@@ -105,6 +105,7 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     })),
     mutation('edm_prepare_dxf', 'Preview supplied DXF source:{fileName,text}, at most 1 MiB UTF-8. Returns unit choices and millimeter bounds for explicit review before import. Does not save a project. Use ordinary Import for larger files.', object({ ...version, source: Type.Optional(source) }), async (input, signal) => {
       checkVersion(input.expectedVersion);
+      preparedDxf.current = null;
       const workbench = app.connectedWorkbench!;
       const value = await textInput(input.source, signal);
       checkVersion(input.expectedVersion);

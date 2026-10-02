@@ -63,7 +63,6 @@ import {
 import {
   readBoundsAnchorPoint,
   readPathDocumentBounds,
-  readPathDocumentBoundsCenter,
   readPathSelectionBoundsCenter,
   type PathBoundsAnchor
 } from './pathSelectionGeometry';
@@ -230,6 +229,23 @@ export function EditorPathNavigatorPanel({
     onTransformDraftChange?.('translate');
   }
   const segmentsById = useMemo(() => segmentMap(pathDocument.segments), [pathDocument]);
+  const operationsById = useMemo(() => {
+    const operations = new Map<string, PathOperation>();
+    for (const operation of pathDocument.plan.operations) {
+      if (!operations.has(operation.id)) operations.set(operation.id, operation);
+    }
+    return operations;
+  }, [pathDocument]);
+  const spatialActionsByOperation = useMemo(() => {
+    const actions = new Map<string | null, ExecutionSpatialAction[]>();
+    for (const action of spatialActions) {
+      if (action.operationId !== null && action.eventKind === 'motion' && action.label === 'Cut endpoint') continue;
+      const group = actions.get(action.operationId);
+      if (group) group.push(action);
+      else actions.set(action.operationId, [action]);
+    }
+    return actions;
+  }, [spatialActions]);
   const projectRail = useMemo(() => createUpidProjectRail(pathDocument), [pathDocument]);
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
   const sequenceMetrics = useMemo(() => deriveCutSequenceMetrics(pathDocument), [pathDocument]);
@@ -264,13 +280,13 @@ export function EditorPathNavigatorPanel({
     ? (segmentsById.get(selectedPathElement.segmentId) ?? null)
     : null;
   const selectedSegmentCenter = selectedSegment && selectedSegment.kind !== 'line' ? selectedSegment.center : null;
-  const documentBounds = readPathDocumentBounds(pathDocument);
-  const documentCenter = readPathDocumentBoundsCenter(pathDocument);
-  const selectedGeometryCenter = readPathSelectionBoundsCenter(
+  const documentBounds = useMemo(() => readPathDocumentBounds(pathDocument), [pathDocument]);
+  const documentCenter = documentBounds ? readBoundsAnchorPoint(documentBounds, 'center') : null;
+  const selectedGeometryCenter = useMemo(() => readPathSelectionBoundsCenter(
     pathDocument,
     selectedPathElement,
     selectedPathOperationId
-  );
+  ), [pathDocument, selectedPathElement, selectedPathOperationId]);
   const translateX = pathTranslateXDraft.trim() ? Number(pathTranslateXDraft) : NaN;
   const translateY = pathTranslateYDraft.trim() ? Number(pathTranslateYDraft) : NaN;
   const targetX = pathTargetXDraft.trim() ? Number(pathTargetXDraft) : NaN;
@@ -586,7 +602,7 @@ export function EditorPathNavigatorPanel({
             )}
           </div>
       </div>
-      {spatialActions.filter((action) => action.operationId === null).map((action) => (
+      {(spatialActionsByOperation.get(null) ?? []).map((action) => (
         <div className="flex items-center border-b border-border/40" key={action.key}>
           <button type="button" data-upid-machining-action={action.key}
             aria-pressed={selectedSpatialActionKey === action.key}
@@ -608,9 +624,10 @@ export function EditorPathNavigatorPanel({
           isCutPathExpanded,
           isSaving,
           pathDocument,
+          operationsById,
           selectedPathElement,
           selectedPathOperationId,
-          spatialActions,
+          spatialActionsByOperation,
           selectedSpatialActionKey,
           onSelectSpatialAction,
           onActivateSpatialAction,
@@ -1396,9 +1413,7 @@ export function EditorPathNavigatorPanel({
                 onHoverPathElement,
                 onMovePathOperation,
                 onSelectPathElement,
-                operation: pathDocument.plan.operations.find(
-                  (operation) => operation.id === pathElement.operationId
-                ),
+                operation: operationsById.get(pathElement.operationId),
                 operationCount: cutSequenceElements.length,
                 metrics: sequenceMetrics.get(pathElement.operationId) ?? { status: 'unavailable', reason: 'Operation is unavailable.' },
                 pathElement,
@@ -2025,11 +2040,12 @@ function renderContourTreeNode({
   onSelectPathElement,
   onToggleSegmentDetails,
   pathDocument,
+  operationsById,
   isCutPathExpanded,
   isPathElementExpanded,
   selectedPathElement,
   selectedPathOperationId,
-  spatialActions,
+  spatialActionsByOperation,
   selectedSpatialActionKey,
   onSelectSpatialAction,
   onActivateSpatialAction,
@@ -2048,9 +2064,10 @@ function renderContourTreeNode({
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onToggleSegmentDetails: (segmentKey: string) => void;
   pathDocument: PathPlanningDocument;
+  operationsById: ReadonlyMap<string, PathOperation>;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
-  spatialActions: readonly ExecutionSpatialAction[];
+  spatialActionsByOperation: ReadonlyMap<string | null, readonly ExecutionSpatialAction[]>;
   selectedSpatialActionKey: string | null;
   onSelectSpatialAction?: (key: string) => void;
   onActivateSpatialAction?: (key: string) => void;
@@ -2060,9 +2077,7 @@ function renderContourTreeNode({
   treeDepth: number;
 }) {
   const { element } = node;
-  const transitions = pathDocument.plan.operations.find(
-    (operation) => operation.id === element.operationId
-  )?.transitions;
+  const transitions = operationsById.get(element.operationId)?.transitions;
   const manualDecisions = upidManualDecisionKinds(element);
   const label = element.displayName;
   const sourceEntityCount = upidPathElementSourceEntityCount(element);
@@ -2227,8 +2242,7 @@ function renderContourTreeNode({
       </summary>
       {expanded && (
         <>
-          {spatialActions.filter((action) => action.operationId === element.operationId &&
-            (action.eventKind !== 'motion' || action.label !== 'Cut endpoint')).map((action) => (
+          {(spatialActionsByOperation.get(element.operationId) ?? []).map((action) => (
             <div key={action.key} className="flex items-center border-b border-border/40">
             <button type="button" data-upid-machining-action={action.key}
               aria-pressed={selectedSpatialActionKey === action.key}
@@ -2309,9 +2323,10 @@ function renderContourTreeNode({
               isCutPathExpanded,
               isPathElementExpanded,
               pathDocument,
+              operationsById,
               selectedPathElement,
               selectedPathOperationId,
-              spatialActions,
+              spatialActionsByOperation,
               selectedSpatialActionKey,
               onSelectSpatialAction,
               onActivateSpatialAction,

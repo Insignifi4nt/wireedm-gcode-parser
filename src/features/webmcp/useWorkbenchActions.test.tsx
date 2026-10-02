@@ -398,6 +398,22 @@ describe('workbench agent actions', () => {
     expect(await h.app().handleGenerateControllerArtifact({ machineId: 'unknown' })).toMatchObject({ ok: false, error: { message: 'Machine not found: unknown.' } });
   });
 
+  it('rejects DXF expansion through the agent tool and invalidates an older preparation after failure', async () => {
+    const h = await harness();
+    const { data: { version: expectedVersion } } = await h.call('edm_workflow_context', {});
+    const first = await h.call('edm_prepare_dxf', { expectedVersion, source: { fileName: 'first.dxf', text } });
+    expect(first.ok).toBe(true);
+    const amplified = '0\nSECTION\n2\nBLOCKS\n0\nBLOCK\n2\nB\n0\nLINE\n10\n0\n20\n0\n11\n1\n21\n0\n0\nENDBLK\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nINSERT\n2\nB\n70\n1000\n71\n1000\n0\nENDSEC\n0\nEOF\n';
+    expect(await h.call('edm_prepare_dxf', { expectedVersion, source: { fileName: 'second.dxf', text: amplified } }))
+      .toMatchObject({ ok: false, error: { code: 'DXF_IMPORT_RESOURCE_LIMIT' } });
+    expect(h.app().connectedWorkbench?.manifest.projects).toHaveLength(0);
+    expect((await h.call('edm_workflow_context', {})).data.dxfPreparationId).toBeNull();
+    expect(await h.call('edm_import_dxf', {
+      expectedVersion, preparationId: first.data.preparationId, unitCandidateId: 'millimeters', declaredUnitOverrideAcknowledged: false
+    })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    expect(h.app().connectedWorkbench?.manifest.projects).toHaveLength(0);
+  });
+
   it('passes direct package bytes through the ordinary validator and preserves explicit collision review', async () => {
     const prepare = vi.fn(defaultAppServices.prepareStoredMachinePackageInstallation);
     const h = await harness({ prepareStoredMachinePackageInstallation: prepare });

@@ -33,8 +33,19 @@ function getBrowserStorage() {
     }
     const storage = window.localStorage;
     const probeKey = `${BROWSER_WORKBENCH_NAMESPACE}:storage-probe`;
-    storage.setItem(probeKey, '1');
-    storage.removeItem(probeKey);
+    try {
+      storage.setItem(probeKey, '1');
+      storage.removeItem(probeKey);
+    } catch (error) {
+      // A full cache can still be read and backed up. Keep its normal validation
+      // and recovery path instead of hiding existing data behind an empty cache.
+      if (!hasCachedWorkbenchFiles(storage)) throw error;
+      return {
+        persistent: true,
+        storage,
+        warning: 'Browser storage could not confirm writes. Existing browser-cache data remains active. Download a workbench backup; saving may fail until storage is available.'
+      };
+    }
     return {
       persistent: true,
       storage
@@ -46,6 +57,14 @@ function getBrowserStorage() {
       storage: createVolatileStorage()
     };
   }
+}
+
+function hasCachedWorkbenchFiles(storage: Storage) {
+  const prefix = `${BROWSER_WORKBENCH_NAMESPACE}:file:`;
+  for (let index = 0; index < storage.length; index++) {
+    if (storage.key(index)?.startsWith(prefix)) return true;
+  }
+  return false;
 }
 
 function createVolatileStorage(): Storage {

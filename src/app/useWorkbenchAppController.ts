@@ -9,6 +9,7 @@ import {
 } from '@/domain/dxf/reimportDxfProjectUnits';
 import type { ImportedDxfProject } from '@/domain/dxf/importDxfProject';
 import type { DxfImportPreviewResult } from '@/domain/dxf/prepareDxfProjectImport';
+import { assertDxfFileSize } from '@/domain/dxf/dxfResourceLimits';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { SavedRevisionTransactionError } from '@/domain/storage/savedRevisionTransaction';
@@ -204,6 +205,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     setImportStatus('importing');
     setImportErrorMessage(null);
     try {
+      assertDxfFileSize(file.size);
       const preparationResult = services.prepareDxfProjectImport(workbench, {
         fileName: file.name,
         text: await file.text()

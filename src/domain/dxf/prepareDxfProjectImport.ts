@@ -12,6 +12,7 @@ import {
 import { DEFAULT_DXF_UPID_OPTIONS } from './dxfToUpid';
 import { normalizeDxfGeometry } from './normalizeDxfGeometry';
 import { parseDxf } from './parseDxf';
+import { DxfResourceLimitError } from './dxfResourceLimits';
 import type { DxfParseResult } from './types';
 
 export interface DxfImportSelection {
@@ -39,6 +40,7 @@ export interface DxfImportPreview {
 }
 
 export type DxfImportPreparationError =
+  | { readonly code: 'DXF_IMPORT_RESOURCE_LIMIT'; readonly message: string }
   | { readonly code: 'DXF_IMPORT_TIMESTAMP_INVALID'; readonly message: string }
   | { readonly code: 'DXF_IMPORT_GEOMETRY_REQUIRED'; readonly message: string };
 
@@ -70,7 +72,15 @@ export function prepareDxfProjectImport(
     };
   }
   const preparedAt = now.toISOString();
-  const parseResult = deepFreeze(jsonSnapshot(parseDxf(input.text)));
+  let parseResult: DxfParseResult;
+  try {
+    parseResult = deepFreeze(jsonSnapshot(parseDxf(input.text)));
+  } catch (error) {
+    if (error instanceof DxfResourceLimitError) {
+      return { ok: false, error: { code: error.code, message: error.message } };
+    }
+    throw error;
+  }
   const rawSegments = pathSegmentsFromDxfEntities(parseResult.entities, DEFAULT_DXF_UPID_OPTIONS);
   if (rawSegments.segments.length === 0) {
     return {

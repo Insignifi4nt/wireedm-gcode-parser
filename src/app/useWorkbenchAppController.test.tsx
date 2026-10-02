@@ -11,6 +11,7 @@ import { FakeDirectoryHandle } from '@/domain/storage/__tests__/fakeDirectoryHan
 import { defaultAppServices, type AppServices } from './appServices';
 import { useWorkbenchAppController } from './useWorkbenchAppController';
 import { MAX_PORTABLE_UPID_BYTES } from '@/domain/upid/portableUpidProject';
+import { DXF_RESOURCE_LIMITS } from '@/domain/dxf/dxfResourceLimits';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -53,6 +54,32 @@ describe('workbench controller asynchronous operations', () => {
     if (!imported.ok) throw new Error(imported.error.message);
     return imported;
   }
+
+  it('rejects oversized DXF before reading the file and permits a later bounded import', async () => {
+    const prepare = vi.fn(defaultAppServices.prepareDxfProjectImport);
+    const read = await mount({ prepareDxfProjectImport: prepare });
+    const before = read().connectedWorkbench;
+    const dxf = '0\nSECTION\n2\nENTITIES\n0\nLINE\n10\n0\n20\n0\n11\n10\n21\n5\n0\nENDSEC\n0\nEOF\n';
+    const readText = vi.fn(async () => dxf);
+    const oversized = new File([], 'large.dxf');
+    Object.defineProperty(oversized, 'size', { value: DXF_RESOURCE_LIMITS.inputBytes + 1 });
+    Object.defineProperty(oversized, 'text', { value: readText });
+    await act(async () => { await read().handleImportDxfFile(oversized); });
+    expect(readText).not.toHaveBeenCalled();
+    expect(prepare).not.toHaveBeenCalled();
+    expect(read().importErrorMessage).toContain('No geometry was imported');
+    expect(read().pendingDxfImport).toBeNull();
+    expect(read().connectedWorkbench).toBe(before);
+
+    const small = new File([dxf], 'small.dxf');
+    Object.defineProperty(small, 'text', { value: readText });
+    await act(async () => { await read().handleImportDxfFile(small); });
+    expect(readText).toHaveBeenCalledOnce();
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(read().pendingDxfImport).not.toBeNull();
+    expect(read().importErrorMessage).toBeNull();
+    expect(read().connectedWorkbench).toBe(before);
+  });
 
   it('rejects oversized UPID before reading bytes and permits a later small import', async () => {
     const imported = vi.fn(defaultAppServices.importPortableUpidProject);

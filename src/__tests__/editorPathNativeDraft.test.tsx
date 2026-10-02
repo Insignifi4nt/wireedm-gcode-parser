@@ -23,6 +23,7 @@ import {
   type WorkbenchProjectDocument
 } from '@/domain/workbench-catalog/workbenchProject';
 import { EditorPage } from '@/features/editor/EditorPage';
+import type { DraftReadSnapshot } from '@/features/webmcp/workbenchSiteTools';
 import { EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY } from '@/features/editor/workspace/editorWorkspaceLayout';
 
 type TestUpidProject = Omit<WorkbenchProjectDocument, 'source' | 'content'> & {
@@ -2282,6 +2283,35 @@ describe('EditorPage UPID draft boundary', () => {
     });
   });
 
+  it('records an agent edit batch as one undo step and preserves redo after a rejected batch', async () => {
+    let latest: DraftReadSnapshot | null = null;
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    await act(async () => root.render(<EditorPageHarness project={project} onSaveEditorDraft={vi.fn()}
+      onReadSnapshot={snapshot => { latest = snapshot; }} />));
+    await flushAsync();
+    const read = () => latest!;
+    const before = structuredClone(read().document);
+    await act(async () => read().edit!([
+      { kind: 'translate', delta: { x: 3, y: 0 } },
+      { kind: 'geometry-basis', basis: 'wire-centre' }
+    ]));
+    const edited = structuredClone(read().document);
+    expect(edited).not.toEqual(before);
+    expect(edited?.geometryBasis).toBe('wire-centre');
+    await act(async () => { expect(read().history!('undo')).toBe(true); });
+    expect(read().document).toEqual(before);
+    await act(async () => { expect(read().history!('undo')).toBe(false); });
+    await act(async () => {
+      expect(() => read().edit!([
+        { kind: 'translate', delta: { x: 100, y: 0 } },
+        { kind: 'reverse', operationId: 'missing-operation' }
+      ])).toThrow('No edits were applied');
+    });
+    expect(read().document).toEqual(before);
+    await act(async () => { expect(read().history!('redo')).toBe(true); });
+    expect(read().document).toEqual(edited);
+  });
+
   it('undoes and redoes UPID path edits as modeled path documents', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);
@@ -3806,6 +3836,7 @@ function EditorPageHarness({
   onBackToDashboard = noop,
   onImportProgramFile = noop,
   onStatusMessage,
+  onReadSnapshot,
   onSaveEditorDraft,
   project,
   saveStatus = 'idle'
@@ -3817,6 +3848,7 @@ function EditorPageHarness({
   onBackToDashboard?: () => void;
   onImportProgramFile?: (file: File) => void;
   onStatusMessage?: (message: string, type: 'info' | 'success' | 'warning' | 'error') => void;
+  onReadSnapshot?: (snapshot: DraftReadSnapshot | null) => void;
   onSaveEditorDraft: (draft: EditorSaveDraft) => void;
   project: TestUpidProject;
   saveStatus?: 'error' | 'idle' | 'saving';
@@ -3897,6 +3929,7 @@ function EditorPageHarness({
         })}
         onImportProgramFile={onImportProgramFile}
         onStatusMessage={onStatusMessage}
+        onReadSnapshot={onReadSnapshot}
         onSaveEditorDraft={onSaveEditorDraft}
         planningMachine={null}
         program={{

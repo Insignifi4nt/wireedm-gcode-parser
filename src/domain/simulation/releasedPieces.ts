@@ -9,6 +9,7 @@ import type {
 } from './types';
 
 const GRAVITY_MM_PER_SECOND_SQUARED = 9810;
+interface CutRange { start: number; end: number }
 
 export function compileReleasedPieces(
   document: PathPlanningDocument,
@@ -18,7 +19,7 @@ export function compileReleasedPieces(
 ): { pieces: SimulationPiece[]; diagnostics: SimulationDiagnostic[] } {
   const segments = segmentMap(document.segments);
   const diagnostics: SimulationDiagnostic[] = [];
-  const coverage = new Map<string, Array<{ start: number; end: number }>>();
+  const coverage = new Map<string, CutRange[]>();
   const released = new Set<string>();
   const polygons = new Map<string, Point2[]>();
   const activeIds = new Set(activeOperationIds);
@@ -48,13 +49,13 @@ export function compileReleasedPieces(
     polygons.set(operation.id, polygon);
   }
   const candidatesBySegment = new Map<string, Array<{
-    operation: (typeof candidates)[number]; polygon: Point2[]; boundaryKey: string;
+    operation: (typeof candidates)[number]; polygon: Point2[]; boundaryKey: string; uncutSegments: Set<string>;
   }>>();
   for (const operation of candidates) {
     const polygon = polygons.get(operation.id);
     if (!polygon) continue;
     const segmentIds = [...new Set(operation.segmentRefs.map(({ segmentId }) => segmentId))].sort();
-    const candidate = { operation, polygon, boundaryKey: segmentIds.join('\u0000') };
+    const candidate = { operation, polygon, boundaryKey: segmentIds.join('\u0000'), uncutSegments: new Set(segmentIds) };
     for (const segmentId of segmentIds) {
       const related = candidatesBySegment.get(segmentId) ?? [];
       related.push(candidate);
@@ -70,14 +71,19 @@ export function compileReleasedPieces(
     if (nextStart !== null) nextOperationStart.set(step.event.id, nextStart);
     if (step.event.kind === 'operation-start') nextStart = step.startSeconds;
   }
+  const completedSegments = new Set<string>();
   for (const step of steps) {
     const event = step.event;
     if (event.kind !== 'motion' || event.role !== 'contour' || !event.sourceSegmentId || !event.sourceRange) continue;
+    if (completedSegments.has(event.sourceSegmentId)) continue;
     const ranges = coverage.get(event.sourceSegmentId) ?? [];
-    ranges.push({ start: Math.min(event.sourceRange.start, event.sourceRange.end), end: Math.max(event.sourceRange.start, event.sourceRange.end) });
+    mergeCoverage(ranges, event.sourceRange.start, event.sourceRange.end);
     coverage.set(event.sourceSegmentId, ranges);
-    for (const { operation, polygon, boundaryKey } of candidatesBySegment.get(event.sourceSegmentId) ?? []) {
-      if (released.has(boundaryKey) || !operation.segmentRefs.every(({ segmentId }) => completeCoverage(coverage.get(segmentId) ?? []))) continue;
+    if (!completeCoverage(ranges)) continue;
+    completedSegments.add(event.sourceSegmentId);
+    for (const { operation, polygon, boundaryKey, uncutSegments } of candidatesBySegment.get(event.sourceSegmentId) ?? []) {
+      uncutSegments.delete(event.sourceSegmentId);
+      if (released.has(boundaryKey) || uncutSegments.size > 0) continue;
       released.add(boundaryKey);
       const role = operationMaterialRole(operation);
       const removalSeconds = role === 'waste' && settings.wasteHandling === 'remove-before-next-operation'
@@ -140,14 +146,29 @@ function associateParents(pieces: readonly SimulationPiece[]): SimulationPiece[]
   });
 }
 
-function completeCoverage(ranges: readonly { start: number; end: number }[]): boolean {
-  let coveredUntil = 0;
-  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
-    // Do not fill even a small uncut bridge simply because the source contour is closed.
-    if (range.start > coveredUntil) return false;
-    coveredUntil = Math.max(coveredUntil, range.end);
+/** Keep disjoint sorted intervals so chronological contour fragments collapse immediately. */
+function mergeCoverage(ranges: CutRange[], from: number, to: number) {
+  let start = Math.min(from, to);
+  let end = Math.max(from, to);
+  let first = 0;
+  let high = ranges.length;
+  while (first < high) {
+    const middle = first + Math.floor((high - first) / 2);
+    if (ranges[middle].end < start) first = middle + 1;
+    else high = middle;
   }
-  return coveredUntil >= 1;
+  let after = first;
+  // Exact comparisons intentionally preserve even a very small uncut bridge.
+  while (after < ranges.length && ranges[after].start <= end) {
+    start = Math.min(start, ranges[after].start);
+    end = Math.max(end, ranges[after].end);
+    after++;
+  }
+  ranges.splice(first, after - first, { start, end });
+}
+
+function completeCoverage(ranges: readonly CutRange[]): boolean {
+  return ranges.length === 1 && ranges[0].start <= 0 && ranges[0].end >= 1;
 }
 
 export function releasedPieceSnapshots(

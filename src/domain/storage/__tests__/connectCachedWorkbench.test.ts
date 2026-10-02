@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { connectCachedWorkbench } from '../connectCachedWorkbench';
 import { importExternalProgram } from '@/domain/editor/importExternalProgram';
+import { createWorkbenchBackup } from '../workbenchBackup';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -32,6 +33,58 @@ class MemoryStorage implements Storage {
 }
 
 describe('connectCachedWorkbench', () => {
+  it('reopens and backs up existing projects when the browser rejects new writes', async () => {
+    const storage = new MemoryStorage();
+    const connected = await connectCachedWorkbench({ storage });
+    if (!connected.ok) throw new Error(connected.error.message);
+    const imported = await importExternalProgram(connected.workbench, {
+      fileName: 'plate.nc', text: 'G21\nG1 X10 Y5'
+    });
+    if (!imported.ok) throw new Error(imported.error.message);
+    const original = Array.from({ length: storage.length }, (_, index) => {
+      const key = storage.key(index)!;
+      return [key, storage.getItem(key)];
+    });
+    const rejectWrites = vi.spyOn(storage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage is full', 'QuotaExceededError');
+    });
+    vi.stubGlobal('localStorage', storage);
+    try {
+      const reopened = await connectCachedWorkbench();
+      if (!reopened.ok) throw new Error(reopened.error.message);
+      expect(reopened.workbench.adapter.kind).toBe('browser-cache');
+      expect(reopened.workbench.adapter.persistenceWarning).toContain('could not confirm writes');
+      expect(reopened.workbench.manifest.projects).toEqual(imported.workbench.manifest.projects);
+      expect(await reopened.workbench.adapter.readText(imported.editorProgram.filePath)).toBe(imported.editorProgram.text);
+      const backup = await createWorkbenchBackup(reopened.workbench);
+      expect(backup.summary.projects).toBe(1);
+      expect(JSON.parse(backup.text).files).toContainEqual(expect.objectContaining({
+        path: imported.editorProgram.filePath, text: imported.editorProgram.text
+      }));
+      expect(original.every(([key, value]) => storage.getItem(key!) === value)).toBe(true);
+      expect(storage.length).toBe(original.length);
+    } finally {
+      rejectWrites.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('reports an existing invalid cache when writes fail instead of creating a temporary replacement', async () => {
+    const storage = new MemoryStorage();
+    const original = '{damaged catalog';
+    storage.setItem('wire-edm-workbench:file:workbench.json', original);
+    vi.spyOn(storage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage is full', 'QuotaExceededError');
+    });
+    vi.stubGlobal('localStorage', storage);
+    try {
+      const result = await connectCachedWorkbench();
+      expect(result).toMatchObject({ ok: false });
+      expect(storage.getItem('wire-edm-workbench:file:workbench.json')).toBe(original);
+      expect(storage.length).toBe(1);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it.each(['missing', 'blocked'])('uses explicit temporary storage when cross-tab coordination is %s without touching the existing cache', async (mode) => {
     const original = '{existing cache bytes}';
     localStorage.setItem('wire-edm-workbench:file:workbench.json', original);

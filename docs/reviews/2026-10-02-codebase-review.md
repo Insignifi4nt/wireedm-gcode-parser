@@ -19,10 +19,13 @@ During the review, the user requested immediate fixes using Astra High agents. F
 | F5 | P2 | Journal cleanup failure hides an already committed revision receipt | Fixed; committed result reports pending cleanup |
 | F6 | P2 | Exact backups reject valid BOM-prefixed folder catalogs | Fixed; semantic parsing preserves exact backup strings |
 | F7 | P2 | Saving external G-code compares metadata but not the opened program text | Fixed for editor saves; checked under the mutation lock |
-| F8 | P2 | DXF block arrays have no global expansion budget and run synchronously | Open; highest remaining import robustness task |
-| F9 | P2 | Endpoint topology scans are quadratic and repeated during navigator renders | Fixed for endpoint derivation; broader rendering work remains |
+| F8 | P2 | DXF block arrays have no global expansion budget and run synchronously | Parsing/expansion bounded; cancellable worker remains a follow-up |
+| F9 | P2 | Endpoint topology scans are quadratic and repeated during navigator renders | Fixed endpoint derivation, row operation/action lookups and repeated bounds scans |
 | F10 | P2 | Closed-contour start selection allocates a full rotated chain for every candidate | Fixed; rank lightweight candidates and copy the winner |
-| F11 | P2 | Undo history retains unlimited deep copies of the full document | Open; needs an explicit history and memory policy |
+| F11 | P2 | Undo history retains unlimited deep copies of the full document | Fixed; shared count/estimated-memory budget with contiguous undo/redo |
+| F12 | P2 | A full but readable browser cache is hidden behind an empty temporary workbench | Fixed; existing cache validation and backup remain available |
+| F13 | P2 | Simulation repeatedly sorts all cut fragments and rescans completed contour segments | Fixed; incremental exact coverage and outstanding-segment tracking |
+| F14 | P2 | A failed replacement DXF preview leaves an older agent preparation importable | Fixed; replacement preparation invalidates the old handle |
 
 ### F1 — Use boundary containment, not a concave polygon's centroid
 
@@ -76,7 +79,11 @@ Editor saves now pass the loaded text as an expected value and compare the owned
 
 [INSERT expansion](https://github.com/Insignifi4nt/wireedm-gcode-parser/blob/c45991a66becafdd9849c3b7859b450ddab2bb1d/src/domain/dxf/parseDxf.ts#L823) multiplies row count, column count and block entities without a global emitted-entity or nesting budget. A 158-byte DXF expanded into 10,000 lines in a bounded probe. Larger arrays or nested blocks amplify further; a one-megabyte WebMCP source limit does not bound expanded work. Ordinary DXF import calls the parser synchronously after reading the file.
 
-Add shared limits for expanded entities/vertices, nesting and total work, with an explicit import failure rather than silently truncated machining geometry. Move parsing/planning to a cancellable worker after introducing these domain limits. SPLINE already has a subdivision-depth bound; retain that guarantee and add an aggregate budget. Verify small-input/large-expansion rejection, cancellation and ordinary large imports. No destructive or OOM-sized probe was run.
+The second pass adds shared limits: 16 MiB UTF-8 source, 500,000 pairs, 20,000 aggregate entities and INSERT instances, 100,000 geometry points, 32 block nesting levels, and 10,000 diagnostics. Intermediate block geometry counts toward the same budget. Spline approximation additionally limits degree to 16, control points to 4,096, aggregate approximated points to 20,000, and work to 10 million units. A separate 10-million-unit source-search budget prevents repeated end-of-file scans for malformed block/polyline delimiters. Exhaustion throws a typed parser error and becomes `DXF_IMPORT_RESOURCE_LIMIT` at preparation; no partial project is saved. Local files are size-checked before reading. Direct text, ordinary import and unit reimport share the parser limits.
+
+Independent review found two additional paths: subdivision-depth exhaustion still became an unsupported-spline warning, and a one-MiB layer name copied 1,000 times could require over one GiB when preparation serialized the result. The depth cap of 20 now throws a fatal resource error. Metadata fields are capped at 4,096 UTF-16 units, and a conservative 64 MiB expanded-data estimate counts repeated geometry, warnings and INSERT provenance without constructing the amplified JSON. Checks run during accumulation and before parser return; shared objects/strings count on every occurrence because serialization repeats them.
+
+Tests reject compact huge/nested arrays, multiplied polyline vertices, cached-depth amplification, malformed section scans, oversized UTF-8 input, excessive spline work/depth and repeated large metadata; a valid 10,000-instance array retains its geometry and provenance. Accepted inputs retain existing behavior. Previously accepted oversized/complex drawings now require simplification or splitting. Parsing and downstream planning still run synchronously; a cancellable worker and measured whole-import latency remain follow-up work. No destructive or OOM-sized probe was run; metadata amplification was measured by lengths without constructing the giant serialization.
 
 ### F9 — Reuse an endpoint lookup and document-derived UI data
 
@@ -84,7 +91,7 @@ Add shared limits for expanded entities/vertices, nesting and total work, with a
 
 On this review host, warmed median row-derivation times for 250 / 1,000 / 2,000 disjoint lines were approximately **6.4 / 83.9 / 387.4 ms**. These are isolated Node measurements, not browser interaction timings. The implementation explains the quadratic trend independently of timing.
 
-The fix builds one lookup, preserves first-owner/reference semantics, and memoizes document-derived navigator data. A deterministic operation-traversal budget accompanies the existing topology behavior tests. Remaining row-level operation searches, bounds calculations and large DOM lists still deserve browser profiling; this patch is not a claim that the whole editor is linear or fully virtualized.
+The fix builds one lookup, preserves first-owner/reference semantics, and memoizes document-derived navigator data. A deterministic operation-traversal budget accompanies the existing topology behavior tests. The second pass also indexes operations and visible spatial actions once, shares document bounds instead of scanning twice per render, and caches selection bounds. Action order, global actions and first-owner behavior are preserved. Large DOM lists and per-row diagnostic derivation still deserve browser profiling; this patch is not a claim that the whole editor is linear or fully virtualized.
 
 Repeating the same bounded probe after the fix measured approximately **0.8 / 2.1 / 4.4 ms** at 250 / 1,000 / 2,000 lines. These illustrative same-host measurements were not taken under controlled benchmark conditions; the deterministic traversal test is the regression gate.
 
@@ -98,18 +105,39 @@ The fix ranks lightweight start/orientation descriptors with the original determ
 
 [Editor history](https://github.com/Insignifi4nt/wireedm-gcode-parser/blob/c45991a66becafdd9849c3b7859b450ddab2bb1d/src/features/editor/EditorPage.tsx#L2383) deep-clones the complete path document into uncapped undo/redo arrays; draft signatures serialize the full document. A 2,000-segment generated fixture serialized to approximately 1.85 MB before history. JSON size is not a heap measurement, but repeated full snapshots make memory grow with both document size and edit count.
 
-Define a byte-based history budget, coalesce suitable repeated edits, and use structural sharing or operation patches where justified. Preserve one-step undo for atomic agent batches and workflows. Test undo/redo correctness, saved-state identity and bounded retained memory before changing behavior. A generic state-library rewrite is not needed to start.
+The second pass introduces a focused history module with a shared limit of 50 undo/redo snapshots and 32 MiB estimated retained data. The estimate accounts for UTF-16 strings, keys, references and object overhead without allocating another document-sized JSON string; it is not an exact JavaScript heap measurement. The current draft and active workflow snapshot are outside this history budget. Eviction removes distant ends only, preserving contiguous undo/redo. A snapshot too large to retain creates an explicit history boundary; undo cannot jump silently across the missing state. Informational/warning messages explain when history is pruned. Text changes, path edits, workflow commits and atomic agent batches use the same policy. Tests include 4,000-segment UPID geometry, byte/count limits, branching, oversized states and one-step agent-batch undo. Structural sharing/coalescing remain potential further improvements.
+
+### F12 — Preserve access to a readable cache when write probing fails
+
+`connectCachedWorkbench` previously treated every localStorage probe failure as unavailable storage and initialized a fresh temporary workbench. With a valid persisted project and `QuotaExceededError` on new writes, the app appeared to have no projects even though all originals were readable. An invalid full cache was similarly hidden instead of reporting its validation error.
+
+The connection now retains the persistent adapter when any workbench file keys exist and runs the normal validation/recovery path. Valid current catalogs remain readable and exportable as an exact backup; a persistence warning explains that writes may still fail. Invalid or unrecoverable catalogs still report their actual error. Missing Web Locks and entirely unavailable storage retain their explicit temporary-session behavior. Regressions reproduce both quota cases and verify a complete project backup without changing stored bytes. This change is specific to browser cache; folder adapters do not use this probe.
+
+### F13 — Track simulation cut coverage incrementally
+
+`compileReleasedPieces` appended each contour fragment and sorted/scanned the complete source-segment history after each step. A bounded 20,000-fragment circular-source probe took approximately 2.77 seconds in this coverage path on the review host. Distinct-segment contours also repeatedly scanned every previously completed segment to determine release.
+
+Sorted disjoint interval merging now retains exact uncut gaps and handles reversed, overlapping and out-of-order ranges. Each candidate tracks its outstanding unique source segments, so completed segments do not need repeated full-contour scans. Release timestamps/events and material behavior are preserved. Regression gates count ordering and traversal work rather than imposing a fragile wall-clock threshold; correctness cases include a 1e-12 uncut bridge, out-of-order fragments and a 2,000-segment closed contour. There is no execution-event, post-output or persistence contract change.
+
+A repeated Node probe against the previous committed implementation measured 20,000-fragment coverage at 2,947 / 5,073 / 5,711 ms before and 8.65 / 6.01 / 5.79 ms after. These are illustrative same-host measurements with runtime/allocation variability, not controlled browser timings or full simulation compilation measurements. Both versions returned the same release event/time and no diagnostics. The bounded probe and output remain in ignored review scratch files.
+
+### F14 — Invalidate the previous agent DXF preparation when replacing it
+
+`edm_prepare_dxf` previously replaced its stored preparation only after success. Preparing file A, then failing to prepare file B, left A's handle in workflow context and still importable. This was inconsistent with the existing package-preparation flow and could cause an agent to continue with the wrong drawing after a failed preview.
+
+After validating the supplied workbench version, a new preparation attempt now clears the previous handle before reading/validating the replacement. Failure leaves no importable preparation and an old handle returns `STALE_STATE`. The integration regression uses a compact array that exceeds the shared expansion limit, verifies the resource error, and confirms no project is saved. Read fresh context and successfully prepare/review the intended file before importing it.
 
 ## Additional optimization and maintainability opportunities
 
 1. **Reduce first-open assets.** Baseline production chunks: main 638.09 kB (180.45 kB gzip), shared JSX/runtime 81.55 kB (21.94 gzip), shared package-tools client chunk 187.03 kB (59.38 gzip). The built main HTML preloads the latter two. Editor is a separate 423.46 kB chunk; simulation is 916.41 kB. The first-run onboarding image alone is 2.64 MB. Resize/re-encode that image and trace startup imports before choosing new lazy boundaries. STEP/WASM/source archives are optional paths; do not count all distribution bytes as startup transfer.
 2. **Reduce repeated storage reads without weakening integrity.** `validateWorkbenchProjectPathOwnership` reads all indexed projects, source files and revision contents during many mutations. The cache adapter may decompress each large file. Add adapter existence/metadata primitives and immutable/versioned read models, invalidate them on storage changes, and retain complete validation on open/recovery. Folder external edits prevent assuming a cached manifest proves all files are unchanged.
 3. **Keep bounded post execution off the UI thread.** Custom posts use an isolated QuickJS runtime and two deterministic executions, but ordinary controller generation awaits synchronous VM execution on the main thread. Reuse a disposable worker approach while preserving exact revision branding, output audit and late-cancellation receipts. Resource limits remain necessary inside the worker.
-4. **Offer hosted recovery access for an unreadable workbench.** Invalid/missing project data correctly blocks normal opening. Current backup requires a valid connected workbench and rejects pending journals, leaving users with limited hosted recovery options. A read-only raw evidence export and recovery preview should preserve exact data without requiring a terminal or repository. Similarly, distinguish quota exhaustion from unavailable storage before falling back to an empty temporary session.
+4. **Offer hosted recovery access for an unreadable workbench.** Invalid/missing project data correctly blocks normal opening. Current backup requires a valid connected workbench and rejects pending journals, leaving users with limited hosted recovery options. A read-only raw evidence export and recovery preview should preserve exact data without requiring a terminal or repository. Quota-aware reconnection for an existing readable cache is now implemented in F12.
 5. **Extract cohesive editor behavior.** `EditorPage` (~3,946 lines), navigator (~2,998), inspector (~1,505) and preview (~2,022) concentrate workflow state and derivation. Extract complete workflow/history/selection modules with narrow interfaces and shared UI/WebMCP guards, rather than splitting files into pass-through hooks. Keep existing interaction tests as the seam's behavioral contract.
 6. **Strengthen validation types incrementally.** Strict TypeScript is enabled, but UPID validation uses broad record values and indexed access is not globally checked. Introduce narrowed discriminated structures at parsing boundaries and enable stronger checks incrementally on touched modules. Avoid a repository-wide cast churn that hides rather than resolves unchecked assumptions.
 7. **Extend tests around the observed gaps.** Existing Chromium end-to-end tests are substantial. Add targeted real-worker/WebGL failure and cancellation checks, setup changes across tabs, and realistic large-model interaction measurements. Evaluate a small Firefox/WebKit browser-cache smoke suite for the folder-API-free path. Keep deterministic work budgets alongside timing experiments; do not duplicate every unit test in browsers.
 8. **Retain the existing architectural strengths.** Production domain code is independent of feature/UI layers. Exact package hashes, explicit capabilities, motion audits, sandbox resource limits, no default feed generation, immutable revision snapshots, on-demand simulation rendering, worker termination and complete-package installation are valuable constraints. Preserve them while optimizing.
+9. **Remove obsolete dependencies when usage is verified.** The second pass removed the unused `dxf` dependency and its ambient declarations after checking application, tests and scripts. The app uses its own tested DXF parser. This removes `dxf`, `commander` and `vecks` from installation; lodash remains only as a development dependency. No unrelated dependency versions or platform annotations were changed.
 
 ## Verification
 
@@ -122,7 +150,9 @@ Baseline at `c45991a`:
 - `npm audit --json`: zero reported vulnerabilities at review time. This does not establish absence of application vulnerabilities.
 - Custom probes reproduced the findings above; bounded performance probes used Node 22.23.2. Large memory-exhaustion inputs and physical machine execution were not attempted.
 
-Final fix validation: **195 test files / 1,904 unit and integration tests passed**, **80 Chromium tests passed / one optional preseeded smoke skipped**. TypeScript/production build, documentation and release checks, all three UPID fixtures, all three unchanged Robofil post fixtures and complete package validation passed. The 0.0.689 release record and PR carry the compatibility checklist. The build retains the pre-existing large-chunk and OCCT browser-externalization warnings.
+First-pass validation at `6511815`: **195 test files / 1,904 unit and integration tests passed**, **80 Chromium tests passed / one optional preseeded smoke skipped**. TypeScript/production build, documentation and release checks, all three UPID fixtures, all three unchanged Robofil post fixtures and complete package validation passed. GitHub Review checks and GitGuardian also passed. The 0.0.689 release record and PR carry the compatibility checklist. The build retains the pre-existing large-chunk and OCCT browser-externalization warnings.
+
+Second-pass final validation: **198 test files / 1,942 unit and integration tests passed**, **80 Chromium tests passed / one optional preseeded smoke skipped**. TypeScript/production build, generated authoring-doc parity, release check and all three UPID fixtures passed. All three unchanged Robofil 2.6.0 post fixtures and the complete package validation passed. Dependency removal reported zero audited vulnerabilities. Public documentation was regenerated and checked after the final report/release update. Independent reviews covered DXF budgets, history boundaries, cache reconnection, navigator lookup semantics and failed preparation invalidation; the extra spline-depth and metadata-amplification findings were fixed before this passing run. Source changes remained frozen during integrated verification.
 
 Local investigation scripts, output and baseline logs are retained under `tmp/review-2026-10-02/` (ignored scratch evidence). New regression tests are checked in beside the affected modules. Independent Astra High reviews covered geometry/performance and the two storage/revision implementations, catching and fixing additional empty-revision and untouched-index recovery cases before the final passing run.
 
@@ -145,9 +175,9 @@ Remote cleanup candidates, all already ancestors of main at inspection: `origin/
 
 ## Suggested next PRs
 
-1. DXF expansion limits and cancellable import, with explicit incomplete-geometry rejection.
-2. A measured editor responsiveness pass: history memory policy, remaining operation lookups and appropriately virtualized lists.
-3. Hosted read-only recovery export and quota-aware startup behavior, designed for both storage adapters.
+1. Cancellable DXF parsing/planning in a worker, retaining the shared resource limits and complete-geometry rejection.
+2. A measured editor responsiveness pass: structural sharing/coalescing, diagnostic derivation and appropriately virtualized lists.
+3. Hosted read-only recovery export for blocked workbenches, designed for both storage adapters.
 4. Startup asset reduction and post-worker execution, with browser measurements and unchanged exact-post output fixtures.
 
 Each PR should advance the app version once, retain its compatibility checklist and preserve installed packages and saved revisions. Recovery format changes require explicit downgrade guidance; geometry/output changes require reviewing the resulting controller output with the exact installed setup.
