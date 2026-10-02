@@ -14,8 +14,10 @@ import {
 } from './MachinePostSettingsPanel';
 
 type WorkbenchStatus = 'initializing' | 'ready' | 'connecting-storage' | 'error';
+export type WorkbenchSettingsSection = 'storage' | 'machine-output';
 
 interface WorkbenchSettingsDialogProps extends MachinePostSettingsActions {
+  readonly initialSection?: WorkbenchSettingsSection;
   readonly connectedWorkbench: ConnectedWorkbenchCatalog | null;
   readonly errorMessage: string | null;
   readonly interactionLocked: boolean;
@@ -32,6 +34,7 @@ interface WorkbenchSettingsDialogProps extends MachinePostSettingsActions {
 }
 
 export function WorkbenchSettingsDialog({
+  initialSection = 'storage',
   connectedWorkbench,
   errorMessage,
   interactionLocked,
@@ -47,15 +50,15 @@ export function WorkbenchSettingsDialog({
   workbenchStatus,
   ...machinePostActions
 }: WorkbenchSettingsDialogProps) {
-  const [activeSection, setActiveSection] = useState<'storage' | 'machine-output'>('storage');
+  const [activeSection, setActiveSection] = useState<WorkbenchSettingsSection>(initialSection);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   useModalFocus({ open, overlayRef, dialogRef, initialFocusRef: closeButtonRef, onClose });
 
   useEffect(() => {
-    if (open) setActiveSection('storage');
-  }, [open]);
+    if (open) setActiveSection(initialSection);
+  }, [open, initialSection]);
 
   if (!open) return null;
   const connecting = workbenchStatus === 'initializing' || workbenchStatus === 'connecting-storage';

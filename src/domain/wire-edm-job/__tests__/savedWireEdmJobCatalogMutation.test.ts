@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { writeMachineLibraryStorage } from '@/domain/machine-definition/machineLibraryStorage';
+import { writePostLibraryStorage } from '@/domain/post-processor/postLibraryStorage';
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
 
 import {
@@ -57,6 +59,96 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
 }
 
 describe('catalog-owned saved revision persistence', () => {
+  it('requires the current setup only when explicitly saving for controller generation', async () => {
+    const fixture = await catalogRevisionFixture();
+    const machine = { ...fixture.machine, activeBindingId: 'production' };
+    expect(await writePostLibraryStorage(fixture.adapter, fixture.library)).toMatchObject({ ok: true });
+    expect(await writeMachineLibraryStorage(fixture.adapter, { schemaVersion: 1, machines: [machine] })).toMatchObject({ ok: true });
+    const other = { ...machine, activeBindingId: 'alternate', bindings: [...machine.bindings, {
+      ...machine.bindings[0], id: 'alternate', name: 'Alternate'
+    }] };
+    expect(await writeMachineLibraryStorage(fixture.adapter, { schemaVersion: 1, machines: [other] })).toMatchObject({ ok: true });
+    const before = new Map(fixture.adapter.files);
+    expect(await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate, {
+      requireCurrentActiveSetup: true
+    })).toMatchObject({ ok: false, error: { code: 'SAVED_REVISION_ACTIVE_SETUP_STALE' } });
+    expect(fixture.adapter.files).toEqual(before);
+    // Deliberately fixed immutable snapshots remain a supported domain API use.
+    expect(await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate)).toMatchObject({ ok: true });
+  });
+
+  it.each(['physical', 'binding', 'post'] as const)('rejects a changed %s snapshot before a controller revision write', async part => {
+    const fixture = await catalogRevisionFixture();
+    const machine = { ...fixture.machine, activeBindingId: 'production' };
+    await writePostLibraryStorage(fixture.adapter, fixture.library);
+    await writeMachineLibraryStorage(fixture.adapter, { schemaVersion: 1, machines: [machine] });
+    if (part === 'physical') await writeMachineLibraryStorage(fixture.adapter, { schemaVersion: 1, machines: [{ ...machine, name: 'Changed machine' }] });
+    else if (part === 'binding') await writeMachineLibraryStorage(fixture.adapter, { schemaVersion: 1, machines: [{ ...machine,
+      bindings: [{ ...machine.bindings[0], properties: { coordinatePrecision: 4 } }]
+    }] });
+    else await writePostLibraryStorage(fixture.adapter, createEmptyPostLibrary());
+    fixture.adapter.mutations.length = 0;
+    expect(await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate, {
+      requireCurrentActiveSetup: true
+    })).toMatchObject({ ok: false, error: { code: 'SAVED_REVISION_ACTIVE_SETUP_STALE' } });
+    expect(fixture.adapter.mutations).toEqual([]);
+  });
+
+  it('returns a committed receipt when journal deletion fails, then recovers without another revision', async () => {
+    const fixture = await catalogRevisionFixture();
+    const remove = fixture.adapter.deleteText.bind(fixture.adapter);
+    const deletion = vi.spyOn(fixture.adapter, 'deleteText').mockImplementation(async path => {
+      if (path === SAVED_REVISION_TRANSACTION_PATH) throw new Error('Injected cleanup failure');
+      await remove(path);
+    });
+    const saved = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    expect(saved).toMatchObject({ ok: true, revision: { revisionId: fixture.candidate.revisionId },
+      cleanupPending: { code: 'SAVED_REVISION_TRANSACTION_STORAGE_FAILED' } });
+    if (!saved.ok) throw new Error(saved.error.message);
+    const revisionBytes = fixture.adapter.files.get(saved.path);
+    expect(saved.project.savedRevisionIds).toEqual([fixture.candidate.revisionId]);
+    expect(fixture.adapter.files.has(SAVED_REVISION_TRANSACTION_PATH)).toBe(true);
+    deletion.mockRestore();
+    const reopened = await initializeWorkbenchCatalog(fixture.adapter);
+    expect(reopened).toMatchObject({ ok: true });
+    expect(fixture.adapter.files.has(SAVED_REVISION_TRANSACTION_PATH)).toBe(false);
+    expect(fixture.adapter.files.get(saved.path)).toBe(revisionBytes);
+  });
+
+  it('retains unrecognized revision bytes and the journal when rollback cannot prove ownership', async () => {
+    const fixture = await catalogRevisionFixture();
+    const path = workbenchProjectRevisionPath('fixture.part', 'revision.0001');
+    const write = fixture.adapter.writeText.bind(fixture.adapter);
+    vi.spyOn(fixture.adapter, 'writeText').mockImplementation(async (target, text) => {
+      await write(target, target === path ? 'unrecognized bytes' : text);
+    });
+    const saved = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    expect(saved).toMatchObject({ ok: false, error: { code: 'SAVED_REVISION_CATALOG_ROLLBACK_FAILED' } });
+    expect(fixture.adapter.files.get(path)).toBe('unrecognized bytes');
+    expect(fixture.adapter.files.has(SAVED_REVISION_TRANSACTION_PATH)).toBe(true);
+  });
+
+  it.each(['projects/fixture.part.json', WORKBENCH_CATALOG_PATH])('preserves an externally changed untouched index %s when a revision write fails', async indexPath => {
+    const fixture = await catalogRevisionFixture();
+    const revisionPath = workbenchProjectRevisionPath('fixture.part', 'revision.0001');
+    const write = fixture.adapter.writeText.bind(fixture.adapter);
+    vi.spyOn(fixture.adapter, 'writeText').mockImplementation(async (path, text) => {
+      await write(path, text);
+      if (path === revisionPath) {
+        await write(indexPath, 'EXTERNAL INDEX CONTENTS');
+        throw new Error('Revision write reported failure after external index edit');
+      }
+    });
+    const remove = vi.spyOn(fixture.adapter, 'deleteText');
+    expect(await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate)).toMatchObject({
+      ok: false, error: { code: 'SAVED_REVISION_CATALOG_ROLLBACK_FAILED' }
+    });
+    expect(fixture.adapter.files.get(indexPath)).toBe('EXTERNAL INDEX CONTENTS');
+    expect(fixture.adapter.files.has(revisionPath)).toBe(true);
+    expect(fixture.adapter.files.has(SAVED_REVISION_TRANSACTION_PATH)).toBe(true);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   it('permanently removes an archived project and its saved revision', async () => {
     const fixture = await catalogRevisionFixture();
     const saved = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
@@ -323,7 +415,7 @@ describe('catalog-owned saved revision persistence', () => {
     }
   });
 
-  it('recovers before parsing a manifest interrupted mid-write and can retry recovery', async () => {
+  it('preserves an unknown partial manifest until a recognized state is restored for recovery', async () => {
     const fixture = await catalogRevisionFixture();
     const before = new Map(fixture.adapter.files);
     fixture.adapter.durableStates.length = 0;
@@ -332,9 +424,10 @@ describe('catalog-owned saved revision persistence', () => {
     const restarted = new MemoryAdapter('partial-manifest');
     for (const [path, text] of interrupted) restarted.files.set(path, text);
     restarted.files.set(WORKBENCH_CATALOG_PATH, '{"format":');
-    restarted.failNextWrite(WORKBENCH_CATALOG_PATH);
     expect(await initializeWorkbenchCatalog(restarted)).toMatchObject({ ok: false });
     expect(restarted.files.has(SAVED_REVISION_TRANSACTION_PATH)).toBe(true);
+    expect(restarted.files.get(WORKBENCH_CATALOG_PATH)).toBe('{"format":');
+    restarted.files.set(WORKBENCH_CATALOG_PATH, before.get(WORKBENCH_CATALOG_PATH)!);
     expect(await initializeWorkbenchCatalog(restarted)).toMatchObject({ ok: true });
     expect(restarted.files).toEqual(before);
   });

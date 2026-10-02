@@ -1,4 +1,5 @@
 import type { DxfPoint } from './types';
+import { DXF_RESOURCE_LIMITS, DxfResourceBudget, DxfResourceLimitError } from './dxfResourceLimits';
 
 export interface DxfSplineDefinition {
   controlPoints: DxfPoint[];
@@ -10,6 +11,7 @@ export interface DxfSplineDefinition {
 
 export interface ApproximateSplineOptions {
   maxChordError: number;
+  budget?: DxfResourceBudget;
 }
 
 export type ApproximateSplineResult =
@@ -30,7 +32,6 @@ interface HomogeneousSpline {
 
 type InternalResult = { ok: true } | { ok: false; reason: string };
 
-const MAX_SUBDIVISION_DEPTH = 20;
 const POINT_EPSILON = 1e-12;
 
 /**
@@ -42,15 +43,22 @@ const POINT_EPSILON = 1e-12;
  * to the endpoint chord bounds the entire curve. Homogeneous de Casteljau
  * subdivision shrinks that hull; if it still exceeds the requested bound at
  * depth 20, approximation fails instead of returning an unproven polyline.
+ * Resource exhaustion throws DxfResourceLimitError so import callers cannot
+ * downgrade an incomplete approximation into an unsupported-entity warning.
  */
 export function approximateSpline(
   definition: DxfSplineDefinition,
   options: ApproximateSplineOptions
 ): ApproximateSplineResult {
+  const budget = options.budget ?? new DxfResourceBudget();
+  if (definition.degree > DXF_RESOURCE_LIMITS.splineDegree) budget.check('splineDegree', definition.degree);
+  budget.check('splineControlPoints', definition.controlPoints.length);
+  // Multiplicity validation scans the knot vector for every distinct knot.
+  budget.reserve('splineWork', definition.knots.length * (definition.knots.length + 1));
   const validationError = validateSpline(definition, options);
   if (validationError) return { ok: false, reason: validationError };
 
-  const spans = rationalBezierSpans(definition);
+  const spans = rationalBezierSpans(definition, budget);
   if (!spans.ok) return spans;
 
   const points: DxfPoint[] = [];
@@ -59,13 +67,14 @@ export function approximateSpline(
     if (!start) {
       return { ok: false, reason: 'SPLINE Bézier span has a non-finite endpoint.' };
     }
-    appendUniquePoint(points, start);
+    appendUniquePoint(points, start, budget);
 
     const subdivision = subdivideBezier(
       controlPoints,
       options.maxChordError,
       0,
-      points
+      points,
+      budget
     );
     if (!subdivision.ok) return subdivision;
   }
@@ -154,7 +163,8 @@ function validateSpline(
 }
 
 function rationalBezierSpans(
-  definition: DxfSplineDefinition
+  definition: DxfSplineDefinition,
+  budget: DxfResourceBudget
 ): { ok: true; spans: HomogeneousPoint[][] } | { ok: false; reason: string } {
   const homogeneousControlPoints: HomogeneousPoint[] = [];
   for (let index = 0; index < definition.controlPoints.length; index++) {
@@ -190,7 +200,10 @@ function rationalBezierSpans(
   ];
 
   for (const target of targets) {
-    while (knotMultiplicity(spline.knots, target.knot) < target.multiplicity) {
+    while (true) {
+      budget.reserve('splineWork', spline.knots.length);
+      if (knotMultiplicity(spline.knots, target.knot) >= target.multiplicity) break;
+      budget.reserve('splineWork', spline.knots.length * 4);
       const insertion = insertKnotOnce(spline, target.knot);
       if (!insertion.ok) return insertion;
       spline = insertion.spline;
@@ -301,8 +314,10 @@ function subdivideBezier(
   controlPoints: HomogeneousPoint[],
   maxChordError: number,
   depth: number,
-  points: DxfPoint[]
+  points: DxfPoint[],
+  budget: DxfResourceBudget
 ): InternalResult {
+  budget.reserve('splineWork', controlPoints.length * controlPoints.length);
   const cartesianControlPoints = controlPoints.map(toCartesianPoint);
   if (cartesianControlPoints.some((point) => point == null)) {
     return { ok: false, reason: 'SPLINE Bézier span produced non-finite geometry.' };
@@ -318,24 +333,19 @@ function subdivideBezier(
   }
 
   if (flatness <= maxChordError) {
-    appendUniquePoint(points, end);
+    appendUniquePoint(points, end, budget);
     return { ok: true };
   }
 
-  if (depth >= MAX_SUBDIVISION_DEPTH) {
-    return {
-      ok: false,
-      reason: `SPLINE subdivision depth ${MAX_SUBDIVISION_DEPTH} cannot satisfy the chord-error bound.`
-    };
-  }
+  if (depth >= DXF_RESOURCE_LIMITS.splineDepth) throw new DxfResourceLimitError('splineDepth');
 
   const split = splitBezierHalf(controlPoints);
   if (!split) {
     return { ok: false, reason: 'SPLINE Bézier subdivision produced non-finite geometry.' };
   }
-  const left = subdivideBezier(split.left, maxChordError, depth + 1, points);
+  const left = subdivideBezier(split.left, maxChordError, depth + 1, points, budget);
   if (!left.ok) return left;
-  return subdivideBezier(split.right, maxChordError, depth + 1, points);
+  return subdivideBezier(split.right, maxChordError, depth + 1, points, budget);
 }
 
 function splitBezierHalf(controlPoints: HomogeneousPoint[]) {
@@ -418,12 +428,13 @@ function distanceToChord(point: DxfPoint, start: DxfPoint, end: DxfPoint) {
   );
 }
 
-function appendUniquePoint(points: DxfPoint[], point: DxfPoint) {
+function appendUniquePoint(points: DxfPoint[], point: DxfPoint, budget: DxfResourceBudget) {
   const previous = points.at(-1);
   if (previous && previous.x === point.x && previous.y === point.y) {
     return;
   }
 
+  budget.reserve('splinePoints', 1);
   points.push({ x: point.x, y: point.y });
 }
 

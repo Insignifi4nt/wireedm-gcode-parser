@@ -6,7 +6,7 @@ import { commitDxfProjectImport } from '@/domain/dxf/importDxfProject';
 import { importPortableUpidProject } from '@/domain/upid/portableUpidProject';
 import { loadEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
-import type { PreparedMachinePackageInstallation } from '@/domain/machine-package';
+import { isPreparedMachinePackageInstallationCurrent, type PreparedMachinePackageInstallation } from '@/domain/machine-package';
 import type { ControllerProgramArtifact } from '@/domain/wire-edm-job/controllerArtifact';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import { workbenchProjectVersion } from '@/domain/workbench-catalog/workbenchProjectVersion';
@@ -37,7 +37,11 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
   const [capture, setCapture] = useState<PreviewCaptureArtifact | null>(null);
   const workbenchVersion = useMemo(() => crypto.randomUUID(), [app.connectedWorkbench]);
   const latestVersion = useRef(workbenchVersion);
-  useLayoutEffect(() => { latestVersion.current = workbenchVersion; });
+  useLayoutEffect(() => {
+    latestVersion.current = workbenchVersion;
+    if (preparedDxf.current?.workbench !== app.connectedWorkbench) preparedDxf.current = null;
+    if (preparedPackage.current && !isPreparedMachinePackageInstallationCurrent(preparedPackage.current.prepared, app.connectedWorkbench)) preparedPackage.current = null;
+  }, [app.connectedWorkbench, workbenchVersion]);
   useEffect(() => () => {
     if (capture) window.setTimeout(() => URL.revokeObjectURL(capture.previewUrl), 60_000);
   }, [capture]);
@@ -97,7 +101,8 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
       dxfPreparationId: preparedDxf.current?.id ?? null, packagePreparationId: preparedPackage.current?.id ?? null,
       artifact: artifact.current ? artifactSummary(artifact.current) : null,
       capture,
-      nextSteps: !draftRef.current ? ['edm_list_projects', 'edm_open_project', 'edm_prepare_dxf', 'edm_import_upid']
+      nextSteps: busy.current || app.workbenchInteractionLocked ? ['Wait for the running operation, then read edm_workflow_context again.']
+        : !draftRef.current ? ['edm_list_projects', 'edm_open_project', 'edm_prepare_dxf', 'edm_import_upid']
         : !draftRef.current.document ? ['edm_capture_preview', 'Use the visible editor for external G-code changes.']
         : draftRef.current.workflowOpen ? ['Finish or cancel the visible editor workflow.']
         : draftRef.current.dirty ? ['edm_describe_edits', 'edm_edit_project', 'edm_review_execution', 'edm_save_project']
@@ -105,6 +110,7 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     })),
     mutation('edm_prepare_dxf', 'Preview supplied DXF source:{fileName,text}, at most 1 MiB UTF-8. Returns unit choices and millimeter bounds for explicit review before import. Does not save a project. Use ordinary Import for larger files.', object({ ...version, source: Type.Optional(source) }), async (input, signal) => {
       checkVersion(input.expectedVersion);
+      preparedDxf.current = null;
       const workbench = app.connectedWorkbench!;
       const value = await textInput(input.source, signal);
       checkVersion(input.expectedVersion);
@@ -161,7 +167,11 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
       current.edit(input.edits);
       return { edited: true, version: draftRef.current?.version, dirty: draftRef.current?.dirty };
     }),
-    mutation('edm_draft_history', 'Undo or redo one complete editor change, including an agent edit batch. Does not save.', object({ ...draftVersion, direction: Type.Union([Type.Literal('undo'), Type.Literal('redo')]) }), input => ({ changed: draft(input.draftVersion).history?.(input.direction) ?? false, version: draftRef.current?.version })),
+    mutation('edm_draft_history', 'Undo or redo one complete editor change, including an agent edit batch. Does not save.', object({ ...draftVersion, direction: Type.Union([Type.Literal('undo'), Type.Literal('redo')]) }), input => {
+      const current = draft(input.draftVersion);
+      if (!current.history) throw new ToolError('UNAVAILABLE', 'Editor history is not available yet. Wait for the editor to finish opening.');
+      return { changed: current.history(input.direction), version: draftRef.current?.version };
+    }),
     mutation('edm_save_project', 'Save the exact current draft into its existing project. Rejects a changed draft or open workflow. Read fresh context after saving.', object(draftVersion), async input => {
       const current = draft(input.draftVersion);
       const saved = await app.handleSaveEditorDraft({ model: 'upid-document', pathDocument: current.document! });
@@ -173,7 +183,7 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
       const current = draft(input.draftVersion);
       const result = compileWireEdmExecutionPlan(current.document!);
       return result.ok ? { executablePlan: true, version: current.version, dirty: current.dirty, requirements: result.plan.requirements, ...page(result.plan.events, input) }
-        : { executablePlan: false, version: current.version, ...page(result.diagnostics.map(summarizeDiagnostic), input) };
+        : { executablePlan: false, version: current.version, ...page(result.diagnostics, input, summarizeDiagnostic) };
     }),
     mutation('edm_prepare_machine_package', 'Validate and preview a supplied complete .wireedm-package via source:{fileName,base64}. Use plain canonical padded base64 archive bytes, at most 32 MiB decoded; no paths, URLs or standalone posts. Returns machine identity, setup, post hashes and collision choices before installation. Does not install.', object({ ...version, source: machinePackageSource }), async (input, signal) => {
       checkVersion(input.expectedVersion);
@@ -214,12 +224,12 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     mutation('edm_generate_controller', 'Generate audited controller output from the saved current project and exact active setup. Requires a clean draft. Persists an immutable revision. Does not download or run a machine. Reuse the returned artifact ID for reading/downloading; do not generate repeatedly.', controllerInput, async (input, signal) => {
       const result = await generate(input, signal);
       if (!result.ok) return generationFailure(result);
-      return { generated: true, ...artifactSummary(result.artifact) };
+      return { generated: true, ...artifactSummary(result.artifact), ...generationCleanup(result) };
     }),
     mutation('edm_export_controller', 'Generate and request download of controller output in one action, using the same saved-draft, exact active-setup and audited-post checks as the export UI. Persists one immutable revision. On generated:true, reuse its artifactId for retries; do not generate another revision just to download.', controllerInput, async (input, signal) => {
       const result = await generate(input, signal);
       if (!result.ok) return generationFailure(result);
-      const summary = artifactSummary(result.artifact);
+      const summary = { ...artifactSummary(result.artifact), ...generationCleanup(result) };
       if (signal.aborted) return { generated: true, status: 'generated-download-not-requested', ...summary };
       try {
         await app.handleDownloadEditorFile({ fileName: result.artifact.fileName, text: result.artifact.text });
@@ -291,5 +301,12 @@ function generationFailure(result: Extract<Awaited<ReturnType<App['handleGenerat
   const error = result.error;
   return { generated: false, error: { ...error, ...summarizeMessage(error.message),
     ...('diagnostics' in error ? summarizeDiagnostics<(typeof error.diagnostics)[number]>(error.diagnostics) : {})
-  }, ...(result.savedRevisionId ? { savedRevisionId: result.savedRevisionId } : {}) };
+  }, ...(result.savedRevisionId ? { savedRevisionId: result.savedRevisionId } : {}), ...generationCleanup(result) };
+}
+
+function generationCleanup(result: Awaited<ReturnType<App['handleGenerateControllerArtifact']>>) {
+  return result.cleanupPending ? { cleanupPending: {
+    code: result.cleanupPending.code,
+    message: 'The revision is saved. Recovery cleanup is pending; reopen the workbench to retry cleanup. Reuse the saved revision or artifact instead of generating again.'
+  } } : {};
 }

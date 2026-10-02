@@ -99,7 +99,7 @@ describe('parseDxf spline fallback', () => {
   });
 
   it('fails instead of claiming a chord-error bound when subdivision depth is exhausted', () => {
-    const result = approximateSpline(
+    expect(() => approximateSpline(
       {
         controlPoints: [
           { x: 0, y: 0 },
@@ -112,10 +112,9 @@ describe('parseDxf spline fallback', () => {
         knots: [0, 0, 0, 0, 1, 1, 1, 1]
       },
       { maxChordError: 1e-30 }
-    );
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('depth 20');
+    )).toThrow(expect.objectContaining({
+      code: 'DXF_IMPORT_RESOURCE_LIMIT', resource: 'splineDepth', limit: 20
+    }));
   });
 
   it('removes only truly duplicate SPLINE points without erasing small valid spans', () => {

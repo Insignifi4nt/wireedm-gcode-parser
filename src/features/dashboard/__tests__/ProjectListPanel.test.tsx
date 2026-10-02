@@ -87,6 +87,64 @@ describe('ProjectListPanel', () => {
     { id: 'c', name: 'Gamma', path: 'projects/c.json', sourceKind: 'upid' as const, updatedAt: '2026-09-02T00:00:00Z' }
   ];
 
+  it('supports export keyboard navigation, dismissal, and focus restoration on selection', async () => {
+    Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: vi.fn() });
+    const exportProject = vi.fn();
+    const saveAs = vi.fn();
+    const render = (interactionLocked = false) => act(async () => root.render(
+      <ProjectListPanel availability="ready" interactionLocked={interactionLocked} projects={projects}
+        onOpenProject={vi.fn()} onDeleteProject={vi.fn()} onRenameProject={vi.fn()}
+        onExportUpidProject={exportProject} onSaveUpidProjectAs={saveAs} onShowRevisions={vi.fn()} />));
+    async function key(target: HTMLElement, key: string, shiftKey = false) {
+      const event = new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true });
+      await act(async () => target.dispatchEvent(event));
+      return event;
+    }
+    await render();
+    const trigger = button('Export UPID project a');
+    await key(trigger, 'ArrowDown');
+    expect(document.activeElement).toBe(menuItem('Export'));
+    expect(trigger.getAttribute('aria-controls')).toBe(menuItem('Export').parentElement?.id);
+    for (const [navigation, label] of [
+      ['ArrowDown', 'Export as…'], ['ArrowDown', 'Export'], ['ArrowUp', 'Export as…'], ['Home', 'Export'], ['End', 'Export as…']
+    ]) {
+      await key(document.activeElement as HTMLElement, navigation);
+      expect(document.activeElement).toBe(menuItem(label));
+    }
+    await key(menuItem('Export as…'), 'Escape');
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    await key(trigger, 'ArrowUp');
+    expect(document.activeElement).toBe(menuItem('Export as…'));
+    await act(async () => menuItem('Export as…').click());
+    expect(saveAs).toHaveBeenCalledWith('a');
+    expect(document.activeElement).toBe(trigger);
+    for (const shiftKey of [false, true]) {
+      await key(trigger, 'Enter');
+      expect(document.activeElement).toBe(menuItem('Export'));
+      expect((await key(menuItem('Export'), 'Tab', shiftKey)).defaultPrevented).toBe(false);
+      expect(container.querySelector('[role="menu"]')).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    }
+    await key(trigger, ' ');
+    const outside = button('Open project c in editor');
+    await act(async () => outside.focus());
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(outside);
+    await key(trigger, 'ArrowDown');
+    await act(async () => outside.dispatchEvent(new Event('pointerdown', { bubbles: true })));
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    await key(button('Export UPID project c'), 'ArrowDown');
+    await act(async () => menuItem('Export').click());
+    expect(exportProject).toHaveBeenCalledWith('c');
+    expect(document.activeElement).toBe(button('Export UPID project c'));
+    await key(trigger, 'ArrowDown');
+    await render(true);
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(trigger.disabled).toBe(true);
+    expect(exportProject).toHaveBeenCalledTimes(1);
+  });
+
   it('combines search and source filters, sorts results, and clears filters without changing the catalog', async () => {
     await act(async () => root.render(<ProjectListPanel availability="ready" interactionLocked={false} projects={projects}
       onOpenProject={vi.fn()} onDeleteProject={vi.fn()} onRenameProject={vi.fn()} onExportUpidProject={vi.fn()} onSaveUpidProjectAs={vi.fn()} onShowRevisions={vi.fn()} />));

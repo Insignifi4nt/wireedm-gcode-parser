@@ -263,6 +263,56 @@ describe('EditorControllerArtifactDialog', () => {
     expect(generate).toHaveBeenCalledOnce();
   });
 
+  it.each(['machine', 'setup', 'post'] as const)('offers real settings navigation when the %s is missing', async (missing) => {
+    const openSettings = vi.fn();
+    const generate = vi.fn();
+    await render({
+      machines: missing === 'machine' ? [] : missing === 'setup' ? [{ ...machines[0], activeBindingId: null }] : machines,
+      posts: missing === 'post' ? createEmptyPostLibrary() : posts,
+      onOpenMachineSettings: openSettings,
+      onGenerateControllerArtifact: generate
+    });
+    expect(button('Generate controller artifact').disabled).toBe(true);
+    await click('Open Machines & setups');
+    expect(openSettings).toHaveBeenCalledOnce();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it('keeps close and settings navigation disabled until generation settles', async () => {
+    let finish!: (result: ControllerArtifactResult) => void;
+    const generate = vi.fn().mockReturnValue(new Promise<ControllerArtifactResult>((resolve) => { finish = resolve; }));
+    const onClose = vi.fn();
+    const openSettings = vi.fn();
+    await render({ onClose, onOpenMachineSettings: openSettings, onGenerateControllerArtifact: generate });
+    await click('Generate controller artifact');
+    await render({ machines: [], onClose, onOpenMachineSettings: openSettings, onGenerateControllerArtifact: generate });
+    expect(button('Close').disabled).toBe(true);
+    expect(button('Open Machines & setups').disabled).toBe(true);
+    await click('Open Machines & setups');
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(openSettings).not.toHaveBeenCalled();
+    await act(async () => finish({ ok: false, error: { code: 'CONTROLLER_ARTIFACT_REVISION_UNVALIDATED', message: 'Unavailable' } }));
+    expect(button('Close').disabled).toBe(false);
+    await click('Open Machines & setups');
+    expect(openSettings).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the repair summary and expanded prompt in the keyboard focus cycle', async () => {
+    await render({ onGenerateControllerArtifact: vi.fn().mockResolvedValue({
+      ok: false, error: { code: 'CONTROLLER_ARTIFACT_POST_FAILED', message: 'Failed', diagnostics: [] }
+    } satisfies ControllerArtifactResult) });
+    await click('Generate controller artifact');
+    const summary = container.querySelector('summary')!;
+    summary.focus();
+    await act(async () => summary.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(button('Close'));
+    container.querySelector('details')!.open = true;
+    await act(async () => button('Close').dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(container.querySelector('textarea[aria-label="Agent repair prompt"]'));
+  });
+
   it('contains keyboard focus and shortcuts, then restores focus when closed', async () => {
     const launcher = document.createElement('button');
     document.body.appendChild(launcher);
@@ -274,6 +324,8 @@ describe('EditorControllerArtifactDialog', () => {
       await render({ onClose });
       const dialog = container.querySelector<HTMLElement>('[role="dialog"]');
       expect(document.activeElement).toBe(dialog);
+      expect(launcher.hasAttribute('inert')).toBe(true);
+      expect(launcher.getAttribute('aria-hidden')).toBe('true');
       await act(async () => dialog?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })));
       expect(document.activeElement).toBe(button('Close'));
       await act(async () => button('Close').dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })));
@@ -284,6 +336,8 @@ describe('EditorControllerArtifactDialog', () => {
       expect(onClose).toHaveBeenCalledOnce();
       await act(async () => root.render(null));
       expect(document.activeElement).toBe(launcher);
+      expect(launcher.hasAttribute('inert')).toBe(false);
+      expect(launcher.hasAttribute('aria-hidden')).toBe(false);
     } finally {
       window.removeEventListener('keydown', editorShortcut);
       launcher.remove();
@@ -299,6 +353,7 @@ describe('EditorControllerArtifactDialog', () => {
           machines={machines}
           posts={posts}
           onClose={vi.fn()}
+          onOpenMachineSettings={vi.fn()}
           onDownload={vi.fn()}
           onGenerateControllerArtifact={vi.fn()}
           {...overrides}

@@ -23,6 +23,7 @@ import {
   type WorkbenchProjectDocument
 } from '@/domain/workbench-catalog/workbenchProject';
 import { EditorPage } from '@/features/editor/EditorPage';
+import type { DraftReadSnapshot } from '@/features/webmcp/workbenchSiteTools';
 import { EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY } from '@/features/editor/workspace/editorWorkspaceLayout';
 
 type TestUpidProject = Omit<WorkbenchProjectDocument, 'source' | 'content'> & {
@@ -79,6 +80,35 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('#workspace-tab-editor')?.getAttribute('aria-selected')).toBe('true');
     expect(visibleWorkflowPanelIds()).toEqual(['path-transform']);
     expect(container.querySelector('input[aria-label="Translate X"]')).not.toBeNull();
+  });
+
+  it('keeps unsaved geometry when blocked export routes to machine settings', async () => {
+    const openSettings = vi.fn();
+    const save = vi.fn();
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    const savedDocument = structuredClone(project.content.document);
+    await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={save} onOpenMachineSettings={openSettings} project={project} />));
+    await flushAsync();
+    const original = previewGeometrySignature();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await clickElement('button[aria-label="Hide Transform"]');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
+    const edited = previewGeometrySignature();
+    expect(edited).not.toBe(original);
+    await clickElement('[data-editor-workflow-command="export.preview"]');
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="Controller artifact export"]')!;
+    expect(dialog.textContent).toContain('Save the project before generating');
+    await act(async () => [...dialog.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Open Machines & setups')!.click());
+    expect(openSettings).toHaveBeenCalledOnce();
+    expect(container.querySelector('[role="dialog"][aria-label="Controller artifact export"]')).toBeNull();
+    expect(previewGeometrySignature()).toBe(edited);
+    expect(project.content.document).toEqual(savedDocument);
+    expect(save).not.toHaveBeenCalled();
+    await clickElement('[data-editor-workflow-command="export.preview"]');
+    expect(container.querySelector('[role="dialog"][aria-label="Controller artifact export"]')?.textContent)
+      .toContain('Save the project before generating');
   });
 
   it('keeps simulation keyboard shortcuts from changing the hidden editor history', async () => {
@@ -2282,6 +2312,35 @@ describe('EditorPage UPID draft boundary', () => {
     });
   });
 
+  it('records an agent edit batch as one undo step and preserves redo after a rejected batch', async () => {
+    let latest: DraftReadSnapshot | null = null;
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    await act(async () => root.render(<EditorPageHarness project={project} onSaveEditorDraft={vi.fn()}
+      onReadSnapshot={snapshot => { latest = snapshot; }} />));
+    await flushAsync();
+    const read = () => latest!;
+    const before = structuredClone(read().document);
+    await act(async () => read().edit!([
+      { kind: 'translate', delta: { x: 3, y: 0 } },
+      { kind: 'geometry-basis', basis: 'wire-centre' }
+    ]));
+    const edited = structuredClone(read().document);
+    expect(edited).not.toEqual(before);
+    expect(edited?.geometryBasis).toBe('wire-centre');
+    await act(async () => { expect(read().history!('undo')).toBe(true); });
+    expect(read().document).toEqual(before);
+    await act(async () => { expect(read().history!('undo')).toBe(false); });
+    await act(async () => {
+      expect(() => read().edit!([
+        { kind: 'translate', delta: { x: 100, y: 0 } },
+        { kind: 'reverse', operationId: 'missing-operation' }
+      ])).toThrow('No edits were applied');
+    });
+    expect(read().document).toEqual(before);
+    await act(async () => { expect(read().history!('redo')).toBe(true); });
+    expect(read().document).toEqual(edited);
+  });
+
   it('undoes and redoes UPID path edits as modeled path documents', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);
@@ -3805,7 +3864,9 @@ function EditorPageHarness({
   interactionLocked = false,
   onBackToDashboard = noop,
   onImportProgramFile = noop,
+  onOpenMachineSettings = noop,
   onStatusMessage,
+  onReadSnapshot,
   onSaveEditorDraft,
   project,
   saveStatus = 'idle'
@@ -3816,7 +3877,9 @@ function EditorPageHarness({
   interactionLocked?: boolean;
   onBackToDashboard?: () => void;
   onImportProgramFile?: (file: File) => void;
+  onOpenMachineSettings?: () => void;
   onStatusMessage?: (message: string, type: 'info' | 'success' | 'warning' | 'error') => void;
+  onReadSnapshot?: (snapshot: DraftReadSnapshot | null) => void;
   onSaveEditorDraft: (draft: EditorSaveDraft) => void;
   project: TestUpidProject;
   saveStatus?: 'error' | 'idle' | 'saving';
@@ -3865,6 +3928,7 @@ function EditorPageHarness({
   return (
     <AppRailProvider
       value={{
+        openMachineSettings: onOpenMachineSettings,
         closeCompactDrawerWithRailFocus,
         compactDrawer,
         compactModalHost: null,
@@ -3897,6 +3961,7 @@ function EditorPageHarness({
         })}
         onImportProgramFile={onImportProgramFile}
         onStatusMessage={onStatusMessage}
+        onReadSnapshot={onReadSnapshot}
         onSaveEditorDraft={onSaveEditorDraft}
         planningMachine={null}
         program={{

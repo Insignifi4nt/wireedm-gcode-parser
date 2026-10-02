@@ -425,10 +425,11 @@ function summarizeUpidEndpointTopology(document: PathPlanningDocument): UpidEndp
 }
 
 export function readUpidEndpointTopologyRows(document: PathPlanningDocument): UpidEndpointTopologyRow[] {
+  const memberLookup = createEndpointMemberLookup(document);
   const exactRows = document.endpointClusters
     .filter((cluster) => cluster.method === 'exact' && cluster.members.length > 1)
     .map((cluster): UpidExactEndpointTopologyRow => {
-      const members = readUpidSelectedEndpointClusterMembers(document, cluster.members);
+      const members = readUpidSelectedEndpointClusterMembers(document, cluster.members, memberLookup);
 
       return {
         clusterId: cluster.id,
@@ -446,7 +447,7 @@ export function readUpidEndpointTopologyRows(document: PathPlanningDocument): Up
   const openRows = document.endpointClusters
     .filter((cluster) => cluster.members.length === 1)
     .map((cluster): UpidOpenEndpointTopologyRow => {
-      const members = readUpidSelectedEndpointClusterMembers(document, cluster.members);
+      const members = readUpidSelectedEndpointClusterMembers(document, cluster.members, memberLookup);
       const member = members[0] ?? null;
 
       return {
@@ -465,7 +466,7 @@ export function readUpidEndpointTopologyRows(document: PathPlanningDocument): Up
   const snappedRows = document.endpointClusters
     .filter((cluster) => cluster.method === 'within-tolerance')
     .map((cluster): UpidSnappedEndpointTopologyRow => {
-      const members = readUpidSelectedEndpointClusterMembers(document, cluster.members);
+      const members = readUpidSelectedEndpointClusterMembers(document, cluster.members, memberLookup);
 
       return {
         clusterId: cluster.id,
@@ -1051,31 +1052,44 @@ function readUpidSelectedEndpointCluster(
   };
 }
 
+function createEndpointMemberLookup(document: PathPlanningDocument) {
+  const elementsByOperation = new Map<string, PathElementId>();
+  for (const element of document.pathElements) {
+    if (element.operationId && !elementsByOperation.has(element.operationId)) {
+      elementsByOperation.set(element.operationId, element.id);
+    }
+  }
+  const ownersBySegment = new Map<SegmentId, {
+    operationId: string; pathElementId: PathElementId | null; segmentIndex: number; ref: OrientedSegmentRef;
+  }>();
+  for (const operation of document.plan.operations) {
+    operation.segmentRefs.forEach((ref, segmentIndex) => {
+      if (!ownersBySegment.has(ref.segmentId)) ownersBySegment.set(ref.segmentId, {
+        operationId: operation.id, pathElementId: elementsByOperation.get(operation.id) ?? null,
+        segmentIndex, ref
+      });
+    });
+  }
+  return { segmentsById: segmentMap(document.segments), ownersBySegment };
+}
+
 function readUpidSelectedEndpointClusterMembers(
   document: PathPlanningDocument,
-  members: Array<{ point: Point2; segmentId: SegmentId; side: EndpointSide }>
+  members: Array<{ point: Point2; segmentId: SegmentId; side: EndpointSide }>,
+  lookup = createEndpointMemberLookup(document)
 ): UpidSelectedEndpointClusterMember[] {
-  const segmentsById = segmentMap(document.segments);
-
   return members.map((member) => {
-    const operation = document.plan.operations.find((candidate) =>
-      candidate.segmentRefs.some((ref) => ref.segmentId === member.segmentId)
-    );
-    const segmentIndex = operation
-      ? operation.segmentRefs.findIndex((ref) => ref.segmentId === member.segmentId)
-      : -1;
-    const ref = operation && segmentIndex >= 0 ? operation.segmentRefs[segmentIndex] : null;
-    const pathElementId = operation ? upidPathElementIdForOperation(document, operation.id) : null;
+    const owner = lookup.ownersBySegment.get(member.segmentId);
 
     return {
-      operationId: operation?.id ?? null,
-      pathElementId,
+      operationId: owner?.operationId ?? null,
+      pathElementId: owner?.pathElementId ?? null,
       point: { ...member.point },
-      pointRole: ref ? pointRoleForRawEndpointSide(ref, member.side) : null,
+      pointRole: owner ? pointRoleForRawEndpointSide(owner.ref, member.side) : null,
       rawEndpointSide: member.side,
       segmentId: member.segmentId,
-      segmentIndex: segmentIndex >= 0 ? segmentIndex : null,
-      segmentKind: segmentsById.get(member.segmentId)?.kind ?? null
+      segmentIndex: owner?.segmentIndex ?? null,
+      segmentKind: lookup.segmentsById.get(member.segmentId)?.kind ?? null
     };
   });
 }

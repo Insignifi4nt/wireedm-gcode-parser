@@ -29,7 +29,7 @@ export interface OwnedWorkbenchFileWrite {
 }
 
 export type OwnedWorkbenchFileChange =
-  | ({ readonly kind: 'write' } & OwnedWorkbenchFileWrite)
+  | ({ readonly kind: 'write'; readonly expectedContents?: string } & OwnedWorkbenchFileWrite)
   | { readonly kind: 'delete'; readonly path: string };
 
 interface AddStoredWorkbenchProjectInput {
@@ -280,6 +280,10 @@ export async function replaceStoredWorkbenchProject(
     const previousPaths = new Set(previous.project.source.files.map(({ path }) => path));
     for (const change of input.ownedFileChanges) {
       const snapshot = snapshots.snapshots.find(({ path }) => path === change.path);
+      if (change.kind === 'write' && change.expectedContents !== undefined && snapshot?.contents !== change.expectedContents) {
+        return { ok: false, error: { code: 'WORKBENCH_PROJECT_CONTENT_CHANGED',
+          message: 'The editable program file changed since it was opened. Reopen the project before saving; the external changes have been preserved.' } };
+      }
       if (change.kind === 'delete' && snapshot?.contents === null) {
         return { ok: false, error: ownedFileDangling(input.project.id, change.path) };
       }

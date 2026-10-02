@@ -9,8 +9,10 @@ import {
 } from '@/domain/dxf/reimportDxfProjectUnits';
 import type { ImportedDxfProject } from '@/domain/dxf/importDxfProject';
 import type { DxfImportPreviewResult } from '@/domain/dxf/prepareDxfProjectImport';
+import { assertDxfFileSize } from '@/domain/dxf/dxfResourceLimits';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
+import type { SavedRevisionTransactionError } from '@/domain/storage/savedRevisionTransaction';
 import { evaluatePhysicalMachineEnvelopeFit } from '@/domain/machine-definition/machineFit';
 import type {
   MachinePackageInstallationResolution,
@@ -203,6 +205,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     setImportStatus('importing');
     setImportErrorMessage(null);
     try {
+      assertDxfFileSize(file.size);
       const preparationResult = services.prepareDxfProjectImport(workbench, {
         fileName: file.name,
         text: await file.text()
@@ -411,6 +414,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       const saved = await services.saveEditorProgram(workbench, {
         projectId: program.project.id,
         expectedContent: program.project.content,
+        ...(program.model === 'gcode-text' ? { expectedText: program.text } : {}),
         draft
       });
       if (!saved.ok) {
@@ -668,7 +672,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     readonly machineId: string;
     readonly signal?: AbortSignal;
     readonly beforeWrite?: () => void;
-  }): Promise<ControllerArtifactResult & { readonly savedRevisionId?: string }> {
+  }): Promise<ControllerArtifactResult & { readonly savedRevisionId?: string; readonly cleanupPending?: SavedRevisionTransactionError }> {
     input.signal?.throwIfAborted();
     const editor = getEditorState?.();
     if (editor?.dirty || (editor?.workflowOpen && editor.workflowCommand !== 'export.preview')) return artifactAppFailure('Save the draft and finish the editor workflow before generating controller output.');
@@ -692,6 +696,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     setControllerArtifactGenerating(true);
     let revisionWriteStarted = false;
     let savedRevisionId: string | undefined;
+    let cleanupPending: SavedRevisionTransactionError | undefined;
     try {
       const candidate = await services.createSavedWireEdmJobRevision({
         revisionId: createSavedWireEdmJobRevisionId(globalThis.crypto.randomUUID()),
@@ -719,20 +724,28 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       // the completed generation receipt even if the caller has cancelled.
       input.signal?.throwIfAborted();
       input.beforeWrite?.();
-      revisionWriteStarted = true;
-      const saved = await services.saveStoredWireEdmJobRevision(workbench, candidate.candidate);
+      const saved = await services.saveStoredWireEdmJobRevision(workbench, candidate.candidate, {
+        requireCurrentActiveSetup: true,
+        beforeWrite: () => {
+          input.signal?.throwIfAborted();
+          input.beforeWrite?.();
+          revisionWriteStarted = true;
+        }
+      });
       if (!saved.ok) return artifactAppFailure(saved.error.message);
       savedRevisionId = saved.revision.revisionId;
+      cleanupPending = saved.cleanupPending;
       setConnectedWorkbench(saved.workbench);
       setLoadedEditorProgram((current) => current === program
         ? { ...current, project: saved.project }
         : current);
       const artifact = await services.generateControllerArtifact(saved.revision);
-      if (artifact.ok) showStatusToast(`Generated exact revision ${saved.revision.revisionId}.`, 'success');
-      return { ...artifact, savedRevisionId };
+      if (cleanupPending) showStatusToast(`Revision ${savedRevisionId} was saved. Recovery cleanup is pending; reopen the workbench to retry cleanup. Reuse this revision instead of generating another.`, 'warning');
+      else if (artifact.ok) showStatusToast(`Generated exact revision ${saved.revision.revisionId}.`, 'success');
+      return { ...artifact, savedRevisionId, ...(cleanupPending ? { cleanupPending } : {}) };
     } catch (error) {
       if (!revisionWriteStarted && (input.signal?.aborted || error instanceof ToolError)) throw error;
-      return { ...artifactAppFailure(errorText(error)), ...(savedRevisionId ? { savedRevisionId } : {}) };
+      return { ...artifactAppFailure(errorText(error)), ...(savedRevisionId ? { savedRevisionId } : {}), ...(cleanupPending ? { cleanupPending } : {}) };
     } finally {
       activeMutation.current = null;
       setControllerArtifactGenerating(false);

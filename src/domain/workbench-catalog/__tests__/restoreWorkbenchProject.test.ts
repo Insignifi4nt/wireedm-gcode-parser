@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { importExternalProgram } from '@/domain/editor/importExternalProgram';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { PROJECT_TRASH_TRANSACTION_PATH } from '@/domain/storage/projectTrashTransaction';
+import { transactionFileHash } from '@/domain/storage/transactionFileState';
 import { initializeWorkbenchCatalog } from '../workbenchCatalog';
 import { deleteStoredWorkbenchProject, purgeArchivedWorkbenchProject, restoreStoredWorkbenchProject } from '../workbenchCatalogMutations';
 
@@ -30,9 +31,10 @@ describe('recoverable project deletion', () => {
     const previous = adapter.files.get('workbench.json');
     const next = JSON.stringify({ ...workbench.manifest, deletedProjects: [] }, null, 2) + '\n';
     const ownedPaths = [...adapter.files.keys()].filter((path) => path.includes(id));
+    const ownedHashes = await Promise.all(ownedPaths.map((path) => transactionFileHash(adapter, path)));
     adapter.files.set(PROJECT_TRASH_TRANSACTION_PATH, JSON.stringify({
-      format: 'wire-edm-project-purge-transaction', schemaVersion: 1,
-      projectId: id, ownedPaths, previous, next
+      format: 'wire-edm-project-purge-transaction', schemaVersion: 2,
+      projectId: id, ownedPaths, ownedHashes, previous, next
     }));
     adapter.files.set('workbench.json', next);
     adapter.files.delete(ownedPaths[0]);
@@ -43,11 +45,17 @@ describe('recoverable project deletion', () => {
     expect(adapter.files.has(PROJECT_TRASH_TRANSACTION_PATH)).toBe(false);
   });
 
-  it('preserves an archive entry when purge manifest writing fails before commit', async () => {
+  it('retains owned files and the journal when a purge leaves unrecognized partial catalog bytes', async () => {
     const { adapter, workbench, id } = await deletedFixture();
     const before = new Map(adapter.files);
     adapter.partialManifestFailure = true;
     expect(await purgeArchivedWorkbenchProject(workbench, { projectId: id })).toMatchObject({ ok: false });
+    expect(adapter.files.has(PROJECT_TRASH_TRANSACTION_PATH)).toBe(true);
+    expect(adapter.files.get('workbench.json')).toBe(JSON.parse(adapter.files.get(PROJECT_TRASH_TRANSACTION_PATH)!).next.slice(0, 20));
+    for (const [path, text] of before) if (path !== 'workbench.json') expect(adapter.files.get(path)).toBe(text);
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: false });
+    adapter.files.set('workbench.json', before.get('workbench.json')!);
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: true });
     expect(adapter.files).toEqual(before);
   });
   it('retains multiple deletions across reload and restores exact source and project bytes', async () => {
@@ -96,20 +104,26 @@ describe('recoverable project deletion', () => {
     expect(reopened.workbench.manifest.deletedProjects).toHaveLength(1);
   });
 
-  it('rolls back a partial restore write and permits retry', async () => {
+  it('preserves a partial restore and permits retry after its exact original catalog is recovered', async () => {
     const { adapter, workbench, id } = await deletedFixture();
     const before = new Map(adapter.files);
     adapter.partialManifestFailure = true;
     expect(await restoreStoredWorkbenchProject(workbench, { projectId: id })).toMatchObject({
       ok: false, error: { code: 'PROJECT_TRASH_TRANSACTION_FAILED' }
     });
-    expect(adapter.files).toEqual(before);
+    const journal = adapter.files.get(PROJECT_TRASH_TRANSACTION_PATH)!;
+    expect(JSON.parse(journal).previous).toBe(before.get('workbench.json'));
+    expect(adapter.files.get('workbench.json')).toBe(JSON.parse(journal).next.slice(0, 20));
+    for (const [path, text] of before) if (path !== 'workbench.json') expect(adapter.files.get(path)).toBe(text);
+    expect((await restoreStoredWorkbenchProject(workbench, { projectId: id })).ok).toBe(false);
+    expect(adapter.files.get(PROJECT_TRASH_TRANSACTION_PATH)).toBe(journal);
+    adapter.files.set('workbench.json', before.get('workbench.json')!);
     expect((await restoreStoredWorkbenchProject(workbench, { projectId: id })).ok).toBe(true);
   });
 
-  it('recovers an interrupted catalog write before parsing it on reload', async () => {
+  it('blocks unknown partial catalog bytes on reload and recovers recognized originals on retry', async () => {
     const { adapter, workbench, id } = await deletedFixture();
-    const previous = adapter.files.get('workbench.json');
+    const previous = adapter.files.get('workbench.json')!;
     const restored = await restoreStoredWorkbenchProject(workbench, { projectId: id });
     if (!restored.ok) throw new Error(restored.error.message);
     const next = adapter.files.get('workbench.json');
@@ -117,6 +131,11 @@ describe('recoverable project deletion', () => {
       format: 'wire-edm-project-trash-transaction', schemaVersion: 1, previous, next
     }));
     adapter.files.set('workbench.json', '{partial');
+    const journal = adapter.files.get(PROJECT_TRASH_TRANSACTION_PATH);
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: false });
+    expect(adapter.files.get('workbench.json')).toBe('{partial');
+    expect(adapter.files.get(PROJECT_TRASH_TRANSACTION_PATH)).toBe(journal);
+    adapter.files.set('workbench.json', previous);
     const reopened = await initializeWorkbenchCatalog(adapter);
     if (!reopened.ok) throw new Error(reopened.error.message);
     expect(reopened.workbench.manifest.projects).toEqual([]);

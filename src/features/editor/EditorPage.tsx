@@ -170,6 +170,12 @@ import {
   editorDraftText,
   type EditorDraftState
 } from './editorDraftState';
+import {
+  createEditorDraftHistory,
+  EDITOR_HISTORY_LIMITS,
+  moveEditorDraftHistory,
+  recordEditorDraftSnapshot
+} from './editorDraftHistory';
 import type { EditorGuideLanguage, EditorGuideTarget } from './editorGuideContent';
 import {
   confirmBulkLineDelete,
@@ -311,7 +317,7 @@ export function EditorPage({
       separationMechanisms: Array.isArray(installed.package.manifest.capabilities.wireSeparation)
         ? installed.package.manifest.capabilities.wireSeparation : [] };
   }, [planningMachine, posts]);
-  const { closeCompactDrawerWithRailFocus, compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailContent } = useAppRail();
+  const { openMachineSettings, closeCompactDrawerWithRailFocus, compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailContent } = useAppRail();
   const [initialWorkspaceLayout] = useState(() => readInitialWorkspaceLayout());
   const [draftState, setDraftState] = useState<EditorDraftState>(() => createEditorDraftState(program));
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
@@ -429,8 +435,18 @@ export function EditorPage({
       initialWorkspaceLayout.dockOrders as Record<EditorDockSide, EditorWorkspacePanelId[]>
   );
   const [expandedPathElementIds, setExpandedPathElementIds] = useState<Record<string, boolean>>({});
-  const [redoStack, setRedoStack] = useState<EditorDraftSnapshot[]>([]);
-  const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
+  const [draftHistory, setDraftHistory] = useState(createEditorDraftHistory<EditorDraftSnapshot>);
+  const { undo: undoStack, redo: redoStack } = draftHistory;
+  const historyWarnings = useRef({ pruned: false, oversized: false });
+  useEffect(() => {
+    if (draftHistory.oversized && !historyWarnings.current.oversized) {
+      historyWarnings.current = { pruned: true, oversized: true };
+      onStatusMessage?.(`An undo snapshot exceeds the estimated ${EDITOR_HISTORY_LIMITS.maxEstimatedBytes / (1024 * 1024)} MiB history budget. History cannot retain this step; save a copy before making further large edits.`, 'warning');
+    } else if (draftHistory.pruned && !historyWarnings.current.pruned) {
+      historyWarnings.current.pruned = true;
+      onStatusMessage?.(`Undo and redo share a limit of ${EDITOR_HISTORY_LIMITS.maxSnapshots} steps and an estimated ${EDITOR_HISTORY_LIMITS.maxEstimatedBytes / (1024 * 1024)} MiB. The most distant history was released; recent steps remain available.`, 'info');
+    }
+  }, [draftHistory.pruned, draftHistory.oversized, onStatusMessage]);
   const draftText = editorDraftText(draftState);
   const interpreterProfile = draftState.model === 'gcode-text'
     ? draftState.interpreterProfile ?? 'neutral' : 'neutral';
@@ -1010,8 +1026,8 @@ export function EditorPage({
     setEntryExitCanvasPick(null);
     setPathClickMode(null);
     setCanvasMouseMode('select');
-    setRedoStack([]);
-    setUndoStack([]);
+    setDraftHistory(createEditorDraftHistory());
+    historyWarnings.current = { pruned: false, oversized: false };
     clearTransientLineState();
   }, [programIdentity, savedDraftSignature]);
 
@@ -2321,8 +2337,8 @@ export function EditorPage({
           : current
       );
     } else {
-      setUndoStack((current) => [...current, currentDraftSnapshot()]);
-      setRedoStack([]);
+      const snapshot = currentDraftSnapshot();
+      setDraftHistory((current) => recordEditorDraftSnapshot(current, snapshot));
     }
     setDraftState(clonedDraft);
     setSelectedPathOperationId(nextSelectedPathOperationId);
@@ -2336,23 +2352,21 @@ export function EditorPage({
 
   function handleUndoDraft() {
     if (isEditorMutationLocked || activeWorkflowSession?.kind === 'mutating') return;
-    const previous = undoStack.at(-1);
-    if (previous === undefined) return;
-
-    setUndoStack((current) => current.slice(0, -1));
-    setRedoStack((current) => [currentDraftSnapshot(), ...current]);
-    restoreDraftSnapshot(previous);
+    if (!undoStack.length) return;
+    const moved = moveEditorDraftHistory(draftHistory, 'undo', currentDraftSnapshot());
+    if (!moved) return;
+    setDraftHistory(moved.history);
+    restoreDraftSnapshot(moved.snapshot);
     clearTransientLineState();
   }
 
   function handleRedoDraft() {
     if (isEditorMutationLocked || activeWorkflowSession?.kind === 'mutating') return;
-    const next = redoStack[0];
-    if (next === undefined) return;
-
-    setRedoStack((current) => current.slice(1));
-    setUndoStack((current) => [...current, currentDraftSnapshot()]);
-    restoreDraftSnapshot(next);
+    if (!redoStack.length) return;
+    const moved = moveEditorDraftHistory(draftHistory, 'redo', currentDraftSnapshot());
+    if (!moved) return;
+    setDraftHistory(moved.history);
+    restoreDraftSnapshot(moved.snapshot);
     clearTransientLineState();
   }
 
@@ -2364,8 +2378,8 @@ export function EditorPage({
     ) {
       return;
     }
-    setUndoStack((current) => [...current, currentDraftSnapshot()]);
-    setRedoStack([]);
+    const snapshot = currentDraftSnapshot();
+    setDraftHistory((current) => recordEditorDraftSnapshot(current, snapshot));
     setDraftState({
       model: 'gcode-text',
       text: nextText,
@@ -2851,11 +2865,8 @@ export function EditorPage({
               session.openingSnapshot.selectedPathOperationId
             )
           };
-      setUndoStack((current) => [
-        ...current,
-        { ...openingSnapshot, historyLabel: session.historyLabel }
-      ]);
-      setRedoStack([]);
+      setDraftHistory((current) => recordEditorDraftSnapshot(current,
+        { ...openingSnapshot, historyLabel: session.historyLabel }));
     } else if (resolution === 'discard') {
       restoreDraftSnapshot(session.openingSnapshot);
     }
@@ -3795,6 +3806,11 @@ export function EditorPage({
           hasUnsavedChanges={hasUnsavedChanges}
           machines={machines}
           posts={posts}
+          onOpenMachineSettings={() => runAfterActiveWorkflowResolved(() => {
+            setExportPreviewOpen(false);
+            setCompactDrawer(null);
+            openMachineSettings();
+          })}
           onClose={() => {
             if (activeWorkflowSession?.commandId === 'export.preview') {
               requestCloseEditorWorkflow();

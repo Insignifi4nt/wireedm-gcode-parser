@@ -55,6 +55,21 @@ async function fixture(adapter: WorkbenchStorageAdapter) {
 }
 
 describe.each(['cache', 'folder'] as const)('%s complete workbench backup', (kind) => {
+  it('validates BOM-prefixed JSON semantically while preserving every original and checksum', async () => {
+    const source = storage(kind);
+    const workbench = await fixture(source);
+    const paths = (await source.listFiles!()).paths;
+    for (const path of paths.filter((path) => path.endsWith('.json') && !path.startsWith('legacy/'))) {
+      await source.writeText(path, `\uFEFF${await source.readExactText!(path)}`);
+    }
+    const backup = await createWorkbenchBackup(workbench);
+    expect(backup.summary).toMatchObject({ trashedProjects: 1, revisions: 1, posts: 1, machines: 1 });
+    const target = storage(kind === 'cache' ? 'folder' : 'cache');
+    await empty(target);
+    await restoreWorkbenchBackup(target, await prepareWorkbenchBackup(backup.text));
+    for (const path of paths) expect(await target.readExactText!(path)).toBe(await source.readExactText!(path));
+    expect((await createWorkbenchBackup({ ...workbench, adapter: target })).contentHash).toBe(backup.contentHash);
+  });
   it('round-trips trash, exact packages, revisions, retained originals and controller line endings', async () => {
     const source = storage(kind);
     const workbench = await fixture(source);

@@ -8,6 +8,8 @@ import { buildMachinePackageArchive, prepareStoredMachinePackageInstallation } f
 import { machinePackageFixture } from '@/domain/machine-package/__tests__/machinePackageFixture';
 import { MACHINE_LIBRARY_PATH } from '@/domain/machine-definition/machineLibraryStorage';
 import { CATALOG_PAIR_TRANSACTION_PATH } from '@/domain/storage/catalogPairTransaction';
+import { SAVED_REVISION_TRANSACTION_PATH } from '@/domain/storage/savedRevisionTransaction';
+import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import { workbenchSiteTools } from './workbenchSiteTools';
 import { applyProjectEdits } from './projectEdits';
 import { useWorkbenchActions } from './useWorkbenchActions';
@@ -90,6 +92,44 @@ async function prepareControllerJob(h: Awaited<ReturnType<typeof harness>>) {
 }
 
 describe('workbench agent actions', () => {
+  it('keeps a package preparation across preference changes but clears it after machine storage changes', async () => {
+    const prepare = vi.fn(defaultAppServices.prepareStoredMachinePackageInstallation);
+    const h = await harness({ prepareStoredMachinePackageInstallation: prepare });
+    const { source } = await packageSource();
+    const context = await h.call('edm_workflow_context', {});
+    const receipt = await h.call('edm_prepare_machine_package', { expectedVersion: context.data.version, source });
+    expect(receipt.ok).toBe(true);
+    await act(async () => { await h.app().handleSaveCatalogPreferences(h.app().connectedWorkbench!.manifest.preferences); });
+    expect((await h.call('edm_workflow_context', {})).data.packagePreparationId).toBe(receipt.data.preparationId);
+    const prepared = await prepare.mock.results[0].value;
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    await act(async () => { expect(await h.app().handleCommitMachinePackage(prepared.prepared, { kind: 'install-new' })).toBe(true); });
+    const fresh = await h.call('edm_workflow_context', {});
+    expect(fresh.data.packagePreparationId).toBeNull();
+    expect(await h.call('edm_install_machine_package', { expectedVersion: fresh.data.version, preparationId: receipt.data.preparationId, resolution: { kind: 'install-new' } })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+  });
+
+  it('removes a DXF preparation from context when its captured workbench changes', async () => {
+    const h = await harness();
+    const context = await h.call('edm_workflow_context', {});
+    const prepared = await h.call('edm_prepare_dxf', { expectedVersion: context.data.version, source: { fileName: 'part.dxf', text } });
+    expect(prepared.ok).toBe(true);
+    expect((await h.call('edm_workflow_context', {})).data.dxfPreparationId).toBe(prepared.data.preparationId);
+    await act(async () => { await h.app().handleSaveCatalogPreferences(h.app().connectedWorkbench!.manifest.preferences); });
+    const fresh = await h.call('edm_workflow_context', {});
+    expect(fresh.data.version).not.toBe(context.data.version);
+    expect(fresh.data.dxfPreparationId).toBeNull();
+    expect(await h.call('edm_import_dxf', { expectedVersion: fresh.data.version, preparationId: prepared.data.preparationId, unitCandidateId: 'millimeters', declaredUnitOverrideAcknowledged: false })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+  });
+
+  it('distinguishes unavailable history from a retained history with no undo step', async () => {
+    const h = await harness();
+    await importCircle(h);
+    expect(await h.call('edm_draft_history', { draftVersion: 'draft', direction: 'undo' })).toMatchObject({ ok: false, error: { code: 'UNAVAILABLE' } });
+    h.draft().current = { ...h.draft().current!, history: () => false };
+    expect(await h.call('edm_draft_history', { draftVersion: 'draft', direction: 'undo' })).toMatchObject({ ok: true, data: { changed: false } });
+  });
+
   it('captures the actual editor callback as a small artifact receipt and keeps the draft unchanged', async () => {
     const h = await harness();
     await importCircle(h);
@@ -191,6 +231,117 @@ describe('workbench agent actions', () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it.each(['cancel', 'draft-change'] as const)('rejects %s while controller generation waits for the storage lock', async change => {
+    let entered!: () => void;
+    const queued = new Promise<void>(resolve => { entered = resolve; });
+    const h = await harness({ saveStoredWireEdmJobRevision: (...args) => {
+      entered();
+      return defaultAppServices.saveStoredWireEdmJobRevision(...args);
+    } });
+    const input = await prepareControllerJob(h);
+    const adapter = h.app().connectedWorkbench!.adapter;
+    let acquired!: () => void;
+    let release!: () => void;
+    const locked = new Promise<void>(resolve => { acquired = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const holder = withWorkbenchMutationLock(adapter, async () => { acquired(); await gate; });
+    await locked;
+    const write = vi.spyOn(adapter, 'writeText');
+    const abort = new AbortController();
+    let result: unknown;
+    await act(async () => {
+      const pending = h.execute('edm_export_controller', input, abort.signal);
+      await queued;
+      if (change === 'cancel') abort.abort();
+      else h.draft().current = { ...h.draft().current!, version: 'changed-while-queued' };
+      release();
+      await holder;
+      result = await pending;
+    });
+    expect(result).toMatchObject({ ok: false, error: { code: change === 'cancel' ? 'CANCELLED' : 'STALE_STATE' } });
+    expect(write).not.toHaveBeenCalled();
+    expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([]);
+    expect(h.generate).not.toHaveBeenCalled();
+    expect(h.download).not.toHaveBeenCalled();
+  });
+
+  it.each(['before-journal', 'after-journal'] as const)('handles cancellation at %s with a truthful persistence receipt', async boundary => {
+    const h = await harness();
+    const input = await prepareControllerJob(h);
+    const adapter = h.app().connectedWorkbench!.adapter;
+    const abort = new AbortController();
+    if (boundary === 'before-journal') {
+      const ensure = adapter.ensureDirectory.bind(adapter);
+      vi.spyOn(adapter, 'ensureDirectory').mockImplementation(async path => {
+        await ensure(path);
+        if (path === 'transactions') abort.abort();
+      });
+    } else {
+      const write = adapter.writeText.bind(adapter);
+      vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+        await write(path, text);
+        if (path === SAVED_REVISION_TRANSACTION_PATH) abort.abort();
+      });
+    }
+    const result = await h.call('edm_export_controller', input, abort.signal);
+    if (boundary === 'before-journal') {
+      expect(result).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+      expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([]);
+      expect(h.generate).not.toHaveBeenCalled();
+    } else {
+      expect(result).toMatchObject({ ok: true, data: { generated: true, status: 'generated-download-not-requested' } });
+      expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([result.data.artifactId]);
+      expect(h.generate).toHaveBeenCalledOnce();
+    }
+    expect(await adapter.readText(SAVED_REVISION_TRANSACTION_PATH)).toBeNull();
+    expect(h.download).not.toHaveBeenCalled();
+  });
+
+  it('rejects an active setup changed in storage after controller revision preparation', async () => {
+    let update: (() => Promise<void>) | undefined;
+    const h = await harness({ createSavedWireEdmJobRevision: async input => {
+      const candidate = await defaultAppServices.createSavedWireEdmJobRevision(input);
+      await update?.();
+      return candidate;
+    } });
+    const input = await prepareControllerJob(h);
+    const adapter = h.app().connectedWorkbench!.adapter;
+    update = async () => {
+      const library = JSON.parse((await adapter.readText(MACHINE_LIBRARY_PATH))!);
+      library.machines[0].bindings.push({ ...library.machines[0].bindings[0], id: 'alternate', name: 'Alternate' });
+      library.machines[0].activeBindingId = 'alternate';
+      await adapter.writeText(MACHINE_LIBRARY_PATH, JSON.stringify(library));
+    };
+    const result = await h.call('edm_export_controller', input);
+    expect(result).toMatchObject({ ok: true, data: { generated: false, error: {
+      message: expect.stringContaining('active setup')
+    } } });
+    expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([]);
+    expect(await adapter.readText(SAVED_REVISION_TRANSACTION_PATH)).toBeNull();
+    expect(h.generate).not.toHaveBeenCalled();
+    expect(h.download).not.toHaveBeenCalled();
+  });
+
+  it('returns the committed revision and artifact when only recovery cleanup fails', async () => {
+    const h = await harness();
+    const input = await prepareControllerJob(h);
+    const adapter = h.app().connectedWorkbench!.adapter;
+    const remove = adapter.deleteText.bind(adapter);
+    const deletion = vi.spyOn(adapter, 'deleteText').mockImplementation(async path => {
+      if (path === SAVED_REVISION_TRANSACTION_PATH) throw new Error('Injected journal cleanup failure');
+      return remove(path);
+    });
+    const result = await h.call('edm_export_controller', input);
+    expect(result).toMatchObject({ ok: true, data: { generated: true, artifactId: expect.any(String),
+      cleanupPending: { code: 'SAVED_REVISION_TRANSACTION_STORAGE_FAILED' } } });
+    expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([result.data.artifactId]);
+    expect(await adapter.readText(SAVED_REVISION_TRANSACTION_PATH)).not.toBeNull();
+    expect(h.generate).toHaveBeenCalledOnce();
+    deletion.mockRestore();
+    expect(await h.call('edm_download_artifact', { artifactId: result.data.artifactId })).toMatchObject({ ok: true });
+    expect(h.generate).toHaveBeenCalledOnce();
+  });
+
   it('returns the committed artifact after late cancellation without starting its download', async () => {
     const abort = new AbortController();
     const h = await harness({ saveStoredWireEdmJobRevision: async (...args) => {
@@ -285,6 +436,22 @@ describe('workbench agent actions', () => {
     expect(await h.app().handleGenerateControllerArtifact({ machineId: 'unknown' })).toMatchObject({ ok: false, error: { message: 'Machine not found: unknown.' } });
   });
 
+  it('rejects DXF expansion through the agent tool and invalidates an older preparation after failure', async () => {
+    const h = await harness();
+    const { data: { version: expectedVersion } } = await h.call('edm_workflow_context', {});
+    const first = await h.call('edm_prepare_dxf', { expectedVersion, source: { fileName: 'first.dxf', text } });
+    expect(first.ok).toBe(true);
+    const amplified = '0\nSECTION\n2\nBLOCKS\n0\nBLOCK\n2\nB\n0\nLINE\n10\n0\n20\n0\n11\n1\n21\n0\n0\nENDBLK\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nINSERT\n2\nB\n70\n1000\n71\n1000\n0\nENDSEC\n0\nEOF\n';
+    expect(await h.call('edm_prepare_dxf', { expectedVersion, source: { fileName: 'second.dxf', text: amplified } }))
+      .toMatchObject({ ok: false, error: { code: 'DXF_IMPORT_RESOURCE_LIMIT' } });
+    expect(h.app().connectedWorkbench?.manifest.projects).toHaveLength(0);
+    expect((await h.call('edm_workflow_context', {})).data.dxfPreparationId).toBeNull();
+    expect(await h.call('edm_import_dxf', {
+      expectedVersion, preparationId: first.data.preparationId, unitCandidateId: 'millimeters', declaredUnitOverrideAcknowledged: false
+    })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    expect(h.app().connectedWorkbench?.manifest.projects).toHaveLength(0);
+  });
+
   it('passes direct package bytes through the ordinary validator and preserves explicit collision review', async () => {
     const prepare = vi.fn(defaultAppServices.prepareStoredMachinePackageInstallation);
     const h = await harness({ prepareStoredMachinePackageInstallation: prepare });
@@ -356,6 +523,7 @@ describe('workbench agent actions', () => {
     const abort = new AbortController();
     let pending!: Promise<unknown>;
     await act(async () => { pending = h.execute('edm_prepare_machine_package', { expectedVersion: context.data.version, source }, abort.signal); await started; });
+    expect(await h.call('edm_workflow_context', {})).toMatchObject({ ok: true, data: { busy: true, nextSteps: ['Wait for the running operation, then read edm_workflow_context again.'] } });
     expect(await h.call('edm_import_upid', { expectedVersion: context.data.version, source: { fileName: 'x.json', text: '{}' } })).toMatchObject({ ok: false, error: { code: 'BUSY' } });
     if (reason === 'cancel') abort.abort();
     else await act(async () => { await h.app().handleSaveCatalogPreferences(h.app().connectedWorkbench!.manifest.preferences); });

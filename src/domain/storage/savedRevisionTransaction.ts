@@ -4,6 +4,7 @@ import { Value } from '@sinclair/typebox/value';
 import { PostIdentifierSchema } from '@/domain/post-processor/postFormatPrimitives';
 import { workbenchProjectDocumentPath, workbenchProjectRevisionPath } from '@/domain/workbench-catalog/workbenchProjectStorage';
 import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
+import { readExactTransactionText as readExact, transactionFileHash, verifyTransactionDeletions } from './transactionFileState';
 
 export const SAVED_REVISION_TRANSACTION_PATH = 'transactions/saved-revision.json';
 const MAX_TRANSACTION_BYTES = 384 * 1024 * 1024;
@@ -19,7 +20,7 @@ const TransactionSchema = Type.Object({
   nextManifest: Type.String()
 }, { additionalProperties: false });
 type Transaction = Static<typeof TransactionSchema>;
-const DeletionTransactionSchema = Type.Object({
+const LegacyDeletionTransactionSchema = Type.Object({
   format: Type.Literal('wire-edm-revision-deletion-transaction'),
   schemaVersion: Type.Literal(1),
   projectId: PostIdentifierSchema,
@@ -28,6 +29,11 @@ const DeletionTransactionSchema = Type.Object({
   nextProject: Type.String(),
   previousManifest: Type.String(),
   nextManifest: Type.String()
+}, { additionalProperties: false });
+const DeletionTransactionSchema = Type.Object({
+  ...LegacyDeletionTransactionSchema.properties,
+  schemaVersion: Type.Literal(2),
+  previousRevisionHashes: Type.Array(Type.Union([Type.String({ pattern: '^[0-9a-f]{64}$' }), Type.Null()]), { minItems: 1, maxItems: 100_000 })
 }, { additionalProperties: false });
 type DeletionTransaction = Static<typeof DeletionTransactionSchema>;
 
@@ -40,17 +46,20 @@ type Result = { readonly ok: true } | { readonly ok: false; readonly error: Save
 /** Call while holding the workbench mutation lock, before changing any owned file. */
 export async function beginSavedRevisionTransaction(
   adapter: WorkbenchStorageAdapter,
-  values: Omit<Transaction, 'format' | 'schemaVersion'>
+  values: Omit<Transaction, 'format' | 'schemaVersion'>,
+  options: { readonly beforeWrite?: () => void } = {}
 ): Promise<Result> {
   const transaction: Transaction = { format: 'wire-edm-saved-revision-transaction', schemaVersion: 1, ...values };
   const raw = JSON.stringify(transaction);
   if (new TextEncoder().encode(raw).byteLength > MAX_TRANSACTION_BYTES) {
     return invalid('Saved revision recovery data exceeds its size limit.');
   }
+  try { await adapter.ensureDirectory('transactions'); }
+  catch (error) { return storageFailure(message(error)); }
+  options.beforeWrite?.();
   try {
-    await adapter.ensureDirectory('transactions');
     await adapter.writeText(SAVED_REVISION_TRANSACTION_PATH, raw);
-    if (await adapter.readText(SAVED_REVISION_TRANSACTION_PATH) !== raw) {
+    if (await readExact(adapter, SAVED_REVISION_TRANSACTION_PATH) !== raw) {
       throw new Error('Recovery data did not read back exactly');
     }
     return { ok: true };
@@ -64,10 +73,15 @@ export async function beginSavedRevisionTransaction(
 /** Journal the index change; revision files are removed only after both indexes commit. */
 export async function beginRevisionDeletionTransaction(
   adapter: WorkbenchStorageAdapter,
-  values: Omit<DeletionTransaction, 'format' | 'schemaVersion'>
+  values: Omit<DeletionTransaction, 'format' | 'schemaVersion' | 'previousRevisionHashes'>
 ): Promise<Result> {
+  let previousRevisionHashes: (string | null)[];
+  try {
+    previousRevisionHashes = await Promise.all(values.revisionIds.map((id) =>
+      transactionFileHash(adapter, workbenchProjectRevisionPath(values.projectId, id))));
+  } catch (error) { return storageFailure(message(error)); }
   const transaction: DeletionTransaction = {
-    format: 'wire-edm-revision-deletion-transaction', schemaVersion: 1, ...values
+    format: 'wire-edm-revision-deletion-transaction', schemaVersion: 2, ...values, previousRevisionHashes
   };
   const raw = JSON.stringify(transaction);
   if (new TextEncoder().encode(raw).byteLength > MAX_TRANSACTION_BYTES) {
@@ -76,7 +90,7 @@ export async function beginRevisionDeletionTransaction(
   try {
     await adapter.ensureDirectory('transactions');
     await adapter.writeText(SAVED_REVISION_TRANSACTION_PATH, raw);
-    if (await adapter.readText(SAVED_REVISION_TRANSACTION_PATH) !== raw) {
+    if (await readExact(adapter, SAVED_REVISION_TRANSACTION_PATH) !== raw) {
       throw new Error('Recovery data did not read back exactly');
     }
     return { ok: true };
@@ -98,10 +112,10 @@ export async function finishSavedRevisionTransaction(adapter: WorkbenchStorageAd
   }
 }
 
-/** Recover before reading the manifest: an interrupted manifest write can itself be partial. */
+/** Recover recognized exact states only; unknown contents retain the journal for manual recovery. */
 export async function recoverSavedRevisionTransaction(adapter: WorkbenchStorageAdapter): Promise<Result> {
   try {
-    const raw = await adapter.readText(SAVED_REVISION_TRANSACTION_PATH);
+    const raw = await readExact(adapter, SAVED_REVISION_TRANSACTION_PATH);
     if (raw === null) return { ok: true };
     // Empty first-write handles precede every owned-file change.
     if (raw === '') return finishSavedRevisionTransaction(adapter);
@@ -110,26 +124,37 @@ export async function recoverSavedRevisionTransaction(adapter: WorkbenchStorageA
     }
     let transaction: unknown;
     try { transaction = JSON.parse(raw); } catch { return invalid('Saved revision recovery data is not valid JSON.'); }
-    if (!Value.Check(TransactionSchema, transaction) && !Value.Check(DeletionTransactionSchema, transaction)) {
+    if (!Value.Check(TransactionSchema, transaction) && !Value.Check(DeletionTransactionSchema, transaction) &&
+        !Value.Check(LegacyDeletionTransactionSchema, transaction)) {
       return invalid('Saved revision recovery data has an invalid shape.');
     }
     if (transaction.format === 'wire-edm-revision-deletion-transaction') {
       const projectPath = workbenchProjectDocumentPath(transaction.projectId);
-      const project = await adapter.readText(projectPath);
-      const manifest = await adapter.readText('workbench.json');
-      if (project === transaction.nextProject && manifest === transaction.nextManifest) {
+      const project = await readExact(adapter, projectPath);
+      const manifest = await readExact(adapter, 'workbench.json');
+      if ((project !== transaction.previousProject && project !== transaction.nextProject) ||
+          (manifest !== transaction.previousManifest && manifest !== transaction.nextManifest)) {
+        return storageFailure('Revision indexes changed outside the pending transaction. Preserve storage and its journal for recovery');
+      }
+      const committed = project === transaction.nextProject && manifest === transaction.nextManifest;
+      const paths = transaction.revisionIds.map((id) => workbenchProjectRevisionPath(transaction.projectId, id));
+      if (transaction.schemaVersion === 2) {
+        await verifyTransactionDeletions(adapter, paths, transaction.previousRevisionHashes, committed);
+      }
+      if (committed) {
         // Both indexes committed. Finish any remaining file deletions after a crash.
+        if (transaction.schemaVersion === 1) await verifyTransactionDeletions(adapter, paths, undefined);
         for (const revisionId of transaction.revisionIds) {
           const path = workbenchProjectRevisionPath(transaction.projectId, revisionId);
           await adapter.deleteText(path);
-          if (await adapter.readText(path) !== null) throw new Error(`Could not remove ${path}`);
+          if (await readExact(adapter, path) !== null) throw new Error(`Could not remove ${path}`);
         }
       } else {
         // Files have not been touched until both index writes have read back.
         await adapter.writeText(projectPath, transaction.previousProject);
         await adapter.writeText('workbench.json', transaction.previousManifest);
-        if (await adapter.readText(projectPath) !== transaction.previousProject ||
-            await adapter.readText('workbench.json') !== transaction.previousManifest) {
+        if (await readExact(adapter, projectPath) !== transaction.previousProject ||
+            await readExact(adapter, 'workbench.json') !== transaction.previousManifest) {
           throw new Error('Rollback did not restore revision indexes exactly');
         }
       }
@@ -141,12 +166,20 @@ export async function recoverSavedRevisionTransaction(adapter: WorkbenchStorageA
       { path: workbenchProjectDocumentPath(transaction.projectId), previous: transaction.previousProject, next: transaction.nextProject },
       { path: 'workbench.json', previous: transaction.previousManifest, next: transaction.nextManifest }
     ];
-    const current = await Promise.all(files.map(({ path }) => adapter.readText(path)));
+    const current = await Promise.all(files.map(({ path }) => readExact(adapter, path)));
+    // An empty first-write handle can only precede both index writes. Once an
+    // index advances, an empty revision is unknown loss, not a safe rollback.
+    const emptyFirstWrite = current[0] === '' && current[1] === transaction.previousProject &&
+      current[2] === transaction.previousManifest;
+    if (files.some((file, index) => current[index] !== file.previous && current[index] !== file.next &&
+        !(index === 0 && emptyFirstWrite))) {
+      return storageFailure('Files changed outside the pending transaction. Preserve storage and its journal for recovery');
+    }
     if (!files.every((file, index) => current[index] === file.next)) {
       for (const file of files) {
         if (file.previous === null) await adapter.deleteText(file.path);
         else await adapter.writeText(file.path, file.previous);
-        if (await adapter.readText(file.path) !== file.previous) {
+        if (await readExact(adapter, file.path) !== file.previous) {
           throw new Error(`Rollback did not restore ${file.path} exactly`);
         }
       }

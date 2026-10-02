@@ -16,6 +16,13 @@ export function AgentActivity({ activity }: { activity: SiteToolActivityState })
     </p>
     {activity.registration === 'unsupported' && <p className="mt-2 leading-5">This browser does not support WebMCP agent tools. The ordinary app controls remain available.</p>}
     {activity.registration === 'failed' && <p className="mt-2 leading-5">Agent tools could not be registered. Reload the page to retry; the ordinary app controls remain available.</p>}
+    {activity.registration === 'ready' && activity.calls.length === 0 && (
+      <p className="mt-2 leading-5">No agent actions in this tab yet. Ask your browser agent to review the open project or import a drawing.</p>
+    )}
+    <a className="mt-2 inline-block underline underline-offset-2 focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring"
+      href={`${import.meta.env.BASE_URL}documentation/agents/`} target="_blank" rel="noreferrer">
+      Agent workflow guide <span className="text-[10px]">(opens in a new tab)</span>
+    </a>
     {activity.calls.length > 0 && <div className="mt-3 border-t border-border pt-2" aria-label="Recent agent actions">
       <p className="mb-2 text-[10px] uppercase text-muted-foreground">Recent agent actions</p>
       <ol className="space-y-2">{activity.calls.map(call => <li key={call.id} className="break-words border border-border bg-background/50 p-2">

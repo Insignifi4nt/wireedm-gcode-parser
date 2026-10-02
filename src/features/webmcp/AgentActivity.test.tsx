@@ -21,13 +21,17 @@ describe('visible agent activity', () => {
     ])} />; }
     container = document.createElement('div'); document.body.append(container); root = createRoot(container);
     await act(async () => root!.render(<Harness />));
-    expect(container.textContent).toBe('Preparing agent tools');
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Preparing agent tools');
     expect(registerTool).toHaveBeenCalledTimes(1);
     await act(async () => acknowledgements[0].resolve());
     expect(registerTool).toHaveBeenCalledTimes(2);
-    expect(container.textContent).toBe('Preparing agent tools');
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Preparing agent tools');
     await act(async () => acknowledgements[1].resolve());
-    expect(container.textContent).toBe('Agent tools ready');
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Agent tools ready');
+    expect(container.textContent).toContain('No agent actions in this tab yet.');
+    const guide = container.querySelector<HTMLAnchorElement>('a');
+    expect(guide?.getAttribute('href')).toBe(`${import.meta.env.BASE_URL}documentation/agents/`);
+    expect(guide?.target).toBe('_blank');
   });
 
   it.each(['before', 'after'] as const)('keeps startup calls visible when registration finishes %s the call', async (completion) => {
@@ -76,10 +80,10 @@ describe('visible agent activity', () => {
     await act(async () => root!.render(<StrictMode><Harness /></StrictMode>));
     expect(signals).toHaveLength(2);
     expect(signals[0].aborted).toBe(true);
-    expect(container.textContent).toBe('Preparing agent tools');
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Preparing agent tools');
     expect(warning).not.toHaveBeenCalled();
     await act(async () => acknowledgements[1]());
-    expect(container.textContent).toBe('Agent tools ready');
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Agent tools ready');
     expect(warning).not.toHaveBeenCalled();
   });
 
@@ -119,7 +123,7 @@ describe('visible agent activity', () => {
     }
     container = document.createElement('div'); document.body.append(container); root = createRoot(container);
     await act(async () => root!.render(<Harness />));
-    expect(container.textContent).toBe('Agent tools ready');
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Agent tools ready');
     let generating!: Promise<unknown>;
     await act(async () => { generating = registered.get('edm_generate_controller')!.execute({}); });
     for (let index = 0; index < 10; index++) await act(async () => { await registered.get('edm_get_context')!.execute({}); });

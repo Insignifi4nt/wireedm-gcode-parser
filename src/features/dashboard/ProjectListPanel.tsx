@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { ChevronDown, History, Pencil, Save, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
 import { supportsSaveTextFileAs } from '@/domain/post/saveTextFileAs';
+import { useDashboardMenu } from './useDashboardMenu';
 
 type WorkbenchProjectIndexEntry = WorkbenchCatalogManifest['projects'][number];
 
@@ -36,35 +37,12 @@ export function ProjectListPanel({
   const [searchText, setSearchText] = useState('');
   const [sourceFilter, setSourceFilter] = useState<ProjectSourceFilter>('all');
   const [sortMode, setSortMode] = useState<ProjectSortMode>('updated-desc');
-  const [exportMenuProjectId, setExportMenuProjectId] = useState<string | null>(null);
-  const exportMenuRef = useRef<HTMLDivElement>(null);
-  const exportTriggerRef = useRef<HTMLButtonElement>(null);
-  const firstExportItemRef = useRef<HTMLButtonElement>(null);
+  const menu = useDashboardMenu(interactionLocked || availability !== 'ready');
+  const exportMenuProjectId = interactionLocked ? null : menu.openId;
   const saveAsAvailable = supportsSaveTextFileAs();
 
-  useEffect(() => {
-    if (exportMenuProjectId === null) return;
-    firstExportItemRef.current?.focus();
-    function handleOutsideClick(event: MouseEvent) {
-      if (event.target instanceof Node && !exportMenuRef.current?.contains(event.target)) {
-        setExportMenuProjectId(null);
-      }
-    }
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return;
-      setExportMenuProjectId(null);
-      exportTriggerRef.current?.focus();
-    }
-    document.addEventListener('mousedown', handleOutsideClick);
-    window.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
-      window.removeEventListener('keydown', handleEscape);
-    };
-  }, [exportMenuProjectId]);
-
   function runExport(projectId: string, chooseLocation: boolean) {
-    setExportMenuProjectId(null);
+    menu.close(true);
     if (chooseLocation) void onSaveUpidProjectAs(projectId);
     else void onExportUpidProject(projectId);
   }
@@ -161,7 +139,7 @@ export function ProjectListPanel({
                     <span className="text-[10px] text-muted-foreground lg:text-[11px]">
                       {getProjectSourceLabel(project.sourceKind)}
                     </span>
-                    <span className="technical-value truncate text-[10px] text-muted-foreground" title={project.updatedAt}>{project.updatedAt}</span>
+                    <ProjectUpdateTime value={project.updatedAt} />
                     <div className="flex min-w-0 items-center gap-1 lg:justify-end">
                       <Button
                         aria-label={`Open project ${project.id} in editor`}
@@ -200,15 +178,17 @@ export function ProjectListPanel({
                         </Button>
                       )}
                       {isPathProjectSourceKind(project.sourceKind) && (
-                        <div className="relative" ref={exportMenuProjectId === project.id ? exportMenuRef : undefined}>
+                        <div className="relative">
                           <Button
                             aria-expanded={exportMenuProjectId === project.id}
+                            aria-controls={exportMenuProjectId === project.id ? menu.menuId : undefined}
                             aria-haspopup="menu"
                             aria-label={`Export UPID project ${project.id}`}
                             className="relative size-7 text-muted-foreground hover:text-foreground"
                             disabled={interactionLocked}
-                            onClick={() => setExportMenuProjectId((current) => current === project.id ? null : project.id)}
-                            ref={exportMenuProjectId === project.id ? exportTriggerRef : undefined}
+                            onClick={() => menu.toggle(project.id)}
+                            onKeyDown={(event) => menu.onTriggerKeyDown(event, project.id)}
+                            ref={exportMenuProjectId === project.id ? menu.triggerRef : undefined}
                             size="icon"
                             title="Export UPID"
                             type="button"
@@ -216,14 +196,15 @@ export function ProjectListPanel({
                           ><Save className="size-4" /><ChevronDown className="absolute bottom-0 right-0 size-2.5" /></Button>
                           {exportMenuProjectId === project.id && (
                             <div aria-label={`Export options for ${project.name}`}
+                              id={menu.menuId} ref={menu.menuRef} onKeyDown={menu.onMenuKeyDown}
                               className="absolute right-0 top-full z-30 mt-1 min-w-32 border border-border bg-popover p-1 shadow-xl"
                               role="menu">
                               <button className="flex h-7 w-full items-center px-2 text-left text-[11px] text-popover-foreground outline-none hover:bg-accent focus:bg-accent"
-                                onClick={() => runExport(project.id, false)} ref={firstExportItemRef} role="menuitem" type="button">
+                                onClick={() => runExport(project.id, false)} role="menuitem" tabIndex={-1} type="button">
                                 Export
                               </button>
                               {saveAsAvailable && <button className="flex h-7 w-full items-center px-2 text-left text-[11px] text-popover-foreground outline-none hover:bg-accent focus:bg-accent"
-                                onClick={() => runExport(project.id, true)} role="menuitem" type="button">
+                                onClick={() => runExport(project.id, true)} role="menuitem" tabIndex={-1} type="button">
                                 Export as…
                               </button>}
                             </div>
@@ -265,6 +246,25 @@ export function ProjectListPanel({
 
 function getProjectSourceLabel(sourceKind: WorkbenchProjectIndexEntry['sourceKind']) {
   return isPathProjectSourceKind(sourceKind) ? 'Path Project' : 'Machine Program';
+}
+
+const projectDateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+const projectTimeFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' });
+
+function ProjectUpdateTime({ value }: { value: string }) {
+  const date = new Date(value);
+  const valid = Number.isFinite(date.getTime());
+  return (
+    <time
+      aria-label={`Updated ${valid ? date.toLocaleString() : value}`}
+      className="technical-value flex flex-wrap gap-x-2 text-[10px] text-muted-foreground lg:grid lg:gap-y-0.5"
+      dateTime={valid ? value : undefined}
+      title={value}
+    >
+      <span>{valid ? projectDateFormatter.format(date) : value}</span>
+      {valid && <span>{projectTimeFormatter.format(date)}</span>}
+    </time>
+  );
 }
 
 function isPathProjectSourceKind(

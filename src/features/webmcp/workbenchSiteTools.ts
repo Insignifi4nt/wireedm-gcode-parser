@@ -66,6 +66,7 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
       const current = getState();
       return { appVersion: APP_VERSION, storage: current.workbench?.adapter.kind ?? null, busy: current.busy,
         draft: current.draft ? { projectId: current.draft.projectId, version: current.draft.version, dirty: current.draft.dirty, workflowOpen: current.draft.workflowOpen,
+          workflowCommand: current.draft.workflowOpen ? current.draft.workflowCommand ?? null : null,
           model: current.draft.document ? 'upid' : 'external-gcode', captureAvailable: Boolean(current.draft.capture),
           editsAvailable: Boolean(current.draft.document && current.draft.edit && !current.draft.workflowOpen && !current.busy) } : null,
         guide: `${import.meta.env.BASE_URL}documentation/agents/`,
@@ -75,7 +76,7 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
       const workbench = connected();
       const version = workbench.manifest.updatedAt;
       if (input.catalogVersion && input.catalogVersion !== version) throw new ToolError('STALE_STATE', 'Project catalog changed. Restart the listing.');
-      return { catalogVersion: version, ...page(workbench.manifest.projects.map(({ id, name, sourceKind, updatedAt }) => ({ id, name, sourceKind, updatedAt })), input) };
+      return { catalogVersion: version, ...page(workbench.manifest.projects, input, ({ id, name, sourceKind, updatedAt }) => ({ id, name, sourceKind, updatedAt })) };
     }),
     siteTool('edm_get_project', 'Read an explicit current draft or saved project summary. Draft reads require the current version from edm_get_context. Counts and recorded diagnostics are not executable certification.', object({ target }), async (input) => {
       const { document, ...snapshot } = await resolve(input.target);
@@ -91,24 +92,24 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
       const doc = snapshot.document;
       if (!doc) throw new ToolError('WRONG_MODEL', 'Geometry queries require a UPID project.');
       if (input.operationId && input.kind !== 'segments') throw new ToolError('INVALID_ARGUMENT', 'operationId applies only to segment queries.');
-      let rows: readonly unknown[];
-      if (input.kind === 'operations') rows = doc.plan.operations.map(({ segmentRefs, provenance: _provenance, ...operation }) => ({ ...operation, segmentCount: segmentRefs.length }));
-      else if (input.kind === 'contours') rows = doc.contours.map(({ approximatePolygon: _polygon, provenance: _provenance, ...contour }) => contour);
+      let rows: ReturnType<typeof page>;
+      if (input.kind === 'operations') rows = page(doc.plan.operations, input, ({ segmentRefs, provenance: _provenance, ...operation }) => ({ ...operation, segmentCount: segmentRefs.length }));
+      else if (input.kind === 'contours') rows = page(doc.contours, input, ({ approximatePolygon: _polygon, provenance: _provenance, ...contour }) => contour);
       else if (input.operationId) {
         const operation = doc.plan.operations.find(({ id }) => id === input.operationId);
         if (!operation) throw new ToolError('NOT_FOUND', 'Operation does not exist in this document.');
         const segments = new Map(doc.segments.map((segment) => [segment.id, segment]));
-        rows = operation.segmentRefs.map((ref) => ({ ...segments.get(ref.segmentId), reversed: ref.reversed }));
-      } else rows = doc.segments;
-      return { version: snapshot.version, kind: input.kind, units: 'mm', ...page(rows, input) };
+        rows = page(operation.segmentRefs, input, ref => ({ ...segments.get(ref.segmentId), reversed: ref.reversed }));
+      } else rows = page(doc.segments, input);
+      return { version: snapshot.version, kind: input.kind, units: 'mm', ...rows };
     }),
     siteTool('edm_get_capabilities', 'Read installed machines, active setup IDs and precise declared post capabilities. Does not change a setup or claim that a project is executable.', object(pageFields), (input) => {
       const workbench = connected();
-      return page(workbench.machines.machines.map((machine) => ({ id: machine.id, name: machine.name, activeBindingId: machine.activeBindingId,
+      return page(workbench.machines.machines, input, (machine) => ({ id: machine.id, name: machine.name, activeBindingId: machine.activeBindingId,
         hardware: machine.hardware, limits: machine.limits,
         setups: machine.bindings.map((binding) => ({ id: binding.id, name: binding.name, post: binding.post, properties: binding.properties, verification: binding.verification,
           capabilities: workbench.posts.installations.find(({ ref }) => ref.packageId === binding.post.packageId && ref.version === binding.post.version && ref.contentHash === binding.post.contentHash)?.package.manifest.capabilities ?? null }))
-      })), input);
+      }));
     }),
     siteTool('edm_list_revisions', 'Read a bounded page of saved revision display metadata for a project. Missing or corrupt rows remain visible. Does not generate controller output.', object({ projectId: id, page: Type.Optional(Type.Integer({ minimum: 0, maximum: 100_000 })), version: Type.Optional(id) }), async (input) => {
       const project = await saved(input.projectId);
