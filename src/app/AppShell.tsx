@@ -21,7 +21,7 @@ import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workb
 
 import { AppRailProvider, type AppRailContent, type EditorCompactDrawer } from './AppRailContext';
 import type { MachinePostSettingsActions } from './MachinePostSettingsPanel';
-import { WorkbenchSettingsDialog } from './WorkbenchSettingsDialog';
+import { WorkbenchSettingsDialog, type WorkbenchSettingsSection } from './WorkbenchSettingsDialog';
 import { EditorCompactDrawerLaunchers } from '@/features/editor/EditorWorkspacePanels';
 
 interface AppShellProps extends MachinePostSettingsActions {
@@ -77,6 +77,11 @@ export function AppShell({
     () => window.innerWidth >= 768 && window.innerWidth < 1024
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<WorkbenchSettingsSection>('storage');
+  const openMachineSettings = useCallback(() => {
+    setSettingsSection('machine-output');
+    setSettingsOpen(true);
+  }, []);
   const isReady = workbenchStatus === 'ready' && connectedWorkbench;
   const isConnectingStorage =
     workbenchStatus === 'initializing' || workbenchStatus === 'connecting-storage';
@@ -227,7 +232,7 @@ export function AppShell({
           </span>
           <Button
             aria-label="Open settings"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => { setSettingsSection('storage'); setSettingsOpen(true); }}
             size="icon"
             title="Settings"
             type="button"
@@ -318,7 +323,7 @@ export function AppShell({
           />
         )}
 
-        <AppRailProvider value={{ closeCompactDrawerWithRailFocus, compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailCollapsed: setShellRailCollapsed, setRailContent }}>
+        <AppRailProvider value={{ openMachineSettings, closeCompactDrawerWithRailFocus, compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailCollapsed: setShellRailCollapsed, setRailContent }}>
           <main
             className="min-h-0 min-w-0 overflow-hidden"
           >
@@ -336,6 +341,7 @@ export function AppShell({
         </AppRailProvider>
       </div>
       <WorkbenchSettingsDialog
+        initialSection={settingsSection}
         connectedWorkbench={connectedWorkbench}
         errorMessage={errorMessage}
         interactionLocked={interactionLocked}

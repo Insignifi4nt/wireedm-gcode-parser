@@ -317,7 +317,7 @@ export function EditorPage({
       separationMechanisms: Array.isArray(installed.package.manifest.capabilities.wireSeparation)
         ? installed.package.manifest.capabilities.wireSeparation : [] };
   }, [planningMachine, posts]);
-  const { closeCompactDrawerWithRailFocus, compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailContent } = useAppRail();
+  const { openMachineSettings, closeCompactDrawerWithRailFocus, compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailContent } = useAppRail();
   const [initialWorkspaceLayout] = useState(() => readInitialWorkspaceLayout());
   const [draftState, setDraftState] = useState<EditorDraftState>(() => createEditorDraftState(program));
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
@@ -3806,6 +3806,11 @@ export function EditorPage({
           hasUnsavedChanges={hasUnsavedChanges}
           machines={machines}
           posts={posts}
+          onOpenMachineSettings={() => runAfterActiveWorkflowResolved(() => {
+            setExportPreviewOpen(false);
+            setCompactDrawer(null);
+            openMachineSettings();
+          })}
           onClose={() => {
             if (activeWorkflowSession?.commandId === 'export.preview') {
               requestCloseEditorWorkflow();

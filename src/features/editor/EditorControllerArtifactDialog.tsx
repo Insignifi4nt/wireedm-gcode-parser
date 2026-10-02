@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useModalFocus } from '@/components/ui/useModalFocus';
 import { AgentRepairPrompt } from '@/components/AgentRepairPrompt';
 import { postFailureGuidance, postRepairPrompt } from '@/domain/post-processor/postRepairPrompt';
 import { APP_VERSION } from '@/domain/release/appRelease';
@@ -20,6 +21,7 @@ export interface EditorControllerArtifactDialogProps {
   readonly machines: readonly MachineDefinition[];
   readonly posts: PostLibrary;
   readonly onClose: () => void;
+  readonly onOpenMachineSettings: () => void;
   readonly onDownload: (fileName: string, text: string) => void;
   readonly onGenerationReset?: () => void;
   readonly onArtifactGenerated?: (
@@ -38,19 +40,13 @@ export function EditorControllerArtifactDialog({
   machines,
   posts,
   onClose,
+  onOpenMachineSettings,
   onDownload,
   onGenerationReset,
   onArtifactGenerated,
   onGenerateControllerArtifact
 }: EditorControllerArtifactDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const previousFocus = document.activeElement;
-    dialogRef.current?.focus();
-    return () => {
-      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
-    };
-  }, []);
   const [machineId, setMachineId] = useState(() => (
     defaultMachineId && machines.some(({ id }) => id === defaultMachineId)
       ? defaultMachineId
@@ -59,6 +55,10 @@ export function EditorControllerArtifactDialog({
   const [artifact, setArtifact] = useState<ControllerProgramArtifact | null>(null);
   const [failure, setFailure] = useState<Extract<ControllerArtifactResult, { ok: false }>['error'] | null>(null);
   const [generating, setGenerating] = useState(false);
+  useModalFocus({
+    open: true, overlayRef: dialogRef, dialogRef, initialFocusRef: dialogRef,
+    onClose, dismissible: !generating
+  });
   const [downloadFailure, setDownloadFailure] = useState<string | null>(null);
   const selectedMachine = machines.find((machine) => machine.id === machineId) ?? null;
   const activeSetup = selectedMachine?.bindings.find(({ id }) => id === selectedMachine.activeBindingId) ?? null;
@@ -197,6 +197,12 @@ export function EditorControllerArtifactDialog({
             The active setup requires {activeSetup.post.packageId}@{activeSetup.post.version}, which is unavailable.
             Reinstall its complete machine package in Workbench Settings.
           </p>
+        )}
+        {(machines.length === 0 || (selectedMachine && (!activeSetup || !activePost))) && (
+          <button className="h-8 w-fit border border-border px-3 disabled:opacity-40" disabled={generating}
+            onClick={() => { if (!generating) onOpenMachineSettings(); }} type="button">
+            Open Machines &amp; setups
+          </button>
         )}
         {activeSetup && activePost && (
           <div className="technical-value grid gap-1 border-y border-border py-2 text-muted-foreground">

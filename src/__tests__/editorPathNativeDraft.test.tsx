@@ -82,6 +82,35 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('input[aria-label="Translate X"]')).not.toBeNull();
   });
 
+  it('keeps unsaved geometry when blocked export routes to machine settings', async () => {
+    const openSettings = vi.fn();
+    const save = vi.fn();
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    const savedDocument = structuredClone(project.content.document);
+    await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={save} onOpenMachineSettings={openSettings} project={project} />));
+    await flushAsync();
+    const original = previewGeometrySignature();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await clickElement('button[aria-label="Hide Transform"]');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
+    const edited = previewGeometrySignature();
+    expect(edited).not.toBe(original);
+    await clickElement('[data-editor-workflow-command="export.preview"]');
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="Controller artifact export"]')!;
+    expect(dialog.textContent).toContain('Save the project before generating');
+    await act(async () => [...dialog.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Open Machines & setups')!.click());
+    expect(openSettings).toHaveBeenCalledOnce();
+    expect(container.querySelector('[role="dialog"][aria-label="Controller artifact export"]')).toBeNull();
+    expect(previewGeometrySignature()).toBe(edited);
+    expect(project.content.document).toEqual(savedDocument);
+    expect(save).not.toHaveBeenCalled();
+    await clickElement('[data-editor-workflow-command="export.preview"]');
+    expect(container.querySelector('[role="dialog"][aria-label="Controller artifact export"]')?.textContent)
+      .toContain('Save the project before generating');
+  });
+
   it('keeps simulation keyboard shortcuts from changing the hidden editor history', async () => {
     await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={projectWithUpid(pathDocumentFromRectangle())} />));
     await flushAsync();
@@ -3835,6 +3864,7 @@ function EditorPageHarness({
   interactionLocked = false,
   onBackToDashboard = noop,
   onImportProgramFile = noop,
+  onOpenMachineSettings = noop,
   onStatusMessage,
   onReadSnapshot,
   onSaveEditorDraft,
@@ -3847,6 +3877,7 @@ function EditorPageHarness({
   interactionLocked?: boolean;
   onBackToDashboard?: () => void;
   onImportProgramFile?: (file: File) => void;
+  onOpenMachineSettings?: () => void;
   onStatusMessage?: (message: string, type: 'info' | 'success' | 'warning' | 'error') => void;
   onReadSnapshot?: (snapshot: DraftReadSnapshot | null) => void;
   onSaveEditorDraft: (draft: EditorSaveDraft) => void;
@@ -3897,6 +3928,7 @@ function EditorPageHarness({
   return (
     <AppRailProvider
       value={{
+        openMachineSettings: onOpenMachineSettings,
         closeCompactDrawerWithRailFocus,
         compactDrawer,
         compactModalHost: null,

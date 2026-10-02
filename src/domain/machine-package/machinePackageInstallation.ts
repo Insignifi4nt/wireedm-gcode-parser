@@ -88,6 +88,15 @@ export interface PreparedMachinePackageInstallation {
   readonly preview: MachinePackageInstallationPreview;
 }
 
+/** In-memory context hint only; commit reopens storage and checks the fingerprint under its lock. */
+export function isPreparedMachinePackageInstallationCurrent(
+  prepared: PreparedMachinePackageInstallation,
+  workbench: ConnectedWorkbenchCatalog | null
+): boolean {
+  return workbench !== null && prepared.workbench.adapter === workbench.adapter &&
+    prepared.preparedCatalogFingerprint === catalogFingerprint(workbench);
+}
+
 export type MachinePackageInstallationResolution =
   | { readonly kind: 'install-new' }
   | {

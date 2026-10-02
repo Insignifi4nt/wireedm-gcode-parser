@@ -21,10 +21,24 @@ export const pageFields = {
   offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100_000 })),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 }))
 };
-export function page<T>(rows: readonly T[], input: { offset?: number; limit?: number }) {
+/** Leave room for the envelope and query metadata; never truncate an individual row. */
+export function page<T, R = T>(rows: readonly T[], input: { offset?: number; limit?: number }, project: (row: T) => R = row => row as unknown as R) {
   const offset = input.offset ?? 0;
   const end = Math.min(rows.length, offset + (input.limit ?? 10));
-  return { items: rows.slice(offset, end), total: rows.length, nextOffset: end < rows.length ? end : null };
+  const items: R[] = [];
+  let bytes = 2;
+  let next = offset;
+  for (; next < end; next += 1) {
+    const item = project(rows[next]);
+    const itemBytes = jsonByteLength(item) + (items.length ? 1 : 0);
+    if (bytes + itemBytes > 24 * 1024) {
+      if (!items.length) throw new ToolError('OUTPUT_TOO_LARGE', 'This individual row exceeds the tool response budget. Use the visible page or exported project for its complete details; reducing the page size cannot shorten this row.', { offset: next });
+      break;
+    }
+    items.push(item);
+    bytes += itemBytes;
+  }
+  return { items, total: rows.length, nextOffset: next < rows.length ? next : null };
 }
 export function siteTool<S extends TSchema>(
   name: string, description: string, inputSchema: S,

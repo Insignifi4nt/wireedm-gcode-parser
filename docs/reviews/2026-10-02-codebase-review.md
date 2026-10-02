@@ -26,6 +26,10 @@ During the review, the user requested immediate fixes using Astra High agents. F
 | F12 | P2 | A full but readable browser cache is hidden behind an empty temporary workbench | Fixed; existing cache validation and backup remain available |
 | F13 | P2 | Simulation repeatedly sorts all cut fragments and rescans completed contour segments | Fixed; incremental exact coverage and outstanding-segment tracking |
 | F14 | P2 | A failed replacement DXF preview leaves an older agent preparation importable | Fixed; replacement preparation invalidates the old handle |
+| F15 | P2 | Dashboard popup menus lose keyboard context and can outlive an interaction lock | Fixed; shared focus/navigation behavior, lock dismissal and retryable inputs |
+| F16 | P2 | Blocked controller export has no direct settings route and exposes its background to assistive technology | Fixed; real settings handoff and modal isolation |
+| F17 | P2 | Valid agent result pages exceed the response budget and force repeated smaller queries | Fixed; byte-adaptive complete pages and lazy projection |
+| F18 | P2 | Agent context advertises obsolete preparations and hides the workflow blocking edits | Fixed; current-preparation checks, workflow identity and truthful history availability |
 
 ### F1 — Use boundary containment, not a concave polygon's centroid
 
@@ -127,6 +131,42 @@ A repeated Node probe against the previous committed implementation measured 20,
 
 After validating the supplied workbench version, a new preparation attempt now clears the previous handle before reading/validating the replacement. Failure leaves no importable preparation and an old handle returns `STALE_STATE`. The integration regression uses a compact array that exceeds the shared expansion limit, verifies the resource error, and confirms no project is saved. Read fresh context and successfully prepare/review the intended file before importing it.
 
+### F15 — Keep dashboard menu focus and retries predictable
+
+The final live-browser pass reproduced ArrowDown doing nothing on **More path project import options**, while Enter opened its menu but left focus on the trigger. The project export menu also lacked complete arrow, Home/End and Tab behavior. An already open popup could keep its items active after the parent became locked.
+
+A shared dashboard menu hook now opens and focuses the first/last item, supports wrapping arrow navigation and Home/End, restores the trigger on Escape/selection, dismisses on outside pointer/focus, and lets native Tab/Shift+Tab continue past the trigger. Locked menus disappear. Import errors are announced as alerts; file inputs clear before awaiting the import callback so selecting the same file can retry after a failure. Native browser tests verify both menus' tab order, beyond the component tests' simulated events.
+
+### F16 — Make export blockers actionable and isolate the modal
+
+With no installed machine, the visible controller export contained an empty selector, disabled generation button and instructions to find **Workbench Settings → Machines & setups**. It had no route to that section. Its custom focus loop also left the entire editor exposed in the accessibility tree behind the modal.
+
+Missing machine/setup/exact-post states now offer **Open Machines & setups**. This finishes the export workflow through existing transition guards, closes its modal/drawer and opens the real installation/settings section. The shared modal hook isolates background content while the existing keyboard loop preserves repair-prompt access and prevents editor shortcuts. Closing and settings navigation stay disabled during generation. Tests cover modal-to-modal handoff, background restoration, and unsaved geometry retained without saving or discarding it. A live WebMCP context read during this UI flow correctly returned `workflowCommand: "export.preview"` and `editsAvailable: false`.
+
+### F17 — Return usable agent pages without truncating rows
+
+Offset queries previously sliced a fixed row count and only then discovered that the complete envelope exceeded 32 KiB. Long but valid geometry metadata made even default-sized queries fail and forced agents to guess a smaller limit. Summary projection also allocated every row before slicing the requested page.
+
+Pages now accumulate complete serialized UTF-8 rows up to 24 KiB, reserving envelope space, and project only the requested rows. They preserve order, exact row contents and `total`; `nextOffset` is the actual continuation, not the requested page size. If one row cannot fit by itself, the explicit `OUTPUT_TOO_LARGE` error identifies its offset and explains that reducing the limit cannot help. Tests cover multibyte/escaped content, exact operation segment order, no skipped/duplicated rows and unused-row projection. Existing argument and row shapes are unchanged. Agents must follow returned `nextOffset`, as documented in the public guide.
+
+### F18 — Describe the state an agent can actually act on
+
+Context could retain a DXF preparation after its captured workbench changed, although import rejected it. Package preparations similarly need the exact adapter and machine/post catalog they were reviewed against; unrelated project/preferences changes are allowed. These handles now disappear from context only under their actual invalidation rules. Package checks reuse a pure domain helper based on the existing fingerprint; the authoritative under-lock installation validation remains unchanged, including protection against another tab's storage edits.
+
+`edm_get_context` now adds the active `workflowCommand`. Busy workflow context advises waiting and refreshing context. History returns `UNAVAILABLE` while its editor callback is absent instead of falsely reporting a successful no-op; `changed: false` still means no retained step. The guide explains these states and continuation rules. Tests distinguish valid/stale package preparations and unavailable/empty history. The Agent panel also exposes the hosted workflow guide and explains its empty history without storing arguments or document contents.
+
+## Final UX walkthrough
+
+This pass used the running app in the Codex in-app browser at its default 1317 × 871 viewport, with a new `UX-audit-rectangle` project copied from the repository's 10 × 10 mm DXF fixture. Existing browser projects were not edited. Current screenshots and accessibility state, plus native keyboard behavior and source regressions, ground the findings; this is not a full screen-reader, WCAG or physical-machine certification.
+
+1. **Library and import menu — improved.** Main import choices were clear. Raw ISO update timestamps were difficult to scan; rows now show local dates/times with exact timestamps retained in semantic `time` elements and tooltips. Keyboard menu defects are fixed in F15.
+2. **DXF review — healthy in the exercised flow.** The app required explicit units and showed supported entity count, layers and resulting 10 × 10 mm bounds before import. No redesign was needed.
+3. **Diagnostics, setup and save — healthy in the exercised flow.** The missing initial-wire diagnostic led directly to its real setup workflow. Reviewing a point changed the draft to Unsaved; applying the workflow and saving produced a truthful Saved state. No machining choice was inferred for a user's job.
+4. **Controller export to machine settings — improved.** F16 adds a direct recovery action and correct modal isolation. The new action opened the existing package-installation section while retaining the project.
+5. **Agent readiness and inspection — improved.** The visible Agent panel now links directly to its guide. A real tool call reported the exact open export workflow; F17/F18 improve large-query continuation and recovery from stale/unavailable state.
+
+The local screenshot walkthrough is `tmp/review-2026-10-02/ux/UX-review.md`, with inspected before/after JPEGs in the same ignored evidence directory. Code and regression tests are included in this PR; screenshots of the existing local library are retained locally.
+
 ## Additional optimization and maintainability opportunities
 
 1. **Reduce first-open assets.** Baseline production chunks: main 638.09 kB (180.45 kB gzip), shared JSX/runtime 81.55 kB (21.94 gzip), shared package-tools client chunk 187.03 kB (59.38 gzip). The built main HTML preloads the latter two. Editor is a separate 423.46 kB chunk; simulation is 916.41 kB. The first-run onboarding image alone is 2.64 MB. Resize/re-encode that image and trace startup imports before choosing new lazy boundaries. STEP/WASM/source archives are optional paths; do not count all distribution bytes as startup transfer.
@@ -153,6 +193,8 @@ Baseline at `c45991a`:
 First-pass validation at `6511815`: **195 test files / 1,904 unit and integration tests passed**, **80 Chromium tests passed / one optional preseeded smoke skipped**. TypeScript/production build, documentation and release checks, all three UPID fixtures, all three unchanged Robofil post fixtures and complete package validation passed. GitHub Review checks and GitGuardian also passed. The 0.0.689 release record and PR carry the compatibility checklist. The build retains the pre-existing large-chunk and OCCT browser-externalization warnings.
 
 Second-pass final validation: **198 test files / 1,942 unit and integration tests passed**, **80 Chromium tests passed / one optional preseeded smoke skipped**. TypeScript/production build, generated authoring-doc parity, release check and all three UPID fixtures passed. All three unchanged Robofil 2.6.0 post fixtures and the complete package validation passed. Dependency removal reported zero audited vulnerabilities. Public documentation was regenerated and checked after the final report/release update. Independent reviews covered DXF budgets, history boundaries, cache reconnection, navigator lookup semantics and failed preparation invalidation; the extra spline-depth and metadata-amplification findings were fixed before this passing run. Source changes remained frozen during integrated verification.
+
+Final UX/agent-pass validation: **199 files / 1,963 unit and integration tests passed**, **82 Chromium tests passed / one optional preseeded smoke skipped**. TypeScript/production build and documentation checks passed. Native browser regressions cover dashboard menu Tab/Shift+Tab order and export-to-settings isolation. Focused agent/package coverage includes complete byte-limited pages, valid/stale preparations, workflow state and history availability. A live in-app-browser walkthrough and real WebMCP context calls verified the final visible behavior. The single PR remains version 0.0.689.
 
 Local investigation scripts, output and baseline logs are retained under `tmp/review-2026-10-02/` (ignored scratch evidence). New regression tests are checked in beside the affected modules. Independent Astra High reviews covered geometry/performance and the two storage/revision implementations, catching and fixing additional empty-revision and untouched-index recovery cases before the final passing run.
 

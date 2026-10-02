@@ -92,6 +92,44 @@ async function prepareControllerJob(h: Awaited<ReturnType<typeof harness>>) {
 }
 
 describe('workbench agent actions', () => {
+  it('keeps a package preparation across preference changes but clears it after machine storage changes', async () => {
+    const prepare = vi.fn(defaultAppServices.prepareStoredMachinePackageInstallation);
+    const h = await harness({ prepareStoredMachinePackageInstallation: prepare });
+    const { source } = await packageSource();
+    const context = await h.call('edm_workflow_context', {});
+    const receipt = await h.call('edm_prepare_machine_package', { expectedVersion: context.data.version, source });
+    expect(receipt.ok).toBe(true);
+    await act(async () => { await h.app().handleSaveCatalogPreferences(h.app().connectedWorkbench!.manifest.preferences); });
+    expect((await h.call('edm_workflow_context', {})).data.packagePreparationId).toBe(receipt.data.preparationId);
+    const prepared = await prepare.mock.results[0].value;
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    await act(async () => { expect(await h.app().handleCommitMachinePackage(prepared.prepared, { kind: 'install-new' })).toBe(true); });
+    const fresh = await h.call('edm_workflow_context', {});
+    expect(fresh.data.packagePreparationId).toBeNull();
+    expect(await h.call('edm_install_machine_package', { expectedVersion: fresh.data.version, preparationId: receipt.data.preparationId, resolution: { kind: 'install-new' } })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+  });
+
+  it('removes a DXF preparation from context when its captured workbench changes', async () => {
+    const h = await harness();
+    const context = await h.call('edm_workflow_context', {});
+    const prepared = await h.call('edm_prepare_dxf', { expectedVersion: context.data.version, source: { fileName: 'part.dxf', text } });
+    expect(prepared.ok).toBe(true);
+    expect((await h.call('edm_workflow_context', {})).data.dxfPreparationId).toBe(prepared.data.preparationId);
+    await act(async () => { await h.app().handleSaveCatalogPreferences(h.app().connectedWorkbench!.manifest.preferences); });
+    const fresh = await h.call('edm_workflow_context', {});
+    expect(fresh.data.version).not.toBe(context.data.version);
+    expect(fresh.data.dxfPreparationId).toBeNull();
+    expect(await h.call('edm_import_dxf', { expectedVersion: fresh.data.version, preparationId: prepared.data.preparationId, unitCandidateId: 'millimeters', declaredUnitOverrideAcknowledged: false })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+  });
+
+  it('distinguishes unavailable history from a retained history with no undo step', async () => {
+    const h = await harness();
+    await importCircle(h);
+    expect(await h.call('edm_draft_history', { draftVersion: 'draft', direction: 'undo' })).toMatchObject({ ok: false, error: { code: 'UNAVAILABLE' } });
+    h.draft().current = { ...h.draft().current!, history: () => false };
+    expect(await h.call('edm_draft_history', { draftVersion: 'draft', direction: 'undo' })).toMatchObject({ ok: true, data: { changed: false } });
+  });
+
   it('captures the actual editor callback as a small artifact receipt and keeps the draft unchanged', async () => {
     const h = await harness();
     await importCircle(h);
@@ -485,6 +523,7 @@ describe('workbench agent actions', () => {
     const abort = new AbortController();
     let pending!: Promise<unknown>;
     await act(async () => { pending = h.execute('edm_prepare_machine_package', { expectedVersion: context.data.version, source }, abort.signal); await started; });
+    expect(await h.call('edm_workflow_context', {})).toMatchObject({ ok: true, data: { busy: true, nextSteps: ['Wait for the running operation, then read edm_workflow_context again.'] } });
     expect(await h.call('edm_import_upid', { expectedVersion: context.data.version, source: { fileName: 'x.json', text: '{}' } })).toMatchObject({ ok: false, error: { code: 'BUSY' } });
     if (reason === 'cancel') abort.abort();
     else await act(async () => { await h.app().handleSaveCatalogPreferences(h.app().connectedWorkbench!.manifest.preferences); });

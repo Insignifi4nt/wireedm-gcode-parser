@@ -3,6 +3,32 @@ import { portableUpidIntentFixture } from '@/domain/upid/__tests__/portableUpidI
 import { workbenchSiteTools, type WorkbenchToolState } from './workbenchSiteTools';
 
 describe('workbench site queries', () => {
+  it('identifies the workflow blocking edits in context', async () => {
+    const state: WorkbenchToolState = { workbench: null, busy: false, draft: { projectId: 'test', version: 'v1', document: portableUpidIntentFixture(), dirty: true, workflowOpen: true, workflowCommand: 'start-point' } };
+    const context = workbenchSiteTools(() => state).find(tool => tool.name === 'edm_get_context')!;
+    expect(await context.execute({})).toMatchObject({ ok: true, data: { draft: { workflowOpen: true, workflowCommand: 'start-point', editsAvailable: false } } });
+    state.draft!.workflowOpen = false;
+    expect(await context.execute({})).toMatchObject({ ok: true, data: { draft: { workflowCommand: null } } });
+  });
+
+  it('returns complete ordered geometry across byte-limited pages', async () => {
+    const document = portableUpidIntentFixture();
+    document.segments = Array.from({ length: 20 }, (_, index) => ({ ...document.segments[0], id: `segment-${index}`, layer: '部品'.repeat(600) }));
+    const operation = document.plan.operations[0];
+    operation.segmentRefs = [...document.segments].reverse().map(segment => ({ segmentId: segment.id, reversed: true }));
+    const query = workbenchSiteTools(() => ({ workbench: null, busy: false, draft: { projectId: 'test', version: 'v1', document, dirty: true, workflowOpen: false } })).find(tool => tool.name === 'edm_query_geometry')!;
+    const ids: string[] = [];
+    let offset: number | null = 0;
+    while (offset !== null) {
+      const result = await query.execute({ target: { kind: 'current-draft', version: 'v1' }, kind: 'segments', operationId: operation.id, limit: 50, offset }) as { ok: boolean; data: { items: { id: string; reversed: boolean }[]; nextOffset: number | null } };
+      expect(result.ok).toBe(true);
+      expect(result.data.items.every(item => item.reversed)).toBe(true);
+      ids.push(...result.data.items.map(item => item.id));
+      offset = result.data.nextOffset;
+    }
+    expect(ids).toEqual(operation.segmentRefs.map(ref => ref.segmentId));
+  });
+
   it('reads the unsaved draft, rejects old versions and preserves the document', async () => {
     const document = portableUpidIntentFixture();
     const before = JSON.stringify(document);

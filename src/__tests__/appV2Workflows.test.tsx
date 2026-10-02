@@ -4,6 +4,7 @@ import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter'
 
 import {
   cleanupAppTestContext,
+  confirmPendingDxfImport,
   createAppTestContext,
   flushAsync,
   prepareDxfImport,
@@ -119,6 +120,32 @@ describe('V2 app workflows', () => {
     expect(context.container.textContent).toContain('Installed machines');
     expect((context.container.querySelector('select') as HTMLSelectElement).value).toBe('ask');
     expect(context.container.textContent).toContain('No machines installed');
+  });
+
+  it('opens machine settings from blocked export while preserving the project and modal isolation', async () => {
+    await renderApp(context);
+    await prepareDxfImport(context.container, new File([simpleLineDxf()], 'settings-route.dxf'));
+    await confirmPendingDxfImport(context.container, 'millimeters');
+    const manifest = await storedJson('workbench.json');
+    const projectBefore = await storedJson(manifest.projects[0].path);
+    await act(async () => context.container.querySelector<HTMLButtonElement>('button[aria-label="Export menu"]')!.click());
+    await act(async () => context.container.querySelector<HTMLButtonElement>('[data-editor-workflow-command="export.preview"]')!.click());
+    const exportDialog = context.container.querySelector<HTMLElement>('[role="dialog"][aria-label="Controller artifact export"]')!;
+    expect(exportDialog).not.toBeNull();
+    await act(async () => [...exportDialog.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Open Machines & setups')!.click());
+    const settings = context.container.querySelector<HTMLElement>('[role="dialog"][aria-label="Workbench settings"]')!;
+    expect(settings.querySelector('h2')?.textContent).toBe('Machines & setups');
+    expect(settings.textContent).toContain('Install a machine package');
+    expect(settings.closest('[inert], [aria-hidden="true"]')).toBeNull();
+    expect(settings.contains(document.activeElement)).toBe(true);
+    expect(context.container.querySelector('[role="dialog"][aria-label="Controller artifact export"]')).toBeNull();
+    const editor = context.container.querySelector<HTMLElement>('[data-editor-context="path-project"]')!;
+    expect(editor.closest('[inert]')).not.toBeNull();
+    expect(editor.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(await storedJson(manifest.projects[0].path)).toEqual(projectBefore);
+    await act(async () => settings.querySelector<HTMLButtonElement>('button[aria-label="Close settings"]')!.click());
+    expect(editor.closest('[inert], [aria-hidden="true"]')).toBeNull();
+    expect(context.container.querySelector('[data-editor-context="path-project"]')).toBe(editor);
   });
 });
 

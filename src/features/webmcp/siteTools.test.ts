@@ -1,8 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Type } from '@sinclair/typebox';
-import { object, registerSiteTools, siteTool, ToolError, type SiteTool, type SiteToolActivity } from './siteTools';
+import { object, page, registerSiteTools, siteTool, ToolError, type SiteTool, type SiteToolActivity } from './siteTools';
 
 describe('site tool boundary', () => {
+  it('adapts pages to serialized UTF-8 bytes without skipping or truncating rows', () => {
+    const rows = Array.from({ length: 12 }, (_, id) => ({ id, message: '界\u0000'.repeat(500) }));
+    const received: typeof rows = [];
+    let offset: number | null = 0;
+    while (offset !== null) {
+      const result: { items: typeof rows; total: number; nextOffset: number | null } = page(rows, { offset, limit: 10 });
+      expect(result.items.length).toBeGreaterThan(0);
+      expect(result.items.length).toBeLessThan(10);
+      expect(new TextEncoder().encode(JSON.stringify(result)).length).toBeLessThan(32 * 1024);
+      expect(result.total).toBe(rows.length);
+      received.push(...result.items);
+      offset = result.nextOffset;
+    }
+    expect(received).toEqual(rows);
+  });
+
+  it('projects only requested rows and identifies an individually oversized row', async () => {
+    const project = vi.fn((id: number) => ({ id }));
+    expect(page([0, 1, 2, 3], { offset: 1, limit: 1 }, project)).toEqual({ items: [{ id: 1 }], total: 4, nextOffset: 2 });
+    expect(project.mock.calls).toEqual([[1]]);
+    expect(page([0], { offset: 5 })).toEqual({ items: [], total: 1, nextOffset: null });
+    const tool = siteTool('rows', 'Read', object({}), () => page(['small', 'x'.repeat(33_000)], { offset: 1 }));
+    expect(await tool.execute({})).toMatchObject({ ok: false, error: { code: 'OUTPUT_TOO_LARGE', details: { offset: 1 }, message: expect.stringContaining('reducing the page size cannot') } });
+  });
+
   it('reports bounded argument paths without returning input values', async () => {
     const tool = siteTool('read', 'Read', object({ count: Type.Integer({ minimum: 1 }) }), () => null);
     expect(await tool.execute({ count: 0 })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT', details: { issues: [{ path: '/count', message: expect.any(String) }] } } });
