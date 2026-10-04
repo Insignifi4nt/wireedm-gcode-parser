@@ -374,7 +374,7 @@ describe('Editor preview controls and guide', () => {
     expect(dialog?.textContent).toContain('Canvas Navigation');
     expect(dialog?.textContent).not.toContain('Preview Navigation');
     expect(dialog?.textContent).toContain('UPID Path Navigator');
-    expect(dialog?.textContent).toContain('Close or reopen Program Lines');
+    expect(dialog?.textContent).toContain('Use Lines for grouped operations');
     expect(dialog?.textContent).toContain('Export normalized ISO in the header');
     expect(dialog?.textContent).not.toContain('Export ISO downloads');
     expect(dialog?.querySelector('[data-editor-guide-highlight="export-iso"]')).toBeNull();

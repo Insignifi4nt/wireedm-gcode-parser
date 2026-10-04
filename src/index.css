@@ -98,6 +98,13 @@ textarea {
   font: inherit;
 }
 
+/* Source editors must retain fixed-width text despite the shared control reset. */
+.gcode-text-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.75;
+}
+
 [data-editor-program-tree] [role="treeitem"]:focus-visible > div:first-child {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
@@ -230,6 +237,13 @@ summary:focus-visible {
   }
 }
 
+@media (max-width: 1023px) {
+  [data-editor-main-grid][data-machine-program-view="code"] > [data-editor-canvas-panel],
+  [data-editor-main-grid][data-machine-program-view="preview"] > [data-editor-inspector-rail] {
+    display: none;
+  }
+}
+
 @media (min-width: 1024px) {
   [data-editor-main-grid][data-inspector-collapsed="false"] {
     grid-template-columns: minmax(0, 1fr) 4px var(--editor-inspector-width);
@@ -237,6 +251,10 @@ summary:focus-visible {
 
   [data-editor-main-grid][data-inspector-collapsed="true"] {
     grid-template-columns: minmax(0, 1fr) 42px;
+  }
+
+  [data-editor-main-grid][data-is-path-project="false"][data-inspector-collapsed="false"] {
+    grid-template-columns: minmax(320px, 1fr) 4px min(var(--editor-inspector-width), calc(100% - 324px));
   }
 
   [data-editor-main-grid][data-is-path-project="true"][data-has-active-right-dock="false"] {

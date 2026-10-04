@@ -142,9 +142,9 @@ test('explains missing compensation and exports after the decision is saved', as
   const inspector = page.getByRole('dialog', { name: 'G-code inspection', exact: true });
   await expect(inspector).toBeVisible();
   await expect(page.getByRole('dialog', { name: 'Controller artifact export' })).toHaveCount(0);
+  await inspector.getByRole('button', { name: 'Context', exact: true }).click();
   await expect(inspector.getByLabel('Inspection initial units')).toHaveValue('mm');
   await expect(inspector.getByLabel('Inspection initial units')).toBeDisabled();
-  await inspector.getByRole('button', { name: 'Context', exact: true }).click();
   await expect(inspector).toContainText('cristian.robofil-100.v2-candidate@2.6.0');
   await expect(inspector).toContainText('Saved revision');
   await expect(inspector).toContainText('Saved setup');

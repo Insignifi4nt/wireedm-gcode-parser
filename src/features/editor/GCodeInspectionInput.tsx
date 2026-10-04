@@ -18,7 +18,7 @@ export function GCodeInspectionInput({ onInspect }: {
   }
 
   return (
-    <div className="grid min-h-0 grid-rows-[auto_minmax(160px,1fr)_auto] gap-3 overflow-auto p-4">
+    <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden p-4">
       <div className="flex flex-wrap items-center gap-3">
         <Button disabled={reading} variant="outline" onClick={() => fileInput.current?.click()}>
           <FileUp />{reading ? 'Reading file…' : 'Choose G-code file'}
@@ -39,7 +39,7 @@ export function GCodeInspectionInput({ onInspect }: {
       </div>
       <label className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2 text-xs">
         G-code to inspect
-        <textarea className="min-h-40 resize-none border border-border bg-background p-3 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        <textarea className="gcode-text-input min-h-0 min-w-0 resize-none overflow-auto border border-border bg-background p-3 outline-none focus-visible:ring-1 focus-visible:ring-ring"
           value={text} onChange={(event) => setText(event.currentTarget.value)} spellCheck={false}
           placeholder="Paste the controller program here…" disabled={reading} />
       </label>

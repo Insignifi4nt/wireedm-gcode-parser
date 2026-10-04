@@ -154,12 +154,9 @@ describe('Editor import, export, and parse feedback', () => {
     const programEditor = container.querySelector(
       'textarea[aria-label="Program editor"]'
     ) as HTMLTextAreaElement | null;
-    const rawProgramDetails = container.querySelector(
-      '[data-editor-code-section="text"]'
-    ) as HTMLDetailsElement | null;
     expect(programEditor).not.toBeNull();
-    expect(rawProgramDetails).toBeInstanceOf(HTMLDetailsElement);
-    expect(rawProgramDetails?.open).toBe(false);
+    expect(container.querySelector('#machine-panel-text')?.classList.contains('hidden')).toBe(true);
+    expect(container.querySelector('#machine-tab-lines')?.getAttribute('aria-selected')).toBe('true');
 
     const firstCutRow = container.querySelector(
       '[data-editor-line="2"]'

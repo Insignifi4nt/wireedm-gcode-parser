@@ -10,6 +10,7 @@ import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 import type { EditorMeasurementState } from './useEditorMeasurement';
 
 interface EditorCanvasPanelProps {
+  id?: string;
   canvasMouseMode: CanvasMouseMode;
   draftProgram: LoadedEditorProgram | null;
   constructionPreview?: EditorConstructionPreview | null;
@@ -45,6 +46,7 @@ interface EditorCanvasPanelProps {
 type CanvasMouseMode = 'select' | 'point';
 
 export function EditorCanvasPanel({
+  id,
   canvasMouseMode,
   draftProgram,
   constructionPreview,
@@ -78,6 +80,7 @@ export function EditorCanvasPanel({
 }: EditorCanvasPanelProps) {
   return (
     <section
+      id={id}
       className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#090d10]"
       data-editor-canvas-panel
       data-editor-canvas-model={pathDocument ? 'upid' : 'gcode'}

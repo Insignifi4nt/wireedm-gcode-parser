@@ -2,6 +2,7 @@ import { canonicalGCodeCommand, gcodeCommandDefinition } from './gcodeCommands';
 import { parseGCodeProgramDetailed } from './gcodeParser';
 import type { GCodeModalSnapshot, GCodeProgramInspection, GCodeInspectionOptions, GCodeCommandInspection, GCodeLineInspection } from './gcodeInspectionTypes';
 import type { GCodeInterpreterState } from './gcodeBlockInterpreter';
+import { scanGCodeCommandCodes } from './gcodeBlockInterpreter';
 import type { GCodeParseIssue } from './types';
 import { validateGCodeInspectionSource } from './gcodeInspectionSource';
 
@@ -15,7 +16,7 @@ const snapshot = (state: GCodeInterpreterState): GCodeModalSnapshot => ({
 
 function canonicalDescriptionCode(code: string) {
   const match = /^([GM])\s*(\d+(?:\.\d+)?)$/i.exec(code.trim());
-  return match ? canonicalGCodeCommand(match[1], Number(match[2])) : null;
+  return match && Number.isFinite(Number(match[2])) ? canonicalGCodeCommand(match[1], Number(match[2])) : null;
 }
 
 /** Read-only nominal XY inspection. Context is ephemeral and never changes source or saved profiles. */
@@ -34,8 +35,7 @@ export function inspectGCodeProgram(text: string, options: GCodeInspectionOption
   let programEndLine: number | null = null;
   const parseResult = parseGCodeProgramDetailed(text, options, (line, sourceText, block, before, after) => {
     const context = contexts.get(line);
-    const commandCodes = block.words.filter(word => word.letter === 'G' || word.letter === 'M')
-      .map(word => canonicalGCodeCommand(word.letter, word.value));
+    const commandCodes = scanGCodeCommandCodes(block.cleanedLine);
     for (const code of commandCodes) {
       const base = gcodeCommandDefinition(code);
       const description = context?.commands?.find(item => canonicalDescriptionCode(item.code) === code) ?? descriptions.get(code);
@@ -44,7 +44,7 @@ export function inspectGCodeProgram(text: string, options: GCodeInspectionOption
           ? 'Legacy Robofil absolute IJ arc-center mode' : base.meaning),
         coverage: context?.previewUnsupported && ['G0', 'G1', 'G2', 'G3'].includes(code) ? 'recognized-not-modeled' as const
           : description && base.coverage === 'unknown' ? 'controller-specific' as const : base.coverage,
-        scope: description?.scope ?? (code === 'G60' && options.profile === 'legacy-robofil' ? 'legacy-robofil' : 'nominal XY interpreter')
+        scope: description?.scope ?? (code === 'G60' && options.profile === 'legacy-robofil' ? 'legacy-robofil' : base.scope ?? 'nominal XY interpreter')
       };
       const row: NonNullable<ReturnType<typeof inventory.get>> = inventory.get(code) ?? { count: 0, sourceLines: [], definitions: new Map() };
       row.count++;
@@ -56,7 +56,7 @@ export function inspectGCodeProgram(text: string, options: GCodeInspectionOption
       if (code.startsWith('M') && definition.coverage === 'unknown') extras.push({ line, type: 'warning',
         message: `Unknown command ${code}; its machine or control-flow effects are not modeled.` });
     }
-    if (commandCodes.includes('G41') || commandCodes.includes('G42')) extras.push({ line, type: 'warning',
+    if (commandCodes.some(code => ['G41', 'G42', 'G41.1', 'G42.1'].includes(code))) extras.push({ line, type: 'warning',
       message: 'Controller cutter compensation is not applied to the nominal XY preview.' });
     const nonXy = block.words.filter(word => ['Z', 'A', 'B', 'C', 'U', 'V', 'W'].includes(word.letter));
     if (nonXy.length) extras.push({ line, type: 'warning',

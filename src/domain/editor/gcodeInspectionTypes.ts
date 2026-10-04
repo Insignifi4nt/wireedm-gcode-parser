@@ -50,7 +50,7 @@ export interface GCodeModalSnapshot {
   readonly xyMode: 'absolute' | 'incremental';
   readonly ijMode: 'absolute' | 'incremental';
   readonly motion: GCodeInterpreterState['motion'];
-  readonly plane: 'XY' | 'XZ' | 'YZ';
+  readonly plane: GCodeInterpreterState['plane'];
   /** Annotation only: the preview never applies controller compensation. */
   readonly compensation: 'off' | 'left' | 'right' | 'unknown';
 }

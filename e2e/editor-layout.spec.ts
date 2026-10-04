@@ -9,7 +9,7 @@ async function openReadyWorkbench(page: import('@playwright/test').Page) {
   await dismissOnboarding(page);
 }
 
-test('machine program editor uses one header and an open resizable inspector', async ({ page }) => {
+test('machine program editor keeps resizable code panels and full-height text editing', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openReadyWorkbench(page);
   await page.locator('input[aria-label="Machine program file"]').setInputFiles({
@@ -53,7 +53,7 @@ test('machine program editor uses one header and an open resizable inspector', a
   await expect(page.locator('[data-editor-status-bar]')).toHaveCSS('height', '24px');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
 
-  await page.locator('[data-editor-code-section="text"] summary').click();
+  await page.getByRole('tab', { name: 'Text', exact: true }).click();
   const draft = await page.getByRole('textbox', { name: 'Program editor', exact: true }).inputValue();
   await appHeader.getByRole('button', { name: 'Inspect G-code draft' }).click();
   const inspection = page.getByRole('dialog', { name: 'G-code inspection', exact: true });
@@ -81,45 +81,46 @@ test('machine program line commands stay fully visible at desktop and laptop wid
 });
 
 for (const width of [767, 320]) {
-  test(`raw machine program keeps two usable stacked panes at ${width}px`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 800 });
+  test(`machine program gives code and preview a complete viewport at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 500 });
     await openReadyWorkbench(page);
     await page.locator('input[aria-label="Machine program file"]').setInputFiles({
-      name: `compact-machine-${width}.nc`,
-      mimeType: 'text/plain',
-      buffer: Buffer.from('%\nG90\nG0 X0 Y0\nG1 X20 Y0\nG1 X20 Y10\nM02\n%')
+      name: `compact-machine-${width}.nc`, mimeType: 'text/plain',
+      buffer: Buffer.from(['G21 G90', 'G0 X0 Y0', ...Array.from({ length: 100 }, (_, i) => `G1 X${i} Y10`), 'M02'].join('\n'))
     });
     await dismissOnboarding(page);
 
-    const mainGrid = page.locator('[data-editor-main-grid]');
     const canvas = page.locator('[data-editor-canvas-panel]');
     const inspector = page.locator('[data-editor-inspector-rail]');
-    await expect(mainGrid).toBeVisible();
-    await expect(canvas).toBeVisible();
     await expect(inspector).toBeVisible();
+    expect((await inspector.boundingBox())!.height).toBeGreaterThan(300);
+    await page.getByRole('tab', { name: 'Text', exact: true }).click();
+    const text = page.getByRole('textbox', { name: 'Program editor', exact: true });
+    await text.press('Control+End');
+    expect(await text.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+    // Existing editable-import cleanup removes terminal M02. The last move must remain reachable.
+    await expect(text).toHaveValue(/G1 X99 Y10$/);
+    expect(await text.evaluate((element: HTMLTextAreaElement) => element.selectionStart === element.value.length)).toBe(true);
+    const draft = await text.inputValue();
 
-    await expect.poll(async () => {
-      const [mainGridBox, canvasBox, inspectorBox] = await Promise.all([
-        mainGrid.boundingBox(),
-        canvas.boundingBox(),
-        inspector.boundingBox()
-      ]);
-      if (!mainGridBox || !canvasBox || !inspectorBox) return false;
-      const visibleInspectorHeight = Math.max(
-        0,
-        Math.min(inspectorBox.y + inspectorBox.height, mainGridBox.y + mainGridBox.height) -
-          Math.max(inspectorBox.y, mainGridBox.y)
-      );
-      return (
-        canvasBox.height >= 300 &&
-        visibleInspectorHeight >= 280 &&
-        inspectorBox.y >= canvasBox.y + canvasBox.height
-      );
-    }).toBe(true);
-
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-      width
-    );
+    await page.getByRole('tab', { name: 'Preview', exact: true }).click();
+    await expect(canvas).toBeVisible();
+    expect((await canvas.boundingBox())!.height).toBeGreaterThan(300);
+    await expect(page.getByRole('img', { name: 'G-code path preview', exact: true })).toBeVisible();
+    await page.getByRole('tab', { name: 'Code', exact: true }).click();
+    await expect(text).toBeVisible();
+    await expect(text).toHaveValue(draft);
+    await page.getByRole('tab', { name: 'Text', exact: true }).press('End');
+    await expect(page.getByRole('tab', { name: 'Points', exact: true })).toBeFocused();
+    await page.getByLabel('Measurement point X', { exact: true }).fill('12');
+    await page.getByLabel('Measurement point Y', { exact: true }).fill('7');
+    await page.getByRole('button', { name: 'Add Point', exact: true }).click();
+    const exportPoints = page.getByRole('button', { name: 'Export CSV', exact: true });
+    await exportPoints.scrollIntoViewIfNeeded();
+    await expect(exportPoints).toBeInViewport();
+    await expect(exportPoints).toBeEnabled();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(500);
   });
 }
 
