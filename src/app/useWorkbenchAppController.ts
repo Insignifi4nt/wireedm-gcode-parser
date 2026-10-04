@@ -947,7 +947,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
         throw new ToolError('STALE_STATE', result.error.message);
       }
       return result.ok
-        ? { ok: true as const, workbench: Object.freeze({ ...workbench, machines: result.library }) }
+        ? { ok: true as const, workbench: Object.freeze({ ...workbench, posts: result.posts, machines: result.library }) }
         : result;
     }, 'Active machine setup changed.', () => guardRejected && Boolean(options.signal || options.beforeWrite));
   }

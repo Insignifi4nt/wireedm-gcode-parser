@@ -1,4 +1,4 @@
-import { buildMachinePackageArchive, prepareStoredMachinePackageInstallation } from '@/domain/machine-package';
+import { buildMachinePackageArchive, prepareStoredMachinePackageInstallation, commitStoredMachinePackageInstallation } from '@/domain/machine-package';
 import { machinePackageFixture } from '@/domain/machine-package/__tests__/machinePackageFixture';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -8,6 +8,14 @@ import { importExternalProgram } from '@/domain/editor/importExternalProgram';
 import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
 import { connectWorkbenchDirectory } from '@/domain/storage/connectWorkbenchDirectory';
 import { FakeDirectoryHandle } from '@/domain/storage/__tests__/fakeDirectoryHandle';
+import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
+import { createBrowserDirectoryAdapter } from '@/domain/storage/browserDirectoryAdapter';
+import { initializeWorkbenchCatalog, type ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
+import { createWorkbenchProjectDocument } from '@/domain/workbench-catalog/workbenchProject';
+import { addStoredWorkbenchProject } from '@/domain/workbench-catalog/workbenchCatalogMutations';
+import { updateWorkbenchCatalogPreferences } from '@/domain/workbench-catalog/storage/updateWorkbenchCatalogPreferences';
+import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { setManualCompensationIntent } from '@/domain/compensation/intent';
 import { defaultAppServices, type AppServices } from './appServices';
 import { createDxfImportServices } from './dxfImportServices';
 import { directDxfProcessor } from '@/features/dxf-import/dxfProcessorTestSupport';
@@ -58,6 +66,65 @@ describe('workbench controller asynchronous operations', () => {
     if (!imported.ok) throw new Error(imported.error.message);
     return imported;
   }
+
+  it.each(['cache', 'folder'])('refreshes matching posts after activation so another-tab machine can generate, preserving stale-manifest rejection (%s)', async kind => {
+    const adapter = kind === 'cache' ? createBrowserCacheAdapter(localStorage, { namespace: crypto.randomUUID() })
+      : createBrowserDirectoryAdapter(new FakeDirectoryHandle('activation-refresh') as unknown as FileSystemDirectoryHandle);
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const geometry = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 10, y: 10 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 10 }, end: { x: 0, y: 10 } },
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 10 }, end: { x: 0, y: 0 } }
+    ]);
+    const document = setManualCompensationIntent(geometry, geometry.plan.operations[0].id, 'centerline')!;
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    const project = createWorkbenchProjectDocument({ id: 'activation.part', name: 'Activation part', now: new Date('2026-10-04T00:00:00.000Z'),
+      source: { kind: 'upid', files: [] }, content: { kind: 'upid-document', document } });
+    if (!project.ok) throw new Error(project.error.message);
+    const added = await addStoredWorkbenchProject(initialized.workbench, { project: project.project, ownedFiles: [] });
+    if (!added.ok) throw new Error(added.error.message);
+    async function install(workbench: ConnectedWorkbenchCatalog, machineId: string, version: string) {
+      const source = await machinePackageFixture({ machineId, postVersion: version, packageVersion: version });
+      const built = await buildMachinePackageArchive({ ...source, document: { ...source.document, machine: { ...source.document.machine,
+        limits: { ...source.document.machine.limits, yTravel: { status: 'known', millimeters: 100 } } } } });
+      if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
+      const prepared = await prepareStoredMachinePackageInstallation(workbench, built.archive);
+      if (!prepared.ok) throw new Error(prepared.error.message);
+      const installed = await commitStoredMachinePackageInstallation(prepared.prepared, { kind: 'install-new' });
+      if (!installed.ok) throw new Error(installed.error.message);
+      return installed.workbench;
+    }
+    const firstTab = await install(added.workbench, 'shop.first', '1.0.0');
+    const read = await mount({ connectCachedWorkbench: async () => ({ ok: true, kind: 'opened', workbench: firstTab }) });
+    await act(async () => { await read().handleOpenWorkbenchProject(project.project.id); });
+    const otherTab = await install(firstTab, 'shop.second', '2.0.0');
+    const postBytes = await adapter.readExactText!('posts/library.json');
+    await act(async () => { expect(await read().handleActivateMachineSetup('shop.first', 'production')).toBe(true); });
+    expect(read().connectedWorkbench?.manifest).toBe(firstTab.manifest);
+    expect(read().connectedWorkbench?.machines.machines).toHaveLength(2);
+    expect(read().connectedWorkbench?.posts).toEqual(otherTab.posts);
+    expect(await adapter.readExactText!('posts/library.json')).toBe(postBytes);
+    await act(async () => {
+      const generated = await read().handleGenerateControllerArtifact({ machineId: 'shop.second' });
+      expect(generated).toMatchObject({ ok: true, artifact: { post: otherTab.machines.machines[1].bindings[0].post } });
+    });
+    const reopened = await initializeWorkbenchCatalog(adapter);
+    if (!reopened.ok) throw new Error(reopened.error.message);
+    const changed = await updateWorkbenchCatalogPreferences(reopened.workbench, {
+      preferences: { ...reopened.workbench.manifest.preferences, importUnits: { mode: 'fixed', unit: 'inches' } }, updatedAt: new Date('2026-10-04T00:02:00.000Z')
+    });
+    if (!changed.ok) throw new Error(changed.error.message);
+    const manifestBytes = await adapter.readExactText!('workbench.json');
+    const writes = vi.spyOn(adapter, 'writeText');
+    await act(async () => {
+      expect(await read().handleGenerateControllerArtifact({ machineId: 'shop.second' })).toMatchObject({ ok: false,
+        error: { message: 'Workbench manifest changed after this catalog snapshot was opened.' } });
+    });
+    expect(writes).not.toHaveBeenCalled(); expect(await adapter.readExactText!('workbench.json')).toBe(manifestBytes);
+    writes.mockRestore();
+  });
 
   it('rejects oversized DXF before reading the file and permits a later bounded import', async () => {
     const prepare = vi.fn(testDxfServices.prepareDxfProjectImport);

@@ -9,6 +9,7 @@ import {
   readPostLibraryStorage,
   type PostLibraryStorageError
 } from '@/domain/post-processor/postLibraryStorage';
+import type { PostLibrary } from '@/domain/post-processor/postLibrary';
 import {
   parseWorkbenchCatalogManifest,
   WORKBENCH_CATALOG_PATH,
@@ -44,7 +45,7 @@ type MachineMutationCatalogMissingError = {
 };
 
 export type ActivateStoredMachinePostBindingResult =
-  | { ok: true; library: MachineLibrary; machine: MachineDefinition }
+  | { ok: true; library: MachineLibrary; posts: PostLibrary; machine: MachineDefinition }
   | {
       ok: false;
       error:
@@ -129,7 +130,7 @@ export async function activateStoredMachinePostBinding(
     if (!replaced.ok) return replaced;
     const written = await persistMachineLibrary(adapter, replaced.library, options.beforeWrite);
     return written.ok
-      ? { ok: true, machine: activated.machine, library: replaced.library }
+      ? { ok: true, machine: activated.machine, library: replaced.library, posts: state.posts }
       : written;
   });
 }
@@ -152,7 +153,7 @@ async function readMutationState(adapter: WorkbenchStorageAdapter, machineId: st
       }
     };
   }
-  return { ok: true as const, machines: machines.library, machine };
+  return { ok: true as const, machines: machines.library, posts: posts.library, machine };
 }
 
 async function readAuthoritativeCatalog(adapter: WorkbenchStorageAdapter) {
