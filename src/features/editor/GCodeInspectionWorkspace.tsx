@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { inspectGCodeProgram } from '@/domain/editor/gcodeInspection';
 import type { GCodeInspectionOptions } from '@/domain/editor/gcodeInspectionTypes';
 import { EditorPreview } from './EditorPreview';
-import { GCodeInspectionPanel, type GCodeInspectionProvenance } from './GCodeInspectionPanel';
+import { GCodeInspectionPanel, type GCodeInspectionDetailView, type GCodeInspectionProvenance } from './GCodeInspectionPanel';
 
 const PAGE_SIZE = 150;
 const MAX_PREVIEW_ITEMS = 10_000;
@@ -23,6 +23,16 @@ export function GCodeInspectionWorkspace({ text, options, provenance }: {
   const [page, setPage] = useState(0);
   const [lineInput, setLineInput] = useState('1');
   const [navigationError, setNavigationError] = useState<string | null>(null);
+  const [companionView, setCompanionView] = useState<'preview' | GCodeInspectionDetailView>('preview');
+  const [compactView, setCompactView] = useState<'code' | 'companion'>('code');
+  const [compactLayout, setCompactLayout] = useState(() => window.matchMedia?.('(max-width: 767px)').matches ?? false);
+  useEffect(() => {
+    const media = window.matchMedia?.('(max-width: 767px)');
+    if (!media) return;
+    const update = () => setCompactLayout(media.matches);
+    update(); media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
   const lineList = useRef<HTMLDivElement>(null);
   const focusSelectedLine = useRef(false);
   const pinnedContext = Boolean(options?.lineContexts?.length);
@@ -47,6 +57,8 @@ export function GCodeInspectionWorkspace({ text, options, provenance }: {
     setLineInput(String(line));
     setNavigationError(null);
     if (reveal) {
+      setCompactView('code');
+      focusSelectedLine.current = true;
       setQuery(''); setCommandFilter(null); setOnlyIssues(false);
       setPage(Math.floor((line - 1) / PAGE_SIZE));
     } else {
@@ -61,11 +73,12 @@ export function GCodeInspectionWorkspace({ text, options, provenance }: {
       row.focus();
       focusSelectedLine.current = false;
     }
-  }, [selectedLine, activePage, query, commandFilter, onlyIssues]);
+  }, [selectedLine, activePage, query, commandFilter, onlyIssues, compactView]);
 
-  return <div className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden" data-gcode-inspection-workspace>
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-3 py-2 text-[11px]">
-      <span className="font-semibold">Preview assumptions</span>
+  const settings = <div className="mb-4 grid gap-3 border-b border-border pb-4">
+      <div><h3 className="font-semibold">Preview settings</h3>
+        <p className="mt-1 text-muted-foreground">{pinnedContext ? 'Pinned post context; these saved assumptions cannot be changed here.' : 'Program declarations take precedence. These assumptions only affect this read-only view.'}</p></div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       <label className="flex items-center gap-1">Source
         <select aria-label="Inspection source interpreter" value={profile} disabled={pinnedContext}
           className="h-7 border border-border bg-background px-1" onChange={(event) => setProfile(event.currentTarget.value as typeof profile)}>
@@ -93,15 +106,26 @@ export function GCodeInspectionWorkspace({ text, options, provenance }: {
           <option value="incremental">Incremental</option><option value="absolute">Absolute</option>
         </select>
       </label>
-      <span className="text-muted-foreground">{pinnedContext ? 'Pinned post context; inspect details in Context.' : 'Program declarations take precedence. Text is unchanged.'}</span>
-    </div>
-    <div className="border-b border-border px-3 py-2 text-[11px]" role="status">
+      </div>
+    </div>;
+
+  return <div className="grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden" data-gcode-inspection-workspace data-compact-active-pane={compactView === 'code' ? 'code' : companionView}>
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-1.5 text-[11px]" role="status">
       <strong className={inspection.preview.status === 'complete' ? '' : 'text-amber-300'}>{inspection.preview.status === 'complete' ? 'Nominal XY preview' : inspection.preview.status === 'limited' ? 'Limited XY preview' : 'XY preview unavailable'}</strong>
-      <span className="ml-2 text-muted-foreground">{inspection.preview.summary}</span>
+      <span className="text-muted-foreground">Line {selectedLine} / {inspection.lines.length} · {pinnedContext ? 'Pinned post context' : profile === 'neutral' ? 'Generic G-code' : 'Legacy Robofil'}</span>
       {previewLimited && <p className="mt-1 text-amber-300">Rendering the first {MAX_PREVIEW_ITEMS.toLocaleString()} path items only. All source lines remain available.</p>}
     </div>
-    <div className="grid min-h-0 grid-cols-1 overflow-auto md:grid-cols-[minmax(260px,1fr)_minmax(300px,1fr)] md:overflow-hidden">
-      <section className="grid min-h-[300px] min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] border-b border-border md:min-h-0 md:border-b-0 md:border-r" aria-label="G-code source">
+    <div className="flex min-w-0 flex-wrap gap-1 border-b border-border px-2 py-1" aria-label="Inspection views">
+      <button type="button" aria-pressed={compactView === 'code'} onClick={() => setCompactView('code')}
+        className={`px-2 py-1 text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring md:hidden ${compactView === 'code' ? 'bg-accent' : 'text-muted-foreground'}`}>Code</button>
+      {(['preview', 'line', 'commands', 'issues', 'context'] as const).map(view => <button type="button" key={view}
+        aria-pressed={companionView === view && (!compactLayout || compactView === 'companion')} onClick={() => { setCompanionView(view); setCompactView('companion'); }}
+        className={`px-2 py-1 text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring ${companionView === view && (!compactLayout || compactView === 'companion') ? 'bg-accent' : 'text-muted-foreground hover:bg-accent/50'}`}>
+        {view === 'preview' ? 'Preview' : view === 'line' ? `Line ${selectedLine}` : view === 'commands' ? `Commands (${inspection.commands.length})` : view === 'issues' ? `Issues (${inspection.diagnostics.length})` : 'Context'}
+      </button>)}
+    </div>
+    <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-hidden md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+      <section className={`${compactView === 'code' ? 'grid' : 'hidden md:grid'} min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden md:border-r md:border-border`} aria-label="G-code source" aria-hidden={compactLayout && compactView !== 'code'} data-inspection-source-pane>
         <div className="flex flex-wrap items-center gap-2 border-b border-border p-2 text-[11px]">
           <input aria-label="Search G-code source" className="h-7 min-w-20 flex-1 border border-border bg-background px-2" placeholder="Find text…" value={query}
             onChange={(event) => { setQuery(event.currentTarget.value); setPage(0); }} />
@@ -145,16 +169,23 @@ export function GCodeInspectionWorkspace({ text, options, provenance }: {
             <span>{activePage + 1} / {pageCount}</span><Button size="sm" variant="outline" className="h-6 px-2" disabled={activePage + 1 >= pageCount} onClick={() => setPage(activePage + 1)}>Next</Button></div>
         </div>
       </section>
-      <div className="grid min-h-[540px] min-w-0 grid-rows-[minmax(220px,1fr)_minmax(250px,1fr)] md:min-h-0">
+      <div className={`${compactView === 'companion' ? 'grid' : 'hidden md:grid'} min-h-0 min-w-0 overflow-hidden`} aria-hidden={compactLayout && compactView !== 'companion'} data-inspection-companion-pane>
+        <div className={`${companionView === 'preview' ? 'grid' : 'hidden'} min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden [&>div]:min-h-0`} aria-hidden={companionView !== 'preview'} data-inspection-preview-pane>
+          <p className="border-b border-border px-3 py-2 text-[11px] text-muted-foreground">{inspection.preview.summary}</p>
         <EditorPreview program={null} parseResult={previewResult} hoveredLine={null} measurementPoints={[]} pinnedLines={[]}
           selectedLines={[selectedLine]} onLineSelect={(line) => selectLine(line, true)} keyboardShortcutsEnabled={false}
           previewTitle="Nominal XY" previewLabel="Inspected G-code XY preview" />
-        <GCodeInspectionPanel inspection={inspection} selectedLine={selectedLine} provenance={provenance}
+        </div>
+        <div className={`${companionView === 'preview' ? 'hidden' : 'grid'} min-h-0 min-w-0 overflow-hidden`} aria-hidden={companionView === 'preview'}>
+        <GCodeInspectionPanel inspection={inspection} selectedLine={selectedLine} view={companionView === 'preview' ? 'line' : companionView} settings={settings} provenance={provenance}
           onSelectLine={(line) => selectLine(line, true)} onSelectCommand={(code) => {
             setCommandFilter(code); setQuery(''); setOnlyIssues(false); setPage(0);
+            setCompactView('code');
+            focusSelectedLine.current = true;
             const first = inspection.commands.find((command) => command.code === code)?.sourceLines[0];
             if (first) { setSelectedLine(first); setLineInput(String(first)); }
           }} />
+        </div>
       </div>
     </div>
   </div>;

@@ -112,7 +112,7 @@ function parseLine(state: ParserState, rawLine: string, lineNumber: number,
   failedBlockPolicy: 'legacy' | 'omit' = 'legacy') {
   const previousUnits = state.interpreter.units;
   const before = observe ? { ...state.interpreter, position: { ...state.interpreter.position } } : null;
-  const block = interpretGCodeBlock(state.interpreter, rawLine, lineNumber, context);
+  const block = interpretGCodeBlock(state.interpreter, rawLine, lineNumber, context, failedBlockPolicy === 'omit');
   // Inspection cannot assume an endpoint after failed geometry; old editor parsing keeps its contract.
   if (failedBlockPolicy === 'omit' && !block.motion && !block.positionSet &&
     block.issues.some(issue => issue.type === 'error')) {

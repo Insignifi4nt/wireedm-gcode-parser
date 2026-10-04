@@ -75,18 +75,11 @@ test('keeps imported NC programs in the machine-program editor through edit, sav
   await expect(page.getByRole('complementary', { name: /UPID rail/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Machining menu' })).toHaveCount(0);
 
-  await expect(page.locator('details[data-editor-code-section="text"] summary')).toBeVisible();
-  expect(await page.evaluate(() => {
-    const summary = document.querySelector<HTMLElement>('details[data-editor-code-section="text"] summary');
-    const inspector = document.querySelector<HTMLElement>('[data-editor-inspector-summary]');
-    if (!summary || !inspector) return false;
-    const summaryBox = summary.getBoundingClientRect();
-    const inspectorBox = inspector.getBoundingClientRect();
-    return summaryBox.bottom <= inspectorBox.top || inspectorBox.bottom <= summaryBox.top;
-  })).toBe(true);
+  await expect(page.getByRole('tab', { name: 'Text', exact: true })).toBeVisible();
 
-  await page.locator('details[data-editor-code-section="text"] summary').click();
+  await page.getByRole('tab', { name: 'Text', exact: true }).click();
   const programEditor = page.getByLabel('Program editor');
+  expect((await programEditor.boundingBox())!.height).toBeGreaterThan(400);
   await programEditor.fill('%\nG90\nG0 X0 Y0\nG1 X24 Y0\nM02\n%');
   await page.getByRole('button', { name: 'Save active document' }).click();
   await expect(page.locator('[data-editor-document-state]')).toHaveText('Saved');
@@ -95,7 +88,7 @@ test('keeps imported NC programs in the machine-program editor through edit, sav
   await expect(page.locator('[data-editor-context="machine-program"]')).toBeVisible();
   await expect(page.getByRole('complementary', { name: /UPID rail/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Machining menu' })).toHaveCount(0);
-  await page.locator('details[data-editor-code-section="text"] summary').click();
+  await page.getByRole('tab', { name: 'Text', exact: true }).click();
   await expect(page.getByLabel('Program editor')).toHaveValue(/G1 X24 Y0/);
 
   await captureNextTextDownload(page);

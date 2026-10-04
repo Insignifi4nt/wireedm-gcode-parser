@@ -23,6 +23,7 @@ import type { SimulationCapture } from '@/features/simulation/SimulationViewport
 import { useAppRail } from '@/app/AppRailContext';
 import { RailResizeHandle } from '@/components/ui/RailResizeHandle';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
+import { EditorMachineProgramPanel, type MachineProgramTab } from './EditorMachineProgramPanel';
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
 
 import {
@@ -334,7 +335,9 @@ export function EditorPage({
   const [guideHighlightTarget, setGuideHighlightTarget] = useState<EditorGuideTarget | null>(null);
   const [guideLanguage, setGuideLanguage] = useState<EditorGuideLanguage>(readStoredGuideLanguage);
   const [guideOpen, setGuideOpen] = useState(false);
-  const [programLinesOpen, setProgramLinesOpen] = useState(true);
+  const [machineProgramTab, setMachineProgramTab] = useState<MachineProgramTab>('lines');
+  const [machineProgramView, setMachineProgramView] = useState<'code' | 'preview'>('code');
+  const [machineProgramWidth, setMachineProgramWidth] = useState(480);
   const [pointXDraft, setPointXDraft] = useState('');
   const [pointYDraft, setPointYDraft] = useState('');
   const [pathTranslateXDraft, setPathTranslateXDraft] = useState('0');
@@ -1039,7 +1042,8 @@ export function EditorPage({
 
   useEffect(() => {
     setInspectorRailCollapsed(false);
-    setProgramLinesOpen(true);
+    setMachineProgramTab('lines');
+    setMachineProgramView('code');
 
   }, [program?.filePath, program?.model]);
 
@@ -1193,7 +1197,7 @@ export function EditorPage({
       if (typeof frame === 'number') globalThis.cancelAnimationFrame?.(frame);
       window.clearTimeout(timeout);
     };
-  }, [guideHighlightTarget, activeWorkflowSession?.panelId, inspectorRailCollapsed, programLinesOpen]);
+  }, [guideHighlightTarget, activeWorkflowSession?.panelId, inspectorRailCollapsed, machineProgramTab, machineProgramView]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -1597,7 +1601,10 @@ export function EditorPage({
       }
     } else if (target !== 'preview' && target !== 'import-program') {
       setInspectorRailCollapsed(false);
-      setProgramLinesOpen(true);
+      setMachineProgramTab(target === 'measurement-points' || target === 'grid-snap' ? 'points' : 'lines');
+      setMachineProgramView('code');
+    } else if (!pathDocumentDraft && target === 'preview') {
+      setMachineProgramView('preview');
     }
   }
 
@@ -2659,11 +2666,11 @@ export function EditorPage({
       return;
     }
     setInspectorRailCollapsed(false);
+    setMachineProgramTab('summary');
+    setMachineProgramView('code');
     window.requestAnimationFrame(() => {
       const issues = document.querySelector<HTMLElement>('[data-editor-parse-issues]');
-      const stats = issues?.closest('details');
-      if (stats) stats.open = true;
-      issues?.scrollIntoView({ block: 'nearest' });
+      issues?.scrollIntoView?.({ block: 'nearest' });
       issues?.focus({ preventScroll: true });
     });
   }
@@ -3135,21 +3142,8 @@ export function EditorPage({
     setSetStartInferenceMode(mode);
   }
 
-  function renderInspectorPanelContent() {
+  function renderProgramLinesPanel() {
     return (
-      <div
-        className={`h-full min-h-0 overflow-hidden ${
-          isPathProject ? '' : 'grid lg:grid-rows-[minmax(0,1fr)_minmax(0,42vh)]'
-        }`}
-      >
-        {pathDocumentDraft && renderWorkspacePanel('measure', 'Measure', (
-          <EditorMeasurePanel measurement={measurement} document={pathDocumentDraft} />
-        ))}
-        {!pathDocumentDraft && (
-          <div
-            className="grid min-h-0 gap-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)_auto]"
-            data-editor-side-code-panel
-          >
             <EditorProgramLinesPanel
               bodyGroups={bodyGroups}
               guideHighlightTarget={guideHighlightTarget}
@@ -3171,16 +3165,22 @@ export function EditorPage({
               onSetStartHere={handleSetStartHere}
               onToggleGroup={handleToggleGroup}
               onTogglePin={handleTogglePin}
-              onToggleProgramLinesOpen={() => setProgramLinesOpen((current) => !current)}
               pinnedLines={pinnedLines}
               program={program}
-              programLinesOpen={programLinesOpen}
               selectedLines={selectedLines}
               structure={structure}
             />
-            {renderProgramTextPanel()}
-          </div>
-        )}
+    );
+  }
+
+  function renderInspectorPanelContent() {
+    return (
+      <div
+        className="h-full min-h-0 overflow-hidden"
+      >
+        {pathDocumentDraft && renderWorkspacePanel('measure', 'Measure', (
+          <EditorMeasurePanel measurement={measurement} document={pathDocumentDraft} />
+        ))}
         <EditorInspectorPanel
           arcMoveCount={arcMoveCount}
           boundsText={boundsText}
@@ -3189,7 +3189,7 @@ export function EditorPage({
           canInsertMeasurementPoints={!isPathProject}
           draftProgram={draftProgram}
           editorFileName={editorFileName}
-          fullHeight={isPathProject}
+          fullHeight
           gridSnapEnabled={gridSnapEnabled}
           guideHighlightTarget={guideHighlightTarget}
           isSaving={isEditorMutationLocked}
@@ -3241,7 +3241,11 @@ export function EditorPage({
           pointYDraft={pointYDraft}
           program={program}
           rapidMoveCount={rapidMoveCount}
-          renderWorkspacePanel={isPathProject ? renderWorkspacePanel : undefined}
+          renderWorkspacePanel={isPathProject ? renderWorkspacePanel : (id, _title, children) => (
+            <div key={id} hidden={id === 'measurement' ? machineProgramTab !== 'points' : machineProgramTab !== 'summary'}>
+              {children}
+            </div>
+          )}
           selectedPathElement={selectedPathElement}
           selectedPathOperationId={selectedPathOperationId}
           structure={isPathProject ? null : structure}
@@ -3615,22 +3619,25 @@ export function EditorPage({
           <SimulationPanel key={programIdentity} document={savedSimulationDocument} projectName={program.project.name} savedAt={program.project.updatedAt} dirty={hasUnsavedChanges} active={workspaceView === 'simulation'} onEdit={() => setWorkspaceView('editor')} onCaptureReady={capture => { simulationCapture.current = capture; }} />
         </Suspense>
       </div>}
+      {!isPathProject && <div className="shrink-0 border-b border-border px-2 py-1 lg:hidden">
+        <SlidingTabs label="Machine program view" value={machineProgramView} onValueChange={setMachineProgramView}
+          className="w-full" tabs={[{ value: 'code', label: 'Code', id: 'machine-view-code', controls: 'machine-code-workspace' },
+            { value: 'preview', label: 'Preview', id: 'machine-view-preview', controls: 'machine-preview-workspace' }]} />
+      </div>}
       <section
         id="workspace-editor"
         role={isPathProject ? 'tabpanel' : undefined}
         aria-labelledby={isPathProject ? 'workspace-tab-editor' : undefined}
-        className={`${workspaceView === 'editor' ? 'grid' : 'hidden'} min-h-0 flex-1 grid-cols-1 gap-y-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)] ${
-          isPathProject
-            ? 'grid-rows-[minmax(0,1fr)]'
-            : 'grid-rows-[minmax(360px,1fr)_minmax(320px,45vh)]'
-        }`}
+        className={`${workspaceView === 'editor' ? 'grid' : 'hidden'} min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] overflow-hidden p-2`}
         data-editor-main-grid
+        data-machine-program-view={isPathProject ? undefined : machineProgramView}
         data-has-active-right-dock={hasActiveRightDock ? 'true' : 'false'}
         data-inspector-collapsed={inspectorRailCollapsed ? 'true' : 'false'}
         data-is-path-project={isPathProject ? 'true' : 'false'}
-        style={{ '--editor-inspector-width': `${inspectorRailWidth}px` } as CSSProperties}
+        style={{ '--editor-inspector-width': `${isPathProject ? inspectorRailWidth : machineProgramWidth}px` } as CSSProperties}
       >
         <EditorCanvasPanel
+          id={isPathProject ? undefined : "machine-preview-workspace"}
           canvasMouseMode={canvasMouseMode}
           constructionPreview={constructionPreview ?? entryExitInferencePreview}
           draftProgram={draftProgram}
@@ -3709,50 +3716,32 @@ export function EditorPage({
             />
             {renderEditorDockZone('right')}
           </>
-        ) : null) : inspectorRailCollapsed ? (
-          <div
-            className="hidden min-h-0 border border-border bg-card/95 lg:flex lg:flex-col lg:items-center lg:gap-3 lg:py-2"
-            data-editor-inspector-collapsed
-          >
-            <button
-              aria-label="Expand Inspector Rail"
-              className="flex size-7 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
-              onClick={() => setInspectorRailCollapsed(false)}
-              title="Expand Inspector Rail"
-              type="button"
-            >
-              <PanelRightOpen className="size-3.5" />
-            </button>
-            <div className="rotate-180 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground [writing-mode:vertical-rl]">
-              Inspector
-            </div>
-          </div>
-        ) : (
+        ) : null) : (
           <>
-            <RailResizeHandle
-              label="Resize Inspector Rail"
-              className="hidden lg:block"
-              data-editor-inspector-resizer
-              side="right" width={inspectorRailWidth} minWidth={280} maxWidth={560}
-              onWidthChange={setInspectorRailWidth}
-            />
-            <aside
-              className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/95 text-[10px]"
-              data-editor-inspector-panel
-              data-editor-inspector-rail
+            {inspectorRailCollapsed && <div
+              className="hidden min-h-0 border border-border bg-card/95 lg:flex lg:flex-col lg:items-center lg:gap-3 lg:py-2"
+              data-editor-inspector-collapsed
             >
-              <div className="flex h-7 shrink-0 items-center justify-end border-b border-border px-1">
-                <button
-                  aria-label="Collapse Inspector Rail"
-                  className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
-                  onClick={() => setInspectorRailCollapsed(true)}
-                  title="Collapse Inspector Rail"
-                  type="button"
-                >
-                  <PanelRightClose className="size-3.5" />
-                </button>
-              </div>
-              {renderInspectorPanelContent()}
+              <button aria-label="Expand Inspector Rail" title="Show code panels" type="button"
+                className="flex size-7 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setInspectorRailCollapsed(false)}>
+                <PanelRightOpen className="size-3.5" />
+              </button>
+              <span className="rotate-180 font-mono text-[10px] uppercase tracking-wider [writing-mode:vertical-rl]">Code</span>
+            </div>}
+            {!inspectorRailCollapsed && <RailResizeHandle
+              label="Resize Inspector Rail" className="hidden lg:block" data-editor-inspector-resizer
+              side="right" width={machineProgramWidth} minWidth={320} maxWidth={760}
+              onWidthChange={setMachineProgramWidth}
+            />}
+            <aside id="machine-code-workspace" aria-label="Machine program code"
+              className={`min-h-0 min-w-0 overflow-hidden border border-border bg-card/95 text-[11px] ${inspectorRailCollapsed ? 'lg:hidden' : ''}`}
+              data-editor-inspector-panel data-editor-inspector-rail>
+              <EditorMachineProgramPanel activeTab={machineProgramTab} onTabChange={setMachineProgramTab}
+                lines={renderProgramLinesPanel()} text={renderProgramTextPanel()} inspector={renderInspectorPanelContent()}
+                collapse={<button aria-label="Collapse Inspector Rail" title="Focus preview" type="button"
+                  className="hidden size-7 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring lg:flex"
+                  onClick={() => setInspectorRailCollapsed(true)}><PanelRightClose className="size-3.5" /></button>} />
             </aside>
           </>
         )}

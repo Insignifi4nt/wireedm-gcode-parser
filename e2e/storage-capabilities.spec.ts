@@ -19,13 +19,13 @@ test('keeps existing cache untouched without Web Locks while temporary imports r
   await temporary.getByRole('button', { name: 'Close settings', exact: true }).click();
   await temporary.getByLabel('Machine program file', { exact: true }).setInputFiles(program('temporary.nc', 12));
   await expect(temporary.locator('[data-editor-context="machine-program"]')).toBeVisible();
-  await temporary.locator('details[data-editor-code-section="text"] summary').click();
+  await temporary.getByRole('tab', { name: 'Text', exact: true }).click();
   await temporary.getByLabel('Program editor').fill('G21 G90\nG0 X0 Y0\nG1 X24 Y5');
   await temporary.getByRole('button', { name: 'Save active document', exact: true }).click();
   await expect(temporary.locator('[data-editor-document-state]')).toHaveText('Saved');
   await temporary.getByRole('button', { name: 'Back to Dashboard', exact: true }).click();
   await temporary.getByRole('button', { name: /^Open project / }).click();
-  await temporary.locator('details[data-editor-code-section="text"] summary').click();
+  await temporary.getByRole('tab', { name: 'Text', exact: true }).click();
   await expect(temporary.getByLabel('Program editor')).toHaveValue('G21 G90\nG0 X0 Y0\nG1 X24 Y5');
   expect(await cache(temporary)).toEqual(before);
   await temporary.reload();

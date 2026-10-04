@@ -12,7 +12,7 @@ describe('read-only G-code inspection', () => {
     container = document.createElement('div'); document.body.append(container);
     root = createRoot(container);
   });
-  afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); });
+  afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
   function button(name: string) {
     const found = [...document.querySelectorAll<HTMLButtonElement>('button')]
       .find((element) => element.getAttribute('aria-label') === name || element.textContent === name);
@@ -43,6 +43,7 @@ describe('read-only G-code inspection', () => {
     input('Go to source line', '4'); click('Go');
     click('Line 4');
     expect(document.querySelector('[aria-label="Modal state at line 4"]')?.textContent).toContain('G1');
+    click('Preview');
     const path = document.querySelector<SVGElement>('path[data-line="3"]');
     // Geometry remains selectable without a stored project or geometry authoring handlers.
     expect(path).not.toBeNull();
@@ -78,8 +79,8 @@ describe('read-only G-code inspection', () => {
     act(() => root.render(<GCodeInspectionDialog text="G39" onClose={vi.fn()}
       options={{ lineContexts: [{ line: 1, commands: [{ code: 'G39', meaning: 'Pinned cancellation', scope: 'Post A' }] }] }}
       provenance={[{ label: 'Revision', value: 'revision-exact' }]} />));
-    expect(document.querySelector<HTMLSelectElement>('[aria-label="Inspection source interpreter"]')?.disabled).toBe(true);
     click('Context');
+    expect(document.querySelector<HTMLSelectElement>('[aria-label="Inspection source interpreter"]')?.disabled).toBe(true);
     expect(document.body.textContent).toContain('revision-exact');
   });
 
@@ -92,5 +93,32 @@ describe('read-only G-code inspection', () => {
     expect(download).toHaveBeenCalledTimes(2);
     expect(document.querySelector('[role="alert"]')).toBeNull();
     expect(document.querySelector('[data-inspection-line="2"] code')?.textContent).toBe('N20 M02');
+  });
+
+  it('keeps settings in Context and reveals source when compact companion navigation selects a command or issue', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    act(() => root.render(<GCodeInspectionDialog text={['G21 G90', 'G1 X10 Y0', 'G999 X50', 'M2'].join('\n')} onClose={vi.fn()} />));
+    const workspace = document.querySelector('[data-gcode-inspection-workspace]')!;
+    expect(workspace.getAttribute('data-compact-active-pane')).toBe('code');
+    expect(document.querySelector('[data-inspection-companion-pane]')?.getAttribute('aria-hidden')).toBe('true');
+    expect(document.querySelector('[aria-label="Inspection initial units"]')).toBeNull();
+    const preview = document.querySelector('[data-inspection-preview-pane] svg');
+    click('Context');
+    expect(workspace.getAttribute('data-compact-active-pane')).toBe('context');
+    expect(document.querySelector('[data-inspection-source-pane]')?.getAttribute('aria-hidden')).toBe('true');
+    expect(document.querySelector('[aria-label="Inspection initial units"]')).not.toBeNull();
+    click('Commands (5)'); click('Inspect G999 occurrences');
+    expect(workspace.getAttribute('data-compact-active-pane')).toBe('code');
+    expect(document.activeElement).toBe(document.querySelector('[data-inspection-line="3"]'));
+    const issues = [...document.querySelectorAll<HTMLButtonElement>('button')].find(item => /^Issues \(/.test(item.textContent ?? ''))!;
+    act(() => issues.click());
+    expect(workspace.getAttribute('data-compact-active-pane')).toBe('issues');
+    const issue = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="G-code inspection details"] button')]
+      .find(item => item.textContent?.includes('Line 3'))!;
+    act(() => issue.click());
+    expect(workspace.getAttribute('data-compact-active-pane')).toBe('code');
+    expect(document.querySelector('[data-inspection-line="3"]')?.getAttribute('aria-pressed')).toBe('true');
+    click('Preview');
+    expect(document.querySelector('[data-inspection-preview-pane] svg')).toBe(preview);
   });
 });

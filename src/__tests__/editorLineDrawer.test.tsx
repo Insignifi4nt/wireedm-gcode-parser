@@ -667,7 +667,7 @@ describe('Editor line drawer operations', () => {
     expect(window.localStorage.getItem('gcodeDrawer.folder.header')).toBe('true');
   });
 
-  it('closes and reopens the program line drawer while preserving the editor text', async () => {
+  it('switches program panels while preserving editor text and line state', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
@@ -697,7 +697,7 @@ describe('Editor line drawer operations', () => {
     expect(container.querySelector('[data-editor-lines-panel]')).not.toBeNull();
 
     const closeDrawerButton = container.querySelector(
-      'button[aria-label="Close G-code drawer"]'
+      '#machine-tab-text'
     ) as HTMLButtonElement | null;
     expect(closeDrawerButton).not.toBeNull();
 
@@ -705,8 +705,8 @@ describe('Editor line drawer operations', () => {
       closeDrawerButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(container.querySelector('[data-editor-lines-panel]')).toBeNull();
-    expect(container.textContent).toContain('G-code drawer closed');
+    expect(container.querySelector('#machine-panel-lines')?.classList.contains('hidden')).toBe(true);
+    expect(container.querySelector('#machine-tab-text')?.getAttribute('aria-selected')).toBe('true');
 
     const programEditor = container.querySelector(
       'textarea[aria-label="Program editor"]'
@@ -714,7 +714,7 @@ describe('Editor line drawer operations', () => {
     expect(programEditor?.value).toContain('G1 X10 Y0');
 
     const openDrawerButton = container.querySelector(
-      'button[aria-label="Open G-code drawer"]'
+      '#machine-tab-lines'
     ) as HTMLButtonElement | null;
     expect(openDrawerButton).not.toBeNull();
 
@@ -723,6 +723,7 @@ describe('Editor line drawer operations', () => {
     });
 
     expect(container.querySelector('[data-editor-lines-panel]')).not.toBeNull();
+    expect(container.querySelector('#machine-tab-lines')?.getAttribute('aria-selected')).toBe('true');
     expect(container.querySelector('[data-editor-line="3"]')?.textContent).toContain('G1 X10 Y0');
   });
 

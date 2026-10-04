@@ -147,9 +147,9 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'program-lines'
           },
           {
-            text: 'Close or reopen Program Lines from its header when you need more room for the canvas without losing the current draft.',
+            text: 'Use Lines for grouped operations, Text for full-program editing, Summary for statistics and parse issues, and Points for construction. Drag the divider for more code space. On small screens, switch between Code and Preview.',
             context: 'program',
-            mock: { label: 'Close drawer' },
+            mock: { label: 'Lines / Text / Summary / Points' },
             highlightTarget: 'program-lines'
           },
           {
@@ -317,9 +317,9 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'program-lines'
           },
           {
-            text: 'Inchide sau redeschide Program Lines din header cand vrei mai mult spatiu pentru canvas, fara sa pierzi draftul curent.',
+            text: 'Foloseste Lines pentru grupuri, Text pentru editarea programului, Summary pentru statistici si erori, iar Points pentru puncte de constructie. Trage separatorul pentru mai mult spatiu. Pe ecrane mici, comuta intre Code si Preview.',
             context: 'program',
-            mock: { label: 'Close drawer' },
+            mock: { label: 'Lines / Text / Summary / Points' },
             highlightTarget: 'program-lines'
           },
           {

@@ -12,7 +12,7 @@ export interface GCodeInterpreterState {
   xyMode: 'absolute' | 'incremental';
   ijMode: 'absolute' | 'incremental';
   motion: GCodeMotionCommand | null;
-  plane: 'XY' | 'XZ' | 'YZ';
+  plane: 'XY' | 'XZ' | 'YZ' | 'unsupported';
   compensation: 'off' | 'left' | 'right' | 'unknown';
   positionKnown: boolean;
 }
@@ -72,7 +72,8 @@ export function interpretGCodeBlock(
   state: GCodeInterpreterState,
   rawLine: string,
   lineNumber: number,
-  context?: NonNullable<GCodeInspectionOptions['lineContexts']>[number]
+  context?: NonNullable<GCodeInspectionOptions['lineContexts']>[number],
+  inspection = false
 ): GCodeBlockResult {
   const issues: GCodeBlockIssue[] = [];
   const commentScan = stripComments(String(rawLine ?? ''), lineNumber, issues);
@@ -80,7 +81,13 @@ export function interpretGCodeBlock(
   const wordScan = scanWords(cleanedLine, lineNumber, issues);
   const words = wordScan.words;
   const gWords = words.filter((word) => word.letter === 'G');
-  const modalGroups = [[0, 1, 2, 3], [17, 18, 19], [20, 21], [90, 91], [90.1, 91.1], [40, 41, 42]];
+  if (inspection && (wordScan.hasInvalidWord || ['X', 'Y', 'I', 'J', 'R'].some(letter => words.filter(word => word.letter === letter).length > 1))) {
+    if (!wordScan.hasInvalidWord) issues.push(errorIssue(lineNumber, 'Repeated coordinate word; this block is not used for preview.'));
+    state.motion = null; state.positionKnown = false;
+    return { ...createResult({ cleanedLine, words, explicitMotion: findExplicitMotion(gWords), positionSet: null, issues, commentScan }), previewOmitted: true };
+  }
+  const modalGroups = [[0, 1, 2, 3], inspection ? [17, 18, 19, 17.1, 18.1, 19.1] : [17, 18, 19], [20, 21], [90, 91], [90.1, 91.1],
+    inspection ? [40, 41, 42, 41.1, 42.1] : [40, 41, 42]];
   if (modalGroups.some(group => new Set(gWords.filter(word => group.includes(word.value)).map(word => word.value)).size > 1)) {
     state.motion = null; state.positionKnown = false;
     issues.push(errorIssue(lineNumber, 'Conflicting commands in the same modal group; this block is omitted from preview.'));
@@ -92,11 +99,14 @@ export function interpretGCodeBlock(
     if (word.value === 17) state.plane = 'XY';
     if (word.value === 18) state.plane = 'XZ';
     if (word.value === 19) state.plane = 'YZ';
+    if (inspection && [17.1, 18.1, 19.1].includes(word.value)) state.plane = 'unsupported';
     if (word.value === 40) state.compensation = 'off';
     if (word.value === 41) state.compensation = 'left';
     if (word.value === 42) state.compensation = 'right';
+    if (inspection && word.value === 41.1) state.compensation = 'left';
+    if (inspection && word.value === 42.1) state.compensation = 'right';
     if (word.value === 39) state.compensation = 'unknown';
-    if (word.value === 18 || word.value === 19) {
+    if (word.value === 18 || word.value === 19 || (inspection && [17.1, 18.1, 19.1].includes(word.value))) {
       issues.push({ line: lineNumber, type: 'warning',
         message: `G${word.value} selects a plane unsupported by the XY preview. The physical toolpath preview cannot be relied on for this program.` });
     }
@@ -115,8 +125,11 @@ export function interpretGCodeBlock(
     }
     if ((word.value === 60 && state.profile === 'legacy-robofil') || word.value === 90.1) state.ijMode = 'absolute';
     if (word.value === 91.1) state.ijMode = 'incremental';
-    if (gcodeCommandDefinition(canonicalGCodeCommand('G', word.value)).coverage === 'unknown') {
+    const definition = gcodeCommandDefinition(canonicalGCodeCommand('G', word.value));
+    if (definition.coverage === 'unknown') {
       issues.push({ line: lineNumber, type: 'warning', message: `Unknown G-code command G${word.value}; its motion and coordinate effects are not modeled.` });
+    } else if (!inspection && definition.legacyOmit) {
+      issues.push({ line: lineNumber, type: 'warning', message: `G${word.value}: ${definition.meaning}. Recognized command; this source preview does not model its effects or assume continued positioning. Scope: ${definition.scope}.` });
     }
   }
   for (const annotation of context?.commands ?? []) {
@@ -141,20 +154,29 @@ export function interpretGCodeBlock(
   const hasG92 = gWords.some((word) => word.value === 92);
   let positionSet: { x: number; y: number } | null = null;
   const hasCoordinates = ['X', 'Y', 'I', 'J', 'R', 'Z', 'A', 'B', 'C', 'U', 'V', 'W'].some(letter => values.has(letter));
-  const unknownG = gWords.some(word => gcodeCommandDefinition(canonicalGCodeCommand('G', word.value)).coverage === 'unknown');
+  const unknownG = gWords.some(word => {
+    const definition = gcodeCommandDefinition(canonicalGCodeCommand('G', word.value));
+    return definition.coverage === 'unknown';
+  });
+  const legacyOmitted = !inspection && gWords.some(word => gcodeCommandDefinition(canonicalGCodeCommand('G', word.value)).legacyOmit);
+  const inspectionEffects = inspection ? words.filter(word => ['G', 'M'].includes(word.letter)).map(word =>
+    gcodeCommandDefinition(canonicalGCodeCommand(word.letter, word.value))) : [];
+  const inspectionInvalidation = inspectionEffects.some(definition => definition.motionEffect === 'invalidate' || definition.coverage === 'unknown');
+  const inspectionSuspension = inspectionInvalidation || inspectionEffects.some(definition => definition.motionEffect === 'suspend');
   const cycle = gWords.some(word => word.value >= 80 && word.value <= 89);
   const subprogram = words.some(word => word.letter === 'M' && (word.value === 98 || word.value === 99));
   const referenceReturn = gWords.some(word => word.value === 28 || word.value === 30);
-  if (unknownG || cycle || subprogram || referenceReturn) state.motion = null;
-  if (unknownG || subprogram || referenceReturn) state.positionKnown = false;
-  const ownsCoordinates = gWords.some(word => gcodeCommandDefinition(canonicalGCodeCommand('G', word.value)).blocksImplicitMotion);
+  if (unknownG || legacyOmitted || cycle || subprogram || referenceReturn || inspectionSuspension) state.motion = null;
+  if (unknownG || legacyOmitted || subprogram || referenceReturn || inspectionInvalidation) state.positionKnown = false;
+  const ownsCoordinates = words.some(word => (word.letter === 'G' || (inspection && word.letter === 'M')) &&
+    gcodeCommandDefinition(canonicalGCodeCommand(word.letter, word.value)).blocksImplicitMotion);
   const unsupportedSyntax = wordScan.hasUnparsedText || /^\//.test(cleanedLine);
   if (unsupportedSyntax) state.motion = null;
-  const suppressMotion = Boolean(context?.previewUnsupported || unsupportedSyntax || unknownG || subprogram || referenceReturn ||
+  const suppressMotion = Boolean(context?.previewUnsupported || unsupportedSyntax || unknownG || legacyOmitted || subprogram || referenceReturn || inspectionSuspension ||
     (ownsCoordinates && hasCoordinates) || (state.plane !== 'XY' && hasCoordinates));
   if (suppressMotion) {
     if ((hasCoordinates && !gWords.every(word => word.value === 4)) || explicitMotion || unsupportedSyntax || context?.previewUnsupported) state.positionKnown = false;
-    if (!unknownG && !wordScan.hasUnparsedText) issues.push({ line: lineNumber, type: 'warning',
+    if (!unknownG && !legacyOmitted && !wordScan.hasUnparsedText) issues.push({ line: lineNumber, type: 'warning',
       message: context?.previewUnsupported ?? 'Unsupported or conditional coordinate block omitted from the XY preview; its endpoint is not assumed.' });
     return { ...createResult({ cleanedLine, words, explicitMotion, positionSet, issues, commentScan }), previewOmitted: true };
   }
@@ -189,6 +211,14 @@ export function interpretGCodeBlock(
 
   const hasMotionParameters = ['X', 'Y', 'I', 'J', 'R'].some((letter) => values.has(letter));
   const command = explicitMotion ?? (hasMotionParameters ? state.motion : null);
+  if (inspection && (command === 'G2' || command === 'G3') &&
+    ((values.has('P') && values.get('P') !== 1) || (values.has('R') && (values.has('I') || values.has('J'))))) {
+    state.motion = null; state.positionKnown = false;
+    issues.push({ line: lineNumber, type: 'warning', message: values.has('R') && (values.has('I') || values.has('J'))
+      ? 'Mixed radius and IJ arc formats are not modeled; this block is omitted from preview.'
+      : 'Arc turn count P other than one is not modeled; this block is omitted from preview.' });
+    return { ...createResult({ cleanedLine, words, explicitMotion, positionSet, issues, commentScan }), previewOmitted: true };
+  }
   if (!command && hasMotionParameters) {
     state.positionKnown = false;
     issues.push({ line: lineNumber, type: 'warning', message: 'Coordinate words have no supported active motion mode; this block is omitted from preview.' });
@@ -351,6 +381,7 @@ function scanWords(cleanedLine: string, lineNumber: number, issues: GCodeBlockIs
   const words: GCodeWord[] = [];
   let hasInvalidMotionWord = false;
   let hasInvalidPositionWord = false;
+  let hasInvalidWord = false;
   WORD_PATTERN.lastIndex = 0;
 
   let match: RegExpExecArray | null;
@@ -362,6 +393,7 @@ function scanWords(cleanedLine: string, lineNumber: number, issues: GCodeBlockIs
     const letter = match[1].toUpperCase();
     const value = Number.parseFloat(match[2]);
     if (!Number.isFinite(value)) {
+      hasInvalidWord = true;
       issues.push(errorIssue(lineNumber, `Word ${letter} must have a finite value.`));
       if (['X', 'Y', 'I', 'J', 'R'].includes(letter)) hasInvalidMotionWord = true;
       if (letter === 'X' || letter === 'Y') hasInvalidPositionWord = true;
@@ -377,7 +409,16 @@ function scanWords(cleanedLine: string, lineNumber: number, issues: GCodeBlockIs
     // Keep the legacy source-bearing warning alongside the conservative preview error.
     issues.push({ line: lineNumber, type: 'warning', message: `Unknown G-code command: ${cleanedLine}` });
   }
-  return { words, hasInvalidMotionWord, hasInvalidPositionWord, hasUnparsedText };
+  return { words, hasInvalidMotionWord, hasInvalidPositionWord, hasUnparsedText, hasInvalidWord };
+}
+
+/** Inventory retains numeric command literals even when their values cannot be interpreted. */
+export function scanGCodeCommandCodes(cleanedLine: string): string[] {
+  const pattern = new RegExp(`([GM])\\s*(${NUMBER_SOURCE})`, 'gi');
+  return [...cleanedLine.matchAll(pattern)].map(match => {
+    const value = Number(match[2]);
+    return Number.isFinite(value) ? canonicalGCodeCommand(match[1], value) : `${match[1]}${match[2]}`.toUpperCase();
+  });
 }
 
 function collectLastWordValues(words: GCodeWord[]) {

@@ -7,8 +7,7 @@ import {
   ChevronRight,
   Pin,
   RefreshCw,
-  Trash2,
-  X
+  Trash2
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -32,7 +31,6 @@ interface EditorProgramLinesPanelProps {
   lineRows: EditorLineRow[];
   pinnedLines: number[];
   program: LoadedEditorProgram | null;
-  programLinesOpen: boolean;
   selectedLines: number[];
   structure: GCodeStructure | null;
   onClearPins: () => void;
@@ -48,7 +46,6 @@ interface EditorProgramLinesPanelProps {
   onSetStartHere: () => void;
   onToggleGroup: (groupId: string) => void;
   onTogglePin: (lineNumber: number) => void;
-  onToggleProgramLinesOpen: () => void;
   onHoverLineChange: (lineNumber: number | null) => void;
 }
 
@@ -61,7 +58,6 @@ export function EditorProgramLinesPanel({
   lineRows,
   pinnedLines,
   program,
-  programLinesOpen,
   selectedLines,
   structure,
   onClearPins,
@@ -77,8 +73,7 @@ export function EditorProgramLinesPanel({
   onSetLineMode,
   onSetStartHere,
   onToggleGroup,
-  onTogglePin,
-  onToggleProgramLinesOpen
+  onTogglePin
 }: EditorProgramLinesPanelProps) {
   const selectedLineSet = new Set(selectedLines);
   const pinnedLineSet = new Set(pinnedLines);
@@ -89,13 +84,13 @@ export function EditorProgramLinesPanel({
     const lineContent =
       lineMode === 'edit' ? (
         <div
-          className="grid min-h-7 grid-cols-[44px_62px_minmax(0,1fr)] items-center gap-2 px-2 text-left"
+          className="grid min-h-7 grid-cols-[32px_minmax(0,1fr)] items-center gap-2 px-2 text-left"
           data-editor-line={row.num}
           onMouseEnter={() => onHoverLineChange(row.num)}
           onMouseLeave={() => onHoverLineChange(null)}
         >
           <span className="text-muted-foreground">{row.num}</span>
-          <span className="text-[10px] uppercase text-muted-foreground">{row.section}</span>
+          <span className="sr-only">{row.section}</span>
           <input
             aria-label={`Edit line ${row.num}`}
             className="h-6 min-w-0 border border-border bg-background px-1.5 font-mono text-[11px] text-foreground outline-none focus:border-primary"
@@ -109,7 +104,7 @@ export function EditorProgramLinesPanel({
       ) : (
         <button
           aria-pressed={isSelected}
-          className={`grid min-h-7 grid-cols-[44px_62px_minmax(0,1fr)] items-center gap-2 px-2 text-left outline-none transition-colors hover:bg-accent ${
+          className={`grid min-h-7 grid-cols-[32px_minmax(0,1fr)] items-center gap-2 px-2 text-left outline-none transition-colors hover:bg-accent ${
             isSelected ? 'bg-sky-500/15 text-sky-100' : 'text-foreground'
           }`}
           data-editor-line={row.num}
@@ -119,8 +114,8 @@ export function EditorProgramLinesPanel({
           type="button"
         >
           <span className="text-muted-foreground">{row.num}</span>
-          <span className="text-[10px] uppercase text-muted-foreground">{row.section}</span>
-          <span className="truncate">{row.text || ' '}</span>
+          <span className="sr-only">{row.section}</span>
+          <span className="whitespace-pre-wrap break-all">{row.text || ' '}</span>
         </button>
       );
 
@@ -134,7 +129,7 @@ export function EditorProgramLinesPanel({
         <button
           aria-label={`Pin line ${row.num}`}
           aria-pressed={isPinned}
-          className={`flex items-center justify-center border-l border-border text-muted-foreground opacity-0 outline-none transition hover:bg-accent hover:text-red-300 group-hover:opacity-100 ${
+          className={`flex items-center justify-center border-l border-border text-muted-foreground opacity-0 outline-none transition hover:bg-accent hover:text-red-300 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring ${
             isPinned ? 'text-red-400 opacity-100' : ''
           }`}
           data-editor-pin-line={row.num}
@@ -244,7 +239,7 @@ export function EditorProgramLinesPanel({
 
   return (
     <section
-      className={`grid min-h-[220px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/70 lg:min-h-0 ${guideHighlightClass(
+      className={`grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-card/70 ${guideHighlightClass(
         'program-lines',
         guideHighlightTarget
       )}`}
@@ -254,22 +249,13 @@ export function EditorProgramLinesPanel({
       <div className="grid min-w-0 gap-1 border-b border-border bg-card/80 px-2 py-1">
         <div className="flex min-w-0 items-center justify-between gap-2">
           <h3 className="shrink-0 font-mono text-[11px] font-semibold">Program Lines</h3>
-          <button
-            aria-label={programLinesOpen ? 'Close G-code drawer' : 'Open G-code drawer'}
-            className="flex size-5 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent"
-            onClick={onToggleProgramLinesOpen}
-            title={programLinesOpen ? 'Close drawer' : 'Open drawer'}
-            type="button"
-          >
-            {programLinesOpen ? <X className="size-3" /> : <ChevronRight className="size-3" />}
-          </button>
+
         </div>
         <div
           className="flex min-w-0 flex-wrap items-center justify-start gap-1 whitespace-normal"
           data-editor-line-toolbar
         >
-          {programLinesOpen && (
-            <>
+          <>
               <div
                 className={`flex h-5 shrink-0 border border-border ${guideHighlightClass(
                   'line-modes',
@@ -381,11 +367,10 @@ export function EditorProgramLinesPanel({
                 <Trash2 className="size-3" />
                 Delete Selected
               </button>
-            </>
-          )}
+          </>
         </div>
         <div
-          className="flex min-w-0 items-center justify-start gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 items-center justify-start gap-1 flex-wrap"
           data-editor-draft-actions
         >
           <Button
@@ -408,7 +393,6 @@ export function EditorProgramLinesPanel({
           </Button>
         </div>
       </div>
-      {programLinesOpen ? (
         <div className="min-h-0 overflow-auto bg-background/60 font-mono text-[11px]" data-editor-lines-panel>
           {structure && lineRows.length > 0 ? (
             <div>
@@ -422,11 +406,6 @@ export function EditorProgramLinesPanel({
             </div>
           )}
         </div>
-      ) : (
-        <div className="flex min-h-0 items-center justify-center bg-background/60 font-mono text-[10px] text-muted-foreground">
-          G-code drawer closed
-        </div>
-      )}
     </section>
   );
 }
