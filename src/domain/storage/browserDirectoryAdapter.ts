@@ -1,4 +1,5 @@
 import { MAX_STORAGE_INVENTORY_ENTRIES, type WorkbenchStorageAdapter } from './workbenchStorageAdapter';
+import { assertReadLimit } from './boundedExactText';
 
 export function createBrowserDirectoryAdapter(
   root: FileSystemDirectoryHandle
@@ -6,7 +7,23 @@ export function createBrowserDirectoryAdapter(
   return {
     name: root.name,
     kind: 'directory',
-    listFiles: () => listDirectoryFiles(root),
+    listFiles: (signal) => listDirectoryFiles(root, signal),
+    readBoundedExactText: async (path, maxBytes, signal) => {
+      assertReadLimit(maxBytes); signal?.throwIfAborted();
+      try {
+        const handle = await getFile(root, splitPath(path), false);
+        const file = await handle.getFile();
+        signal?.throwIfAborted();
+        if (file.size > maxBytes) return { status: 'too-large' };
+        const bytes = await file.arrayBuffer();
+        signal?.throwIfAborted();
+        return { status: 'read', text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) };
+      } catch (error) {
+        signal?.throwIfAborted();
+        if (isNotFoundError(error)) return { status: 'missing' };
+        throw error;
+      }
+    },
     readExactText: async (path: string) => {
       try {
         const handle = await getFile(root, splitPath(path), false);
@@ -57,12 +74,13 @@ export function createBrowserDirectoryAdapter(
   };
 }
 
-async function listDirectoryFiles(root: FileSystemDirectoryHandle) {
+async function listDirectoryFiles(root: FileSystemDirectoryHandle, signal?: AbortSignal) {
   const paths: string[] = [];
   let visited = 0;
   let truncated = false;
   async function visit(directory: FileSystemDirectoryHandle, prefix: string, depth: number): Promise<void> {
     for await (const [name, handle] of directory.entries()) {
+      signal?.throwIfAborted();
       if (++visited > MAX_STORAGE_INVENTORY_ENTRIES) { truncated = true; return; }
       const path = `${prefix}${name}`;
       if (handle.kind === 'file') paths.push(path);

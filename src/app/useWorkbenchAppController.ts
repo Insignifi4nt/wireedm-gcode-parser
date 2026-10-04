@@ -40,6 +40,8 @@ import type {
 } from '@/features/dashboard/dashboardTypes';
 
 import { defaultAppServices, type AppServices } from './appServices';
+import { recoverySourceSummary, type RecoveryStorageSource, type PreparedRecoveryExport } from '@/domain/storage/workbenchRecovery';
+import type { RecoveryExportControls } from './RecoveryExportPanel';
 
 export type WorkbenchStatus = 'initializing' | 'ready' | 'connecting-storage' | 'error';
 export type ImportStatus = 'idle' | 'importing' | 'error';
@@ -66,6 +68,13 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
   const [connectedWorkbench, setConnectedWorkbench] = useState<ConnectedWorkbenchCatalog | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [storageWarningMessage, setStorageWarningMessage] = useState<string | null>(null);
+  const [recoverySource, setRecoverySource] = useState<RecoveryStorageSource | null>(null);
+  const recoverySourceRef = useRef<RecoveryStorageSource | null>(null);
+  const [recoveryExport, setRecoveryExport] = useState<PreparedRecoveryExport | null>(null);
+  const recoveryExportRef = useRef<PreparedRecoveryExport | null>(null);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ActiveView>('dashboard');
   const [loadedEditorProgram, setLoadedEditorProgram] = useState<LoadedEditorProgram | null>(null);
   const [editorProgramRevision, setEditorProgramRevision] = useState(0);
@@ -94,7 +103,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
   workbenchRef.current = connectedWorkbench;
   const editorProgramRef = useRef(loadedEditorProgram);
   editorProgramRef.current = loadedEditorProgram;
-  const activeMutation = useRef<'controller-artifact' | 'editor-save' | 'program-import' | 'project-open' | 'storage-connect' | 'project-action' | null>(null);
+  const activeMutation = useRef<'controller-artifact' | 'editor-save' | 'program-import' | 'project-open' | 'storage-connect' | 'project-action' | 'recovery-export' | null>(null);
   const toastSequence = useRef(0);
   useEffect(() => () => { dxfTask.current?.controller.abort(); }, []);
 
@@ -128,34 +137,71 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     try {
       const remembered = await services.connectRememberedWorkbenchDirectory();
       if ('ok' in remembered) {
-        if (!remembered.ok) return failWorkbench(remembered.error.message);
-        return readyWorkbench(remembered.workbench, null);
+        if (!remembered.ok) return failWorkbench(remembered.error.message, remembered.recoverySource);
+        return readyWorkbench(remembered.workbench, null, remembered.recoverySource);
       }
       if (remembered.status === 'error') return failWorkbench(remembered.message);
       const cached = await services.connectCachedWorkbench();
-      if (!cached.ok) return failWorkbench(cached.error.message);
+      if (!cached.ok) return failWorkbench(cached.error.message, cached.recoverySource);
       const warning = remembered.status === 'permission-needed'
         ? 'The remembered folder needs permission. Browser storage is active. Choose Workbench Folder to reconnect it or select another folder.'
         : remembered.status === 'unsupported'
           ? 'Folder access is unavailable in this browser. Browser storage is active.'
           : null;
-      readyWorkbench(cached.workbench, warning);
+      readyWorkbench(cached.workbench, warning, cached.recoverySource);
     } catch (error) {
       failWorkbench(errorText(error));
     }
   }
 
-  function readyWorkbench(workbench: ConnectedWorkbenchCatalog, warning: string | null) {
+  function readyWorkbench(workbench: ConnectedWorkbenchCatalog, warning: string | null, recovery?: RecoveryStorageSource) {
+    retainRecoverySource(recovery ?? null);
     setConnectedWorkbench(workbench);
     setStorageWarningMessage(workbench.adapter.persistenceWarning ?? warning);
     setErrorMessage(null);
     setWorkbenchStatus('ready');
   }
 
-  function failWorkbench(message: string) {
+  function failWorkbench(message: string, recovery?: RecoveryStorageSource) {
+    retainRecoverySource(recovery ?? null);
     setConnectedWorkbench(null);
     setErrorMessage(message);
     setWorkbenchStatus('error');
+  }
+
+  function retainRecoverySource(source: RecoveryStorageSource | null) {
+    recoverySourceRef.current = source; setRecoverySource(source);
+    recoveryExportRef.current = null; setRecoveryExport(null);
+    setRecoveryError(null); setRecoveryMessage(null);
+  }
+
+  async function handleExportRecovery(input: { sourceId: string; downloadPrepared?: boolean; signal?: AbortSignal }) {
+    if (activeMutation.current || interactionLocked) throw new ToolError('BUSY', 'Another workbench operation is running.');
+    const source = recoverySourceRef.current;
+    if (!source || source.id !== input.sourceId) throw new ToolError('STALE_STATE', 'The recovery location changed. Read context again.');
+    input.signal?.throwIfAborted();
+    activeMutation.current = 'recovery-export'; setRecoveryBusy(true); setRecoveryError(null); setRecoveryMessage(null);
+    try {
+      const prepared = input.downloadPrepared ? recoveryExportRef.current
+        : await services.captureWorkbenchRecovery(source, { signal: input.signal });
+      input.signal?.throwIfAborted();
+      if (recoverySourceRef.current !== source) throw new ToolError('STALE_STATE', 'The recovery location changed during capture. Read context again.');
+      if (!prepared || prepared.receipt.sourceId !== source.id) throw new ToolError('NOT_FOUND', 'Capture recovery files before requesting their download again.');
+      // Retain captured evidence even when the native download request fails.
+      recoveryExportRef.current = prepared; setRecoveryExport(prepared);
+      try { await services.downloadTextFile({ fileName: prepared.receipt.fileName, text: prepared.text, mimeType: 'application/json;charset=utf-8' }); }
+      catch {
+        const error = { code: 'DOWNLOAD_FAILED', message: 'Recovery files were captured. Request the prepared download again and check that the browser saved it.' };
+        setRecoveryError(error.message);
+        return { status: 'captured-download-failed' as const, receipt: prepared.receipt, error };
+      }
+      // Once download was requested, preserve its receipt even if cancellation arrived during the request.
+      setRecoveryMessage('Recovery export download requested. Check that the file was saved.');
+      return { status: 'download-requested' as const, receipt: prepared.receipt };
+    } catch (error) {
+      setRecoveryError(input.signal?.aborted ? 'Recovery capture cancelled. No download was requested.' : errorText(error));
+      throw error;
+    } finally { activeMutation.current = null; setRecoveryBusy(false); }
   }
 
   function requireWorkbench() {
@@ -187,11 +233,12 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     try {
       const connected = await services.connectWorkbenchDirectory();
       if (!connected.ok) {
+        retainRecoverySource(connected.recoverySource ?? null);
         setWorkbenchStatus(connectedWorkbench ? 'ready' : 'error');
         setErrorMessage(connected.error.message);
         return;
       }
-      readyWorkbench(connected.workbench, null);
+      readyWorkbench(connected.workbench, null, connected.recoverySource);
       setLatestImport(null);
       handleBackToDashboard();
       handleCancelDxfImport();
@@ -216,9 +263,12 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     setErrorMessage(null);
     try {
       const cached = await services.connectCachedWorkbench();
-      if (!cached.ok) throw new Error(cached.error.message);
+      if (!cached.ok) {
+        retainRecoverySource(cached.recoverySource ?? null);
+        throw new Error(cached.error.message);
+      }
       await services.forgetWorkbenchDirectory();
-      readyWorkbench(cached.workbench, null);
+      readyWorkbench(cached.workbench, null, cached.recoverySource);
       setLatestImport(null);
       handleBackToDashboard();
       handleCancelDxfImport();
@@ -1048,7 +1098,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     setDxfReimportErrorMessage(message);
   }
 
-  const interactionLocked = workbenchStatus === 'initializing' || workbenchStatus === 'connecting-storage' ||
+  const interactionLocked = recoveryBusy || workbenchStatus === 'initializing' || workbenchStatus === 'connecting-storage' ||
     projectOpening || projectActionPending || [importStatus, editorImportStatus, dxfReimportStatus].includes('importing') ||
     controllerArtifactGenerating || editorSaveStatus === 'saving' || settingsStatus === 'saving';
 
@@ -1057,6 +1107,13 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     dxfImportCancellable: importStatus === 'importing' && dxfTask.current !== null && !dxfWriting,
     prepareDxfSource: (workbench: ConnectedWorkbenchCatalog, input: DxfSourceInput, signal: AbortSignal) => services.prepareDxfProjectImport(workbench, input, signal),
     commitPreparedDxf: (workbench: ConnectedWorkbenchCatalog, preparation: DxfImportPreparation, decision: DxfImportDecision, options: DxfProcessingOptions) => services.commitDxfProjectImport(workbench, preparation, decision, options),
+    handleExportRecovery,
+    recoveryControls: recoverySource ? {
+      source: recoverySourceSummary(recoverySource), receipt: recoveryExport?.receipt ?? null, busy: recoveryBusy,
+      error: recoveryError, message: recoveryMessage,
+      onExport: () => handleExportRecovery({ sourceId: recoverySource.id }),
+      onDownload: () => handleExportRecovery({ sourceId: recoverySource.id, downloadPrepared: true })
+    } satisfies RecoveryExportControls : null,
     activeView,
     connectedWorkbench,
     dismissStatusToast,

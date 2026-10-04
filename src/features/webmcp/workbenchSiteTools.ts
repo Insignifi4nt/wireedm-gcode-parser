@@ -4,6 +4,7 @@ import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workb
 import { readStoredWorkbenchProject } from '@/domain/workbench-catalog/workbenchCatalogMutations';
 import { readSavedRevisionSummaryPage } from '@/domain/wire-edm-job/revisionSummaries';
 import { APP_VERSION } from '@/domain/release/appRelease';
+import type { recoverySourceSummary } from '@/domain/storage/workbenchRecovery';
 import { workbenchProjectVersion } from '@/domain/workbench-catalog/workbenchProjectVersion';
 import { startPackageTool } from '@/features/package-tools/packageToolsClient';
 import { object, page, pageFields, siteTool, ToolError } from './siteTools';
@@ -27,6 +28,7 @@ export interface WorkbenchToolState {
   workbench: ConnectedWorkbenchCatalog | null;
   draft: DraftReadSnapshot | null;
   busy: boolean;
+  recovery?: ReturnType<typeof recoverySourceSummary> | null;
 }
 const id = Type.String({ minLength: 1, maxLength: 160 });
 const target = Type.Union([
@@ -77,7 +79,7 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
     editCatalogTool(),
     siteTool('edm_get_context', 'Read app version, storage kind and the current editor draft identity/version. Does not open or change a project.', object({}), () => {
       const current = getState();
-      return { appVersion: APP_VERSION, storage: current.workbench?.adapter.kind ?? null, busy: current.busy,
+      return { appVersion: APP_VERSION, storage: current.workbench?.adapter.kind ?? null, busy: current.busy, recovery: current.recovery ?? null,
         draft: current.draft ? { projectId: current.draft.projectId, version: current.draft.version, dirty: current.draft.dirty, workflowOpen: current.draft.workflowOpen,
           workflowCommand: current.draft.workflowOpen ? current.draft.workflowCommand ?? null : null,
           model: current.draft.document ? 'upid' : 'external-gcode', captureAvailable: Boolean(current.draft.capture),

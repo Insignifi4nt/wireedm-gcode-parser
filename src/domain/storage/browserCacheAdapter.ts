@@ -1,6 +1,7 @@
 import { gunzip, gunzipSync, gzip, gzipSync, strFromU8, strToU8 } from 'fflate';
 
 import { MAX_STORAGE_INVENTORY_ENTRIES, type WorkbenchStorageAdapter } from './workbenchStorageAdapter';
+import { assertReadLimit, exceedsUtf8Limit, readBoundedGzip } from './boundedExactText';
 
 const COMPRESSED_TEXT_PREFIX = '\u0000wire-edm-cache-gzip-v1:';
 const MIN_COMPRESS_LENGTH = 4096;
@@ -39,17 +40,25 @@ export function createBrowserCacheAdapter(
     },
     readText: async (path: string) => decodeStoredText(storage.getItem(fileKey(namespace, path))),
     readExactText: async (path: string) => decodeStoredText(storage.getItem(fileKey(namespace, path)), true),
+    readBoundedExactText: async (path, maxBytes, signal) => {
+      assertReadLimit(maxBytes); signal?.throwIfAborted();
+      const stored = storage.getItem(fileKey(namespace, path));
+      if (stored === null) return { status: 'missing' };
+      if (stored.startsWith(COMPRESSED_TEXT_PREFIX)) return readBoundedGzip(stored.slice(COMPRESSED_TEXT_PREFIX.length), maxBytes, signal);
+      return exceedsUtf8Limit(stored, maxBytes) ? { status: 'too-large' } : { status: 'read', text: stored };
+    },
     deleteText: async (path: string) => {
       storage.removeItem(fileKey(namespace, path));
     },
     writeText: async (path: string, contents: string) => {
       storage.setItem(fileKey(namespace, path), await encodeStoredText(contents));
     },
-    listFiles: async () => {
+    listFiles: async (signal) => {
       const paths: string[] = [];
       const prefix = `${namespace}:file:`;
       const count = Math.min(storage.length, MAX_STORAGE_INVENTORY_ENTRIES);
       for (let index = 0; index < count; index++) {
+        signal?.throwIfAborted();
         const key = storage.key(index);
         if (key?.startsWith(prefix)) paths.push(key.slice(prefix.length));
       }

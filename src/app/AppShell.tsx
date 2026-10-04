@@ -22,9 +22,11 @@ import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workb
 import { AppRailProvider, type AppRailContent, type EditorCompactDrawer } from './AppRailContext';
 import type { MachinePostSettingsActions } from './MachinePostSettingsPanel';
 import { WorkbenchSettingsDialog, type WorkbenchSettingsSection } from './WorkbenchSettingsDialog';
+import type { RecoveryExportControls } from './RecoveryExportPanel';
 import { EditorCompactDrawerLaunchers } from '@/features/editor/EditorWorkspacePanels';
 
 interface AppShellProps extends MachinePostSettingsActions {
+  recovery?: RecoveryExportControls | null;
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
   connectedWorkbench: ConnectedWorkbenchCatalog | null;
   errorMessage: string | null;
@@ -42,6 +44,7 @@ interface AppShellProps extends MachinePostSettingsActions {
 }
 
 export function AppShell({
+  recovery,
   workbenchStatus,
   connectedWorkbench,
   errorMessage,
@@ -341,6 +344,7 @@ export function AppShell({
         </AppRailProvider>
       </div>
       <WorkbenchSettingsDialog
+        recovery={recovery}
         initialSection={settingsSection}
         connectedWorkbench={connectedWorkbench}
         errorMessage={errorMessage}

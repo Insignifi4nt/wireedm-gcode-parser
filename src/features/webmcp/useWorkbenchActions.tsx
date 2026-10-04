@@ -97,17 +97,28 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     siteTool('edm_workflow_context', 'Read mutation version, direct-input limits, prepared imports and the most recent generated artifact. Import tools accept supplied text or package base64; browser storage belongs to this browser.', object({}), () => ({
       version: workbenchVersion, busy: busy.current || app.workbenchInteractionLocked,
       inputFile: null,
+      recovery: app.recoveryControls ? { source: app.recoveryControls.source, receipt: app.recoveryControls.receipt } : null,
       inputLimits: { textUtf8Bytes: 1024 * 1024, machinePackageBytes: 32 * 1024 * 1024, packageEncoding: 'base64' },
       dxfPreparationId: preparedDxf.current?.id ?? null, packagePreparationId: preparedPackage.current?.id ?? null,
       artifact: artifact.current ? artifactSummary(artifact.current) : null,
       capture,
       nextSteps: busy.current || app.workbenchInteractionLocked ? ['Wait for the running operation, then read edm_workflow_context again.']
+        : !app.connectedWorkbench && app.recoveryControls ? ['edm_export_recovery', 'Review Settings > Storage.']
+        : !app.connectedWorkbench ? ['Review the storage connection diagnostic in Settings.']
         : !draftRef.current ? ['edm_list_projects', 'edm_open_project', 'edm_prepare_dxf', 'edm_import_upid']
         : !draftRef.current.document ? ['edm_capture_preview', 'Use the visible editor for external G-code changes.']
         : draftRef.current.workflowOpen ? ['Finish or cancel the visible editor workflow.']
         : draftRef.current.dirty ? ['edm_describe_edits', 'edm_edit_project', 'edm_review_execution', 'edm_save_project']
         : ['edm_describe_edits', 'edm_review_execution', 'edm_get_capabilities', 'edm_export_controller', 'edm_export_upid', 'edm_capture_preview']
     })),
+    siteTool('edm_export_recovery', 'Capture and request a download of readable original logical text and diagnostics from the failed or unavailable storage source in edm_workflow_context.recovery. Does not repair, restore, delete, initialize or execute posts. Omissions and non-atomic reads are explicit. Returns an archive receipt, not file contents or proof that the browser saved it. Set downloadPrepared:true to retry the captured download without rereading storage.',
+      object({ sourceId: identifier, downloadPrepared: Type.Optional(Type.Boolean()) }), async (input, signal) => {
+        // Recovery may run without a connected catalog, but shares the live agent operation gate.
+        if (busy.current) throw new ToolError('BUSY', 'Another workbench operation is running.');
+        busy.current = true;
+        try { return await app.handleExportRecovery({ ...input, signal }); }
+        finally { busy.current = false; }
+      }, false),
     mutation('edm_prepare_dxf', 'Preview supplied DXF source:{fileName,text}, at most 1 MiB UTF-8. Returns unit choices and millimeter bounds for explicit review before import. Does not save a project. Use ordinary Import for larger files.', object({ ...version, source: Type.Optional(source) }), async (input, signal) => {
       checkVersion(input.expectedVersion);
       preparedDxf.current = null;
