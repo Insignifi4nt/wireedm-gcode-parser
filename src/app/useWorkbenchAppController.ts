@@ -22,14 +22,12 @@ import type {
   PreparedMachinePackageInstallation,
   PrepareStoredMachinePackageInstallationResult
 } from '@/domain/machine-package';
-import { MAX_MACHINE_PACKAGE_ARCHIVE_BYTES } from '@/domain/machine-package';
+import { MAX_MACHINE_PACKAGE_ARCHIVE_BYTES } from '@/domain/machine-package/machinePackageLimits';
 import type { DownloadProgramFileInput } from '@/domain/post/downloadProgramFile';
 import { selectTextFileDestination, writeSelectedTextFile } from '@/domain/post/saveTextFileAs';
 import { MAX_PORTABLE_UPID_BYTES, portableFileBaseName } from '@/domain/upid/portableUpidProject';
-import {
-  createSavedWireEdmJobRevisionId,
-  type ControllerArtifactResult
-} from '@/domain/wire-edm-job';
+import { createSavedWireEdmJobRevisionId } from '@/domain/wire-edm-job/savedWireEdmJobRevision';
+import type { ControllerArtifactResult } from '@/domain/wire-edm-job/controllerArtifact';
 import type {
   ConnectedWorkbenchCatalog,
   WorkbenchCatalogManifest

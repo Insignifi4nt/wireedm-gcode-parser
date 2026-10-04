@@ -8,10 +8,9 @@ import { readSavedRevisionSummaryPage, type SavedRevisionSummary } from '@/domai
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import { readStoredWorkbenchProject } from '@/domain/workbench-catalog/workbenchCatalogMutations';
 import {
-  generateControllerArtifact,
   loadSavedWireEdmJobRevision,
   serializeSavedWireEdmJobRevision,
-} from '@/domain/wire-edm-job';
+} from '@/domain/wire-edm-job/savedWireEdmJobRevision';
 
 interface ProjectRevisionsDialogProps {
   workbench: ConnectedWorkbenchCatalog;
@@ -99,6 +98,7 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
     try {
       const loaded = await loadSavedWireEdmJobRevision(workbench.adapter, projectId, revisionId);
       if (!loaded.ok) throw new Error(loaded.error.message);
+      const { generateControllerArtifact } = await import('@/domain/wire-edm-job/controllerArtifact');
       const result = await generateControllerArtifact(loaded.revision);
       if (!result.ok) throw new Error(result.error.message);
       downloadProgramFile({ fileName: result.artifact.fileName, text: result.artifact.text });

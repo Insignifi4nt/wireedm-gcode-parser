@@ -1,9 +1,5 @@
 import { canonicalJson } from './canonicalJson';
-import { CANONICAL_POST_PLAN_FIXTURES } from './custom-runtime/canonicalPostConformanceFixtures';
-import {
-  runCustomPostConformance,
-  type CustomPostConformanceDiagnostic
-} from './custom-runtime/customPostConformance';
+import type { CustomPostConformanceDiagnostic } from './custom-runtime/customPostConformance';
 import type { PostInstallationRef } from './postFormatPrimitives';
 import type { WireEdmPostPackage } from './postPackageSchema';
 
@@ -115,6 +111,11 @@ export async function installPostPackage(
     };
   }
 
+  // Opening stored libraries validates their exact schema/hash without loading the execution runtime.
+  const [{ runCustomPostConformance }, { CANONICAL_POST_PLAN_FIXTURES }] = await Promise.all([
+    import('./custom-runtime/customPostConformance'),
+    import('./custom-runtime/canonicalPostConformanceFixtures')
+  ]);
   const conformance = await runCustomPostConformance({
     packageValue,
     planFixtures: CANONICAL_POST_PLAN_FIXTURES
