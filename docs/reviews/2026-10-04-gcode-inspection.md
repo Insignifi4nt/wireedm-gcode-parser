@@ -24,6 +24,8 @@ The integrated regression suite passed 209 files / 2,092 tests. Existing asserti
 
 The final native Chromium batch passed all 29 cases: standalone files/paste, compact inspection, the Machine Program draft, original editor layouts and import/save/reload/export, UPID round trips, complete package installation and both controller inspection entry paths. Exact downloads match byte-for-byte and inspection leaves persisted cache files unchanged. Export/revision dialogs stay within 360 pixels and existing editors retain their 320/767-pixel layouts. One new draft assertion initially queried the collapsed Program Text section; the test now opens that section through its existing UI before reading the draft. All original layout assertions remain intact.
 
+The first complete CI browser run passed 88 cases and skipped the optional preseeded-project fixture, but caught an existing dashboard keyboard-order assertion: inserting Inspect before Open Machine Program changed the Tab destination after the import menu. Inspection now follows the existing action, preserving that keyboard path. The original dashboard UX and new standalone inspection files then passed all four native cases, with the existing test untouched. CI repeats the full suite for the corrected commit.
+
 ## Compatibility
 
 App release 0.0.695 changes no post/package/UPID/engine/storage schema, controller output rule, installed package or saved revision. Shared external G-code preview interpretation is more conservative; programs previously drawn speculatively may have omitted fragments or warnings. The release record and UI diagnostics disclose this behavior change. Inspection is a nominal XY trace, not controller execution verification.

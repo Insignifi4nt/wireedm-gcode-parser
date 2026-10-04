@@ -158,12 +158,6 @@ export function StartWorkPanel({
 
         <div className="grid gap-1">
           <span className="technical-label">Posted file: .gcode, .nc, .iso, .txt</span>
-          {onInspectGCode && <>
-            <Button disabled={isImporting} onClick={onInspectGCode} type="button" variant="outline">
-              <FileSearch />Inspect G-code
-            </Button>
-            <p className="text-[10px] text-muted-foreground">Quick file or paste inspection. No project created.</p>
-          </>}
           <Button
             disabled={!connected || isImporting}
             onClick={() => programInputRef.current?.click()}
@@ -174,6 +168,12 @@ export function StartWorkPanel({
             {programImporting ? 'Opening Machine Program...' : 'Open Machine Program'}
           </Button>
           <p className="text-[10px] text-muted-foreground">Import an editable copy into the workbench.</p>
+          {onInspectGCode && <>
+            <Button disabled={isImporting} onClick={onInspectGCode} type="button" variant="outline">
+              <FileSearch />Inspect G-code
+            </Button>
+            <p className="text-[10px] text-muted-foreground">Quick file or paste inspection. No project created.</p>
+          </>}
         </div>
 
         <div className="grid gap-1">
