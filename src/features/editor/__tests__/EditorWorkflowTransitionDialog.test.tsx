@@ -21,7 +21,7 @@ describe('EditorWorkflowTransitionDialog', () => {
     container.remove();
   });
 
-  it('renders Save and Discard as its only decision actions', async () => {
+  it('renders Apply and Discard as its only decision actions', async () => {
     await act(async () => root.render(
       <EditorWorkflowTransitionDialog
         nextWorkflowLabel="Entry/Exit"
@@ -44,10 +44,10 @@ describe('EditorWorkflowTransitionDialog', () => {
     );
     expect(dismiss).toBeTruthy();
     expect(allButtons.filter((button) => button !== dismiss).map((button) => button.textContent))
-      .toEqual(['Discard', 'Save']);
+      .toEqual(['Discard', 'Apply']);
   });
 
-  it('disables Save and exposes its reason', async () => {
+  it('disables Apply and exposes its reason', async () => {
     const reason = 'Choose an entry point before saving.';
     await act(async () => root.render(
       <EditorWorkflowTransitionDialog
@@ -62,7 +62,7 @@ describe('EditorWorkflowTransitionDialog', () => {
     ));
 
     const save = Array.from(container.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Save');
+      .find((button) => button.textContent === 'Apply');
     expect(save?.disabled).toBe(true);
     const reasonId = save?.getAttribute('aria-describedby');
     const reasonElement = reasonId ? container.querySelector<HTMLElement>(`#${reasonId}`) : null;
@@ -172,7 +172,7 @@ describe('EditorWorkflowTransitionDialog', () => {
       '[aria-label="Dismiss workflow transition"]'
     );
     const save = Array.from(container.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Save');
+      .find((button) => button.textContent === 'Apply');
     dismiss?.focus();
     dismiss?.dispatchEvent(new KeyboardEvent('keydown', {
       bubbles: true,

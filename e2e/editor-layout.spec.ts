@@ -235,7 +235,7 @@ test('path editor keeps an active right dock and its controls inside the workben
     dockedPanel.getByRole('button', { name: 'Float Entry / Exit' }),
     dockedPanel.getByRole('button', { name: 'Hide Entry / Exit' }),
     dockedPanel.getByRole('button', { name: 'Cancel Entry / Exit workflow' }),
-    dockedPanel.getByRole('button', { name: 'Save Entry / Exit workflow' })
+    dockedPanel.getByRole('button', { name: 'Apply Entry / Exit workflow' })
   ];
   for (const control of dockControls) {
     await expect(control).toBeVisible();
@@ -889,7 +889,7 @@ async function expectActiveRightDockInsideWorkbench(
     dockedPanel.getByRole('button', { name: 'Float Entry / Exit' }),
     dockedPanel.getByRole('button', { name: 'Hide Entry / Exit' }),
     dockedPanel.getByRole('button', { name: 'Cancel Entry / Exit workflow' }),
-    dockedPanel.getByRole('button', { name: 'Save Entry / Exit workflow' })
+    dockedPanel.getByRole('button', { name: 'Apply Entry / Exit workflow' })
   ];
   for (const control of dockControls) {
     await expect(control).toBeVisible();

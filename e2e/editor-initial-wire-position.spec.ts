@@ -7,6 +7,10 @@ test('updates the starting marker and connection after review and preserves them
   await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
   await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
+  const startLabel = await page.locator('[data-path-marker-label="start"]').boundingBox();
+  const endLabel = await page.locator('[data-path-marker-label="end"]').boundingBox();
+  if (!startLabel || !endLabel) throw new Error('Expected both closed-path endpoint labels');
+  expect(startLabel.y + startLabel.height).toBeLessThanOrEqual(endLabel.y);
   await page.getByRole('button', { name: 'Machining menu' }).click();
   await page.locator('[data-editor-workflow-command="machining.initial-wire"]').click();
 
@@ -20,8 +24,9 @@ test('updates the starting marker and connection after review and preserves them
   await expect(page.locator('[data-initial-wire-position-preview]')).toHaveText('X-17.500 Y24.900');
   await expect(page.locator('[data-initial-wire-position-pending]')).toHaveCount(0);
   await expectReviewedPreview(page);
-  await page.getByRole('button', { name: 'Save Initial wire position workflow', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply Initial wire position workflow', exact: true }).click();
   await expectReviewedPreview(page);
+  await expect(page.locator('[data-editor-document-state]')).toHaveText('Unsaved');
   await page.getByRole('button', { name: 'Save active document', exact: true }).click();
   await expect(page.locator('[data-editor-document-state]')).toHaveText('Saved');
   await page.getByRole('button', { name: 'Back to Dashboard', exact: true }).click();
@@ -77,7 +82,7 @@ test('preserves linked center setup through contour start splitting, undo and sa
     await page.locator(`[data-editor-workflow-command="${command}"]`).click();
   }
   async function saveWorkflow(command: string) {
-    await page.locator(`[data-editor-workflow-actions="${command}"] button[aria-label^="Save "]`).click();
+    await page.locator(`[data-editor-workflow-actions="${command}"] button[aria-label^="Apply "]`).click();
   }
   async function expectSourceSegments(count: number) {
     await expect.poll(() => page.locator('path[data-preview-segment]').evaluateAll((paths) =>

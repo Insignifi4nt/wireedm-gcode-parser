@@ -27,10 +27,10 @@ test('guide owns focus and Escape without discarding an active geometry edit', a
   await page.keyboard.press('Escape');
   await expect(guide).toHaveCount(0);
   await expect(launcher).toBeFocused();
-  await expect(page.getByRole('dialog', { name: 'Unsaved workflow changes' })).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Pending workflow changes' })).toHaveCount(0);
   expect(await cuts.evaluateAll(paths => paths.map(path => path.getAttribute('d')))).toEqual(rotated);
   await expect(page.locator('[data-editor-workflow-actions="geometry.transform"]')).toBeVisible();
-  await page.locator('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]').click();
+  await page.locator('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]').click();
   await expect(page.getByRole('button', { name: 'Undo active document change', exact: true })).toBeEnabled();
   await launcher.click();
   await guide.locator('[data-editor-guide-highlight="grid-snap"]').click();

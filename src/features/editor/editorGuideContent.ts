@@ -180,7 +180,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '6. Editing And Export',
         steps: [
           {
-            text: 'Workflow Save commits one undoable change; Cancel restores the opening state after you discard pending changes. Switching workflows with edits asks you to save or discard. Header Save persists committed decisions to the project.',
+            text: 'Workflow Apply commits one undoable change to the editor draft; Cancel restores the opening state after you discard pending changes. Switching workflows with edits asks you to apply or discard. Header Save persists the draft to the project.',
             context: 'path'
           },
           {
@@ -350,7 +350,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '6. Editare si export',
         steps: [
           {
-            text: 'Save din workflow confirma o singura modificare anulabila prin Undo. Cancel restaureaza starea de la deschidere dupa Discard. Schimbarea workflow-ului cu modificari cere Save sau Discard. Save din header persista deciziile confirmate in proiect.',
+            text: 'Apply din workflow confirma in draft o singura modificare anulabila prin Undo. Cancel restaureaza starea de la deschidere dupa Discard. Schimbarea workflow-ului cu modificari cere Apply sau Discard. Save din header persista draftul in proiect.',
             context: 'path'
           },
           {

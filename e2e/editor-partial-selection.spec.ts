@@ -12,7 +12,7 @@ test('clicking a clipped cut selects its source and exact active range', async (
   await page.getByLabel('Machining span start', { exact: true }).fill('60');
   await page.getByLabel('Machining span end', { exact: true }).fill('100');
   await page.getByRole('button', { name: 'Mark inactive reference', exact: true }).click();
-  await page.locator('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]').click();
+  await page.locator('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Apply "]').click();
   await page.getByRole('button', { name: 'Machining menu' }).click();
   await page.locator('[data-editor-workflow-command="machining.participation"]').click();
   const reference = page.locator('path[data-preview-participation="inactive-reference"]');

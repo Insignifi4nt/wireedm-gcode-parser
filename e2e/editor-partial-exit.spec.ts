@@ -11,7 +11,7 @@ test('confirms the active partial exit, persists review, and undoes revocation',
   await page.getByLabel('Exit X', { exact: true }).fill('-3');
   await page.getByLabel('Exit Y', { exact: true }).fill('0');
   await page.getByRole('button', { name: 'Set straight exit', exact: true }).click();
-  await page.locator('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]').click();
+  await page.locator('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Apply "]').click();
   await page.getByRole('button', { name: 'Machining menu' }).click();
   await page.locator('[data-editor-workflow-command="machining.participation"]').click();
   await page.getByLabel('Machining span start', { exact: true }).fill('60');
@@ -23,7 +23,7 @@ test('confirms the active partial exit, persists review, and undoes revocation',
   await review.click();
   await expect(review).toHaveText('Exit reviewed · revoke');
   await page.screenshot({ path: 'tmp/cam-audit/09-partial-exit-review.png', fullPage: true });
-  await page.locator('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]').click();
+  await page.locator('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Apply "]').click();
   await page.getByRole('button', { name: 'Save active document', exact: true }).click();
   await page.getByRole('button', { name: 'Back to Dashboard' }).click();
   await page.reload();
@@ -33,7 +33,7 @@ test('confirms the active partial exit, persists review, and undoes revocation',
   await expect(review).toHaveText('Exit reviewed · revoke');
   await review.click();
   await expect(review).toHaveText('Review partial exit');
-  await page.locator('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]').click();
+  await page.locator('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Apply "]').click();
   await page.getByRole('button', { name: 'Undo active document change', exact: true }).click();
   await page.getByRole('button', { name: 'Machining menu' }).click();
   await page.locator('[data-editor-workflow-command="machining.participation"]').click();

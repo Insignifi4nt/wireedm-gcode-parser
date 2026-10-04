@@ -448,7 +448,7 @@ test('editor translates selected path geometry through the Transform panel', asy
   const originalContourPath = await contourPath.getAttribute('d');
   await page.locator('[data-upid-transform-apply]').click();
   await expect(contourPath).not.toHaveAttribute('d', originalContourPath ?? '');
-  await page.getByRole('button', { name: 'Save Transform Geometry workflow' }).click();
+  await page.getByRole('button', { name: 'Apply Transform Geometry workflow' }).click();
 
   await page.locator('[data-preview-source="path-document"][data-preview-segment="seg_0001"]').first().click({ force: true });
   await showPanels(page, ['path-transform']);
@@ -546,7 +546,7 @@ test('editor moves a selected arc center to a chosen measurement point', async (
   await page.getByLabel('Measurement point X').fill('-4');
   await page.getByLabel('Measurement point Y').fill('6');
   await page.getByRole('button', { name: 'Add Point' }).click();
-  await page.getByRole('button', { name: 'Save Construction points workflow' }).click();
+  await page.getByRole('button', { name: 'Apply Construction points workflow' }).click();
   await expect(page.locator('[data-editor-workspace-panel="measurement"]')).toHaveCount(0);
 
   await showPanels(page, ['path-transform']);

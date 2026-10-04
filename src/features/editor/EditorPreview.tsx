@@ -1477,7 +1477,7 @@ export function EditorPreview({
                 <text
                   data-path-marker-label={marker.type}
                   dx={radius * 1.45}
-                  dy={marker.type === 'start' ? -radius * 1.5 : -radius}
+                  dy={marker.type === 'start' ? -radius * 1.5 : radius + markerLabelFontSize}
                   fill={marker.type === 'start' ? '#fecaca' : '#a5f3fc'}
                   fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
                   fontSize={markerLabelFontSize}

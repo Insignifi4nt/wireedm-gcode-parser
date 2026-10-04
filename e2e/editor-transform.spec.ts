@@ -32,7 +32,7 @@ test('transforms preview, cancel, commit once and persist through reopening', as
   await openTransform();
   await apply();
   const transformed = await geometry();
-  await page.locator('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]').click();
+  await page.locator('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]').click();
   await page.getByRole('button', { name: 'Undo active document change', exact: true }).click();
   expect(await geometry()).toEqual(original);
   await expect(page.getByRole('button', { name: 'Undo active document change', exact: true })).toBeDisabled();

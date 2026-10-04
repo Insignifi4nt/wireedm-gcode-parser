@@ -42,7 +42,7 @@ test('edits stops from their panel without losing pending fields and undoes the 
   await page.getByLabel('Program stop placement', { exact: true }).selectOption('before-entry');
   await page.getByRole('button', { name: 'Add program stop', exact: true }).click();
   await expect(page.locator('[data-program-stop="stop-3"]')).toContainText('Stop before positioning');
-  await page.getByRole('button', { name: 'Save Program Stops workflow', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply Program Stops workflow', exact: true }).click();
   await page.getByRole('button', { name: 'Undo active document change', exact: true }).click();
   await page.getByRole('button', { name: 'Machining menu' }).click();
   await page.locator('[data-editor-workflow-command="machining.program-stops"]').click();
