@@ -56,3 +56,15 @@ Baseline: 199 unit/integration files / 1,963 tests pass. Final integrated candid
 ## Remaining work
 
 The coverage plan retains cancellable DXF processing, post/editor responsiveness, deeper domain review, hosted recovery, developer-test efficiency and further human/agent workflows. Confirmed additional cancellation gaps are tracked rather than silently excluded. No speculative geometry or post-output change is included here.
+
+## Checkpoint 2: responsive DXF processing
+
+A valid 5,000-line drawing of only 164 kB spent about 1.97 seconds in planning in an isolated probe and up to 9.82 seconds during concurrent test load. That work previously blocked the browser. The change moves parsing, candidate unit previews and confirmed planning into disposable local workers, with a 90-second acceptance deadline and cancellation. This improves responsiveness; it does not claim a faster or different geometry algorithm.
+
+UI imports, source-unit reimports and agent imports share the processor seam. Worker payloads contain source/preferences or geometry/metadata, never storage adapters. Pure domain APIs retain their synchronous default. Worker results preserve exact source, unit review, diagnostics and geometry; the browser reports failure rather than falling back to blocking execution. Preparation replies are frozen again after structured cloning.
+
+Cancellation runs before the journal begins, including after waiting for the storage lock and final transaction preparation. The shared optional guard preserves its original rejection. Once journaling starts, the transaction's durable outcome remains authoritative, even if cancellation arrives or opening the resulting editor fails. Reimport checks the full reviewed project and exact source under lock after planning so independent edits are retained.
+
+Independent source review found no actionable introduced regression. Two separate real-operation probes verified late-cancel and failed-editor-open receipts. Owner verification: TypeScript and 19 focused files / 296 tests pass. Two native Chromium tests use real workers, preserve CRLF/Unicode source and geometry, cancel a 5,000-line plan without a saved project, and successfully import a smaller drawing afterward. Final integrated results are recorded in the 0.0.691 release record.
+
+Limitations are explicit: browser project validation, transaction snapshots, serialization and persistence still perform main-thread work. A pending `File.text()` read cannot itself be interrupted; its obsolete result is ignored. Existing resource limits still apply. No geometry order, post, output, schema or installed-package change is intended.

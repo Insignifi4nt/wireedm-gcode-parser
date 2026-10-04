@@ -19,22 +19,22 @@ Each workstream records inspected modules, reproducible findings, disposition an
 | Area | First-pass owner | Required evidence | Status |
 | --- | --- | --- | --- |
 | Branches and release workflow | Primary | Current refs, ancestry, PR state, release gates | Production baseline confirmed; five merged remote branches cleaned |
-| Storage, recovery and revisions | Integrity reviewer | Exact-byte, conflict, interrupted-write and adapter behavior | In progress |
-| Geometry, UPID, planning, execution and posts | Integrity reviewer | Relevant invariants, realistic edge cases, unchanged conformance | In progress |
+| Storage, recovery and revisions | Integrity reviewer | Exact-byte, conflict, interrupted-write and adapter behavior | Conflict/preference fixes merged; hosted read-only recovery export in progress |
+| Geometry, UPID, planning, execution and posts | Integrity reviewer | Relevant invariants, realistic edge cases, unchanged conformance | Broad domain review completed without further confirmed output defects; conformance preserved |
 | Agent tools, cancellation, freshness, state and docs | Agent-workflow reviewer | Shared guard paths, tool-level repros, hosted documentation | In progress |
 | Imports, editor and simulation performance | Performance reviewer | Bounded measurements and semantic regression checks | In progress |
 | Human UX and visual design | Primary | Current screenshots, keyboard behavior, complete workflows at different sizes | In progress |
 | Test quality and verification cost | Primary | Existing contract inspection, measured runtime, remove only proved waste | In progress |
 | Architecture, bundles, dependencies and maintainability | Primary + performance reviewer | Import graph, actual usage, build evidence, cohesive boundaries | In progress |
-| Integration and independent review | Rotating reviewers | Frozen diff, focused then broad checks, browser walkthrough, PR checks | Pending |
+| Integration and independent review | Rotating reviewers | Frozen diff, focused then broad checks, browser walkthrough, PR checks | First PR merged after independent review and green GitHub checks; second scope reviewed |
 
 ## Candidate delivery sequence
 
-1. **Reliability and workflow clarity:** verified correctness/agent-state defects and focused UX fixes.
-2. **Responsive import and execution:** cancellable worker boundaries and startup assets where measurements justify them.
-3. **Editor usability and maintainability:** cohesive state/selection improvements, dense readable controls and measured rendering work.
-4. **Hosted recovery and portability:** only if a complete read-only, data-preserving design and adapter coverage fit the evidence.
-5. **Reserved:** independent review findings or another substantial opportunity, not a quota to fill.
+1. **Reliability and workflow clarity:** merged exact-state rollback, current preference validation, complete agent reports and compact UX fixes.
+2. **Responsive DXF import:** reviewed cancellable worker preparation/planning with persistence and reimport freshness guards.
+3. **Editor and agent workflow state:** distinguish Apply from project Save, separate closed-path marker labels, fix reproduced save/open/setup cancellation and draft-freshness gaps; improve shared busy state and bounded setup discovery where confirmed.
+4. **Hosted recovery and portability:** retain failed readable storage separately and export bounded exact logical-file evidence without initialization, repair or deletion.
+5. **Startup and verification efficiency:** measured bundle boundaries and pure-domain test environments; implement only improvements supported by evidence.
 
 At each checkpoint revisit the full ledger before going deeper into one area. No agent creates branches, commits, releases or PRs independently; primary coordinates shared-file ownership and integration. Reviewers use Sol 6.1 High with no inherited turns and receive explicit context.
 
@@ -44,7 +44,7 @@ Keep baseline tests intact while reproducing defects. Add tests for the real fai
 
 ## PR budget
 
-0 of 5 created. The first reviewed scope advances the app to 0.0.690. Update this record with links, checkpoints, review findings and final coverage rather than creating duplicate planning documents.
+1 of 5 created and merged: [PR #5](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/5), app 0.0.690, merge `6d1e673`. Its full GitHub verification passed. The second candidate advances to 0.0.691. Update this record with links, checkpoints, review findings and final coverage rather than creating duplicate planning documents.
 
 ## Local evidence
 
