@@ -1,4 +1,6 @@
-import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
+import { initializeWorkbenchConnection, type WorkbenchConnectionResult } from './initializeWorkbenchConnection';
+import { recoveryStorageSource, type RecoveryStorageSource } from './workbenchRecovery';
+import { MAX_STORAGE_INVENTORY_ENTRIES } from './workbenchStorageAdapter';
 
 import { createBrowserCacheAdapter } from './browserCacheAdapter';
 
@@ -9,10 +11,10 @@ interface ConnectCachedWorkbenchOptions {
   now?: Date;
 }
 
-export async function connectCachedWorkbench(options: ConnectCachedWorkbenchOptions = {}) {
+export async function connectCachedWorkbench(options: ConnectCachedWorkbenchOptions = {}): Promise<WorkbenchConnectionResult> {
   const storageSource = options.storage && typeof navigator !== 'undefined' && navigator.locks
     ? { storage: options.storage, persistent: true }
-    : getBrowserStorage();
+    : getBrowserStorage(options.storage);
   const adapter = createBrowserCacheAdapter(storageSource.storage, {
     kind: storageSource.persistent ? 'browser-cache' : 'memory',
     name: storageSource.persistent ? 'Local storage' : 'Temporary storage',
@@ -20,18 +22,24 @@ export async function connectCachedWorkbench(options: ConnectCachedWorkbenchOpti
     ...('warning' in storageSource ? { persistenceWarning: storageSource.warning } : {})
   });
 
-  return initializeWorkbenchCatalog(adapter, {
-    now: options.now
-  });
+  const result = await initializeWorkbenchConnection(adapter, options.now);
+  return result.recoverySource || !('recoverySource' in storageSource) ? result : { ...result, recoverySource: storageSource.recoverySource };
 }
 
-function getBrowserStorage() {
+function getBrowserStorage(override?: Storage) {
   try {
     if (!navigator.locks) {
-      return { persistent: false, storage: createVolatileStorage(),
+      let recoverySource: RecoveryStorageSource | undefined;
+      // Discovery has no write probe and never initializes the persistent cache without locks.
+      try {
+        const existing = override ?? window.localStorage;
+        if (hasCachedWorkbenchFiles(existing)) recoverySource = recoveryStorageSource(createBrowserCacheAdapter(existing, { namespace: BROWSER_WORKBENCH_NAMESPACE }),
+          { code: 'PERSISTENT_STORAGE_UNCOORDINATED', message: 'Persistent browser cache is readable, but this browser cannot coordinate edits. Only read-only recovery export is available.' });
+      } catch { /* Storage itself may be inaccessible; the temporary fallback remains explicit. */ }
+      return { persistent: false, storage: createVolatileStorage(), recoverySource,
         warning: 'This browser cannot coordinate persistent edits across tabs. Temporary storage is active; changes last only until this page closes or reloads. Existing browser-cache projects are untouched. Open this site in a browser with Web Locks support to use them.' };
     }
-    const storage = window.localStorage;
+    const storage = override ?? window.localStorage;
     const probeKey = `${BROWSER_WORKBENCH_NAMESPACE}:storage-probe`;
     try {
       storage.setItem(probeKey, '1');
@@ -61,10 +69,11 @@ function getBrowserStorage() {
 
 function hasCachedWorkbenchFiles(storage: Storage) {
   const prefix = `${BROWSER_WORKBENCH_NAMESPACE}:file:`;
-  for (let index = 0; index < storage.length; index++) {
+  for (let index = 0; index < Math.min(storage.length, MAX_STORAGE_INVENTORY_ENTRIES); index++) {
     if (storage.key(index)?.startsWith(prefix)) return true;
   }
-  return false;
+  // An incomplete scan cannot establish that the remaining cache is empty.
+  return storage.length > MAX_STORAGE_INVENTORY_ENTRIES;
 }
 
 function createVolatileStorage(): Storage {

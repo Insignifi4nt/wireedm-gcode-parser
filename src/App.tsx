@@ -8,6 +8,7 @@ import { AppShell } from '@/app/AppShell';
 import { type AppServices } from '@/app/appServices';
 import { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
 import { StatusToastList } from '@/components/StatusToasts';
+import { RecoveryExportPanel } from '@/app/RecoveryExportPanel';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { DxfImportConfirmationDialog } from '@/features/dashboard/DxfImportConfirmationDialog';
 import { OnboardingDialog } from '@/features/onboarding/OnboardingDialog';
@@ -29,7 +30,7 @@ export default function App({ services }: AppProps = {}) {
   const agentActions = useWorkbenchActions(app, draftRead);
   const updateDraftRead = useCallback((snapshot: DraftReadSnapshot | null) => { draftRead.current = snapshot; }, []);
   const toolState = useRef<WorkbenchToolState>({ workbench: null, draft: null, busy: false });
-  useLayoutEffect(() => { toolState.current = { workbench: app.connectedWorkbench, draft: null, busy: app.workbenchInteractionLocked }; });
+  useLayoutEffect(() => { toolState.current = { workbench: app.connectedWorkbench, draft: null, busy: app.workbenchInteractionLocked, recovery: app.recoveryControls?.source ?? null }; });
   const agentActivity = useSiteTools([...workbenchSiteTools(() => ({ ...toolState.current, draft: draftRead.current,
     busy: agentActions.isBusy() })), ...agentActions.tools]);
   const planningMachineId = app.connectedWorkbench?.manifest.preferences.recentPlanningMachineId;
@@ -44,6 +45,7 @@ export default function App({ services }: AppProps = {}) {
 
   return (
     <AppShell
+      recovery={app.recoveryControls}
       agentPanelContent={<><AgentActivity activity={agentActivity} />{agentActions.previewControl && <div className="mt-3 border-t border-border pt-2">{agentActions.previewControl}</div>}</>}
       connectedWorkbench={app.connectedWorkbench}
       errorMessage={app.errorMessage}
@@ -75,6 +77,7 @@ export default function App({ services }: AppProps = {}) {
           <div className="max-w-2xl border border-destructive bg-destructive/10 p-4 font-mono text-xs text-destructive">
             <h1 className="mb-2 font-sans text-sm font-semibold">Workbench could not be opened</h1>
             <p>{app.errorMessage ?? 'The workbench failed without a diagnostic.'}</p>
+            <div className="mt-4 text-foreground"><RecoveryExportPanel recovery={app.recoveryControls} disabled={app.workbenchInteractionLocked} /></div>
           </div>
         </section>
       ) : app.activeView === 'editor' && app.connectedWorkbench ? (

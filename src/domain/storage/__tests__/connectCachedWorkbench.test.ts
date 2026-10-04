@@ -180,7 +180,8 @@ describe('connectCachedWorkbench', () => {
     const original = JSON.stringify({ schemaVersion: 1, machineProfiles: [] });
     storage.setItem('wire-edm-workbench:file:workbench.json', original);
 
-    expect(await connectCachedWorkbench({ storage })).toEqual({
+    const { recoverySource, ...failure } = await connectCachedWorkbench({ storage });
+    expect(failure).toEqual({
       ok: false,
       error: {
         code: 'WORKBENCH_CATALOG_SCHEMA_INVALID',
@@ -188,6 +189,8 @@ describe('connectCachedWorkbench', () => {
         path: '/name'
       }
     });
+    expect(recoverySource?.adapter.kind).toBe('browser-cache');
+    expect(await recoverySource?.adapter.readBoundedExactText?.('workbench.json', 4096)).toEqual({ status: 'read', text: original });
     expect(storage.getItem('wire-edm-workbench:file:workbench.json')).toBe(original);
     expect(storage.getItem('wire-edm-workbench:file:posts/library.json')).toBeNull();
   });

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/domain/release/appRelease';
 import { StorageReviewPanel } from './StorageReviewPanel';
 import { WorkbenchBackupPanel } from './WorkbenchBackupPanel';
+import { RecoveryExportPanel, type RecoveryExportControls } from './RecoveryExportPanel';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import {
@@ -17,6 +18,7 @@ type WorkbenchStatus = 'initializing' | 'ready' | 'connecting-storage' | 'error'
 export type WorkbenchSettingsSection = 'storage' | 'machine-output';
 
 interface WorkbenchSettingsDialogProps extends MachinePostSettingsActions {
+  readonly recovery?: RecoveryExportControls | null;
   readonly initialSection?: WorkbenchSettingsSection;
   readonly connectedWorkbench: ConnectedWorkbenchCatalog | null;
   readonly errorMessage: string | null;
@@ -34,6 +36,7 @@ interface WorkbenchSettingsDialogProps extends MachinePostSettingsActions {
 }
 
 export function WorkbenchSettingsDialog({
+  recovery,
   initialSection = 'storage',
   connectedWorkbench,
   errorMessage,
@@ -99,6 +102,7 @@ export function WorkbenchSettingsDialog({
                   {(connectedWorkbench?.adapter.kind === 'directory' || !connectedWorkbench) && <Button className="mt-3 mr-2" disabled={storageSwitchDisabled || connecting} onClick={onUseBrowserCache} type="button" variant="outline">Use browser cache</Button>}
                   {canConnect && <Button className="mt-3" disabled={storageSwitchDisabled} onClick={onConnectWorkbench} type="button" variant="outline"><RefreshCw />{storageActionLabel}</Button>}
                 </section>
+                <RecoveryExportPanel recovery={recovery ?? null} disabled={interactionLocked || connecting} />
                 {connectedWorkbench && <WorkbenchBackupPanel workbench={connectedWorkbench} disabled={storageSwitchDisabled || connecting} />}
                 {connectedWorkbench && <StorageReviewPanel workbench={connectedWorkbench} disabled={interactionLocked || connecting} />}
               </div>

@@ -1,7 +1,4 @@
-import {
-  initializeWorkbenchCatalog,
-  type InitializeWorkbenchCatalogResult
-} from '@/domain/workbench-catalog/workbenchCatalog';
+import { initializeWorkbenchConnection, type WorkbenchConnectionResult } from './initializeWorkbenchConnection';
 
 import { createBrowserDirectoryAdapter } from './browserDirectoryAdapter';
 import {
@@ -33,7 +30,7 @@ interface ConnectWorkbenchDirectoryOptions {
 }
 
 export type RememberedWorkbenchDirectoryResult =
-  | InitializeWorkbenchCatalogResult
+  | WorkbenchConnectionResult
   | { status: 'missing' | 'permission-needed' | 'unsupported' }
   | { status: 'error'; message: string };
 
@@ -47,9 +44,7 @@ export async function connectWorkbenchDirectory(
   const directoryHandle = await requestDirectory();
   const adapter = createAdapter(directoryHandle);
 
-  const connected = await initializeWorkbenchCatalog(adapter, {
-    now: options.now
-  });
+  const connected = await initializeWorkbenchConnection(adapter, options.now);
   if (connected.ok) await handleStore.write(directoryHandle);
   return connected;
 }
@@ -76,9 +71,7 @@ export async function connectRememberedWorkbenchDirectory(
     }
 
     const adapter = createAdapter(directoryHandle);
-    return initializeWorkbenchCatalog(adapter, {
-      now: options.now
-    });
+    return initializeWorkbenchConnection(adapter, options.now);
   } catch (error) {
     return {
       status: 'error',

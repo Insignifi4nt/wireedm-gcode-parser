@@ -1,0 +1,33 @@
+{
+  "version": "0.0.693",
+  "previousVersion": "0.0.692",
+  "postCompatibility": "preserved-output-additive-read-only-recovery",
+  "summary": "Exports bounded original logical files and diagnostics when cache or folder storage cannot open.",
+  "warning": "Recovery export is evidence, not a validated restore backup. It reads available original logical text without initialization, repair, post execution or deletion. Limits and unreadable files produce explicit omissions; reads are not an atomic snapshot. Keep original storage and transaction journals intact. Installed posts, saved revisions and controller output are unchanged.",
+  "checklist": {
+    "schema": "The app advances once to 0.0.693. Installed post, machine package, UPID, project, revision, transaction and engine API schemas are unchanged. A distinct wireedm-recovery JSON evidence format is additive and is not accepted as a normal restore backup.",
+    "events": "Execution event kinds, fields, ordering and post translation are unchanged. Recovery never runs a post or reconstructs an execution plan.",
+    "capabilities": "Installed post capabilities are unchanged. edm_export_recovery and source/receipt context reuse the same guarded capture/download operation as startup and Settings. It works with a failed readable source without requiring a healthy connected catalog. Source identity, cancellation, workbench changes and shared live busy state are checked. Retained receipts allow downloading the same captured archive again without rereading storage.",
+    "auditAndOutput": "Generation, physical preflight, sandbox/conformance, audit and controller file rules are unchanged. Recovery preserves exact logical strings including BOM/CRLF and malformed JSON. Unpaired UTF-16 cache text remains exact through JSON escaping; hashes distinguish logical JSON text from valid UTF-8. The archive receipt hashes the actual serialized bytes. Browser download requests are not proof of on-disk persistence.",
+    "installationAndStorage": "No migration, repair, installed-package rewrite or deletion. Cache and folder adapters supply bounded exact reads. Folder byte limits are checked before decoding, invalid UTF-8 is omitted, and compressed cache expansion is capped through a cancellable native stream. Missing decompression support is explicit. Export caps are 32 MiB per logical file, 128 MiB serialized archive, 10,000 inventory entries, 16 folder levels and 1,024 path characters. Whole-file omissions, inventory changes and lock coordination are recorded. Readable persistent cache remains exportable without write access or Web Locks; normal mutation safeguards remain unchanged.",
+    "verification": "Original source and integration received independent review. Final integrated verification passes 206 files and 2,063 unit/integration tests (four workers), app/tooling TypeScript, production build, 24 documentation pages/78 files, generated post contract parity, three UPID fixtures, three unchanged Robofil fixtures and complete package validation. Eight targeted native Chromium cases pass, covering actual corrupt-cache recovery download and hashes, missing Web Locks, cross-tab locking, settings focus/backup and complete installation/controller output. Earlier native recovery acceptance also passes at 640 x 800. Tests cover both adapters, exact malformed originals/journals, bounded compressed/escaped data, cancellation, failed folder versus healthy cache, stale sources, shared agent busy state and download retry. Full GitHub checks run before merge."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Unchanged Robofil 2.6.0 implementation passes all three conformance fixtures and complete package validation. Native complete-package installation and saved controller output cases pass. Recovery does not execute installed post code; no physical controller verification is claimed."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Download recovery evidence directly from the hosted app when storage cannot open.",
+    "changes": [
+      "Startup errors and Storage settings identify the failed location and offer a recovery export.",
+      "The archive preserves readable original logical files and diagnostics, with explicit missing or omitted files and exact hashes.",
+      "A retained receipt lets you retry the same captured download without reading storage again.",
+      "Agents can use the same recovery operation and inspect source identity, limits and capture receipts."
+    ],
+    "compatibility": "Installed posts, saved revisions, generation and storage formats are unchanged. A recovery export is not a validated restore backup and does not authorize removing or rewriting the originals.",
+    "action": "Keep original storage intact. Export from the reported failed location, inspect completeness and omissions, and verify the browser saved the file. Use the retained download action to retry the same capture."
+  }
+}

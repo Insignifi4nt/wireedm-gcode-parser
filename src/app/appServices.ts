@@ -17,6 +17,7 @@ import {
 } from '@/domain/machine-package';
 import { downloadProgramFile } from '@/domain/post/downloadProgramFile';
 import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
+import { captureWorkbenchRecovery } from '@/domain/storage/workbenchRecovery';
 import {
   forgetWorkbenchDirectory,
   connectRememberedWorkbenchDirectory,
@@ -40,6 +41,7 @@ import { updateWorkbenchCatalogPreferences } from '@/domain/workbench-catalog/st
 import { dxfImportServices } from './dxfImportServices';
 
 export interface AppServices {
+  readonly captureWorkbenchRecovery: typeof captureWorkbenchRecovery;
   readonly forgetWorkbenchDirectory: typeof forgetWorkbenchDirectory;
   readonly connectCachedWorkbench: typeof connectCachedWorkbench;
   readonly connectRememberedWorkbenchDirectory: typeof connectRememberedWorkbenchDirectory;
@@ -75,6 +77,7 @@ export interface AppServices {
 }
 
 export const defaultAppServices: AppServices = {
+  captureWorkbenchRecovery,
   forgetWorkbenchDirectory,
   connectCachedWorkbench,
   connectRememberedWorkbenchDirectory,

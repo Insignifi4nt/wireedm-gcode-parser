@@ -2,7 +2,7 @@
 
 ## Shipped scope
 
-The app registers 28 workbench tools and eight temporary package-authoring tools. `siteTools.ts` owns the small browser adapter, runtime TypeBox argument validation, bounded issue paths, 32 KiB result limit, registration lifetime and execution cancellation. No server, relay, polyfill or separate editor state owner is added for WebMCP.
+The app registers 29 workbench tools and eight temporary package-authoring tools. `siteTools.ts` owns the small browser adapter, runtime TypeBox argument validation, bounded issue paths, 32 KiB result limit, registration lifetime and execution cancellation. No server, relay, polyfill or separate editor state owner is added for WebMCP.
 
 Package-workbench calls use the existing UI actions and cancellable worker. Archive inspection uses the file selected on that page; post checks and package builds can also receive supplied text. No arbitrary URL/path retrieval is exposed. Worker termination stops conformance when aborted. Reports stay visible, and only a successful current build can request an archive download. Context reports the live shared operation lock and pages complete evidence rows with a pinned input version. Check/build/inspection summaries preserve status and exact hashes within a 24 KiB details budget, explicitly marking omitted rows, nested output and shortened prose. `edm_read_package_report` returns exact bounded UTF-16 JSON chunks from the latest report without repeating its check; an independent report version prevents combining repeated checks of unchanged inputs. The report text is serialized once per immutable report and retained weakly for continued reads.
 
@@ -27,6 +27,8 @@ The final cancellation/version callback runs under the workbench mutation lock a
 `useSiteTools` also exposes bounded activity state to `AgentActivity` in the notification bell's Agent tab, alongside captured-preview access. Running actions remain visible while context calls complete; failures include tool codes/messages but never arguments or document contents. The unsupported-browser path keeps ordinary controls available.
 
 This completes the core machining workflow from the original Astra plan. It deliberately leaves drawing construction, external G-code text editing, storage switching and deletion to the UI. There is no generic approval framework or second state store.
+
+`edm_export_recovery` uses the controller capture/download operation even when no catalog can open. It pins the failed readable source, shares the live agent busy guard, preserves cancellation and source/workbench identity checks, and retains a receipt for retrying the exact captured download. It never initializes, repairs, rewrites, deletes or executes posts. Bounded adapters preserve exact logical text with explicit omissions; the recovery format is separate from validated restore backups. See the hosted agent guide and storage-maintenance map for limits and hash semantics.
 
 ## Browser contract and evidence
 
