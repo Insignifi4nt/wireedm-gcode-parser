@@ -43,6 +43,43 @@ describe.each(['cache', 'folder'] as const)('%s machine-library mutation integri
       : removeStoredMachineDefinition(workbench, 'shop.robofil-100');
   }
 
+  it('rejects cancellation after final transaction preparation without any write, then permits retry', async () => {
+    const { adapter, workbench, original } = await fixture();
+    const controller = new AbortController();
+    const reason = new DOMException('Cancelled at final preparation', 'AbortError');
+    const ensure = adapter.ensureDirectory.bind(adapter);
+    const paused = vi.spyOn(adapter, 'ensureDirectory').mockImplementation(async path => {
+      await ensure(path);
+      if (path === 'transactions') controller.abort(reason);
+    });
+    const writes = vi.spyOn(adapter, 'writeText');
+    await expect(activateStoredMachinePostBinding(adapter, 'shop.robofil-100', 'setup-2', {
+      expectedMachine: workbench.machines.machines[0], beforeWrite: () => controller.signal.throwIfAborted()
+    })).rejects.toBe(reason);
+    expect(writes).not.toHaveBeenCalled();
+    expect(await exact(adapter, MACHINE_LIBRARY_PATH)).toBe(original);
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+    paused.mockRestore();
+    expect(await activateStoredMachinePostBinding(adapter, 'shop.robofil-100', 'setup-2', {
+      expectedMachine: workbench.machines.machines[0]
+    })).toMatchObject({ ok: true, machine: { activeBindingId: 'setup-2' } });
+  });
+
+  it('rejects an externally changed same-ID setup against authoritative storage without replacing its bytes', async () => {
+    const { adapter, workbench } = await fixture();
+    const catalog = JSON.parse((await adapter.readText(MACHINE_LIBRARY_PATH))!);
+    catalog.machines[0].bindings[1].name = 'Changed setup after review';
+    const changed = `${kind === 'folder' ? '\uFEFF' : ''}${JSON.stringify(catalog)}\r\n`;
+    await adapter.writeText(MACHINE_LIBRARY_PATH, changed);
+    const writes = vi.spyOn(adapter, 'writeText');
+    expect(await activateStoredMachinePostBinding(adapter, 'shop.robofil-100', 'setup-2', {
+      expectedMachine: workbench.machines.machines[0]
+    })).toMatchObject({ ok: false, error: { code: 'MACHINE_LIBRARY_MUTATION_MACHINE_CHANGED' } });
+    expect(writes).not.toHaveBeenCalled();
+    expect(await exact(adapter, MACHINE_LIBRARY_PATH)).toBe(changed);
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+  });
+
   it.each(['activate', 'remove'] as const)('restores exact original bytes after a failed %s write', async (operation) => {
     const { adapter, workbench, original } = await fixture();
     const write = adapter.writeText.bind(adapter);

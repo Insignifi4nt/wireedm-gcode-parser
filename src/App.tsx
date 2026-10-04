@@ -30,7 +30,8 @@ export default function App({ services }: AppProps = {}) {
   const updateDraftRead = useCallback((snapshot: DraftReadSnapshot | null) => { draftRead.current = snapshot; }, []);
   const toolState = useRef<WorkbenchToolState>({ workbench: null, draft: null, busy: false });
   useLayoutEffect(() => { toolState.current = { workbench: app.connectedWorkbench, draft: null, busy: app.workbenchInteractionLocked }; });
-  const agentActivity = useSiteTools([...workbenchSiteTools(() => ({ ...toolState.current, draft: draftRead.current })), ...agentActions.tools]);
+  const agentActivity = useSiteTools([...workbenchSiteTools(() => ({ ...toolState.current, draft: draftRead.current,
+    busy: agentActions.isBusy() })), ...agentActions.tools]);
   const planningMachineId = app.connectedWorkbench?.manifest.preferences.recentPlanningMachineId;
   const planningMachine = app.connectedWorkbench?.machines.machines.find(
     ({ id }) => id === planningMachineId

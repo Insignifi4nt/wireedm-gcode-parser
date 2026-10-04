@@ -10,6 +10,7 @@ import {
   prepareDxfImport,
   renderApp,
   setSelectValue,
+  setInputValue,
   simpleLineDxf,
   type AppTestContext
 } from './appTestHelpers';
@@ -25,6 +26,32 @@ describe('V2 app workflows', () => {
   });
 
   afterEach(() => cleanupAppTestContext(context));
+
+  it('saves the actual dirty draft when header Save returns from Simulation to Editor', async () => {
+    await renderApp(context);
+    const container = context.container;
+    async function click(selector: string) {
+      const button = container.querySelector<HTMLButtonElement>(selector);
+      if (!button) throw new Error(`Missing ${selector}`);
+      await act(async () => button.click()); await flushAsync();
+    }
+    await prepareDxfImport(container, new File([simpleLineDxf()], 'simulation-save.dxf'));
+    await confirmPendingDxfImport(container, 'millimeters');
+    await click('button[aria-label="Geometry menu"]');
+    await click('[data-editor-workflow-command="geometry.transform"]');
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Translate X"]')!;
+    await act(async () => setInputValue(input, '3'));
+    await click('button[aria-label="Apply translation to document geometry"]');
+    await click('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]');
+    expect(container.querySelector('[data-editor-document-state]')?.textContent).toBe('Unsaved');
+    await click('#workspace-tab-simulation');
+    await click('button[aria-label="Save active document"]');
+    expect(container.querySelector('#workspace-tab-editor')?.getAttribute('aria-selected')).toBe('true');
+    expect(container.querySelector('[data-editor-document-state]')?.textContent).toBe('Saved');
+    const manifest = await storedJson('workbench.json');
+    const saved = await storedJson(manifest.projects[0].path);
+    expect(saved.content.document.segments[0].start.x).toBe(3);
+  });
 
   it('creates a strict browser-cache catalog with no machine or export defaults', async () => {
     await renderApp(context);

@@ -160,13 +160,13 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
         return openImported(result.workbench, result.project.id);
       });
     }),
-    mutation('edm_open_project', 'Open an existing saved project by ID. Save any dirty draft and finish its workflow first.', object({ ...version, projectId: identifier }), async input => {
+    mutation('edm_open_project', 'Open an existing saved project by ID. Save any dirty draft and finish its workflow first.', object({ ...version, projectId: identifier }), async (input, signal) => {
       checkVersion(input.expectedVersion);
       return app.runAgentWorkbenchOperation(async workbench => {
         const loaded = await loadEditorProgram(workbench, input.projectId);
         if (!loaded.ok) throw new ToolError(loaded.error.code, loaded.error.message);
         return { workbench, editorProgram: loaded.editorProgram, value: { projectId: input.projectId, opened: true } };
-      });
+      }, { beforeApply: () => { signal.throwIfAborted(); checkVersion(input.expectedVersion); } });
     }),
     mutation('edm_edit_project', 'Apply an atomic, undoable batch to the current draft. Coordinates/lengths are millimeters. start-point snaps to the nearest contour point and may split a segment. Null entry/exit explicitly reviews no lead. Read geometry and execution diagnostics before choosing machining intent; edits do not save.', object({ ...draftVersion, edits: Type.Array(projectEdit, { minItems: 1, maxItems: 50 }) }), input => {
       const current = draft(input.draftVersion);
@@ -179,10 +179,21 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
       if (!current.history) throw new ToolError('UNAVAILABLE', 'Editor history is not available yet. Wait for the editor to finish opening.');
       return { changed: current.history(input.direction), version: draftRef.current?.version };
     }),
-    mutation('edm_save_project', 'Save the exact current draft into its existing project. Rejects a changed draft or open workflow. Read fresh context after saving.', object(draftVersion), async input => {
+    mutation('edm_save_project', 'Save the exact current draft into its existing project. Rejects a changed draft or open workflow. Read fresh context after saving.', object(draftVersion), async (input, signal) => {
       const current = draft(input.draftVersion);
-      const saved = await app.handleSaveEditorDraft({ model: 'upid-document', pathDocument: current.document! });
-      if (!saved) throw new ToolError('SAVE_FAILED', 'Save failed. Read the visible save diagnostic; the draft is retained.');
+      let writingStarted = false;
+      const saved = await app.handleSaveEditorDraft({ model: 'upid-document', pathDocument: current.document! }, {
+        signal, beforeWrite: () => {
+          const latest = draft(input.draftVersion);
+          if (latest.projectId !== current.projectId || latest.document !== current.document) throw new ToolError('STALE_STATE', 'The draft changed. Read edm_get_context and review it before saving.');
+          writingStarted = true;
+        }
+      });
+      if (!saved) {
+        const error = { code: 'SAVE_FAILED', message: 'Save failed. Read the visible save diagnostic; the draft is retained.' };
+        if (writingStarted && signal.aborted) return { saved: false, status: 'save-failed', error };
+        throw new ToolError(error.code, error.message);
+      }
       return { saved: true, projectId: saved.project.id, updatedAt: saved.project.updatedAt };
     }),
     siteTool('edm_review_execution', 'Compile the current draft into ordered execution events or actionable diagnostics. Paginated events include generated wire actions and program stops. Successful compilation is not post/machine certification; generation runs those checks.', object({ ...draftVersion, ...pageFields }), input => {
@@ -223,9 +234,15 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
       preparedPackage.current = null;
       return { installed: true, packageHash: prepared.prepared.preview.packageHash };
     }),
-    mutation('edm_activate_setup', 'Activate an installed machine setup by exact machine and binding IDs from edm_get_capabilities.', object({ ...version, machineId: identifier, bindingId: identifier }), async input => {
+    mutation('edm_activate_setup', 'Activate an installed machine setup by exact machine and binding IDs from edm_get_capabilities.', object({ ...version, machineId: identifier, bindingId: identifier }), async (input, signal) => {
       checkVersion(input.expectedVersion);
-      if (!await app.handleActivateMachineSetup(input.machineId, input.bindingId)) throw new ToolError('ACTIVATION_FAILED', 'The setup could not be activated. Review the settings diagnostic.');
+      let writingStarted = false;
+      if (!await app.handleActivateMachineSetup(input.machineId, input.bindingId, { signal,
+        beforeWrite: () => { checkVersion(input.expectedVersion); writingStarted = true; } })) {
+        const error = { code: 'ACTIVATION_FAILED', message: 'The setup could not be activated. Review the settings diagnostic.' };
+        if (writingStarted && signal.aborted) return { activated: false, status: 'activation-failed', error };
+        throw new ToolError(error.code, error.message);
+      }
       return { activated: true, machineId: input.machineId, bindingId: input.bindingId };
     }),
     mutation('edm_generate_controller', 'Generate audited controller output from the saved current project and exact active setup. Requires a clean draft. Persists an immutable revision. Does not download or run a machine. Reuse the returned artifact ID for reading/downloading; do not generate repeatedly.', controllerInput, async (input, signal) => {
@@ -297,7 +314,7 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     return current;
   }
   const previewControl = capture && <a className="px-2 text-xs text-muted-foreground underline" href={capture.previewUrl} download={capture.fileName} title={`Download captured ${capture.source.toUpperCase()} preview (${capture.contentSource === 'saved-project' ? 'saved project' : capture.dirty ? 'unsaved draft' : 'saved draft'})`}>Preview PNG</a>;
-  return { tools, previewControl };
+  return { tools, previewControl, isBusy: () => busy.current || app.workbenchInteractionLocked };
 }
 
 function artifactSummary(artifact: ControllerProgramArtifact) {

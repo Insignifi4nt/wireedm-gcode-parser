@@ -29,6 +29,8 @@ export type EditorSaveDraft =
     };
 
 export interface SaveEditorProgramInput {
+  /** Runs under the mutation lock immediately before journal writing starts. */
+  readonly beforeWrite?: () => void;
   readonly projectId: string;
   readonly draft: EditorSaveDraft;
   readonly expectedContent?: WorkbenchProjectDocument['content'];
@@ -123,7 +125,8 @@ export async function saveEditorProgram(
   const replaced = await replaceStoredWorkbenchProject(workbench, {
     project: parsed.project,
     expectedContent: input.expectedContent ?? read.project.content,
-    ownedFileChanges
+    ownedFileChanges,
+    beforeWrite: input.beforeWrite
   });
   if (!replaced.ok) return replaced;
 
