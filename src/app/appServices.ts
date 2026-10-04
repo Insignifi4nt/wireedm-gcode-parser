@@ -1,17 +1,4 @@
-import {
-  commitDxfProjectImport,
-  type DxfImportDecision,
-  type ImportDxfProjectResult
-} from '@/domain/dxf/importDxfProject';
-import {
-  prepareDxfProjectImport,
-  previewDxfProjectImport,
-  type DxfImportPreparation
-} from '@/domain/dxf/prepareDxfProjectImport';
-import {
-  commitDxfProjectReimport,
-  prepareDxfProjectReimport
-} from '@/domain/dxf/reimportDxfProjectUnits';
+import { previewDxfProjectImport } from '@/domain/dxf/prepareDxfProjectImport';
 import {
   importExternalProgram,
   type ImportExternalProgramInput,
@@ -50,21 +37,18 @@ import {
 } from '@/domain/wire-edm-job';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import { updateWorkbenchCatalogPreferences } from '@/domain/workbench-catalog/storage/updateWorkbenchCatalogPreferences';
+import { dxfImportServices } from './dxfImportServices';
 
 export interface AppServices {
   readonly forgetWorkbenchDirectory: typeof forgetWorkbenchDirectory;
   readonly connectCachedWorkbench: typeof connectCachedWorkbench;
   readonly connectRememberedWorkbenchDirectory: typeof connectRememberedWorkbenchDirectory;
   readonly connectWorkbenchDirectory: typeof connectWorkbenchDirectory;
-  readonly prepareDxfProjectImport: typeof prepareDxfProjectImport;
+  readonly prepareDxfProjectImport: typeof dxfImportServices.prepareDxfProjectImport;
   readonly previewDxfProjectImport: typeof previewDxfProjectImport;
-  readonly commitDxfProjectImport: (
-    workbench: ConnectedWorkbenchCatalog,
-    preparation: DxfImportPreparation,
-    decision: DxfImportDecision
-  ) => Promise<ImportDxfProjectResult>;
-  readonly prepareDxfProjectReimport: typeof prepareDxfProjectReimport;
-  readonly commitDxfProjectReimport: typeof commitDxfProjectReimport;
+  readonly commitDxfProjectImport: typeof dxfImportServices.commitDxfProjectImport;
+  readonly prepareDxfProjectReimport: typeof dxfImportServices.prepareDxfProjectReimport;
+  readonly commitDxfProjectReimport: typeof dxfImportServices.commitDxfProjectReimport;
   readonly exportPortableUpidProject: typeof exportPortableUpidProject;
   readonly importPortableUpidProject: typeof importPortableUpidProject;
   readonly importExternalProgram: (
@@ -95,11 +79,8 @@ export const defaultAppServices: AppServices = {
   connectCachedWorkbench,
   connectRememberedWorkbenchDirectory,
   connectWorkbenchDirectory,
-  prepareDxfProjectImport,
+  ...dxfImportServices,
   previewDxfProjectImport,
-  commitDxfProjectImport,
-  prepareDxfProjectReimport,
-  commitDxfProjectReimport,
   exportPortableUpidProject,
   importPortableUpidProject,
   importExternalProgram,

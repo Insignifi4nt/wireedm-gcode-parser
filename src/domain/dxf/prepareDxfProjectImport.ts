@@ -29,6 +29,8 @@ export interface DxfImportPreparation {
   readonly warningCount: number;
   readonly unitCandidates: readonly DxfImportUnitCandidate[];
   readonly defaultUnitCandidateId: string | null;
+  /** Optional session-only previews prepared off the browser's UI thread. */
+  readonly unitPreviews?: Readonly<Record<string, DxfImportPreviewResult>>;
 }
 
 export interface DxfImportPreview {
@@ -64,6 +66,13 @@ export function prepareDxfProjectImport(
   workbench: ConnectedWorkbenchCatalog,
   input: { readonly fileName: string; readonly text: string; readonly now?: Date }
 ): DxfImportPreparationResult {
+  return prepareDxfImportSource(workbench.manifest.preferences.importUnits, input);
+}
+
+export function prepareDxfImportSource(
+  preference: ConnectedWorkbenchCatalog['manifest']['preferences']['importUnits'],
+  input: { readonly fileName: string; readonly text: string; readonly now?: Date }
+): DxfImportPreparationResult {
   const now = input.now ?? new Date();
   if (!Number.isFinite(now.getTime())) {
     return {
@@ -91,7 +100,6 @@ export function prepareDxfProjectImport(
       }
     };
   }
-  const preference = workbench.manifest.preferences.importUnits;
   return {
     ok: true,
     preparation: deepFreeze({
@@ -128,6 +136,8 @@ export function previewDxfProjectImport(
       }
     };
   }
+  const cached = preparation.unitPreviews?.[selection.unitCandidateId];
+  if (cached) return cached;
   try {
     const normalized = normalizeDxfGeometry({
       entities: preparation.parseResult.entities,

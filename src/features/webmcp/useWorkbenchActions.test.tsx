@@ -4,6 +4,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
 import { defaultAppServices, type AppServices } from '@/app/appServices';
+import { createDxfImportServices } from '@/app/dxfImportServices';
+import { directDxfProcessor } from '@/features/dxf-import/dxfProcessorTestSupport';
+import { DxfProcessingError } from '@/domain/dxf/dxfProcessing';
 import { buildMachinePackageArchive, prepareStoredMachinePackageInstallation } from '@/domain/machine-package';
 import { machinePackageFixture } from '@/domain/machine-package/__tests__/machinePackageFixture';
 import { MACHINE_LIBRARY_PATH } from '@/domain/machine-definition/machineLibraryStorage';
@@ -32,7 +35,7 @@ async function harness(overrides: Partial<AppServices> = {}) {
   const download = vi.fn<AppServices['downloadTextFile']>();
   function Harness() {
     draft = useRef<DraftReadSnapshot | null>(null);
-    app = useWorkbenchAppController({ connectRememberedWorkbenchDirectory: async () => ({ status: 'missing' }), generateControllerArtifact: generate, downloadTextFile: download, ...overrides }, () => draft.current);
+    app = useWorkbenchAppController({ ...createDxfImportServices(directDxfProcessor), connectRememberedWorkbenchDirectory: async () => ({ status: 'missing' }), generateControllerArtifact: generate, downloadTextFile: download, ...overrides }, () => draft.current);
     const actions = useWorkbenchActions(app, draft);
     tools = [...workbenchSiteTools(() => ({ workbench: app.connectedWorkbench, draft: draft.current, busy: app.workbenchInteractionLocked })), ...actions.tools];
     return actions.previewControl;
@@ -92,6 +95,13 @@ async function prepareControllerJob(h: Awaited<ReturnType<typeof harness>>) {
 }
 
 describe('workbench agent actions', () => {
+  it.each(['DXF_IMPORT_WORKER_FAILED', 'DXF_IMPORT_TIMEOUT'] as const)('preserves the actionable %s preparation diagnostic', async code => {
+    const h = await harness({ prepareDxfProjectImport: async () => { throw new DxfProcessingError(code, 'Local DXF worker stopped.'); } });
+    const context = await h.call('edm_workflow_context', {});
+    expect(await h.call('edm_prepare_dxf', { expectedVersion: context.data.version, source: { fileName: 'part.dxf', text } }))
+      .toMatchObject({ ok: false, error: { code, message: 'Local DXF worker stopped.' } });
+    expect((await h.call('edm_workflow_context', {})).data.dxfPreparationId).toBeNull();
+  });
   it('keeps a package preparation across preference changes but clears it after machine storage changes', async () => {
     const prepare = vi.fn(defaultAppServices.prepareStoredMachinePackageInstallation);
     const h = await harness({ prepareStoredMachinePackageInstallation: prepare });

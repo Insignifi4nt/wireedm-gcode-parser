@@ -16,6 +16,19 @@ describe.each(['cache', 'folder'] as const)('%s file transaction recovery', (kin
     { path: 'projects/part.json', previous: 'OLD PROJECT', next: 'NEW PROJECT' },
     { path: 'workbench.json', previous: 'OLD INDEX', next: 'NEW INDEX' }
   ];
+
+  it('preserves exact originals and writes no journal when the final guard rejects', async () => {
+    const adapter = storage();
+    await adapter.ensureDirectory('projects');
+    await adapter.writeText('projects/part.json', '\ufeffORIGINAL\r\n');
+    const reason = new DOMException('Cancelled before writing', 'AbortError');
+    const guard = vi.fn(() => { throw reason; });
+    await expect(withWorkbenchMutationLock(adapter, () => commitWorkbenchFileTransaction(adapter,
+      [{ path: 'projects/part.json', contents: 'REPLACEMENT' }], guard))).rejects.toMatchObject({ reason });
+    expect(guard).toHaveBeenCalledOnce();
+    expect(await (adapter.readExactText ?? adapter.readText)('projects/part.json')).toBe('\ufeffORIGINAL\r\n');
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+  });
   it.each([0, 1, 2, 3])('recovers after %i completed file writes without leaving mixed revisions', async (completed) => {
     const adapter = storage();
     await adapter.writeText(WORKBENCH_FILE_TRANSACTION_PATH, JSON.stringify({ format: 'wire-edm-file-transaction', schemaVersion: 1, files }));

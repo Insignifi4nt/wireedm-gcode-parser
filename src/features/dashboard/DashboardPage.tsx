@@ -17,6 +17,8 @@ interface DashboardPageProps {
   connectedWorkbench: ConnectedWorkbenchCatalog | null;
   importStatus: 'idle' | 'importing' | 'error';
   importErrorMessage: string | null;
+  dxfWriting?: boolean;
+  dxfImportCancellable?: boolean;
   interactionLocked: boolean;
   programImportStatus: 'idle' | 'importing' | 'error';
   programImportErrorMessage: string | null;
@@ -46,6 +48,8 @@ export function DashboardPage({
   connectedWorkbench,
   importStatus,
   importErrorMessage,
+  dxfWriting,
+  dxfImportCancellable,
   interactionLocked,
   programImportStatus,
   programImportErrorMessage,
@@ -121,6 +125,7 @@ export function DashboardPage({
             dxfImporting={importStatus === 'importing'}
             interactionLocked={interactionLocked}
             onImportDxfFile={onImportDxfFile}
+            onCancelDxfImport={dxfImportCancellable ? onCancelDxfImport : undefined}
             onImportUpidFile={onImportUpidFile}
             onImportProgramFile={onImportProgramFile}
             onOpenEditor={onOpenEditor}
@@ -164,6 +169,7 @@ export function DashboardPage({
 
       {pendingDxfImport && (
         <DxfImportConfirmationDialog
+          cancellationBlocked={dxfWriting}
           declaredUnitOverrideAcknowledged={pendingDxfImport.declaredUnitOverrideAcknowledged}
           errorMessage={importErrorMessage}
           onCancel={onCancelDxfImport}

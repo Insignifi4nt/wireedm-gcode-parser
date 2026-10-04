@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Type, type Static, type TSchema } from '@sinclair/typebox';
 import type { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
-import { prepareDxfProjectImport, previewDxfProjectImport, type DxfImportPreparation } from '@/domain/dxf/prepareDxfProjectImport';
-import { commitDxfProjectImport } from '@/domain/dxf/importDxfProject';
+import { previewDxfProjectImport, type DxfImportPreparation } from '@/domain/dxf/prepareDxfProjectImport';
+import { DxfProcessingError } from '@/domain/dxf/dxfProcessing';
 import { importPortableUpidProject } from '@/domain/upid/portableUpidProject';
 import { loadEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
@@ -115,7 +115,12 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
       const value = await textInput(input.source, signal);
       checkVersion(input.expectedVersion);
       if (!/\.dxf$/i.test(value.fileName)) throw new ToolError('WRONG_FILE', 'Choose a .dxf file.');
-      const result = prepareDxfProjectImport(workbench, value);
+      const result = await app.prepareDxfSource(workbench, value, signal).catch(error => {
+        if (error instanceof DxfProcessingError) throw new ToolError(error.code, error.message);
+        throw error;
+      });
+      signal.throwIfAborted();
+      checkVersion(input.expectedVersion);
       if (!result.ok) throw new ToolError(result.error.code, result.error.message);
       const id = crypto.randomUUID();
       preparedDxf.current = { id, workbench, preparation: result.preparation };
@@ -136,7 +141,9 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
       if (!prepared || prepared.id !== input.preparationId || prepared.workbench !== app.connectedWorkbench) throw new ToolError('STALE_STATE', 'Prepare and review the DXF again.');
       signal.throwIfAborted();
       return app.runAgentWorkbenchOperation(async workbench => {
-        const result = await commitDxfProjectImport(workbench, prepared.preparation, { ...input, confirmed: true });
+        const result = await app.commitPreparedDxf(workbench, prepared.preparation, { ...input, confirmed: true }, {
+          signal, beforeWrite: () => { signal.throwIfAborted(); checkVersion(input.expectedVersion); }
+        });
         if (!result.ok) throw new ToolError(result.error.code, result.error.message);
         preparedDxf.current = null;
         return openImported(result.workbench, result.project.id);

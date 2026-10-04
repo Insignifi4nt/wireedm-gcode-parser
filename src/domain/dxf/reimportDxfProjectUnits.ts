@@ -14,6 +14,7 @@ import {
 
 import { buildDxfImportUnitCandidates, type DxfImportUnitCandidate } from './dxfImportUnits';
 import { dxfEntitiesToUpidDocument } from './dxfToUpid';
+import { DxfProcessingError, type DxfProcessingOptions } from './dxfProcessing';
 import type { DxfImportDecision } from './importDxfProject';
 import {
   prepareDxfProjectImport,
@@ -43,6 +44,7 @@ export interface DxfProjectReimportDecision extends DxfImportDecision {
 
 export type DxfProjectReimportError =
   | DxfImportPreparationError
+  | { readonly code: DxfProcessingError['code']; readonly message: string }
   | WorkbenchProjectError
   | ReadStoredWorkbenchProjectError
   | Extract<ReplaceStoredWorkbenchProjectResult, { readonly ok: false }>['error']
@@ -90,8 +92,9 @@ export function dxfProjectReimportRequiresRebuild(
 export async function prepareDxfProjectReimport(
   workbench: ConnectedWorkbenchCatalog,
   projectId: string,
-  options: { readonly now?: Date } = {}
+  options: DxfProcessingOptions & { readonly now?: Date } = {}
 ): Promise<PrepareDxfProjectReimportResult> {
+  options.signal?.throwIfAborted();
   const read = await readStoredWorkbenchProject(workbench, projectId);
   if (!read.ok) return read;
   if (read.project.source.kind !== 'dxf' || read.project.content.kind !== 'upid-document') {
@@ -127,11 +130,16 @@ export async function prepareDxfProjectReimport(
       `Catalog-owned raw DXF is missing: ${rawSource.path}.`
     );
   }
-  const prepared = prepareDxfProjectImport(workbench, {
+  const input = {
     fileName: rawSource.name,
     text,
     now: options.now
-  });
+  };
+  options.signal?.throwIfAborted();
+  const prepared = options.processor
+    ? await options.processor.prepare(workbench.manifest.preferences.importUnits, input, options.signal)
+    : prepareDxfProjectImport(workbench, input);
+  options.signal?.throwIfAborted();
   if (!prepared.ok) return prepared;
   return {
     ok: true,
@@ -149,8 +157,10 @@ export async function prepareDxfProjectReimport(
 export async function commitDxfProjectReimport(
   workbench: ConnectedWorkbenchCatalog,
   preparation: DxfProjectReimportPreparation,
-  decision: DxfProjectReimportDecision
+  decision: DxfProjectReimportDecision,
+  options: DxfProcessingOptions = {}
 ): Promise<DxfProjectReimportResult> {
+  options.signal?.throwIfAborted();
   if (!decision.confirmed) {
     return ownFailure(
       'DXF_REIMPORT_CONFIRMATION_REQUIRED',
@@ -184,6 +194,7 @@ export async function commitDxfProjectReimport(
       'The raw DXF changed after unit review.'
     );
   }
+  options.signal?.throwIfAborted();
   const reviewedCandidate = preparation.unitCandidates.find(
     ({ id }) => id === decision.unitCandidateId
   );
@@ -235,12 +246,13 @@ export async function commitDxfProjectReimport(
 
   let pathDocument: PathPlanningDocument;
   try {
-    pathDocument = jsonSnapshot(dxfEntitiesToUpidDocument(
-      preparation.parseResult.entities,
-      {},
-      sourceMetadata(preparation, currentCandidate, overridesDeclaration)
-    ));
+    const metadata = sourceMetadata(preparation, currentCandidate, overridesDeclaration);
+    pathDocument = options.processor
+      ? await options.processor.plan(preparation.parseResult.entities, metadata, options.signal)
+      : jsonSnapshot(dxfEntitiesToUpidDocument(preparation.parseResult.entities, {}, metadata));
   } catch (error) {
+    options.signal?.throwIfAborted();
+    if (error instanceof DxfProcessingError) return { ok: false, error: { code: error.code, message: error.message } };
     return ownFailure(
       'DXF_REIMPORT_GEOMETRY_REQUIRED',
       error instanceof Error ? error.message : String(error)
@@ -260,7 +272,11 @@ export async function commitDxfProjectReimport(
   if (!next.ok) return next;
   const replaced = await replaceStoredWorkbenchProject(workbench, {
     project: next.project,
-    ownedFileChanges: []
+    expectedContent: preparation.project.content,
+    expectedProject: preparation.project,
+    expectedOwnedFiles: [{ path: preparation.rawSource.path, contents: preparation.reviewedRawText }],
+    ownedFileChanges: [],
+    beforeWrite: () => { options.signal?.throwIfAborted(); options.beforeWrite?.(); }
   });
   if (!replaced.ok) return replaced;
   return {

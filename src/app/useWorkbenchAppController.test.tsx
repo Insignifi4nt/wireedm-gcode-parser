@@ -9,6 +9,9 @@ import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench'
 import { connectWorkbenchDirectory } from '@/domain/storage/connectWorkbenchDirectory';
 import { FakeDirectoryHandle } from '@/domain/storage/__tests__/fakeDirectoryHandle';
 import { defaultAppServices, type AppServices } from './appServices';
+import { createDxfImportServices } from './dxfImportServices';
+import { directDxfProcessor } from '@/features/dxf-import/dxfProcessorTestSupport';
+const testDxfServices = createDxfImportServices(directDxfProcessor);
 import { useWorkbenchAppController } from './useWorkbenchAppController';
 import { MAX_PORTABLE_UPID_BYTES } from '@/domain/upid/portableUpidProject';
 import { DXF_RESOURCE_LIMITS } from '@/domain/dxf/dxfResourceLimits';
@@ -30,6 +33,7 @@ describe('workbench controller asynchronous operations', () => {
     let current: ReturnType<typeof useWorkbenchAppController> | undefined;
     function Harness() {
       current = useWorkbenchAppController({
+        ...testDxfServices,
         connectRememberedWorkbenchDirectory: async () => ({ status: 'missing' }),
         ...overrides
       });
@@ -56,7 +60,7 @@ describe('workbench controller asynchronous operations', () => {
   }
 
   it('rejects oversized DXF before reading the file and permits a later bounded import', async () => {
-    const prepare = vi.fn(defaultAppServices.prepareDxfProjectImport);
+    const prepare = vi.fn(testDxfServices.prepareDxfProjectImport);
     const read = await mount({ prepareDxfProjectImport: prepare });
     const before = read().connectedWorkbench;
     const dxf = '0\nSECTION\n2\nENTITIES\n0\nLINE\n10\n0\n20\n0\n11\n10\n21\n5\n0\nENDSEC\n0\nEOF\n';
@@ -101,6 +105,82 @@ describe('workbench controller asynchronous operations', () => {
     expect(readText).toHaveBeenCalledOnce();
     expect(imported).toHaveBeenCalledOnce();
     expect(read().workbenchInteractionLocked).toBe(false);
+  });
+
+  it('cancels a pending file read without preparing or reopening the import', async () => {
+    const prepare = vi.fn(testDxfServices.prepareDxfProjectImport);
+    const read = await mount({ prepareDxfProjectImport: prepare });
+    const contents = deferred<string>();
+    const file = new File([], 'slow.dxf');
+    Object.defineProperty(file, 'text', { value: () => contents.promise });
+    let pending!: Promise<void>;
+    await act(async () => { pending = read().handleImportDxfFile(file); });
+    expect(read().importStatus).toBe('importing');
+    await act(async () => { read().handleCancelDxfImport(); });
+    await act(async () => { contents.resolve('0\nEOF'); await pending; });
+    expect(prepare).not.toHaveBeenCalled();
+    expect(read().pendingDxfImport).toBeNull();
+    expect(read().importStatus).toBe('idle');
+    expect(read().workbenchInteractionLocked).toBe(false);
+  });
+
+  it('aborts replaced preparations and ignores their later failure', async () => {
+    const old = deferred<Awaited<ReturnType<AppServices['prepareDxfProjectImport']>>>();
+    let oldSignal: AbortSignal | undefined;
+    const prepare = vi.fn(testDxfServices.prepareDxfProjectImport).mockImplementationOnce((_workbench, _input, signal) => {
+      oldSignal = signal; return old.promise;
+    });
+    const read = await mount({ prepareDxfProjectImport: prepare });
+    const text = '0\nSECTION\n2\nENTITIES\n0\nLINE\n10\n0\n20\n0\n11\n10\n21\n5\n0\nENDSEC\n0\nEOF\n';
+    let pending!: Promise<void>;
+    await act(async () => { pending = read().handleImportDxfFile(new File([text], 'old.dxf')); });
+    await act(async () => { await read().handleImportDxfFile(new File([text], 'current.dxf')); });
+    expect(oldSignal?.aborted).toBe(true);
+    await act(async () => { old.resolve({ ok: false, error: { code: 'DXF_IMPORT_GEOMETRY_REQUIRED', message: 'Obsolete failure' } }); await pending; });
+    const result = read().pendingDxfImport?.preparationResult;
+    expect(result?.ok && result.preparation.fileName).toBe('current.dxf');
+    expect(read().importErrorMessage).toBeNull();
+    expect(read().importStatus).toBe('idle');
+  });
+
+  it('aborts preparation when the controller unmounts', async () => {
+    const waiting = deferred<Awaited<ReturnType<AppServices['prepareDxfProjectImport']>>>();
+    let signal: AbortSignal | undefined;
+    const read = await mount({ prepareDxfProjectImport: async (_workbench, _input, taskSignal) => {
+      signal = taskSignal; return waiting.promise;
+    } });
+    let pending!: Promise<void>;
+    await act(async () => { pending = read().handleImportDxfFile(new File(['0\nEOF'], 'unmount.dxf')); });
+    act(() => root?.unmount()); root = undefined;
+    expect(signal?.aborted).toBe(true);
+    waiting.resolve({ ok: false, error: { code: 'DXF_IMPORT_GEOMETRY_REQUIRED', message: 'Late failure' } });
+    await pending;
+  });
+
+  it('does not advertise DXF cancellation while a UPID import is running', async () => {
+    const waiting = deferred<Awaited<ReturnType<AppServices['importPortableUpidProject']>>>();
+    const read = await mount({ importPortableUpidProject: () => waiting.promise });
+    let pending!: Promise<void>;
+    await act(async () => { pending = read().handleImportUpidFile(new File(['{}'], 'part.upid.json')); });
+    expect(read().importStatus).toBe('importing');
+    expect(read().dxfImportCancellable).toBe(false);
+    await act(async () => {
+      waiting.resolve({ ok: false, error: { code: 'PORTABLE_UPID_DOCUMENT_INVALID', message: 'Fixture rejected' } });
+      await pending;
+    });
+  });
+
+  it('keeps a committed DXF receipt and unlocks the UI when opening its editor throws', async () => {
+    const read = await mount({ loadEditorProgram: vi.fn(defaultAppServices.loadEditorProgram).mockRejectedValueOnce(new Error('Editor read interrupted')) });
+    const text = '0\nSECTION\n2\nENTITIES\n0\nLINE\n10\n0\n20\n0\n11\n10\n21\n5\n0\nENDSEC\n0\nEOF\n';
+    await act(async () => { await read().handleImportDxfFile(new File([text], 'committed.dxf')); });
+    await act(async () => { read().handleDxfImportUnitCandidateChange('millimeters'); });
+    await act(async () => { await read().handleConfirmDxfImport(); });
+    expect(read().connectedWorkbench?.manifest.projects).toHaveLength(1);
+    expect(read().latestImport?.project.name).toBe('committed');
+    expect(read().pendingDxfImport).toBeNull();
+    expect(read().workbenchInteractionLocked).toBe(false);
+    expect(read().statusToasts.at(-1)?.message).toContain('DXF was committed, but its editor document could not be opened: Editor read interrupted');
   });
 
   it('rejects a machine package prepared for another workbench before committing', async () => {
@@ -327,11 +407,11 @@ describe('workbench controller asynchronous operations', () => {
 
   it('recovers DXF import and reimport after rejected service operations', async () => {
     const read = await mount({
-      commitDxfProjectImport: vi.fn(defaultAppServices.commitDxfProjectImport)
+      commitDxfProjectImport: vi.fn(testDxfServices.commitDxfProjectImport)
         .mockRejectedValueOnce(new Error('Import interrupted')),
-      prepareDxfProjectReimport: vi.fn(defaultAppServices.prepareDxfProjectReimport)
+      prepareDxfProjectReimport: vi.fn(testDxfServices.prepareDxfProjectReimport)
         .mockRejectedValueOnce(new Error('Source read interrupted')),
-      commitDxfProjectReimport: vi.fn(defaultAppServices.commitDxfProjectReimport)
+      commitDxfProjectReimport: vi.fn(testDxfServices.commitDxfProjectReimport)
         .mockRejectedValueOnce(new Error('Reimport interrupted'))
     });
     const dxf = [

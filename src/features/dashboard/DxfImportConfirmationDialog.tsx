@@ -24,6 +24,7 @@ export interface DxfImportConfirmationDialogProps {
   previewResult: DxfImportPreviewResult | null;
   selectedUnitCandidateId: string | null;
   submitting: boolean;
+  cancellationBlocked?: boolean;
   mode?: 'import' | 'reimport';
   rebuildAcknowledged?: boolean;
   rebuildRequired?: boolean;
@@ -42,6 +43,7 @@ export function DxfImportConfirmationDialog({
   previewResult,
   selectedUnitCandidateId,
   submitting,
+  cancellationBlocked = false,
   mode = 'import',
   rebuildAcknowledged = false,
   rebuildRequired = false
@@ -52,9 +54,9 @@ export function DxfImportConfirmationDialog({
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const latestCancelRef = useRef(onCancel);
-  const latestSubmittingRef = useRef(submitting);
+  const latestSubmittingRef = useRef(cancellationBlocked);
   latestCancelRef.current = onCancel;
-  latestSubmittingRef.current = submitting;
+  latestSubmittingRef.current = cancellationBlocked;
 
   useEffect(() => {
     const overlay = overlayRef.current;
@@ -151,7 +153,7 @@ export function DxfImportConfirmationDialog({
       className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
       data-dxf-import-overlay
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !submitting) {
+        if (event.target === event.currentTarget && !cancellationBlocked) {
           event.preventDefault();
           onCancel();
         }
@@ -182,7 +184,7 @@ export function DxfImportConfirmationDialog({
           <button
             aria-label={reimport ? 'Close DXF unit re-import review' : 'Close DXF import review'}
             className="flex size-7 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground disabled:opacity-45"
-            disabled={submitting}
+            disabled={cancellationBlocked}
             onClick={onCancel}
             type="button"
           >
@@ -290,7 +292,7 @@ export function DxfImportConfirmationDialog({
         </div>
 
         <footer className="flex items-center justify-end gap-2 border-t border-border p-3">
-          <Button disabled={submitting} onClick={onCancel} type="button" variant="outline">
+          <Button disabled={cancellationBlocked} onClick={onCancel} type="button" variant="outline">
             Cancel
           </Button>
           <Button disabled={confirmationBlocked} type="submit">

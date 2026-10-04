@@ -18,6 +18,11 @@ export class WorkbenchFileWriteError extends Error {
   }
 }
 
+/** Distinguish a rejected pre-write guard from a storage write failure. No journal exists yet. */
+export class WorkbenchFileGuardError extends Error {
+  constructor(readonly reason: unknown) { super('File transaction cancelled before writing.'); }
+}
+
 export function isPortableStoragePath(path: string) {
   return path.length <= 1024 && path.split('/').length <= 17 && path.split('/').every((part) =>
     part.length > 0 && part !== '.' && part !== '..' && !/[<>:"\\|?*\u0000-\u001f]/.test(part)
@@ -80,7 +85,8 @@ export async function recoverWorkbenchFileTransaction(adapter: WorkbenchStorageA
 
 /** Caller holds the lock. Write the catalog last; exact before/after images permit crash recovery. */
 export async function commitWorkbenchFileTransaction(
-  adapter: WorkbenchStorageAdapter, changes: readonly { path: string; contents: string | null }[]
+  adapter: WorkbenchStorageAdapter, changes: readonly { path: string; contents: string | null }[],
+  beforeWrite?: () => void
 ) {
   if (!changes.length) return;
   await recoverWorkbenchFileTransaction(adapter);
@@ -94,6 +100,9 @@ export async function commitWorkbenchFileTransaction(
   const raw = JSON.stringify(transaction);
   if (new TextEncoder().encode(raw).byteLength > maximumBytes) throw new Error('File recovery data exceeds its size limit.');
   await adapter.ensureDirectory('transactions');
+  // Cancellation is still reversible here. Once the journal starts, finish and report the durable result.
+  try { beforeWrite?.(); }
+  catch (error) { throw new WorkbenchFileGuardError(error); }
   try {
     await adapter.writeText(WORKBENCH_FILE_TRANSACTION_PATH, raw);
     if (await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH) !== raw) throw new Error('Recovery journal did not read back exactly.');
