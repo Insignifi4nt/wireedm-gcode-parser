@@ -19,14 +19,14 @@ Each workstream records inspected modules, reproducible findings, disposition an
 | Area | First-pass owner | Required evidence | Status |
 | --- | --- | --- | --- |
 | Branches and release workflow | Primary | Current refs, ancestry, PR state, release gates | Production baseline confirmed; five merged remote branches cleaned |
-| Storage, recovery and revisions | Integrity reviewer | Exact-byte, conflict, interrupted-write and adapter behavior | Conflict/preference fixes merged; hosted read-only recovery export in progress |
+| Storage, recovery and revisions | Integrity reviewer | Exact-byte, conflict, interrupted-write and adapter behavior | Conflict/preference fixes merged; hosted recovery implemented, independently reviewed and verified on both adapters |
 | Geometry, UPID, planning, execution and posts | Integrity reviewer | Relevant invariants, realistic edge cases, unchanged conformance | Broad domain review completed without further confirmed output defects; conformance preserved |
-| Agent tools, cancellation, freshness, state and docs | Agent-workflow reviewer | Shared guard paths, tool-level repros, hosted documentation | In progress |
-| Imports, editor and simulation performance | Performance reviewer | Bounded measurements and semantic regression checks | Cancellable DXF worker merged; existing incremental simulation reviewed; allocation/startup follow-up scoped |
-| Human UX and visual design | Primary | Current screenshots, keyboard behavior, complete workflows at different sizes | In progress |
-| Test quality and verification cost | Primary | Existing contract inspection, measured runtime, remove only proved waste | In progress |
-| Architecture, bundles, dependencies and maintainability | Primary + performance reviewer | Import graph, actual usage, build evidence, cohesive boundaries | In progress |
-| Integration and independent review | Rotating reviewers | Frozen diff, focused then broad checks, browser walkthrough, PR checks | First two PRs merged after independent review and green complete GitHub checks |
+| Agent tools, cancellation, freshness, state and docs | Agent-workflow reviewer | Shared guard paths, tool-level repros, hosted documentation | Complete: final guards, shared busy state, truthful receipts, bounded complete reports/setup discovery and recovery tools |
+| Imports, editor and simulation performance | Performance reviewer | Bounded measurements and semantic regression checks | Cancellable DXF worker merged; simulation/history reviewed; measured startup split verified; route-sensitive planner optimization deferred explicitly |
+| Human UX and visual design | Primary | Current screenshots, keyboard behavior, complete workflows at different sizes | Complete: compact library/settings, Apply/Save clarity, markers, keyboard focus, recovery and agent activity; native workflows verified |
+| Test quality and verification cost | Primary | Existing contract inspection, measured runtime, remove only proved waste | Complete: one ineffective layout assertion replaced by real regression; complete test inventory retained across conservative Node/jsdom partition |
+| Architecture, bundles, dependencies and maintainability | Primary + performance reviewer | Import graph, actual usage, build evidence, cohesive boundaries | Complete: shared transaction/action guards, typed worker/services, bounded read helpers and measured static import reduction; no added dependencies |
+| Integration and independent review | Rotating reviewers | Frozen diff, focused then broad checks, browser walkthrough, PR checks | Independent review completed for every checkpoint; final PRs use the same complete GitHub merge/deployment gates |
 
 ## Candidate delivery sequence
 
@@ -44,7 +44,7 @@ Keep baseline tests intact while reproducing defects. Add tests for the real fai
 
 ## PR budget
 
-3 of 5 created and merged: [PR #5](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/5), app 0.0.690, merge `6d1e673`; [PR #6](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/6), app 0.0.691, merge `56fad6e`; [PR #7](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/7), app 0.0.692, merge e8b8177. All three passed complete GitHub verification; the first two deployed and the third deployment is underway. Recovery is the fourth candidate, 0.0.693. Update this record with links, checkpoints, review findings and final coverage rather than creating duplicate planning documents.
+4 of 5 created and merged: [PR #5](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/5), app 0.0.690, merge `6d1e673`; [PR #6](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/6), app 0.0.691, merge `56fad6e`; [PR #7](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/7), app 0.0.692, merge e8b8177; [PR #8](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/8), app 0.0.693, merge 9dcea85. All four passed complete GitHub verification; the first three deployed and recovery deployment is underway. The final startup/test efficiency candidate 0.0.694 uses the fifth and last PR slot. Update this record with links, checkpoints, review findings and final coverage rather than creating duplicate planning documents.
 
 ## Local evidence
 
@@ -90,3 +90,11 @@ The completed improvement branches `improve/workbench-reliability` (`a9bdbad`) a
 - Cache and folder adapters cover oversized/invalid/compressed text without unbounded decompression fallback. Missing write access or Web Locks does not make readable cache evidence inaccessible; ordinary mutation restrictions remain intact.
 - Source switch, cancellation, workbench identity and live agent busy guards apply before capture/download. A retained receipt retries the exact captured download. Integration review reproduced and fixed a busy-state gap during agent DXF preparation.
 - Original source and integration independently reviewed; 200 focused integration tests pass. Existing native corrupt-cache/download acceptance passes at desktop and compact sizes, preserving actual original strings and archive hashes. Final merged-base verification is recorded in the review and release record.
+
+## Checkpoint 5: measured startup and verification efficiency
+
+- Typed optional services defer package preparation/installation, artifact generation and revision deletion; stored integrity validation and recovery remain eager. Pure package limits/freshness checks retain compatible public exports.
+- Matched current builds count every initial static JavaScript import and modulepreload: 943,343 to 884,876 raw bytes and 271,604 to 256,755 gzip bytes (6.2%/5.5% lower). Dynamic/worker/image/CSS/WASM assets are excluded; no startup-time claim is made.
+- All 206 files / 2,063 tests remain selected exactly once. The 42 pure Node files preserve the same 346 test identities; the remaining 164 files / 1,717 tests keep their browser environment. No test source or threshold changes in this checkpoint.
+- Final full suite, app/tooling types and production build pass. Five cold native workflows cover actual DXF workers/cancellation, complete package installation and saved output, plus blocked recovery download. Independent source/integration review verifies retained guards, receipts and eager validation.
+- The application-wide review records inspected modules, retained tests, measured outcomes and remaining route-sensitive optimization, recovery and hardware-verification limits. No additional feature or branch-cleanup work is hidden outside this ledger.

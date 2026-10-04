@@ -1,6 +1,6 @@
 # Workbench improvement review — 4 October 2026
 
-This is the first implementation checkpoint of the [application-wide plan](../plans/2026-10-04-application-improvement.md), not a claim that every input or physical controller is verified. Baseline: `ab2c2d9` / release 0.0.689, the newest production main after fetching origin.
+This records the findings, implementation checkpoints and verification from the [application-wide plan](../plans/2026-10-04-application-improvement.md). It does not claim that every possible input or physical controller is verified. Baseline: `ab2c2d9` / release 0.0.689, the newest production main after fetching origin.
 
 ## Correctness and storage
 
@@ -53,9 +53,9 @@ Sol 6.1 High reviewers independently examined the integrity and agent changes an
 
 Baseline: 199 unit/integration files / 1,963 tests pass. Final integrated candidate: 200 files / 1,989 tests pass with four workers (121.80 seconds). Chromium: 84 pass, one optional preseeded case skipped. TypeScript/production build, documentation discovery/parity, three UPID fixtures, three unchanged Robofil 2.6.0 post fixtures and complete package validation pass. Production dependency audit reports zero known vulnerabilities at this checkpoint. A concurrent unbounded test run hit timing failures and stopped progressing; it was stopped and rerun with bounded workers after the overlapping CPU-heavy verification finished. No assertion or timeout was relaxed; the interrupted log remains in local evidence.
 
-## Remaining work
+## Scope carried beyond the first checkpoint
 
-The coverage plan retains cancellable DXF processing, post/editor responsiveness, deeper domain review, hosted recovery, developer-test efficiency and further human/agent workflows. Confirmed additional cancellation gaps are tracked rather than silently excluded. No speculative geometry or post-output change is included here.
+The later checkpoints cover cancellable DXF processing, deeper domain review, hosted recovery, test efficiency and further human/agent workflows. Confirmed cancellation gaps were carried into those scopes rather than silently excluded. Geometry order and post-output algorithms remain unchanged; residual opportunities and verification limits are recorded at the end.
 
 ## Checkpoint 2: responsive DXF processing
 
@@ -104,3 +104,33 @@ The controller guards source identity, cancellation and workbench changes, and r
 Both original source and the rebased controller/agent integration received independent review, including separate cancellation and escaped-budget probes. Focused integration passes 13 files / 200 tests and isolated TypeScript. Existing native corrupt-cache/download acceptance also passed at 1280 × 720 and 640 × 800, with exact originals and archive hashes verified; screenshots confirm the source, action, limitations and retry receipt remain readable. Final candidate-wide results follow below.
 
 Final recovery candidate: 206 files / 2,063 tests pass (65.23 seconds, four workers), app/tooling TypeScript and production build pass, generated documentation checks cover 24 pages / 78 files, and STEP distribution remains valid. Eight targeted native Chromium cases pass (18.8 seconds), covering recovery's actual downloaded originals/hash alongside unavailable locks, cross-tab locking, normal backup/focus, complete package installation and saved controller output. Three UPID fixtures, three unchanged Robofil 2.6.0 conformance fixtures and complete package validation pass. GitHub runs the full candidate verification before merge.
+
+## Checkpoint 5: startup and test efficiency
+
+Optional machine-package preparation/installation, controller artifact generation and revision deletion now load through typed application services when invoked. Installation-time post conformance and revision-dialog generation also load on demand. Lightweight package limits and installation-context freshness checks are separated from archive/execution code while retaining existing public domain exports. Startup still eagerly validates stored schemas, exact post hashes and bindings and performs required transaction recovery. Module failures retain the ordinary action diagnostics and any already-saved revision receipt.
+
+Matched builds with the same dependencies reduce the initial JavaScript entry plus all modulepreloads and recursive static imports from 943,343 to 884,876 raw bytes, and from 271,604 to 256,755 gzip bytes: 6.2% and 5.5% lower. All initial chunks are counted; the entry file alone is not the metric. Dynamic imports, workers, CSS, images and WASM are excluded, and first use of an optional action still needs its code. No measured startup-time or whole-application-size claim is made.
+
+Vitest now separates 42 pure geometry/planning files from the remaining browser-dependent suites. Pure tests run in Node with no browser setup/shims; all storage, UI, package and persistence suites retain their original environment. Complete inventory comparison finds all 206 files exactly once and the same 346 pure test identities. No test source, assertion or timing threshold changes in this checkpoint. Earlier alternating same-host subset controls measured passing jsdom/Node runs at 14.94/7.79 seconds; an earlier noisy control failed its existing timing ratio and was retained in the evidence. This is illustrative subset evidence, not a whole-suite or CI speed guarantee.
+
+Final integrated verification passes 206 files / 2,063 tests (54.35 seconds, four workers), app/tooling TypeScript and production build. Five cold native Chromium cases pass (20.0 seconds), covering real DXF exact source/units/cancellation, complete package installation, saved controller output and blocked recovery originals/download. Original-source and integration review verify unchanged guards/receipts, eager integrity checks and complete test selection. Generated post contract parity, 25 documentation pages / 81 files, STEP source distribution, three UPID fixtures, three unchanged Robofil fixtures and complete package validation pass. The complete GitHub merge/deployment gates apply to the final source.
+
+## Broader audit coverage and retained boundaries
+
+The storage review also inspected generic file transactions, both adapters, mutation locks, backup capture/prepare/restore/cleanup, project ownership/parsing, catalog-pair recovery, trash and immutable-revision deletion. Existing duplicate/case/path checks, exact identity checks and conflict retention were preserved. Folder writers outside the browser remain beyond Web Locks; recovery therefore reports its non-atomic observations instead of implying exclusive access.
+
+The machining review covered UPID validation/portability, compensation and initial-wire resolution, program-stop placement, execution compilation/bounds, physical machine preflight, controller serialization/audit, QuickJS isolation and conformance. No further confirmed output defect was found in this pass after the previously documented October 2 fixes. Runtime memory/stack/action/event/output/deadline limits, fresh-run determinism checks and audits of formatted motion remain intact. Existing saved manufacturing intent is not silently reclassified.
+
+The performance review examined DXF resource budgets and phases, endpoint clustering/chains, contour/operation planning, simulation workers, binary seeking, GPU path batches, incremental contour coverage and retained editor history. It confirmed the DXF main-thread stall and startup import opportunities addressed here. Existing simulation and history optimizations were retained rather than reimplemented. Workers improve responsiveness and cancellation; project validation, transaction snapshots, serialization and persistence still do work on the main thread.
+
+Test inspection distinguished behavior from implementation-detail assertions. One class-only layout test was replaced by a native regression that actually failed on the observed overlap. Storage tests that demanded overwriting unknown conflicting bytes now require preservation while retaining mismatch detection. Other existing workflows, timing thresholds, exact outputs and meaningful negative checks remain; broad deletion of historical regression tests was not justified. The final environment split preserves every selected test identity without adding browser shims to pure Node suites.
+
+Human walkthroughs covered the library, compact/desktop settings, backup, machine setup entry, unit review, diagnostics, initial-wire/contour workflows, Apply versus Save, saved/unsaved simulation, revision history, archive confirmation, tree keyboard/selection feedback, blocked recovery and visible agent activity. Native cases additionally cover the detailed editor panels, smaller layouts and complete saved/exported workflows. Screenshots establish the exercised visual states, not full screen-reader certification or every hardware/display combination.
+
+## Remaining opportunities and limits
+
+- Default nearest-operation planning still has a measured expensive phase on drawings with thousands of separate contours. Stable ordering has epsilon-sensitive ties; replacing its sort with a minimum search can change machining routes. Exact-order parity and explicit output compatibility should precede that optimization. The shipped worker keeps the interface responsive without changing those routes.
+- Agent execution review currently recompiles a draft when reading another event page. A bounded immutable plan cache and continuation-offset reachability audit are plausible follow-ups, but were not needed for the reproduced capability/report failures and were not added speculatively.
+- Onboarding retains a large existing raster asset. The startup figures above concern JavaScript only and do not claim image/WASM or total application size savings.
+- Recovery exports available logical evidence, not physical compressed envelopes, an atomic snapshot, a validated restore or a license to delete missing/unreferenced data. Automatic repair/migration remains deliberately separate.
+- No physical controller was run. Software conformance, explicit installed verification claims, generated bytes and browser download requests have distinct meanings and remain distinct in UI/tool documentation.
