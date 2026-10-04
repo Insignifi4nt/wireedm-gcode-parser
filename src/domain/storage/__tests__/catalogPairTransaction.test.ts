@@ -7,7 +7,8 @@ import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbench
 import {
   beginCatalogPairTransaction,
   CATALOG_PAIR_TRANSACTION_PATH,
-  recoverCatalogPairTransaction
+  recoverCatalogPairTransaction,
+  rollbackCatalogPairTransaction
 } from '../catalogPairTransaction';
 import type { WorkbenchStorageAdapter } from '../workbenchStorageAdapter';
 import { createBrowserCacheAdapter } from '../browserCacheAdapter';
@@ -62,6 +63,26 @@ describe('catalog-pair transaction recovery', () => {
     expect(adapter.files.get(POST_LIBRARY_PATH)).toBe(nextPosts);
     expect(adapter.files.get(MACHINE_LIBRARY_PATH)).toBe(nextMachines);
     expect(adapter.files.has(CATALOG_PAIR_TRANSACTION_PATH)).toBe(false);
+  });
+
+  it('rejects a replaced journal before immediate rollback touches either catalog', async () => {
+    const adapter = new MemoryAdapter();
+    const values = { previousPosts: 'previous posts', previousMachines: 'previous machines',
+      nextPosts: 'next posts', nextMachines: 'next machines' };
+    await beginCatalogPairTransaction(adapter, values);
+    await adapter.writeText(POST_LIBRARY_PATH, values.nextPosts);
+    await adapter.writeText(MACHINE_LIBRARY_PATH, values.previousMachines);
+    const replaced = { ...JSON.parse(adapter.files.get(CATALOG_PAIR_TRANSACTION_PATH)!), previousPosts: 'unrelated original' };
+    await adapter.writeText(CATALOG_PAIR_TRANSACTION_PATH, JSON.stringify(replaced));
+    const before = new Map(adapter.files);
+    const write = vi.spyOn(adapter, 'writeText');
+    const remove = vi.spyOn(adapter, 'deleteText');
+
+    expect(await rollbackCatalogPairTransaction(adapter, values)).toMatchObject({ ok: false,
+      error: { code: 'CATALOG_PAIR_TRANSACTION_RECOVERY_MISMATCH' } });
+    expect(write).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(adapter.files).toEqual(before);
   });
 
   it('removes malformed bytes when transaction-journal creation fails readback', async () => {

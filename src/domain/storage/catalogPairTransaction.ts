@@ -96,18 +96,38 @@ export async function finishCatalogPairTransaction(
 export async function recoverCatalogPairTransaction(
   adapter: WorkbenchStorageAdapter
 ): Promise<CatalogPairTransactionResult> {
+  return settleCatalogPairTransaction(adapter);
+}
+
+/** Failed installation may restore only its own recorded exact catalog states. */
+export async function rollbackCatalogPairTransaction(
+  adapter: WorkbenchStorageAdapter,
+  expected: Omit<CatalogPairTransaction, 'format' | 'schemaVersion'>
+): Promise<CatalogPairTransactionResult> {
+  return settleCatalogPairTransaction(adapter, expected);
+}
+
+async function settleCatalogPairTransaction(
+  adapter: WorkbenchStorageAdapter,
+  rollback?: Omit<CatalogPairTransaction, 'format' | 'schemaVersion'>
+): Promise<CatalogPairTransactionResult> {
   let raw: string | null;
   try {
     raw = await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH);
   } catch (error) {
     return failure('CATALOG_PAIR_TRANSACTION_STORAGE_FAILED', `Could not read machine-package recovery data: ${errorMessage(error)}.`);
   }
-  if (raw === null) return { ok: true };
+  if (raw === null) return rollback
+    ? failure('CATALOG_PAIR_TRANSACTION_RECOVERY_MISMATCH', 'Machine-package rollback has no recovery journal. Catalogs were preserved; reopen the workbench before further edits.')
+    : { ok: true };
   // Empty first-write handles precede every catalog change.
-  if (raw === '') return finishCatalogPairTransaction(adapter);
+  if (raw === '' && !rollback) return finishCatalogPairTransaction(adapter);
   const parsed = parseTransaction(raw);
   if (!parsed.ok) return parsed;
   const transaction = parsed.transaction;
+  if (rollback && Object.entries(rollback).some(([key, value]) => transaction[key as keyof typeof rollback] !== value)) {
+    return failure('CATALOG_PAIR_TRANSACTION_RECOVERY_MISMATCH', 'Machine-package recovery journal changed outside this installation. Catalogs and journal were preserved for recovery.');
+  }
   try {
     const posts = await readExact(adapter, POST_LIBRARY_PATH);
     const machines = await readExact(adapter, MACHINE_LIBRARY_PATH);
@@ -117,7 +137,7 @@ export async function recoverCatalogPairTransaction(
         'Installed post or machine catalogs changed outside the pending transaction. Both catalogs and the recovery journal were preserved; preserve this workbench for recovery before further edits.');
     }
     const committed = posts === transaction.nextPosts && machines === transaction.nextMachines;
-    if (!committed) {
+    if (rollback || !committed) {
       await adapter.writeText(POST_LIBRARY_PATH, transaction.previousPosts);
       await adapter.writeText(MACHINE_LIBRARY_PATH, transaction.previousMachines);
       if (

@@ -107,7 +107,7 @@ describe.each(['cache', 'folder'] as const)('%s machine-package installation exa
     expect(await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH)).toBeNull();
   });
 
-  it('detects a BOM unexpectedly added during write readback and rolls back exactly', async () => {
+  it('detects an unexpected BOM at readback and preserves the unknown exact bytes for recovery', async () => {
     const { adapter, before, prepared } = await fixture();
     const write = adapter.writeText.bind(adapter);
     let changed = false;
@@ -121,10 +121,48 @@ describe.each(['cache', 'folder'] as const)('%s machine-package installation exa
     });
 
     expect(await commitStoredMachinePackageInstallation(prepared, { kind: 'install-new' })).toMatchObject({
-      ok: false, error: { code: 'MACHINE_PACKAGE_INSTALLATION_READBACK_MISMATCH' }
+      ok: false, error: { code: 'MACHINE_PACKAGE_INSTALLATION_ROLLBACK_FAILED',
+        message: expect.stringContaining('did not read back byte-for-byte') }
     });
+    // A decoder-hidden BOM is still an unknown state, as in restart recovery.
+    // Immediate rollback must not erase it or its journal as the old contract did.
+    const journal = JSON.parse((await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH))!);
+    expect(await exact(adapter, POST_LIBRARY_PATH)).toBe(`\uFEFF${journal.nextPosts}`);
+    expect(await exact(adapter, MACHINE_LIBRARY_PATH)).toBe(journal.nextMachines);
+    expect(await recoverCatalogPairTransaction(adapter)).toMatchObject({ ok: false });
+    expect(await exact(adapter, POST_LIBRARY_PATH)).not.toBe(before.get(POST_LIBRARY_PATH));
+    expect(await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH)).not.toBeNull();
+  });
+
+  it.each([POST_LIBRARY_PATH, MACHINE_LIBRARY_PATH])('preserves an independent edit at %s before any rollback write and permits a reviewed retry', async (changedPath) => {
+    const { adapter, before, prepared } = await fixture();
+    const write = adapter.writeText.bind(adapter);
+    const external = 'Independent catalog change\r\n';
+    let interrupted = false;
+    const writes = vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      if (path === MACHINE_LIBRARY_PATH && !interrupted) {
+        interrupted = true;
+        await write(changedPath, external);
+        throw new Error('Machine write interrupted');
+      }
+      await write(path, text);
+    });
+    expect(await commitStoredMachinePackageInstallation(prepared, { kind: 'install-new' })).toMatchObject({
+      ok: false, error: { code: 'MACHINE_PACKAGE_INSTALLATION_ROLLBACK_FAILED',
+        message: expect.stringContaining('preserved') }
+    });
+    expect(await exact(adapter, changedPath)).toBe(external);
+    expect(writes.mock.calls.filter(([path]) => path === POST_LIBRARY_PATH)).toHaveLength(1);
+    expect(await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH)).not.toBeNull();
+    writes.mockRestore();
+    expect(await recoverCatalogPairTransaction(adapter)).toMatchObject({ ok: false });
+
+    // Only a deliberate restoration of known bytes resolves the conflict.
+    await write(changedPath, before.get(changedPath)!);
+    expect(await recoverCatalogPairTransaction(adapter)).toEqual({ ok: true });
     for (const [path, original] of before) expect(await exact(adapter, path)).toBe(original);
     expect(await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH)).toBeNull();
+    expect(await commitStoredMachinePackageInstallation(prepared, { kind: 'install-new' })).toMatchObject({ ok: true });
   });
 });
 

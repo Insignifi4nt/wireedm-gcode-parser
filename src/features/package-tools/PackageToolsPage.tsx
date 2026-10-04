@@ -92,6 +92,7 @@ export function PackageToolsPage() {
   }
   useSiteTools(packageSiteTools({ version: inputVersion, postText, documentText, evidence, archive, result,
     isCurrent: (version) => currentInputVersion.current === version,
+    isBusy: () => operationActive.current,
     async run(request, signal) {
       if (operationActive.current) throw new ToolError('BUSY', 'A check is already running.');
       let checked: PackageAuthoringResult | undefined;

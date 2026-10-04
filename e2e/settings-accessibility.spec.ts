@@ -1,5 +1,26 @@
 import { expect, test } from '@playwright/test';
 
+test('compact settings keeps navigation and a working backup action in view', async ({ page }) => {
+  await page.setViewportSize({ width: 640, height: 800 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await page.getByRole('button', { name: 'Open settings', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Workbench settings', exact: true });
+  await expect(dialog.getByRole('button', { name: 'Storage', exact: true })).toBeInViewport();
+  await expect(dialog.getByRole('button', { name: 'Machines & setups', exact: true })).toBeInViewport();
+  const backup = dialog.getByRole('button', { name: 'Create and download backup', exact: true });
+  await expect(backup).toBeInViewport();
+  const downloadPromise = page.waitForEvent('download');
+  await backup.click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.wireedm-backup\.json$/);
+  await expect(dialog.getByRole('status')).toContainText('Verified backup download requested');
+  await dialog.getByRole('button', { name: 'Machines & setups', exact: true }).click();
+  await expect(dialog.getByRole('heading', { name: 'Install a machine package', exact: true })).toBeInViewport();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Open settings', exact: true })).toBeFocused();
+});
+
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 1024, height: 720 }

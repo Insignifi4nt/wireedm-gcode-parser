@@ -66,16 +66,18 @@ export function WorkbenchSettingsDialog({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" data-workbench-settings-overlay onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} ref={overlayRef}>
-      <div aria-label="Workbench settings" aria-modal="true" className="grid h-[86vh] w-full max-w-4xl grid-cols-[224px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role="dialog" tabIndex={-1}>
-        <aside className="min-h-0 border-r border-border bg-background/45 p-3">
-          <button aria-label="Close settings" className="mb-4 flex size-8 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent hover:text-foreground" onClick={onClose} ref={closeButtonRef} type="button"><X className="size-4" /></button>
-          <nav aria-label="Settings sections" className="grid gap-1">
+      <div aria-label="Workbench settings" aria-modal="true" className="grid h-[86dvh] w-full max-w-4xl grid-cols-[224px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1 max-[720px]:grid-rows-[auto_minmax(0,1fr)]" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role="dialog" tabIndex={-1}>
+        <aside className="min-h-0 border-r border-border bg-background/45 p-3 max-[720px]:grid max-[720px]:grid-cols-[auto_minmax(0,1fr)] max-[720px]:items-center max-[720px]:gap-x-3 max-[720px]:gap-y-2 max-[720px]:border-b max-[720px]:border-r-0">
+          <button aria-label="Close settings" className="mb-4 flex size-8 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-[720px]:mb-0" onClick={onClose} ref={closeButtonRef} type="button"><X className="size-4" /></button>
+          <nav aria-label="Settings sections" className="grid gap-1 max-[720px]:flex max-[720px]:flex-wrap">
             <SectionButton active={activeSection === 'storage'} icon={<Database className="size-4" />} label="Storage" onClick={() => setActiveSection('storage')} />
             <SectionButton active={activeSection === 'machine-output'} icon={<SlidersHorizontal className="size-4" />} label="Machines & setups" onClick={() => setActiveSection('machine-output')} />
           </nav>
-          <p className="mt-4 text-[11px] text-muted-foreground">Wire EDM Workbench {APP_VERSION}</p>
-          <a className="mt-2 block text-[11px] underline" href={`${import.meta.env.BASE_URL}documentation/releases/${APP_VERSION}/`} target="_blank" rel="noreferrer">Release notes & compatibility</a>
-          <a className="mt-2 block text-[11px] underline" href={`${import.meta.env.BASE_URL}documentation/`} target="_blank" rel="noreferrer">Postprocessor documentation</a>
+          <div className="mt-4 grid gap-2 text-[11px] max-[720px]:col-span-2 max-[720px]:mt-0 max-[720px]:flex max-[720px]:flex-wrap max-[720px]:gap-x-4">
+            <p className="text-muted-foreground">Wire EDM Workbench {APP_VERSION}</p>
+            <a className="underline" href={`${import.meta.env.BASE_URL}documentation/releases/${APP_VERSION}/`} target="_blank" rel="noreferrer">Release notes & compatibility</a>
+            <a className="underline" href={`${import.meta.env.BASE_URL}documentation/`} target="_blank" rel="noreferrer">Help & documentation</a>
+          </div>
         </aside>
         <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
           <header className="border-b border-border p-4"><h2 className="text-base font-semibold">{activeSection === 'storage' ? 'Storage' : 'Machines & setups'}</h2></header>
@@ -84,10 +86,12 @@ export function WorkbenchSettingsDialog({
               <div className="grid gap-5 text-[11px]">
                 <section>
                   <h3 className="text-xs font-semibold">Connection</h3>
-                  <div className="technical-value mt-3 divide-y divide-border border-y border-border">
-                    <SettingsRow label="Status" value={storageStatus(connectedWorkbench, workbenchStatus)} />
-                    <SettingsRow label="Workbench" value={connectedWorkbench?.manifest.name ?? 'Not connected'} />
-                    <SettingsRow label="Projects" value={`${connectedWorkbench?.manifest.projects.length ?? 0}`} />
+                  <div className="mt-2 border-y border-border py-2">
+                    <p className="font-medium">{storageStatus(connectedWorkbench, workbenchStatus)}</p>
+                    {connectedWorkbench && <p className="mt-1 break-words text-muted-foreground">
+                      {connectedWorkbench.manifest.name} · {connectedWorkbench.manifest.projects.length} saved {connectedWorkbench.manifest.projects.length === 1 ? 'project' : 'projects'}
+                    </p>}
+                    {connectedWorkbench && <p className="mt-2 text-muted-foreground">{storageLocation(connectedWorkbench)}</p>}
                   </div>
                   {errorMessage && <Message tone="error">{errorMessage}</Message>}
                   {storageWarningMessage && <Message tone="warning">{storageWarningMessage}</Message>}
@@ -95,16 +99,8 @@ export function WorkbenchSettingsDialog({
                   {(connectedWorkbench?.adapter.kind === 'directory' || !connectedWorkbench) && <Button className="mt-3 mr-2" disabled={storageSwitchDisabled || connecting} onClick={onUseBrowserCache} type="button" variant="outline">Use browser cache</Button>}
                   {canConnect && <Button className="mt-3" disabled={storageSwitchDisabled} onClick={onConnectWorkbench} type="button" variant="outline"><RefreshCw />{storageActionLabel}</Button>}
                 </section>
-                <section>
-                  <h3 className="text-xs font-semibold">Location</h3>
-                  <div className="technical-value mt-3 divide-y divide-border border-y border-border">
-                    <SettingsRow label="Adapter" value={connectedWorkbench?.adapter.kind ?? 'None'} />
-                    <SettingsRow label="Name" value={connectedWorkbench?.adapter.name ?? 'None'} />
-                    <SettingsRow label="Persistence" value={connectedWorkbench?.adapter.kind === 'memory' ? 'Session only' : connectedWorkbench ? 'Persistent' : 'Not connected'} />
-                  </div>
-                </section>
-                {connectedWorkbench && <StorageReviewPanel workbench={connectedWorkbench} disabled={interactionLocked || connecting} />}
                 {connectedWorkbench && <WorkbenchBackupPanel workbench={connectedWorkbench} disabled={storageSwitchDisabled || connecting} />}
+                {connectedWorkbench && <StorageReviewPanel workbench={connectedWorkbench} disabled={interactionLocked || connecting} />}
               </div>
             ) : connectedWorkbench ? (
               <MachinePostSettingsPanel connectedWorkbench={connectedWorkbench} interactionLocked={interactionLocked} settingsErrorMessage={settingsErrorMessage} settingsStatus={settingsStatus} {...machinePostActions} />
@@ -119,11 +115,13 @@ export function WorkbenchSettingsDialog({
 }
 
 function SectionButton({ active, icon, label, onClick }: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) {
-  return <button aria-current={active ? 'page' : undefined} className={`flex h-8 items-center gap-2 whitespace-nowrap rounded-[2px] border px-3 text-left text-[10px] outline-none ${active ? 'border-primary/40 bg-accent text-foreground' : 'border-transparent text-muted-foreground hover:border-border hover:bg-accent/50'}`} onClick={onClick} type="button">{icon}{label}</button>;
+  return <button aria-current={active ? 'page' : undefined} className={`flex h-8 items-center gap-2 whitespace-nowrap rounded-[2px] border px-3 text-left text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? 'border-primary/40 bg-accent text-foreground' : 'border-transparent text-muted-foreground hover:border-border hover:bg-accent/50'}`} onClick={onClick} type="button">{icon}{label}</button>;
 }
 
-function SettingsRow({ label, value }: { label: string; value: string }) {
-  return <div className="grid grid-cols-[150px_minmax(0,1fr)] gap-4 py-3"><div className="text-muted-foreground">{label}</div><div className="break-words text-foreground">{value}</div></div>;
+function storageLocation(workbench: ConnectedWorkbenchCatalog): string {
+  if (workbench.adapter.kind === 'memory') return 'Temporary session only. Download your work before closing this page.';
+  if (workbench.adapter.kind === 'directory') return `Saved in the folder “${workbench.adapter.name}”.`;
+  return 'Saved in this browser. Clearing site data removes this workbench; keep a downloaded backup.';
 }
 
 function Message({ children, tone }: { children: ReactNode; tone: 'error' | 'warning' }) {

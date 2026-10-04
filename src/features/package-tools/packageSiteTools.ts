@@ -1,7 +1,8 @@
 import { Type } from '@sinclair/typebox';
 import { APP_VERSION } from '@/domain/release/appRelease';
 import type { PackageAuthoringRequest, PackageAuthoringResult } from '@/domain/machine-package/packageAuthoringTools';
-import { object, siteTool, ToolError } from '@/features/webmcp/siteTools';
+import { object, page, pageFields, siteTool, ToolError } from '@/features/webmcp/siteTools';
+import { packageReportSummary } from './packageReportSummary';
 
 interface PackageToolState {
   version: string;
@@ -11,6 +12,7 @@ interface PackageToolState {
   archive: File | null;
   result: PackageAuthoringResult | null;
   isCurrent(version: string): boolean;
+  isBusy(): boolean;
   run(request: PackageAuthoringRequest, signal: AbortSignal): Promise<PackageAuthoringResult>;
   addText(path: string, text: string, signal: AbortSignal): Promise<void>;
   reuse(signal: AbortSignal): Promise<void>;
@@ -18,37 +20,51 @@ interface PackageToolState {
 }
 const version = { expectedInputVersion: Type.String({ minLength: 1, maxLength: 100 }) };
 const text = Type.String({ minLength: 1, maxLength: 1024 * 1024 });
+const reports = new WeakMap<PackageAuthoringResult['report'], { version: string; text: string }>();
+function reportContent(report: PackageAuthoringResult['report']) {
+  let content = reports.get(report);
+  if (!content) {
+    content = { version: crypto.randomUUID(), text: JSON.stringify(report, null, 2) };
+    reports.set(report, content);
+  }
+  return content;
+}
 
 export function packageSiteTools(state: PackageToolState) {
   function check(expected: string) {
     if (!state.isCurrent(expected)) throw new ToolError('STALE_STATE', 'Inputs changed. Read edm_package_context again.');
+    if (state.isBusy()) throw new ToolError('BUSY', 'A package operation is running. Wait and read edm_package_context again.');
   }
-  const summarize = (value: PackageAuthoringResult) => {
-    // Full fixture output remains visible/downloadable; keep tool responses small.
-    const details = value.report.details;
-    if (details && typeof details === 'object' && 'conformance' in details) {
-      const conformance = details.conformance as { ok: boolean; fixtures?: readonly { fixtureId: string; diagnostics?: unknown }[]; diagnostics?: unknown };
-      return { ...value.report, details: { ...details, conformance: { ok: conformance.ok,
-        fixtures: conformance.fixtures?.map(({ fixtureId, diagnostics }) => ({ fixtureId, diagnostics })), diagnostics: conformance.diagnostics } } };
-    }
-    return value.report;
-  };
   return [
-    siteTool('edm_package_context', 'Read this package authoring page’s input version, selected evidence hashes, archive and latest check status. Files belong to this browser session.', object({}), () => ({
-      appVersion: APP_VERSION, inputVersion: state.version,
+    siteTool('edm_package_context', 'Read this package authoring page’s input version, busy state, selected evidence hashes, archive and latest check status. Page evidence with offset/limit and pin expectedInputVersion after the first page; follow nextOffset. Files belong to this browser session.', object({ ...pageFields, expectedInputVersion: Type.Optional(version.expectedInputVersion) }), input => {
+      if (input.expectedInputVersion && !state.isCurrent(input.expectedInputVersion)) throw new ToolError('STALE_STATE', 'Inputs changed. Restart the evidence listing.');
+      const evidence = page(state.evidence, { ...input, limit: input.limit ?? 50 }, ({ path, hash, bytes }) => ({ path, sha256: hash, size: bytes.byteLength }));
+      return {
+      appVersion: APP_VERSION, inputVersion: state.version, busy: state.isBusy(),
       postLoaded: Boolean(state.postText), documentLoaded: Boolean(state.documentText),
-      evidence: state.evidence.slice(0, 50).map(({ path, hash, bytes }) => ({ path, sha256: hash, size: bytes.byteLength })),
+      evidence: evidence.items, nextOffset: evidence.nextOffset,
       evidenceCount: state.evidence.length,
       archive: state.archive ? { name: state.archive.name, size: state.archive.size } : null,
-      lastCheck: state.result ? { ok: state.result.report.ok, operation: state.result.report.operation, packageAvailable: Boolean(state.result.output?.archive) } : null
-    })),
+      lastCheck: state.result ? { ok: state.result.report.ok, operation: state.result.report.operation, packageAvailable: Boolean(state.result.output?.archive), fullReportAvailable: true, reportVersion: reportContent(state.result.report).version } : null
+    }; }),
+    siteTool('edm_read_package_report', 'Read a bounded exact JSON text chunk of the latest visible validation report, including unabridged diagnostics, fixtures and evidence paths. Pin expectedInputVersion and lastCheck.reportVersion from edm_package_context. Offsets count JavaScript UTF-16 characters; follow nextOffset. Does not repeat checks.', object({ ...version, reportVersion: Type.String({ minLength: 1, maxLength: 100 }), offset: Type.Optional(Type.Integer({ minimum: 0 })), length: Type.Optional(Type.Integer({ minimum: 1, maximum: 4000 })) }), input => {
+      check(input.expectedInputVersion);
+      if (!state.result) throw new ToolError('REPORT_REQUIRED', 'Run a check, inspection or build first.');
+      const content = reportContent(state.result.report);
+      if (input.reportVersion !== content.version) throw new ToolError('STALE_STATE', 'The validation report changed. Read edm_package_context and restart the report reading.');
+      const report = content.text;
+      const offset = input.offset ?? 0;
+      const text = report.slice(offset, offset + (input.length ?? 2000));
+      return { inputVersion: state.version, reportVersion: content.version, operation: state.result.report.operation, reportOk: state.result.report.ok,
+        characterCount: report.length, text, nextOffset: offset + text.length < report.length ? offset + text.length : null };
+    }),
     siteTool('edm_check_post', 'Check supplied text or the visible Post JSON using sandboxed conformance and return its canonical hash. Shows the full report on this page. Does not install a post.', object({ ...version, text: Type.Optional(text) }), async (input, signal) => {
       check(input.expectedInputVersion);
-      return summarize(await state.run({ operation: 'check-post', text: input.text ?? state.postText }, signal));
+      return packageReportSummary(await state.run({ operation: 'check-post', text: input.text ?? state.postText }, signal));
     }, false),
     siteTool('edm_build_package', 'Validate supplied documentText or the visible package document with staged evidence and sandboxed conformance. Prepare a downloadable archive; does not install or save a machine.', object({ ...version, documentText: Type.Optional(text) }), async (input, signal) => {
       check(input.expectedInputVersion);
-      return summarize(await state.run({ operation: 'build-package', text: input.documentText ?? state.documentText, files: state.evidence }, signal));
+      return packageReportSummary(await state.run({ operation: 'build-package', text: input.documentText ?? state.documentText, files: state.evidence }, signal));
     }, false),
     siteTool('edm_inspect_package', 'Inspect the archive selected through Machine package file, including sandboxed post conformance. Show its report and safely decoded repair inputs. Does not install it.', object(version), async (input, signal) => {
       check(input.expectedInputVersion);
@@ -57,7 +73,7 @@ export function packageSiteTools(state: PackageToolState) {
       const bytes = new Uint8Array(await state.archive.arrayBuffer());
       signal.throwIfAborted();
       check(input.expectedInputVersion);
-      return summarize(await state.run({ operation: 'inspect-package', bytes }, signal));
+      return packageReportSummary(await state.run({ operation: 'inspect-package', bytes }, signal));
     }, false),
     siteTool('edm_add_text_evidence', 'Stage supplied UTF-8 evidence text in this authoring page. Hashes its bytes and clears previous results. Use actual supplied evidence; this does not verify its truth.', object({ ...version, path: Type.String({ minLength: 1, maxLength: 200 }), text }), async (input, signal) => {
       check(input.expectedInputVersion);

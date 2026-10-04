@@ -89,6 +89,33 @@ test('keeps the 1024px workbench in one readable column without clipping', async
   );
 });
 
+test('keeps a populated compact library above its import controls', async ({ page }) => {
+  await page.setViewportSize({ width: 640, height: 800 });
+  await openReadyWorkbench(page);
+  for (let index = 1; index <= 12; index++) {
+    await page.getByLabel('Machine program file', { exact: true }).setInputFiles({
+      name: `compact-library-${index}.nc`,
+      mimeType: 'text/plain',
+      buffer: Buffer.from('G90\nG0 X0 Y0\nG1 X10 Y10')
+    });
+    await page.getByRole('button', { name: 'Back to Dashboard', exact: true }).click();
+  }
+
+  const library = page.locator('[data-project-library]');
+  const rows = page.getByRole('list', { name: 'Project list', exact: true }).getByRole('listitem');
+  await expect(rows).toHaveCount(12);
+  const lastRow = await rows.last().boundingBox();
+  const libraryBox = await library.boundingBox();
+  const startBox = await page.getByRole('region', { name: 'Start work', exact: true }).boundingBox();
+  expect(lastRow).not.toBeNull();
+  expect(libraryBox).not.toBeNull();
+  expect(startBox).not.toBeNull();
+  expect(lastRow!.y + lastRow!.height).toBeLessThanOrEqual(libraryBox!.y + libraryBox!.height);
+  expect(startBox!.y).toBeGreaterThanOrEqual(libraryBox!.y + libraryBox!.height);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(640);
+  await page.getByRole('button', { name: 'Open Machine Program', exact: true }).click();
+});
+
 function rectangleDxf() {
   return `0
 SECTION

@@ -601,7 +601,7 @@ describe('complete machine package installation', () => {
     });
   });
 
-  it('restores both exact catalogs when readback detects a corrupt machine write', async () => {
+  it('retains both catalogs and recovery evidence when readback detects an unknown corrupt machine write', async () => {
     const adapter = new MemoryAdapter();
     const initialized = await initializeWorkbenchCatalog(adapter, {
       now: new Date('2026-09-04T08:00:00.000Z')
@@ -619,10 +619,14 @@ describe('complete machine package installation', () => {
 
     expect(committed).toMatchObject({
       ok: false,
-      error: { code: 'MACHINE_PACKAGE_INSTALLATION_READBACK_MISMATCH' }
+      error: { code: 'MACHINE_PACKAGE_INSTALLATION_ROLLBACK_FAILED',
+        message: expect.stringContaining('did not read back byte-for-byte') }
     });
-    expect(adapter.files.get(POST_LIBRARY_PATH)).toBe(beforePosts);
-    expect(adapter.files.get(MACHINE_LIBRARY_PATH)).toBe(beforeMachines);
+    expect(adapter.files.get(POST_LIBRARY_PATH)).not.toBe(beforePosts);
+    expect(adapter.files.get(MACHINE_LIBRARY_PATH)).not.toBe(beforeMachines);
+    const journal = JSON.parse(adapter.files.get(CATALOG_PAIR_TRANSACTION_PATH)!);
+    expect(adapter.files.get(MACHINE_LIBRARY_PATH)).toBe(`${journal.nextMachines}corrupt`);
+    expect(adapter.files.has(CATALOG_PAIR_TRANSACTION_PATH)).toBe(true);
   });
 
   it('restores both catalogs when the committed transaction journal cannot be removed', async () => {
@@ -663,7 +667,7 @@ describe('complete machine package installation', () => {
     if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
     const prepared = await prepareStoredMachinePackageInstallation(initialized.workbench, built.archive);
     if (!prepared.ok) throw new Error(prepared.error.message);
-    adapter.corruptNextMachineWrite = true;
+    adapter.failNextMachineWrite = true;
     adapter.corruptPostRollbackAfterMachineFailure = true;
 
     const committed = await commitStoredMachinePackageInstallation(
@@ -703,6 +707,7 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
   readonly files = new Map<string, string>();
   corruptNextMachineWrite = false;
+  failNextMachineWrite = false;
   corruptPostRollbackAfterMachineFailure = false;
   corruptNextPostWrite = false;
   retainNextTransactionDelete = false;
@@ -712,6 +717,11 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
   async readText(path: string) { return this.files.get(path) ?? null; }
   async writeText(path: string, contents: string) {
     this.writeCount += 1;
+    if (path === MACHINE_LIBRARY_PATH && this.failNextMachineWrite) {
+      this.failNextMachineWrite = false;
+      this.corruptNextPostWrite = this.corruptPostRollbackAfterMachineFailure;
+      throw new Error('Machine write failed');
+    }
     if (path === POST_LIBRARY_PATH && this.corruptNextPostWrite) {
       this.corruptNextPostWrite = false;
       this.files.set(path, `${contents}corrupt`);
@@ -719,7 +729,6 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
     }
     if (path === MACHINE_LIBRARY_PATH && this.corruptNextMachineWrite) {
       this.corruptNextMachineWrite = false;
-      this.corruptNextPostWrite = this.corruptPostRollbackAfterMachineFailure;
       this.files.set(path, `${contents}corrupt`);
       return;
     }

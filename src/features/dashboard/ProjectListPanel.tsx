@@ -112,7 +112,7 @@ export function ProjectListPanel({
               >
                 {visibleProjects.map((project) => (
                   <div
-                    className="grid min-w-0 gap-x-3 gap-y-1 p-2 lg:grid-cols-[minmax(0,1fr)_110px_minmax(120px,150px)_auto] lg:items-center"
+                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 p-2 lg:grid-cols-[minmax(0,1fr)_110px_minmax(120px,150px)_auto]"
                     data-project-row
                     data-project-source={project.sourceKind}
                     key={project.id}
@@ -120,7 +120,7 @@ export function ProjectListPanel({
                   >
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-1">
-                        <p className="truncate text-foreground" title={project.name}>{project.name}</p>
+                        <p className="truncate text-foreground" title={`${project.name}\n${project.path}`}>{project.name}</p>
                         <Button
                           aria-label={`Rename project ${project.id}`}
                           className="size-5 shrink-0 text-muted-foreground hover:text-foreground"
@@ -132,15 +132,12 @@ export function ProjectListPanel({
                           variant="ghost"
                         ><Pencil className="size-3" /></Button>
                       </div>
-                      <p className="technical-value mt-1 truncate text-[10px] text-muted-foreground" title={project.path}>
-                        {project.path}
-                      </p>
                     </div>
-                    <span className="text-[10px] text-muted-foreground lg:text-[11px]">
+                    <span className="col-start-1 row-start-2 text-[10px] text-muted-foreground lg:col-auto lg:row-auto lg:text-[11px]">
                       {getProjectSourceLabel(project.sourceKind)}
                     </span>
                     <ProjectUpdateTime value={project.updatedAt} />
-                    <div className="flex min-w-0 items-center gap-1 lg:justify-end">
+                    <div className="col-start-2 row-start-1 flex min-w-0 items-center justify-end gap-1 lg:col-auto lg:row-auto">
                       <Button
                         aria-label={`Open project ${project.id} in editor`}
                         disabled={interactionLocked}
