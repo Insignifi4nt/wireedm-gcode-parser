@@ -63,6 +63,12 @@ export default function App({ services }: AppProps = {}) {
       workbenchStatus={app.workbenchStatus}
     >
       <StatusToastList onDismiss={app.dismissStatusToast} toasts={app.statusToasts} />
+      {app.dxfReimportStatus === 'importing' && !app.pendingDxfReimport && (
+        <div className="fixed left-1/2 top-14 z-50 flex -translate-x-1/2 items-center gap-3 border border-border bg-background p-3 text-xs" role="status">
+          Preparing DXF unit review…
+          <button className="border border-border px-2 py-1" onClick={app.handleCancelDxfReimport} type="button">Cancel DXF preparation</button>
+        </div>
+      )}
       {app.workbenchStatus === 'error' && !app.connectedWorkbench ? (
         <section className="grid h-full place-items-center p-6" role="alert">
           <div className="max-w-2xl border border-destructive bg-destructive/10 p-4 font-mono text-xs text-destructive">
@@ -97,6 +103,8 @@ export default function App({ services }: AppProps = {}) {
         /></Suspense>
       ) : (
         <DashboardPage
+          dxfWriting={app.dxfWriting}
+          dxfImportCancellable={app.dxfImportCancellable}
           connectedWorkbench={app.connectedWorkbench}
           importErrorMessage={app.importErrorMessage}
           importStatus={app.importStatus}
@@ -127,6 +135,7 @@ export default function App({ services }: AppProps = {}) {
       )}
       {app.pendingDxfReimport && (
         <DxfImportConfirmationDialog
+          cancellationBlocked={app.dxfWriting}
           declaredUnitOverrideAcknowledged={app.pendingDxfReimport.declaredUnitOverrideAcknowledged}
           errorMessage={app.dxfReimportErrorMessage}
           mode="reimport"

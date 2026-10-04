@@ -1,0 +1,34 @@
+{
+  "version": "0.0.691",
+  "previousVersion": "0.0.690",
+  "postCompatibility": "preserved-output-bounded-dxf-worker-processing",
+  "summary": "Moves DXF preparation, unit previews and planning into cancellable local workers, with exact source checks before persistence.",
+  "warning": "Installed post processors, saved revisions and controller output are unchanged. Browser DXF import and unit reimport now require a working local worker and stop each CPU task after 90 seconds with an explicit diagnostic. A worker failure does not fall back to blocking the page. Some large drawings previously left the page unresponsive; these may now require simplification or splitting. Cancellation before the transaction journal starts saves no project. Once persistence starts, the transaction finishes or recovers and the committed result remains authoritative.",
+  "checklist": {
+    "schema": "App version advances once to 0.0.691. UPID, project, saved revision, post package, machine package, engine API, execution-plan and storage transaction schemas are unchanged. Cached unit previews exist only in a preparation session and are not persisted.",
+    "events": "Execution event kinds, fields, ordering, route selection and post translation are unchanged. Workers invoke the same pure parsing, unit and planning algorithms.",
+    "capabilities": "Installed post capabilities are unchanged. Ordinary DXF import, unit reimport and WebMCP preparation/import use the same processor boundary. Existing agent argument schemas and explicit unit acknowledgements remain valid. Worker failure and timeout are explicit diagnostics. Pure domain clients retain their synchronous default; browser clients do not silently fall back to main-thread CPU work.",
+    "auditAndOutput": "Post sandbox behavior, conformance, motion audits, controller extension/encoding/line endings/numbering/wrappers and no-default-feed behavior are unchanged. Native browser and serialized-task tests compare original source, reviewed units and planned geometry. No physical controller verification is claimed.",
+    "installationAndStorage": "No installed-package, saved-revision or source migration. A narrow optional guard runs under the existing mutation lock immediately before the first file-transaction journal write. Cancelled queued imports write no journal or project. After journaling begins, durable results are not erased by late cancellation or an editor-open failure. Unit reimport rechecks the entire reviewed project and exact source after planning, preserving changed originals. Existing cache/folder transaction recovery and conflict checks remain in force.",
+    "verification": "Independent source review covers the worker, controller, domain and agent boundaries; independent probes verify truthful committed receipts after late cancellation and failed editor loading. Integrated unit/integration verification passes 203 files / 2,016 tests with four workers. App and tooling TypeScript checks, production build, documentation discovery/parity (22 pages / 72 files), UPID fixtures, post conformance and complete package validation pass. The complete Chromium run passed 85 cases with one optional skip and exposed one installation test uploading through a disabled file input before installation completed. That test now waits for the verified install receipt without weakening its output assertions; both native installation cases pass on rerun. Two native worker cases cover exact CRLF/Unicode source and cancellable 5,000-line planning with a successful retry. CI repeats the full candidate verification before merge."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Post implementation unchanged. All three current UPID and Robofil post fixtures, complete package validation and both native machine-install/output cases pass. No physical controller verification is claimed."
+    }
+  ],
+  "publicNotes": {
+    "summary": "DXF preparation and planning stay responsive and can be cancelled before saving begins.",
+    "changes": [
+      "DXF import and source-unit review run parsing, unit previews and planning in local browser workers.",
+      "Cancel preparation or planning without saving a partial project, then retry another drawing.",
+      "A stopped or unavailable worker produces an actionable error. CPU tasks stop after 90 seconds instead of holding the page indefinitely.",
+      "Changing a project's source units rechecks the reviewed project and original source before saving, protecting edits made while planning was running.",
+      "If an import was saved but its editor could not open, the saved project remains available and the result reports what completed."
+    ],
+    "compatibility": "Installed posts, saved revisions, geometry algorithms and output contracts are unchanged. Browser DXF processing now requires local workers and has a 90-second limit per CPU task. Existing drawing resource limits still apply.",
+    "action": "If processing reaches the time limit, simplify or split the drawing and retry. Cancellation is available before saving starts; once an import reports a saved project, open that project instead of repeating the import."
+  }
+}

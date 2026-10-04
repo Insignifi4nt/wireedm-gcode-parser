@@ -13,6 +13,7 @@ import {
 
 import { buildDxfImportUnitCandidates, type DxfImportUnitCandidate } from './dxfImportUnits';
 import { dxfEntitiesToUpidDocument } from './dxfToUpid';
+import { DxfProcessingError, type DxfProcessingOptions } from './dxfProcessing';
 import {
   prepareDxfProjectImport,
   type DxfImportPreparation,
@@ -45,6 +46,7 @@ export interface ImportedDxfProject {
 
 export type DxfProjectImportError =
   | DxfImportPreparationError
+  | { readonly code: DxfProcessingError['code']; readonly message: string }
   | WorkbenchProjectError
   | Extract<AddStoredWorkbenchProjectResult, { readonly ok: false }>['error']
   | {
@@ -72,8 +74,10 @@ export type ImportDxfProjectResult =
 export async function commitDxfProjectImport(
   workbench: ConnectedWorkbenchCatalog,
   preparation: DxfImportPreparation,
-  decision: DxfImportDecision
+  decision: DxfImportDecision,
+  options: DxfProcessingOptions = {}
 ): Promise<ImportDxfProjectResult> {
+  options.signal?.throwIfAborted();
   if (!decision.confirmed) {
     return failure('DXF_IMPORT_CONFIRMATION_REQUIRED', 'DXF import requires explicit confirmation.');
   }
@@ -114,12 +118,13 @@ export async function commitDxfProjectImport(
   });
   let pathDocument: PathPlanningDocument;
   try {
-    pathDocument = jsonSnapshot(dxfEntitiesToUpidDocument(
-      preparation.parseResult.entities,
-      {},
-      sourceMetadata(preparation, identity.id, current, overridesDeclaration)
-    ));
+    const metadata = sourceMetadata(preparation, identity.id, current, overridesDeclaration);
+    pathDocument = options.processor
+      ? await options.processor.plan(preparation.parseResult.entities, metadata, options.signal)
+      : jsonSnapshot(dxfEntitiesToUpidDocument(preparation.parseResult.entities, {}, metadata));
   } catch (error) {
+    options.signal?.throwIfAborted();
+    if (error instanceof DxfProcessingError) return { ok: false, error: { code: error.code, message: error.message } };
     return failure(
       'DXF_IMPORT_GEOMETRY_REQUIRED',
       error instanceof Error ? error.message : String(error)
@@ -147,7 +152,8 @@ export async function commitDxfProjectImport(
   if (!created.ok) return created;
   const stored = await addStoredWorkbenchProject(workbench, {
     project: created.project,
-    ownedFiles: [{ path: sourcePath, contents: preparation.text }]
+    ownedFiles: [{ path: sourcePath, contents: preparation.text }],
+    beforeWrite: () => { options.signal?.throwIfAborted(); options.beforeWrite?.(); }
   });
   if (!stored.ok) return stored;
   return {

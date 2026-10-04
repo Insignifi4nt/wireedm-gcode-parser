@@ -71,6 +71,8 @@ test('explains missing compensation and exports after the decision is saved', as
     .locator('[data-machine-package-preview]')
     .getByRole('button', { name: 'Install machine package' })
     .click();
+  // File-input automation can bypass disabled controls; finish the intended install first.
+  await expect(page.getByText('Saved and verified from storage.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close settings' }).click();
 
   await page.getByLabel('DXF file').setInputFiles(

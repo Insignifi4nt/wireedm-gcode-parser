@@ -3,6 +3,8 @@ import { createRoot, type Root } from 'react-dom/client';
 
 import App from '../App';
 import type { AppServices } from '../app/appServices';
+import { createDxfImportServices } from '../app/dxfImportServices';
+import { directDxfProcessor } from '../features/dxf-import/dxfProcessorTestSupport';
 import { ONBOARDING_DISMISSED_STORAGE_KEY } from '../features/onboarding/onboardingPreference';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -106,7 +108,7 @@ export async function renderApp(
   // still loads the editor chunk only when that workspace is opened.
   await import('@/features/editor/EditorPage');
   await act(async () => {
-    context.root.render(<App services={services} />);
+    context.root.render(<App services={{ ...createDxfImportServices(directDxfProcessor), ...services }} />);
   });
   await flushAsync();
 }

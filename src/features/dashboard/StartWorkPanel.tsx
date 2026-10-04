@@ -12,6 +12,7 @@ export interface StartWorkPanelProps {
   programErrorMessage: string | null;
   programImporting: boolean;
   onImportDxfFile: (file: File) => void | Promise<void>;
+  onCancelDxfImport?: () => void;
   onImportUpidFile: (file: File) => void | Promise<void>;
   onImportProgramFile: (file: File) => void | Promise<void>;
   onOpenEditor: () => void;
@@ -25,6 +26,7 @@ export function StartWorkPanel({
   programErrorMessage,
   programImporting,
   onImportDxfFile,
+  onCancelDxfImport,
   onImportUpidFile,
   onImportProgramFile,
   onOpenEditor
@@ -178,6 +180,7 @@ export function StartWorkPanel({
           </Button>
         </div>
 
+        {dxfImporting && onCancelDxfImport && <Button onClick={onCancelDxfImport} type="button" variant="outline">Cancel DXF preparation</Button>}
         {dxfErrorMessage && (
           <p role="alert" className="border border-destructive bg-destructive/10 p-2 text-destructive">
             {dxfErrorMessage}

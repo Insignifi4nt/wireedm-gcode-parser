@@ -1,4 +1,4 @@
-import { commitWorkbenchFileTransaction, WorkbenchFileWriteError } from '@/domain/storage/workbenchFileTransaction';
+import { commitWorkbenchFileTransaction, WorkbenchFileGuardError, WorkbenchFileWriteError } from '@/domain/storage/workbenchFileTransaction';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import { parseSavedWireEdmJobRevision } from '@/domain/wire-edm-job/savedWireEdmJobRevision';
 import { commitProjectPurgeTransaction, commitProjectTrashTransaction, recoverProjectTrashTransaction, type ProjectTrashTransactionError } from '@/domain/storage/projectTrashTransaction';
@@ -33,11 +33,15 @@ export type OwnedWorkbenchFileChange =
   | { readonly kind: 'delete'; readonly path: string };
 
 interface AddStoredWorkbenchProjectInput {
+  readonly beforeWrite?: () => void;
   readonly project: WorkbenchProjectDocument;
   readonly ownedFiles: readonly OwnedWorkbenchFileWrite[];
 }
 
 interface ReplaceStoredWorkbenchProjectInput {
+  readonly beforeWrite?: () => void;
+  readonly expectedProject?: WorkbenchProjectDocument;
+  readonly expectedOwnedFiles?: readonly { readonly path: string; readonly contents: string }[];
   readonly project: WorkbenchProjectDocument;
   readonly expectedContent?: WorkbenchProjectDocument['content'];
   readonly ownedFileChanges: readonly OwnedWorkbenchFileChange[];
@@ -224,7 +228,7 @@ export async function addStoredWorkbenchProject(
       ...input.ownedFiles,
       { path, contents: serialized.text },
       { path: WORKBENCH_CATALOG_PATH, contents: JSON.stringify(nextManifest, null, 2) + '\n' }
-    ]);
+    ], input.beforeWrite);
     if (!written.ok) return written;
     return { ok: true, project: input.project, workbench: freezeWorkbench(workbench, nextManifest) };
   });
@@ -255,6 +259,19 @@ export async function replaceStoredWorkbenchProject(
     if (!entry) return projectNotFound(input.project.id);
     const previous = await readIndexedWorkbenchProjectStorage(workbench.adapter, entry);
     if (!previous.ok) return previous;
+    if (input.expectedProject && JSON.stringify(input.expectedProject) !== JSON.stringify(previous.project)) {
+      return { ok: false, error: { code: 'WORKBENCH_PROJECT_CONTENT_CHANGED', message: 'The saved project changed after review. Reopen the project before saving.' } };
+    }
+    for (const expected of input.expectedOwnedFiles ?? []) {
+      if (!previous.project.source.files.some(({ path }) => path === expected.path)) {
+        return { ok: false, error: { code: 'WORKBENCH_PROJECT_CONTENT_CHANGED', message: 'The original source changed after review. Prepare and review it again before saving.' } };
+      }
+      try {
+        if (await workbench.adapter.readText(expected.path) !== expected.contents) {
+          return { ok: false, error: { code: 'WORKBENCH_PROJECT_CONTENT_CHANGED', message: 'The original source changed after review. Prepare and review it again before saving.' } };
+        }
+      } catch (error) { return projectAccessFailure('read', expected.path, error); }
+    }
     if (input.expectedContent && JSON.stringify(input.expectedContent) !== JSON.stringify(previous.project.content)) {
       return { ok: false, error: { code: 'WORKBENCH_PROJECT_CONTENT_CHANGED', message: 'The saved project changed before the edit could be committed. Reopen the project.' } };
     }
@@ -297,7 +314,7 @@ export async function replaceStoredWorkbenchProject(
       ...input.ownedFileChanges.map((change) => ({ path: change.path, contents: change.kind === 'write' ? change.contents : null })),
       { path: entry.path, contents: serialized.text },
       { path: WORKBENCH_CATALOG_PATH, contents: JSON.stringify(nextManifest, null, 2) + '\n' }
-    ]);
+    ], input.beforeWrite);
     if (!written.ok) return written;
     return { ok: true, project: input.project, workbench: freezeWorkbench(workbench, nextManifest) };
   });
@@ -570,11 +587,12 @@ async function verifyManifestCurrent(workbench: ConnectedWorkbenchCatalog) {
   return { ok: true as const };
 }
 
-async function commitProjectFiles(workbench: ConnectedWorkbenchCatalog, changes: readonly { path: string; contents: string | null }[]) {
+async function commitProjectFiles(workbench: ConnectedWorkbenchCatalog, changes: readonly { path: string; contents: string | null }[], beforeWrite?: () => void) {
   try {
-    await commitWorkbenchFileTransaction(workbench.adapter, changes);
+    await commitWorkbenchFileTransaction(workbench.adapter, changes, beforeWrite);
     return { ok: true as const };
   } catch (error) {
+    if (error instanceof WorkbenchFileGuardError) throw error.reason;
     if (error instanceof WorkbenchFileWriteError && error.path === WORKBENCH_CATALOG_PATH) {
       return { ok: false as const, error: {
         code: 'WORKBENCH_CATALOG_MUTATION_MANIFEST_WRITE_FAILED' as const,
