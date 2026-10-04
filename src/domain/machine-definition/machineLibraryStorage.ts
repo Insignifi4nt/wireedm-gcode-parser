@@ -288,7 +288,7 @@ function storageAccessFailure(
   };
 }
 
-function machineLibrarySizeError(rawText: string): Extract<
+export function machineLibrarySizeError(rawText: string): Extract<
   MachineLibraryStorageError,
   { code: 'MACHINE_LIBRARY_STORAGE_TOO_LARGE' }
 > | null {

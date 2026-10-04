@@ -4,6 +4,7 @@ import {
   type CatalogPairTransactionError
 } from '@/domain/storage/catalogPairTransaction';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import { commitWorkbenchFileTransaction, WORKBENCH_FILE_TRANSACTION_PATH, WorkbenchFileWriteError } from '@/domain/storage/workbenchFileTransaction';
 import {
   readPostLibraryStorage,
   type PostLibraryStorageError
@@ -28,7 +29,7 @@ import {
   MACHINE_LIBRARY_PATH,
   readMachineLibraryStorage,
   serializeMachineLibraryStorage,
-  writeMachineLibraryStorage,
+  machineLibrarySizeError,
   type MachineLibraryStorageError
 } from './machineLibraryStorage';
 
@@ -42,23 +43,6 @@ type MachineMutationCatalogMissingError = {
   path: typeof WORKBENCH_CATALOG_PATH;
 };
 
-type MachineLibraryMutationReadbackError = {
-  code: 'MACHINE_LIBRARY_MUTATION_READBACK_MISMATCH';
-  message: string;
-  path: typeof MACHINE_LIBRARY_PATH;
-};
-
-type MachineLibraryMutationRollbackError = {
-  code: 'MACHINE_LIBRARY_MUTATION_ROLLBACK_FAILED';
-  message: string;
-  originalError: MachineLibraryStorageError | MachineLibraryMutationReadbackError;
-  rollbackError: MachineLibraryStorageError;
-};
-
-type MachineLibraryMutationPersistenceError =
-  | MachineLibraryMutationReadbackError
-  | MachineLibraryMutationRollbackError;
-
 export type ActivateStoredMachinePostBindingResult =
   | { ok: true; library: MachineLibrary; machine: MachineDefinition }
   | {
@@ -68,8 +52,7 @@ export type ActivateStoredMachinePostBindingResult =
         | MachineLibraryStorageError
         | CatalogPairTransactionError
         | ActivateBindingError
-        | ReplaceMachineError
-        | MachineLibraryMutationPersistenceError;
+        | ReplaceMachineError;
     };
 
 type MachineIsRecentError = {
@@ -82,8 +65,7 @@ export type RemoveStoredMachineDefinitionError =
   | WorkbenchCatalogError
   | MachineMutationCatalogMissingError
   | RemoveMachineError
-  | MachineIsRecentError
-  | MachineLibraryMutationPersistenceError;
+  | MachineIsRecentError;
 
 export type RemoveStoredMachineDefinitionResult =
   | {
@@ -115,7 +97,6 @@ export async function removeStoredMachineDefinition(
     if (!removed.ok) return removed;
     const written = await persistMachineLibrary(
       workbench.adapter,
-      state.machineLibraryRaw,
       removed.library
     );
     if (!written.ok) return written;
@@ -140,9 +121,7 @@ export async function activateStoredMachinePostBinding(
     if (!activated.ok) return activated;
     const replaced = replaceMachineDefinition(state.machines, activated.machine);
     if (!replaced.ok) return replaced;
-    const previousRaw = await readMachineLibraryRaw(adapter);
-    if (!previousRaw.ok) return previousRaw;
-    const written = await persistMachineLibrary(adapter, previousRaw.rawText, replaced.library);
+    const written = await persistMachineLibrary(adapter, replaced.library);
     return written.ok
       ? { ok: true, machine: activated.machine, library: replaced.library }
       : written;
@@ -193,8 +172,6 @@ async function readAuthoritativeCatalog(adapter: WorkbenchStorageAdapter) {
   if (!posts.ok) return posts;
   const machines = await readMachineLibraryStorage(adapter, posts.library);
   if (!machines.ok) return machines;
-  const machineLibraryRaw = await readMachineLibraryRaw(adapter);
-  if (!machineLibraryRaw.ok) return machineLibraryRaw;
   const manifest = parseWorkbenchCatalogManifest(rawManifest, machines.library);
   if (!manifest.ok) return manifest;
   const ownership = await validateWorkbenchProjectPathOwnership(adapter, manifest.manifest.projects);
@@ -206,8 +183,7 @@ async function readAuthoritativeCatalog(adapter: WorkbenchStorageAdapter) {
       manifest: manifest.manifest,
       posts: posts.library,
       machines: machines.library
-    }),
-    machineLibraryRaw: machineLibraryRaw.rawText
+    })
   };
 }
 
@@ -224,76 +200,29 @@ function catalogMissing(): { ok: false; error: MachineMutationCatalogMissingErro
 
 async function persistMachineLibrary(
   adapter: WorkbenchStorageAdapter,
-  previousRawText: string,
   library: MachineLibrary
 ) {
   const expectedRawText = serializeMachineLibraryStorage(library);
-  const written = await writeMachineLibraryStorage(adapter, library);
-  if (!written.ok) return rollbackMachineLibrary(adapter, previousRawText, written.error);
-  const readback = await readMachineLibraryRaw(adapter);
-  if (!readback.ok) return rollbackMachineLibrary(adapter, previousRawText, readback.error);
-  if (readback.rawText !== expectedRawText) {
-    return rollbackMachineLibrary(adapter, previousRawText, {
-      code: 'MACHINE_LIBRARY_MUTATION_READBACK_MISMATCH',
-      message: `Machine library did not read back byte-for-byte at ${MACHINE_LIBRARY_PATH}.`,
-      path: MACHINE_LIBRARY_PATH
-    });
-  }
-  return { ok: true as const };
-}
-
-async function rollbackMachineLibrary(
-  adapter: WorkbenchStorageAdapter,
-  previousRawText: string,
-  originalError: MachineLibraryStorageError | MachineLibraryMutationReadbackError
-) {
-  const restored = await writeMachineLibraryRaw(adapter, previousRawText);
-  if (restored.ok) return { ok: false as const, error: originalError };
-  return {
-    ok: false as const,
-    error: {
-      code: 'MACHINE_LIBRARY_MUTATION_ROLLBACK_FAILED' as const,
-      message: 'Machine library mutation failed and the exact previous bytes could not be restored.',
-      originalError,
-      rollbackError: restored.error
-    }
-  };
-}
-
-async function readMachineLibraryRaw(adapter: WorkbenchStorageAdapter) {
+  const sizeError = machineLibrarySizeError(expectedRawText);
+  if (sizeError) return { ok: false as const, error: sizeError };
   try {
-    const rawText = await adapter.readText(MACHINE_LIBRARY_PATH);
-    if (rawText !== null) return { ok: true as const, rawText };
-    return {
-      ok: false as const,
-      error: {
-        code: 'MACHINE_LIBRARY_STORAGE_NOT_FOUND' as const,
-        message: `Machine library file does not exist: ${MACHINE_LIBRARY_PATH}.`
-      }
-    };
-  } catch (error) {
-    return machineLibraryAccessFailure('read', error);
-  }
-}
-
-async function writeMachineLibraryRaw(adapter: WorkbenchStorageAdapter, rawText: string) {
-  try {
-    await adapter.writeText(MACHINE_LIBRARY_PATH, rawText);
+    await commitWorkbenchFileTransaction(adapter, [{ path: MACHINE_LIBRARY_PATH, contents: expectedRawText }]);
     return { ok: true as const };
   } catch (error) {
-    return machineLibraryAccessFailure('write', error);
+    return machineLibraryAccessFailure('write', error,
+      error instanceof WorkbenchFileWriteError ? error.path : WORKBENCH_FILE_TRANSACTION_PATH);
   }
 }
 
-function machineLibraryAccessFailure(operation: 'read' | 'write', error: unknown) {
+function machineLibraryAccessFailure(operation: 'read' | 'write', error: unknown, path = MACHINE_LIBRARY_PATH) {
   const cause = error instanceof Error ? error.message : String(error);
   return {
     ok: false as const,
     error: {
       code: 'MACHINE_LIBRARY_STORAGE_ACCESS_FAILED' as const,
-      message: `Machine library ${operation} failed at ${MACHINE_LIBRARY_PATH}: ${cause}`,
+      message: `Machine library ${operation} failed at ${path}: ${cause}`,
       operation,
-      path: MACHINE_LIBRARY_PATH
+      path
     }
   };
 }

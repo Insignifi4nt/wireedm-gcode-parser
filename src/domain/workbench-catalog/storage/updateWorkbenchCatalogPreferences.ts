@@ -1,6 +1,10 @@
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import { recoverProjectTrashTransaction, type ProjectTrashTransactionError } from '@/domain/storage/projectTrashTransaction';
 import { recoverSavedRevisionTransaction, type SavedRevisionTransactionError } from '@/domain/storage/savedRevisionTransaction';
+import { recoverCatalogPairTransaction, type CatalogPairTransactionError } from '@/domain/storage/catalogPairTransaction';
+import { commitWorkbenchFileTransaction, WORKBENCH_FILE_TRANSACTION_PATH, WorkbenchFileWriteError } from '@/domain/storage/workbenchFileTransaction';
+import { readPostLibraryStorage, type PostLibraryStorageError } from '@/domain/post-processor/postLibraryStorage';
+import { readMachineLibraryStorage, type MachineLibraryStorageError } from '@/domain/machine-definition/machineLibraryStorage';
 
 import {
   parseWorkbenchCatalogManifest,
@@ -32,30 +36,19 @@ type PreferenceStorageAccessError = {
   readonly code: 'WORKBENCH_CATALOG_PREFERENCES_ACCESS_FAILED';
   readonly message: string;
   readonly operation: 'read' | 'write';
-  readonly path: typeof WORKBENCH_CATALOG_PATH;
-};
-
-type PreferenceReadbackError = {
-  readonly code: 'WORKBENCH_CATALOG_PREFERENCES_READBACK_MISMATCH';
-  readonly message: string;
-  readonly path: typeof WORKBENCH_CATALOG_PATH;
+  readonly path: string;
 };
 
 export type UpdateWorkbenchCatalogPreferencesError =
   | ProjectTrashTransactionError
   | SavedRevisionTransactionError
+  | CatalogPairTransactionError
+  | PostLibraryStorageError
+  | MachineLibraryStorageError
   | WorkbenchCatalogManifestError
   | PreferenceManifestStateError
   | PreferenceTimestampError
-  | PreferenceStorageAccessError
-  | PreferenceReadbackError;
-
-type PreferenceRollbackError = {
-  readonly code: 'WORKBENCH_CATALOG_PREFERENCES_ROLLBACK_FAILED';
-  readonly message: string;
-  readonly originalError: UpdateWorkbenchCatalogPreferencesError;
-  readonly rollbackError: PreferenceStorageAccessError | PreferenceReadbackError;
-};
+  | PreferenceStorageAccessError;
 
 export type UpdateWorkbenchCatalogPreferencesResult =
   | {
@@ -65,7 +58,7 @@ export type UpdateWorkbenchCatalogPreferencesResult =
     }
   | {
       readonly ok: false;
-      readonly error: UpdateWorkbenchCatalogPreferencesError | PreferenceRollbackError;
+      readonly error: UpdateWorkbenchCatalogPreferencesError;
     };
 
 export function updateWorkbenchCatalogPreferences(
@@ -77,6 +70,12 @@ export function updateWorkbenchCatalogPreferences(
     if (!recoveredTrash.ok) return recoveredTrash;
     const recovered = await recoverSavedRevisionTransaction(workbench.adapter);
     if (!recovered.ok) return recovered;
+    const recoveredPackages = await recoverCatalogPairTransaction(workbench.adapter);
+    if (!recoveredPackages.ok) return recoveredPackages;
+    const posts = await readPostLibraryStorage(workbench.adapter);
+    if (!posts.ok) return posts;
+    const machines = await readMachineLibraryStorage(workbench.adapter, posts.library);
+    if (!machines.ok) return machines;
     const currentRead = await readManifest(workbench);
     if (!currentRead.ok) return currentRead;
     if (currentRead.rawText === null) {
@@ -86,7 +85,7 @@ export function updateWorkbenchCatalogPreferences(
         path: WORKBENCH_CATALOG_PATH
       });
     }
-    const current = parseWorkbenchCatalogManifest(currentRead.rawText.replace(/^\uFEFF/, ''), workbench.machines);
+    const current = parseWorkbenchCatalogManifest(currentRead.rawText.replace(/^\uFEFF/, ''), machines.library);
     if (!current.ok) return current;
     if (JSON.stringify(current.manifest) !== JSON.stringify(workbench.manifest)) {
       return failure({
@@ -109,30 +108,21 @@ export function updateWorkbenchCatalogPreferences(
       projects: [...workbench.manifest.projects]
     } satisfies WorkbenchCatalogManifest;
     const candidateText = `${JSON.stringify(candidate, null, 2)}\n`;
-    const validated = parseWorkbenchCatalogManifest(candidateText, workbench.machines);
+    const validated = parseWorkbenchCatalogManifest(candidateText, machines.library);
     if (!validated.ok) return validated;
     const serialized = `${JSON.stringify(validated.manifest, null, 2)}\n`;
 
-    const written = await writeManifest(workbench, serialized);
-    if (!written.ok) {
-      return rollbackManifest(workbench, currentRead.rawText, written.error);
-    }
-    const readback = await readManifest(workbench);
-    if (!readback.ok) {
-      return rollbackManifest(workbench, currentRead.rawText, readback.error);
-    }
-    if (readback.rawText !== serialized) {
-      return rollbackManifest(workbench, currentRead.rawText, {
-        code: 'WORKBENCH_CATALOG_PREFERENCES_READBACK_MISMATCH',
-        message: `Workbench preference manifest did not read back byte-for-byte at ${WORKBENCH_CATALOG_PATH}.`,
-        path: WORKBENCH_CATALOG_PATH
-      });
+    try {
+      await commitWorkbenchFileTransaction(workbench.adapter, [{ path: WORKBENCH_CATALOG_PATH, contents: serialized }]);
+    } catch (error) {
+      return failure(storageAccessError('write', error,
+        error instanceof WorkbenchFileWriteError ? error.path : WORKBENCH_FILE_TRANSACTION_PATH));
     }
 
     return {
       ok: true,
       preferences: validated.manifest.preferences,
-      workbench: Object.freeze({ ...workbench, manifest: validated.manifest })
+      workbench: Object.freeze({ ...workbench, posts: posts.library, machines: machines.library, manifest: validated.manifest })
     };
   });
 }
@@ -149,49 +139,17 @@ async function readManifest(workbench: ConnectedWorkbenchCatalog) {
   }
 }
 
-async function writeManifest(workbench: ConnectedWorkbenchCatalog, rawText: string) {
-  try {
-    await workbench.adapter.writeText(WORKBENCH_CATALOG_PATH, rawText);
-    return { ok: true as const };
-  } catch (error) {
-    return failure(storageAccessError('write', error));
-  }
-}
-
-async function rollbackManifest(
-  workbench: ConnectedWorkbenchCatalog,
-  previousRawText: string,
-  originalError: UpdateWorkbenchCatalogPreferencesError
-): Promise<Extract<UpdateWorkbenchCatalogPreferencesResult, { readonly ok: false }>> {
-  const restored = await writeManifest(workbench, previousRawText);
-  const readback = restored.ok ? await readManifest(workbench) : restored;
-  if (readback.ok && readback.rawText === previousRawText) return failure(originalError);
-  const rollbackError: PreferenceStorageAccessError | PreferenceReadbackError = readback.ok ? {
-    code: 'WORKBENCH_CATALOG_PREFERENCES_READBACK_MISMATCH',
-    message: `Workbench preference rollback did not restore the exact previous manifest at ${WORKBENCH_CATALOG_PATH}.`,
-    path: WORKBENCH_CATALOG_PATH
-  } : readback.error;
-  return {
-    ok: false,
-    error: {
-      code: 'WORKBENCH_CATALOG_PREFERENCES_ROLLBACK_FAILED',
-      message: 'Workbench preference mutation failed and the exact previous manifest could not be restored.',
-      originalError,
-      rollbackError
-    }
-  };
-}
-
 function storageAccessError(
   operation: PreferenceStorageAccessError['operation'],
-  error: unknown
+  error: unknown,
+  path = WORKBENCH_CATALOG_PATH
 ): PreferenceStorageAccessError {
   const cause = error instanceof Error ? error.message : String(error);
   return {
     code: 'WORKBENCH_CATALOG_PREFERENCES_ACCESS_FAILED',
-    message: `Workbench preference manifest ${operation} failed at ${WORKBENCH_CATALOG_PATH}: ${cause}`,
+    message: `Workbench preference manifest ${operation} failed at ${path}: ${cause}`,
     operation,
-    path: WORKBENCH_CATALOG_PATH
+    path
   };
 }
 

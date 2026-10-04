@@ -80,7 +80,8 @@ Open the [Package workbench](https://insignifi4nt.github.io/wireedm-gcode-parser
 
 | Tool | Use |
 | --- | --- |
-| `edm_package_context` | Read the current input version, selected file and evidence hashes. |
+| `edm_package_context` | Read the current input version, busy state, selected file and a page of exact evidence paths/hashes. |
+| `edm_read_package_report` | Read exact JSON text chunks of the latest complete report without repeating its check. |
 | `edm_check_post` | Check supplied `text` or the visible Post JSON; run sandboxed conformance and obtain its canonical hash. |
 | `edm_add_text_evidence` | Stage actual supplied text at an `evidence/` path and calculate its byte hash. |
 | `edm_inspect_package` | Check the archive selected through **Machine package file**, including sandboxed conformance. |
@@ -88,7 +89,13 @@ Open the [Package workbench](https://insignifi4nt.github.io/wireedm-gcode-parser
 | `edm_build_package` | Check supplied `documentText` or the visible document with the staged evidence, and prepare an archive. |
 | `edm_download_package` | Request a download of the successful current build. |
 
-Read `edm_package_context` first. Pass its `inputVersion` as `expectedInputVersion` to each action. Read context again after changing inputs; a stale version is rejected. File inputs use the normal browser upload controls. Tools cannot fetch files from another browser or accept local filesystem paths.
+Read `edm_package_context` first. Pass its `inputVersion` as `expectedInputVersion` to each action. Read context again after changing inputs; a stale version is rejected. When `busy` is true, wait for the ordinary page or agent operation to finish and refresh context. File inputs use the normal browser upload controls. Tools cannot fetch files from another browser or accept local filesystem paths.
+
+Context returns up to 50 complete evidence rows and shortens the page to fit the response budget. Continue with its returned `nextOffset`, `offset` and the same `expectedInputVersion`; optional `limit` selects at most 50 rows. `evidenceCount` describes the complete staged inventory. Never assume the first page contains every file or advance by the requested limit. An individually oversized path returns `OUTPUT_TOO_LARGE` with its offset; use the visible evidence list for that row.
+
+Check, build and inspection replies are compact summaries marked `detailsSummarized: true` and `fullReportAvailable: true`. They retain validation status and exact package/post hashes. Counts such as `omittedDiagnosticCount`, `omittedFixtureCount`, `omittedPostCount` and `omittedEvidencePathCount` identify omitted rows; `messageTruncated`, `descriptionTruncated`, `omittedDetails` and `omittedDetailFields` identify shortened prose or excluded details. Complete original reports remain on the page and in **Download report**.
+
+To read the complete report through tools, refresh context after the check and pass `inputVersion` as `expectedInputVersion` and `lastCheck.reportVersion` as `reportVersion` to `edm_read_package_report`. Concatenate returned `text` in order, following `nextOffset`. Offsets and `characterCount` count JavaScript UTF-16 characters; `length` is at most 4,000. A repeat check can replace the report even when inputs stay the same, so a changed report version rejects the continuation. Restart from fresh context instead of combining reports. Reading report chunks does not rerun conformance or create another archive.
 
 For a repair: select the original archive, inspect it, reuse its contents, edit the visible document, check any changed post and update its exact reference hash, then build. Full reports and package documents remain selectable and downloadable on the page. A download result means **requested**, not proof that the browser saved the file.
 

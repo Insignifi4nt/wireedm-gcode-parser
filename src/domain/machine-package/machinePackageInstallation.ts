@@ -25,7 +25,8 @@ import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageA
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import {
   beginCatalogPairTransaction,
-  finishCatalogPairTransaction
+  finishCatalogPairTransaction,
+  rollbackCatalogPairTransaction
 } from '@/domain/storage/catalogPairTransaction';
 import {
   initializeWorkbenchCatalogUnderMutationLock,
@@ -501,32 +502,33 @@ async function persistCatalogsAtomically(
   }, null, 2);
   // The transaction must finish or recover once its journal phase begins.
   beforeWrite?.();
-  const transaction = await beginCatalogPairTransaction(adapter, {
+  const transactionValues = {
     previousPosts: beforePosts.text,
     previousMachines: beforeMachines.text,
     nextPosts: expectedPosts,
     nextMachines: expectedMachines
-  });
+  };
+  const transaction = await beginCatalogPairTransaction(adapter, transactionValues);
   if (!transaction.ok) return transaction;
 
   const postWrite = await writePostLibraryStorage(adapter, posts);
   if (!postWrite.ok) {
-    return rollbackCatalogs(adapter, beforePosts.text, beforeMachines.text, postWrite);
+    return rollbackCatalogs(adapter, transactionValues, postWrite);
   }
   const machineWrite = await writeMachineLibraryStorage(adapter, machines);
   if (!machineWrite.ok) {
-    return rollbackCatalogs(adapter, beforePosts.text, beforeMachines.text, machineWrite);
+    return rollbackCatalogs(adapter, transactionValues, machineWrite);
   }
   const postReadback = await readRequired(adapter, POST_LIBRARY_PATH);
   if (!postReadback.ok) {
-    return rollbackCatalogs(adapter, beforePosts.text, beforeMachines.text, postReadback);
+    return rollbackCatalogs(adapter, transactionValues, postReadback);
   }
   const machineReadback = await readRequired(adapter, MACHINE_LIBRARY_PATH);
   if (!machineReadback.ok) {
-    return rollbackCatalogs(adapter, beforePosts.text, beforeMachines.text, machineReadback);
+    return rollbackCatalogs(adapter, transactionValues, machineReadback);
   }
   if (postReadback.text !== expectedPosts || machineReadback.text !== expectedMachines) {
-    return rollbackCatalogs(adapter, beforePosts.text, beforeMachines.text, {
+    return rollbackCatalogs(adapter, transactionValues, {
       ok: false,
       error: {
         code: 'MACHINE_PACKAGE_INSTALLATION_READBACK_MISMATCH',
@@ -537,26 +539,21 @@ async function persistCatalogsAtomically(
   const finished = await finishCatalogPairTransaction(adapter);
   return finished.ok
     ? { ok: true }
-    : rollbackCatalogs(adapter, beforePosts.text, beforeMachines.text, finished);
+    : rollbackCatalogs(adapter, transactionValues, finished);
 }
 
 async function rollbackCatalogs(
   adapter: WorkbenchStorageAdapter,
-  previousPosts: string,
-  previousMachines: string,
+  values: Parameters<typeof rollbackCatalogPairTransaction>[1],
   original: { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 ) {
-  const restoredPosts = await restore(adapter, POST_LIBRARY_PATH, previousPosts);
-  const restoredMachines = await restore(adapter, MACHINE_LIBRARY_PATH, previousMachines);
-  if (restoredPosts.ok && restoredMachines.ok) {
-    const finished = await finishCatalogPairTransaction(adapter);
-    if (finished.ok) return original;
-  }
+  const restored = await rollbackCatalogPairTransaction(adapter, values);
+  if (restored.ok) return original;
   return {
     ok: false,
     error: {
       code: 'MACHINE_PACKAGE_INSTALLATION_ROLLBACK_FAILED',
-      message: 'Machine package installation failed and the previous catalog bytes could not be restored.'
+      message: `${original.error.message} Machine package rollback could not restore the previous catalog bytes. ${restored.error.message}`
     }
   };
 }
@@ -581,17 +578,6 @@ async function readRequired(adapter: WorkbenchStorageAdapter, path: string) {
         message: `Could not read ${path}: ${errorMessage(error)}.`
       }
     };
-  }
-}
-
-async function restore(adapter: WorkbenchStorageAdapter, path: string, text: string) {
-  try {
-    await adapter.writeText(path, text);
-    return await readExact(adapter, path) === text
-      ? { ok: true as const }
-      : { ok: false as const };
-  } catch {
-    return { ok: false as const };
   }
 }
 

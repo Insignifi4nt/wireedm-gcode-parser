@@ -1,0 +1,35 @@
+{
+  "version": "0.0.690",
+  "previousVersion": "0.0.689",
+  "postCompatibility": "preserved-output-stricter-storage-conflict-handling",
+  "summary": "Preserves machine catalog conflicts during failed changes, makes complete package reports available to browser agents, and improves compact library and storage settings usability.",
+  "warning": "Installed post processors and saved revisions are preserved without rewriting. A failed package installation now retains unexpected catalog bytes and its recovery journal instead of overwriting the conflict. Machine activation, removal and preference saves now require space for the existing exact-image file journal; finish pending recovery with this release before downgrading. These operations can fail conservatively where previous versions attempted an unconditional rollback. No controller output, schema, capability, execution event or output audit change is intended.",
+  "checklist": {
+    "schema": "App version advances once to 0.0.690. UPID, saved-job revision, post package, machine package, engine API, execution plan, workbench catalog, project and transaction schemas remain unchanged.",
+    "events": "Execution event kinds, fields, ordering and post translation are unchanged.",
+    "capabilities": "Installed post capabilities are unchanged. Package-authoring WebMCP adds edm_read_package_report with input/report version pins and exact UTF-16 text continuation. edm_package_context adds optional evidence pagination, expectedInputVersion, nextOffset and live busy state; its empty-argument form remains valid. Existing check/build/inspect tools return explicit bounded report summaries with preserved status and receipt hashes; complete reports remain accessible without rerunning checks. Page operations retain their shared live lock and cancellation checks.",
+    "auditAndOutput": "Post sandbox execution, deterministic conformance, motion audits, encoding, line endings, numbering, wrappers and no-default-feed behavior are unchanged. Report summaries do not alter the underlying report or generated archive. Report chunks preserve exact JSON text and require the exact report identity, including repeated checks of unchanged inputs.",
+    "installationAndStorage": "Immediate package rollback validates exact before/after catalog states and the installation's own journal before writing. Unexpected bytes or a changed journal are retained with an explicit recovery diagnostic. Machine activation/removal and preference saves reuse the existing durable file transaction, preserve exact original strings including folder BOMs, preflight size and reject conflicting rollback states. Preferences validate against authoritative installed libraries under the mutation lock, reject removed-machine selection from stale tabs and return refreshed libraries. Machine/preference mutation failures use their existing storage-access diagnostic codes with the affected file/journal path. Both browser cache and folder behavior are exercised. Installed packages and immutable saved revisions are never migrated or rewritten. Compact storage settings consolidate duplicate metadata and surface backups before read-only storage inspection; existing action guards and restore/cleanup authorization remain intact.",
+    "verification": "Independent reviews cover storage, preferences, agent contracts and UI. Final unit/integration suite: 200 files / 1,989 tests pass with four workers. Chromium: 84 pass, one optional preseeded case skipped. TypeScript/production build, public documentation parity/discovery, three UPID fixtures, three unchanged Robofil 2.6.0 post fixtures, complete package validation and release compatibility checks pass. An overlapping unbounded test run encountered timing failures and was stopped; the bounded rerun passes without changing assertions or timeouts. No physical machine execution or full accessibility certification is claimed."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Three unchanged post conformance fixtures and complete package validation pass; no physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "More reliable machine-setting recovery, complete agent access to package reports, and clearer compact layouts.",
+    "changes": [
+      "A failed machine-package installation preserves unexpected catalog changes and recovery records instead of overwriting them.",
+      "Changing the active machine setup, removing a machine or saving preferences preserves exact originals and can recover an interrupted write in browser cache and folder workbenches.",
+      "A stale tab cannot save a preference for a machine removed in another tab, preventing a workbench that fails to reopen.",
+      "Package agents can inspect all staged evidence and read complete versioned reports, even when diagnostics or evidence lists exceed a single response. Successful build receipts remain available.",
+      "The project library keeps its rows clear of import controls on compact screens. Denser rows prioritize project names and actions; file paths remain available in name tooltips and search.",
+      "Compact settings use less space for navigation. Storage explains where work is saved and presents backup actions before advanced inspection."
+    ],
+    "compatibility": "Installed posts, saved revisions and controller output contracts are unchanged. Unexpected storage conflicts now block rollback and retain recovery records. Active-setup changes, machine removal and preference saves need space for a recovery journal; finish pending recovery in this release before downgrading.",
+    "action": "If a storage conflict is reported, preserve the workbench and its recovery records. Keep downloaded backups outside browser storage. Agents should follow returned nextOffset values and pin input/report versions when reading multiple pages."
+  }
+}

@@ -1,0 +1,58 @@
+# Workbench improvement review — 4 October 2026
+
+This is the first implementation checkpoint of the [application-wide plan](../plans/2026-10-04-application-improvement.md), not a claim that every input or physical controller is verified. Baseline: `ab2c2d9` / release 0.0.689, the newest production main after fetching origin.
+
+## Correctness and storage
+
+### Preserve unknown catalogs during immediate package rollback
+
+Restart recovery already accepted only exact recorded before/after states, but failed installation used a separate unconditional rollback. Injecting an independent post-catalog edit during a failed machine-catalog write erased that edit and removed the journal. Immediate rollback now shares the exact-state checks with recovery and also checks that the journal still belongs to this installation. Unknown catalog or journal bytes block writes and remain available for recovery.
+
+Existing tests that expected unknown BOM/corruption to be overwritten contradicted the preserve-data rule. Their readback-failure detection remains; assertions now require retained conflicting bytes, retained journal and conservative recovery. The rollback-readback regression still tests corrupted restoration by first causing a failed write in a recognized state.
+
+### Journal active-setup changes and machine removal
+
+These operations previously saved and rolled back the machine library without durable recovery; ordinary folder decoding also discarded an original BOM. They now use the existing file transaction with size preflight and exact originals. This removes duplicate rollback code without adding a storage schema. Fault tests cover both adapters, independent edits, write interruption, rollback interruption, journal quota failure and successful retry.
+
+Pending recovery requires the current release. Installed post snapshots, saved revisions, capabilities, execution events, output formatting and audit rules are unchanged. Stricter conflict handling and the journal space requirement are explicit in the [release compatibility record](../releases/0.0.690.json).
+
+### Validate preferences against current machine libraries
+
+A stale tab could select a machine removed by another tab because preference validation used the old in-memory machine library. The write succeeded, then reopening failed with `WORKBENCH_CATALOG_MACHINE_NOT_FOUND`. Reproductions exercise the actual install/remove/preference APIs on both storage adapters. Preference saves now recover pending package transactions and read authoritative libraries under the mutation lock before validating either manifest. The saved result returns those current libraries and retains the existing stale-manifest rejection.
+
+Preference persistence also uses the existing file journal. Unknown concurrent bytes and interrupted writes follow the same preserve-data rules as other file transactions. The corrupt-write fixture was narrowed to its target manifest so the new preceding journal write does not consume its injected fault. Tests retain mismatch detection and exact known-state BOM restoration while replacing unsafe overwrite expectations with retained-conflict assertions.
+
+## Agent workflows
+
+### Keep successful build receipts and complete evidence accessible
+
+A real valid package with 120 referenced evidence files produced a 51,125-byte report. Build succeeded, but the outer tool returned `OUTPUT_TOO_LARGE`; context exposed only its first 50 evidence files with no continuation.
+
+Package context now returns complete rows within the existing byte budget, optional input-version pins and an actual continuation offset. Check/build/inspect summaries preserve result status and exact receipt hashes and explicitly mark shortened or omitted detail. A new reader returns the complete original report as bounded JSON text chunks without rerunning conformance. It pins a separate report identity, so repeating a check with unchanged inputs cannot mix reports. Ordinary page and agent operations share the same live busy guard.
+
+Meaningful regressions use the real many-file package, successful fixture output and large escaped/multibyte failure details. They verify complete reconstruction, exact hashes, no repeated execution, stale continuation rejection and busy-state behavior. Hosted and maintainer guides document the additive contract.
+
+## Human UX walkthrough
+
+Current screenshots were captured in the in-app browser, initially at 1280 × 720 and at the compact 640 × 800 breakpoint. Existing projects were observed without editing; a new `UX-review-October4` project was imported from the 10 × 10 mm rectangle fixture for editor review. Images and detailed local notes are under `tmp/oct04-review/ux/` and are not committed with local library data.
+
+1. **Library — improved.** At the compact breakpoint, baseline project rows spilled into the import controls. A browser regression measured the last row bottom at 639px against its panel bottom of 541px. Content-sized grid rows fix the overlap; denser project rows keep names and actions prominent. Exact storage paths remain available in name tooltips and search.
+2. **Storage settings — improved.** Duplicate location/adapter metadata buried backup controls. Connection information is consolidated, browser/session/folder persistence is described accurately, and backup precedes advanced inspection.
+3. **Compact settings — improved.** Navigation consumed about 220px vertically. It now shares rows at small widths while preserving the existing modal focus/isolation behavior. The browser test exercises a real backup download, section navigation and focus restoration.
+4. **Machine settings — healthy in the exercised empty-library state.** The package installer and declared preferences remain available; this checkpoint preserves existing package-install UI guards.
+5. **DXF review — healthy for the rectangle fixture.** Source layers, explicit unit selection and resulting millimeter dimensions are visible before saving. Long-running processing is a separate workstream.
+6. **Editor diagnostic route — healthy in the exercised flow.** The missing initial-wire diagnostic leads to actual coordinate-review controls. Selection, editing, simulation and larger-model work remain in the wider review plan.
+
+These observations do not establish a complete screen-reader or accessibility certification. Browser tests provide behavioral evidence beyond screenshots.
+
+## Test quality and independent review
+
+One removed jsdom test asserted CSS class strings while the actual overlap defect still existed. Its purpose is now covered by the real compact-browser regression, strengthened to twelve imported programs after row compaction. Existing settings focus, storage status, keyboard and import tests remain intact.
+
+Sol 6.1 High reviewers independently examined the integrity and agent changes and the UI diff. Review caught a missing per-fixture omission marker in successful conformance summaries; the implementer added it and a real successful-post regression. No blocking issues remained in those reviewed diffs.
+
+Baseline: 199 unit/integration files / 1,963 tests pass. Final integrated candidate: 200 files / 1,989 tests pass with four workers (121.80 seconds). Chromium: 84 pass, one optional preseeded case skipped. TypeScript/production build, documentation discovery/parity, three UPID fixtures, three unchanged Robofil 2.6.0 post fixtures and complete package validation pass. Production dependency audit reports zero known vulnerabilities at this checkpoint. A concurrent unbounded test run hit timing failures and stopped progressing; it was stopped and rerun with bounded workers after the overlapping CPU-heavy verification finished. No assertion or timeout was relaxed; the interrupted log remains in local evidence.
+
+## Remaining work
+
+The coverage plan retains cancellable DXF processing, post/editor responsiveness, deeper domain review, hosted recovery, developer-test efficiency and further human/agent workflows. Confirmed additional cancellation gaps are tracked rather than silently excluded. No speculative geometry or post-output change is included here.
