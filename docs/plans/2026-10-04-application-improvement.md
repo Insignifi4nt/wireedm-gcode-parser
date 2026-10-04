@@ -44,7 +44,7 @@ Keep baseline tests intact while reproducing defects. Add tests for the real fai
 
 ## PR budget
 
-2 of 5 created and merged: [PR #5](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/5), app 0.0.690, merge `6d1e673`; [PR #6](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/6), app 0.0.691, merge `56fad6e`. Both passed complete GitHub verification. The third candidate advances to 0.0.692. Update this record with links, checkpoints, review findings and final coverage rather than creating duplicate planning documents.
+3 of 5 created and merged: [PR #5](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/5), app 0.0.690, merge `6d1e673`; [PR #6](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/6), app 0.0.691, merge `56fad6e`; [PR #7](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/7), app 0.0.692, merge e8b8177. All three passed complete GitHub verification; the first two deployed and the third deployment is underway. Recovery is the fourth candidate, 0.0.693. Update this record with links, checkpoints, review findings and final coverage rather than creating duplicate planning documents.
 
 ## Local evidence
 
@@ -75,3 +75,18 @@ Remote refs were deleted with leases pinned to these tips after every tip passed
 | `refactor` | `e29927ba02974bdee84faf27a5dfe4784e570ff9` |
 
 The completed improvement branches `improve/workbench-reliability` (`a9bdbad`) and `improve/responsive-dxf-import` (`7b560b3`) were also removed locally and remotely after their merged ancestry was verified against `56fad6e`, using exact remote-tip leases. Active improvement worktrees remain in use. Both merged releases completed deployment successfully.
+
+## Checkpoint 3: editor and agent state
+
+- Apply versus Save is explicit in workflow controls, transitions, help and accessibility labels. Closed-path markers and keyboard tree focus are readable. Existing persistence, undo and external-program/UPID round trips remain covered.
+- Final save/open/setup guards reject cancelled or stale work; started journals retain truthful outcomes. Both agent context surfaces agree on busy state. Setup activation refreshes the matching authoritative post library without weakening stale-manifest checks.
+- Valid large machine/setup records now have complete version-pinned discovery and exact detail reads. Explicit omissions preserve status, hashes and evidence; bounded retained serialization avoids accumulating copies of every large setup.
+- Independent reviews caught and resolved two introduced UI/receipt regressions before publication. Final local verification: 204 files / 2,041 tests; 86 Chromium cases pass, one optional preseeded case skipped; type/build/docs/post/package checks pass. Native in-app production WebMCP discovery and visible activity are verified.
+
+## Checkpoint 4: hosted recovery
+
+- A failed readable storage source is retained separately from a healthy connection. Startup, Settings and agents share an export operation that does not initialize, repair, rewrite, delete or execute posts.
+- Exact logical text and diagnostics have bounded reads, explicit whole-file omissions, source identity, per-file/serialized-archive hashes and non-atomic coordination metadata. This is a distinct evidence format, not a validated restore backup.
+- Cache and folder adapters cover oversized/invalid/compressed text without unbounded decompression fallback. Missing write access or Web Locks does not make readable cache evidence inaccessible; ordinary mutation restrictions remain intact.
+- Source switch, cancellation, workbench identity and live agent busy guards apply before capture/download. A retained receipt retries the exact captured download. Integration review reproduced and fixed a busy-state gap during agent DXF preparation.
+- Original source and integration independently reviewed; 200 focused integration tests pass. Existing native corrupt-cache/download acceptance passes at desktop and compact sizes, preserving actual original strings and archive hashes. Final merged-base verification is recorded in the review and release record.
