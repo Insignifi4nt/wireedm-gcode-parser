@@ -10,6 +10,7 @@ import { object, page, pageFields, siteTool, ToolError } from './siteTools';
 import { editCatalogTool } from './editCatalog';
 import { summarizeDiagnostics } from './diagnosticSummaries';
 import { sourceIdentifier } from './projectEdits';
+import { capabilityVersion, machineCapabilityRow, machineSetupJson, setupCapabilityRow } from './capabilityQueries';
 
 export interface DraftReadSnapshot {
   projectId: string | null;
@@ -32,6 +33,10 @@ const target = Type.Union([
   object({ kind: Type.Literal('current-draft'), version: id }),
   object({ kind: Type.Literal('saved-project'), projectId: id, version: Type.Optional(id) })
 ]);
+const capabilityInput = Type.Union([
+  object({ ...pageFields, kind: Type.Optional(Type.Literal('machines')), capabilityVersion: Type.Optional(id) }),
+  object({ ...pageFields, kind: Type.Literal('setups'), machineId: id, capabilityVersion: id })
+]);
 
 export function workbenchSiteTools(getState: () => WorkbenchToolState) {
   function connected() {
@@ -46,6 +51,14 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
     if (getState().workbench !== workbench) throw new ToolError('STALE_STATE', 'Workbench changed. Read context again.');
     if (!result.ok) throw new ToolError(result.error.code, 'The selected saved project could not be read.');
     return result.project;
+  }
+  async function capabilities(expected?: string) {
+    const workbench = connected();
+    const version = await capabilityVersion(workbench);
+    if (getState().workbench !== workbench) throw new ToolError('STALE_STATE', 'Workbench changed while reading capabilities. Restart discovery.');
+    if (getState().busy) throw new ToolError('BUSY', 'A workbench operation is in progress. Retry when it completes.');
+    if (expected && expected !== version) throw new ToolError('STALE_STATE', 'Installed machines or post capabilities changed. Restart edm_get_capabilities.');
+    return { workbench, version };
   }
   async function resolve(input: typeof target.static) {
     if (input.kind === 'current-draft') {
@@ -103,13 +116,27 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
       } else rows = page(doc.segments, input);
       return { version: snapshot.version, kind: input.kind, units: 'mm', ...rows };
     }),
-    siteTool('edm_get_capabilities', 'Read installed machines, active setup IDs and precise declared post capabilities. Does not change a setup or claim that a project is executable.', object(pageFields), (input) => {
-      const workbench = connected();
-      return page(workbench.machines.machines, input, (machine) => ({ id: machine.id, name: machine.name, activeBindingId: machine.activeBindingId,
-        hardware: machine.hardware, limits: machine.limits,
-        setups: machine.bindings.map((binding) => ({ id: binding.id, name: binding.name, post: binding.post, properties: binding.properties, verification: binding.verification,
-          capabilities: workbench.posts.installations.find(({ ref }) => ref.packageId === binding.post.packageId && ref.version === binding.post.version && ref.contentHash === binding.post.contentHash)?.package.manifest.capabilities ?? null }))
-      }));
+    siteTool('edm_get_capabilities', 'Read installed machines and exact post capabilities. Pin returned capabilityVersion across pages. Default retains complete small machine rows; kind:machines always lists compact machines. setupsOmitted means request kind:setups with exact machineId/version. Large setup omittedDetails remain available through edm_read_machine_setup. Does not activate or certify a job.', capabilityInput, async (input) => {
+      const { workbench, version } = await capabilities(input.capabilityVersion);
+      if (input.kind === 'setups') {
+        const machine = workbench.machines.machines.find(machine => machine.id === input.machineId);
+        if (!machine) throw new ToolError('NOT_FOUND', 'The requested installed machine does not exist.');
+        return { capabilityVersion: version, kind: input.kind, machineId: machine.id, activeBindingId: machine.activeBindingId,
+          ...page(machine.bindings, input, binding => setupCapabilityRow(workbench, binding)) };
+      }
+      return { capabilityVersion: version, ...(input.kind ? { kind: input.kind } : {}),
+        ...page(workbench.machines.machines, input, machine => machineCapabilityRow(workbench, machine, input.kind === 'machines')) };
+    }),
+    siteTool('edm_read_machine_setup', 'Read complete exact installed setup JSON including post hash, properties, compatibility, verification and capabilities. Requires machineId/bindingId/capabilityVersion from discovery. Offsets count JavaScript UTF-16 code units; concatenate text chunks and parse JSON. Does not activate, edit or certify a setup.', object({ machineId: id, bindingId: id, capabilityVersion: id,
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })), length: Type.Optional(Type.Integer({ minimum: 1, maximum: 4000 })) }), async input => {
+      const { workbench, version } = await capabilities(input.capabilityVersion);
+      const machine = workbench.machines.machines.find(machine => machine.id === input.machineId);
+      const binding = machine?.bindings.find(binding => binding.id === input.bindingId);
+      if (!binding) throw new ToolError('NOT_FOUND', 'The requested installed machine setup does not exist.');
+      const text = machineSetupJson(workbench, binding), offset = input.offset ?? 0;
+      const chunk = text.slice(offset, offset + (input.length ?? 4000));
+      return { capabilityVersion: version, machineId: machine!.id, bindingId: binding.id, format: 'json', offsetUnit: 'utf16-code-units',
+        offset, text: chunk, totalCharacterCount: text.length, nextOffset: offset + chunk.length < text.length ? offset + chunk.length : null };
     }),
     siteTool('edm_list_revisions', 'Read a bounded page of saved revision display metadata for a project. Missing or corrupt rows remain visible. Does not generate controller output.', object({ projectId: id, page: Type.Optional(Type.Integer({ minimum: 0, maximum: 100_000 })), version: Type.Optional(id) }), async (input) => {
       const project = await saved(input.projectId);
