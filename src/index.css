@@ -98,6 +98,11 @@ textarea {
   font: inherit;
 }
 
+[data-editor-program-tree] [role="treeitem"]:focus-visible > div:first-child {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
