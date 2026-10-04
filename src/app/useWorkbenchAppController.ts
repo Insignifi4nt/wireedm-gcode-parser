@@ -14,6 +14,7 @@ import type { DxfImportDecision } from '@/domain/dxf/importDxfProject';
 import { assertDxfFileSize } from '@/domain/dxf/dxfResourceLimits';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import type { SavedRevisionTransactionError } from '@/domain/storage/savedRevisionTransaction';
 import { evaluatePhysicalMachineEnvelopeFit } from '@/domain/machine-definition/machineFit';
 import type {
@@ -56,7 +57,10 @@ interface PendingDxfReimport {
   readonly planningMachineFit: ResolvedPlanningMachineFit | null;
 }
 
-export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, getEditorState?: () => { dirty: boolean; workflowOpen: boolean; workflowCommand?: string } | null) {
+export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, getEditorState?: () => {
+  dirty: boolean; workflowOpen: boolean; workflowCommand?: string; projectId?: string | null; version?: string;
+  document?: PathPlanningDocument | null;
+} | null) {
   const [services] = useState<AppServices>(() => ({ ...defaultAppServices, ...overrides }));
   const [workbenchStatus, setWorkbenchStatus] = useState<WorkbenchStatus>('initializing');
   const [connectedWorkbench, setConnectedWorkbench] = useState<ConnectedWorkbenchCatalog | null>(null);
@@ -88,6 +92,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
   const [dxfWriting, setDxfWriting] = useState(false);
   const workbenchRef = useRef(connectedWorkbench);
   workbenchRef.current = connectedWorkbench;
+  const editorProgramRef = useRef(loadedEditorProgram);
+  editorProgramRef.current = loadedEditorProgram;
   const activeMutation = useRef<'controller-artifact' | 'editor-save' | 'program-import' | 'project-open' | 'storage-connect' | 'project-action' | null>(null);
   const toastSequence = useRef(0);
   useEffect(() => () => { dxfTask.current?.controller.abort(); }, []);
@@ -456,7 +462,9 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     setPendingDxfReimport(null);
   }
 
-  async function handleSaveEditorDraft(draft: EditorSaveDraft) {
+  async function handleSaveEditorDraft(draft: EditorSaveDraft,
+    options: { readonly signal?: AbortSignal; readonly beforeWrite?: () => void } = {}) {
+    options.signal?.throwIfAborted();
     const workbench = requireWorkbench();
     const program = loadedEditorProgram;
     if (!workbench || !program) {
@@ -472,12 +480,32 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     activeMutation.current = 'editor-save';
     setEditorSaveStatus('saving');
     setEditorSaveErrorMessage(null);
+    const reviewedEditor = getEditorState?.();
+    let guardRejected = false;
     try {
       const saved = await services.saveEditorProgram(workbench, {
         projectId: program.project.id,
         expectedContent: program.project.content,
         ...(program.model === 'gcode-text' ? { expectedText: program.text } : {}),
-        draft
+        draft,
+        beforeWrite: () => {
+          try {
+            options.signal?.throwIfAborted();
+            const currentEditor = getEditorState?.();
+            // Ordinary Save may switch workspace views without changing the UPID draft.
+            const draftChanged = reviewedEditor?.document
+              ? currentEditor?.document !== reviewedEditor.document ||
+                (draft.model === 'upid-document' && draft.pathDocument !== reviewedEditor.document)
+              : currentEditor?.version !== reviewedEditor?.version;
+            if (workbenchRef.current !== workbench || editorProgramRef.current !== program ||
+              (currentEditor?.projectId !== undefined && currentEditor.projectId !== program.project.id) ||
+              currentEditor?.projectId !== reviewedEditor?.projectId || draftChanged ||
+              currentEditor?.workflowOpen !== reviewedEditor?.workflowOpen || currentEditor?.workflowCommand !== reviewedEditor?.workflowCommand) {
+              throw new ToolError('STALE_STATE', 'The editor changed before saving. Review the current draft and save again.');
+            }
+            options.beforeWrite?.();
+          } catch (error) { guardRejected = true; throw error; }
+        }
       });
       if (!saved.ok) {
         setEditorSaveStatus('error');
@@ -500,6 +528,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       showStatusToast('Project saved.', 'success');
       return saved.editorProgram;
     } catch (error) {
+      if (guardRejected && (options.signal || options.beforeWrite)) { setEditorSaveStatus('idle'); throw error; }
       setEditorSaveStatus('error');
       setEditorSaveErrorMessage(errorText(error));
       return null;
@@ -895,15 +924,32 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     }, 'Machine package installed.', error => error instanceof ToolError || error instanceof DOMException && error.name === 'AbortError');
   }
 
-  async function handleActivateMachineSetup(machineId: string, setupId: string) {
+  async function handleActivateMachineSetup(machineId: string, setupId: string,
+    options: { readonly signal?: AbortSignal; readonly beforeWrite?: () => void } = {}) {
+    options.signal?.throwIfAborted();
     const workbench = requireWorkbench();
     if (!workbench) return false;
+    const expectedMachine = workbench.machines.machines.find(machine => machine.id === machineId);
+    let guardRejected = false;
     return runSettingsMutation(async () => {
-      const result = await services.activateStoredMachinePostBinding(workbench.adapter, machineId, setupId);
+      const result = await services.activateStoredMachinePostBinding(workbench.adapter, machineId, setupId, {
+        expectedMachine,
+        beforeWrite: () => {
+          try {
+            options.signal?.throwIfAborted();
+            if (workbenchRef.current !== workbench) throw new ToolError('STALE_STATE', 'The workbench changed before setup activation. Read current capabilities again.');
+            options.beforeWrite?.();
+          } catch (error) { guardRejected = true; throw error; }
+        }
+      });
+      if (!result.ok && result.error.code === 'MACHINE_LIBRARY_MUTATION_MACHINE_CHANGED' && options.beforeWrite) {
+        guardRejected = true;
+        throw new ToolError('STALE_STATE', result.error.message);
+      }
       return result.ok
-        ? { ok: true as const, workbench: Object.freeze({ ...workbench, machines: result.library }) }
+        ? { ok: true as const, workbench: Object.freeze({ ...workbench, posts: result.posts, machines: result.library }) }
         : result;
-    }, 'Active machine setup changed.');
+    }, 'Active machine setup changed.', () => guardRejected && Boolean(options.signal || options.beforeWrite));
   }
 
   async function handleRemoveMachineDefinition(machineId: string) {
@@ -949,15 +995,27 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
   /** Agent imports/opening use the same storage operations and app state as the interface. */
   async function runAgentWorkbenchOperation<T>(action: (workbench: ConnectedWorkbenchCatalog) => Promise<{
     workbench: ConnectedWorkbenchCatalog; editorProgram?: LoadedEditorProgram; value: T;
-  }>): Promise<T> {
+  }>, options: { readonly beforeApply?: () => void } = {}): Promise<T> {
     if (!connectedWorkbench) throw new ToolError('WORKBENCH_UNAVAILABLE', 'Wait for the workbench.');
     if (activeMutation.current || interactionLocked) throw new ToolError('BUSY', 'A workbench operation is in progress.');
     const editor = getEditorState?.();
+    const program = loadedEditorProgram;
+    const workbench = connectedWorkbench;
     if (editor?.dirty || editor?.workflowOpen) throw new ToolError('DRAFT_IN_USE', 'Save the draft and finish its workflow first.');
     activeMutation.current = 'project-action';
     flushSync(() => setProjectActionPending(true));
     try {
       const result = await action(connectedWorkbench);
+      // Read-only opens may still be cancelled. Committed imports deliberately omit this guard.
+      if (options.beforeApply) {
+        options.beforeApply();
+        const currentEditor = getEditorState?.();
+        if (workbenchRef.current !== workbench || editorProgramRef.current !== program ||
+          currentEditor?.projectId !== editor?.projectId || currentEditor?.version !== editor?.version ||
+          currentEditor?.dirty || currentEditor?.workflowOpen) {
+          throw new ToolError('STALE_STATE', 'The editor changed while opening. Keep the current draft and read context again.');
+        }
+      }
       flushSync(() => {
         setConnectedWorkbench(result.workbench);
         if (result.editorProgram) openEditorProgram(result.editorProgram);

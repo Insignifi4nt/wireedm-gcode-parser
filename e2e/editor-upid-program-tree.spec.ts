@@ -5,6 +5,16 @@ import { confirmPendingDxfImport } from './dxf-import';
 
 test('round-trips an exported UPID through a clean browser cache with execution order and provenance', async ({ page }) => {
   await importTwoContourDxf(page, 'tree-portable-round-trip.dxf');
+  const sourceSection = page.locator('[data-tree-key="section:source"]');
+  const executionSection = page.locator('[data-tree-key="section:program"]');
+  await sourceSection.press('ArrowDown');
+  await expect(executionSection).toBeFocused();
+  const focusedRow = executionSection.locator(':scope > div').first();
+  await expect(focusedRow).toHaveCSS('outline-style', 'solid');
+  await expect(focusedRow).toHaveCSS('outline-width', '2px');
+  // The focus indicator belongs to the row, not its expanded descendants.
+  await expect(executionSection.locator(':scope > ul > li > div').first())
+    .toHaveCSS('outline-style', 'none');
   const beforeOrder = await programOperationLabels(page);
   await page.getByRole('button', { name: 'Back to Dashboard' }).click();
   await captureNextTextDownload(page);

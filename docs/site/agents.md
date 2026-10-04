@@ -7,6 +7,8 @@ Start with `edm_get_context` and `edm_workflow_context`. They identify the curre
 | Task | Tool |
 | --- | --- |
 | Find the exact fields for an edit | `edm_describe_edits` lists kinds; supply `kind` for its precise schema and meaning. |
+| Discover installed machines and setups | `edm_get_capabilities` lists machines or pages an exact machine's setups with a `capabilityVersion` pin. |
+| Read complete setup details | `edm_read_machine_setup` returns exact setup JSON in bounded chunks, including properties, verification and post capabilities. |
 | Export the clean, open job as UPID | `edm_export_upid` uses the current `draftVersion`. |
 | Export a saved library job without opening it | `edm_export_saved_upid` uses its project ID, saved-project version and workbench version. Unsaved edits are excluded. |
 | Generate and download controller output | `edm_export_controller` applies the same saved-job and machine/setup checks as the export UI. |
@@ -30,7 +32,17 @@ Imported units, initial wire position, leads, compensation and threading must re
 
 Pass `edm_get_context`'s `draft.version` as `draftVersion` for draft edits, history, review, save, current-project UPID export and preview capture. Pass `edm_workflow_context`'s `version` as `expectedVersion` for imports, opening a project, package actions, setup changes and saved-library UPID export. Controller generation/export requires both. Read fresh context after a change; do not guess a version. Wait for a non-null draft after opening the editor.
 
+`edm_get_capabilities` also returns `capabilityVersion`, which pins the installed machine/post catalog for discovery. Keep this pin across machine pages, setup pages and detail chunks; it is separate from the mutation `expectedVersion`. A changed catalog returns `STALE_STATE`; restart discovery without a pin. Project or preference changes alone do not invalidate a capability pin.
+
+The default capability call keeps complete small machine rows. A large machine instead has `setupsOmitted: true` and `setupCount`, with its exact machine ID, active binding ID, hardware and limits intact. Request `{ "kind": "machines" }` for compact machine rows every time. To list all setups of one machine, request `{ "kind": "setups", "machineId": "<exact ID>", "capabilityVersion": "<returned pin>" }`. Follow each returned `nextOffset` with the same pin until null; pages adapt to serialized bytes and may contain fewer rows than `limit`.
+
+A valid setup can itself exceed the 24 KiB row budget: it may have up to 128 property values, each up to 4,096 characters, or long verification notes. Such setup rows preserve exact IDs, post references/hashes, verification status/hash claims and declared capabilities, and explicitly mark `omittedDetails`, `propertyCount` and `detailsAvailable`. Read the complete record with `edm_read_machine_setup`, supplying its `machineId`, `bindingId` and `capabilityVersion`. Concatenate the returned `text` chunks, following `nextOffset` until null, then parse the JSON. Offsets count JavaScript UTF-16 code units; `length` is at most 4,000. This preserves every property value, compatibility acknowledgement and verification note without clipping, while each tool envelope stays within 32 KiB. These reads do not activate or certify a setup.
+
 Opening/importing another project rejects unsaved work. Finish or cancel any open editor workflow before agent edits or saving; `edm_get_context` reports its `workflowCommand` when available. Controller generation and current-project UPID export require a saved draft. `edm_export_saved_upid` reads the explicitly selected saved record and leaves any open draft untouched. A stale call leaves the current document intact. If a call is interrupted during a storage write, read context and revisions before retrying; cancellation does not roll back a completed write.
+
+Saving and setup activation check cancellation and the reviewed state again under the storage lock, immediately before journal writing. A changed draft or installed machine returns `STALE_STATE`; read fresh context and capabilities before retrying. Cancelling a project open while storage is being read leaves the visible editor untouched, and opening rechecks the current draft before applying the result. Both context tools report the same `busy` state, including agent preparation tasks; draft edits are unavailable while busy.
+
+Once a save or setup journal starts, check the returned `saved` or `activated` field even if cancellation arrives. Successful writes retain their success receipt. If writing fails after late cancellation, the receipt instead reports `saved: false, status: "save-failed"` or `activated: false, status: "activation-failed"`, with a failure diagnostic. Inspect the visible details and current state before retrying.
 
 For saved-library export, first call `edm_get_project` with `{ "target": { "kind": "saved-project", "projectId": "<listed ID>" } }`. Pass its returned `version` as `savedProjectVersion` to `edm_export_saved_upid`, together with that `projectId` and the current `expectedVersion`. A changed saved record returns `PORTABLE_UPID_PROJECT_CHANGED`; read it again before retrying.
 

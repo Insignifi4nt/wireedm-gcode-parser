@@ -1,0 +1,35 @@
+{
+  "version": "0.0.692",
+  "previousVersion": "0.0.691",
+  "postCompatibility": "preserved-output-explicit-workflow-and-agent-state",
+  "summary": "Distinguishes applying editor changes from saving, protects final agent action boundaries, and makes large installed setup inventories readable.",
+  "warning": "Installed post processors, saved revisions and generated controller output are unchanged. Agent saves and setup activation now reject cancellation or changed reviewed state immediately before journal writing; cancelled or stale project opens no longer replace the visible editor. A journal that has already started finishes or recovers and reports its actual outcome. Workflow Apply accepts changes into the draft; the project still needs Save. Large capability responses explicitly summarize omitted setup details and provide a version-pinned exact reader rather than failing or silently truncating them.",
+  "checklist": {
+    "schema": "The app advances once to 0.0.692. UPID, stored project, saved revision, post package, machine package, engine API, execution-plan and transaction schemas are unchanged. New capability reader arguments and result metadata are additive agent contracts, not persisted schemas.",
+    "events": "Execution event kinds, fields, ordering, route selection and post translation are unchanged. START/END label placement and keyboard row focus affect presentation only.",
+    "capabilities": "Installed post capabilities are unchanged. Save/open/activation keep existing tool arguments and successful receipts. Cancellation and freshness are checked at the final applicable boundary. Both context tools use the same live busy state. Failed writes after late cancellation return explicit saved:false or activated:false receipts with failure status and diagnostics; the visible Agent activity reports failure. Capability discovery preserves existing small default results, adds catalog version pins and machine/setup views, and marks omitted large detail explicitly. edm_read_machine_setup reads complete exact setup JSON in bounded version-pinned chunks without execution or mutation.",
+    "auditAndOutput": "Post sandbox, conformance, motion audits, controller extension/encoding/line endings/numbering/wrappers and no-default-feed behavior are unchanged. Ordinary Save from Simulation and with an unchanged view-only workflow remain supported. Agent calls retain strict draft-version and workflow guards. No physical controller verification is claimed.",
+    "installationAndStorage": "No migration or rewrite of installed packages, saved revisions or original source. Final optional guards reuse the existing transaction boundary under the mutation lock. Changed same-ID machine/setup definitions are rejected against authoritative storage. Successful activation refreshes the already-read matching post library with its machine library, preserving the existing manifest snapshot and stale-manifest protection. Cancellation before a new journal writes nothing; committed outcomes remain authoritative after late cancellation.",
+    "verification": "Independent reviews and real-operation regressions cover save/open/setup boundaries, exact cache/folder preservation and truthful receipts. Review caught and resolved a Simulation-to-Save presentation-version regression and false successful activity for semantic failure receipts. The frozen integrated candidate passes 204 unit/integration files and 2,041 tests (four workers), app/tooling TypeScript, production build, 23 documentation pages/75 files, generated post contract parity, three UPID fixtures, three Robofil fixtures and complete package validation. Full native Chromium passes 86 cases with one optional preseeded case skipped. Native in-app WebMCP against the frozen production build verifies machine/setup discovery, exact setup reading, stale catalog rejection and visible activity. No physical machine verification is claimed."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Unchanged Robofil 2.6.0 implementation passes all three conformance fixtures and complete package validation. Actual cache/folder activation tests generate with the exact newly installed post while preserving its stored bytes; native installation and saved controller output cases pass."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Editor changes and agent actions now show more clearly what has been applied, saved or cancelled.",
+    "changes": [
+      "Workflow panels use Apply for draft changes and explain when the project still needs Save.",
+      "Closed-path START and END labels are separated, and keyboard focus is visible in the execution tree.",
+      "Cancelled or stale agent actions stop before saving or replacing the current editor; completed writes keep their actual receipt.",
+      "Agent context and activity agree about busy state and failed saves or setup changes.",
+      "Large installed setup lists and complete setup details can be read in bounded pages pinned to the same catalog.",
+      "Activating a setup refreshes the matching post library, keeping machines installed in another tab usable without an extra refresh."
+    ],
+    "compatibility": "Installed posts, saved revisions, execution events and controller output rules are unchanged. Existing small capability calls remain supported; large results explicitly identify summarized fields and how to read the complete details.",
+    "action": "After Apply, save the project when ready. Agents should read fresh context after changes, follow capability continuation/version fields and inspect the actual saved or activated receipt before retrying an interrupted action."
+  }
+}

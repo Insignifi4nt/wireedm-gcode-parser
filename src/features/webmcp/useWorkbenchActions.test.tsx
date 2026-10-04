@@ -12,6 +12,7 @@ import { machinePackageFixture } from '@/domain/machine-package/__tests__/machin
 import { MACHINE_LIBRARY_PATH } from '@/domain/machine-definition/machineLibraryStorage';
 import { CATALOG_PAIR_TRANSACTION_PATH } from '@/domain/storage/catalogPairTransaction';
 import { SAVED_REVISION_TRANSACTION_PATH } from '@/domain/storage/savedRevisionTransaction';
+import { WORKBENCH_FILE_TRANSACTION_PATH } from '@/domain/storage/workbenchFileTransaction';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import { workbenchSiteTools } from './workbenchSiteTools';
 import { applyProjectEdits } from './projectEdits';
@@ -37,7 +38,7 @@ async function harness(overrides: Partial<AppServices> = {}) {
     draft = useRef<DraftReadSnapshot | null>(null);
     app = useWorkbenchAppController({ ...createDxfImportServices(directDxfProcessor), connectRememberedWorkbenchDirectory: async () => ({ status: 'missing' }), generateControllerArtifact: generate, downloadTextFile: download, ...overrides }, () => draft.current);
     const actions = useWorkbenchActions(app, draft);
-    tools = [...workbenchSiteTools(() => ({ workbench: app.connectedWorkbench, draft: draft.current, busy: app.workbenchInteractionLocked })), ...actions.tools];
+    tools = [...workbenchSiteTools(() => ({ workbench: app.connectedWorkbench, draft: draft.current, busy: actions.isBusy() })), ...actions.tools];
     return actions.previewControl;
   }
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
@@ -528,12 +529,16 @@ describe('workbench agent actions', () => {
     const h = await harness({ prepareStoredMachinePackageInstallation: async (...args) => {
       entered(); await gate; return defaultAppServices.prepareStoredMachinePackageInstallation(...args);
     } });
+    await importCircle(h);
+    h.draft().current = { ...h.draft().current!, edit: () => undefined };
+    expect(await h.call('edm_get_context', {})).toMatchObject({ ok: true, data: { busy: false, draft: { editsAvailable: true } } });
     const { source } = await packageSource();
     const context = await h.call('edm_workflow_context', {});
     const abort = new AbortController();
     let pending!: Promise<unknown>;
     await act(async () => { pending = h.execute('edm_prepare_machine_package', { expectedVersion: context.data.version, source }, abort.signal); await started; });
     expect(await h.call('edm_workflow_context', {})).toMatchObject({ ok: true, data: { busy: true, nextSteps: ['Wait for the running operation, then read edm_workflow_context again.'] } });
+    expect(await h.call('edm_get_context', {})).toMatchObject({ ok: true, data: { busy: true, draft: { editsAvailable: false } } });
     expect(await h.call('edm_import_upid', { expectedVersion: context.data.version, source: { fileName: 'x.json', text: '{}' } })).toMatchObject({ ok: false, error: { code: 'BUSY' } });
     if (reason === 'cancel') abort.abort();
     else await act(async () => { await h.app().handleSaveCatalogPreferences(h.app().connectedWorkbench!.manifest.preferences); });
@@ -542,6 +547,7 @@ describe('workbench agent actions', () => {
     expect(result).toMatchObject({ ok: false, error: { code: reason === 'cancel' ? 'CANCELLED' : 'STALE_STATE' } });
     expect((await h.call('edm_workflow_context', {})).data.packagePreparationId).toBeNull();
     expect(h.app().connectedWorkbench!.machines.machines).toHaveLength(0);
+    expect(await h.call('edm_get_context', {})).toMatchObject({ ok: true, data: { busy: false, draft: { editsAvailable: true } } });
   });
 
   it('cancels after installation preflight reads before any package write and allows a reviewed retry', async () => {
@@ -583,5 +589,157 @@ describe('workbench agent actions', () => {
       : { ok: true, data: { installed: true, packageHash: prepared.data.preview.packageHash } });
     expect(h.app().connectedWorkbench!.machines.machines).toHaveLength(writeFailure ? 0 : 1);
     expect(await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH)).toBeNull();
+  });
+});
+
+function deferredGate() {
+  let resolve!: () => void;
+  const promise = new Promise<void>(done => { resolve = done; });
+  return { promise, resolve };
+}
+async function holdMutationLock(adapter: Parameters<typeof withWorkbenchMutationLock>[0]) {
+  const entered = deferredGate(), release = deferredGate();
+  const pending = withWorkbenchMutationLock(adapter, async () => { entered.resolve(); await release.promise; });
+  await entered.promise;
+  return { release: async () => { release.resolve(); await pending; } };
+}
+async function prepareSetupActivation(h: Awaited<ReturnType<typeof harness>>) {
+  await prepareControllerJob(h);
+  const input = await machinePackageFixture({ bindingId: 'spare' });
+  const built = await buildMachinePackageArchive({ ...input, document: { ...input.document,
+    machine: { ...input.document.machine, limits: { ...input.document.machine.limits, yTravel: { status: 'known', millimeters: 200 } } }
+  } });
+  if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
+  const machine = h.app().connectedWorkbench!.machines.machines[0];
+  const prepared = await prepareStoredMachinePackageInstallation(h.app().connectedWorkbench!, built.archive);
+  if (!prepared.ok) throw new Error(prepared.error.message);
+  await act(async () => { expect(await h.app().handleCommitMachinePackage(prepared.prepared,
+    { kind: 'reuse-existing', machineId: machine.id, activate: 'keep-current' })).toBe(true); });
+  return { expectedVersion: (await h.call('edm_workflow_context', {})).data.version, machineId: machine.id, bindingId: 'spare' };
+}
+
+describe('agent final save/open/setup guards', () => {
+  it('keeps ordinary Save available with an unchanged view-only workflow', async () => {
+    const h = await harness(), program = await importCircle(h);
+    const document = applyProjectEdits(program.pathDocument, [{ kind: 'translate', delta: { x: 1, y: 0 } }]);
+    h.draft().current = { ...h.draft().current!, document, dirty: true, workflowOpen: true, workflowCommand: 'export.preview' };
+    let saved: unknown;
+    await act(async () => { saved = await h.app().handleSaveEditorDraft({ model: 'upid-document', pathDocument: document }); });
+    expect(saved).toMatchObject({ model: 'upid-document', project: { id: program.project.id } });
+    expect(await h.call('edm_save_project', { draftVersion: 'draft' })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  });
+  it.each(['cancel', 'draft-change', 'workflow'] as const)('rejects %s while saving waits for the actual storage lock, retains draft and allows retry', async reason => {
+    const h = await harness();
+    const program = await importCircle(h);
+    const document = applyProjectEdits(program.pathDocument, [{ kind: 'translate', delta: { x: 1, y: 0 } }]);
+    h.draft().current = { ...h.draft().current!, document, dirty: true };
+    const adapter = h.app().connectedWorkbench!.adapter;
+    const original = await adapter.readExactText!(program.filePath);
+    const lock = await holdMutationLock(adapter);
+    const writes = vi.spyOn(adapter, 'writeText');
+    const abort = new AbortController();
+    let pending!: Promise<unknown>;
+    await act(async () => { pending = h.execute('edm_save_project', { draftVersion: 'draft' }, abort.signal); });
+    expect(writes).not.toHaveBeenCalled();
+    if (reason === 'cancel') abort.abort();
+    else h.draft().current = { ...h.draft().current!, ...(reason === 'draft-change'
+      ? { version: 'new-draft', document: applyProjectEdits(document, [{ kind: 'translate', delta: { x: 2, y: 0 } }]) }
+      : { workflowOpen: true }) };
+    const latest = h.draft().current;
+    let result: unknown;
+    await act(async () => { await lock.release(); result = await pending; });
+    expect(result).toMatchObject({ ok: false, error: { code: reason === 'cancel' ? 'CANCELLED' : 'STALE_STATE' } });
+    expect(writes).not.toHaveBeenCalled();
+    expect(await adapter.readExactText!(program.filePath)).toBe(original);
+    expect(h.app().loadedEditorProgram).toBe(program);
+    expect(h.draft().current).toBe(latest);
+    expect(h.app().workbenchInteractionLocked).toBe(false);
+    h.draft().current = { ...latest!, workflowOpen: false };
+    expect(await h.call('edm_save_project', { draftVersion: h.draft().current!.version })).toMatchObject({ ok: true, data: { saved: true } });
+  });
+
+  it.each([false, true])('reports actual save outcome after journal-start cancellation, write failure=%s', async failWrite => {
+    const h = await harness();
+    const program = await importCircle(h);
+    h.draft().current = { ...h.draft().current!, dirty: true,
+      document: applyProjectEdits(program.pathDocument, [{ kind: 'translate', delta: { x: 1, y: 0 } }]) };
+    const adapter = h.app().connectedWorkbench!.adapter, abort = new AbortController();
+    const original = await adapter.readExactText!(program.filePath);
+    const write = adapter.writeText.bind(adapter);
+    let failing = failWrite;
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      if (path === program.filePath && failing) { failing = false; throw new Error('Project write interrupted'); }
+      await write(path, text);
+      if (path === WORKBENCH_FILE_TRANSACTION_PATH) abort.abort();
+    });
+    expect(await h.call('edm_save_project', { draftVersion: 'draft' }, abort.signal)).toMatchObject(failWrite
+      ? { ok: true, data: { saved: false, status: 'save-failed', error: { code: 'SAVE_FAILED' } } }
+      : { ok: true, data: { saved: true, projectId: program.project.id } });
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+    expect(h.app().workbenchInteractionLocked).toBe(false);
+    if (failWrite) expect(await adapter.readExactText!(program.filePath)).toBe(original);
+    else expect(h.app().loadedEditorProgram).not.toBe(program);
+  });
+
+  it.each(['cancel', 'draft-change'] as const)('rejects %s after a real project read before opening replaces visible state', async reason => {
+    const h = await harness();
+    const program = await importCircle(h);
+    await act(async () => h.app().handleBackToDashboard());
+    h.draft().current = null;
+    const context = await h.call('edm_workflow_context', {});
+    const adapter = h.app().connectedWorkbench!.adapter, read = adapter.readText.bind(adapter);
+    const waiting = deferredGate(), reading = deferredGate(), abort = new AbortController();
+    const paused = vi.spyOn(adapter, 'readText').mockImplementation(async path => {
+      if (path === program.filePath) { reading.resolve(); await waiting.promise; }
+      return read(path);
+    });
+    let pending!: Promise<unknown>;
+    await act(async () => { pending = h.execute('edm_open_project', { expectedVersion: context.data.version, projectId: program.project.id }, abort.signal); await reading.promise; });
+    if (reason === 'cancel') abort.abort();
+    else h.draft().current = { projectId: program.project.id, version: 'new-draft', document: program.pathDocument, dirty: true, workflowOpen: false };
+    const latest = h.draft().current;
+    let result: unknown;
+    await act(async () => { waiting.resolve(); result = await pending; });
+    expect(result).toMatchObject({ ok: false, error: { code: reason === 'cancel' ? 'CANCELLED' : 'STALE_STATE' } });
+    expect(h.app().activeView).toBe('dashboard');
+    expect(h.app().loadedEditorProgram).toBeNull();
+    expect(h.draft().current).toBe(latest);
+    expect(h.app().workbenchInteractionLocked).toBe(false);
+    paused.mockRestore(); h.draft().current = null;
+    expect(await h.call('edm_open_project', { expectedVersion: context.data.version, projectId: program.project.id })).toMatchObject({ ok: true, data: { opened: true } });
+  });
+
+  it('cancels setup activation while waiting for the actual storage lock, then permits retry', async () => {
+    const h = await harness(), input = await prepareSetupActivation(h);
+    const adapter = h.app().connectedWorkbench!.adapter;
+    const original = await adapter.readExactText!(MACHINE_LIBRARY_PATH), lock = await holdMutationLock(adapter);
+    const writes = vi.spyOn(adapter, 'writeText'), abort = new AbortController();
+    let pending!: Promise<unknown>;
+    await act(async () => { pending = h.execute('edm_activate_setup', input, abort.signal); });
+    expect(writes).not.toHaveBeenCalled(); abort.abort();
+    let result: unknown;
+    await act(async () => { await lock.release(); result = await pending; });
+    expect(result).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    expect(writes).not.toHaveBeenCalled(); expect(await adapter.readExactText!(MACHINE_LIBRARY_PATH)).toBe(original);
+    expect(h.app().workbenchInteractionLocked).toBe(false);
+    expect(await h.call('edm_activate_setup', input)).toMatchObject({ ok: true, data: { activated: true, bindingId: 'spare' } });
+  });
+
+  it.each([false, true])('reports actual setup outcome after journal-start cancellation, write failure=%s', async failWrite => {
+    const h = await harness(), input = await prepareSetupActivation(h);
+    const adapter = h.app().connectedWorkbench!.adapter, abort = new AbortController();
+    const original = await adapter.readExactText!(MACHINE_LIBRARY_PATH), write = adapter.writeText.bind(adapter);
+    let failing = failWrite;
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      if (path === MACHINE_LIBRARY_PATH && failing) { failing = false; throw new Error('Machine write interrupted'); }
+      await write(path, text); if (path === WORKBENCH_FILE_TRANSACTION_PATH) abort.abort();
+    });
+    expect(await h.call('edm_activate_setup', input, abort.signal)).toMatchObject(failWrite
+      ? { ok: true, data: { activated: false, status: 'activation-failed', error: { code: 'ACTIVATION_FAILED' } } }
+      : { ok: true, data: { activated: true, bindingId: 'spare' } });
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+    expect(h.app().workbenchInteractionLocked).toBe(false);
+    if (failWrite) expect(await adapter.readExactText!(MACHINE_LIBRARY_PATH)).toBe(original);
+    else expect(h.app().connectedWorkbench!.machines.machines[0].activeBindingId).toBe('spare');
   });
 });

@@ -26,7 +26,7 @@ test('explains stop phases and saves an exact travel-distance stop with preview 
   await expect(marker).toHaveAttribute('cx', '15');
   await expect(marker).toHaveAttribute('cy', '0');
   await page.screenshot({ path: 'tmp/cam-audit/program-stop-travel-distance.png' });
-  await page.getByRole('button', { name: 'Save Program Stops workflow', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply Program Stops workflow', exact: true }).click();
   await page.getByRole('button', { name: 'Undo active document change', exact: true }).click();
   await expect(marker).toHaveCount(0);
   await page.getByRole('button', { name: 'Redo active document change', exact: true }).click();

@@ -4,11 +4,12 @@ import {
   type CatalogPairTransactionError
 } from '@/domain/storage/catalogPairTransaction';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
-import { commitWorkbenchFileTransaction, WORKBENCH_FILE_TRANSACTION_PATH, WorkbenchFileWriteError } from '@/domain/storage/workbenchFileTransaction';
+import { commitWorkbenchFileTransaction, WORKBENCH_FILE_TRANSACTION_PATH, WorkbenchFileWriteError, WorkbenchFileGuardError } from '@/domain/storage/workbenchFileTransaction';
 import {
   readPostLibraryStorage,
   type PostLibraryStorageError
 } from '@/domain/post-processor/postLibraryStorage';
+import type { PostLibrary } from '@/domain/post-processor/postLibrary';
 import {
   parseWorkbenchCatalogManifest,
   WORKBENCH_CATALOG_PATH,
@@ -44,7 +45,7 @@ type MachineMutationCatalogMissingError = {
 };
 
 export type ActivateStoredMachinePostBindingResult =
-  | { ok: true; library: MachineLibrary; machine: MachineDefinition }
+  | { ok: true; library: MachineLibrary; posts: PostLibrary; machine: MachineDefinition }
   | {
       ok: false;
       error:
@@ -52,7 +53,8 @@ export type ActivateStoredMachinePostBindingResult =
         | MachineLibraryStorageError
         | CatalogPairTransactionError
         | ActivateBindingError
-        | ReplaceMachineError;
+        | ReplaceMachineError
+        | { code: 'MACHINE_LIBRARY_MUTATION_MACHINE_CHANGED'; message: string; machineId: string };
     };
 
 type MachineIsRecentError = {
@@ -112,18 +114,23 @@ export async function removeStoredMachineDefinition(
 export async function activateStoredMachinePostBinding(
   adapter: WorkbenchStorageAdapter,
   machineId: string,
-  bindingId: string
+  bindingId: string,
+  options: { readonly expectedMachine?: MachineDefinition; readonly beforeWrite?: () => void } = {}
 ): Promise<ActivateStoredMachinePostBindingResult> {
   return withWorkbenchMutationLock(adapter, async () => {
     const state = await readMutationState(adapter, machineId);
     if (!state.ok) return state;
+    if (options.expectedMachine && JSON.stringify(state.machine) !== JSON.stringify(options.expectedMachine)) {
+      return { ok: false as const, error: { code: 'MACHINE_LIBRARY_MUTATION_MACHINE_CHANGED' as const,
+        message: 'The installed machine or its setups changed after review. Read the current machine setups before activating.', machineId } };
+    }
     const activated = activateMachinePostBinding(state.machine, bindingId);
     if (!activated.ok) return activated;
     const replaced = replaceMachineDefinition(state.machines, activated.machine);
     if (!replaced.ok) return replaced;
-    const written = await persistMachineLibrary(adapter, replaced.library);
+    const written = await persistMachineLibrary(adapter, replaced.library, options.beforeWrite);
     return written.ok
-      ? { ok: true, machine: activated.machine, library: replaced.library }
+      ? { ok: true, machine: activated.machine, library: replaced.library, posts: state.posts }
       : written;
   });
 }
@@ -146,7 +153,7 @@ async function readMutationState(adapter: WorkbenchStorageAdapter, machineId: st
       }
     };
   }
-  return { ok: true as const, machines: machines.library, machine };
+  return { ok: true as const, machines: machines.library, posts: posts.library, machine };
 }
 
 async function readAuthoritativeCatalog(adapter: WorkbenchStorageAdapter) {
@@ -200,15 +207,17 @@ function catalogMissing(): { ok: false; error: MachineMutationCatalogMissingErro
 
 async function persistMachineLibrary(
   adapter: WorkbenchStorageAdapter,
-  library: MachineLibrary
+  library: MachineLibrary,
+  beforeWrite?: () => void
 ) {
   const expectedRawText = serializeMachineLibraryStorage(library);
   const sizeError = machineLibrarySizeError(expectedRawText);
   if (sizeError) return { ok: false as const, error: sizeError };
   try {
-    await commitWorkbenchFileTransaction(adapter, [{ path: MACHINE_LIBRARY_PATH, contents: expectedRawText }]);
+    await commitWorkbenchFileTransaction(adapter, [{ path: MACHINE_LIBRARY_PATH, contents: expectedRawText }], beforeWrite);
     return { ok: true as const };
   } catch (error) {
+    if (error instanceof WorkbenchFileGuardError) throw error.reason;
     return machineLibraryAccessFailure('write', error,
       error instanceof WorkbenchFileWriteError ? error.path : WORKBENCH_FILE_TRANSACTION_PATH);
   }

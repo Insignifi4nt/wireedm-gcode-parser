@@ -9,7 +9,7 @@ import { importExternalProgram } from '../importExternalProgram';
 import { loadEditorProgram } from '../loadEditorProgram';
 import { saveEditorProgram } from '../saveEditorProgram';
 
-afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); });
+afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe.each(['browser-cache', 'directory'] as const)('external program stale saves in %s', (kind) => {
   async function fixture() {
@@ -48,6 +48,26 @@ describe.each(['browser-cache', 'directory'] as const)('external program stale s
     expect(retry.ok).toBe(true);
     expect(await adapter.readText(imported.editorProgram.filePath)).toBe(`${externalText}\nM02`);
     expect(await adapter.readText(imported.project.source.files[0].path)).toBe('G0 X0 Y0\nG1 X10 Y0');
+  });
+
+  it('preserves exact external files and catalog when cancelled at the final transaction guard', async () => {
+    const { adapter, imported } = await fixture();
+    const read = adapter.readExactText!.bind(adapter);
+    const paths = [imported.editorProgram.filePath, imported.project.source.files[0].path, 'workbench.json'];
+    const originals = await Promise.all(paths.map(read));
+    const controller = new AbortController(), reason = new DOMException('Cancelled before journal', 'AbortError');
+    const ensure = adapter.ensureDirectory.bind(adapter);
+    vi.spyOn(adapter, 'ensureDirectory').mockImplementation(async path => {
+      await ensure(path); if (path === 'transactions') controller.abort(reason);
+    });
+    const writes = vi.spyOn(adapter, 'writeText');
+    await expect(saveEditorProgram(imported.workbench, {
+      projectId: imported.project.id, expectedContent: imported.project.content, expectedText: imported.editorProgram.text,
+      draft: { model: 'gcode-text', text: 'G0 X40 Y0' }, beforeWrite: () => controller.signal.throwIfAborted()
+    })).rejects.toBe(reason);
+    expect(writes).not.toHaveBeenCalled();
+    expect(await Promise.all(paths.map(read))).toEqual(originals);
+    expect(await adapter.readText('transactions/workbench-files.json')).toBeNull();
   });
 
   it('checks the file after a queued save obtains the mutation lock', async () => {

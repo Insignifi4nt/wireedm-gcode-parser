@@ -17,6 +17,7 @@ import {
 import { createPortal } from 'react-dom';
 import { Box, PenTool, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { captureSvgPreview } from './captureEditorPreview';
+import { EditorWorkflowActions } from './EditorWorkflowActions';
 import type { SimulationCapture } from '@/features/simulation/SimulationViewport';
 
 import { useAppRail } from '@/app/AppRailContext';
@@ -676,7 +677,7 @@ export function EditorPage({
     )
   );
   const workflowProjectSaveBlockedReason = activeMutatingWorkflow
-    ? `Save or discard ${activeMutatingWorkflow.label} before saving the project.`
+    ? `Apply or discard ${activeMutatingWorkflow.label} before saving the project.`
     : null;
   const constructionHoveredPathElement = useMemo<EditorPathElementRef | null>(
     () =>
@@ -1435,7 +1436,7 @@ export function EditorPage({
       treeKey !== selectedProgramTreeKey
     ) {
       onStatusMessage?.(
-        `Save or discard ${activeWorkflowSession.label} before changing the program-tree target.`,
+        `Apply or discard ${activeWorkflowSession.label} before changing the program-tree target.`,
         'warning'
       );
       return;
@@ -2590,13 +2591,13 @@ export function EditorPage({
   function readWorkflowSaveUnavailableReason(commandId: string) {
     switch (commandId) {
       case SET_START_COMMAND.id:
-        return 'No explicit contour-start change to save; the automatic start remains active.';
+        return 'No explicit contour-start change to apply; the automatic start remains active.';
       case 'construction.measurement':
-        return 'Add, move, or remove a measurement or construction point before saving.';
+        return 'Add, move, or remove a measurement or construction point before applying this workflow.';
       case 'machining.initial-wire':
-        return 'Review and apply an initial wire position before saving.';
+        return 'Review and set an initial wire position before applying this workflow.';
       default:
-        return 'Make a valid change in this workflow before saving.';
+        return 'Make a valid change in this workflow before applying it.';
     }
   }
 
@@ -2954,50 +2955,12 @@ export function EditorPage({
         )}
         {children}
         {ownedMutatingWorkflow && (
-          <div className="mt-3 border-t border-border pt-2" data-editor-workflow-actions={ownedMutatingWorkflow.commandId}>
-            {options.readOnly && !ownedMutatingWorkflow.dirty ? (
-              <button
-                aria-label={`Close ${ownedMutatingWorkflow.label} workflow`}
-                className="h-7 w-full border border-border px-2 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
-                onClick={requestCloseEditorWorkflow}
-                type="button"
-              >
-                Close
-              </button>
-            ) : (
-              <>
-                {!ownedMutatingWorkflow.saveAvailability.enabled && (
-                  <p className="mb-1 text-[10px] leading-4 text-amber-300" data-editor-workflow-save-reason>
-                    {ownedMutatingWorkflow.saveAvailability.reason}
-                  </p>
-                )}
-                <div className="grid grid-cols-2 gap-1">
-                  <button
-                    aria-label={`Cancel ${ownedMutatingWorkflow.label} workflow`}
-                    className="h-7 border border-border px-2 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
-                    onClick={requestCloseEditorWorkflow}
-                    type="button"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    aria-label={`Save ${ownedMutatingWorkflow.label} workflow`}
-                    className="h-7 border border-primary bg-primary px-2 text-[10px] text-primary-foreground outline-none disabled:cursor-not-allowed disabled:opacity-45"
-                    disabled={!ownedMutatingWorkflow.saveAvailability.enabled}
-                    onClick={saveActiveEditorWorkflow}
-                    title={
-                      ownedMutatingWorkflow.saveAvailability.enabled
-                        ? `Save ${ownedMutatingWorkflow.label}`
-                        : ownedMutatingWorkflow.saveAvailability.reason
-                    }
-                    type="button"
-                  >
-                    Save
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          <EditorWorkflowActions
+            workflow={ownedMutatingWorkflow}
+            readOnly={options.readOnly}
+            onApply={saveActiveEditorWorkflow}
+            onClose={requestCloseEditorWorkflow}
+          />
         )}
       </>
     );
@@ -3088,7 +3051,7 @@ export function EditorPage({
           markActiveWorkflowPending(
             'geometry.transform',
             source === 'target' ? 'transform-target' : 'transform-translate',
-            'Apply or correct the pending transform coordinates before saving or changing the target.'
+            'Apply or correct the pending transform coordinates before finishing this workflow or changing the target.'
           );
         }}
         targetDraftPending={Boolean(activeWorkflowPendingReasons['transform-target'])}
@@ -3117,7 +3080,7 @@ export function EditorPage({
     markActiveWorkflowPending(
       'construction.measurement',
       'construction-mode',
-      'Place the construction point or exit the active construction mode before saving.'
+      'Place the construction point or exit the active construction mode before applying this workflow.'
     );
   }
 
@@ -3252,7 +3215,7 @@ export function EditorPage({
             if (pathDocumentDraft) markActiveWorkflowPending(
               'construction.measurement',
               'measurement-input',
-              'Add a valid point or clear the pending point coordinates before saving.'
+              'Add a valid point or clear the pending point coordinates before applying this workflow.'
             );
           }}
           onPointYDraftChange={(value) => {
@@ -3260,7 +3223,7 @@ export function EditorPage({
             if (pathDocumentDraft) markActiveWorkflowPending(
               'construction.measurement',
               'measurement-input',
-              'Add a valid point or clear the pending point coordinates before saving.'
+              'Add a valid point or clear the pending point coordinates before applying this workflow.'
             );
           }}
           onSelectPathElement={handleSelectPathElement}
@@ -3548,7 +3511,7 @@ export function EditorPage({
               document={pathDocumentDraft}
               onDraftChange={() => markActiveWorkflowPending(
                 'machining.initial-wire', 'initial-input',
-                'Review and apply valid initial wire coordinates before saving.'
+                'Review and set valid initial wire coordinates before applying this workflow.'
               )}
               onSetGeometryLinked={handleSetGeometryLinkedInitialWirePosition}
               onSetManual={handleSetManualInitialWirePosition}
@@ -3568,7 +3531,7 @@ export function EditorPage({
               }}
               onDraftChange={(source) => markActiveWorkflowPending(
                 'machining.entry-exit', source,
-                'Apply or correct the pending cut entry or exit coordinates before saving or changing the target contour.'
+                'Apply or correct the pending cut entry or exit coordinates before finishing this workflow or changing the target contour.'
               )}
               onSelectOperation={handleSelectWorkflowOperation}
               onSetCircleCenterEntry={handleSetOperationCircleCenterEntry}
@@ -3604,7 +3567,7 @@ export function EditorPage({
               document={pathDocumentDraft}
               onDraftChange={() => markActiveWorkflowPending(
                 'machining.participation', 'span-form',
-                'Apply a valid machining span or discard its pending range before saving or changing the target contour.'
+                'Apply a valid machining span or discard its pending range before finishing this workflow or changing the target contour.'
               )}
               onSetEntryReview={handleSetPartialContourEntryReview}
               onSetExitReview={handleSetPartialContourExitReview}
@@ -3625,7 +3588,7 @@ export function EditorPage({
               document={pathDocumentDraft}
               onDraftChange={() => markActiveWorkflowPending(
                 'machining.program-stops', 'stop-form',
-                'Apply or add the program stop, or discard its pending fields before saving or changing the target contour or stop.'
+                'Apply or add the program stop, or discard its pending fields before finishing this workflow or changing the target contour or stop.'
               )}
               onSetStops={handleSetOperationProgramStops}
               targetChangeBlocked={workflowTargetChangeBlocked}

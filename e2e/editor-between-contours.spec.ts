@@ -22,7 +22,7 @@ test('keeps threading defaults and overrides distinct through save and reopen', 
   await defaultMode.selectOption('continuous');
   await expect(override).toHaveValue('automatic');
   await page.screenshot({ path: 'tmp/cam-audit/10-between-contours.png', fullPage: true });
-  await page.locator('[data-editor-workflow-actions="machining.between-contours"] button[aria-label^="Save "]').click();
+  await page.locator('[data-editor-workflow-actions="machining.between-contours"] button[aria-label^="Apply "]').click();
   await page.getByRole('button', { name: 'Save active document', exact: true }).click();
   await page.getByRole('button', { name: 'Back to Dashboard' }).click();
   await page.reload();
@@ -34,7 +34,7 @@ test('keeps threading defaults and overrides distinct through save and reopen', 
   await expect(override).toHaveValue('automatic');
   await override.selectOption('project-default');
   await expect(page.locator('[data-between-contours-panel]')).toContainText('Keep the wire threaded while positioning');
-  await page.locator('[data-editor-workflow-actions="machining.between-contours"] button[aria-label^="Save "]').click();
+  await page.locator('[data-editor-workflow-actions="machining.between-contours"] button[aria-label^="Apply "]').click();
   await page.getByRole('button', { name: 'Undo active document change', exact: true }).click();
   await page.getByRole('button', { name: 'Machining menu' }).click();
   await page.locator('[data-editor-workflow-command="machining.between-contours"]').click();

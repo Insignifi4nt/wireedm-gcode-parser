@@ -90,7 +90,7 @@ test('explains missing compensation and exports after the decision is saved', as
   await page.getByLabel('Initial wire X').fill('-5');
   await page.getByLabel('Initial wire Y').fill('0');
   await page.getByRole('button', { name: 'Review and set manual initial wire position' }).click();
-  await page.getByRole('button', { name: 'Save Initial wire position workflow' }).click();
+  await page.getByRole('button', { name: 'Apply Initial wire position workflow' }).click();
   await page.getByRole('button', { name: 'Save active document' }).click();
 
   await page.getByRole('button', { name: 'Export menu' }).click();
@@ -107,7 +107,7 @@ test('explains missing compensation and exports after the decision is saved', as
   await page.getByRole('button', { name: 'Machining menu' }).click();
   await page.locator('[data-editor-workflow-command="machining.contour-setup"]').click();
   await page.getByLabel('Compensation kept material').selectOption('outside');
-  await page.getByRole('button', { name: 'Save Contour Setup workflow' }).click();
+  await page.getByRole('button', { name: 'Apply Contour Setup workflow' }).click();
   await page.getByRole('button', { name: 'Save active document' }).click();
 
   await page.getByRole('button', { name: 'Export menu' }).click();

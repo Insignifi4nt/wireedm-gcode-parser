@@ -204,7 +204,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(onStatusMessage).toHaveBeenCalledWith(expect.stringContaining('move the whole contour'), 'warning');
     expect(previewGeometrySignature()).toBe(original);
     expect(container.querySelector<HTMLInputElement>('input[aria-label="Translate X"]')?.value).toBe('50');
-    expect(container.querySelector<HTMLButtonElement>('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]')?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]')?.disabled).toBe(true);
   });
 
   it('clears pending entry coordinates when circle-center entry replaces them', async () => {
@@ -213,11 +213,11 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
     await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
     await changeInput('input[aria-label="Entry X"]', '123');
-    const save = () => container.querySelector<HTMLButtonElement>('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]')!;
+    const save = () => container.querySelector<HTMLButtonElement>('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Apply "]')!;
     expect(save().disabled).toBe(true);
     await clickElement('button[aria-label="Add center pierce lead-in"]');
     expect(save().disabled).toBe(false);
-    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Apply "]');
     expect(visibleWorkflowPanelIds()).not.toContain('entry-exit');
   });
 
@@ -365,7 +365,7 @@ describe('EditorPage UPID draft boundary', () => {
     ) as HTMLButtonElement | null;
     expect(projectSave?.disabled).toBe(true);
     expect(projectSave?.title).toBe(
-      'Save or discard Transform Geometry before saving the project.'
+      'Apply or discard Transform Geometry before saving the project.'
     );
     await act(async () => projectSave?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(onSaveEditorDraft).not.toHaveBeenCalled();
@@ -394,7 +394,7 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('button[aria-label="Apply translation to document geometry"]');
     const openingGeometry = previewGeometrySignature();
     expect(openingGeometry).not.toBe(originalGeometry);
-    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]');
 
     await clickElement('[data-editor-workflow-command="geometry.transform"]');
     await changeInput('input[aria-label="Translate X"]', '5');
@@ -618,11 +618,11 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement(`[data-editor-workflow-command="${workflow.commandId}"]`);
     await workflow.mutate();
     const save = container.querySelector(
-      `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Save "]`
+      `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Apply "]`
     ) as HTMLButtonElement | null;
     expect(save?.disabled, workflow.commandId).toBe(false);
     await clickElement(
-      `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Save "]`
+      `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Apply "]`
     );
     expect(visibleWorkflowPanelIds(), workflow.commandId).toEqual([]);
     await clickElement(`[data-editor-workflow-command="${workflow.commandId}"]`);
@@ -714,7 +714,7 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('[data-editor-workflow-command="construction.measurement"]');
     await clickElement('button[aria-label="Toggle preview grid snap"]');
-    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Apply "]');
     await clickElement('[data-editor-workflow-command="geometry.transform"]');
 
     const preview = container.querySelector(
@@ -749,7 +749,7 @@ describe('EditorPage UPID draft boundary', () => {
 
     expect(
       (container.querySelector(
-        '[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]'
+        '[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]'
       ) as HTMLButtonElement).disabled
     ).toBe(false);
   });
@@ -834,7 +834,7 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('button[aria-label="Toggle preview grid snap"]');
     await clickElement('button[aria-label="Magnetize latest point tangent"]');
     const save = () => container.querySelector<HTMLButtonElement>(
-      '[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Save "]'
+      '[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Apply "]'
     );
     expect(save()?.disabled).toBe(true);
     const preview = container.querySelector<SVGSVGElement>('svg[aria-label="UPID path preview"]');
@@ -847,7 +847,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('button[aria-label="Magnetize latest point tangent"]')?.getAttribute('aria-pressed')).toBe('false');
     expect(container.querySelectorAll('[data-measurement-point-row]')).toHaveLength(0);
     expect(save()?.disabled).toBe(false);
-    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Apply "]');
     expect(visibleWorkflowPanelIds()).toEqual([]);
   });
 
@@ -862,7 +862,7 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('[data-editor-workflow-command="construction.measurement"]');
     await changeInput('input[aria-label="Measurement point X"]', '2');
     const save = () => container.querySelector(
-      '[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Save "]'
+      '[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Apply "]'
     ) as HTMLButtonElement;
     expect(save().disabled).toBe(true);
     expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
@@ -903,7 +903,7 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBe(false);
     await changeInput('input[aria-label="Translate X"]', '2');
     const save = () => container.querySelector(
-      '[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]'
+      '[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]'
     ) as HTMLButtonElement;
     expect(save().disabled).toBe(true);
     expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
@@ -1002,7 +1002,7 @@ describe('EditorPage UPID draft boundary', () => {
     const manualOrder = order();
     expect(manualOrder).toEqual([originalOrder[1], originalOrder[0], ...originalOrder.slice(2)]);
     expect(container.textContent).toContain('Manual order overrides active');
-    await clickElement('[data-editor-workflow-actions="machining.sequence"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.sequence"] button[aria-label^="Apply "]');
     await clickElement('[data-editor-workflow-command="machining.sequence"]');
     await clickElement('button[aria-label="Reapply planning order strategy"]');
     expect(order()).toEqual(originalOrder);
@@ -1011,7 +1011,7 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('[data-editor-workflow-command="machining.sequence"]');
     expect(order()).toEqual(manualOrder);
     await clickElement('button[aria-label="Reapply planning order strategy"]');
-    await clickElement('[data-editor-workflow-actions="machining.sequence"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.sequence"] button[aria-label^="Apply "]');
     await clickElement('button[aria-label="Undo active document change"]');
     await clickElement('button[aria-label="Save active document"]');
     const saved = onSaveEditorDraft.mock.calls[0]?.[0];
@@ -1060,9 +1060,9 @@ describe('EditorPage UPID draft boundary', () => {
     await changeInput('input[aria-label="Translate X"]', '2');
     await clickElement('button[aria-label="Apply translation to document geometry"]');
     expect(container.querySelector<HTMLInputElement>('input[aria-label="Document reference target X"]')!.value).toBe('20');
-    expect(container.querySelector<HTMLButtonElement>('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]')!.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]')!.disabled).toBe(true);
     await clickElement('button[aria-label="Move document reference to target"]');
-    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]');
     await clickElement('button[aria-label="Save active document"]');
     const saved = onSaveEditorDraft.mock.calls[0]?.[0];
     if (saved?.model !== 'upid-document' || saved.pathDocument.segments[0].kind !== 'circle') {
@@ -1081,7 +1081,7 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('[data-editor-workflow-command="geometry.transform"]');
     await changeInput('input[aria-label="Document reference target X"]', '10');
     await clickElement('button[aria-label="Move document reference to target"]');
-    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]');
     await clickElement('button[aria-label="Save active document"]');
     const saved = onSaveEditorDraft.mock.calls[0]?.[0];
     if (saved?.model !== 'upid-document' || saved.pathDocument.segments[0].kind !== 'circle') {
@@ -1105,11 +1105,11 @@ describe('EditorPage UPID draft boundary', () => {
     const addPoint = [...container.querySelectorAll<HTMLButtonElement>('[data-editor-workspace-panel="measurement"] button')]
       .find((button) => button.textContent?.trim() === 'Add Point')!;
     await act(async () => addPoint.click());
-    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Apply "]');
     await clickElement('[data-editor-workflow-command="geometry.transform"]');
     await clickElement(`button[aria-label="Use ${choice} as document reference target"]`);
     await clickElement('button[aria-label="Move document reference to target"]');
-    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]');
     await clickElement('button[aria-label="Save active document"]');
     const saved = onSaveEditorDraft.mock.calls[0]?.[0];
     if (saved?.model !== 'upid-document' || saved.pathDocument.segments[0].kind !== 'circle') {
@@ -1131,7 +1131,7 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('button[aria-label="Move document reference to target"]');
 
     const save = container.querySelector(
-      '[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]'
+      '[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]'
     ) as HTMLButtonElement;
     expect(save.disabled).toBe(false);
     expect(container.querySelector('[data-editor-workflow-save-reason]')).toBeNull();
@@ -1156,7 +1156,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
     expect(
       (container.querySelector(
-        '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]'
+        '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Apply "]'
       ) as HTMLButtonElement).disabled
     ).toBe(true);
 
@@ -1168,7 +1168,7 @@ describe('EditorPage UPID draft boundary', () => {
     )].find((button) => button.textContent?.trim() === 'Mark inactive reference');
     await act(async () => markInactive?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     await flushAsync();
-    await clickElement('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Apply "]');
     await clickElement('[data-editor-workflow-command="machining.participation"]');
     await changeInput('input[aria-label="Machining span start"]', '20');
     const secondOperation = project.content.document.plan.operations[1];
@@ -1185,7 +1185,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
     expect(
       (container.querySelector(
-        '[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]'
+        '[data-editor-workflow-actions="machining.participation"] button[aria-label^="Apply "]'
       ) as HTMLButtonElement).disabled
     ).toBe(true);
   });
@@ -1325,7 +1325,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('path[data-preview-travel="lead-out"]')).toBeNull();
     expect(
       (container.querySelector(
-        '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]'
+        '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Apply "]'
       ) as HTMLButtonElement).disabled
     ).toBe(true);
   });
@@ -1450,7 +1450,7 @@ describe('EditorPage UPID draft boundary', () => {
       .toBe('12.000');
     expect((container.querySelector('input[aria-label="Document reference target Y"]') as HTMLInputElement).value)
       .toBe('10.500');
-    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]');
 
     await clickElement('[data-editor-workflow-command="construction.measurement"]');
     await changeInput('input[aria-label="Measurement point X"]', '3');
@@ -1708,7 +1708,7 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
     await clickElement(
-      '[data-editor-workflow-actions="machining.set-start"] button[aria-label^="Save "]'
+      '[data-editor-workflow-actions="machining.set-start"] button[aria-label^="Apply "]'
     );
     await clickElement('[data-editor-workflow-command="machining.sequence"]');
 
@@ -1895,7 +1895,7 @@ describe('EditorPage UPID draft boundary', () => {
     await changeInput('input[aria-label="Entry X"]', '-3');
     await changeInput('input[aria-label="Entry Y"]', '1');
     await clickElement('button[aria-label="Set straight entry"]');
-    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Apply "]');
 
     const selectedRapidPath = () => container.querySelector(
       'svg[aria-label="UPID path preview"] path[data-preview-travel="rapid-in"][data-preview-travel-source="planned"]'
@@ -1904,7 +1904,7 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
     await changeInput('input[aria-label="Entry X"]', '-4');
     await clickElement('button[aria-label="Set straight entry"]');
-    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Apply "]');
     expect(selectedRapidPath()?.getAttribute('d')).toMatch(/ L -4 1$/);
 
     await clickElement('button[aria-label="Undo active document change"]');
@@ -1969,7 +1969,7 @@ describe('EditorPage UPID draft boundary', () => {
       container.querySelector('select[aria-label="Contour setup operation"]'),
       secondOperation.id
     );
-    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Apply "]');
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
       `Selection ${secondOperation.displayName}`
     );
@@ -2011,7 +2011,7 @@ describe('EditorPage UPID draft boundary', () => {
       container.querySelector('select[aria-label="Contour setup operation"]'),
       secondOperation.id
     );
-    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Apply "]');
     await clickElement('button[aria-label="Save active document"]');
 
     const savedDraft = onSaveEditorDraft.mock.calls[0]?.[0] as EditorSaveDraft | undefined;
@@ -2066,7 +2066,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     await clickElement('button[aria-label="Reverse path operation"]');
-    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Apply "]');
 
     await act(async () => {
       root.render(
@@ -2139,7 +2139,7 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     await clickElement('button[aria-label="Reverse path operation"]');
-    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Apply "]');
     await clickElement('button[aria-label="Back to Dashboard"]');
 
     expect(confirmDiscard).toHaveBeenCalledWith('Discard unsaved changes?');
@@ -2169,7 +2169,7 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     await clickElement('button[aria-label="Reverse path operation"]');
-    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Apply "]');
     const modifiedEvent = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(modifiedEvent);
     expect(modifiedEvent.defaultPrevented).toBe(true);
@@ -2197,7 +2197,7 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     await clickElement('button[aria-label="Reverse path operation"]');
-    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Apply "]');
 
     expect(container.textContent).toContain('Unsaved');
 
@@ -2254,7 +2254,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector<HTMLButtonElement>('button[aria-label="Undo active document change"]')?.disabled).toBe(true);
     await transform();
     const transformed = previewGeometrySignature();
-    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]');
     await clickElement('button[aria-label="Undo active document change"]');
     expect(previewGeometrySignature()).toBe(original);
     expect(container.querySelector<HTMLButtonElement>('button[aria-label="Undo active document change"]')?.disabled).toBe(true);
@@ -2289,7 +2289,7 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement(`button[aria-label="Rotate document 90 degrees ${direction}"]`);
     const rotated = previewGeometrySignature();
     expect(rotated).not.toBe(original);
-    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Apply "]');
     await clickElement('button[aria-label="Undo active document change"]');
     expect(previewGeometrySignature()).toBe(original);
     await clickElement('button[aria-label="Redo active document change"]');
@@ -2358,7 +2358,7 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     await clickElement('button[aria-label="Reverse path operation"]');
-    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Apply "]');
     expect(container.textContent).toContain('Unsaved');
 
     await clickElement('button[aria-label="Undo active document change"]');
@@ -2686,7 +2686,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Entry and exit operation"]')?.value).toBe(operation.id);
     await clickElement('[data-editor-workflow-command="machining.participation"]');
     await clickElement('[aria-label="Review derived partial exit"]');
-    await clickElement('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Apply "]');
     await clickElement('button[aria-label="Save active document"]');
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       model: 'upid-document', pathDocument: expect.objectContaining({
@@ -2986,7 +2986,7 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     await clickElement('button[aria-label="Reverse path operation"]');
-    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Apply "]');
     await clickElement('[data-editor-workflow-command="view.contours"]');
 
     const reversedFirstSegmentRow = container.querySelector(

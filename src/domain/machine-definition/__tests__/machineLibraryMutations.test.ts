@@ -77,7 +77,8 @@ describe('persisted machine library mutations', () => {
 
     expect(activated).toMatchObject({
       ok: true,
-      machine: { id: 'shop.robofil-100', activeBindingId: 'production-v2' }
+      machine: { id: 'shop.robofil-100', activeBindingId: 'production-v2' },
+      posts: second.workbench.posts
     });
   });
 

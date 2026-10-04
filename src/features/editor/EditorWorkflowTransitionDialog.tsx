@@ -45,8 +45,8 @@ export function EditorWorkflowTransitionDialog({
   if (!open) return null;
 
   const description = nextWorkflowLabel
-    ? `Save or discard changes in ${workflowLabel} before opening ${nextWorkflowLabel}.`
-    : `Save or discard changes in ${workflowLabel} before closing it.`;
+    ? `Apply or discard changes in ${workflowLabel} before opening ${nextWorkflowLabel}. Applying updates the editor draft; the project still needs to be saved.`
+    : `Apply or discard changes in ${workflowLabel} before closing it. Applying updates the editor draft; the project still needs to be saved.`;
   const saveReasonId = 'editor-workflow-transition-save-reason';
 
   function handleDialogKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -87,7 +87,7 @@ export function EditorWorkflowTransitionDialog({
         <div className="flex items-start justify-between gap-4 border-b border-border p-4">
           <div>
             <h2 className="font-mono text-sm font-semibold" id="editor-workflow-transition-title">
-              Unsaved workflow changes
+              Pending workflow changes
             </h2>
             <p
               className="mt-2 font-mono text-[11px] leading-5 text-muted-foreground"
@@ -133,7 +133,7 @@ export function EditorWorkflowTransitionDialog({
             onClick={onSave}
             type="button"
           >
-            Save
+            Apply
           </Button>
         </div>
       </div>
