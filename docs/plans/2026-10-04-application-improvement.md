@@ -22,11 +22,11 @@ Each workstream records inspected modules, reproducible findings, disposition an
 | Storage, recovery and revisions | Integrity reviewer | Exact-byte, conflict, interrupted-write and adapter behavior | Conflict/preference fixes merged; hosted read-only recovery export in progress |
 | Geometry, UPID, planning, execution and posts | Integrity reviewer | Relevant invariants, realistic edge cases, unchanged conformance | Broad domain review completed without further confirmed output defects; conformance preserved |
 | Agent tools, cancellation, freshness, state and docs | Agent-workflow reviewer | Shared guard paths, tool-level repros, hosted documentation | In progress |
-| Imports, editor and simulation performance | Performance reviewer | Bounded measurements and semantic regression checks | In progress |
+| Imports, editor and simulation performance | Performance reviewer | Bounded measurements and semantic regression checks | Cancellable DXF worker merged; existing incremental simulation reviewed; allocation/startup follow-up scoped |
 | Human UX and visual design | Primary | Current screenshots, keyboard behavior, complete workflows at different sizes | In progress |
 | Test quality and verification cost | Primary | Existing contract inspection, measured runtime, remove only proved waste | In progress |
 | Architecture, bundles, dependencies and maintainability | Primary + performance reviewer | Import graph, actual usage, build evidence, cohesive boundaries | In progress |
-| Integration and independent review | Rotating reviewers | Frozen diff, focused then broad checks, browser walkthrough, PR checks | First PR merged after independent review and green GitHub checks; second scope reviewed |
+| Integration and independent review | Rotating reviewers | Frozen diff, focused then broad checks, browser walkthrough, PR checks | First two PRs merged after independent review and green complete GitHub checks |
 
 ## Candidate delivery sequence
 
@@ -44,7 +44,7 @@ Keep baseline tests intact while reproducing defects. Add tests for the real fai
 
 ## PR budget
 
-1 of 5 created and merged: [PR #5](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/5), app 0.0.690, merge `6d1e673`. Its full GitHub verification passed. The second candidate advances to 0.0.691. Update this record with links, checkpoints, review findings and final coverage rather than creating duplicate planning documents.
+2 of 5 created and merged: [PR #5](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/5), app 0.0.690, merge `6d1e673`; [PR #6](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/6), app 0.0.691, merge `56fad6e`. Both passed complete GitHub verification. The third candidate advances to 0.0.692. Update this record with links, checkpoints, review findings and final coverage rather than creating duplicate planning documents.
 
 ## Local evidence
 
