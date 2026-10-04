@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 
 import type { ImportedDxfProject } from '@/domain/dxf/importDxfProject';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
@@ -11,6 +11,9 @@ import { ProjectListPanel } from './ProjectListPanel';
 import { ProjectRevisionsDialog } from './ProjectRevisionsDialog';
 import { StartWorkPanel } from './StartWorkPanel';
 import type { PendingDashboardDxfImport } from './dashboardTypes';
+
+const GCodeInspectionDialog = lazy(() => import('@/features/editor/GCodeInspectionDialog')
+  .then((module) => ({ default: module.GCodeInspectionDialog })));
 
 interface DashboardPageProps {
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
@@ -74,6 +77,7 @@ export function DashboardPage({
   onImportProgramFile
 }: DashboardPageProps) {
   const projects = connectedWorkbench?.manifest.projects ?? [];
+  const [inspectingGCode, setInspectingGCode] = useState(false);
   const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
   const [revisionProject, setRevisionProject] = useState<(typeof projects)[number] | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
@@ -129,6 +133,7 @@ export function DashboardPage({
             onImportUpidFile={onImportUpidFile}
             onImportProgramFile={onImportProgramFile}
             onOpenEditor={onOpenEditor}
+            onInspectGCode={() => setInspectingGCode(true)}
             programErrorMessage={programImportErrorMessage}
             programImporting={programImportStatus === 'importing'}
           />
@@ -156,6 +161,9 @@ export function DashboardPage({
         onDeleteProject={onDeleteProject}
         onRenameProject={onRenameProject}
       />
+      {inspectingGCode && <Suspense fallback={<p role="status">Opening G-code inspection…</p>}>
+        <GCodeInspectionDialog onClose={() => setInspectingGCode(false)} />
+      </Suspense>}
 
       {revisionProject && connectedWorkbench && (
         <ProjectRevisionsDialog

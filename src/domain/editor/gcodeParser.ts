@@ -12,11 +12,14 @@ import type {
   GCodeParseStats,
   GCodePathPoint
 } from './types';
+import { isRecognizedGCodeSetup } from './gcodeCommands';
+import type { GCodeInspectionOptions } from './gcodeInspectionTypes';
 
 const POSITION_EPSILON = 1e-9;
 
 interface ParserState {
   hasUndeclaredCoordinates: boolean;
+  pendingBreak: boolean;
   interpreter: GCodeInterpreterState;
   path: GCodePathPoint[];
   bounds: GCodeBounds;
@@ -29,17 +32,28 @@ export function parseGCodeProgram(
   gcodeText: string,
   profile: GCodeInterpreterState['profile'] = 'neutral'
 ): GCodeParseResult {
+  return parseGCodeProgramDetailed(gcodeText, { profile });
+}
+
+/** Trace collection is opt-in; ordinary import/save parsing allocates no line snapshots. */
+export function parseGCodeProgramDetailed(
+  gcodeText: string,
+  options: GCodeInspectionOptions,
+  observe?: (line: number, text: string, block: GCodeBlockResult, before: GCodeInterpreterState, after: GCodeInterpreterState) => void,
+  failedBlockPolicy: 'legacy' | 'omit' = 'legacy'
+): GCodeParseResult {
   if (typeof gcodeText !== 'string') {
     throw new Error('G-code input must be a string.');
   }
 
-  const state = createParserState(profile);
-  const lines = gcodeText.split(/\r?\n/);
+  const state = createParserState(options.profile ?? 'neutral', options.defaults);
+  const contexts = new Map(options.lineContexts?.map(context => [context.line, context]));
+  const lines = gcodeText.split(/\r\n|\r|\n/);
   state.stats.totalLines = lines.length;
 
   lines.forEach((line, index) => {
     try {
-      parseLine(state, line, index + 1);
+      parseLine(state, line, index + 1, contexts.get(index + 1), observe, failedBlockPolicy);
     } catch (error) {
       state.errors.push({
         line: index + 1,
@@ -53,7 +67,7 @@ export function parseGCodeProgram(
   if (state.path.length === 0) {
     state.warnings.push({
       line: 0,
-      message: 'No valid G-code commands found in input.',
+      message: 'No supported XY motion found in input.',
       type: 'warning'
     });
   }
@@ -72,10 +86,11 @@ export function parseGCodeProgram(
   };
 }
 
-function createParserState(profile: GCodeInterpreterState['profile']): ParserState {
+function createParserState(profile: GCodeInterpreterState['profile'], defaults?: GCodeInspectionOptions['defaults']): ParserState {
   return {
     hasUndeclaredCoordinates: false,
-    interpreter: createGCodeInterpreterState(profile),
+    pendingBreak: false,
+    interpreter: createGCodeInterpreterState(profile, defaults),
     path: [],
     bounds: createEmptyBounds(),
     errors: [],
@@ -91,9 +106,21 @@ function createParserState(profile: GCodeInterpreterState['profile']): ParserSta
   };
 }
 
-function parseLine(state: ParserState, rawLine: string, lineNumber: number) {
+function parseLine(state: ParserState, rawLine: string, lineNumber: number,
+  context?: NonNullable<GCodeInspectionOptions['lineContexts']>[number],
+  observe?: (line: number, text: string, block: GCodeBlockResult, before: GCodeInterpreterState, after: GCodeInterpreterState) => void,
+  failedBlockPolicy: 'legacy' | 'omit' = 'legacy') {
   const previousUnits = state.interpreter.units;
-  const block = interpretGCodeBlock(state.interpreter, rawLine, lineNumber);
+  const before = observe ? { ...state.interpreter, position: { ...state.interpreter.position } } : null;
+  const block = interpretGCodeBlock(state.interpreter, rawLine, lineNumber, context);
+  // Inspection cannot assume an endpoint after failed geometry; old editor parsing keeps its contract.
+  if (failedBlockPolicy === 'omit' && !block.motion && !block.positionSet &&
+    block.issues.some(issue => issue.type === 'error')) {
+    state.interpreter.positionKnown = false;
+    state.interpreter.motion = null;
+    block.previewOmitted = true;
+  }
+  if (observe && before) observe(lineNumber, rawLine, block, before, { ...state.interpreter, position: { ...state.interpreter.position } });
   if (previousUnits === null && state.interpreter.units !== null && state.hasUndeclaredCoordinates) {
     state.warnings.push({ line: lineNumber, type: 'warning',
       message: 'Coordinates before the first G20/G21 declaration have unknown units; their preview scale cannot be verified.' });
@@ -102,6 +129,10 @@ function parseLine(state: ParserState, rawLine: string, lineNumber: number) {
     state.hasUndeclaredCoordinates = true;
   }
   recordIssues(state, block);
+  if (block.previewOmitted) {
+    if (!state.interpreter.positionKnown) state.pendingBreak = true;
+    return;
+  }
 
   if (block.commentOnly) {
     state.stats.comments++;
@@ -114,16 +145,15 @@ function parseLine(state: ParserState, rawLine: string, lineNumber: number) {
       state.warnings.push({ line: lineNumber, type: 'warning',
         message: 'G92 changes coordinates after motion. Connections across this reset are not modeled; the physical toolpath preview cannot be relied on for this program.' });
     }
-    if (state.path.length === 0) {
-      state.path.push({
-        type: 'position',
-        x: block.positionSet.x,
-        y: block.positionSet.y,
-        line: lineNumber,
-        meta: { source: 'G92' }
-      });
-      state.bounds = updateBounds(state.bounds, block.positionSet.x, block.positionSet.y);
-    }
+    state.path.push({
+      type: 'position',
+      x: block.positionSet.x,
+      y: block.positionSet.y,
+      line: lineNumber,
+      meta: { source: 'G92' }
+    });
+    state.bounds = updateBounds(state.bounds, block.positionSet.x, block.positionSet.y);
+    state.pendingBreak = false;
     state.stats.processedLines++;
     return;
   }
@@ -134,9 +164,11 @@ function parseLine(state: ParserState, rawLine: string, lineNumber: number) {
       type: motion.command === 'G0' ? 'rapid' : 'cut',
       x: motion.end.x,
       y: motion.end.y,
-      line: lineNumber
+      line: lineNumber,
+      ...(motion.breakBefore || state.pendingBreak ? { breakBefore: true as const } : {})
     });
     state.bounds = updateBounds(state.bounds, motion.end.x, motion.end.y);
+    state.pendingBreak = false;
     state.stats.linearMoves++;
     state.stats.processedLines++;
     return;
@@ -155,6 +187,7 @@ function parseLine(state: ParserState, rawLine: string, lineNumber: number) {
       line: lineNumber
     };
     state.path.push(arc);
+    state.pendingBreak = false;
     state.bounds = mergeBounds(state.bounds, calculateArcBounds(arc));
     state.stats.arcMoves++;
     state.stats.processedLines++;
@@ -198,9 +231,7 @@ function isKnownNonMotionBlock(block: GCodeBlockResult) {
     if (word.letter === 'M') return true;
     if (word.letter !== 'G') return false;
     return (
-      [17, 18, 19, 20, 21, 38, 60, 90, 90.1, 91, 91.1, 92].includes(word.value) ||
-      (word.value >= 40 && word.value <= 59) ||
-      (word.value >= 94 && word.value <= 99)
+      isRecognizedGCodeSetup(word.value)
     );
   });
 }

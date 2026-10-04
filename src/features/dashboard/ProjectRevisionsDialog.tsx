@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Trash2, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,9 @@ import {
   loadSavedWireEdmJobRevision,
   serializeSavedWireEdmJobRevision,
 } from '@/domain/wire-edm-job/savedWireEdmJobRevision';
+import { createControllerArtifactInspection, type ControllerArtifactInspection } from '@/domain/wire-edm-job/controllerArtifactInspection';
+
+const GCodeInspectionDialog = lazy(() => import('@/features/editor/GCodeInspectionDialog').then(module => ({ default: module.GCodeInspectionDialog })));
 
 interface ProjectRevisionsDialogProps {
   workbench: ConnectedWorkbenchCatalog;
@@ -33,16 +36,21 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [inspection, setInspection] = useState<ControllerArtifactInspection | null>(null);
+  const generation = useRef(0);
   const busy = busyId !== null || deleting;
   const pageReady = !loading && loadedPage?.projectId === projectId &&
     loadedPage.page === page && loadedPage.reload === reload;
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  useModalFocus({ open: true, overlayRef, dialogRef, initialFocusRef: closeRef,
+  useModalFocus({ open: inspection === null, overlayRef, dialogRef, initialFocusRef: closeRef,
     onClose, dismissible: !busy && !confirmDelete });
 
   useEffect(() => {
+    generation.current++;
+    setInspection(null);
+    setBusyId(null);
     setPage(0);
     setRevisions([]);
     setLoadedPage(null);
@@ -50,6 +58,7 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
     setSelectedIds(new Set());
     setSelecting(false);
     setConfirmDelete(false);
+    return () => { generation.current++; };
   }, [projectId]);
 
   useEffect(() => {
@@ -109,6 +118,28 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
     }
   }
 
+  async function inspectController(revisionId: string) {
+    const current = generation.current;
+    setBusyId(revisionId);
+    setError(null);
+    try {
+      const loaded = await loadSavedWireEdmJobRevision(workbench.adapter, projectId, revisionId);
+      if (!loaded.ok) throw new Error(loaded.error.message);
+      const { generateControllerArtifact } = await import('@/domain/wire-edm-job/controllerArtifact');
+      const result = await generateControllerArtifact(loaded.revision);
+      if (!result.ok) throw new Error(result.error.message);
+      const inspected = await createControllerArtifactInspection(result.artifact, {
+        machine: loaded.revision.machine, binding: loaded.revision.post.binding,
+        installation: loaded.revision.post.installation, properties: loaded.revision.post.properties
+      });
+      if (generation.current === current) setInspection(inspected);
+    } catch (cause) {
+      if (generation.current === current) setError(messageOf(cause));
+    } finally {
+      if (generation.current === current) setBusyId(null);
+    }
+  }
+
   async function downloadRevision(revisionId: string) {
     setBusyId(revisionId);
     setError(null);
@@ -161,6 +192,11 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
       setDeleting(false);
     }
   }
+
+  if (inspection) return <Suspense fallback={<div role="status">Opening G-code inspection…</div>}>
+    <GCodeInspectionDialog {...inspection} onClose={() => setInspection(null)}
+      onDownload={() => downloadProgramFile({ fileName: inspection.fileName, text: inspection.text })} />
+  </Suspense>;
 
   return (
     <div ref={overlayRef} className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
@@ -242,7 +278,9 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
                     </p>
                   </div>
                 </div>
-                {!selecting && <div className="flex gap-1">
+                {!selecting && <div className="flex min-w-0 flex-wrap gap-1">
+                  <Button size="sm" variant="outline" type="button" disabled={busyId !== null || !revision.savedAt}
+                    onClick={() => void inspectController(revision.revisionId)}>Inspect controller file</Button>
                   <Button size="sm" variant="outline" type="button" disabled={busyId !== null || !revision.savedAt}
                     onClick={() => void downloadController(revision.revisionId)}>
                     {busyId === revision.revisionId ? 'Generating…' : 'Controller file'}

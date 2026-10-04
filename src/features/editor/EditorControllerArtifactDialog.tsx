@@ -1,8 +1,11 @@
-import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { lazy, Suspense, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useModalFocus } from '@/components/ui/useModalFocus';
 import { AgentRepairPrompt } from '@/components/AgentRepairPrompt';
 import { postFailureGuidance, postRepairPrompt } from '@/domain/post-processor/postRepairPrompt';
 import { APP_VERSION } from '@/domain/release/appRelease';
+import { createControllerArtifactInspection, type ControllerArtifactInspection, type ControllerArtifactInspectionContext } from '@/domain/wire-edm-job/controllerArtifactInspection';
+
+const GCodeInspectionDialog = lazy(() => import('./GCodeInspectionDialog').then(module => ({ default: module.GCodeInspectionDialog })));
 
 import type { MachineDefinition } from '@/domain/machine-definition/machineDefinition';
 import type { PostInstallation, PostLibrary } from '@/domain/post-processor/postLibrary';
@@ -55,8 +58,12 @@ export function EditorControllerArtifactDialog({
   const [artifact, setArtifact] = useState<ControllerProgramArtifact | null>(null);
   const [failure, setFailure] = useState<Extract<ControllerArtifactResult, { ok: false }>['error'] | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [inspection, setInspection] = useState<ControllerArtifactInspection | null>(null);
+  const [inspecting, setInspecting] = useState(false);
+  const [inspectionFailure, setInspectionFailure] = useState<string | null>(null);
+  const artifactContext = useRef<ControllerArtifactInspectionContext | null>(null);
   useModalFocus({
-    open: true, overlayRef: dialogRef, dialogRef, initialFocusRef: dialogRef,
+    open: inspection === null, overlayRef: dialogRef, dialogRef, initialFocusRef: dialogRef,
     onClose, dismissible: !generating
   });
   const [downloadFailure, setDownloadFailure] = useState<string | null>(null);
@@ -69,7 +76,7 @@ export function EditorControllerArtifactDialog({
         ref.contentHash === activeSetup.post.contentHash
       )) ?? null
     : null;
-  const canGenerate = !hasUnsavedChanges && activePost !== null && !generating;
+  const canGenerate = !hasUnsavedChanges && activePost !== null && !generating && !inspecting;
   const selectionKey = JSON.stringify({
     machine: selectedMachine ? { ...selectedMachine, bindings: undefined } : null,
     setup: activeSetup,
@@ -80,6 +87,9 @@ export function EditorControllerArtifactDialog({
     if (selection.current.key === selectionKey) return;
     selection.current = { key: selectionKey, revision: selection.current.revision + 1 };
     setArtifact(null);
+    artifactContext.current = null;
+    setInspection(null);
+    setInspectionFailure(null);
     setFailure(null);
     setDownloadFailure(null);
     onGenerationReset?.();
@@ -113,10 +123,13 @@ export function EditorControllerArtifactDialog({
     if (!canGenerate) return;
     const generationMachine = selectedMachine;
     const generationPost = activePost;
+    const generationSetup = activeSetup;
     const generationRevision = selection.current.revision;
     onGenerationReset?.();
     setGenerating(true);
     setArtifact(null);
+    artifactContext.current = null;
+    setInspectionFailure(null);
     setFailure(null);
     setDownloadFailure(null);
     try {
@@ -124,6 +137,9 @@ export function EditorControllerArtifactDialog({
       if (selection.current.revision !== generationRevision) return;
       if (result.ok) {
         setArtifact(result.artifact);
+        if (generationMachine && generationPost && generationSetup) artifactContext.current = {
+          machine: generationMachine, installation: generationPost, binding: generationSetup, properties: generationSetup.properties
+        };
         if (generationMachine && generationPost) onArtifactGenerated?.(result.artifact, generationMachine, generationPost);
       }
       else setFailure(result.error);
@@ -148,6 +164,25 @@ export function EditorControllerArtifactDialog({
       setDownloadFailure(error instanceof Error ? error.message : String(error));
     }
   }
+
+  async function inspect() {
+    const context = artifactContext.current;
+    if (!artifact || !context || inspecting) return;
+    const reviewedArtifact = artifact;
+    const revision = selection.current.revision;
+    setInspecting(true);
+    setInspectionFailure(null);
+    try {
+      const result = await createControllerArtifactInspection(reviewedArtifact, context);
+      if (selection.current.revision === revision) setInspection(result);
+    } catch (error) {
+      if (selection.current.revision === revision) setInspectionFailure(error instanceof Error ? error.message : String(error));
+    } finally { setInspecting(false); }
+  }
+
+  if (inspection) return <Suspense fallback={<div role="status">Opening G-code inspection…</div>}>
+    <GCodeInspectionDialog {...inspection} onClose={() => setInspection(null)} onDownload={() => onDownload(inspection.fileName, inspection.text)} />
+  </Suspense>;
 
   return (
     <div aria-label="Controller artifact export" aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-black/65 p-4 outline-none" onKeyDown={handleKeyDown} ref={dialogRef} role="dialog" tabIndex={-1}>
@@ -258,10 +293,16 @@ export function EditorControllerArtifactDialog({
 
         {artifact && (
           <section className="grid gap-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-mono">{artifact.fileName}</span>
-              <button className="h-7 border border-border px-2" onClick={download} type="button">Download {artifact.fileName}</button>
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="min-w-0 max-w-full break-all font-mono">{artifact.fileName}</span>
+              <div className="flex min-w-0 max-w-full flex-wrap gap-2">
+                <button className="min-h-7 border border-border px-2 disabled:opacity-40" disabled={inspecting} onClick={() => void inspect()} type="button">{inspecting ? 'Opening inspection…' : inspectionFailure ? 'Retry inspection' : 'Inspect G-code'}</button>
+                <button className="min-h-7 min-w-0 max-w-full break-all border border-border px-2" onClick={download} type="button">Download {artifact.fileName}</button>
+              </div>
             </div>
+            {inspectionFailure !== null && <p className="border border-destructive/60 bg-destructive/10 p-2 text-destructive" role="alert">
+              Inspection could not open: {inspectionFailure}. Retry inspection; the generated artifact is still available.
+            </p>}
             {downloadFailure !== null && (
               <p className="border border-destructive/60 bg-destructive/10 p-2 text-destructive" role="alert">
                 Download failed: {downloadFailure}. Try Download again; the generated artifact is still available.

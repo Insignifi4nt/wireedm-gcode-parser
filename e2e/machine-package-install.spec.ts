@@ -132,4 +132,53 @@ test('explains missing compensation and exports after the decision is saved', as
   expect(bytes.toString('ascii')).toMatch(/^%\r\nN10 G92 X-5\.000 Y0\.000\r\n/);
   expect(bytes.toString('ascii')).toMatch(/M02\r\n$/);
   expect(bytes.equals(Buffer.from(preview.replace(/\r?\n/g, '\r\n'), 'ascii'))).toBe(true);
+
+  const persistedBeforeInspection = await page.evaluate(() => Object.keys(localStorage)
+    .filter(key => key.startsWith('wire-edm-workbench:file:')).sort().map(key => [key, localStorage.getItem(key)]));
+  await page.setViewportSize({ width: 360, height: 844 });
+  expect(await artifactDialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await artifactDialog.locator('section').first().evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await artifactDialog.getByRole('button', { name: 'Inspect G-code', exact: true }).click();
+  const inspector = page.getByRole('dialog', { name: 'G-code inspection', exact: true });
+  await expect(inspector).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Controller artifact export' })).toHaveCount(0);
+  await expect(inspector.getByLabel('Inspection initial units')).toHaveValue('mm');
+  await expect(inspector.getByLabel('Inspection initial units')).toBeDisabled();
+  await inspector.getByRole('button', { name: 'Context', exact: true }).click();
+  await expect(inspector).toContainText('cristian.robofil-100.v2-candidate@2.6.0');
+  await expect(inspector).toContainText('Saved revision');
+  await expect(inspector).toContainText('Saved setup');
+  const context = await inspector.locator('dl').textContent();
+  await inspector.getByRole('button', { name: /^Commands / }).click();
+  await expect(inspector).toContainText('compensation.finish: compensation.off');
+  const inspectionDownloadPromise = page.waitForEvent('download');
+  await inspector.getByRole('button', { name: 'Download exact file', exact: true }).click();
+  const inspectionDownload = await inspectionDownloadPromise;
+  expect(await readFile((await inspectionDownload.path())!)).toEqual(bytes);
+  await inspector.getByRole('button', { name: 'Close G-code inspection', exact: true }).click();
+  await expect(artifactDialog).toBeFocused();
+  await expect(artifactDialog.locator('pre')).toHaveText(preview);
+  expect(await page.evaluate(() => Object.keys(localStorage)
+    .filter(key => key.startsWith('wire-edm-workbench:file:')).sort().map(key => [key, localStorage.getItem(key)])))
+    .toEqual(persistedBeforeInspection);
+
+  await artifactDialog.getByRole('button', { name: 'Close controller artifact export' }).click();
+  await page.getByRole('button', { name: 'Back to Dashboard', exact: true }).click();
+  await page.getByRole('button', { name: /^Show revisions for project / }).click();
+  const revisionsDialog = page.getByRole('dialog', { name: /^Revisions for / });
+  expect(await revisionsDialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await revisionsDialog.getByRole('button', { name: 'Inspect controller file', exact: true }).click();
+  await expect(inspector).toBeVisible();
+  await expect(revisionsDialog).toHaveCount(0);
+  await inspector.getByRole('button', { name: 'Context', exact: true }).click();
+  expect(await inspector.locator('dl').textContent()).toBe(context);
+  const revisionDownloadPromise = page.waitForEvent('download');
+  await inspector.getByRole('button', { name: 'Download exact file', exact: true }).click();
+  const revisionDownload = await revisionDownloadPromise;
+  expect(await readFile((await revisionDownload.path())!)).toEqual(bytes);
+  await inspector.getByRole('button', { name: 'Close G-code inspection', exact: true }).click();
+  await expect(revisionsDialog.getByRole('button', { name: 'Close revisions', exact: true })).toBeFocused();
+  expect(await page.evaluate(() => Object.keys(localStorage)
+    .filter(key => key.startsWith('wire-edm-workbench:file:')).sort().map(key => [key, localStorage.getItem(key)])))
+    .toEqual(persistedBeforeInspection);
 });

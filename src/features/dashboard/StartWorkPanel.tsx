@@ -1,5 +1,5 @@
 import { useRef, type ChangeEvent } from 'react';
-import { ChevronDown, FileCode, FileJson2, FilePlus2, FileUp } from 'lucide-react';
+import { ChevronDown, FileCode, FileJson2, FilePlus2, FileSearch, FileUp } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useDashboardMenu } from './useDashboardMenu';
@@ -16,6 +16,7 @@ export interface StartWorkPanelProps {
   onImportUpidFile: (file: File) => void | Promise<void>;
   onImportProgramFile: (file: File) => void | Promise<void>;
   onOpenEditor: () => void;
+  onInspectGCode?: () => void;
 }
 
 export function StartWorkPanel({
@@ -29,7 +30,8 @@ export function StartWorkPanel({
   onCancelDxfImport,
   onImportUpidFile,
   onImportProgramFile,
-  onOpenEditor
+  onOpenEditor,
+  onInspectGCode
 }: StartWorkPanelProps) {
   const dxfInputRef = useRef<HTMLInputElement>(null);
   const upidInputRef = useRef<HTMLInputElement>(null);
@@ -165,6 +167,13 @@ export function StartWorkPanel({
             <FileCode />
             {programImporting ? 'Opening Machine Program...' : 'Open Machine Program'}
           </Button>
+          <p className="text-[10px] text-muted-foreground">Import an editable copy into the workbench.</p>
+          {onInspectGCode && <>
+            <Button disabled={isImporting} onClick={onInspectGCode} type="button" variant="outline">
+              <FileSearch />Inspect G-code
+            </Button>
+            <p className="text-[10px] text-muted-foreground">Quick file or paste inspection. No project created.</p>
+          </>}
         </div>
 
         <div className="grid gap-1">

@@ -5,6 +5,7 @@ import {
   type GCodeInterpreterState,
   type GCodeInterpretedMotion
 } from './gcodeBlockInterpreter';
+import { isRecognizedGCodeSetup } from './gcodeCommands';
 
 export interface GCodeStructuredLine {
   num: number;
@@ -244,6 +245,12 @@ function detectContours(bodyLines: GCodeStructuredLine[], blocks: GCodeBlockResu
     const block = blocks[index];
     const motion = block.motion;
 
+    if (block.previewOmitted || motion?.breakBefore) {
+      if (currentToolpath) toolpaths.push(finalizeToolpath(currentToolpath));
+      currentToolpath = null;
+      return;
+    }
+
     if (
       motion &&
       (motion.command === 'G1' || motion.command === 'G2' || motion.command === 'G3')
@@ -361,9 +368,7 @@ function isHeaderBlock(block: GCodeBlockResult) {
   return block.words.some((word) => {
     if (word.letter !== 'G') return false;
     return (
-      [17, 18, 19, 20, 21, 38, 60, 90, 90.1, 91, 91.1, 92].includes(word.value) ||
-      (word.value >= 40 && word.value <= 59) ||
-      (word.value >= 94 && word.value <= 99)
+      isRecognizedGCodeSetup(word.value)
     );
   });
 }

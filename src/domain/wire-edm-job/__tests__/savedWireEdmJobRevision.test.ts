@@ -24,9 +24,70 @@ import {
   serializeSavedWireEdmJobRevision
 } from '../savedWireEdmJobRevision';
 import { generateControllerArtifact } from '../controllerArtifact';
+import { createControllerArtifactInspection } from '../controllerArtifactInspection';
 import type { SavedWireEdmJobRevision } from '../savedWireEdmJobRevision';
 
 describe('saved Wire EDM job revision', () => {
+  it('inspects exact numbered wrapped output from its pinned revision without changing snapshot bytes', async () => {
+    const post = minimalPostPackage();
+    post.manifest.output.programEnvelope = { prefix: ['%'], suffix: ['%'] };
+    post.manifest.output.blockNumbering = { mode: 'sequential', prefix: 'N', start: 10, increment: 10, minimumWidth: 3 };
+    for (const fixture of post.fixtures) fixture.expectedArtifact = ['%',
+      ...fixture.expectedProgram.split('\n').map((line, index) => `N${String((index + 1) * 10).padStart(3, '0')} ${line}`), '%', ''].join('\r\n');
+    const fixture = await revisionFixture(post);
+    const generated = await generateControllerArtifact(fixture.revision);
+    if (!generated.ok) throw new Error(generated.error.message);
+    const before = await fixture.adapter.readText(fixture.path);
+    const inspected = await createControllerArtifactInspection(generated.artifact, {
+      machine: fixture.revision.machine, binding: fixture.revision.post.binding,
+      installation: fixture.revision.post.installation, properties: fixture.revision.post.properties
+    });
+    expect(inspected.text).toBe(generated.artifact.text);
+    expect(inspected.text).toMatch(/^%\r\nN010 G90\r\n/);
+    expect(inspected.provenance).toEqual(expect.arrayContaining([
+      { label: 'Saved revision', value: fixture.revision.revisionId },
+      { label: 'Artifact SHA-256', value: generated.artifact.sha256 },
+      { label: 'Physical machine', value: `${fixture.revision.machine.name} (${fixture.revision.machine.id})` }
+    ]));
+    expect(inspected.options).toMatchObject({ profile: 'neutral', defaults: { units: 'mm', xyMode: 'absolute', initialPosition: { x: -2, y: 0 } } });
+    expect(inspected.options?.lineContexts?.[0]).toMatchObject({ line: 2, commands: [{ code: 'G90', meaning: 'distance.absolute: distance.absolute' }] });
+    expect(inspected.options?.lineContexts?.every(context => !context.previewUnsupported)).toBe(true);
+    expect(await fixture.adapter.readText(fixture.path)).toBe(before);
+
+    const stale = await createControllerArtifactInspection(generated.artifact, {
+      machine: { ...fixture.revision.machine, name: 'Changed physical machine' }, binding: fixture.revision.post.binding,
+      installation: fixture.revision.post.installation, properties: fixture.revision.post.properties
+    });
+    expect(stale.options).toBeUndefined();
+    expect(stale.provenance.some(({ label }) => label === 'Physical machine')).toBe(false);
+    expect(stale.text).toBe(generated.artifact.text);
+  });
+
+  it('keeps custom post axis layouts visible without inventing conventional XY geometry', async () => {
+    for (const template of ['G1 Y{x} X{y}', 'G1 G0 X{x} Y{y}']) {
+      const post = minimalPostPackage();
+      post.dialect.commands['motion.linear'].template = template;
+      for (const fixture of post.fixtures) {
+        fixture.expectedProgram = template === 'G1 Y{x} X{y}'
+          ? fixture.expectedProgram.replace(/X([^ ]+) Y([^\n]+)/g, 'Y$1 X$2')
+          : fixture.expectedProgram.replace(/G1 /g, 'G1 G0 ');
+        fixture.expectedArtifact = fixture.expectedProgram.replace(/\n/g, '\r\n') + '\r\n';
+      }
+      const fixture = await revisionFixture(post);
+      const generated = await generateControllerArtifact(fixture.revision);
+      if (!generated.ok) throw new Error(generated.error.message);
+      const inspected = await createControllerArtifactInspection(generated.artifact, {
+        machine: fixture.revision.machine, binding: fixture.revision.post.binding,
+        installation: fixture.revision.post.installation, properties: fixture.revision.post.properties
+      });
+      expect(inspected.text).toBe(generated.artifact.text);
+      const motionLines = generated.artifact.program.blocks.filter(block => block.motion).map(block => block.lineIndex + 1);
+      expect(motionLines.length).toBeGreaterThan(0);
+      for (const line of motionLines) expect(inspected.options?.lineContexts?.find(context => context.line === line)?.previewUnsupported)
+        .toContain('cannot be represented');
+    }
+  });
+
   it('creates schema-valid revision IDs even when the UUID begins with a digit', () => {
     expect(createSavedWireEdmJobRevisionId('01234567-89ab-4cde-8f01-23456789abcd'))
       .toBe('revision.01234567-89ab-4cde-8f01-23456789abcd');
