@@ -11,10 +11,10 @@ import {
   activateStoredMachinePostBinding,
   removeStoredMachineDefinition,
 } from '@/domain/machine-definition/machineLibraryMutations';
-import {
+import type {
   commitStoredMachinePackageInstallation,
   prepareStoredMachinePackageInstallation
-} from '@/domain/machine-package';
+} from '@/domain/machine-package/machinePackageInstallation';
 import { downloadProgramFile } from '@/domain/post/downloadProgramFile';
 import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
 import { captureWorkbenchRecovery } from '@/domain/storage/workbenchRecovery';
@@ -32,10 +32,10 @@ import {
 } from '@/domain/upid/portableUpidProject';
 import {
   createSavedWireEdmJobRevision,
-  deleteStoredWireEdmJobRevisions,
-  generateControllerArtifact,
   saveStoredWireEdmJobRevision
-} from '@/domain/wire-edm-job';
+} from '@/domain/wire-edm-job/savedWireEdmJobRevision';
+import type { deleteStoredWireEdmJobRevisions } from '@/domain/wire-edm-job/deleteSavedWireEdmJobRevisions';
+import type { generateControllerArtifact } from '@/domain/wire-edm-job/controllerArtifact';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import { updateWorkbenchCatalogPreferences } from '@/domain/workbench-catalog/storage/updateWorkbenchCatalogPreferences';
 import { dxfImportServices } from './dxfImportServices';
@@ -96,12 +96,16 @@ export const defaultAppServices: AppServices = {
   purgeArchivedWorkbenchProject,
   updateWorkbenchCatalogPreferences,
   activateStoredMachinePostBinding,
-  prepareStoredMachinePackageInstallation,
-  commitStoredMachinePackageInstallation,
+  prepareStoredMachinePackageInstallation: async (...args) =>
+    (await import('@/domain/machine-package/machinePackageInstallation')).prepareStoredMachinePackageInstallation(...args),
+  commitStoredMachinePackageInstallation: async (...args) =>
+    (await import('@/domain/machine-package/machinePackageInstallation')).commitStoredMachinePackageInstallation(...args),
   removeStoredMachineDefinition,
   createSavedWireEdmJobRevision,
-  deleteStoredWireEdmJobRevisions,
+  deleteStoredWireEdmJobRevisions: async (...args) =>
+    (await import('@/domain/wire-edm-job/deleteSavedWireEdmJobRevisions')).deleteStoredWireEdmJobRevisions(...args),
   saveStoredWireEdmJobRevision,
-  generateControllerArtifact,
+  generateControllerArtifact: async (...args) =>
+    (await import('@/domain/wire-edm-job/controllerArtifact')).generateControllerArtifact(...args),
   downloadTextFile: downloadProgramFile
 };

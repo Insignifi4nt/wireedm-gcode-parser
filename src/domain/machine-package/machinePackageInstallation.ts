@@ -38,6 +38,9 @@ import {
   type MachinePackage,
   type MachinePackageDiagnostic
 } from './machinePackage';
+import { machinePackageCatalogFingerprint as catalogFingerprint } from './machinePackageInstallationContext';
+
+export { isPreparedMachinePackageInstallationCurrent } from './machinePackageInstallationContext';
 
 export interface MachinePackagePostPreview {
   readonly kind: 'install' | 'already-installed';
@@ -87,15 +90,6 @@ export interface PreparedMachinePackageInstallation {
   readonly package: MachinePackage;
   readonly preparedCatalogFingerprint: string;
   readonly preview: MachinePackageInstallationPreview;
-}
-
-/** In-memory context hint only; commit reopens storage and checks the fingerprint under its lock. */
-export function isPreparedMachinePackageInstallationCurrent(
-  prepared: PreparedMachinePackageInstallation,
-  workbench: ConnectedWorkbenchCatalog | null
-): boolean {
-  return workbench !== null && prepared.workbench.adapter === workbench.adapter &&
-    prepared.preparedCatalogFingerprint === catalogFingerprint(workbench);
 }
 
 export type MachinePackageInstallationResolution =
@@ -625,13 +619,6 @@ function physicalMachineChanges(
   return fields
     .filter(([, left, right]) => canonicalJson(left) !== canonicalJson(right))
     .map(([path, left, right]) => ({ path, before: left, after: right }));
-}
-
-function catalogFingerprint(workbench: ConnectedWorkbenchCatalog) {
-  return canonicalJson({
-    machines: workbench.machines,
-    posts: workbench.posts
-  });
 }
 
 function errorMessage(error: unknown) {

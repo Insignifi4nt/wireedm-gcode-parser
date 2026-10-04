@@ -1,0 +1,32 @@
+{
+  "version": "0.0.694",
+  "previousVersion": "0.0.693",
+  "postCompatibility": "preserved-output-deferred-optional-services",
+  "summary": "Reduces initial JavaScript and unnecessary browser test environments while preserving application checks and test coverage.",
+  "warning": "Installed posts, saved revisions, execution and controller output are unchanged. Storage recovery, installed schema/hash checks and binding validation remain eager. Optional authoring/output operations now load their code on first use; unavailable chunks follow existing action failure and receipt handling. This changes loading boundaries, not post authority or storage formats.",
+  "checklist": {
+    "schema": "The app advances once to 0.0.694. UPID, post, machine package, engine API, project, revision, transaction and recovery export schemas are unchanged. Domain exports and typed service signatures remain compatible.",
+    "events": "Execution event kinds, fields, ordering, route selection and translation are unchanged. Geometry and planning algorithms are unchanged.",
+    "capabilities": "Installed post capabilities and agent tool contracts are unchanged. Deferred services preserve full arguments, results, cancellation and final freshness guards. Lightweight package limits and installation-context checks are separated from archive/execution code; existing public exports remain available.",
+    "auditAndOutput": "Exact post resolution, physical preflight, sandbox/conformance, audit and controller file rules remain intact. Saved-revision generation and download keep truthful receipts on module or post failures, including already-saved revision identity. No physical controller verification is claimed.",
+    "installationAndStorage": "No migration, installed-package rewrite or saved-revision change. Initialization, transaction recovery, stored post schema/hash validation and machine binding checks remain eager. Only optional package preparation/installation, artifact generation, revision deletion and install-time conformance loading are deferred. Read-only hosted recovery remains available through its guarded shared operation.",
+    "verification": "Independent original/integration reviews verify guard and receipt preservation, eager validation and exact test selection. Final integrated suite passes all 206 files and 2,063 tests (four workers, 54.35 seconds): 42 pure Node files/346 unchanged identities and 164 browser files/1,717 tests, with no missing or duplicated files or changed test sources. App/tooling TypeScript and production build pass. Five cold native Chromium cases pass, exercising cache startup, real DXF workers/cancellation, complete package installation, saved controller output and blocked recovery download. Same-dependency 0.0.693/0.0.694 initial JavaScript closures are 943,343/884,876 raw bytes and 271,604/256,755 gzip bytes (6.2%/5.5% lower), including all static imports/preloads. This is a transfer-size comparison, not a measured startup-time or total-asset reduction. Generated post contract parity, 25 documentation pages/81 files, STEP source distribution, three UPID fixtures, three unchanged Robofil fixtures and complete package validation pass; GitHub repeats complete verification before merge."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Unchanged Robofil 2.6.0 implementation passes all three conformance fixtures and complete package validation. Cold native complete-package installation and saved controller output pass with deferred modules; no physical controller verification is claimed."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Opening the workbench requires less JavaScript while keeping storage and installed-package checks intact.",
+    "changes": [
+      "Optional package and output features load their code when first used.",
+      "Startup still validates installed packages and runs required transaction recovery before editing.",
+      "Action failures retain the existing diagnostics and saved-artifact or revision receipts."
+    ],
+    "compatibility": "Installed posts, saved revisions, agent tools and controller output rules are unchanged. Optional actions still require their code to load successfully before running.",
+    "action": "Continue using the normal workflows. If an action fails, inspect its diagnostic and retained receipt before retrying; do not regenerate a saved result merely to retry its download."
+  }
+}

@@ -30,11 +30,20 @@ import {
   type WireEdmPostPackage
 } from '@/domain/post-processor/postPackageSchema';
 
-export const MACHINE_PACKAGE_ENTRY = 'wireedm-package.json';
-export const MACHINE_PACKAGE_SCHEMA_VERSION = 1 as const;
-export const MAX_MACHINE_PACKAGE_ARCHIVE_BYTES = 32 * 1024 * 1024;
-export const MAX_MACHINE_PACKAGE_EXPANDED_BYTES = 64 * 1024 * 1024;
-export const MAX_MACHINE_PACKAGE_ENTRIES = 2_048;
+import {
+  MACHINE_PACKAGE_ENTRY,
+  MACHINE_PACKAGE_SCHEMA_VERSION,
+  MAX_MACHINE_PACKAGE_ARCHIVE_BYTES,
+  MAX_MACHINE_PACKAGE_EXPANDED_BYTES,
+  MAX_MACHINE_PACKAGE_ENTRIES
+} from './machinePackageLimits';
+export {
+  MACHINE_PACKAGE_ENTRY,
+  MACHINE_PACKAGE_SCHEMA_VERSION,
+  MAX_MACHINE_PACKAGE_ARCHIVE_BYTES,
+  MAX_MACHINE_PACKAGE_EXPANDED_BYTES,
+  MAX_MACHINE_PACKAGE_ENTRIES
+} from './machinePackageLimits';
 
 const strictObject = { additionalProperties: false } as const;
 

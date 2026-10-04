@@ -8,6 +8,8 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 
 - `npm run dev` - start Vite on port **3777**
 - `npm test -- --run` - run tests once
+- `npm test -- --run --project pure-domain` - run pure geometry/planning suites in Node
+- `npm test -- --run --project browser` - run browser storage, DOM and app suites
 - `npm run build` - type-check and build
 - `npm run preview` - preview production build on port **3778**
 

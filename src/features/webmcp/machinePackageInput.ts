@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { MAX_MACHINE_PACKAGE_ARCHIVE_BYTES } from '@/domain/machine-package';
+import { MAX_MACHINE_PACKAGE_ARCHIVE_BYTES } from '@/domain/machine-package/machinePackageLimits';
 import { object, ToolError } from './siteTools';
 
 export const MAX_MACHINE_PACKAGE_BASE64_CHARACTERS = Math.ceil(MAX_MACHINE_PACKAGE_ARCHIVE_BYTES / 3) * 4;
