@@ -73,3 +73,5 @@ Remote refs were deleted with leases pinned to these tips after every tip passed
 | `feat/upid-simulation-workbench` | `188b1bdeda9a8a2d344fe1f4d16fd98153be1112` |
 | `fix/compensation-wording-startup-recovery` | `469d0e11158ff660c3099e426ba5af143d36f8b4` |
 | `refactor` | `e29927ba02974bdee84faf27a5dfe4784e570ff9` |
+
+The completed improvement branches `improve/workbench-reliability` (`a9bdbad`) and `improve/responsive-dxf-import` (`7b560b3`) were also removed locally and remotely after their merged ancestry was verified against `56fad6e`, using exact remote-tip leases. Active improvement worktrees remain in use. Both merged releases completed deployment successfully.
