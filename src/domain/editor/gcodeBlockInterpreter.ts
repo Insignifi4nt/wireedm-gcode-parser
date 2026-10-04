@@ -1,3 +1,6 @@
+import { canonicalGCodeCommand, gcodeCommandDefinition } from './gcodeCommands';
+import type { GCodeInspectionOptions } from './gcodeInspectionTypes';
+
 export type GCodeMotionCommand = 'G0' | 'G1' | 'G2' | 'G3';
 
 export interface GCodeInterpreterState {
@@ -9,6 +12,9 @@ export interface GCodeInterpreterState {
   xyMode: 'absolute' | 'incremental';
   ijMode: 'absolute' | 'incremental';
   motion: GCodeMotionCommand | null;
+  plane: 'XY' | 'XZ' | 'YZ';
+  compensation: 'off' | 'left' | 'right' | 'unknown';
+  positionKnown: boolean;
 }
 
 export interface GCodeInterpretedMotion {
@@ -17,6 +23,7 @@ export interface GCodeInterpretedMotion {
   end: { x: number; y: number };
   center?: { x: number; y: number };
   clockwise?: boolean;
+  breakBefore?: true;
 }
 
 export interface GCodeWord {
@@ -39,6 +46,7 @@ export interface GCodeBlockResult {
   issues: GCodeBlockIssue[];
   hadComment: boolean;
   commentOnly: boolean;
+  previewOmitted: boolean;
 }
 
 const NUMBER_SOURCE = '[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[Ee][-+]?\\d+)?';
@@ -46,21 +54,25 @@ const WORD_PATTERN = new RegExp(`([A-Z])\\s*(${NUMBER_SOURCE})`, 'gi');
 const POSITION_EPSILON = 1e-12;
 const SWEEP_RESOLUTION = Number.EPSILON * Math.PI * 4;
 
-export function createGCodeInterpreterState(profile: GCodeInterpreterState['profile'] = 'neutral'): GCodeInterpreterState {
+export function createGCodeInterpreterState(profile: GCodeInterpreterState['profile'] = 'neutral', defaults: GCodeInspectionOptions['defaults'] = {}): GCodeInterpreterState {
+  if (defaults.initialPosition && ![defaults.initialPosition.x, defaults.initialPosition.y].every(Number.isFinite)) {
+    throw new Error('Initial preview position must be finite.');
+  }
   return {
     profile,
-    position: { x: 0, y: 0 },
-    units: null,
-    xyMode: 'absolute',
-    ijMode: 'incremental',
-    motion: null
+    position: { ...(defaults.initialPosition ?? { x: 0, y: 0 }) },
+    units: defaults.units ?? null,
+    xyMode: defaults.xyMode ?? 'absolute',
+    ijMode: defaults.ijMode ?? 'incremental',
+    motion: null, plane: 'XY', compensation: 'off', positionKnown: true
   };
 }
 
 export function interpretGCodeBlock(
   state: GCodeInterpreterState,
   rawLine: string,
-  lineNumber: number
+  lineNumber: number,
+  context?: NonNullable<GCodeInspectionOptions['lineContexts']>[number]
 ): GCodeBlockResult {
   const issues: GCodeBlockIssue[] = [];
   const commentScan = stripComments(String(rawLine ?? ''), lineNumber, issues);
@@ -68,13 +80,28 @@ export function interpretGCodeBlock(
   const wordScan = scanWords(cleanedLine, lineNumber, issues);
   const words = wordScan.words;
   const gWords = words.filter((word) => word.letter === 'G');
+  const modalGroups = [[0, 1, 2, 3], [17, 18, 19], [20, 21], [90, 91], [90.1, 91.1], [40, 41, 42]];
+  if (modalGroups.some(group => new Set(gWords.filter(word => group.includes(word.value)).map(word => word.value)).size > 1)) {
+    state.motion = null; state.positionKnown = false;
+    issues.push(errorIssue(lineNumber, 'Conflicting commands in the same modal group; this block is omitted from preview.'));
+    return { ...createResult({ cleanedLine, words, explicitMotion: findExplicitMotion(gWords), positionSet: null, issues, commentScan }), previewOmitted: true };
+  }
+  if (context?.ijMode) state.ijMode = context.ijMode;
 
   for (const word of gWords) {
+    if (word.value === 17) state.plane = 'XY';
+    if (word.value === 18) state.plane = 'XZ';
+    if (word.value === 19) state.plane = 'YZ';
+    if (word.value === 40) state.compensation = 'off';
+    if (word.value === 41) state.compensation = 'left';
+    if (word.value === 42) state.compensation = 'right';
+    if (word.value === 39) state.compensation = 'unknown';
     if (word.value === 18 || word.value === 19) {
       issues.push({ line: lineNumber, type: 'warning',
         message: `G${word.value} selects a plane unsupported by the XY preview. The physical toolpath preview cannot be relied on for this program.` });
     }
     if ((word.value >= 52 && word.value < 60) || (word.value > 92 && word.value < 93)) {
+      state.positionKnown = false;
       issues.push({ line: lineNumber, type: 'warning',
         message: `G${word.value} coordinate-frame offsets are not modeled. The physical toolpath preview cannot be relied on for this program.` });
     }
@@ -88,6 +115,12 @@ export function interpretGCodeBlock(
     }
     if ((word.value === 60 && state.profile === 'legacy-robofil') || word.value === 90.1) state.ijMode = 'absolute';
     if (word.value === 91.1) state.ijMode = 'incremental';
+    if (gcodeCommandDefinition(canonicalGCodeCommand('G', word.value)).coverage === 'unknown') {
+      issues.push({ line: lineNumber, type: 'warning', message: `Unknown G-code command G${word.value}; its motion and coordinate effects are not modeled.` });
+    }
+  }
+  for (const annotation of context?.commands ?? []) {
+    if (annotation.compensation && words.some(word => canonicalGCodeCommand(word.letter, word.value) === annotation.code)) state.compensation = annotation.compensation;
   }
 
   const explicitMotion = findExplicitMotion(gWords);
@@ -107,16 +140,39 @@ export function interpretGCodeBlock(
   }
   const hasG92 = gWords.some((word) => word.value === 92);
   let positionSet: { x: number; y: number } | null = null;
+  const hasCoordinates = ['X', 'Y', 'I', 'J', 'R', 'Z', 'A', 'B', 'C', 'U', 'V', 'W'].some(letter => values.has(letter));
+  const unknownG = gWords.some(word => gcodeCommandDefinition(canonicalGCodeCommand('G', word.value)).coverage === 'unknown');
+  const cycle = gWords.some(word => word.value >= 80 && word.value <= 89);
+  const subprogram = words.some(word => word.letter === 'M' && (word.value === 98 || word.value === 99));
+  const referenceReturn = gWords.some(word => word.value === 28 || word.value === 30);
+  if (unknownG || cycle || subprogram || referenceReturn) state.motion = null;
+  if (unknownG || subprogram || referenceReturn) state.positionKnown = false;
+  const ownsCoordinates = gWords.some(word => gcodeCommandDefinition(canonicalGCodeCommand('G', word.value)).blocksImplicitMotion);
+  const unsupportedSyntax = wordScan.hasUnparsedText || /^\//.test(cleanedLine);
+  if (unsupportedSyntax) state.motion = null;
+  const suppressMotion = Boolean(context?.previewUnsupported || unsupportedSyntax || unknownG || subprogram || referenceReturn ||
+    (ownsCoordinates && hasCoordinates) || (state.plane !== 'XY' && hasCoordinates));
+  if (suppressMotion) {
+    if ((hasCoordinates && !gWords.every(word => word.value === 4)) || explicitMotion || unsupportedSyntax || context?.previewUnsupported) state.positionKnown = false;
+    if (!unknownG && !wordScan.hasUnparsedText) issues.push({ line: lineNumber, type: 'warning',
+      message: context?.previewUnsupported ?? 'Unsupported or conditional coordinate block omitted from the XY preview; its endpoint is not assumed.' });
+    return { ...createResult({ cleanedLine, words, explicitMotion, positionSet, issues, commentScan }), previewOmitted: true };
+  }
 
   if (hasG92) {
     if (!wordScan.hasInvalidPositionWord) {
       const hasX = values.has('X');
       const hasY = values.has('Y');
+      if (!state.positionKnown && hasX !== hasY) {
+        issues.push({ line: lineNumber, type: 'warning', message: 'Partial G92 cannot recover the unknown omitted axis after an unsupported block.' });
+        return { ...createResult({ cleanedLine, words, explicitMotion, positionSet, issues, commentScan }), previewOmitted: true };
+      }
       positionSet = {
         x: hasX ? normalized(values.get('X')!) : hasY ? state.position.x : 0,
         y: hasY ? normalized(values.get('Y')!) : hasX ? state.position.y : 0
       };
       state.position = { ...positionSet };
+      state.positionKnown = true;
     }
 
     return createResult({
@@ -133,6 +189,11 @@ export function interpretGCodeBlock(
 
   const hasMotionParameters = ['X', 'Y', 'I', 'J', 'R'].some((letter) => values.has(letter));
   const command = explicitMotion ?? (hasMotionParameters ? state.motion : null);
+  if (!command && hasMotionParameters) {
+    state.positionKnown = false;
+    issues.push({ line: lineNumber, type: 'warning', message: 'Coordinate words have no supported active motion mode; this block is omitted from preview.' });
+    return { ...createResult({ cleanedLine, words, explicitMotion, positionSet, issues, commentScan }), previewOmitted: true };
+  }
   if (!command || wordScan.hasInvalidMotionWord) {
     return createResult({
       cleanedLine,
@@ -145,6 +206,11 @@ export function interpretGCodeBlock(
   }
 
   const start = { ...state.position };
+  const recoveringPosition = !state.positionKnown;
+  if (recoveringPosition && (state.xyMode !== 'absolute' || !values.has('X') || !values.has('Y') || command === 'G2' || command === 'G3')) {
+    issues.push({ line: lineNumber, type: 'warning', message: 'Motion start is unknown after an omitted block. Supply complete absolute X/Y positioning before preview can resume.' });
+    return { ...createResult({ cleanedLine, words, explicitMotion, positionSet, issues, commentScan }), previewOmitted: true };
+  }
   const end = resolveEndPosition(state, start, values);
   if (![end.x, end.y].every(Number.isFinite)) {
     issues.push(errorIssue(lineNumber, 'Motion resolves to a non-finite endpoint.'));
@@ -159,8 +225,9 @@ export function interpretGCodeBlock(
   }
 
   if (command === 'G0' || command === 'G1') {
-    const motion: GCodeInterpretedMotion = { command, start, end };
+    const motion: GCodeInterpretedMotion = { command, start, end, ...(recoveringPosition ? { breakBefore: true as const } : {}) };
     state.position = { ...end };
+    state.positionKnown = true;
     return createResult({
       cleanedLine,
       words,
@@ -218,7 +285,7 @@ interface ResultValues {
   explicitMotion: GCodeMotionCommand | null;
   positionSet: { x: number; y: number } | null;
   issues: GCodeBlockIssue[];
-  commentScan: CommentScan;
+      commentScan: CommentScan;
 }
 
 function createResult(values: ResultValues): GCodeBlockResult {
@@ -233,7 +300,8 @@ function createResult(values: ResultValues): GCodeBlockResult {
     commentOnly:
       values.cleanedLine === '' &&
       values.commentScan.hadComment &&
-      values.commentScan.rawTrimmed !== ''
+      values.commentScan.rawTrimmed !== '',
+    previewOmitted: false
   };
 }
 
@@ -286,7 +354,11 @@ function scanWords(cleanedLine: string, lineNumber: number, issues: GCodeBlockIs
   WORD_PATTERN.lastIndex = 0;
 
   let match: RegExpExecArray | null;
+  let matchedEnd = 0;
+  let remainder = '';
   while ((match = WORD_PATTERN.exec(cleanedLine)) !== null) {
+    remainder += cleanedLine.slice(matchedEnd, match.index);
+    matchedEnd = WORD_PATTERN.lastIndex;
     const letter = match[1].toUpperCase();
     const value = Number.parseFloat(match[2]);
     if (!Number.isFinite(value)) {
@@ -298,7 +370,14 @@ function scanWords(cleanedLine: string, lineNumber: number, issues: GCodeBlockIs
     words.push({ letter, value });
   }
 
-  return { words, hasInvalidMotionWord, hasInvalidPositionWord };
+  remainder += cleanedLine.slice(matchedEnd);
+  const hasUnparsedText = remainder.trim() !== '' && cleanedLine !== '%';
+  if (hasUnparsedText) {
+    issues.push(errorIssue(lineNumber, 'Unrecognized block syntax or malformed word; this block is not used for preview.'));
+    // Keep the legacy source-bearing warning alongside the conservative preview error.
+    issues.push({ line: lineNumber, type: 'warning', message: `Unknown G-code command: ${cleanedLine}` });
+  }
+  return { words, hasInvalidMotionWord, hasInvalidPositionWord, hasUnparsedText };
 }
 
 function collectLastWordValues(words: GCodeWord[]) {

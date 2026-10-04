@@ -24,6 +24,7 @@ import { useAppRail } from '@/app/AppRailContext';
 import { RailResizeHandle } from '@/components/ui/RailResizeHandle';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
+
 import {
   deleteBodyGroup,
   moveBodyGroup,
@@ -241,6 +242,8 @@ import {
 } from './workspace/editorFloatingPanelPlacement';
 
 const SimulationPanel = lazy(() => import('@/features/simulation/SimulationPanel'));
+const GCodeInspectionDialog = lazy(() => import('./GCodeInspectionDialog')
+  .then((module) => ({ default: module.GCodeInspectionDialog })));
 
 interface EditorPageProps {
   onReadSnapshot?: (snapshot: import('@/features/webmcp/workbenchSiteTools').DraftReadSnapshot | null) => void;
@@ -391,6 +394,7 @@ export function EditorPage({
   >({});
   const [hoveredPathElement, setHoveredPathElement] = useState<EditorPathElementRef | null>(null);
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
+  const [gcodeInspectionOpen, setGcodeInspectionOpen] = useState(false);
   const [pathHoverAssistEnabled, setPathHoverAssistEnabled] = useState(false);
   const [setStartInferenceMode, setSetStartInferenceMode] =
     useState<SetStartInferenceMode>('endpoint');
@@ -911,6 +915,7 @@ export function EditorPage({
           clearTransientLineState();
         }}
         onOpenGuide={() => setGuideOpen(true)}
+        onInspectGCode={documentContext === 'machine-program' ? () => setGcodeInspectionOpen(true) : undefined}
         onRedo={() => { setWorkspaceView('editor'); handleRedoDraft(); }}
         onSave={() => { setWorkspaceView('editor'); return handleSaveClick(); }}
         onUndo={() => { setWorkspaceView('editor'); handleUndoDraft(); }}
@@ -3799,6 +3804,13 @@ export function EditorPage({
           onGenerateControllerArtifact={onGenerateControllerArtifact}
         />
       )}
+      {gcodeInspectionOpen && draftProgram?.model === 'gcode-text' && <Suspense fallback={<p role="status">Opening G-code inspection…</p>}>
+        <GCodeInspectionDialog text={draftText} fileName={editorFileName}
+          options={{ profile: interpreterProfile }}
+          provenance={[{ label: 'Source', value: hasUnsavedChanges ? 'Unsaved editable draft' : 'Saved editable program' },
+            { label: 'Text', value: 'Editable copy; import cleanup has already been applied. Original imports remain stored separately.' }]}
+          onClose={() => setGcodeInspectionOpen(false)} />
+      </Suspense>}
     </div>
   );
 }

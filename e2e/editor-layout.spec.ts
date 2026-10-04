@@ -52,6 +52,17 @@ test('machine program editor uses one header and an open resizable inspector', a
   await expect(page.locator('[data-app-header]')).toHaveCSS('height', '40px');
   await expect(page.locator('[data-editor-status-bar]')).toHaveCSS('height', '24px');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
+
+  await page.locator('[data-editor-code-section="text"] summary').click();
+  const draft = await page.getByRole('textbox', { name: 'Program editor', exact: true }).inputValue();
+  await appHeader.getByRole('button', { name: 'Inspect G-code draft' }).click();
+  const inspection = page.getByRole('dialog', { name: 'G-code inspection', exact: true });
+  await expect(inspection.locator('[data-inspection-line] code')).toHaveText(draft.split(/\r\n|\r|\n/).map(line => line || ' '));
+  await inspection.getByRole('button', { name: 'Context', exact: true }).click();
+  await expect(inspection).toContainText('import cleanup has already been applied');
+  await inspection.getByRole('button', { name: 'Close G-code inspection' }).click();
+  await expect(appHeader.getByRole('button', { name: 'Inspect G-code draft' })).toBeFocused();
+  await expect(page.getByRole('textbox', { name: 'Program editor', exact: true })).toHaveValue(draft);
 });
 
 test('machine program line commands stay fully visible at desktop and laptop widths', async ({ page }) => {

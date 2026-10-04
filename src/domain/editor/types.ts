@@ -4,6 +4,8 @@ export interface GCodeLinearPathPoint {
   y: number;
   line: number;
   meta?: Record<string, string>;
+  /** The endpoint anchors a new fragment; no connection across omitted source is known. */
+  breakBefore?: true;
 }
 
 export interface GCodeArcPathPoint {

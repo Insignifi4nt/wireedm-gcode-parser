@@ -11,6 +11,7 @@ import {
 } from '@/domain/post-processor/postLibrary';
 import { minimalPostPackage } from '@/domain/post-processor/__tests__/postPackageFixture';
 import type { ControllerArtifactResult } from '@/domain/wire-edm-job/controllerArtifact';
+import * as artifactInspection from '@/domain/wire-edm-job/controllerArtifactInspection';
 
 import { EditorControllerArtifactDialog } from '../EditorControllerArtifactDialog';
 
@@ -42,6 +43,7 @@ describe('EditorControllerArtifactDialog', () => {
     act(() => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('copies actionable exact diagnostics and falls back to selectable text when clipboard is denied', async () => {
@@ -101,6 +103,33 @@ describe('EditorControllerArtifactDialog', () => {
     expect(container.querySelector('pre')?.textContent).toBe(artifactText);
     expect(container.textContent).toContain('Output: .iso · CRLF · ASCII');
 
+    await click('Download project.iso');
+    expect(download).toHaveBeenCalledWith('project.iso', artifactText);
+  });
+
+  it('reports inspection failures separately and retries inspection while preserving exact download', async () => {
+    let failInspection!: (error: Error) => void;
+    const inspect = vi.spyOn(artifactInspection, 'createControllerArtifactInspection')
+      .mockImplementationOnce(() => new Promise<artifactInspection.ControllerArtifactInspection>((_resolve, reject) => { failInspection = reject; }))
+      .mockRejectedValueOnce(new Error('Inspection context still unavailable'));
+    const artifactText = 'G90\r\nG1 X10 Y5\r\nM2\r\n';
+    const artifact = { fileName: 'project.iso', text: artifactText };
+    const download = vi.fn();
+    const generate = vi.fn().mockResolvedValue({ ok: true, artifact });
+    await render({ onDownload: download, onGenerateControllerArtifact: generate });
+    await click('Generate controller artifact');
+    await click('Inspect G-code');
+    expect(button('Generate controller artifact').disabled).toBe(true);
+    await click('Generate controller artifact');
+    expect(generate).toHaveBeenCalledOnce();
+    await act(async () => failInspection(new Error('Inspection context unavailable')));
+    expect(button('Generate controller artifact').disabled).toBe(false);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Inspection could not open: Inspection context unavailable');
+    expect(container.textContent).not.toContain('Download failed');
+    await click('Retry inspection');
+    expect(inspect).toHaveBeenCalledTimes(2);
+    expect(inspect.mock.calls[1]).toEqual(inspect.mock.calls[0]);
+    expect(container.querySelector('pre')?.textContent).toBe(artifactText);
     await click('Download project.iso');
     expect(download).toHaveBeenCalledWith('project.iso', artifactText);
   });

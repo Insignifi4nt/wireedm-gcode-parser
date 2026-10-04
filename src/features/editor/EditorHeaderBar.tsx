@@ -1,5 +1,5 @@
 import { useRef, type ChangeEvent, type ReactNode } from 'react';
-import { ArrowLeft, CircleHelp, FileOutput, FileUp, Redo2, Save, Undo2 } from 'lucide-react';
+import { ArrowLeft, CircleHelp, FileOutput, FileSearch, FileUp, Redo2, Save, Undo2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { GCodeInterpreterState } from '@/domain/editor/gcodeBlockInterpreter';
@@ -40,6 +40,7 @@ interface EditorHeaderBarProps {
   onImportProgramFile: (file: File) => void | Promise<void>;
   onInterpreterProfileChange?: (profile: GCodeInterpreterState['profile']) => void;
   onOpenGuide: () => void;
+  onInspectGCode?: () => void;
   onRedo: () => void;
   onSave: () => void | Promise<void>;
   onUndo: () => void;
@@ -70,6 +71,7 @@ export function EditorHeaderBar({
   onImportProgramFile,
   onInterpreterProfileChange,
   onOpenGuide,
+  onInspectGCode,
   onRedo,
   onSave,
   onUndo
@@ -138,6 +140,10 @@ export function EditorHeaderBar({
           </div>
         )}
         <div className="flex shrink-0 items-center gap-1" data-editor-header-document-commands>
+        {onInspectGCode && <Button aria-label="Inspect G-code draft" className="h-7 px-2 text-[11px]"
+          data-editor-header-command disabled={interactionLocked} onClick={onInspectGCode} size="sm" variant="outline">
+          <FileSearch /><span data-editor-header-command-label>Inspect</span>
+        </Button>}
         <Button
           aria-label="Undo active document change"
           className="h-7 px-2 text-[11px]"

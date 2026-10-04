@@ -108,6 +108,10 @@ export function buildEditorPreviewGeometry(
     }
 
     if (point.type === 'rapid' || point.type === 'cut') {
+      if (point.breakBefore) {
+        currentPoint = { x: point.x, y: point.y };
+        continue;
+      }
       const start = currentPoint ?? { x: point.x, y: point.y };
       paths.push({
         type: point.type,

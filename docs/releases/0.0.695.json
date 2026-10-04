@@ -1,0 +1,33 @@
+{
+  "version": "0.0.695",
+  "previousVersion": "0.0.694",
+  "postCompatibility": "preserved-output-explicit-inspection-context",
+  "summary": "Adds shared G-code inspection for standalone programs, editable drafts and exact saved controller output.",
+  "warning": "Installed post packages and generated output are unchanged. G-code preview interpretation is intentionally more conservative: unsupported commands, cycles, macros and coordinate resets can omit motion or break connections that older previews drew speculatively. G39 is identified as controller-specific and receives an exact explanation only from supplied post context. This is a nominal XY inspection view, not controller execution verification.",
+  "checklist": {
+    "schema": "App version advances once to 0.0.695. UPID, post, package, engine API, stored project, saved revision and interpreter-profile schemas are unchanged. New inspection options and modal trace are ephemeral domain types.",
+    "events": "Execution-event contracts, sequencing, compilation, post invocation and translation are unchanged. The posted-text interpreter reports unsupported blocks without inventing continuous geometry.",
+    "capabilities": "Installed post capability claims and existing WebMCP contracts are unchanged. Inspection derives scoped descriptions and arc-center context from the exact saved post when its machine/setup/property hashes match the artifact. Generic G-code requires explicit assumptions and retains unsupported-command diagnostics.",
+    "auditAndOutput": "Post audit, saved-revision generation and exact output serialization remain authoritative. Inspection preserves the supplied artifact text and delegates exact download to the original artifact action. It does not normalize, regenerate on download retry, alter output preferences or certify a physical controller.",
+    "installationAndStorage": "No migration, cleanup, package rewrite or saved-revision mutation. Standalone file/paste inspection writes no project. Existing editable import cleanup and storage flows remain available; the inspector labels drafts separately from exact exports.",
+    "verification": "Independent implementation and final delta reviews pass, including executable probes for source decoding, unsupported motion, coordinate resets, numeric failures/extents, exact context and asynchronous artifact races. Integrated regression suite: 209 files / 2,092 tests pass with existing assertions preserved. The final pending-inspection guard passes the 19-test controller-dialog suite; final app/config TypeScript passes. Production build, 26 documentation pages / 84 files, generated post contract parity and STEP source distribution pass. Final targeted Chromium batch: all 29 cases pass, covering standalone file/paste, draft inspection, exact fresh/saved artifact bytes, unchanged persisted cache, keyboard/focus, 360-pixel export/revision dialogs and existing 320/767-pixel editor layouts. Three UPID fixtures, three unchanged Robofil 2.6.0 post conformance fixtures and complete machine-package validation pass. GitHub repeats the complete suite before merge."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Unchanged post passes all three conformance fixtures and complete package validation. Native installation, generation, fresh/saved inspection and exact download equality pass; pinned G39 effects and arc-center properties are inspected without changing output. No physical controller verification is claimed."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Inspect G-code directly, from an editable draft, or from a saved controller export.",
+    "changes": [
+      "Inspect a UTF-8/ASCII file or pasted program without creating a project, with search, source-line navigation, command coverage and modal-state details.",
+      "Open exact controller output from the export dialog or saved revisions with its pinned post, machine and revision context.",
+      "Unknown and unsupported commands remain visible; the XY preview reports omitted motion and uncertain positions instead of drawing speculative connections.",
+      "Existing editable imports and UPID authoring remain available. Inspection preserves source text and does not change the project."
+    ],
+    "compatibility": "Installed posts, saved revisions and controller output rules are unchanged. Some external G-code previews are now deliberately incomplete where controller behavior is not modeled.",
+    "action": "Choose Inspect G-code in Start Work, Inspect in a Machine Program, or Inspect G-code after generating controller output. Read Context and Issues before interpreting the nominal XY preview."
+  }
+}

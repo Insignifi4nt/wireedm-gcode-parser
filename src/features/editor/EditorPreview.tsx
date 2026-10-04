@@ -11,6 +11,7 @@ import { Magnet, Maximize2, MousePointer2, ZoomIn, ZoomOut } from 'lucide-react'
 
 import { Button } from '@/components/ui/button';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
+import type { GCodeParseResult } from '@/domain/editor/types';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import { measurePointPair } from '@/domain/editor/geometryMeasurement';
 import { matchesPreviewSelectionFilter, PREVIEW_SELECTION_FILTERS, previewSelectionCandidates, segmentIntersectsSelectionRect, type PreviewSelectionFilter } from '@/domain/editor/previewSelection';
@@ -69,6 +70,9 @@ interface EditorPreviewProps {
   previewLabel?: string;
   previewTitle?: string;
   program: LoadedEditorProgram | null;
+  /** Posted-text inspection does not need a stored project. */
+  parseResult?: GCodeParseResult;
+  onLineSelect?: (line: number) => void;
   hoveredLine: number | null;
   hoveredPathElement?: EditorPathElementRef | null;
   keyboardShortcutsEnabled?: boolean;
@@ -137,6 +141,8 @@ export function EditorPreview({
   constructionPreview,
   startPreview,
   program,
+  parseResult,
+  onLineSelect,
   hoveredLine,
   hoveredPathElement,
   keyboardShortcutsEnabled = true,
@@ -171,10 +177,10 @@ export function EditorPreview({
         ? buildEditorPathDocumentPreviewGeometry(pathDocument, {
             padding: 1,
           })
-        : program?.parseResult
-          ? buildEditorPreviewGeometry(program.parseResult, { padding: 1 })
+        : (parseResult ?? program?.parseResult)
+          ? buildEditorPreviewGeometry((parseResult ?? program?.parseResult)!, { padding: 1 })
           : null,
-    [pathDocument, program]
+    [pathDocument, program, parseResult]
   );
   const selected = useMemo(() => new Set(selectedLines), [selectedLines]);
   const stopMarkers = useMemo(() => pathDocument && spatialActions.length === 0 ? programStopPreview(pathDocument) : [], [pathDocument, spatialActions]);
@@ -1179,6 +1185,11 @@ export function EditorPreview({
                   if (suppressClickRef.current) {
                     suppressClickRef.current = false;
                     event.stopPropagation();
+                    return;
+                  }
+                  if (path.source === 'gcode' && onLineSelect) {
+                    event.stopPropagation();
+                    onLineSelect(path.line);
                     return;
                   }
                   if (path.source !== 'path-document' || !path.operationId || !onPathElementClick) return;
