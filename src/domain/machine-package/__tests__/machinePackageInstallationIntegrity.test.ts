@@ -35,6 +35,34 @@ describe.each(['cache', 'folder'] as const)('%s machine-package installation exa
     return { adapter, before, prepared: prepared.prepared };
   }
 
+  it('journals the exact historical catalog encoding written by installation', async () => {
+    const { adapter, before, prepared } = await fixture();
+    const write = adapter.writeText.bind(adapter);
+    let journalText: string | null = null;
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      if (path === CATALOG_PAIR_TRANSACTION_PATH) journalText = text;
+      await write(path, text);
+    });
+    const installed = await commitStoredMachinePackageInstallation(prepared, { kind: 'install-new' });
+    if (!installed.ok) throw new Error(installed.error.message);
+    const expectedPosts = JSON.stringify({
+      format: 'wire-edm-post-library', schemaVersion: 1,
+      installations: installed.workbench.posts.installations
+    }, null, 2);
+    const expectedMachines = JSON.stringify({
+      format: 'wire-edm-machine-library', schemaVersion: 1,
+      machines: installed.workbench.machines.machines
+    }, null, 2);
+    expect(await exact(adapter, POST_LIBRARY_PATH)).toBe(expectedPosts);
+    expect(await exact(adapter, MACHINE_LIBRARY_PATH)).toBe(expectedMachines);
+    expect(JSON.parse(journalText ?? '')).toEqual({
+      format: 'wire-edm-catalog-pair-transaction', schemaVersion: 1,
+      previousPosts: before.get(POST_LIBRARY_PATH), previousMachines: before.get(MACHINE_LIBRARY_PATH),
+      nextPosts: expectedPosts, nextMachines: expectedMachines
+    });
+    expect(await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH)).toBeNull();
+  });
+
   it('restores original catalog text, including folder BOMs, when a catalog write fails', async () => {
     const { adapter, before, prepared } = await fixture();
     const write = adapter.writeText.bind(adapter);

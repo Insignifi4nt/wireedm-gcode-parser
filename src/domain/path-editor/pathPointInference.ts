@@ -115,37 +115,17 @@ export function inferPathPoint(
               nearestPointOnSegment(segment, ref, request.hintPoint).point
             )
           : hintDistance;
-      const inferred: InferredPathPoint = {
-        ...candidate,
+      const inferred = createInferredPathPoint({
+        candidate,
         distance: hintDistance,
-        endpointRole: endpointRoleFor(
-          segment,
-          ref,
-          candidate.point,
-          document.options.coincidenceEpsilon
-        ),
-        mode: request.mode,
+        epsilon: document.options.coincidenceEpsilon,
         operationId: operation.id,
         pathElementId,
-        segmentId: ref.segmentId,
+        ref,
+        request,
+        segment,
         segmentIndex,
-        ...(request.sourcePoint
-          ? {
-              sourcePoint: { ...request.sourcePoint },
-              guide: {
-                from: { ...request.sourcePoint },
-                to: { ...candidate.point }
-              }
-            }
-          : request.mode === 'nearest'
-            ? {
-                guide: {
-                  from: { ...request.hintPoint },
-                  to: { ...candidate.point }
-                }
-              }
-          : {})
-      };
+      });
       if (!best || selectionDistance < bestSelectionDistance) {
         best = inferred;
         bestSelectionDistance = selectionDistance;
@@ -184,20 +164,40 @@ export function inferPathPointOnSegment(
   if (!candidate) return null;
   const pathElementId =
     document.pathElements.find((element) => element.operationId === operation.id)?.id ?? null;
-  return {
-    ...candidate,
+  return createInferredPathPoint({
+    candidate,
     distance: distance(request.hintPoint, candidate.point),
-    endpointRole: endpointRoleFor(
-      segment,
-      ref,
-      candidate.point,
-      document.options.coincidenceEpsilon
-    ),
-    mode: request.mode,
+    epsilon: document.options.coincidenceEpsilon,
     operationId: operation.id,
     pathElementId,
-    segmentId: ref.segmentId,
-    segmentIndex,
+    ref,
+    request,
+    segment,
+    segmentIndex
+  });
+}
+
+function createInferredPathPoint(input: {
+  candidate: SegmentCandidate;
+  distance: number;
+  epsilon: number;
+  operationId: string;
+  pathElementId: PathElementId | null;
+  ref: OrientedSegmentRef;
+  request: PathPointInferenceRequest;
+  segment: PathSegment;
+  segmentIndex: number;
+}): InferredPathPoint {
+  const { candidate, request } = input;
+  return {
+    ...candidate,
+    distance: input.distance,
+    endpointRole: endpointRoleFor(input.segment, input.ref, candidate.point, input.epsilon),
+    mode: request.mode,
+    operationId: input.operationId,
+    pathElementId: input.pathElementId,
+    segmentId: input.ref.segmentId,
+    segmentIndex: input.segmentIndex,
     ...(request.sourcePoint
       ? {
           sourcePoint: { ...request.sourcePoint },

@@ -56,6 +56,12 @@ describe.each(['browser-cache', 'directory'] as const)('legacy external program 
     expect(await exact(adapter, backupPath)).toBe(project);
     expect(await exact(adapter, `imports/${id}.iso`)).toBe(originalProgram);
     expect(await exact(adapter, activeFilePath)).toBe(editedProgram);
+    expect(await exact(adapter, 'posts/library.json')).toBe(
+      '{\n  "format": "wire-edm-post-library",\n  "schemaVersion": 1,\n  "installations": []\n}'
+    );
+    expect(await exact(adapter, 'machines/library.json')).toBe(
+      '{\n  "format": "wire-edm-machine-library",\n  "schemaVersion": 1,\n  "machines": []\n}'
+    );
     if (layout === 'nested') expect(await exact(adapter, path)).toBe(project);
     const currentManifest = await exact(adapter, 'workbench.json');
     expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: true, kind: 'opened' });
