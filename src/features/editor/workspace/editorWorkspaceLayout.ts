@@ -24,10 +24,10 @@ export interface EditorWorkspaceLayoutV1 {
 export function readEditorWorkspaceLayout(
   defaults: EditorWorkspaceLayoutV1,
   viewport: EditorWorkspaceLayoutViewport,
-  storage: Pick<Storage, 'getItem'> = localStorage
+  storage: Pick<Storage, 'getItem'> | undefined = undefined
 ): EditorWorkspaceLayoutV1 {
   try {
-    const stored = storage.getItem(EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY);
+    const stored = (storage === undefined ? globalThis.localStorage : storage).getItem(EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY);
     if (!stored) return defaults;
     return normalizeEditorWorkspaceLayout(JSON.parse(stored), defaults, viewport);
   } catch {
@@ -37,9 +37,13 @@ export function readEditorWorkspaceLayout(
 
 export function writeEditorWorkspaceLayout(
   layout: EditorWorkspaceLayoutV1,
-  storage: Pick<Storage, 'setItem'> = localStorage
+  storage: Pick<Storage, 'setItem'> | undefined = undefined
 ) {
-  storage.setItem(EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+  try {
+    (storage === undefined ? globalThis.localStorage : storage).setItem(EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+  } catch {
+    // Layout changes still apply to this session when preferences cannot be persisted.
+  }
 }
 
 export function readEditorWorkspaceRenderedPlacement(

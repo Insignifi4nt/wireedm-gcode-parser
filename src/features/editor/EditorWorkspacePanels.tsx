@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -429,6 +430,10 @@ export function EditorFloatingPanel({
 }: EditorFloatingPanelProps) {
   const compactDrawerCloseRef = useRef<HTMLButtonElement>(null);
   const compactDrawerTitleId = useId();
+  const pointerInteractionCleanupRef = useRef<(() => void) | null>(null);
+  const interactive = !isCompactWorkflow || (compactDrawerOpen && !compactTransitionOverlay);
+
+  useLayoutEffect(() => () => pointerInteractionCleanupRef.current?.(), [id, interactive]);
 
   useEffect(() => {
     if (!compactDrawerOpen || compactTransitionOverlay) return;
@@ -465,31 +470,50 @@ export function EditorFloatingPanel({
     }
   }
 
-  function handleDragStart(event: PointerEvent<HTMLButtonElement>) {
+  function beginPointerInteraction(
+    event: PointerEvent<HTMLButtonElement>,
+    onMove: (event: globalThis.PointerEvent) => void,
+    onEnd?: (event: globalThis.PointerEvent) => void
+  ) {
+    if (!interactive || event.button !== 0 || pointerInteractionCleanupRef.current) return;
     event.preventDefault();
+    const pointerId = event.pointerId;
+    function cleanup() {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerCancel);
+      window.removeEventListener('blur', cleanup);
+      if (pointerInteractionCleanupRef.current === cleanup) pointerInteractionCleanupRef.current = null;
+    }
+    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
+      if (moveEvent.pointerId === pointerId) onMove(moveEvent);
+    }
+    function handlePointerUp(upEvent: globalThis.PointerEvent) {
+      if (upEvent.pointerId !== pointerId) return;
+      cleanup();
+      onEnd?.(upEvent);
+    }
+    function handlePointerCancel(cancelEvent: globalThis.PointerEvent) {
+      if (cancelEvent.pointerId === pointerId) cleanup();
+    }
+    pointerInteractionCleanupRef.current = cleanup;
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerCancel);
+    window.addEventListener('blur', cleanup);
+  }
+
+  function handleDragStart(event: PointerEvent<HTMLButtonElement>) {
     const startX = event.clientX;
     const startY = event.clientY;
     const startGeometry = geometry;
-    let lastPoint = { x: event.clientX, y: event.clientY };
-
-    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      lastPoint = { x: moveEvent.clientX, y: moveEvent.clientY };
+    beginPointerInteraction(event, (moveEvent) => {
       onGeometryChange({
         ...startGeometry,
         x: Math.max(6, startGeometry.x + moveEvent.clientX - startX),
         y: Math.max(42, startGeometry.y + moveEvent.clientY - startY)
       });
-    }
-
-    function handlePointerUp(upEvent: globalThis.PointerEvent) {
-      lastPoint = { x: upEvent.clientX, y: upEvent.clientY };
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-      onDragEnd(lastPoint);
-    }
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp, { once: true });
+    }, (upEvent) => onDragEnd({ x: upEvent.clientX, y: upEvent.clientY }));
   }
 
   function handleMoveKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
@@ -521,27 +545,18 @@ export function EditorFloatingPanel({
   }
 
   function handleResizeStart(event: PointerEvent<HTMLButtonElement>) {
-    event.preventDefault();
     event.stopPropagation();
     const startX = event.clientX;
     const startY = event.clientY;
     const startGeometry = geometry;
 
-    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
+    beginPointerInteraction(event, (moveEvent) => {
       onGeometryChange({
         ...startGeometry,
         width: Math.max(260, startGeometry.width + moveEvent.clientX - startX),
         height: Math.max(180, startGeometry.height + moveEvent.clientY - startY)
       });
-    }
-
-    function handlePointerUp() {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    }
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp, { once: true });
+    });
   }
 
   return (

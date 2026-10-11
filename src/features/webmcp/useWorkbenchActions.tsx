@@ -169,7 +169,9 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
       checkVersion(input.expectedVersion);
       signal.throwIfAborted();
       return app.runAgentWorkbenchOperation(async workbench => {
-        const result = await importPortableUpidProject(workbench, value);
+        const result = await importPortableUpidProject(workbench, { ...value,
+          beforeWrite: () => { signal.throwIfAborted(); checkVersion(input.expectedVersion); }
+        });
         if (!result.ok) throw new ToolError(result.error.code, result.error.message);
         return openImported(result.workbench, result.project.id);
       });

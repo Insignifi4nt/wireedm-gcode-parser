@@ -20,6 +20,7 @@ interface EditorCanvasPanelProps {
   guideOpen: boolean;
   hoveredLine: number | null;
   interactionHint?: string | null;
+  interactionKey?: string;
   hoveredPathElement?: EditorPathElementRef | null;
   measurementPoints: MeasurementPoint[];
   measurement?: EditorMeasurementState;
@@ -56,6 +57,7 @@ export function EditorCanvasPanel({
   guideOpen,
   hoveredLine,
   interactionHint,
+  interactionKey,
   hoveredPathElement,
   measurementPoints,
   measurement,
@@ -96,6 +98,7 @@ export function EditorCanvasPanel({
           constructionPreview={constructionPreview}
           startPreview={startPreview}
           keyboardShortcutsEnabled={!guideOpen}
+          interactionKey={interactionKey}
           measurementPoints={measurementPoints}
           measurement={measurement}
           onCursorPointChange={onCursorPointChange}

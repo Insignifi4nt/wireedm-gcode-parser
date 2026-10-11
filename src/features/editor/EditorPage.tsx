@@ -475,6 +475,10 @@ export function EditorPage({
   const draftSignature = useMemo(() => editorDraftSignature(draftState), [draftState]);
   const hasUnsavedChanges = Boolean(program && draftSignature !== savedDraftSignature);
   const readVersion = useMemo(() => crypto.randomUUID(), [draftState, program, hasUnsavedChanges, activeWorkflowSession, workspaceView]);
+  const canvasInteractionVersion = useMemo(() => crypto.randomUUID(), [draftState, program,
+    activeWorkflowSession?.commandId, activeWorkflowSession?.openingSnapshot, workspaceView]);
+  const canvasConstructionSource = pathClickMode === 'perpendicular' || pathClickMode === 'tangent'
+    ? measurementPoints.at(-1) : undefined;
   useLayoutEffect(() => {
     onReadSnapshot?.({ projectId: program?.project.id ?? null, version: readVersion, document: pathDocumentDraft,
       dirty: hasUnsavedChanges, workflowOpen: activeWorkflowSession !== null,
@@ -3651,6 +3655,9 @@ export function EditorPage({
           guideOpen={guideOpen}
           hoveredLine={hoveredLine}
           interactionHint={editorInteractionHint}
+          interactionKey={JSON.stringify([canvasInteractionVersion, entryExitCanvasPick?.kind, entryExitCanvasPick?.operationId,
+            pathClickMode, isEditorMutationLocked, canvasConstructionSource?.id, canvasConstructionSource?.x,
+            canvasConstructionSource?.y, pathClickMode === 'set-start' ? setStartInferenceMode : undefined])}
           hoveredPathElement={activeHoveredPathElement}
           measurementPoints={measurementPoints}
           onCursorPointChange={setPreviewCursorPoint}
