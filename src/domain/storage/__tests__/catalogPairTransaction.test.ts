@@ -85,7 +85,7 @@ describe('catalog-pair transaction recovery', () => {
     expect(adapter.files).toEqual(before);
   });
 
-  it('removes malformed bytes when transaction-journal creation fails readback', async () => {
+  it('retains malformed bytes when transaction-journal creation fails readback', async () => {
     const adapter = new MemoryAdapter();
     adapter.corruptNextJournalWrite = true;
 
@@ -100,8 +100,9 @@ describe('catalog-pair transaction recovery', () => {
       ok: false,
       error: { code: 'CATALOG_PAIR_TRANSACTION_READBACK_MISMATCH' }
     });
-    expect(adapter.files.has(CATALOG_PAIR_TRANSACTION_PATH)).toBe(false);
-    expect(await recoverCatalogPairTransaction(adapter)).toEqual({ ok: true });
+    // Unexpected bytes do not prove ownership, even before catalog writes start.
+    expect(adapter.files.get(CATALOG_PAIR_TRANSACTION_PATH)).toBe('{');
+    expect(await recoverCatalogPairTransaction(adapter)).toMatchObject({ ok: false });
   });
 });
 

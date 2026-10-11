@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   createMachinePostBinding,
@@ -11,6 +11,10 @@ import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPl
 import { createEmptyPostLibrary, installPostPackage } from '@/domain/post-processor/postLibrary';
 import type { WireEdmPostPackageValue } from '@/domain/post-processor/postPackageSchema';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
+import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
+import { createBrowserDirectoryAdapter } from '@/domain/storage/browserDirectoryAdapter';
+import { FakeDirectoryHandle } from '@/domain/storage/__tests__/fakeDirectoryHandle';
+import { readExactTransactionText as exact } from '@/domain/storage/transactionFileState';
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
 import { createUpidFromDxfEntities as createUnresolvedUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { createWorkbenchProjectDocument } from '@/domain/workbench-catalog/workbenchProject';
@@ -254,7 +258,7 @@ describe('saved Wire EDM job revision', () => {
     });
   });
 
-  it('keeps revision paths immutable and rolls back a failed new-file verification', async () => {
+  it('keeps revision paths immutable and preserves bytes that cannot be verified after failure', async () => {
     const fixture = await revisionFixture();
     expect(await persistSavedWireEdmJobRevision(
       fixture.adapter,
@@ -315,9 +319,10 @@ describe('saved Wire EDM job revision', () => {
       fixture.candidate
     )).toMatchObject({
       ok: false,
-      error: { code: 'SAVED_REVISION_STORAGE_READBACK_MISMATCH' }
+      error: { code: 'SAVED_REVISION_STORAGE_ROLLBACK_FAILED' }
     });
-    expect(stored).toBeNull();
+    // Readback corruption cannot establish that deleting the stored file is safe.
+    expect(stored).toBe(serializeSavedWireEdmJobRevision(fixture.candidate));
 
     let failedRollbackReads = 0;
     const failedRollbackAdapter: WorkbenchStorageAdapter = {
@@ -355,7 +360,7 @@ describe('saved Wire EDM job revision', () => {
       ok: false,
       error: { code: 'SAVED_REVISION_STORAGE_WRITE_FAILED' }
     });
-    expect(deleteAttempts).toBe(1);
+    expect(deleteAttempts).toBe(0);
   });
 
   it('recompiles and verifies both the plan and hashes when parsing', async () => {
@@ -602,6 +607,110 @@ describe('saved Wire EDM job revision', () => {
       }
     });
     expect(generated).not.toHaveProperty('artifact');
+  });
+});
+
+describe.each(['cache', 'folder'] as const)('%s standalone revision persistence failures', (kind) => {
+  function storage(): WorkbenchStorageAdapter {
+    return kind === 'cache' ? createBrowserCacheAdapter(localStorage, { namespace: crypto.randomUUID() })
+      : createBrowserDirectoryAdapter(new FakeDirectoryHandle('standalone-revision') as unknown as FileSystemDirectoryHandle);
+  }
+
+  it.each(['write', 'readback'] as const)('retains unknown revision bytes after a %s failure', async (failure) => {
+    const fixture = await revisionFixture();
+    const adapter = storage();
+    const write = adapter.writeText.bind(adapter);
+    const unknown = '\ufeffUNRELATED IMMUTABLE REVISION\r\n';
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path) => {
+      await write(path, unknown);
+      if (failure === 'write') throw new Error('Interrupted write');
+    });
+    const remove = vi.spyOn(adapter, 'deleteText');
+    expect(await persistSavedWireEdmJobRevision(adapter, fixture.candidate)).toMatchObject({
+      ok: false, error: { code: 'SAVED_REVISION_STORAGE_ROLLBACK_FAILED', message: expect.stringContaining('preserved') }
+    });
+    expect(await exact(adapter, fixture.path)).toBe(unknown);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it.each(['candidate', 'empty'] as const)('removes only its recognized %s image after a failed write', async (image) => {
+    const fixture = await revisionFixture();
+    const adapter = storage();
+    const write = adapter.writeText.bind(adapter);
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      await write(path, image === 'empty' ? '' : text);
+      throw new Error('Interrupted write');
+    });
+    expect(await persistSavedWireEdmJobRevision(adapter, fixture.candidate)).toMatchObject({
+      ok: false, error: { code: 'SAVED_REVISION_STORAGE_WRITE_FAILED' }
+    });
+    expect(await exact(adapter, fixture.path)).toBeNull();
+  });
+
+  it.each(['mismatch', 'unavailable'] as const)('retains an emptied revision after a completed write and %s readback', async (failure) => {
+    const fixture = await revisionFixture();
+    const adapter = storage();
+    const read = adapter.readExactText!.bind(adapter);
+    const write = adapter.writeText.bind(adapter);
+    let reads = 0;
+    vi.spyOn(adapter, 'readExactText').mockImplementation(async (path) => {
+      if (path === fixture.path && ++reads === 2) {
+        await write(path, '');
+        if (failure === 'unavailable') throw new Error('Readback unavailable');
+      }
+      return read(path);
+    });
+    const remove = vi.spyOn(adapter, 'deleteText');
+    expect(await persistSavedWireEdmJobRevision(adapter, fixture.candidate)).toMatchObject({
+      ok: false, error: { code: 'SAVED_REVISION_STORAGE_ROLLBACK_FAILED', message: expect.stringContaining('preserved') }
+    });
+    expect(await read(fixture.path)).toBe('');
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('cleans up its complete candidate after a completed write and transient read failure', async () => {
+    const fixture = await revisionFixture();
+    const adapter = storage();
+    const read = adapter.readExactText!.bind(adapter);
+    let reads = 0;
+    vi.spyOn(adapter, 'readExactText').mockImplementation(async (path) => {
+      if (path === fixture.path && ++reads === 2) throw new Error('Readback unavailable');
+      return read(path);
+    });
+    expect(await persistSavedWireEdmJobRevision(adapter, fixture.candidate)).toMatchObject({
+      ok: false, error: { code: 'SAVED_REVISION_STORAGE_READ_FAILED' }
+    });
+    expect(await read(fixture.path)).toBeNull();
+  });
+
+  it('retains evidence when deletion reports success without removing its known image', async () => {
+    const fixture = await revisionFixture();
+    const adapter = storage();
+    const write = adapter.writeText.bind(adapter);
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      await write(path, text);
+      throw new Error('Interrupted write');
+    });
+    vi.spyOn(adapter, 'deleteText').mockResolvedValue();
+    expect(await persistSavedWireEdmJobRevision(adapter, fixture.candidate)).toMatchObject({
+      ok: false, error: { code: 'SAVED_REVISION_STORAGE_ROLLBACK_FAILED' }
+    });
+    expect(await exact(adapter, fixture.path)).toBe(serializeSavedWireEdmJobRevision(fixture.candidate));
+  });
+
+  it('compares a preexisting revision including its exact BOM and retains it on conflict', async () => {
+    const fixture = await revisionFixture();
+    const adapter = storage();
+    const original = `\ufeff${serializeSavedWireEdmJobRevision(fixture.candidate)}`;
+    await adapter.writeText(fixture.path, original);
+    const write = vi.spyOn(adapter, 'writeText');
+    const remove = vi.spyOn(adapter, 'deleteText');
+    expect(await persistSavedWireEdmJobRevision(adapter, fixture.candidate)).toMatchObject({
+      ok: false, error: { code: 'SAVED_REVISION_STORAGE_CONFLICT' }
+    });
+    expect(await exact(adapter, fixture.path)).toBe(original);
+    expect(write).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
   });
 });
 

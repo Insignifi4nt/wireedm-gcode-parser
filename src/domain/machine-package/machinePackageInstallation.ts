@@ -27,7 +27,8 @@ import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageA
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import {
   beginCatalogPairTransaction,
-  finishCatalogPairTransaction,
+  finishExpectedCatalogPairTransaction,
+  serializeCatalogPairTransaction,
   rollbackCatalogPairTransaction
 } from '@/domain/storage/catalogPairTransaction';
 import {
@@ -524,7 +525,7 @@ async function persistCatalogsAtomically(
       }
     });
   }
-  const finished = await finishCatalogPairTransaction(adapter);
+  const finished = await finishExpectedCatalogPairTransaction(adapter, serializeCatalogPairTransaction(transactionValues));
   return finished.ok
     ? { ok: true }
     : rollbackCatalogs(adapter, transactionValues, finished);

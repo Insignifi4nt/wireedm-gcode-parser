@@ -2,6 +2,16 @@ import { MACHINE_LIBRARY_PATH } from '@/domain/machine-definition/machineLibrary
 import { POST_LIBRARY_PATH } from '@/domain/post-processor/postLibraryStorage';
 
 import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
+import {
+  cleanupFailedTransactionJournalWrite,
+  readExactTransactionText as readExact,
+  removeTransactionJournal,
+  TransactionJournalConflictError,
+  TransactionJournalReadbackError,
+  verifyTransactionJournal,
+  verifyTransactionJournalAbsent,
+  type TransactionJournalWritePhase
+} from './transactionFileState';
 
 export const CATALOG_PAIR_TRANSACTION_DIRECTORY = 'transactions';
 export const CATALOG_PAIR_TRANSACTION_PATH = `${CATALOG_PAIR_TRANSACTION_DIRECTORY}/machine-package-install.json`;
@@ -31,64 +41,83 @@ export type CatalogPairTransactionResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: CatalogPairTransactionError };
 
+export function serializeCatalogPairTransaction(values: Omit<CatalogPairTransaction, 'format' | 'schemaVersion'>) {
+  return JSON.stringify({ format: 'wire-edm-catalog-pair-transaction', schemaVersion: 1, ...values });
+}
+
 export async function beginCatalogPairTransaction(
   adapter: WorkbenchStorageAdapter,
   values: Omit<CatalogPairTransaction, 'format' | 'schemaVersion'>
 ): Promise<CatalogPairTransactionResult> {
-  const transaction: CatalogPairTransaction = {
-    format: 'wire-edm-catalog-pair-transaction',
-    schemaVersion: 1,
-    ...values
-  };
-  const text = JSON.stringify(transaction);
+  const text = serializeCatalogPairTransaction(values);
   if (new TextEncoder().encode(text).byteLength > MAX_TRANSACTION_BYTES) {
     return failure('CATALOG_PAIR_TRANSACTION_TOO_LARGE', 'Machine-package transaction recovery data is too large to store safely.');
   }
-  let writeAttempted = false;
+  let writePhase: TransactionJournalWritePhase = 'not-attempted';
   try {
     await adapter.ensureDirectory(CATALOG_PAIR_TRANSACTION_DIRECTORY);
-    writeAttempted = true;
+    await verifyTransactionJournalAbsent(adapter, CATALOG_PAIR_TRANSACTION_PATH);
+    writePhase = 'writing';
     await adapter.writeText(CATALOG_PAIR_TRANSACTION_PATH, text);
-    if (await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH) !== text) {
+    writePhase = 'completed';
+    if (await readExact(adapter, CATALOG_PAIR_TRANSACTION_PATH) !== text) {
       const result = failure('CATALOG_PAIR_TRANSACTION_READBACK_MISMATCH', 'Machine-package transaction recovery data did not read back exactly.');
-      return cleanupFailedBegin(adapter, result);
+      return cleanupFailedBegin(adapter, text, result, writePhase);
     }
     return { ok: true };
   } catch (error) {
     const result = failure('CATALOG_PAIR_TRANSACTION_STORAGE_FAILED', `Could not create machine-package recovery data: ${errorMessage(error)}.`);
-    return writeAttempted ? cleanupFailedBegin(adapter, result) : result;
+    return cleanupFailedBegin(adapter, text, result, writePhase);
   }
 }
 
 async function cleanupFailedBegin(
   adapter: WorkbenchStorageAdapter,
-  original: { readonly ok: false; readonly error: CatalogPairTransactionError }
+  expected: string,
+  original: { readonly ok: false; readonly error: CatalogPairTransactionError },
+  phase: TransactionJournalWritePhase
 ): Promise<CatalogPairTransactionResult> {
   try {
-    await adapter.deleteText(CATALOG_PAIR_TRANSACTION_PATH);
-    if (await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH) === null) return original;
+    await cleanupFailedTransactionJournalWrite(adapter, CATALOG_PAIR_TRANSACTION_PATH, expected, phase);
+    return original;
   } catch (error) {
     return failure(
-      'CATALOG_PAIR_TRANSACTION_STORAGE_FAILED',
+      error instanceof TransactionJournalConflictError ? original.error.code : 'CATALOG_PAIR_TRANSACTION_STORAGE_FAILED',
       `${original.error.message} Failed transaction data could not be removed: ${errorMessage(error)}.`
     );
   }
-  return failure(
-    'CATALOG_PAIR_TRANSACTION_STORAGE_FAILED',
-    `${original.error.message} Failed transaction data could not be removed.`
-  );
 }
 
 export async function finishCatalogPairTransaction(
   adapter: WorkbenchStorageAdapter
 ): Promise<CatalogPairTransactionResult> {
   try {
-    await adapter.deleteText(CATALOG_PAIR_TRANSACTION_PATH);
-    if (await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH) !== null) {
-      return failure('CATALOG_PAIR_TRANSACTION_READBACK_MISMATCH', 'Completed machine-package recovery data was not removed.');
+    const raw = await readExact(adapter, CATALOG_PAIR_TRANSACTION_PATH);
+    if (raw === null) return { ok: true };
+    const parsed = parseTransaction(raw);
+    if (!parsed.ok) return parsed;
+    if (await readExact(adapter, POST_LIBRARY_PATH) !== parsed.transaction.nextPosts ||
+        await readExact(adapter, MACHINE_LIBRARY_PATH) !== parsed.transaction.nextMachines) {
+      return failure('CATALOG_PAIR_TRANSACTION_RECOVERY_MISMATCH',
+        'Installed catalogs do not prove a completed transaction. Preserve storage and its journal; reopen the workbench for normal recovery.');
     }
+    return finishExpectedCatalogPairTransaction(adapter, raw);
+  } catch (error) {
+    return failure('CATALOG_PAIR_TRANSACTION_STORAGE_FAILED', `Could not read completed machine-package recovery data: ${errorMessage(error)}.`);
+  }
+}
+
+/** Internal installation/recovery callers retain their own exact journal image. */
+export async function finishExpectedCatalogPairTransaction(
+  adapter: WorkbenchStorageAdapter, expected: string
+): Promise<CatalogPairTransactionResult> {
+  try {
+    await removeTransactionJournal(adapter, CATALOG_PAIR_TRANSACTION_PATH, { kind: 'verified', text: expected });
     return { ok: true };
   } catch (error) {
+    if (error instanceof TransactionJournalReadbackError) {
+      return failure('CATALOG_PAIR_TRANSACTION_READBACK_MISMATCH', 'Completed machine-package recovery data was not removed.');
+    }
     return failure('CATALOG_PAIR_TRANSACTION_STORAGE_FAILED', `Could not remove completed machine-package recovery data: ${errorMessage(error)}.`);
   }
 }
@@ -113,7 +142,7 @@ async function settleCatalogPairTransaction(
 ): Promise<CatalogPairTransactionResult> {
   let raw: string | null;
   try {
-    raw = await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH);
+    raw = await readExact(adapter, CATALOG_PAIR_TRANSACTION_PATH);
   } catch (error) {
     return failure('CATALOG_PAIR_TRANSACTION_STORAGE_FAILED', `Could not read machine-package recovery data: ${errorMessage(error)}.`);
   }
@@ -121,7 +150,7 @@ async function settleCatalogPairTransaction(
     ? failure('CATALOG_PAIR_TRANSACTION_RECOVERY_MISMATCH', 'Machine-package rollback has no recovery journal. Catalogs were preserved; reopen the workbench before further edits.')
     : { ok: true };
   // Empty first-write handles precede every catalog change.
-  if (raw === '' && !rollback) return finishCatalogPairTransaction(adapter);
+  if (raw === '' && !rollback) return finishExpectedCatalogPairTransaction(adapter, raw);
   const parsed = parseTransaction(raw);
   if (!parsed.ok) return parsed;
   const transaction = parsed.transaction;
@@ -129,6 +158,7 @@ async function settleCatalogPairTransaction(
     return failure('CATALOG_PAIR_TRANSACTION_RECOVERY_MISMATCH', 'Machine-package recovery journal changed outside this installation. Catalogs and journal were preserved for recovery.');
   }
   try {
+    if (rollback) await verifyTransactionJournal(adapter, CATALOG_PAIR_TRANSACTION_PATH, serializeCatalogPairTransaction(rollback));
     const posts = await readExact(adapter, POST_LIBRARY_PATH);
     const machines = await readExact(adapter, MACHINE_LIBRARY_PATH);
     if ((posts !== transaction.previousPosts && posts !== transaction.nextPosts) ||
@@ -138,6 +168,7 @@ async function settleCatalogPairTransaction(
     }
     const committed = posts === transaction.nextPosts && machines === transaction.nextMachines;
     if (rollback || !committed) {
+      await verifyTransactionJournal(adapter, CATALOG_PAIR_TRANSACTION_PATH, raw);
       await adapter.writeText(POST_LIBRARY_PATH, transaction.previousPosts);
       await adapter.writeText(MACHINE_LIBRARY_PATH, transaction.previousMachines);
       if (
@@ -147,14 +178,10 @@ async function settleCatalogPairTransaction(
         return failure('CATALOG_PAIR_TRANSACTION_RECOVERY_MISMATCH', 'Machine-package rollback did not restore both catalogs exactly.');
       }
     }
-    return finishCatalogPairTransaction(adapter);
+    return finishExpectedCatalogPairTransaction(adapter, raw);
   } catch (error) {
     return failure('CATALOG_PAIR_TRANSACTION_RECOVERY_FAILED', `Could not recover an interrupted machine-package installation: ${errorMessage(error)}.`);
   }
-}
-
-function readExact(adapter: WorkbenchStorageAdapter, path: string) {
-  return adapter.readExactText?.(path) ?? adapter.readText(path);
 }
 
 function parseTransaction(raw: string):

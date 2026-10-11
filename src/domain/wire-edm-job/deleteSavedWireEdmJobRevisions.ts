@@ -1,5 +1,6 @@
 import {
-  beginRevisionDeletionTransaction,
+  beginRevisionDeletionTransactionWithJournal,
+  recoverExpectedSavedRevisionTransaction,
   recoverSavedRevisionTransaction
 } from '@/domain/storage/savedRevisionTransaction';
 import { recoverProjectTrashTransaction } from '@/domain/storage/projectTrashTransaction';
@@ -74,7 +75,7 @@ export function deleteStoredWireEdmJobRevisions(
           : entry)
       };
       const nextManifestText = `${JSON.stringify(nextManifest, null, 2)}\n`;
-      const begun = await beginRevisionDeletionTransaction(adapter, {
+      const begun = await beginRevisionDeletionTransactionWithJournal(adapter, {
         projectId: project.id,
         revisionIds: [...selection],
         previousProject,
@@ -89,7 +90,7 @@ export function deleteStoredWireEdmJobRevisions(
         if (await readExact(adapter, documentPath) !== serializedProject.text) throw new Error('Project index did not read back exactly.');
         await adapter.writeText(WORKBENCH_CATALOG_PATH, nextManifestText);
         if (await readExact(adapter, WORKBENCH_CATALOG_PATH) !== nextManifestText) throw new Error('Workbench manifest did not read back exactly.');
-        const finished = await recoverSavedRevisionTransaction(adapter);
+        const finished = await recoverExpectedSavedRevisionTransaction(adapter, begun.journal);
         if (!finished.ok) throw new Error(finished.error.message);
         return {
           ok: true,
@@ -98,7 +99,7 @@ export function deleteStoredWireEdmJobRevisions(
           deletedCount: selection.size
         };
       } catch (error) {
-        const recovered = await recoverSavedRevisionTransaction(adapter);
+        const recovered = await recoverExpectedSavedRevisionTransaction(adapter, begun.journal);
         if (!recovered.ok) return failure(`${message(error)}; recovery failed: ${recovered.error.message}`);
         if (await readExact(adapter, documentPath) === serializedProject.text &&
             await readExact(adapter, WORKBENCH_CATALOG_PATH) === nextManifestText) {

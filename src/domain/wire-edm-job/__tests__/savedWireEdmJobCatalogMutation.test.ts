@@ -128,6 +128,36 @@ describe('catalog-owned saved revision persistence', () => {
     expect(fixture.adapter.files.has(SAVED_REVISION_TRANSACTION_PATH)).toBe(true);
   });
 
+  it.each(['rollback', 'cleanup'] as const)('retains a replaced journal during saved-revision %s', async (stage) => {
+    const fixture = await catalogRevisionFixture();
+    const path = workbenchProjectRevisionPath('fixture.part', 'revision.0001');
+    const previousProject = fixture.adapter.files.get('projects/fixture.part.json');
+    const previousManifest = fixture.adapter.files.get(WORKBENCH_CATALOG_PATH);
+    const write = fixture.adapter.writeText.bind(fixture.adapter);
+    const replacement = '\ufeffUNRELATED REVISION JOURNAL\r\n';
+    vi.spyOn(fixture.adapter, 'writeText').mockImplementation(async (target, text) => {
+      await write(target, text);
+      if (target === (stage === 'rollback' ? path : WORKBENCH_CATALOG_PATH)) {
+        await write(SAVED_REVISION_TRANSACTION_PATH, replacement);
+        if (stage === 'rollback') throw new Error('Write failed after journal replacement');
+      }
+    });
+    const remove = vi.spyOn(fixture.adapter, 'deleteText');
+    const result = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    expect(result).toMatchObject(stage === 'rollback'
+      ? { ok: false, error: { code: 'SAVED_REVISION_CATALOG_ROLLBACK_FAILED' } }
+      : { ok: true, cleanupPending: { code: 'SAVED_REVISION_TRANSACTION_STORAGE_FAILED' } });
+    expect(fixture.adapter.files.has(path)).toBe(true);
+    expect(fixture.adapter.files.get(SAVED_REVISION_TRANSACTION_PATH)).toBe(replacement);
+    expect(remove).not.toHaveBeenCalled();
+    if (stage === 'rollback') {
+      expect(fixture.adapter.files.get('projects/fixture.part.json')).toBe(previousProject);
+      expect(fixture.adapter.files.get(WORKBENCH_CATALOG_PATH)).toBe(previousManifest);
+    } else if (result.ok) {
+      expect(result.project.savedRevisionIds).toEqual([fixture.candidate.revisionId]);
+    }
+  });
+
   it.each(['projects/fixture.part.json', WORKBENCH_CATALOG_PATH])('preserves an externally changed untouched index %s when a revision write fails', async indexPath => {
     const fixture = await catalogRevisionFixture();
     const revisionPath = workbenchProjectRevisionPath('fixture.part', 'revision.0001');

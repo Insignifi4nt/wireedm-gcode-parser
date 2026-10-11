@@ -5,6 +5,7 @@ import { FakeDirectoryHandle } from './fakeDirectoryHandle';
 import { commitWorkbenchFileTransaction, recoverWorkbenchFileTransaction, WORKBENCH_FILE_TRANSACTION_PATH } from '../workbenchFileTransaction';
 import { withWorkbenchMutationLock } from '../workbenchMutationLock';
 import type { WorkbenchStorageAdapter } from '../workbenchStorageAdapter';
+import { readExactTransactionText as exact } from '../transactionFileState';
 
 describe.each(['cache', 'folder'] as const)('%s file transaction recovery', (kind) => {
   function storage(): WorkbenchStorageAdapter {
@@ -15,7 +16,7 @@ describe.each(['cache', 'folder'] as const)('%s file transaction recovery', (kin
     { path: 'imports/new.dxf', previous: null, next: 'SOURCE' },
     { path: 'projects/part.json', previous: 'OLD PROJECT', next: 'NEW PROJECT' },
     { path: 'workbench.json', previous: 'OLD INDEX', next: 'NEW INDEX' }
-  ];
+  ] as const;
 
   it('preserves exact originals and writes no journal when the final guard rejects', async () => {
     const adapter = storage();
@@ -92,6 +93,96 @@ describe.each(['cache', 'folder'] as const)('%s file transaction recovery', (kin
     await recoverWorkbenchFileTransaction(adapter);
     expect(await adapter.readText(files[0].path)).toBeNull();
     expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+  });
+  it('recovers an empty first-write handle after earlier writes completed and before later indexes advance', async () => {
+    const adapter = storage();
+    const interruptedFiles = [files[0], { path: 'projects/new.json', previous: null, next: 'NEW PROJECT' }, files[2]];
+    await adapter.writeText(WORKBENCH_FILE_TRANSACTION_PATH, JSON.stringify({ format: 'wire-edm-file-transaction', schemaVersion: 1, files: interruptedFiles }));
+    await adapter.writeText(files[0].path, files[0].next);
+    await adapter.writeText('projects/new.json', '');
+    await adapter.writeText('workbench.json', files[2].previous);
+    await recoverWorkbenchFileTransaction(adapter);
+    expect(await exact(adapter, files[0].path)).toBeNull();
+    expect(await exact(adapter, 'projects/new.json')).toBeNull();
+    expect(await exact(adapter, 'workbench.json')).toBe(files[2].previous);
+  });
+  it.each(['project', 'committed'] as const)('retains an emptied source after the %s index state advanced', async (state) => {
+    const adapter = storage();
+    const journal = JSON.stringify({ format: 'wire-edm-file-transaction', schemaVersion: 1, files });
+    await adapter.writeText(WORKBENCH_FILE_TRANSACTION_PATH, journal);
+    await adapter.writeText(files[0].path, '');
+    await adapter.writeText(files[1].path, files[1].next);
+    await adapter.writeText(files[2].path, state === 'committed' ? files[2].next : files[2].previous);
+    const paths = [...files.map(({ path }) => path), WORKBENCH_FILE_TRANSACTION_PATH];
+    const before = await Promise.all(paths.map((path) => exact(adapter, path)));
+    const writes = vi.spyOn(adapter, 'writeText');
+    const deletes = vi.spyOn(adapter, 'deleteText');
+    await expect(recoverWorkbenchFileTransaction(adapter)).rejects.toThrow('outside');
+    expect(writes).not.toHaveBeenCalled();
+    expect(deletes).not.toHaveBeenCalled();
+    expect(await Promise.all(paths.map((path) => exact(adapter, path)))).toEqual(before);
+  });
+  it('retains a replacement journal and every file before immediate rollback', async () => {
+    const adapter = storage();
+    await adapter.writeText(files[1].path, files[1].previous);
+    const write = adapter.writeText.bind(adapter);
+    const replacement = '\ufeffEXTERNAL RECOVERY EVIDENCE\r\n';
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      if (path === files[1].path && text === files[1].next) {
+        await write(WORKBENCH_FILE_TRANSACTION_PATH, replacement);
+        throw new Error('Interrupted project write');
+      }
+      await write(path, text);
+    });
+    const deletes = vi.spyOn(adapter, 'deleteText');
+    await expect(commitWorkbenchFileTransaction(adapter, files.slice(0, 2).map(({ path, next }) => ({ path, contents: next })))).rejects.toThrow('retained');
+    expect(await exact(adapter, files[0].path)).toBe(files[0].next);
+    expect(await exact(adapter, files[1].path)).toBe(files[1].previous);
+    expect(await exact(adapter, WORKBENCH_FILE_TRANSACTION_PATH)).toBe(replacement);
+    expect(deletes).not.toHaveBeenCalled();
+  });
+  it('retains unexpected journal bytes after a failed first journal write', async () => {
+    const adapter = storage();
+    await adapter.writeText('workbench.json', 'ORIGINAL');
+    const write = adapter.writeText.bind(adapter);
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      await write(path, path === WORKBENCH_FILE_TRANSACTION_PATH ? 'UNRELATED JOURNAL' : text);
+      if (path === WORKBENCH_FILE_TRANSACTION_PATH) throw new Error('Interrupted journal write');
+    });
+    const deletes = vi.spyOn(adapter, 'deleteText');
+    await expect(commitWorkbenchFileTransaction(adapter, [{ path: 'workbench.json', contents: 'NEXT' }])).rejects.toThrow('outside');
+    expect(await exact(adapter, 'workbench.json')).toBe('ORIGINAL');
+    expect(await exact(adapter, WORKBENCH_FILE_TRANSACTION_PATH)).toBe('UNRELATED JOURNAL');
+    expect(deletes).not.toHaveBeenCalled();
+  });
+  it('retains a journal changed while recovery preflights its files', async () => {
+    const adapter = storage();
+    await adapter.writeText(WORKBENCH_FILE_TRANSACTION_PATH, JSON.stringify({ format: 'wire-edm-file-transaction', schemaVersion: 1, files }));
+    await adapter.writeText(files[0].path, files[0].next);
+    await adapter.writeText(files[1].path, files[1].previous);
+    await adapter.writeText(files[2].path, files[2].previous);
+    const read = adapter.readExactText!.bind(adapter);
+    vi.spyOn(adapter, 'readExactText').mockImplementation(async (path) => {
+      const text = await read(path);
+      if (path === files[2].path) await adapter.writeText(WORKBENCH_FILE_TRANSACTION_PATH, 'REPLACED DURING PREFLIGHT');
+      return text;
+    });
+    await expect(recoverWorkbenchFileTransaction(adapter)).rejects.toThrow('outside');
+    expect(await exact(adapter, files[0].path)).toBe(files[0].next);
+    expect(await exact(adapter, WORKBENCH_FILE_TRANSACTION_PATH)).toBe('REPLACED DURING PREFLIGHT');
+  });
+  it('reports committed writes while retaining a journal changed before final cleanup', async () => {
+    const adapter = storage();
+    const write = adapter.writeText.bind(adapter);
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      await write(path, text);
+      if (path === 'projects/new.json') await write(WORKBENCH_FILE_TRANSACTION_PATH, '\ufeffEXTERNAL JOURNAL');
+    });
+    const deletes = vi.spyOn(adapter, 'deleteText');
+    await commitWorkbenchFileTransaction(adapter, [{ path: 'projects/new.json', contents: 'SAVED' }]);
+    expect(await exact(adapter, 'projects/new.json')).toBe('SAVED');
+    expect(await exact(adapter, WORKBENCH_FILE_TRANSACTION_PATH)).toBe('\ufeffEXTERNAL JOURNAL');
+    expect(deletes).not.toHaveBeenCalled();
   });
   it('retains evidence and refuses unexpected external edits during recovery', async () => {
     const adapter = storage();

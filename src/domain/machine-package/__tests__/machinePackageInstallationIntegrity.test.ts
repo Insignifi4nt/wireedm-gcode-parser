@@ -80,6 +80,26 @@ describe.each(['cache', 'folder'] as const)('%s machine-package installation exa
     expect(await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH)).toBeNull();
   });
 
+  it('retains a replaced journal and committed pair when final installation cleanup cannot prove ownership', async () => {
+    const { adapter, prepared } = await fixture();
+    const write = adapter.writeText.bind(adapter);
+    const committed = new Map<string, string>();
+    const replacement = '\ufeffUNRELATED PACKAGE JOURNAL\r\n';
+    const writes = vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      await write(path, text);
+      if (path === POST_LIBRARY_PATH || path === MACHINE_LIBRARY_PATH) committed.set(path, text);
+      if (path === MACHINE_LIBRARY_PATH) await write(CATALOG_PAIR_TRANSACTION_PATH, replacement);
+    });
+    const remove = vi.spyOn(adapter, 'deleteText');
+    expect(await commitStoredMachinePackageInstallation(prepared, { kind: 'install-new' })).toMatchObject({
+      ok: false, error: { code: 'MACHINE_PACKAGE_INSTALLATION_ROLLBACK_FAILED' }
+    });
+    for (const [path, text] of committed) expect(await exact(adapter, path)).toBe(text);
+    expect(writes.mock.calls.filter(([path]) => path === POST_LIBRARY_PATH || path === MACHINE_LIBRARY_PATH)).toHaveLength(2);
+    expect(await exact(adapter, CATALOG_PAIR_TRANSACTION_PATH)).toBe(replacement);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   it('checks cancellation after exact catalog reads without creating a journal or changing originals', async () => {
     const { adapter, before, prepared } = await fixture();
     const abort = new AbortController();

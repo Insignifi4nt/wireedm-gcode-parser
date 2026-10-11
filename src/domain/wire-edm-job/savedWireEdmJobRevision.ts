@@ -37,9 +37,12 @@ import { WireEdmPostPackageSchema } from '@/domain/post-processor/postPackageSch
 import type { PostPropertyDiagnostic, PostPropertyValue } from '@/domain/post-processor/postProperties';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import { readExactTransactionText as readExact, verifyTransactionJournal } from '@/domain/storage/transactionFileState';
 import {
   beginSavedRevisionTransaction,
-  finishSavedRevisionTransaction,
+  finishExpectedSavedRevisionTransaction,
+  serializeSavedRevisionTransaction,
+  SAVED_REVISION_TRANSACTION_PATH,
   recoverSavedRevisionTransaction,
   type SavedRevisionTransactionError
 } from '@/domain/storage/savedRevisionTransaction';
@@ -738,8 +741,6 @@ export function saveStoredWireEdmJobRevision(
       writtenContents: snapshot.path === path ? serializedRevision
         : snapshot.path === documentPath ? serializedProject : serializedManifest
     }));
-    const rollback = (error: SavedRevisionCatalogMutationError) =>
-      rollbackCatalogRevision(workbench, applied, transactionSnapshots, error);
     const previousProject = snapshots.snapshots.find((snapshot) => snapshot.path === documentPath)?.contents;
     const previousManifest = snapshots.snapshots.find((snapshot) => snapshot.path === WORKBENCH_CATALOG_PATH)?.contents;
     if (previousProject == null || previousManifest == null) {
@@ -749,7 +750,7 @@ export function saveStoredWireEdmJobRevision(
       const current = await verifyCurrentActiveSetup(workbench.adapter, candidate);
       if (!current.ok) return current;
     }
-    const begun = await beginSavedRevisionTransaction(workbench.adapter, {
+    const transactionValues = {
       projectId: project.id,
       revisionId: candidate.revisionId,
       previousProject,
@@ -757,7 +758,11 @@ export function saveStoredWireEdmJobRevision(
       nextRevision: serializedRevision,
       nextProject: serializedProject,
       nextManifest: serializedManifest
-    }, { beforeWrite: options.beforeWrite });
+    };
+    const journal = serializeSavedRevisionTransaction(transactionValues);
+    const rollback = (error: SavedRevisionCatalogMutationError) =>
+      rollbackCatalogRevision(workbench, applied, transactionSnapshots, journal, error);
+    const begun = await beginSavedRevisionTransaction(workbench.adapter, transactionValues, { beforeWrite: options.beforeWrite });
     if (!begun.ok) return begun;
     journalCatalogSnapshot(applied, snapshots.snapshots, path, serializedRevision);
     const revisionWrite = await writeCatalogTransactionText(workbench, path, serializedRevision);
@@ -806,7 +811,7 @@ export function saveStoredWireEdmJobRevision(
         path: WORKBENCH_CATALOG_PATH
       });
     }
-    const finished = await finishSavedRevisionTransaction(workbench.adapter);
+    const finished = await finishExpectedSavedRevisionTransaction(workbench.adapter, journal);
     return {
       ok: true,
       path,
@@ -856,7 +861,7 @@ async function persistSavedWireEdmJobRevisionUnlocked(
   const serialized = serializeSavedWireEdmJobRevision(candidate);
   let existing: string | null;
   try {
-    existing = await adapter.readText(path);
+    existing = await readExact(adapter, path);
   } catch (error) {
     return storageFailure(
       'SAVED_REVISION_STORAGE_READ_FAILED',
@@ -891,7 +896,7 @@ async function persistSavedWireEdmJobRevisionUnlocked(
   try {
     await adapter.writeText(path, serialized);
   } catch (error) {
-    return rollbackNewRevision(adapter, path, storageFailure(
+    return rollbackNewRevision(adapter, path, { kind: 'failed-write', text: serialized }, storageFailure(
       'SAVED_REVISION_STORAGE_WRITE_FAILED',
       `Could not persist saved revision at ${path}: ${errorMessage(error)}.`
     ));
@@ -899,11 +904,12 @@ async function persistSavedWireEdmJobRevisionUnlocked(
 
   let readBack: string | null;
   try {
-    readBack = await adapter.readText(path);
+    readBack = await readExact(adapter, path);
   } catch (error) {
     return rollbackNewRevision(
       adapter,
       path,
+      { kind: 'completed-write', text: serialized },
       storageFailure(
         'SAVED_REVISION_STORAGE_READ_FAILED',
         `Could not verify saved revision at ${path}: ${errorMessage(error)}.`
@@ -914,6 +920,7 @@ async function persistSavedWireEdmJobRevisionUnlocked(
     return rollbackNewRevision(
       adapter,
       path,
+      { kind: 'completed-write', text: serialized },
       storageFailure(
         'SAVED_REVISION_STORAGE_READBACK_MISMATCH',
         `Saved revision at ${path} did not read back byte-for-byte.`
@@ -922,7 +929,7 @@ async function persistSavedWireEdmJobRevisionUnlocked(
   }
   const parsed = await parseSavedWireEdmJobRevision(readBack);
   if (!parsed.ok) {
-    return rollbackNewRevision(adapter, path, storageFailure(
+    return rollbackNewRevision(adapter, path, { kind: 'completed-write', text: serialized }, storageFailure(
       'SAVED_REVISION_STORAGE_READBACK_MISMATCH',
       `Saved revision at ${path} failed validation after write: ${parsed.error.message}`
     ));
@@ -1229,9 +1236,12 @@ async function rollbackCatalogRevision(
   workbench: ConnectedWorkbenchCatalog,
   snapshots: readonly AppliedCatalogSnapshot[],
   transactionSnapshots: readonly AppliedCatalogSnapshot[],
+  expectedJournal: string,
   originalError: SavedRevisionCatalogMutationError
 ): Promise<Extract<SaveStoredWireEdmJobRevisionResult, { readonly ok: false }>> {
   const rollbackErrors: WorkbenchProjectStorageError[] = [];
+  try { await verifyTransactionJournal(workbench.adapter, SAVED_REVISION_TRANSACTION_PATH, expectedJournal); }
+  catch (error) { rollbackErrors.push(catalogStorageAccessFailure('write', SAVED_REVISION_TRANSACTION_PATH, error)); }
   // Validate every journal target before touching any of them. An external edit
   // or unrecognized partial write must retain both its bytes and recovery journal.
   for (const snapshot of transactionSnapshots) {
@@ -1240,6 +1250,10 @@ async function rollbackCatalogRevision(
     else if (current.contents !== snapshot.contents && current.contents !== snapshot.writtenContents) {
       rollbackErrors.push(catalogStorageAccessFailure('write', snapshot.path, 'Rollback target has unknown bytes; original and recovery data were preserved'));
     }
+  }
+  if (rollbackErrors.length === 0) {
+    try { await verifyTransactionJournal(workbench.adapter, SAVED_REVISION_TRANSACTION_PATH, expectedJournal); }
+    catch (error) { rollbackErrors.push(catalogStorageAccessFailure('write', SAVED_REVISION_TRANSACTION_PATH, error)); }
   }
   for (const snapshot of rollbackErrors.length === 0 ? [...snapshots].reverse() : []) {
     const restored = snapshot.contents === null
@@ -1255,7 +1269,7 @@ async function rollbackCatalogRevision(
     }
   }
   if (rollbackErrors.length === 0) {
-    const finished = await finishSavedRevisionTransaction(workbench.adapter);
+    const finished = await finishExpectedSavedRevisionTransaction(workbench.adapter, expectedJournal);
     return finished.ok ? catalogMutationFailure(originalError) : finished;
   }
   return {
@@ -1395,10 +1409,19 @@ function storageFailure<Code extends SavedWireEdmJobRevisionStorageError['code']
 async function rollbackNewRevision(
   adapter: WorkbenchStorageAdapter,
   path: string,
+  expected: { readonly kind: 'failed-write' | 'completed-write'; readonly text: string },
   originalFailure: Extract<PersistSavedWireEdmJobRevisionResult, { readonly ok: false }>
 ): Promise<Extract<PersistSavedWireEdmJobRevisionResult, { readonly ok: false }>> {
   try {
+    const current = await readExact(adapter, path);
+    if (current === null) return originalFailure;
+    // Only a failed first write can leave an initial empty handle. Once that
+    // write completes, empty bytes are unknown contents and must be retained.
+    if (current !== expected.text && !(expected.kind === 'failed-write' && current === '')) {
+      throw new Error('Revision changed outside this write. Its contents were preserved for recovery');
+    }
     await adapter.deleteText(path);
+    if (await readExact(adapter, path) !== null) throw new Error('Revision cleanup did not read back exactly');
     return originalFailure;
   } catch (error) {
     return storageFailure(
