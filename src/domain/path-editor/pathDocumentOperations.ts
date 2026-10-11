@@ -1725,16 +1725,22 @@ function translatePoint(point: Point2, delta: Point2): Point2 {
 
 function rotationPointTransform(angleDegrees: number, origin: Point2) {
   const normalizedAngle = ((angleDegrees % 360) + 360) % 360;
+  if (normalizedAngle === 0 && Number.isFinite(origin.x) && Number.isFinite(origin.y)) {
+    return (point: Point2): Point2 => ({ ...point });
+  }
   const radians = (normalizedAngle * Math.PI) / 180;
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
+  // Exact quarter-turn coefficients remove trigonometric residue without rounding geometry.
+  const cos = normalizedAngle === 180 ? -1
+    : normalizedAngle === 90 || normalizedAngle === 270 ? 0 : Math.cos(radians);
+  const sin = normalizedAngle === 90 ? 1
+    : normalizedAngle === 270 ? -1 : normalizedAngle === 180 ? 0 : Math.sin(radians);
 
   return (point: Point2): Point2 => {
     const localX = point.x - origin.x;
     const localY = point.y - origin.y;
     return {
-      x: roundCoordinate(origin.x + localX * cos - localY * sin),
-      y: roundCoordinate(origin.y + localX * sin + localY * cos)
+      x: origin.x + localX * cos - localY * sin,
+      y: origin.y + localX * sin + localY * cos
     };
   };
 }
@@ -1743,16 +1749,11 @@ function mirrorPointTransform(axis: PathMirrorAxis, origin: Point2) {
   return (point: Point2): Point2 =>
     axis === 'x'
       ? {
-          x: roundCoordinate(point.x),
-          y: roundCoordinate(origin.y - (point.y - origin.y))
+          x: point.x,
+          y: origin.y - (point.y - origin.y)
         }
       : {
-          x: roundCoordinate(origin.x - (point.x - origin.x)),
-          y: roundCoordinate(point.y)
+          x: origin.x - (point.x - origin.x),
+          y: point.y
         };
-}
-
-function roundCoordinate(value: number) {
-  const rounded = Number(value.toFixed(12));
-  return Math.abs(rounded) <= 1e-12 ? 0 : rounded;
 }

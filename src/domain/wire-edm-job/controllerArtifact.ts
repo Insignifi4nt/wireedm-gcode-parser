@@ -73,16 +73,16 @@ export async function generateControllerArtifact(
       message: 'Controller artifacts require a saved revision returned by the revision creator or parser.'
     });
   }
-  if (revision.engineVersion === '1') {
+  if (revision.engineVersion !== WIRE_EDM_ENGINE_VERSION) {
     const current = compileWireEdmExecutionPlan(revision.project.content.document);
     if (!current.ok) return artifactFailure({
       code: 'CONTROLLER_ARTIFACT_EXECUTION_PLAN_INVALID',
-      message: 'This legacy revision is readable, but its manufacturing intent needs current review before generation.',
+      message: 'This historical revision is readable, but its manufacturing intent needs current review before generation. Open its editable project from the library, review the diagnostics and program stops, save the project, then choose Generate controller artifact to save a new revision.',
       diagnostics: current.diagnostics
     });
     if (canonicalJson(JSON.parse(JSON.stringify(current.plan))) !== canonicalJson(revision.executionPlan)) return artifactFailure({
       code: 'CONTROLLER_ARTIFACT_EXECUTION_PLAN_INVALID',
-      message: 'This legacy execution plan differs from the current compiler and requires a new saved revision.',
+      message: 'This historical execution plan differs from the current compiler, which uses corrected arc-stop distance calculations and circle stop/partial-range endpoints. Open its editable project from the library, review circular geometry and program stops, save the project, then choose Generate controller artifact to save a new revision. The original revision and installed machine packages have not been changed.',
       diagnostics: []
     });
   }

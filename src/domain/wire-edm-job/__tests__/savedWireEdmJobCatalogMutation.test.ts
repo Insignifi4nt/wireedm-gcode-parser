@@ -59,6 +59,30 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
 }
 
 describe('catalog-owned saved revision persistence', () => {
+  it('retains a trashed project and exposes the saved-plan incompatibility diagnostic on restore', async () => {
+    const fixture = await catalogRevisionFixture();
+    const saved = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    if (!saved.ok) throw new Error(saved.error.message);
+    const deleted = await deleteStoredWorkbenchProject(saved.workbench, {
+      projectId: fixture.candidate.project.id, deletedAt: new Date('2026-10-11T12:00:00.000Z')
+    });
+    if (!deleted.ok) throw new Error(deleted.error.message);
+    const historic = {
+      ...fixture.candidate, engineVersion: '2', executionPlan: {
+        ...fixture.candidate.executionPlan,
+        requirements: { ...fixture.candidate.executionPlan.requirements, operationCount: 99 }
+      }
+    };
+    fixture.adapter.files.set(saved.path, JSON.stringify(historic));
+    const before = new Map(fixture.adapter.files);
+    fixture.adapter.mutations.length = 0;
+    expect(await restoreStoredWorkbenchProject(deleted.workbench, { projectId: fixture.candidate.project.id }))
+      .toMatchObject({ ok: false, error: { code: 'WORKBENCH_PROJECT_SCHEMA_INVALID',
+        message: expect.stringContaining('corrected arc-stop distance calculations') } });
+    expect(fixture.adapter.files).toEqual(before);
+    expect(fixture.adapter.mutations).toEqual([]);
+  });
+
   it('requires the current setup only when explicitly saving for controller generation', async () => {
     const fixture = await catalogRevisionFixture();
     const machine = { ...fixture.machine, activeBindingId: 'production' };

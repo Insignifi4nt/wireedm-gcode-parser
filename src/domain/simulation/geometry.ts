@@ -1,4 +1,5 @@
 import type { WireEdmExecutionEvent } from '@/domain/execution-plan/executionPlan';
+import { circularRadialDistance, rotateCircularPoint, signedRadialAngle } from '@/domain/path-intel/circularGeometry';
 import type { Point2 } from '@/domain/path-intel/types';
 
 export type SimulationMotion = Extract<WireEdmExecutionEvent, { kind: 'motion' }>;
@@ -11,11 +12,7 @@ export function distance(a: Point2, b: Point2): number {
 export function arcSweep(motion: SimulationMotion): number {
   if (motion.motion !== 'circular' || !motion.center) return 0;
   if (motion.fullCircle) return motion.clockwise ? -TURN : TURN;
-  const startX = motion.start.x - motion.center.x;
-  const startY = motion.start.y - motion.center.y;
-  const endX = motion.end.x - motion.center.x;
-  const endY = motion.end.y - motion.center.y;
-  const angle = Math.atan2(startX * endY - startY * endX, startX * endX + startY * endY);
+  const angle = signedRadialAngle(motion.start, motion.end, motion.center);
   const positive = (value: number) => value < 0 ? value + TURN : value;
   return motion.clockwise ? -positive(-angle) : positive(angle);
 }
@@ -34,15 +31,21 @@ export function interpolateMotion(motion: SimulationMotion, fraction: number): P
   if (fraction <= 0) return { ...motion.start };
   if (fraction >= 1) return { ...motion.end };
   if (motion.motion !== 'circular' || !motion.center) return interpolateLine(motion.start, motion.end, fraction);
-  const radius = distance(motion.start, motion.center);
-  const angle = Math.atan2(motion.start.y - motion.center.y, motion.start.x - motion.center.x)
-    + arcSweep(motion) * fraction;
-  return { x: motion.center.x + radius * Math.cos(angle), y: motion.center.y + radius * Math.sin(angle) };
+  return rotateCircularPoint(motion.start, motion.start.x - motion.center.x,
+    motion.start.y - motion.center.y, arcSweep(motion) * fraction);
 }
 
 export function motionPolyline(motion: SimulationMotion): Point2[] {
-  const count = motion.motion === 'circular' ? Math.max(1, Math.ceil(Math.abs(arcSweep(motion)) / (Math.PI / 90))) : 1;
-  return Array.from({ length: count + 1 }, (_, index) => interpolateMotion(motion, index / count));
+  if (motion.motion !== 'circular' || !motion.center) return [{ ...motion.start }, { ...motion.end }];
+  const sweep = arcSweep(motion);
+  const count = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 90)));
+  const radialX = motion.start.x - motion.center.x;
+  const radialY = motion.start.y - motion.center.y;
+  return Array.from({ length: count + 1 }, (_, index) => {
+    if (index === 0) return { ...motion.start };
+    if (index === count) return { ...motion.end };
+    return rotateCircularPoint(motion.start, radialX, radialY, sweep * (index / count));
+  });
 }
 
 export function polygonArea(polygon: readonly Point2[]): number {
@@ -91,13 +94,13 @@ export function distanceToMotion(point: Point2, motion: SimulationMotion): numbe
   if (motion.motion !== 'circular' || !motion.center) return distanceToLine(point, motion.start, motion.end);
   const center = motion.center;
   const radius = distance(motion.start, center);
-  if (motion.fullCircle) return Math.abs(distance(point, center) - radius);
-  const start = Math.atan2(motion.start.y - center.y, motion.start.x - center.x);
-  const angle = Math.atan2(point.y - center.y, point.x - center.x);
+  if (motion.fullCircle) return circularRadialDistance(point, motion.start, center, radius);
+  const angle = signedRadialAngle(motion.start, point, center);
   const sweep = arcSweep(motion);
-  const travel = sweep < 0 ? ((start - angle) % TURN + TURN) % TURN : ((angle - start) % TURN + TURN) % TURN;
+  const directed = motion.clockwise ? -angle : angle;
+  const travel = directed < 0 ? directed + TURN : directed;
   return travel <= Math.abs(sweep)
-    ? Math.abs(distance(point, center) - radius)
+    ? circularRadialDistance(point, motion.start, center, radius)
     : Math.min(distance(point, motion.start), distance(point, motion.end));
 }
 

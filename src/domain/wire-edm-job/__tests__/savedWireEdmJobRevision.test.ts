@@ -18,6 +18,7 @@ import { readExactTransactionText as exact } from '@/domain/storage/transactionF
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
 import { createUpidFromDxfEntities as createUnresolvedUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { createWorkbenchProjectDocument } from '@/domain/workbench-catalog/workbenchProject';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
 
 import {
   createSavedWireEdmJobRevisionId,
@@ -105,7 +106,7 @@ describe('saved Wire EDM job revision', () => {
     expect(fixture.revision).toMatchObject({
       format: 'wire-edm-job-revision',
       schemaVersion: 1,
-      engineVersion: '2',
+      engineVersion: '3',
       revisionId: 'revision.0001',
       project: {
         format: 'wire-edm-project',
@@ -165,19 +166,92 @@ describe('saved Wire EDM job revision', () => {
     });
   });
 
-  it('labels a compatible legacy revision artifact with the current generating engine', async () => {
+  it.each(['1', '2'])('labels a compatible engine-%s revision artifact with the current generating engine', async (engineVersion) => {
     const fixture = await revisionFixture();
     const old = JSON.parse(serializeSavedWireEdmJobRevision(fixture.revision));
-    old.engineVersion = '1';
+    old.engineVersion = engineVersion;
     const parsed = await parseSavedWireEdmJobRevision(JSON.stringify(old));
     if (!parsed.ok) throw new Error(parsed.error.message);
     const persisted = await persistSavedWireEdmJobRevision(createMemoryAdapter(), parsed.candidate);
     if (!persisted.ok) throw new Error(persisted.error.message);
     const generated = await generateControllerArtifact(persisted.revision);
     expect(generated).toMatchObject({ ok: true, artifact: {
-      engineVersion: '2', sourceRevisionEngineVersion: '1', revisionId: old.revisionId
+      engineVersion: '3', sourceRevisionEngineVersion: engineVersion, revisionId: old.revisionId
     } });
-    expect(persisted.revision.engineVersion).toBe('1');
+    expect(persisted.revision.engineVersion).toBe(engineVersion);
+  });
+
+  it.each(['1', '2'])('explains historical compilation failures and how to create a corrected revision, engine=%s', async engineVersion => {
+    const document = createUpidFromDxfEntities([{
+      type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5
+    }]);
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: 5, y: 0 }, review: 'reviewed' } };
+    document.plan.operations[0].programStops = [{ id: 'retained', enabled: true, reason: 'operator-check',
+      placement: { kind: 'before-operation-end', remainingCutLengthMm: 5 * Math.PI } }];
+    const fixture = await revisionFixture(undefined, document);
+    const changedDocument = structuredClone(fixture.candidate.project.content.document);
+    changedDocument.plan.operations[0].programStops![0].placement = {
+      kind: 'before-operation-end', remainingCutLengthMm: 1e-16
+    };
+    const historical = { ...fixture.candidate, engineVersion,
+      project: { ...fixture.candidate.project, content: { ...fixture.candidate.project.content, document: changedDocument } },
+      hashes: { ...fixture.candidate.hashes, upid: await hashJson(changedDocument) }
+    };
+    const parsed = await parseSavedWireEdmJobRevision(canonicalJson(historical));
+    expect(parsed).toMatchObject({ ok: false, error: {
+      code: 'SAVED_REVISION_EXECUTION_PLAN_INVALID',
+      message: expect.stringContaining('corrected calculations')
+    } });
+    if (parsed.ok) throw new Error('Expected a blocked historical boundary stop');
+    expect(parsed.error.message).toContain('original saved revision and installed machine packages have not been changed');
+    expect(parsed.error.message).toContain('Generate controller artifact');
+    expect(parsed.error.message).toContain('numerical precision');
+  });
+
+  it.each(['cache', 'folder'] as const)('blocks changed engine-1/2 arc-stop snapshots in %s without rewriting their originals', async (kind) => {
+    const fixture = await revisionFixture(undefined, stoppedArcDocument());
+    const ranges = fixture.candidate.executionPlan.events.flatMap((event) => event.kind === 'motion' && event.role === 'contour'
+      ? [event.sourceRange] : []);
+    expect(ranges).toEqual([{ start: 0, end: 0.5 }, { start: 0.5, end: 1 }]);
+    // Captured engine-1/2 result from the accepted 0.1-radian start / 1e-16-radian sweep.
+    const oldSplit = 0.4853028997290862;
+    const historicalPlan = {
+      ...fixture.candidate.executionPlan,
+      events: fixture.candidate.executionPlan.events.map((event) => event.kind === 'motion' && event.role === 'contour'
+        ? { ...event, sourceRange: event.sourceRange?.start === 0
+          ? { start: 0, end: oldSplit } : { start: oldSplit, end: 1 } }
+        : event)
+    };
+    const adapter = kind === 'cache'
+      ? createBrowserCacheAdapter(localStorage, { namespace: crypto.randomUUID() })
+      : createBrowserDirectoryAdapter(new FakeDirectoryHandle('historical-arc-stop') as unknown as FileSystemDirectoryHandle);
+    for (const engineVersion of ['1', '2']) {
+      const historical = {
+        ...fixture.candidate, engineVersion, executionPlan: historicalPlan,
+        hashes: { ...fixture.candidate.hashes, executionPlan: await hashJson(historicalPlan) }
+      };
+      const raw = canonicalJson(historical);
+      const original = `\ufeff${raw}\r\n`;
+      await adapter.writeText(fixture.path, original);
+      expect(await parseSavedWireEdmJobRevision(raw)).toMatchObject({
+        ok: false, error: { code: 'SAVED_REVISION_EXECUTION_PLAN_MISMATCH',
+          message: expect.stringContaining('corrected arc-stop distance calculations') }
+      });
+      const loaded = await loadSavedWireEdmJobRevision(adapter, fixture.candidate.project.id, fixture.candidate.revisionId);
+      expect(loaded).toMatchObject({ ok: false, error: {
+        code: 'SAVED_REVISION_EXECUTION_PLAN_MISMATCH', message: expect.stringContaining('Generate controller artifact')
+      } });
+      expect(await exact(adapter, fixture.path)).toBe(original);
+      const recovered = await createSavedWireEdmJobRevision({
+        revisionId: `revision.corrected-${engineVersion}`, savedAt: '2026-10-11T12:00:00.000Z',
+        project: fixture.candidate.project, machine: fixture.machine,
+        bindingId: 'production', postLibrary: fixture.library
+      });
+      if (!recovered.ok) throw new Error(recovered.error.message);
+      const persisted = await persistSavedWireEdmJobRevision(adapter, recovered.candidate);
+      expect(persisted).toMatchObject({ ok: true, revision: { engineVersion: '3' } });
+      expect(await exact(adapter, fixture.path)).toBe(original);
+    }
   });
 
   it('preserves an engine-1 continuous material-crossing revision without authorizing new output', async () => {
@@ -213,8 +287,8 @@ describe('saved Wire EDM job revision', () => {
 
   it('rejects obsolete or non-UPID project state instead of defaulting it', async () => {
     expect(await parseSavedWireEdmJobRevision(JSON.stringify({
-      format: 'wire-edm-job-revision', schemaVersion: 1, engineVersion: '3'
-    }))).toMatchObject({ ok: false, error: { code: 'SAVED_REVISION_ENGINE_UNSUPPORTED' } });
+      format: 'wire-edm-job-revision', schemaVersion: 1, engineVersion: '4'
+    }))).toMatchObject({ ok: false, error: { code: 'SAVED_REVISION_ENGINE_UNSUPPORTED', supportedVersions: ['1', '2', '3'] } });
     expect(await parseSavedWireEdmJobRevision(JSON.stringify({
       format: 'wire-edm-job-revision',
       schemaVersion: 0
@@ -525,7 +599,7 @@ describe('saved Wire EDM job revision', () => {
     expect(generated.artifact).toMatchObject({
       format: 'wire-edm-controller-artifact',
       schemaVersion: 1,
-      engineVersion: '2',
+      engineVersion: '3',
       revisionId: 'revision.0001',
       revisionHashes: fixture.revision.hashes,
       fileName: 'fixture.part.iso',
@@ -737,10 +811,10 @@ function customPostPackage(failOnPosition: boolean): WireEdmPostPackageValue {
   return packageValue;
 }
 
-async function revisionFixture(packageValue?: WireEdmPostPackageValue) {
+async function revisionFixture(packageValue?: WireEdmPostPackageValue, inputDocument?: PathPlanningDocument) {
   const selected = await machineAndPostFixture(packageValue);
-  const document = createUpidFromDxfEntities(rectangle());
-  document.setup = {
+  const document = inputDocument ?? createUpidFromDxfEntities(rectangle());
+  document.setup ??= {
     initialWirePosition: {
       kind: 'manual',
       point: { x: -2, y: 0 },
@@ -774,6 +848,24 @@ async function revisionFixture(packageValue?: WireEdmPostPackageValue) {
     path: persisted.path,
     revision: persisted.revision
   };
+}
+
+function stoppedArcDocument() {
+  const angle = 0.1;
+  const sweep = 1e-16;
+  const start = { x: Math.cos(angle), y: Math.sin(angle) };
+  const document = createUpidFromDxfEntities([{
+    type: 'arc', layer: 'CUT', center: { x: 0, y: 0 }, radius: 1,
+    start, end: { x: Math.cos(angle + sweep), y: Math.sin(angle + sweep) },
+    startAngle: angle * 180 / Math.PI, endAngle: (angle + sweep) * 180 / Math.PI,
+    sweepRadians: sweep, clockwise: false
+  }], { coincidenceEpsilon: 0, endpointTolerance: 0 });
+  document.setup = { initialWirePosition: { kind: 'manual', point: start, review: 'reviewed' } };
+  document.plan.operations[0].programStops = [{
+    id: 'half', enabled: true, reason: 'operator-check',
+    placement: { kind: 'before-operation-end', remainingCutLengthMm: sweep / 2 }
+  }];
+  return document;
 }
 
 function createUpidFromDxfEntities(...args: Parameters<typeof createUnresolvedUpidFromDxfEntities>) {

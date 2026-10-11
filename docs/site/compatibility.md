@@ -1,6 +1,6 @@
 # Compatibility and repairs
 
-## Four independent versions
+## Independent versions
 
 | Version | Meaning |
 | --- | --- |
@@ -8,6 +8,7 @@
 | UPID schema | Serialized manufacturing intent; v2 adds after-positioning stops and separation during positioning |
 | Post schema | Serialized post manifest and dialect; new posts use v2 exact separation declarations |
 | Engine API / authoring kit | Guest callback contract and publication generation; currently `1` |
+| Saved-job / generating engine | Calculation provenance for saved revisions and controller artifacts; currently `3`, independent of engine API `1` |
 
 Do not replace schema numbers with app versions or assume adjacent app releases are compatible. Check the release ledger, exact capabilities and conformance results. `manifest.authoredFor` names the author's target app and versioned docs. An absent field means unknown provenance. No app-version range or physical-machine compatibility is inferred from it.
 
@@ -19,6 +20,16 @@ Do not replace schema numbers with app versions or assume adjacent app releases 
 - **Saved revisions:** old engine snapshots keep their original hashes. If recompilation changes their plan, review the project and save a new revision before generation.
 
 These are documented as baseline restrictions in app 0.0.685, not newly introduced by the documentation release.
+
+## Arc-stop calculation compatibility
+
+Engine `3` uses accepted source lengths and resolved source positions to split circular motions at remaining-cut program stops. It corrects circle stop and partial-range endpoints, circular sampling, numerical arc playback and output-audit calculations. Extremely small remaining cuts that cannot represent a position inside the contour are rejected with a precision diagnostic. Newly applied rotations and reflections retain more coordinate precision, and valid endpoint tangencies use a bounded arithmetic check. Simulation keeps continuous positioning threaded and can report clearance warnings that were previously missed. Installed posts can receive different circular points and source-range boundaries, and their circular output can receive a different audit result. Check the affected controller artifact and the exact post's fixtures before machining. Use **Validate post and run conformance** in the [Package workbench](tools.md) when reviewing a supplied post.
+
+An engine `1` or `2` saved revision is readable only when its plan and hashes still match corrected compilation exactly. A changed historical plan can report `SAVED_REVISION_EXECUTION_PLAN_MISMATCH`; a project that cannot compile under the corrected calculations can report `SAVED_REVISION_EXECUTION_PLAN_INVALID` with its compiler diagnostics. Both block controller generation, inspection and **Snapshot JSON** download. The app preserves its original bytes and hashes. It does not migrate historical arithmetic or rewrite installed machine packages. Saved-revision and post schema numbers, capabilities, engine API `1` and execution-event shapes remain unchanged. Earlier apps that only accept engines `1` and `2` cannot read a new engine `3` revision.
+
+For an active project, open its editable project from the library, review circular geometry and program stops, save the project, then choose **Generate controller artifact**. This creates a separate engine `3` saved revision. Review the resulting output before machining. The old revision stays retained; a new revision does not restore its previous reproducibility.
+
+Verified backup and backup restoration validate every indexed revision, so an incompatible historical revision blocks them even after a new revision is saved. Restoring its project from Trash also fails with the revision diagnostic and keeps the retained files. This update provides no automatic historical-revision migration or healthy-workbench recovery download. Keep existing backups and retained originals. Do not delete or edit historical revisions to bypass validation.
 
 ## When export fails
 

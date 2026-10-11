@@ -68,7 +68,8 @@ import {
 } from '@/domain/workbench-catalog/workbenchProjectStorage';
 
 export const SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION = 1 as const;
-export const WIRE_EDM_ENGINE_VERSION = '2' as const;
+export const WIRE_EDM_ENGINE_VERSION = '3' as const;
+const readableWireEdmEngineVersions = ['1', '2', WIRE_EDM_ENGINE_VERSION] as const;
 
 const MAX_SAVED_REVISION_BYTES = 128 * 1024 * 1024;
 const strictObject = { additionalProperties: false } as const;
@@ -87,7 +88,7 @@ const PostPropertyValueSchema = Type.Union([
 export const SavedWireEdmJobRevisionSchema = Type.Object({
   format: Type.Literal('wire-edm-job-revision'),
   schemaVersion: Type.Literal(SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION),
-  engineVersion: Type.Union([Type.Literal('1'), Type.Literal(WIRE_EDM_ENGINE_VERSION)]),
+  engineVersion: Type.Union([Type.Literal('1'), Type.Literal('2'), Type.Literal(WIRE_EDM_ENGINE_VERSION)]),
   revisionId: PostIdentifierSchema,
   savedAt: Type.String({ pattern: canonicalTimestampPattern }),
   project: WorkbenchProjectDocumentSchema,
@@ -148,7 +149,7 @@ export interface SavedRevisionHashes {
 export interface SavedWireEdmJobRevisionData {
   readonly format: 'wire-edm-job-revision';
   readonly schemaVersion: typeof SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION;
-  readonly engineVersion: '1' | typeof WIRE_EDM_ENGINE_VERSION;
+  readonly engineVersion: SavedRevisionSchemaValue['engineVersion'];
   readonly revisionId: string;
   readonly savedAt: string;
   readonly project: UpidWorkbenchProjectDocument;
@@ -183,7 +184,7 @@ export type SavedWireEdmJobRevisionError =
       readonly supportedVersion: typeof SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION;
     }
   | { readonly code: 'SAVED_REVISION_ENGINE_UNSUPPORTED'; readonly message: string;
-      readonly foundVersion: string; readonly supportedVersions: readonly ['1', '2'] }
+      readonly foundVersion: string; readonly supportedVersions: typeof readableWireEdmEngineVersions }
   | { readonly code: 'SAVED_REVISION_FILE_TOO_LARGE'; readonly message: string }
   | { readonly code: 'SAVED_REVISION_JSON_INVALID'; readonly message: string }
   | { readonly code: 'SAVED_REVISION_SCHEMA_INVALID'; readonly message: string; readonly path: string }
@@ -489,10 +490,10 @@ export async function parseSavedWireEdmJobRevision(
     });
   }
   if (record && typeof record.engineVersion === 'string' &&
-    record.engineVersion !== '1' && record.engineVersion !== WIRE_EDM_ENGINE_VERSION) {
+    !readableWireEdmEngineVersions.some((version) => version === record.engineVersion)) {
     return failure({ code: 'SAVED_REVISION_ENGINE_UNSUPPORTED',
       message: `Saved revision engine version ${record.engineVersion} is unsupported.`,
-      foundVersion: record.engineVersion, supportedVersions: ['1', '2'] });
+      foundVersion: record.engineVersion, supportedVersions: readableWireEdmEngineVersions });
   }
   const schemaError = Value.Errors(SavedWireEdmJobRevisionSchema, value).First();
   if (schemaError) return schemaFailure(schemaError.path, schemaError.message);
@@ -566,7 +567,7 @@ export async function parseSavedWireEdmJobRevision(
   if (!compiled.ok) {
     return failure({
       code: 'SAVED_REVISION_EXECUTION_PLAN_INVALID',
-      message: 'The saved UPID no longer compiles into a valid execution plan.',
+      message: `The saved UPID no longer compiles with the current engine's corrected calculations. ${compiled.diagnostics.map(diagnostic => diagnostic.message).join(' ')} The original saved revision and installed machine packages have not been changed. Open its editable project from the library, review the diagnostics, circular geometry and program stops, save the project, then choose Generate controller artifact to save a new revision.`,
       diagnostics: compiled.diagnostics
     });
   }
@@ -588,7 +589,7 @@ export async function parseSavedWireEdmJobRevision(
   if (canonicalJson(candidate.executionPlan) !== canonicalJson(snapshot.executionPlan)) {
     return failure({
       code: 'SAVED_REVISION_EXECUTION_PLAN_MISMATCH',
-      message: 'Saved execution plan does not match the current compilation of its UPID. The original saved revision and installed machine packages have not been changed. Review the project and save a new revision before generating controller output; do not rewrite the historical revision to match.'
+      message: 'Saved execution plan does not match the current compilation of its UPID, which uses corrected arc-stop distance calculations and circle stop/partial-range endpoints. The original saved revision and installed machine packages have not been changed. Review the project and save a new revision before generating controller output: open its editable project from the library, review circular geometry and program stops, save the project, then choose Generate controller artifact. Do not rewrite the historical revision to match.'
     });
   }
   const hashes = await calculateHashes({

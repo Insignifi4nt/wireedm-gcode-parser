@@ -1,11 +1,10 @@
 import { deriveSourceMachiningOperations } from './machiningParticipation';
 import { resolveSourceAfterContourTravel, travelDistanceError } from './afterContourTravel';
 import {
-  orientedCircleClockwise,
   orientedSegmentEnd,
   orientedSegmentStart,
   pointOnArcAtParameter,
-  pointOnCircle,
+  pointOnCircleAtParameter,
   pathCutLength,
   requiredSegment,
   segmentMap
@@ -100,33 +99,81 @@ export function resolveOperationProgramStopPoints(
   operation: PathOperation,
   segmentsById: Map<string, PathPlanningDocument['segments'][number]>
 ): ReturnType<typeof resolveProgramStopPoints> {
+  const resolved = resolveOperationProgramStopLocations(operation, segmentsById);
+  if (resolved.status === 'blocked') return resolved;
+  return {
+    status: 'ready',
+    stops: resolved.stops.map(stop => ({
+      id: stop.id,
+      placement: stop.placement,
+      point: stop.point,
+      remainingCutLengthMm: stop.remainingCutLengthMm
+    }))
+  };
+}
+
+export interface ResolvedOperationProgramStopLocation {
+  id: string;
+  placement: 'before-operation-end';
+  point: Point2;
+  remainingCutLengthMm: number;
+  segmentRefIndex: number;
+  parameter: number;
+}
+
+export function resolveOperationProgramStopLocations(
+  operation: PathOperation,
+  segmentsById: Map<string, PathPlanningDocument['segments'][number]>
+):
+  | { status: 'ready'; stops: ResolvedOperationProgramStopLocation[] }
+  | Extract<ReturnType<typeof resolveProgramStopPoints>, { status: 'blocked' }> {
   const requested = (operation.programStops ?? []).filter(
     (stop) => stop.enabled && stop.placement.kind === 'before-operation-end'
   );
   if (requested.length === 0) return { status: 'ready', stops: [] };
   const total = pathCutLength(operation.segmentRefs, segmentsById);
-  const stops = [];
+  const stops: ResolvedOperationProgramStopLocation[] = [];
   for (const stop of requested) {
     if (stop.placement.kind !== 'before-operation-end') continue;
     const remaining = stop.placement.remainingCutLengthMm;
     if (!Number.isFinite(remaining) || remaining <= 0 || remaining >= total) {
       return { status: 'blocked', reason: 'invalid-program-stop' };
     }
-    let distanceFromStart = total - remaining;
-    let point: Point2 | null = null;
-    for (const ref of operation.segmentRefs) {
+    // Remaining cut is measured from the end. Subtracting it from a much larger
+    // contour total can erase a short final segment or its stop parameter.
+    let distanceFromEnd = remaining;
+    let location: Pick<ResolvedOperationProgramStopLocation, 'point' | 'segmentRefIndex' | 'parameter'> | null = null;
+    for (let segmentRefIndex = operation.segmentRefs.length - 1; segmentRefIndex >= 0; segmentRefIndex -= 1) {
+      const ref = operation.segmentRefs[segmentRefIndex];
       const segment = requiredSegment(segmentsById, ref.segmentId);
-      if (distanceFromStart <= segment.length) {
-        point = pointAtParameter(segment, ref, distanceFromStart / segment.length);
+      if (distanceFromEnd < segment.length) {
+        const parameter = (segment.length - distanceFromEnd) / segment.length;
+        // Internal joins may round to their exact stored endpoint. At either
+        // contour boundary, that would turn an interior stop into a start/end stop.
+        if (distanceFromEnd > 0 && (
+          (parameter <= 0 && segmentRefIndex === 0) ||
+          (parameter >= 1 && segmentRefIndex === operation.segmentRefs.length - 1)
+        )) {
+          return { status: 'blocked', reason: 'invalid-program-stop' };
+        }
+        const point = pointAtParameter(segment, ref, parameter);
+        if (parameter > 0 && parameter < 1) {
+          const start = orientedSegmentStart(segment, ref);
+          const end = orientedSegmentEnd(segment, ref);
+          if ((point.x === start.x && point.y === start.y) || (point.x === end.x && point.y === end.y)) {
+            return { status: 'blocked', reason: 'invalid-program-stop' };
+          }
+        }
+        location = { point, segmentRefIndex, parameter };
         break;
       }
-      distanceFromStart -= segment.length;
+      distanceFromEnd -= segment.length;
     }
-    if (!point) return { status: 'blocked', reason: 'invalid-program-stop' };
+    if (!location) return { status: 'blocked', reason: 'invalid-program-stop' };
     stops.push({
       id: stop.id,
       placement: 'before-operation-end' as const,
-      point,
+      ...location,
       remainingCutLengthMm: remaining
     });
   }
@@ -142,14 +189,13 @@ function pointAtParameter(
   if (segment.kind === 'line') {
     const start = orientedSegmentStart(segment, ref);
     const end = orientedSegmentEnd(segment, ref);
+    if (clamped === 0) return start;
+    if (clamped === 1) return end;
     return {
       x: start.x + (end.x - start.x) * clamped,
       y: start.y + (end.y - start.y) * clamped
     };
   }
   if (segment.kind === 'arc') return pointOnArcAtParameter(segment, ref, clamped);
-  const start = orientedSegmentStart(segment, ref);
-  const startAngle = Math.atan2(start.y - segment.center.y, start.x - segment.center.x);
-  const direction = orientedCircleClockwise(segment, ref) ? -1 : 1;
-  return pointOnCircle(segment.center, segment.radius, startAngle + direction * Math.PI * 2 * clamped);
+  return pointOnCircleAtParameter(segment, ref, clamped);
 }

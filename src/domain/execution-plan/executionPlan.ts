@@ -5,7 +5,7 @@ import { createPositioningMaterialClassifier } from '@/domain/path-intel/positio
 import { threadingIntentIsCompatible } from '@/domain/path-intel/threadingIntent';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { operationEntryPoint } from '@/domain/path-intel/operationTransitions';
-import { resolveOperationProgramStopPoints } from '@/domain/path-intel/programStops';
+import { resolveOperationProgramStopLocations, type ResolvedOperationProgramStopLocation } from '@/domain/path-intel/programStops';
 import {
   orientedArcClockwise,
   orientedCircleClockwise,
@@ -476,11 +476,11 @@ function compileOperation(input: {
     operation, segmentsById, document.options.coincidenceEpsilon, input.sourceSpansById
   );
   if (!contourMotions.ok) return contourMotions;
-  const distanceStops = resolveOperationProgramStopPoints(operation, segmentsById);
+  const distanceStops = resolveOperationProgramStopLocations(operation, segmentsById);
   if (distanceStops.status === 'blocked') {
     return blockedForOperation(
       'EXECUTION_PLAN_PROGRAM_STOP_INVALID',
-      `A remaining-distance program stop for ${operation.displayName} cannot be resolved.`,
+      `A remaining-distance program stop for ${operation.displayName} cannot be resolved inside its active contour. Check the distance; a stop too close to a segment endpoint may exceed numerical precision.`,
       operation
     );
   }
@@ -585,49 +585,42 @@ function compileContourMotions(
 
 function interleaveDistanceStops(
   motions: readonly ContourMotionEvent[],
-  stops: readonly {
-    id: string;
-    placement: 'before-operation-end';
-    point: Point2;
-    remainingCutLengthMm: number;
-  }[],
+  stops: readonly ResolvedOperationProgramStopLocation[],
   operation: PathOperation
 ):
   | { ok: true; items: Array<{ kind: 'motion'; event: ContourMotionEvent } | { kind: 'stop'; stop: OperationProgramStop; point: Point2 }> }
   | ExecutionPlanFailure {
   const stopById = new Map(enabledStops(operation).map((stop) => [stop.id, stop]));
-  const totalLength = motions.reduce((total, motion) => total + motionLength(motion), 0);
-  const pending = stops
-    .map((stop) => ({ ...stop, distanceFromStart: totalLength - stop.remainingCutLengthMm }))
-    .sort((left, right) => left.distanceFromStart - right.distanceFromStart);
+  // Resolve points and source parameters together, including which side of a join
+  // a rounded distance selects. Recomputing cumulative distances can select another side.
+  const pending = [...stops].sort((left, right) =>
+    left.segmentRefIndex - right.segmentRefIndex || left.parameter - right.parameter ||
+    right.remainingCutLengthMm - left.remainingCutLengthMm);
   const items: Array<
     { kind: 'motion'; event: ContourMotionEvent } |
     { kind: 'stop'; stop: OperationProgramStop; point: Point2 }
   > = [];
-  let distanceFromStart = 0;
   let stopIndex = 0;
 
-  for (const motion of motions) {
-    const length = motionLength(motion);
-    const motionEndDistance = distanceFromStart + length;
+  for (const [index, motion] of motions.entries()) {
     let currentStart = copyPoint(motion.start);
     let currentSourceParameter = motion.sourceRange?.start;
     let splitCurrentMotion = false;
-    while (pending[stopIndex] && pending[stopIndex].distanceFromStart <= motionEndDistance) {
+    while (pending[stopIndex] && pending[stopIndex].segmentRefIndex === index) {
       const pendingStop = pending[stopIndex];
       const stop = stopById.get(pendingStop.id);
-      if (!stop || pendingStop.distanceFromStart <= distanceFromStart) {
+      if (!stop) {
         return blockedForOperation(
           'EXECUTION_PLAN_PROGRAM_STOP_INVALID',
           `Program stop ${pendingStop.id} does not lie inside a contour motion.`,
           operation
         );
       }
-      if (!pointsEqual(currentStart, pendingStop.point, 0)) {
-        const fraction = (pendingStop.distanceFromStart - distanceFromStart) / length;
+      const wholeCircleBeforeStop = motion.fullCircle === true && !splitCurrentMotion && pendingStop.parameter === 1;
+      if (!pointsEqual(currentStart, pendingStop.point, 0) || wholeCircleBeforeStop) {
+        const fraction = pendingStop.parameter;
         const stopSourceParameter = motion.sourceRange
-          ? motion.sourceRange.start +
-            (motion.sourceRange.end - motion.sourceRange.start) * fraction
+          ? sourceParameterAtFraction(motion.sourceRange, fraction)
           : undefined;
         items.push({
           kind: 'motion',
@@ -635,7 +628,7 @@ function interleaveDistanceStops(
             ...motion,
             start: currentStart,
             end: copyPoint(pendingStop.point),
-            fullCircle: false,
+            fullCircle: wholeCircleBeforeStop,
             ...(currentSourceParameter === undefined || stopSourceParameter === undefined
               ? {}
               : { sourceRange: { start: currentSourceParameter, end: stopSourceParameter } })
@@ -648,7 +641,7 @@ function interleaveDistanceStops(
       splitCurrentMotion = true;
       stopIndex += 1;
     }
-    if (!pointsEqual(currentStart, motion.end, 0) || motion.fullCircle) {
+    if (!pointsEqual(currentStart, motion.end, 0) || (motion.fullCircle && !splitCurrentMotion)) {
       items.push({
         kind: 'motion',
         event: {
@@ -661,7 +654,6 @@ function interleaveDistanceStops(
         }
       });
     }
-    distanceFromStart = motionEndDistance;
   }
   if (stopIndex !== pending.length) {
     return blockedForOperation(
@@ -673,17 +665,10 @@ function interleaveDistanceStops(
   return { ok: true, items };
 }
 
-function motionLength(motion: ContourMotionEvent) {
-  if (motion.motion === 'linear') return distance(motion.start, motion.end);
-  if (!motion.center) return Number.NaN;
-  const radius = distance(motion.center, motion.start);
-  if (motion.fullCircle) return Math.PI * 2 * radius;
-  const startAngle = Math.atan2(motion.start.y - motion.center.y, motion.start.x - motion.center.x);
-  const endAngle = Math.atan2(motion.end.y - motion.center.y, motion.end.x - motion.center.x);
-  const delta = motion.clockwise
-    ? positiveAngle(startAngle - endAngle)
-    : positiveAngle(endAngle - startAngle);
-  return radius * delta;
+function sourceParameterAtFraction(range: { start: number; end: number }, fraction: number) {
+  if (fraction === 0) return range.start;
+  if (fraction === 1) return range.end;
+  return range.start + (range.end - range.start) * fraction;
 }
 
 function enabledStops(operation: PathOperation) {
@@ -847,12 +832,6 @@ function pointsEqual(first: Point2, second: Point2, tolerance: number) {
 
 function distance(first: Point2, second: Point2) {
   return Math.hypot(first.x - second.x, first.y - second.y);
-}
-
-function positiveAngle(value: number) {
-  const fullTurn = Math.PI * 2;
-  const remainder = value % fullTurn;
-  return remainder < 0 ? remainder + fullTurn : remainder;
 }
 
 function copyPoint(point: Point2): Point2 {

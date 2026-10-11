@@ -54,6 +54,12 @@ interface ParameterizedIntersectionPoint {
   rightParameter: number | null;
 }
 
+interface LineCircularIntersectionCandidate {
+  point: Point2;
+  radial: Point2;
+  parameter: number;
+}
+
 type DetailedSegmentIntersection =
   | { kind: 'none'; points: [] }
   | { kind: 'points'; points: ParameterizedIntersectionPoint[] }
@@ -413,34 +419,35 @@ function intersectLineCircular(
     Number.MIN_VALUE
   );
   const discriminantTolerance = ROUNDING_FACTOR * Number.EPSILON * discriminantScale;
-  if (discriminant < -discriminantTolerance) return noIntersection();
+  const anchoredCandidates = arcEndpointAnchoredLineCandidates({
+    line, circular, start, end: { x: localEnd.x / scale, y: localEnd.y / scale },
+    delta, radius, scale, quadraticA
+  });
+  if (anchoredCandidates == null && discriminant < -discriminantTolerance) return noIntersection();
   const roots = Math.abs(discriminant) <= discriminantTolerance
     ? [closestParameter]
     : stableQuadraticRoots(quadraticA, quadraticB, quadraticC, Math.max(0, discriminant));
+  const candidates = anchoredCandidates ?? roots.map((parameter) => {
+    const radial = {
+      x: (start.x + delta.x * parameter) * scale,
+      y: (start.y + delta.y * parameter) * scale
+    };
+    return {
+      point: { x: circular.center.x + radial.x, y: circular.center.y + radial.y },
+      radial,
+      parameter
+    };
+  });
   const parameterTolerance = tolerance / Math.max(lineLength, Number.MIN_VALUE);
   const minimum = range === 'start' ? -Infinity : range === 'end' ? 1 : 0;
   const maximum = range === 'end' ? Infinity : range === 'start' ? 0 : 1;
-  const points = roots
+  const points = candidates
     .filter(
-      (parameter) =>
+      ({ parameter }) =>
         Number.isFinite(parameter) &&
         parameter >= minimum - parameterTolerance &&
         parameter <= maximum + parameterTolerance
     )
-    .map((parameter) => {
-      const radial = {
-        x: (start.x + delta.x * parameter) * scale,
-        y: (start.y + delta.y * parameter) * scale
-      };
-      return {
-        point: {
-          x: circular.center.x + radial.x,
-          y: circular.center.y + radial.y
-        },
-        radial,
-        parameter
-      };
-    })
     .filter(({ point, radial }) =>
       pointIsOnCircularSegment(point, circular, tolerance, epsilon, radial)
     )
@@ -451,6 +458,58 @@ function intersectLineCircular(
     }));
 
   return parameterizedPointIntersection(points);
+}
+
+function arcEndpointAnchoredLineCandidates({ line, circular, start, end, delta, radius, scale, quadraticA }: {
+  line: LinePathSegment;
+  circular: CircularPathSegment;
+  start: Point2;
+  end: Point2;
+  delta: Point2;
+  radius: number;
+  scale: number;
+  quadraticA: number;
+}): LineCircularIntersectionCandidate[] | null {
+  if (circular.kind !== 'arc') return null;
+  for (const candidate of [
+    { parameter: 0, point: line.start, radial: start },
+    { parameter: 1, point: line.end, radial: end }
+  ]) {
+    const sharedEndpoint = [circular.start, circular.end].some(endpoint =>
+      candidate.point.x === endpoint.x && candidate.point.y === endpoint.y
+    );
+    if (!sharedEndpoint) continue;
+
+    const radialSquared = dot(candidate.radial, candidate.radial);
+    const radiusSquared = radius * radius;
+    if (radialSquared === 0 || radiusSquared === 0) continue;
+    const radialRoundoff = ROUNDING_FACTOR * Number.EPSILON * (radialSquared + radiusSquared);
+    if (Math.abs(radialSquared - radiusSquared) > radialRoundoff) continue;
+    // An exact declared endpoint supplies one root when its radial residual is
+    // only local arithmetic error. Factor u * (A*u + B) at that endpoint instead
+    // of letting sqrt(radial error) create two artificial near-tangent branches.
+    // Retain the other root: a small dot product can still encode a real crossing.
+    const secondOffset = -2 * dot(candidate.radial, delta) / quadraticA;
+    return [
+      {
+        point: candidate.point,
+        radial: { x: candidate.radial.x * scale, y: candidate.radial.y * scale },
+        parameter: candidate.parameter
+      },
+      {
+        point: {
+          x: candidate.point.x + delta.x * secondOffset * scale,
+          y: candidate.point.y + delta.y * secondOffset * scale
+        },
+        radial: {
+          x: (candidate.radial.x + delta.x * secondOffset) * scale,
+          y: (candidate.radial.y + delta.y * secondOffset) * scale
+        },
+        parameter: candidate.parameter + secondOffset
+      }
+    ];
+  }
+  return null;
 }
 
 function intersectCircularSegments(

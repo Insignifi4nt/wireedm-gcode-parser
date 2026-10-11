@@ -27,7 +27,7 @@ export function compileSimulation(document: PathPlanningDocument, input: Simulat
       const sourceId = event.trace.find((ref) => ref.kind === 'operation')?.operationId ?? event.operationId;
       const operation = document.plan.operations.find(({ id }) => id === sourceId);
       const threading = operation?.threadingTransition ?? document.setup?.threadingDefault;
-      if (threading?.wireSeparation === 'already-separated') wireThreaded = false;
+      if (threading?.mode !== 'continuous' && threading?.wireSeparation === 'already-separated') wireThreaded = false;
     }
     if (event.kind === 'wire-separate' || (event.kind === 'position' && event.separatesWire)) wireThreaded = false;
     const lengthMm = event.kind === 'motion' ? motionLength(event) : event.kind === 'position' ? distance(event.from, event.to) : 0;
