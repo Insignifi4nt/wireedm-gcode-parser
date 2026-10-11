@@ -916,6 +916,15 @@ function remapMachiningSpansAfterSplit(
   const intervals = original.kind === 'circle'
     ? [[firstParameter, firstParameter + direction * 0.5], [firstParameter + direction * 0.5, firstParameter + direction]]
     : [[firstParameter, firstParameter + direction * split.t], [firstParameter + direction * split.t, firstParameter + direction]];
+  const reservedSpanIds = new Set(document.machiningParticipation.spans
+    .filter((span) => span.sourceSegmentId !== original.id).map((span) => span.id));
+  const reserveSpanId = (preferred: string) => {
+    let id = preferred;
+    let suffix = 2;
+    while (reservedSpanIds.has(id)) id = `${preferred}__${suffix++}`;
+    reservedSpanIds.add(id);
+    return id;
+  };
   document.machiningParticipation.spans = document.machiningParticipation.spans.flatMap((span) => {
     if (span.sourceSegmentId !== original.id) return [span];
     return replacements.flatMap((replacement, index) => {
@@ -935,7 +944,7 @@ function remapMachiningSpansAfterSplit(
         else merged.push(range);
       }
       return merged.map((range, rangeIndex) => ({
-        ...span, id: `${span.id}__${replacement.id}_${rangeIndex + 1}`, sourceSegmentId: replacement.id, range
+        ...span, id: reserveSpanId(`${span.id}__${replacement.id}_${rangeIndex + 1}`), sourceSegmentId: replacement.id, range
       }));
     });
   }).sort((left, right) => left.sourceSegmentId.localeCompare(right.sourceSegmentId) || left.range.start - right.range.start);

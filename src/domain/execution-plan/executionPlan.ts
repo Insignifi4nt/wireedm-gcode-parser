@@ -1,7 +1,7 @@
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
-import { classifyPositioningMaterial } from '@/domain/path-intel/positioningMaterial';
+import { createPositioningMaterialClassifier } from '@/domain/path-intel/positioningMaterial';
 import { threadingIntentIsCompatible } from '@/domain/path-intel/threadingIntent';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { operationEntryPoint } from '@/domain/path-intel/operationTransitions';
@@ -244,6 +244,11 @@ export function compileWireEdmExecutionPlan(
     initialWirePosition: copyPoint(initialWire.point)
   });
   let currentPosition = copyPoint(initialWire.point);
+  let positioningMaterial: ReturnType<typeof createPositioningMaterialClassifier> | undefined;
+  const classifyMaterial: ReturnType<typeof createPositioningMaterialClassifier> = (from, to) => {
+    positioningMaterial ??= createPositioningMaterialClassifier(document);
+    return positioningMaterial(from, to);
+  };
 
   for (const [operationIndex, operation] of operations.entries()) {
     const compiled = compileOperation({
@@ -254,6 +259,7 @@ export function compileWireEdmExecutionPlan(
       operationIndex,
       segmentsById,
       sourceSpansById,
+      classifyMaterial,
       legacySavedRevision: options.legacySavedRevision === true
     });
     if (!compiled.ok) return compiled;
@@ -313,6 +319,7 @@ function compileOperation(input: {
   operationIndex: number;
   segmentsById: Map<string, PathSegment>;
   sourceSpansById: Map<string, MachiningSpan>;
+  classifyMaterial: ReturnType<typeof createPositioningMaterialClassifier>;
   legacySavedRevision: boolean;
 }): ExecutionPlanFailure | { ok: true; endPoint: Point2 } {
   const { context, document, operation, operationIndex, segmentsById } = input;
@@ -382,7 +389,7 @@ function compileOperation(input: {
   // Material crossing only constrains a continuously threaded move. Separated
   // travel and legacy integrity reads do not consume this potentially full-job scan.
   const material = !input.legacySavedRevision && threading?.mode === 'continuous'
-    ? classifyPositioningMaterial(document, input.currentPosition, entryPoint)
+    ? input.classifyMaterial(input.currentPosition, entryPoint)
     : null;
   if (!input.legacySavedRevision && threading?.mode === 'continuous' && material?.status === 'crosses-finished-material') {
     return blockedForOperation('EXECUTION_PLAN_THREADING_INVALID',

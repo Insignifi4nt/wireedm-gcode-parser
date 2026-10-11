@@ -1285,6 +1285,16 @@ function validatePathElements(
         `Path element ${element.id} references missing contour ${element.contourId}.`,
         { relatedContourIds: [element.contourId] }
       );
+    } else if (
+      Number.isInteger(element.containmentDepth) &&
+      Number.isInteger(contour.containmentDepth) &&
+      element.containmentDepth !== contour.containmentDepth
+    ) {
+      context.add(
+        'upid-identity-mismatch',
+        `Path element ${element.id} containment depth disagrees with contour ${contour.id}. The original is unchanged; review a corrected document and save a new revision.`,
+        { relatedContourIds: [contour.id] }
+      );
     }
     if (!chain) {
       context.add(
@@ -2089,7 +2099,7 @@ function manualStartSourceExists(
   if (segmentMap.has(sourceSegmentId)) return true;
   return createdSegmentIds.length > 0 && createdSegmentIds.every((id) => {
     const segment = segmentMap.get(id);
-    return segment?.source.edit?.parentSegmentId === sourceSegmentId;
+    return segment?.source?.edit?.parentSegmentId === sourceSegmentId;
   });
 }
 
@@ -2462,8 +2472,8 @@ function refsAreValidTraversalOf(
 ) {
   if (!Array.isArray(candidateValue) || !Array.isArray(chainValue)) return false;
   if (candidateValue.length === 0 || candidateValue.length !== chainValue.length) return false;
-  const candidate = candidateValue.map(validOrientedRef);
-  const chain = chainValue.map(validOrientedRef);
+  const candidate = Array.from(candidateValue, validOrientedRef);
+  const chain = Array.from(chainValue, validOrientedRef);
   if (candidate.some((ref) => !ref) || chain.some((ref) => !ref)) return false;
   const candidateRefs = candidate as OrientedSegmentRef[];
   const chainRefs = chain as OrientedSegmentRef[];

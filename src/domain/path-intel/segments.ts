@@ -668,24 +668,24 @@ export function requiredSegment(segmentsById: Map<SegmentId, PathSegment>, segme
 }
 
 export function segmentStartTangent(segment: PathSegment, ref: OrientedSegmentRef) {
-  if (segment.kind === 'circle') return { x: 0, y: ref.reversed ? -1 : 1 };
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
   if (segment.kind === 'line') return normalizeVector({ x: end.x - start.x, y: end.y - start.y });
 
   const angle = Math.atan2(start.y - segment.center.y, start.x - segment.center.x);
-  const clockwise = orientedArcClockwise(segment, ref);
+  const clockwise = segment.kind === 'circle'
+    ? orientedCircleClockwise(segment, ref) : orientedArcClockwise(segment, ref);
   return clockwise ? { x: Math.sin(angle), y: -Math.cos(angle) } : { x: -Math.sin(angle), y: Math.cos(angle) };
 }
 
 export function segmentEndTangent(segment: PathSegment, ref: OrientedSegmentRef) {
-  if (segment.kind === 'circle') return { x: 0, y: ref.reversed ? -1 : 1 };
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
   if (segment.kind === 'line') return normalizeVector({ x: end.x - start.x, y: end.y - start.y });
 
   const angle = Math.atan2(end.y - segment.center.y, end.x - segment.center.x);
-  const clockwise = orientedArcClockwise(segment, ref);
+  const clockwise = segment.kind === 'circle'
+    ? orientedCircleClockwise(segment, ref) : orientedArcClockwise(segment, ref);
   return clockwise ? { x: Math.sin(angle), y: -Math.cos(angle) } : { x: -Math.sin(angle), y: Math.cos(angle) };
 }
 

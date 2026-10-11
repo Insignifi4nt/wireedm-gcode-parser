@@ -4,7 +4,7 @@ import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 import { normalizeUpidPathElementSelection } from '@/domain/upid/projectRail';
 import { deriveSpanSegment, setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 import { inferPathPoint } from '../pathPointInference';
-import { mirrorPathDocument, reversePathOperation, rotatePathDocument, setClosedOperationStartAtInferredPoint, translatePathDocument, translatePathSegment } from '../pathDocumentOperations';
+import { mirrorPathDocument, reversePathOperation, rotatePathDocument, setClosedOperationStartAtInferredPoint, setClosedOperationStartNearPoint, translatePathDocument, translatePathSegment } from '../pathDocumentOperations';
 
 function rectangle() {
   return createPathPlanningDocumentFromDxfEntities([
@@ -104,5 +104,44 @@ describe('geometry edit identity integrity', () => {
     expect(setClosedOperationStartAtInferredPoint(moved, inferred)).toBeNull();
     expect(setClosedOperationStartAtInferredPoint(document, { ...inferred, t: 0.9 })).toBeNull();
     expect(setClosedOperationStartAtInferredPoint(document, inferred)).not.toBeNull();
+  });
+
+  it('reserves untouched portable span IDs when a manual circle start splits participation', () => {
+    let document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 5 }
+    ]);
+    const [firstSource, secondSource] = document.segments;
+    const firstPartial = setMachiningSpanParticipation(document, {
+      sourceSegmentId: firstSource.id, range: { start: 0, end: 0.25 }, participation: 'inactive-reference'
+    });
+    if (!firstPartial) throw new Error('Invalid first participation fixture');
+    const secondPartial = setMachiningSpanParticipation(firstPartial, {
+      sourceSegmentId: secondSource.id, range: { start: 0, end: 0.25 }, participation: 'inactive-reference'
+    });
+    if (!secondPartial?.machiningParticipation) throw new Error('Invalid second participation fixture');
+    document = secondPartial;
+    const firstSpan = secondPartial.machiningParticipation.spans[0];
+    const secondSpan = secondPartial.machiningParticipation.spans[1];
+    const firstOperation = document.plan.operations.find((operation) =>
+      operation.segmentRefs.some((ref) => ref.segmentId === firstSource.id));
+    if (!firstOperation) throw new Error('Missing first circle operation');
+    const ordinary = setClosedOperationStartNearPoint(document, firstOperation.id, { x: 0, y: 5 });
+    const ordinarySpan = ordinary?.machiningParticipation?.spans.find((span) =>
+      span.sourceSegmentId !== secondSource.id);
+    if (!ordinarySpan) throw new Error('Missing split participation fixture');
+    expect(ordinarySpan.id).toBe(`${firstSpan.id}__seg_edit_0002_1`);
+
+    secondSpan.id = ordinarySpan.id;
+    const before = structuredClone(document);
+    expect(validateUpidDocument(document).structuralDiagnostics).toEqual([]);
+    const result = setClosedOperationStartNearPoint(document, firstOperation.id, { x: 0, y: 5 });
+    if (!result?.machiningParticipation) throw new Error('Manual start split failed');
+    expect(validateUpidDocument(result).structuralDiagnostics).toEqual([]);
+    expect(result.machiningParticipation.spans.find((span) => span.sourceSegmentId === secondSource.id)).toEqual(secondSpan);
+    expect(result.machiningParticipation.spans.find((span) => span.sourceSegmentId !== secondSource.id))
+      .toMatchObject({ id: `${ordinarySpan.id}__2`, range: ordinarySpan.range });
+    expect(result).toEqual(setClosedOperationStartNearPoint(document, firstOperation.id, { x: 0, y: 5 }));
+    expect(document).toEqual(before);
   });
 });
