@@ -6,6 +6,26 @@ import { cadSiteTools } from './cadSiteTools';
 import type { CadController } from './useCadController';
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('discovers Sweep and rejects incomplete geometry edits behind compact registration', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid feature reached the controller'); });
+    const tools = cadSiteTools(controller); const edit = tools.find(entry => entry.name === 'cad_edit_document');
+    const inspect = tools.find(entry => entry.name === 'cad_inspect_sweep');
+    if (!edit || !inspect) throw new Error('Missing Sweep tools');
+    const envelope = { kind: 'sweep', id: 'bend', name: 'Bend', suppressed: false };
+    const complete = { ...envelope, sketchId: 'section', curveId: 'rail', operation: 'new', targetId: null };
+    for (const feature of [envelope, { ...complete, curveId: null }, { ...complete, autoPlace: true }, { ...complete, twist: 90 }]) {
+      const input = { expectedVersion: 'current', edits: [{ kind: 'add-feature', feature }] };
+      expect(Value.Check(edit.inputSchema, input)).toBe(true);
+      expect(await edit.execute(input)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(await inspect.execute({ expectedVersion: 'current', sketchId: 'section', curveId: 'rail', repair: true }))
+      .toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(controller).not.toHaveBeenCalled();
+    const discovery = cadSiteTools(() => ({} as CadController)).find(entry => entry.name === 'cad_describe_features');
+    expect(await discovery?.execute({ kind: 'sweep' })).toMatchObject({ ok: true, data: { kind: 'sweep',
+      description: expect.stringContaining('cad_inspect_sweep'), schema: { additionalProperties: false,
+        required: expect.arrayContaining(['sketchId', 'curveId', 'operation', 'targetId']) } } });
+  });
   it('keeps registered feature envelopes compact while rejecting invalid complete edits before the controller', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid feature reached the controller'); });
     const edit = cadSiteTools(controller).find(item => item.name === 'cad_edit_document');

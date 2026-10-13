@@ -14,6 +14,8 @@ import { loadCadSolidImport } from './cadKernelImport';
 import { resolveCadCircularPattern } from '../../../domain/cad/cadPatterns';
 import { resolveCadLoftSections } from '../../../domain/cad/cadLoft';
 import { buildCadLoftSolid } from './cadKernelLoft';
+import { resolveCadSweepInputs } from '../../../domain/cad/cadSweep';
+import { buildCadSweepSolid } from './cadKernelSweep';
 import { MAX_CAD_TOPOLOGY_ELEMENTS, parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
 
@@ -64,6 +66,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
   const bodies = new Map<string, { shape: Shape3D; feature: CadFeature; mesh: CadMesh; instances: number; topology: CadKernelTopology }>();
   const visible = new Set<string>();
   const sketches = new Map<string, CadSketchFeature>();
+  const references = new Map<string, CadFeature>();
   const diagnostics: CadBuildResult['diagnostics'][number][] = [];
   const number = (value: CadScalar) => evaluateCadScalar(value, document.parameters);
   const own = (shape: Shape3D) => { shapes.add(shape); return shape; };
@@ -122,8 +125,8 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
       let instances = 1;
       const consumed: string[] = [];
       switch (feature.kind) {
-        case 'sketch': sketches.set(feature.id, feature); continue;
-        case 'curve': continue; // Exact reference geometry produces and consumes no native body.
+        case 'sketch': sketches.set(feature.id, feature); references.set(feature.id, feature); continue;
+        case 'curve': references.set(feature.id, feature); continue; // Exact reference geometry produces and consumes no native body.
         case 'imported': {
           const imported = loadCadSolidImport(feature.source);
           result = own(imported.shape); instances = boundedInstances(imported.analysis.solidCount); break;
@@ -151,6 +154,18 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
             result = own(feature.operation === 'join' ? target.fuse(loft) : target.cut(loft));
             consumed.push(feature.targetId);
           } else result = own(buildCadLoftSolid(sections, feature.ruled));
+          break;
+        }
+        case 'sweep': {
+          const inputs = resolveCadSweepInputs(feature, references, document.parameters);
+          if (feature.operation !== 'new') {
+            if (!feature.targetId) throw new CadError('missing-target', 'Join and cut need a target body.');
+            const target = body(feature.targetId);
+            instances = boundedInstances(1 + instancesOf(feature.targetId));
+            const sweep = own(buildCadSweepSolid(inputs));
+            result = own(feature.operation === 'join' ? target.fuse(sweep) : target.cut(sweep));
+            consumed.push(feature.targetId);
+          } else result = own(buildCadSweepSolid(inputs));
           break;
         }
         case 'fillet': case 'chamfer': {

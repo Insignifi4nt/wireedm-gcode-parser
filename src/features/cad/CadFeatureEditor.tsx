@@ -9,9 +9,10 @@ import { CadPolygonVertexFields } from './CadPolygonVertexFields';
 import { cadVisibleBodyIds } from '@/domain/cad/cadSchema';
 import { CadTopologyQuerySummary } from './CadTopologyQuerySummary';
 import { CadLoftSections } from './CadLoftSections';
+import { CadSweepSources } from './CadSweepSources';
 
 export const featureLabels: Record<CadFeature['kind'], string> = {
-  sketch: 'Sketch', curve: 'Curve', imported: 'Imported solid', extrude: 'Pad / Pocket', revolve: 'Revolve', loft: 'Loft', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / Rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
+  sketch: 'Sketch', curve: 'Curve', imported: 'Imported solid', extrude: 'Pad / Pocket', revolve: 'Revolve', loft: 'Loft', sweep: 'Sweep', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / Rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
 };
 
 const planeOptions = (['XY', 'XZ', 'YZ'] satisfies CadPlane[]).map((value) => ({ value, label: `${value} plane` }));
@@ -49,6 +50,7 @@ export function CadFeatureEditor({ feature, document, isNew, onApply, onCancel, 
   };
   let fields: React.ReactNode;
   switch (draft.kind) {
+    case 'sweep': fields = <><CadSweepSources document={document} featureId={feature.id} applyError={error} sketchId={draft.sketchId} curveId={draft.curveId} onChange={sources => update({ ...draft, ...sources })} /><SelectField label="Operation" value={draft.operation} options={operationOptions} onChange={operation => update({ ...draft, operation, targetId: operation === 'new' ? null : draft.targetId ?? bodies.at(-1)?.value ?? null })} />{draft.operation !== 'new' && body('Target body', draft.targetId ?? '', targetId => update({ ...draft, targetId }))}</>; break;
     case 'imported': fields = <><dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Format</dt><dd>{draft.source.format.toUpperCase()}</dd>{draft.source.format === 'stl' && <><dt>Source units</dt><dd>{draft.source.units === 'inch' ? 'inch' : 'mm'}</dd></>}</dl><p className="cad-inspector-note">Imported geometry is fixed. Add features to modify the solid.</p></>; break;
     case 'sketch': fields = <><SelectField label="Reference plane" value={draft.plane} options={planeOptions} onChange={(plane) => update({ ...draft, plane })} />{scalar('Plane offset', draft.offset, (offset) => update({ ...draft, offset }))}{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
     case 'curve': fields = <><SelectField label="Reference plane" value={draft.plane} options={planeOptions} onChange={plane => update({ ...draft, plane })} />{scalar('Plane offset', draft.offset, offset => update({ ...draft, offset }))}<CadPathSegmentFields label="Curve" segments={draft.segments} parameters={document.parameters} onChange={segments => update({ ...draft, segments })} />{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;

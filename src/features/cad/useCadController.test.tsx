@@ -59,6 +59,57 @@ async function harness(withGeometry = false, allowHandoff = false) {
 }
 
 describe('CAD controller asynchronous guards', () => {
+  async function sweepHarness() {
+    const h = await harness(true);
+    await act(async () => h.cad().edit([{ kind: 'add-feature', feature: {
+      kind: 'curve', id: 'rail', name: 'Rail', plane: 'XZ', offset: 0, suppressed: false,
+      segments: [{ kind: 'line', start: [0, 0], end: [0, 40] }],
+      source: { format: 'dxf', fileName: 'rail.dxf', units: 'mm', text: '999\n' + 'Original annotation '.repeat(80_000) + '\n0\nEOF\n' },
+    } }]));
+    const tool = cadSiteTools(h.cad).find(entry => entry.name === 'cad_inspect_sweep');
+    if (!tool) throw new Error('Sweep inspection tool missing');
+    return { ...h, tool };
+  }
+  it('shares a bounded read-only Sweep preflight without native work or imported-source duplication', async () => {
+    const h = await sweepHarness(); const before = h.session.getSnapshot();
+    const result = await h.tool.execute({ expectedVersion: before.version, sketchId: 'sketch', curveId: 'rail' });
+    expect(result).toMatchObject({ ok: true, data: { version: before.version, eligible: true, nativeBuildRequired: true,
+      scope: 'new-feature-at-end', persisted: false, sketchId: 'sketch', curveId: 'rail', nativeWork: 1,
+      limits: { curveSegments: 64, sectionEdgesTimesCurveSegments: 2048 }, section: { plane: 'XY', offsetMm: 0, edgeCount: 1 },
+      curve: { plane: 'XZ', offsetMm: 0, segmentCount: 1, lengthMm: 40, startWorldMm: [0, 0, 0], startTangentWorld: [0, 0, 1] },
+      clearance: { profileRadiusMm: expect.closeTo(10, 8), envelopeEdgeCount: 4 } } });
+    expect(JSON.stringify(result).length).toBeLessThan(2048);
+    expect(JSON.stringify(result)).not.toContain('Original annotation');
+    expect(h.session.getSnapshot()).toBe(before); expect(kernel.build).not.toHaveBeenCalled();
+    expect(await h.tool.execute({ expectedVersion: before.version, sketchId: 'rail', curveId: 'sketch' }))
+      .toMatchObject({ ok: true, data: { eligible: false, code: 'invalid-reference', persisted: false } });
+    expect(h.session.getSnapshot()).toBe(before);
+  });
+  it('keeps Sweep preflight behind current version, workflow, cancellation and strict tool arguments', async () => {
+    const h = await sweepHarness(); const before = h.session.getSnapshot();
+    const input = { expectedVersion: before.version, sketchId: 'sketch', curveId: 'rail' };
+    expect(await h.tool.execute({ ...input, repair: true })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(await h.tool.execute({ ...input, expectedVersion: 'stale' })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    const abort = new AbortController(); abort.abort();
+    expect(await h.tool.execute(input, { signal: abort.signal })).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    await act(async () => h.session.setWorkflowOpen(true));
+    expect(await h.tool.execute(input)).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    await act(async () => h.session.setWorkflowOpen(false));
+    expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().version).toBe(before.version);
+    expect(kernel.build).not.toHaveBeenCalled();
+  });
+  it('rechecks draft changes and late cancellation after loading the Sweep inspector', async () => {
+    const h = await sweepHarness(); const before = h.session.getSnapshot();
+    await act(async () => {
+      const reading = h.cad().inspectSweep('sketch', 'rail', before.version);
+      h.session.edit([{ kind: 'rename-document', name: 'Newer draft' }]);
+      await expect(reading).rejects.toMatchObject({ code: 'STALE_STATE' });
+    });
+    const latest = h.session.getSnapshot(); const abort = new AbortController();
+    const reading = h.cad().inspectSweep('sketch', 'rail', latest.version, abort.signal); abort.abort();
+    await expect(reading).rejects.toMatchObject({ name: 'AbortError' });
+    expect(h.session.getSnapshot()).toBe(latest); expect(kernel.build).not.toHaveBeenCalled();
+  });
   const curveDxf = '0\nSECTION\n2\nENTITIES\n0\nLINE\n10\n0\n20\n0\n11\n20\n21\n0\n0\nENDSEC\n0\nEOF\n';
   const curveSource = { format: 'dxf' as const, fileName: 'Rail.dxf', text: curveDxf, units: 'mm' as const };
   const curveInput = { fileName: curveSource.fileName, text: curveSource.text, units: curveSource.units };

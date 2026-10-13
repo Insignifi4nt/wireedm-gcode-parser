@@ -11,6 +11,7 @@ import { isCadImportData } from './cadImportData';
 import { MAX_CAD_PATTERN_COUNT, MAX_CAD_PATTERN_INSTANCES, MIN_CAD_PATTERN_COUNT, resolveCadCircularPattern } from './cadPatterns';
 import { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS, resolveCadLoftSections } from './cadLoft';
 import { CadCurveFeatureSchema, resolveCadCurve } from './cadCurve';
+import { CadSweepFeatureSchema, resolveCadSweepInputs } from './cadSweep';
 import { CadFeatureBaseSchemaFields, CadIdentifierSchema, CadLabelSchema, CadNumberSchema, CadPathSegmentSchema, CadPlaneSchema, CadPoint2Schema, CadScalarSchema } from './cadPrimitives';
 export { CadPathSegmentSchema } from './cadPrimitives';
 
@@ -35,6 +36,7 @@ export const CadSketchProfileSchema = Type.Object({ id: identifier, name: label,
   role: Type.Optional(Type.Union([Type.Literal('outer'), Type.Literal('hole')])), geometry: CadProfileSchema }, strict);
 export const CadFeatureSchema = Type.Union([
   CadCurveFeatureSchema,
+  CadSweepFeatureSchema,
   Type.Object({ ...base, kind: Type.Literal('imported'), source: CadSolidImportSourceSchema }, strict),
   Type.Object({ ...base, kind: Type.Literal('sketch'), plane, offset: scalar, profiles: Type.Array(CadSketchProfileSchema, { maxItems: 256 }), source: Type.Optional(CadDxfImportSourceSchema) }, strict),
   Type.Object({ ...base, kind: Type.Literal('extrude'), sketchId: identifier, distance: scalar, symmetric: Type.Boolean(), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
@@ -66,6 +68,7 @@ export function cadFeatureInputs(feature: CadFeature): { readonly sketchIds: rea
     case 'sketch': case 'curve': case 'imported': return { sketchIds: [], curveIds, bodyIds: [] };
     case 'extrude': case 'revolve': return { sketchIds: [feature.sketchId], curveIds, bodyIds: feature.targetId === null ? [] : [feature.targetId] };
     case 'loft': return { sketchIds: feature.sketchIds, curveIds, bodyIds: feature.targetId === null ? [] : [feature.targetId] };
+    case 'sweep': return { sketchIds: [feature.sketchId], curveIds: [feature.curveId], bodyIds: feature.targetId === null ? [] : [feature.targetId] };
     case 'fillet': case 'chamfer': case 'shell': return { sketchIds: [], curveIds, bodyIds: [feature.targetId] };
     case 'boolean': return { sketchIds: [], curveIds, bodyIds: [feature.targetId, feature.toolId] };
     case 'transform': case 'linear-pattern': case 'circular-pattern': case 'mirror': return { sketchIds: [], curveIds, bodyIds: [feature.sourceId] };
@@ -81,7 +84,7 @@ export type CadBodyFeature = Exclude<CadFeature, { readonly kind: 'sketch' | 'cu
 export function cadFeatureProducesBody(feature: CadFeature): feature is CadBodyFeature {
   switch (feature.kind) {
     case 'sketch': case 'curve': return false;
-    case 'imported': case 'extrude': case 'revolve': case 'loft': case 'fillet': case 'chamfer': case 'shell':
+    case 'imported': case 'extrude': case 'revolve': case 'loft': case 'sweep': case 'fillet': case 'chamfer': case 'shell':
     case 'boolean': case 'transform': case 'linear-pattern': case 'circular-pattern': case 'mirror': return true;
     default: { const exhaustive: never = feature; return exhaustive; }
   }
@@ -151,9 +154,9 @@ export function parseCadDocument(value: unknown): CadDocument {
       if (!visibleBodies.has(id)) throw new CadError('unavailable-body', `Feature "${feature.name}" references suppressed or already consumed body "${id}". Select its current successor.`);
     }
     const operandInstances = solidDependencies.reduce((total, id) => total + (expandedInstances.get(id) ?? 1), 0);
-    // Loft adds one generated operand before join/cut. Keep the existing
+    // New section generators add one operand before join/cut. Keep the existing
     // Pad/Revolve preflight counts unchanged for saved-history compatibility.
-    let instances = feature.kind === 'curve' ? 0 : feature.kind === 'loft' ? operandInstances + 1 : operandInstances || 1;
+    let instances = feature.kind === 'curve' ? 0 : feature.kind === 'loft' || feature.kind === 'sweep' ? operandInstances + 1 : operandInstances || 1;
     if (feature.kind === 'linear-pattern' || feature.kind === 'circular-pattern') instances *= feature.count;
     if (instances > MAX_CAD_PATTERN_INSTANCES) throw new CadError('feature-limit', 'Nested pattern expansion exceeds 1000 solid instances.');
     switch (feature.kind) {
@@ -194,6 +197,11 @@ export function parseCadDocument(value: unknown): CadDocument {
       case 'loft': {
         if (feature.operation === 'new' && feature.targetId !== null || feature.operation !== 'new' && feature.targetId === null) throw new CadError('invalid-operation', 'New bodies have no target; join and cut require a target body.');
         if (!feature.suppressed) resolveCadLoftSections(feature, previous, document.parameters);
+        break;
+      }
+      case 'sweep': {
+        if (feature.operation === 'new' && feature.targetId !== null || feature.operation !== 'new' && feature.targetId === null) throw new CadError('invalid-operation', 'New bodies have no target; join and cut require a target body.');
+        if (!feature.suppressed) resolveCadSweepInputs(feature, previous, document.parameters);
         break;
       }
       case 'fillet': case 'chamfer': {

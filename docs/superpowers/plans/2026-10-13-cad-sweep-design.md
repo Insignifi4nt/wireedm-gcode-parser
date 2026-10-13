@@ -1,6 +1,6 @@
 # Open reference curves and solid sweep
 
-Status: Curve foundation approved for implementation by the coordinator under the ongoing autonomous CAD request. Path authoring is checkpointed at `14b6914`. Ship the reusable Curve foundation first; add Sweep only after its clearance preflight and native regressions pass. Sweep remains a design proposal.
+Status: Curve foundation is implemented. Sweep domain preflight and exact segmented native construction are approved and implemented; integrated UI, shared agent operations and production verification are being completed. This records the finite conservative support contract, not a formal interval-arithmetic proof.
 
 ## Terms and scope
 
@@ -8,7 +8,7 @@ A material contour is a closed boundary in a sketch. Existing nesting determines
 
 Keep open curves separate from existing `CadProfile` values. In particular, do not weaken the closed-path invariant, encode a rail as a construction material contour, or insert an invisible closing edge. Curve references are useful on their own for exact lengths, bounds, endpoints, dimension editing and interchange.
 
-## Proposed saved contracts
+## Saved contracts
 
 ```ts
 interface CadCurveFeature extends CadFeatureBase {
@@ -82,7 +82,9 @@ Preserve the source sketch's world position and orientation. Require its plane t
 
 Initially require one active material boundary without voids or additional regions, and an active simple open G1 rail. Construction profiles are ignored explicitly. Shared `inspectCadSweepInputs` and `resolveCadSweepInputs` return the section, resolved curve, frame, precision and eligibility diagnostics. Reuse section resolution with Loft while preserving its existing error contracts; avoid a second nesting algorithm.
 
-Native probes by `cad_kernel` establish that `PipeShell` at the actual start vertex with contact/correction disabled preserves authored placement. A fixed binormal equal to the rail plane normal gives deterministic planar transport for straight, quarter-circle, tangent line/arc, clockwise and major-270-degree rails. Use explicit native settings and finally-owned builder/wire/handle cleanup. Validate one closed positive solid and existing output limits before replacing a target. Holes and non-tangent corner modes remain separate later capabilities.
+Early `PipeShell` probes established the placement and planar-frame requirements, but fitted frame/surface behavior left a certification gap. The approved implementation instead uses exact `BRepPrimAPI_MakePrism` for each authored world line displacement and signed `BRepPrimAPI_MakeRevol` around each world arc center and the rail plane normal. The native primitive's `LastShape` terminal Face becomes the next section; it avoids an independently rounded replacement pose. Fuse completed pieces without fuzzy healing or a selected corner mode. Preserve the actual world section, including offset and concave profiles. Every primitive and intermediate fuse must contain one closed, valid positive solid, with vertex/edge/face tolerances at most `2e-7` mm. Finally-owned builders, vectors, axes, Faces and failed pieces are released; the target is consumed only after complete success. Holes and sharp corner modes remain separate later capabilities.
+
+Sweep supports at most 64 rail segments and at most 2048 section-edge × rail-segment operations. Circle counts one analytic edge, polygon/path uses its actual edge count, rounded rectangle uses its actual analytic boundary, and display tessellation contributes no work units. Native probes of split quarter-circle rails took approximately 0.20, 1.12 and 22.88 seconds at 16, 64 and 128 pieces, motivating the 64-piece cap. A 128-edge section over 16 pieces completed native construction and STEP roundtrip in approximately 7.83 seconds. These are bounded performance limits for Sweep; Curve retains its 2048-edge authoring/import contract.
 
 ## Sweep clearance proof before release
 
@@ -97,6 +99,32 @@ Use a conservative analytic clearance envelope for the planar rail:
 
 This is a sufficient supported-scope proof, not a necessary test for every possible section. Report `unsupported-sweep-clearance` when a section's enclosing disk fails, with the measured section radius and rail limits. A rejected wide or offset section may still be valid under a more precise future proof. Once the tube is injective, its bounding disk contains the transported material and rules out local folding and nonlocal overlap. Kernel result checks still run afterward.
 
+### Independent pressure test and remaining certificate work
+
+For an exactly connected, unit-speed planar G1 rail, let `t` be its authored tangent, `b` its fixed plane normal and `n = b × t`. The planar transport is `F(s,y) = rail(s) + y*n(s)`. On each line/arc its signed Jacobian is `1 - curvature(s)*y`; `R > r` makes it positive throughout `|y| <= r`. Extend this map over a parameter rectangle with two semicircular caps using the endpoint tangent frames. Exact G1 joints keep the map continuous and locally one-to-one across curvature jumps. If the entire ordered boundary is an injective Jordan loop, its winding degree is one and the positive local preimage degrees force one global preimage. The third coordinate, `z*b`, then preserves injectivity of the transported section. This is an application of the [global boundary-invertibility result](https://www.cambridge.org/core/journals/proceedings-of-the-royal-society-of-edinburgh-section-a-mathematics/article/abs/global-invertibility-theorem-for-manifolds-with-boundary/8FBB60511406CB82AC37C3CFFEE44923), with the local-homeomorphism assumptions checked for these analytic pieces.
+
+The proof requires the authored boundary map itself to be simple. Clipping a self-intersecting offset, computing its union outline, or retaining only an exterior loop loses this certificate. Signed sweeps and endpoint cap directions must follow the same world frame, including clockwise rails and the XZ normal. Compute the section's enclosing radius about the actual rail start from outward-certified analytic bounds; a centroid-centred radius or sampled display bounds can underestimate an offset section.
+
+Ignored probe `tmp/probe-cad-sweep-clearance.ts` established three focused cases:
+
+- A valid two-line Curve with tangents separated by `1e-9` radians has floating-point dot product exactly `1`. At section radius `1e6` mm, its offset joints differ by `0.001` mm, against `1.78e-9` mm endpoint tolerance. Check signed cross/dot orientation and both derived offset joints; an angular threshold alone cannot certify G1. Apply the same amplified-residual check to section-plane alignment. Preserve source coordinates and reject unsupported uncertainty.
+- For `R=10` and `r=1`, circular-rail envelopes at 90, 270 and 340 degrees pass existing analytic checks; 350 and 359.999 degrees fail through endpoint-cap intersection. The local curvature inequality therefore needs the independent global envelope test.
+- A straight rail of length `0.5` with `r=1` has a simple capsule. Its cap support circles intersect, but its actual semicircles do not. Test the authored arc intervals to avoid a false rejection.
+
+Use a dedicated derived-envelope representation. Its `R+r` outer radii can exceed the saved primitive radius cap of `1e6`; the existing saved-profile parser is unsuitable as the envelope validator. Keep derived values finite, bound edge count, and outward-bound arithmetic error without silently adding saved-schema restrictions. Non-adjacent clearance decisions need a certified separation or an uncertainty rejection; ordinary finite-precision intersection rejection alone is insufficient as a proof at the scalar limits.
+
+The exploratory PipeShell alternative would require additional native-frame/approximation certification. Its [defaults](https://occt3d.com/dev/doc/refman/html/class_b_rep_offset_a_p_i___make_pipe_shell.html) are `1e-4`, `1e-4` and `1e-2`; a positional `ErrorOnSurface` bound alone cannot prove a positive Jacobian. Exact segmented prisms/revolutions supersede that alternative in this implementation.
+
+### Implemented finite support contract
+
+`cadSweep.ts` resolves one active one-boundary sketch and one active ordered Curve, validates source placement and work limits, and returns immutable section/frame/clearance data. `cadSweepClearance.ts` uses an outward section-radius bound about the actual world rail start, including accepted axial placement residual. Radius extrema use explicit arc support and interval membership; concave polygon corners and off-centre sections contribute their complete extent.
+
+The comparison band is `max(2e-7, 64*Number.EPSILON*worldSupportScale)` mm. Accumulated transport uncertainty sums scaled arithmetic per primitive, initial plane/alignment residual, every accepted joint gap and the section-radius-amplified tangent residual. Require the total at most `1e-7` mm. G1 requires the same tangent direction; the section normal may be parallel or antiparallel to the first tangent. Both comparisons use arithmetic angular precision; a resolvable elbow is unsupported. The tube radius adds four comparison bands, each arc retains another four-band radius margin, and short edges within eight bands are unsupported. Actual offset/cap joints keep the unchanged endpoint closure tolerance; no gap repair or widened closure rule is introduced.
+
+Build the ordered two-offset/two-cap envelope in a derived representation independent of saved primitive radius limits. Outward AABBs expanded by four bands prune disjoint pairs. Stream the remaining pairs without quadratic arrays; maximum accepted envelope size is 130 edges. Adjacent pairs may share only their verified joint. Non-adjacent pairs use normalized existing analytic intersection classification plus endpoint/interior stationary-point distance candidates for line/arc combinations. Subtract the arithmetic band and require separation beyond four bands. Uncertain coincident support directions reject conservatively. The returned `minimumTestedSeparationMm` describes only broadphase-tested lower bounds; it is not a global minimum. Excluded pairs are separated by their expanded outward bounds.
+
+Focused domain tests cover signed/all-plane placement, circular major/minor rails, tangent curvature reversals and shared-circle seams, close return legs, endpoint caps, remote-support cancellation, concave/off-centre enclosure, accumulated small accepted Curve gaps, work limits, strict boundaries and atomic suppressed/history/budget semantics. Native tests cover exact primitive volumes, concave/off-centre transport, signed arcs/all planes, analytic sections and exchange, cap/fuse preparation failures and native tolerance reservation. These tests establish a conservative engineering scope at the declared precision; they do not claim an all-real interval certificate or guarantee every native build succeeds after preflight.
+
 ## Meaningful verification
 
 Curve foundation tests should cover all principal planes and signed offsets, parameter propagation and invalid atomic edits, open lines, clockwise/minor/major/seam arcs, mixed chains, far-origin endpoint precision, disconnected/closed/self-touching/overlapping rejection, 2048/8192 limits, strict unknown input, suppression, reorder/cascade and immutable undo/redo. UI tests must prove no empty saved Curve, retained draft after failed Finish, no hidden closing edge, mode/undo/cancel semantics, pending workflow locks and constant work during hover. DXF tests must prove exact local geometry, chosen traversal contract, units/conflicts, provenance and rejection without partial import.
@@ -107,4 +135,4 @@ Sweep tests should include circle and non-circular sections, straight and G1 cur
 
 The official [Open CASCADE PipeShell reference](https://occt3d.com/dev/doc/refman/html/class_b_rep_offset_a_p_i___make_pipe_shell.html) distinguishes explicit placement, correction and transition settings. [Autodesk's Sweep reference](https://help.autodesk.com/cloudhelp/ENU/Fusion-Model/files/SLD-REF-SWEEP.htm) describes profiles and paths as separate inputs. These sources guide terminology; installed-kernel probes above determine supported behavior.
 
-Domain owns curve types/schema, shared ordered-chain and plane math, dependency/body classification and construction/measurement. UI owns atomic curve creation, editing/rendering and workflow tests. The kernel agent owns exact curve DXF exchange and current native dispatch integration for the Curve phase; future native sweep construction and preflight require their own reviewed checkpoint. Root owns controller/shared agent operations, public guides, integration tests and local checkpoint commits. API tests precede exposed controls.
+Domain owns Curve/Sweep types/schema, ordered-chain and plane math, dependency/body classification, construction/measurement and conservative Sweep preflight. UI owns atomic authoring, editing/rendering and workflow tests. The kernel agent owns exact Curve DXF exchange and segmented native Sweep construction, output validation and resource cleanup. Root owns controller/shared agent operations, public guides, integration tests and local checkpoint commits. API tests precede exposed controls.

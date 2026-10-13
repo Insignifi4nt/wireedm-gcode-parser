@@ -60,6 +60,16 @@ async function flushFrame() {
 async function loseContext() { await act(async () => { renderer().lost = true; renderer().domElement.dispatchEvent(new Event('webglcontextlost')); }); }
 
 describe('CAD WebGL context lifecycle', () => {
+  it('shows only the supplied empty-scene action, respects locks, and gives graphics recovery precedence', async () => {
+    const onAction = vi.fn(); const emptyAction = { label: 'Edit sketch', description: 'Open Outline to draw a profile', onAction };
+    const render = async (interactionLocked: boolean) => { await act(async () => root.render(<CadViewport meshes={[]} selectedId={null} onSelect={vi.fn()}
+      emptyAction={emptyAction} interactionLocked={interactionLocked} onControlsReady={value => { controls = value; }} />)); };
+    await render(false); const button = container.querySelector<HTMLButtonElement>('.cad-view-message button');
+    if (!button) throw new Error('Empty scene action missing'); expect(button.textContent).toBe('Edit sketch'); expect(button.title).toContain('Outline');
+    await act(async () => button.click()); expect(onAction).toHaveBeenCalledTimes(1);
+    await render(true); expect(button.disabled).toBe(true); await act(async () => button.click()); expect(onAction).toHaveBeenCalledTimes(1);
+    await loseContext(); expect(container.querySelector('.cad-view-message button')?.textContent).toBe('Retry 3D view');
+  });
   it('marks lost graphics unavailable, cancels pending rendering and refuses an empty PNG capture', async () => {
     await mount(); const previous = currentControls().getState().revision;
     await loseContext();

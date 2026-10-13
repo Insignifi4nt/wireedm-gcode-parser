@@ -321,6 +321,24 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     signal?.throwIfAborted(); session.assertVersion(expectedVersion); session.assertWorkflowClosed();
     return measureCadCurve(session.getSnapshot().document, curveId);
   }
+  async function inspectSweep(sketchId: string, curveId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
+    editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
+    const { inspectCadSweepInputs, MAX_CAD_SWEEP_SEGMENTS, MAX_CAD_SWEEP_WORK } = await import('@/domain/cad/cadSweep');
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
+    const document = session.getSnapshot().document;
+    const inspection = inspectCadSweepInputs({ kind: 'sweep', id: 'inspection_sweep', name: 'Sweep', suppressed: false,
+      sketchId, curveId, operation: 'new', targetId: null }, new Map(document.features.map(feature => [feature.id, feature])), document.parameters);
+    const receipt = { version: expectedVersion, sketchId, curveId, scope: 'new-feature-at-end' as const,
+      limits: { curveSegments: MAX_CAD_SWEEP_SEGMENTS, sectionEdgesTimesCurveSegments: MAX_CAD_SWEEP_WORK }, persisted: false };
+    if (!inspection.eligible) return { ...receipt, eligible: false as const, code: inspection.code, message: inspection.message };
+    const { section, curve, clearance, sectionEdgeCount, nativeWork } = inspection.inputs;
+    // Never return original imports or unbounded profile/curve geometry in a receipt.
+    return { ...receipt, eligible: true as const, nativeBuildRequired: true, transport: 'fixed-binormal' as const,
+      section: { plane: section.plane, offsetMm: section.offset, edgeCount: sectionEdgeCount },
+      curve: { plane: curve.plane, offsetMm: curve.offset, segmentCount: curve.segments.length,
+        lengthMm: curve.length, startWorldMm: curve.startWorld, startTangentWorld: curve.startTangentWorld },
+      clearance, nativeWork };
+  }
   function getViewport(expectedVersion = session.getSnapshot().version) {
     editable(expectedVersion);
     const controls = viewport.current;
@@ -473,7 +491,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   function back() { connected(); session.assertWorkflowClosed(); changeOpen(false); }
   const isBusy = () => busy.current;
   return { session, snapshot, open, enter, edit, save, list, showLibrary, library, libraryDiagnostic, closeLibrary: () => setLibrary(null),
-    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, measureCurve, exportDocument, exportSolid, exportDxf, exportCurveDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
+    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, measureCurve, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
     setViewportControls, readViewport: (expectedVersion: string) => getViewport(expectedVersion).getState(), changeViewport, captureViewport, previewArtifact,
     inspectTopology: topology.inspect, resolveTopologyPicks: topology.resolve,
     build, buildVersion, buildState, errorMessage, setErrorMessage, storageBusy, isBusy, isOpen: () => current.current.open,

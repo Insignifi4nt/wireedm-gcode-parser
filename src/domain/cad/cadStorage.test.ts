@@ -8,6 +8,7 @@ import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbench
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { createCadDocument, parseCadDocument } from './cadSchema';
 import { importCadDxfSketch } from './cadDxfImport';
+import { importCadDxfCurve } from './cadCurveDxf';
 import { cadDocumentPath, listCadDocuments, loadCadDocument, saveCadDocument, MAX_CAD_FILE_BYTES } from './cadStorage';
 
 afterEach(() => vi.restoreAllMocks());
@@ -27,6 +28,27 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     await expect(saveCadDocument(adapter, { ...document, name: 'Stale' }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('changed in storage');
     expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(next.savedVersion);
     expect((await listCadDocuments(adapter)).entries).toMatchObject([{ id: 'cad_bracket', name: 'Edited' }]);
+  });
+  it('persists Sweep references, parameter expressions and exact Curve originals without writing an invalid revision', async () => {
+    const text = '\uFEFF0\r\nSECTION\r\n2\r\nENTITIES\r\n0\r\nLINE\r\n10\r\n0\r\n20\r\n0\r\n11\r\n20\r\n21\r\n0\r\n0\r\nENDSEC\r\n0\r\nEOF\r\n';
+    const curve = importCadDxfCurve({ fileName: 'Rail.dxf', text, units: 'mm', curveId: 'rail' }).curve;
+    const document = parseCadDocument({ ...createCadDocument('Swept reference', 'cad_sweep_save'), parameters: { radius: 2 }, features: [
+      { kind: 'sketch', id: 'section', name: 'Section', suppressed: false, plane: 'YZ', offset: 0,
+        profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 'radius' } }] },
+      curve, { kind: 'sweep', id: 'sweep', name: 'Sweep', suppressed: false, sketchId: 'section', curveId: 'rail', operation: 'new', targetId: null },
+    ] });
+    const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const path = cadDocumentPath(document.id); const exact = await adapter.readExactText?.(path);
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(document);
+    await expect(saveCadDocument(adapter, { ...document, parameters: { radius: -1 } }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow();
+    expect(await adapter.readExactText?.(path)).toBe(exact);
+    const changed = await saveCadDocument(adapter, { ...document, parameters: { radius: 3 } }, { expectedSavedVersion: saved.savedVersion });
+    const reopened = await loadCadDocument(adapter, document.id);
+    expect(reopened).toEqual(changed);
+    expect(reopened.document.features[0]).toMatchObject({ profiles: [{ geometry: { radius: 'radius' } }] });
+    expect(reopened.document.features[1]).toMatchObject({ source: { text }, segments: curve.segments });
+    expect(reopened.document.features[2]).toEqual(document.features[2]);
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
   });
   it('preserves an external edit made after the optimistic read and before the transaction captures its original', async () => {
     const document = parseCadDocument({ ...createCadDocument('Original', 'cad_external_race'), features: [{

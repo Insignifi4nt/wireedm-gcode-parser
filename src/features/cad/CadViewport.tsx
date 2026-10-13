@@ -11,9 +11,14 @@ import { pickTopology, type CadPickMode, type CadTopologyHit } from './cadTopolo
 import { createCadTopologyHighlights } from './cadTopologyHighlights';
 import { pickCadCurveReference, type CadCurveViewportReference } from './cadCurveRendering';
 const NO_REFERENCES: readonly CadCurveViewportReference[] = Object.freeze([]);
+export interface CadViewportEmptyAction {
+  readonly label: string;
+  readonly description: string;
+  onAction(): void;
+}
 
 export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersion = null, selectedId, onSelect, onControlsReady, interactionLocked = false,
-  pickMode = 'body', topologySelection = null, onPickMode, onTopologyPick, pickingEnabled = true }: {
+  pickMode = 'body', topologySelection = null, onPickMode, onTopologyPick, pickingEnabled = true, emptyAction = null }: {
   meshes: readonly CadMesh[];
   references?: readonly CadCurveViewportReference[];
   referenceVersion?: string | null;
@@ -26,6 +31,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
   onPickMode?(mode: CadPickMode): void;
   onTopologyPick?(hit: CadTopologyHit | null, additive: boolean): void;
   pickingEnabled?: boolean;
+  emptyAction?: CadViewportEmptyAction | null;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const controller = useRef<CadRenderedViewControls | null>(null);
@@ -384,7 +390,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         {(['body', 'face', 'edge'] satisfies CadPickMode[]).map((mode) => <button key={mode} disabled={interactionLocked || unavailable || !pickingEnabled} aria-pressed={pickMode === mode} title={`Pick ${mode === 'body' ? 'bodies' : `${mode}s`}`} onClick={() => onPickMode(mode)}>{mode === 'body' ? 'Body' : mode === 'face' ? 'Face' : 'Edge'}</button>)}
       </>}
     </div>
-    {unavailable ? <div className="cad-view-message" role="status"><strong>{graphicsFailure === 'lost' ? 'The 3D graphics context was interrupted.' : '3D graphics are unavailable in this browser.'}</strong><span>{graphicsFailure === 'lost' ? 'Waiting for recovery. Retry the view if it stays blank; your CAD document is retained.' : 'Sketch editing and document operations remain available. Enable WebGL to view solids.'}</span><button type="button" disabled={interactionLocked} onClick={() => setContextGeneration(generation => generation + 1)}>Retry 3D view</button></div> : meshes.length === 0 && references.length === 0 ? <div className="cad-view-message"><strong>Your part starts with a sketch</strong><span>Create a sketch on a reference plane, then draw a profile and add a Pad or Revolve.</span></div> : null}
+    {unavailable ? <div className="cad-view-message" role="status"><strong>{graphicsFailure === 'lost' ? 'The 3D graphics context was interrupted.' : '3D graphics are unavailable in this browser.'}</strong><span>{graphicsFailure === 'lost' ? 'Waiting for recovery. Retry the view if it stays blank; your CAD document is retained.' : 'Sketch editing and document operations remain available. Enable WebGL to view solids.'}</span><button type="button" disabled={interactionLocked} onClick={() => setContextGeneration(generation => generation + 1)}>Retry 3D view</button></div> : meshes.length === 0 && references.length === 0 ? emptyAction && <div className="cad-view-message"><button type="button" disabled={interactionLocked} title={emptyAction.description} onClick={emptyAction.onAction}>{emptyAction.label}</button></div> : null}
     {topologySelection?.picks.length ? <div className="cad-view-caption">{topologySelection.picks.length} {topologySelection.picks[0].kind}{topologySelection.picks.length === 1 ? '' : 's'} selected</div> : null}
     <div className="cad-view-help">{pickMode === 'edge' ? 'Ctrl / Cmd click to toggle edges · ' : ''}Drag to orbit · Right drag to pan · Scroll to zoom</div>
   </div>;

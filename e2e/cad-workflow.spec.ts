@@ -235,6 +235,76 @@ test('ordered loft sections rebuild parametrically and carry an exact bored sect
   await expect(page.locator('[data-preview-model="upid"]')).toBeVisible();
 });
 
+test('Sweep preflight repairs placement before human creation and exact agent CAM handoff', async ({ page, context: browserContext }) => {
+  const wasmRequests: string[] = [];
+  browserContext.on('request', request => { if (/\.wasm(?:\?|$)/.test(request.url())) wasmRequests.push(request.url()); });
+  await prepare(page); const initial = await context(page);
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Swept bend' });
+  const blank = await context(page);
+  const sectionSketch: CadSketchFeature = { kind: 'sketch', id: 'section', name: 'Circular section', suppressed: false,
+    plane: 'XY', offset: 0, profiles: [{ id: 'circle', name: 'Circle', construction: false,
+      geometry: { kind: 'circle', x: 0, y: 0, radius: 'section_radius' } }] };
+  await call(page, 'cad_edit_document', { expectedVersion: blank.version, edits: [
+    { kind: 'set-parameter', name: 'section_radius', value: 1 },
+    { kind: 'add-feature', feature: sectionSketch },
+    { kind: 'add-feature', feature: { kind: 'curve', id: 'rail', name: 'Bend rail', suppressed: false, plane: 'XY', offset: 0,
+      segments: [{ kind: 'line', start: [0, 0], end: [20, 0] },
+        { kind: 'arc', center: [20, 10], radius: 10, startAngle: -90, sweep: 90 },
+        { kind: 'line', start: [30, 10], end: [30, 30] }] } },
+  ] });
+  const misplaced = await context(page);
+  expect(await call(page, 'cad_inspect_sweep', { expectedVersion: misplaced.version, sketchId: 'section', curveId: 'rail' }))
+    .toMatchObject({ eligible: false, persisted: false, code: 'unsupported-sweep-placement', message: expect.stringContaining('YZ sketch at offset 0') });
+  expect(await context(page)).toMatchObject({ version: misplaced.version, featureCount: 2 });
+  await call(page, 'cad_edit_document', { expectedVersion: misplaced.version, edits: [{ kind: 'update-feature', feature: { ...sectionSketch, plane: 'YZ' } }] });
+  const sources = await context(page);
+  expect(await call(page, 'cad_inspect_sweep', { expectedVersion: sources.version, sketchId: 'section', curveId: 'rail' }))
+    .toMatchObject({ eligible: true, persisted: false, nativeBuildRequired: true, nativeWork: 3,
+      curve: { segmentCount: 3, lengthMm: expect.closeTo(40 + 5 * Math.PI, 8) } });
+  expect(wasmRequests).toEqual([]);
+  expect(await call(page, 'cad_describe_features', { kind: 'sweep' }))
+    .toMatchObject({ schema: { required: expect.arrayContaining(['sketchId', 'curveId', 'operation', 'targetId']) } });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: sources.version }))
+    .toMatchObject({ ok: true, data: { documentVersion: sources.version } });
+  await call(page, 'cad_set_viewport', { expectedVersion: sources.version, command: { kind: 'select-feature', featureId: 'rail' } });
+  await page.getByRole('button', { name: 'Sweep', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Profile sketch', exact: true })).toHaveValue('section');
+  await expect(page.getByRole('combobox', { name: 'Curve', exact: true })).toHaveValue('rail');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  const created = await context(page);
+  const featurePage = await call(page, 'cad_read_features', { expectedVersion: created.version });
+  const sweep = (featurePage as { items: CadFeature[] }).items.find(feature => feature.kind === 'sweep');
+  if (!sweep) throw new Error('Sweep feature was not committed');
+  expect(sweep).toMatchObject({ sketchId: 'section', curveId: 'rail', operation: 'new', targetId: null });
+  const unitVolume = 40 * Math.PI + 5 * Math.PI ** 2;
+  expect(await call(page, 'cad_build', { expectedVersion: created.version }))
+    .toMatchObject({ diagnostics: [], totalBodies: 1, bodies: [{ featureId: sweep.id, volumeMm3: expect.closeTo(unitVolume, 6) }] });
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: created.version,
+    edits: [{ kind: 'set-parameter', name: 'section_radius', value: 12 }] }))
+    .toMatchObject({ ok: false, error: { code: 'unsupported-sweep-clearance' } });
+  expect(await context(page)).toMatchObject({ version: created.version, parameters: { section_radius: 1 } });
+  await call(page, 'cad_edit_document', { expectedVersion: created.version, edits: [{ kind: 'set-parameter', name: 'section_radius', value: 2 }] });
+  const finalDraft = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: finalDraft.version }))
+    .toMatchObject({ diagnostics: [], totalBodies: 1, bodies: [{ volumeMm3: expect.closeTo(4 * unitVolume, 6) }] });
+  const section = { bodyId: sweep.id, plane: 'YZ', offset: 10 };
+  const measured = await call(page, 'cad_inspect_section', { expectedVersion: finalDraft.version, section });
+  expect(measured).toMatchObject({ contourCount: 1 });
+  const entities = (measured as { entities: { items: { type: string; radius?: number }[] } }).entities.items;
+  expect(entities.length).toBeGreaterThan(0);
+  for (const entity of entities) { expect(['circle', 'arc']).toContain(entity.type); expect(entity.radius).toBeCloseTo(2, 6); }
+  const download = page.waitForEvent('download');
+  await call(page, 'cad_export_solid', { expectedVersion: finalDraft.version, format: 'step' });
+  const stepPath = await (await download).path(); if (!stepPath) throw new Error('Missing STEP download');
+  expect(await readFile(stepPath, 'utf8')).toContain('ISO-10303-21');
+  await call(page, 'cad_set_viewport', { expectedVersion: finalDraft.version, command: { kind: 'fit' } });
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: finalDraft.version }));
+  await page.screenshot({ path: 'tmp/cad-swept-bend.png' });
+  expect(await call(page, 'cad_send_section_to_cam', { expectedVersion: finalDraft.version, section }))
+    .toMatchObject({ opened: true, sourceDocumentId: finalDraft.documentId, section: { contourCount: 1, offset: 10 } });
+  await expect(page.locator('[data-preview-model="upid"]')).toBeVisible();
+});
+
 test('human and agent share a parametric circular bolt-hole pattern through exact CAM handoff', async ({ page }) => {
   await prepare(page);
   const initial = await context(page);

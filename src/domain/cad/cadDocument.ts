@@ -38,7 +38,11 @@ export interface CadCurveFeature extends CadFeatureBase {
   readonly segments: readonly CadPathSegment[];
   readonly source?: CadDxfImportSource;
 }
-export type CadFeature = CadSketchFeature | CadCurveFeature
+export interface CadSweepFeature extends CadFeatureBase {
+  readonly kind: 'sweep'; readonly sketchId: string; readonly curveId: string;
+  readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null;
+}
+export type CadFeature = CadSketchFeature | CadCurveFeature | CadSweepFeature
   | (CadFeatureBase & { readonly kind: 'imported'; readonly source: CadSolidImportSource })
   | (CadFeatureBase & { readonly kind: 'extrude'; readonly sketchId: string; readonly distance: CadScalar; readonly symmetric: boolean; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })
   | (CadFeatureBase & { readonly kind: 'revolve'; readonly sketchId: string; readonly angle: CadScalar; readonly axis: 'x' | 'y'; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })
