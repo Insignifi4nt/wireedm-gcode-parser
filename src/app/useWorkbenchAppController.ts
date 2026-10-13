@@ -38,7 +38,7 @@ import type {
 } from '@/features/dashboard/dashboardTypes';
 
 import { defaultAppServices, type AppServices } from './appServices';
-import { recoverySourceSummary, type RecoveryStorageSource, type PreparedRecoveryExport } from '@/domain/storage/workbenchRecovery';
+import { recoverySourceSummary, recoveryStorageSource, type RecoveryStorageSource, type PreparedRecoveryExport } from '@/domain/storage/workbenchRecovery';
 import type { RecoveryExportControls } from './RecoveryExportPanel';
 
 export type WorkbenchStatus = 'initializing' | 'ready' | 'connecting-storage' | 'error';
@@ -153,7 +153,10 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
   }
 
   function readyWorkbench(workbench: ConnectedWorkbenchCatalog, warning: string | null, recovery?: RecoveryStorageSource) {
-    retainRecoverySource(recovery ?? null);
+    retainRecoverySource(recovery ?? recoveryStorageSource(workbench.adapter, {
+      code: 'CONNECTED_WORKBENCH_RECOVERY_COPY',
+      message: 'Saved files from this connected location can still be copied when historical revisions or retained journals block verified backup.'
+    }));
     setConnectedWorkbench(workbench);
     setStorageWarningMessage(workbench.adapter.persistenceWarning ?? warning);
     setErrorMessage(null);

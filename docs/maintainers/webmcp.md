@@ -28,7 +28,7 @@ The final cancellation/version callback runs under the workbench mutation lock a
 
 This completes the core machining workflow from the original Astra plan. It deliberately leaves drawing construction, external G-code text editing, storage switching and deletion to the UI. There is no generic approval framework or second state store.
 
-`edm_export_recovery` uses the controller capture/download operation even when no catalog can open. It pins the failed readable source, shares the live agent busy guard, preserves cancellation and source/workbench identity checks, and retains a receipt for retrying the exact captured download. It never initializes, repairs, rewrites, deletes or executes posts. Bounded adapters preserve exact logical text with explicit omissions; the recovery format is separate from validated restore backups. See the hosted agent guide and storage-maintenance map for limits and hash semantics.
+`edm_export_recovery` uses the controller capture/download operation for connected storage as well as when no catalog can open. It pins the displayed readable source, which can be a retained failed selection rather than the active adapter, shares the live agent busy guard, preserves cancellation and source identity checks, and retains a receipt for retrying the exact captured download. It never initializes, repairs, rewrites, deletes, validates historical revisions or executes posts. Bounded adapters preserve exact logical text with explicit omissions; the recovery format is separate from validated restore backups. See the hosted agent guide and storage-maintenance map for limits and hash semantics.
 
 ## CAD integration
 

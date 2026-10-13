@@ -29,7 +29,7 @@ An engine `1` or `2` saved revision is readable only when its plan and hashes st
 
 For an active project, open its editable project from the library, review circular geometry and program stops, save the project, then choose **Generate controller artifact**. This creates a separate engine `3` saved revision. Review the resulting output before machining. The old revision stays retained; a new revision does not restore its previous reproducibility.
 
-Verified backup and backup restoration validate every indexed revision, so an incompatible historical revision blocks them even after a new revision is saved. Restoring its project from Trash also fails with the revision diagnostic and keeps the retained files. This update provides no automatic historical-revision migration or healthy-workbench recovery download. Keep existing backups and retained originals. Do not delete or edit historical revisions to bypass validation.
+Verified backup and backup restoration validate every indexed revision, so an incompatible historical revision blocks them even after a new revision is saved. Restoring its project from Trash also fails with the revision diagnostic and keeps the retained files. Use **Settings → Storage → Capture and download recovery export** to copy readable originals from the connected workbench. This copy includes retained historical revisions, reports omissions and cannot be loaded with Restore. No automatic historical-revision migration is provided. Keep existing backups and retained originals. Do not delete or edit historical revisions to bypass validation.
 
 ## When export fails
 

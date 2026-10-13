@@ -12,6 +12,7 @@ import type { DraftReadSnapshot } from '@/features/webmcp/workbenchSiteTools';
 import type { SiteTool } from '@/features/webmcp/siteTools';
 import { useWorkbenchAppController } from './useWorkbenchAppController';
 import { defaultAppServices, type AppServices } from './appServices';
+import { createWorkbenchBackup } from '@/domain/storage/workbenchBackup';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root; let container: HTMLDivElement;
@@ -49,6 +50,33 @@ it('exposes failed startup source to agents and downloads exact evidence through
   expect(localStorage.getItem('wire-edm-workbench:file:workbench.json')).toBe('\uFEFF{broken');
 });
 
+it.each(['cache', 'folder'])('exports exact connected %s storage even when a retained journal blocks verified backup', async kind => {
+  const adapter = kind === 'cache' ? createBrowserCacheAdapter(localStorage, { namespace: crypto.randomUUID() })
+    : createBrowserDirectoryAdapter(new FakeDirectoryHandle('connected-folder') as unknown as FileSystemDirectoryHandle);
+  const opened = await initializeWorkbenchCatalog(adapter);
+  if (!opened.ok) throw new Error(opened.error.message);
+  const h = await harness({ connectCachedWorkbench: async () => opened }, false);
+  const originals = { 'imports/original.nc': '\uFEFFG90\r\nG1 X2 Y3\r\n',
+    'projects/part/revisions/historical.wireedm-job.json': '\uFEFF{"engineVersion":"2",\r\n',
+    'transactions/workbench-files.json': '{interrupted' };
+  for (const [path, text] of Object.entries(originals)) await adapter.writeText(path, text);
+  await expect(createWorkbenchBackup(opened.workbench)).rejects.toThrow('Pending recovery');
+  const write = vi.spyOn(adapter, 'writeText');
+  const remove = vi.spyOn(adapter, 'deleteText');
+  const ensure = vi.spyOn(adapter, 'ensureDirectory');
+  const context = await h.call('edm_workflow_context', {});
+  expect(context.data.recovery.source).toMatchObject({ kind: adapter.kind, name: adapter.name });
+  const exported = await h.call('edm_export_recovery', { sourceId: context.data.recovery.source.id });
+  expect(exported).toMatchObject({ ok: true, data: { status: 'download-requested', receipt: { contentComplete: true } } });
+  const archive = JSON.parse(h.download.mock.calls[0][0].text);
+  for (const [path, text] of Object.entries(originals)) {
+    expect(archive.files).toContainEqual(expect.objectContaining({ path, status: 'captured', text }));
+    expect(await adapter.readExactText!(path)).toBe(text);
+  }
+  expect(write).not.toHaveBeenCalled(); expect(remove).not.toHaveBeenCalled(); expect(ensure).not.toHaveBeenCalled();
+  expect(h.app().connectedWorkbench).toBe(opened.workbench);
+});
+
 it('retains the exact captured archive and receipt after download failure and retries without rereading', async () => {
   const capture = vi.fn(defaultAppServices.captureWorkbenchRecovery);
   const download = vi.fn<AppServices['downloadTextFile']>().mockImplementationOnce(() => { throw new Error('Download blocked'); });
@@ -67,7 +95,8 @@ it('invalidates captured receipts and old source versions after switching to hea
   const sourceId = h.app().recoveryControls!.source.id;
   await h.call('edm_export_recovery', { sourceId });
   await act(async () => { await h.app().handleConnectWorkbench(); });
-  expect(h.app().recoveryControls).toBeNull(); expect(h.app().connectedWorkbench).not.toBeNull();
+  expect(h.app().recoveryControls?.source.id).not.toBe(sourceId);
+  expect(h.app().recoveryControls?.receipt).toBeNull(); expect(h.app().connectedWorkbench).not.toBeNull();
   expect(await h.call('edm_export_recovery', { sourceId, downloadPrepared: true })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
   expect(h.download).toHaveBeenCalledOnce();
 });

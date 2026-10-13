@@ -114,7 +114,7 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
         : draftRef.current.dirty ? ['edm_describe_edits', 'edm_edit_project', 'edm_review_execution', 'edm_save_project']
         : ['edm_describe_edits', 'edm_review_execution', 'edm_get_capabilities', 'edm_export_controller', 'edm_export_upid', 'edm_capture_preview']
     })),
-    siteTool('edm_export_recovery', 'Capture and request a download of readable original logical text and diagnostics from the failed or unavailable storage source in edm_workflow_context.recovery. Does not repair, restore, delete, initialize or execute posts. Omissions and non-atomic reads are explicit. Returns an archive receipt, not file contents or proof that the browser saved it. Set downloadPrepared:true to retry the captured download without rereading storage.',
+    siteTool('edm_export_recovery', 'Capture and request a download of readable original logical text and diagnostics from the connected or failed storage source in edm_workflow_context.recovery. Check its location, which can differ from the active workbench after a failed storage switch. Does not repair, restore, delete, initialize, validate revisions or execute posts. Omissions and non-atomic reads are explicit. Returns an archive receipt, not file contents or proof that the browser saved it. Set downloadPrepared:true to retry the captured download without rereading storage.',
       object({ sourceId: identifier, downloadPrepared: Type.Optional(Type.Boolean()) }), async (input, signal) => {
         // Recovery may run without a connected catalog, but shares the live agent operation gate.
         if (isBusy()) throw new ToolError('BUSY', 'Another workbench operation is running.');
