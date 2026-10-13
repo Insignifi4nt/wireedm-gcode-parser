@@ -32,7 +32,7 @@ import {
 } from '@/domain/editor/previewGeometry';
 import type { EditorPreviewPath, EditorPreviewViewBox } from '@/domain/editor/previewGeometry';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
-import { orientedSegmentStart, orientedSegmentEnd } from '@/domain/path-intel/segments';
+import { readPathEndpointHandles } from './editorPreviewEndpoints';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 import {
   MAX_PREVIEW_ZOOM,
@@ -1838,72 +1838,6 @@ function pathElementMatches(
   if (path.travelRole) return false;
   if (!path.segmentId) return false;
   return element.segmentId ? path.segmentId === element.segmentId : true;
-}
-
-interface PreviewPathEndpointHandle {
-  operationId: string;
-  pathElementId?: string;
-  point: { x: number; y: number };
-  role: 'start' | 'end';
-  segmentId: string;
-}
-
-function readPathEndpointHandles(paths: EditorPreviewPath[], document?: PathPlanningDocument | null): PreviewPathEndpointHandle[] {
-  const segmentPaths = new Map<
-    string,
-    {
-      first: EditorPreviewPath;
-      last: EditorPreviewPath;
-    }
-  >();
-
-  for (const previewPath of paths) {
-    if (previewPath.source !== 'path-document' || !previewPath.operationId || !previewPath.segmentId) continue;
-    let path = previewPath;
-    if (path.clippedSourceSegment) {
-      const source = document?.segments.find((segment) => segment.id === path.segmentId);
-      const ref = document?.plan.operations.find((operation) => operation.id === path.operationId)?.segmentRefs.find((candidate) => candidate.segmentId === path.segmentId);
-      if (!source || !ref) continue;
-      path = { ...path, start: orientedSegmentStart(source, ref), end: orientedSegmentEnd(source, ref) };
-    }
-
-    const key = `${path.operationId}:${path.pathElementId ?? ''}:${path.segmentId}`;
-    const grouped = segmentPaths.get(key);
-    if (grouped) {
-      grouped.last = path;
-    } else {
-      segmentPaths.set(key, { first: path, last: path });
-    }
-  }
-
-  return [...segmentPaths.values()].flatMap(({ first, last }) => {
-    const start: PreviewPathEndpointHandle = {
-      operationId: first.operationId!,
-      pathElementId: first.pathElementId,
-      point: first.start,
-      role: 'start',
-      segmentId: first.segmentId!
-    };
-    if (previewPointsEqual(first.start, last.end)) return [start];
-
-    return [
-      start,
-      {
-        operationId: last.operationId!,
-        pathElementId: last.pathElementId,
-        point: last.end,
-        role: 'end',
-        segmentId: last.segmentId!
-      }
-    ];
-  });
-}
-
-function previewPointsEqual(
-  first: { x: number; y: number },
-  second: { x: number; y: number }
-) {
-  return Math.abs(first.x - second.x) <= 1e-9 && Math.abs(first.y - second.y) <= 1e-9;
 }
 
 function pathEndpointMatches(
