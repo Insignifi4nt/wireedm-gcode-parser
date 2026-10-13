@@ -3,7 +3,7 @@ import type { Point2 } from '@/domain/path-intel/types';
 import {
   distanceToMotion, distanceToPolygon, interpolateLine, interpolateMotion, pointInPolygon, polygonCrossings
 } from './geometry';
-import { releasedPieceSnapshots } from './releasedPieces';
+import { createReleasedPieceSnapshotSampler } from './releasedPieces';
 import type { SimulationDiagnostic, SimulationPieceSnapshot, SimulationPlan, SimulationStep, SimulationWarning } from './types';
 
 const MAX_SCAN_SAMPLES = 100_000;
@@ -37,10 +37,24 @@ export function compileObstructions(plan: SimulationPlan): { warnings: Simulatio
   const last = steps.at(-1);
   if (last && plan.durationSeconds > last.endSeconds) steps.push({ ...last,
     startSeconds: last.endSeconds, endSeconds: plan.durationSeconds });
+  const samplePieces = createReleasedPieceSnapshotSampler(plan.pieces, plan.settings);
+  const firstPiecesById = new Map<string, (typeof plan.pieces)[number]>();
+  for (const piece of plan.pieces) if (!firstPiecesById.has(piece.id)) firstPiecesById.set(piece.id, piece);
+  const fallStarts = plan.pieces.map(piece => {
+    let fallStart = piece.releaseSeconds;
+    let ancestorId = piece.parentPieceId;
+    while (ancestorId) {
+      const ancestor = firstPiecesById.get(ancestorId);
+      if (!ancestor) break;
+      fallStart = Math.min(fallStart, ancestor.releaseSeconds);
+      ancestorId = ancestor.parentPieceId;
+    }
+    return fallStart;
+  });
   let samples = 0;
   for (const step of steps) {
     if (step.endSeconds <= step.startSeconds) continue;
-    const fractions = sampleFractions(step, plan, polygons);
+    const fractions = sampleFractions(step, plan, polygons, fallStarts);
     for (const fraction of fractions) {
       if (++samples > MAX_SCAN_SAMPLES) return { warnings: sorted(warnings), diagnostics: [{
         code: 'SIMULATION_OBSTRUCTION_SCAN_LIMIT', severity: 'warning', operationId: null,
@@ -48,7 +62,7 @@ export function compileObstructions(plan: SimulationPlan): { warnings: Simulatio
       }] };
       const time = step.startSeconds + (step.endSeconds - step.startSeconds) * fraction;
       const point = stepPoint(step, fraction);
-      const released = releasedPieceSnapshots(plan.pieces, plan.settings, time);
+      const released = samplePieces(time);
       const add = (piece: SimulationPieceSnapshot | null, envelope: 'wire' | 'guide') => {
         const key = `${step.event.id}:${piece?.id ?? 'stock'}:${envelope}`;
         if (keys.has(key)) return;
@@ -94,7 +108,9 @@ function stepPoint(step: SimulationStep, fraction: number): Point2 {
       : step.path[0];
 }
 
-function sampleFractions(step: SimulationStep, plan: SimulationPlan, polygons: readonly BoundedPolygon[]): number[] {
+function sampleFractions(
+  step: SimulationStep, plan: SimulationPlan, polygons: readonly BoundedPolygon[], fallStarts: readonly number[]
+): number[] {
   const fractions = new Set<number>([0, 1]);
   const count = Math.min(4096, Math.max(8, Math.ceil(step.lengthMm / Math.max(0.25, plan.settings.wireDiameter))));
   for (let i = 1; i < count; i++) fractions.add(i / count);
@@ -114,18 +130,11 @@ function sampleFractions(step: SimulationStep, plan: SimulationPlan, polygons: r
     const fraction = (time - step.startSeconds) / duration;
     if (fraction > 0 && fraction < 1) fractions.add(fraction);
   };
-  for (const piece of plan.pieces) {
+  for (const [pieceIndex, piece] of plan.pieces.entries()) {
     addTime(piece.releaseSeconds);
     if (piece.removalSeconds !== null) addTime(piece.removalSeconds);
     if (plan.settings.retention !== 'fall') continue;
-    let fallStart = piece.releaseSeconds;
-    let ancestorId = piece.parentPieceId;
-    while (ancestorId) {
-      const ancestor = plan.pieces.find(({ id }) => id === ancestorId);
-      if (!ancestor) break;
-      fallStart = Math.min(fallStart, ancestor.releaseSeconds);
-      ancestorId = ancestor.parentPieceId;
-    }
+    const fallStart = fallStarts[pieceIndex];
     // Partition contacts at both guide-body ends as well as the wire-end plane.
     const guideHeight = plan.settings.guideRadiusMm * 2;
     for (const drop of [plan.settings.guideClearanceMm, plan.settings.guideClearanceMm + plan.settings.stock.thickness,
