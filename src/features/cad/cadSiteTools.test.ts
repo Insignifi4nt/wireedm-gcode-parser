@@ -30,4 +30,17 @@ describe('CAD tool argument boundary and discovery', () => {
     if (!stored || !('profiles' in stored.properties)) throw new Error('Missing stored sketch schema');
     expect(stored.properties.profiles.items.properties.role).toBeDefined();
   });
+  it('discovers the circular pattern contract with explicit total-extent and body-consumption semantics', async () => {
+    const tool = cadSiteTools(() => ({} as CadController)).find(item => item.name === 'cad_describe_features');
+    if (!tool) throw new Error('Missing discovery tool');
+    expect(await tool.execute({})).toMatchObject({ ok: true, data: { items: expect.arrayContaining([
+      { kind: 'linear-pattern', description: expect.stringContaining('Fuse') },
+      { kind: 'circular-pattern', description: expect.stringContaining('signed total angular extent') }
+    ]) } });
+    expect(await tool.execute({ kind: 'circular-pattern' })).toMatchObject({ ok: true, data: {
+      kind: 'circular-pattern', description: expect.stringContaining('without a duplicate endpoint'),
+      schema: { additionalProperties: false, required: expect.arrayContaining(['sourceId', 'count', 'axis', 'center', 'angle']),
+        properties: { count: { type: 'integer', minimum: 2, maximum: 100 }, center: { minItems: 3, maxItems: 3 } } }
+    } });
+  });
 });

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
 import { initializeWorkbenchCatalog, type ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
-import type { CadBuildResult } from '@/domain/cad/cadDocument';
+import type { CadBuildResult, CadFeature } from '@/domain/cad/cadDocument';
 import type { CadSectionResult } from '@/domain/cad/cadSection';
 import type { CadTopologyDescriptor, CadTopologyInspectRequest } from '@/domain/cad/cadTopology';
 import { loadCadDocument } from '@/domain/cad/cadStorage';
@@ -58,6 +58,42 @@ async function harness(withGeometry = false, allowHandoff = false) {
 }
 
 describe('CAD controller asynchronous guards', () => {
+  it('edits and saves circular patterns through the shared versioned tool boundary', async () => {
+    const h = await harness(true);
+    const tools = cadSiteTools(h.cad);
+    const edit = tools.find(tool => tool.name === 'cad_edit_document');
+    const context = tools.find(tool => tool.name === 'cad_get_context');
+    if (!edit || !context) throw new Error('Missing CAD tools');
+    const before = h.session.getSnapshot();
+    const pattern: CadFeature = { id: 'radial', name: 'Circular pattern', kind: 'circular-pattern', suppressed: false,
+      sourceId: 'pad', count: 4, axis: 'z', center: ['pitch', 0, 0], angle: '-extent' };
+    const edits = [{ kind: 'set-parameter', name: 'pitch', value: 30 }, { kind: 'set-parameter', name: 'extent', value: 360 },
+      { kind: 'add-feature', feature: { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false,
+        sketchId: 'sketch', distance: 5, symmetric: false, operation: 'new', targetId: null } },
+      { kind: 'add-feature', feature: pattern }];
+    await act(async () => h.session.setWorkflowOpen(true));
+    await expect(edit.execute({ expectedVersion: before.version, edits })).resolves.toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    expect(h.session.getSnapshot().document).toBe(before.document);
+    await act(async () => h.session.setWorkflowOpen(false));
+    const cancellation = new AbortController(); cancellation.abort();
+    await expect(edit.execute({ expectedVersion: before.version, edits }, { signal: cancellation.signal })).resolves.toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits })).toMatchObject({ ok: true,
+      data: { supported: { solids: expect.arrayContaining(['linear-pattern', 'circular-pattern']) }, featureCount: 3 } }); });
+    const accepted = h.session.getSnapshot();
+    expect(accepted.document.features[2]).toEqual(pattern);
+    await expect(edit.execute({ expectedVersion: before.version, edits })).resolves.toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    await act(async () => { expect(await edit.execute({ expectedVersion: accepted.version, edits: [
+      { kind: 'set-parameter', name: 'pitch', value: 99 }, { kind: 'set-parameter', name: 'extent', value: 361 }
+    ] })).toMatchObject({ ok: false }); });
+    expect(h.session.getSnapshot()).toBe(accepted);
+    await act(async () => h.cad().undo(accepted.version));
+    expect(h.session.getSnapshot().document).toEqual(before.document);
+    await act(async () => h.cad().redo(h.session.getSnapshot().version));
+    expect(h.session.getSnapshot().document).toEqual(accepted.document);
+    await act(async () => { await h.cad().save(); });
+    expect((await loadCadDocument(h.workbench().adapter, before.document.id)).document).toEqual(accepted.document);
+    expect(await context.execute({})).toMatchObject({ ok: true, data: { dirty: false, savedVersion: expect.any(String) } });
+  });
   const dxfText = '0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n10\n0\n20\n0\n40\n2\n0\nENDSEC\n0\nEOF\n';
   it('imports a unitless DXF through worker validation only after explicit units are supplied', async () => {
     const h = await harness(); const before = h.session.getSnapshot();

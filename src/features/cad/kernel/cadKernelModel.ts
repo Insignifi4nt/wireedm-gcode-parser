@@ -10,6 +10,7 @@ import { cadMeshScalarCount, MAX_CAD_PREVIEW_SCALARS } from './cadKernelLimits';
 import { CadKernelTopology } from './cadKernelTopology';
 import { applyCadEdgeOperation, applyCadShell } from './cadKernelOperations';
 import { loadCadSolidImport } from './cadKernelImport';
+import { resolveCadCircularPattern } from '../../../domain/cad/cadPatterns';
 import { MAX_CAD_TOPOLOGY_ELEMENTS, parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
 
@@ -236,6 +237,25 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           for (let index = 1; index < feature.count; index++) {
             const instance = own(own(source.clone()).translate(spacing[0] * index, spacing[1] * index, spacing[2] * index));
             result = own(result.fuse(instance));
+          }
+          consumed.push(feature.sourceId); break;
+        }
+        case 'circular-pattern': {
+          const pattern = resolveCadCircularPattern(feature, document.parameters);
+          const source = body(feature.sourceId);
+          instances = boundedInstances(instancesOf(feature.sourceId) * pattern.count);
+          const center: SimplePoint = [...pattern.center]; const direction: SimplePoint = [...pattern.direction];
+          result = source;
+          for (const angle of pattern.angles.slice(1)) {
+            const clone = own(source.clone());
+            const instance = own(clone.rotate(angle, center, direction));
+            // Replicad rotations consume their input wrapper. Keep only the
+            // original seed and current union while constructing the pattern.
+            shapes.delete(clone);
+            const previous = result;
+            result = own(previous.fuse(instance));
+            instance.delete(); shapes.delete(instance);
+            if (previous !== source) { previous.delete(); shapes.delete(previous); }
           }
           consumed.push(feature.sourceId); break;
         }

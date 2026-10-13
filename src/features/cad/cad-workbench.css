@@ -21,6 +21,10 @@
 .cad-file-menu { position: absolute; right: 0; top: calc(100% + 8px); width: 224px; z-index: 16; border: 1px solid #42515d; padding: 5px; border-radius: 4px; background: #1c252d; box-shadow: 0 10px 30px #0008; }
 .cad-file-menu button { display: flex; justify-content: flex-start; width: 100%; padding: 7px 8px; }
 .cad-menu-rule { display: block; border-bottom: 1px solid #384550; margin: 4px; }
+.cad-pattern-menu { position: fixed; width: 172px; z-index: 16; padding: 4px; border: 1px solid #42515d; border-radius: 4px; background: #1c252d; box-shadow: 0 10px 30px #0008; font: 12px/1.4 Inter, "Segoe UI", sans-serif; }
+.cad-pattern-menu button { display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px 8px; color: #becbd3; background: transparent; border: 1px solid transparent; border-radius: 3px; font: inherit; cursor: pointer; text-align: left; }
+.cad-pattern-menu button:hover, .cad-pattern-menu button:focus-visible { background: #27323b; color: #eef5f8; }
+.cad-pattern-menu button:focus-visible { outline: 1px solid #67c8da; outline-offset: -1px; }
 .cad-toolbar { display: flex; flex-shrink: 0; align-items: center; background: #1a2229; border-bottom: 1px solid #34404a; height: 36px; padding: 2px 8px; overflow-x: auto; }
 .cad-tool-group { display: flex; align-items: center; height: 27px; padding: 0 7px; border-right: 1px solid #34404a; gap: 2px; flex-shrink: 0; }
 .cad-tool-group:first-child { padding-left: 0; }

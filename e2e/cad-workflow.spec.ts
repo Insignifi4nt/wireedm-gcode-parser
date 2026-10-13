@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import type { CadTopologyDescriptor } from '../src/domain/cad/cadTopology';
-import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
+import type { CadFeature, CadSketchFeature } from '../src/domain/cad/cadDocument';
 
 // Exercise the production tool registrations without a browser-specific WebMCP transport.
 // Native WebMCP interoperability is also checked separately in the Codex in-app browser.
@@ -66,6 +66,69 @@ async function createBox(page: Page) {
   expect(build).toMatchObject({ bodies: [{ volumeMm3: expect.closeTo(1000, 7) }] });
   return { draft, buildId: build.buildId };
 }
+
+test('human and agent share a parametric circular bolt-hole pattern through exact CAM handoff', async ({ page }) => {
+  await prepare(page);
+  const initial = await context(page);
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Four-bolt flange' });
+  const blank = await context(page);
+  expect(await call(page, 'cad_describe_features', { kind: 'circular-pattern' })).toMatchObject({
+    schema: { required: expect.arrayContaining(['sourceId', 'count', 'axis', 'center', 'angle']) }
+  });
+  const sketch = (id: string, name: string, x: number, radius: number): CadSketchFeature => ({
+    id, name, kind: 'sketch', plane: 'XY', offset: 0, suppressed: false,
+    profiles: [{ id: `${id}_circle`, name: 'Circle', construction: false, geometry: { kind: 'circle', x, y: 0, radius } }]
+  });
+  const pad = (id: string, name: string, sketchId: string): CadFeature => ({
+    id, name, kind: 'extrude', suppressed: false, sketchId, distance: 'thickness', symmetric: false, operation: 'new', targetId: null
+  });
+  await call(page, 'cad_edit_document', { expectedVersion: blank.version, edits: [
+    { kind: 'set-parameter', name: 'thickness', value: 8 }, { kind: 'set-parameter', name: 'sweep', value: 360 },
+    ...[sketch('flange_outline', 'Flange outline', 0, 30), pad('flange_pad', 'Flange', 'flange_outline'),
+      sketch('cutter_outline', 'Bolt cutter outline', 20, 3), pad('cutter_pad', 'Bolt cutter', 'cutter_outline')]
+      .map(feature => ({ kind: 'add-feature', feature }))
+  ] });
+  const seeded = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: seeded.version })).toMatchObject({ diagnostics: [], totalBodies: 2 });
+  await call(page, 'cad_set_viewport', { expectedVersion: seeded.version, command: { kind: 'select-feature', featureId: 'cutter_pad' } });
+  await page.getByRole('button', { name: 'Pattern', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Circular pattern', exact: true }).click();
+  await expect(page.getByLabel('Instances, including original')).toHaveValue('4');
+  await page.getByLabel('Angular extent', { exact: false }).fill('sweep');
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: seeded.version,
+    edits: [{ kind: 'rename-document', name: 'Must remain blocked' }] })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  const patterned = await context(page);
+  const definitions = await call(page, 'cad_read_features', { expectedVersion: patterned.version });
+  const pattern = (definitions as { items: CadFeature[] }).items.find(feature => feature.kind === 'circular-pattern');
+  expect(pattern).toMatchObject({ sourceId: 'cutter_pad', count: 4, axis: 'z', center: [0, 0, 0], angle: 'sweep' });
+  if (!pattern) throw new Error('Missing applied circular pattern');
+  await call(page, 'cad_edit_document', { expectedVersion: patterned.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'drilled_flange', name: 'Drilled flange', kind: 'boolean', suppressed: false,
+    operation: 'cut', targetId: 'flange_pad', toolId: pattern.id
+  } }] });
+  const drilled = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: drilled.version })).toMatchObject({ diagnostics: [], totalBodies: 1,
+    bodies: [{ featureId: 'drilled_flange', volumeMm3: expect.closeTo(6912 * Math.PI, 6),
+      boundsMm: { min: [expect.closeTo(-30, 5), expect.closeTo(-30, 5), expect.closeTo(0, 5)], max: [expect.closeTo(30, 5), expect.closeTo(30, 5), expect.closeTo(8, 5)] } }] });
+  const section = { bodyId: 'drilled_flange', plane: 'XY', offset: 'thickness / 2' };
+  expect(await call(page, 'cad_inspect_section', { expectedVersion: drilled.version, section })).toMatchObject({ contourCount: 5 });
+  await call(page, 'cad_set_viewport', { expectedVersion: drilled.version, command: { kind: 'select-feature', featureId: 'drilled_flange' } });
+  await page.getByRole('button', { name: 'Fit model', exact: true }).click();
+  expect(await call(page, 'cad_capture_preview', { expectedVersion: drilled.version })).toMatchObject({ source: '3d', draftVersion: drilled.version });
+  await page.screenshot({ path: 'tmp/cad-circular-flange.png' });
+  await call(page, 'cad_save_document', { expectedVersion: drilled.version });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+  const reloaded = await context(page);
+  await call(page, 'cad_open_document', { expectedVersion: reloaded.version, documentId: drilled.documentId });
+  const reopened = await context(page);
+  expect(await call(page, 'cad_get_feature', { expectedVersion: reopened.version, featureId: pattern.id })).toMatchObject({ feature: pattern });
+  expect(await call(page, 'cad_send_section_to_cam', { expectedVersion: reopened.version, section })).toMatchObject({
+    opened: true, sourceDocumentId: drilled.documentId, section: { contourCount: 5, offset: 4 }
+  });
+  await expect(page.locator('[data-preview-model="upid"]')).toBeVisible();
+});
 
 test('agent selects exact top edges and chamfers only that rim', async ({ page }) => {
   const { draft, buildId } = await createBox(page);

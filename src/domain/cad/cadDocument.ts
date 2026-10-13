@@ -41,6 +41,7 @@ export type CadFeature = CadSketchFeature
   | (CadFeatureBase & { readonly kind: 'boolean'; readonly targetId: string; readonly toolId: string; readonly operation: 'union' | 'cut' | 'intersect' })
   | (CadFeatureBase & { readonly kind: 'transform'; readonly sourceId: string; readonly translation: CadPoint3; readonly rotation: CadPoint3 })
   | (CadFeatureBase & { readonly kind: 'linear-pattern'; readonly sourceId: string; readonly count: number; readonly spacing: CadPoint3 })
+  | (CadFeatureBase & { readonly kind: 'circular-pattern'; readonly sourceId: string; readonly count: number; readonly axis: 'x' | 'y' | 'z'; readonly center: CadPoint3; readonly angle: CadScalar })
   | (CadFeatureBase & { readonly kind: 'mirror'; readonly sourceId: string; readonly plane: CadPlane });
 
 export interface CadDocument {

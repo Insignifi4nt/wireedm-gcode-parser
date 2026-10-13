@@ -8,6 +8,7 @@ import { CadEdgeSelectionSchema, CadFaceQuerySchema, resolveCadEdgeSelection, va
 import { CadSolidImportSourceSchema, MAX_CAD_DOCUMENT_BYTES, parseCadSolidImportSource } from './cadImports';
 import { CadDxfImportSourceSchema, parseCadDxfImportSource } from './cadDxfSource';
 import { isCadImportData } from './cadImportData';
+import { MAX_CAD_PATTERN_COUNT, MAX_CAD_PATTERN_INSTANCES, MIN_CAD_PATTERN_COUNT, resolveCadCircularPattern } from './cadPatterns';
 
 const strict = { additionalProperties: false };
 const identifier = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' });
@@ -41,7 +42,8 @@ export const CadFeatureSchema = Type.Union([
   Type.Object({ ...base, kind: Type.Literal('shell'), targetId: identifier, thickness: scalar, opening: CadFaceQuerySchema }, strict),
   Type.Object({ ...base, kind: Type.Literal('boolean'), targetId: identifier, toolId: identifier, operation: Type.Union([Type.Literal('union'), Type.Literal('cut'), Type.Literal('intersect')]) }, strict),
   Type.Object({ ...base, kind: Type.Literal('transform'), sourceId: identifier, translation: point3, rotation: point3 }, strict),
-  Type.Object({ ...base, kind: Type.Literal('linear-pattern'), sourceId: identifier, count: Type.Integer({ minimum: 2, maximum: 100 }), spacing: point3 }, strict),
+  Type.Object({ ...base, kind: Type.Literal('linear-pattern'), sourceId: identifier, count: Type.Integer({ minimum: MIN_CAD_PATTERN_COUNT, maximum: MAX_CAD_PATTERN_COUNT }), spacing: point3 }, strict),
+  Type.Object({ ...base, kind: Type.Literal('circular-pattern'), sourceId: identifier, count: Type.Integer({ minimum: MIN_CAD_PATTERN_COUNT, maximum: MAX_CAD_PATTERN_COUNT }), axis: Type.Union([Type.Literal('x'), Type.Literal('y'), Type.Literal('z')]), center: point3, angle: scalar }, strict),
   Type.Object({ ...base, kind: Type.Literal('mirror'), sourceId: identifier, plane }, strict)
 ]);
 export const CadDocumentSchema = Type.Object({
@@ -57,7 +59,7 @@ export function cadFeatureDependencies(feature: CadFeature): string[] {
     case 'extrude': case 'revolve': return feature.targetId === null ? [feature.sketchId] : [feature.sketchId, feature.targetId];
     case 'fillet': case 'chamfer': case 'shell': return [feature.targetId];
     case 'boolean': return [feature.targetId, feature.toolId];
-    case 'transform': case 'linear-pattern': case 'mirror': return [feature.sourceId];
+    case 'transform': case 'linear-pattern': case 'circular-pattern': case 'mirror': return [feature.sourceId];
     default: { const exhaustive: never = feature; return exhaustive; }
   }
 }
@@ -69,7 +71,7 @@ export function cadConsumedBodyIds(feature: CadFeature): readonly string[] {
     case 'extrude': case 'revolve': return feature.targetId === null ? [] : [feature.targetId];
     case 'fillet': case 'chamfer': case 'shell': return [feature.targetId];
     case 'boolean': return [feature.targetId, feature.toolId];
-    case 'transform': case 'linear-pattern': return [feature.sourceId];
+    case 'transform': case 'linear-pattern': case 'circular-pattern': return [feature.sourceId];
     default: { const exhaustive: never = feature; return exhaustive; }
   }
 }
@@ -128,8 +130,8 @@ export function parseCadDocument(value: unknown): CadDocument {
       if (!visibleBodies.has(id)) throw new CadError('unavailable-body', `Feature "${feature.name}" references suppressed or already consumed body "${id}". Select its current successor.`);
     }
     let instances = solidDependencies.reduce((total, id) => total + (expandedInstances.get(id) ?? 1), 0) || 1;
-    if (feature.kind === 'linear-pattern') instances *= feature.count;
-    if (instances > 1000) throw new CadError('feature-limit', 'Nested pattern expansion exceeds 1000 solid instances.');
+    if (feature.kind === 'linear-pattern' || feature.kind === 'circular-pattern') instances *= feature.count;
+    if (instances > MAX_CAD_PATTERN_INSTANCES) throw new CadError('feature-limit', 'Nested pattern expansion exceeds 1000 solid instances.');
     switch (feature.kind) {
       case 'imported': parseCadSolidImportSource(feature.source); break;
       case 'sketch': {
@@ -174,12 +176,15 @@ export function parseCadDocument(value: unknown): CadDocument {
       case 'linear-pattern': {
         const spacing = feature.spacing.map(e);
         if (spacing.every(value => Math.abs(value) <= 1e-7)) throw new CadError('invalid-dimension', 'Pattern spacing must be nonzero.');
-        instanceBudget += feature.count;
-        if (instanceBudget > 1000) throw new CadError('feature-limit', 'Document has too many pattern instances.');
         break;
       }
+      case 'circular-pattern': resolveCadCircularPattern(feature, document.parameters); break;
       case 'mirror': break;
       default: { const exhaustive: never = feature; throw exhaustive; }
+    }
+    if (feature.kind === 'linear-pattern' || feature.kind === 'circular-pattern') {
+      instanceBudget += feature.count;
+      if (instanceBudget > MAX_CAD_PATTERN_INSTANCES) throw new CadError('feature-limit', 'Document has too many pattern instances.');
     }
     previous.set(feature.id, feature);
     expandedInstances.set(feature.id, instances);

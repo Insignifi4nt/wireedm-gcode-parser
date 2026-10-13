@@ -35,7 +35,8 @@ const featureDescriptions: Record<CadFeature['kind'], string> = {
   shell: 'Hollow a current solid inward by positive thickness in mm, opening exactly one planar face selected by geometric predicates. Ambiguous selections and invalid walls fail explicitly.',
   boolean: 'Union/cut/intersect current target and tool bodies. Both inputs are consumed and replaced by this feature.',
   transform: 'Translate in mm and rotate in degrees about global axes. Replaces its current source body.',
-  'linear-pattern': 'Create a compound containing the original and translated copies of the current source. Count includes the original. Replaces sourceId.',
+  'linear-pattern': 'Fuse the original current source and translated copies, retaining disconnected solids where copies do not touch. Count includes the original; spacing is the XYZ translation between instances in mm. Replaces sourceId.',
+  'circular-pattern': 'Fuse the original current source and rotated copies, retaining disconnected solids where copies do not touch. Count includes the original (2–100). Rotate about the positive world x/y/z axis through center in mm, following the right-hand rule. angle is the signed total angular extent in degrees, greater than 0.0000001 in magnitude and at most 360. Exactly ±360 distributes count instances without a duplicate endpoint; partial extents include both endpoints. Center and angle accept parameter expressions. Replaces sourceId; combined expanded pattern instances are limited to 1000.',
   mirror: 'Mirror the current source across a global reference plane, preserving the original source as a separate body.'
 };
 
@@ -66,7 +67,7 @@ export function cadSiteTools(getController: () => CadController) {
       buildState: cad.buildState, buildVersion: cad.buildVersion, buildId: cad.build?.buildId ?? null,
       ...diagnosticSummary(cad.build?.diagnostics ?? []),
       supported: { sketches: ['rectangle', 'circle', 'polygon', 'slot', 'path'], planes: ['XY', 'XZ', 'YZ'],
-        solids: ['imported', 'extrude', 'revolve', 'fillet', 'chamfer', 'shell', 'boolean', 'transform', 'linear-pattern', 'mirror'],
+        solids: ['imported', 'extrude', 'revolve', 'fillet', 'chamfer', 'shell', 'boolean', 'transform', 'linear-pattern', 'circular-pattern', 'mirror'],
         imports: ['cad-json', 'dxf', 'step', 'stl'],
         exports: ['cad-json', 'dxf', 'step', 'stl'], expressions: 'Finite arithmetic: + - * / and parentheses over named numeric parameters. Millimeters and degrees.' },
       camHandoff: 'Choose a sketch or exact planar section of a final solid. Local 2D millimeter contours become a new detached CAM project. Sections preserve lines/arcs; unsupported curves are rejected. CAD is saved first; CAM retains its own revisions and installed machine checks.',
