@@ -9,6 +9,7 @@ import { CadSolidImportSourceSchema, MAX_CAD_DOCUMENT_BYTES, parseCadSolidImport
 import { CadDxfImportSourceSchema, parseCadDxfImportSource } from './cadDxfSource';
 import { isCadImportData } from './cadImportData';
 import { MAX_CAD_PATTERN_COUNT, MAX_CAD_PATTERN_INSTANCES, MIN_CAD_PATTERN_COUNT, resolveCadCircularPattern } from './cadPatterns';
+import { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS, resolveCadLoftSections } from './cadLoft';
 
 const strict = { additionalProperties: false };
 const identifier = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' });
@@ -38,6 +39,7 @@ export const CadFeatureSchema = Type.Union([
   Type.Object({ ...base, kind: Type.Literal('sketch'), plane, offset: scalar, profiles: Type.Array(CadSketchProfileSchema, { maxItems: 256 }), source: Type.Optional(CadDxfImportSourceSchema) }, strict),
   Type.Object({ ...base, kind: Type.Literal('extrude'), sketchId: identifier, distance: scalar, symmetric: Type.Boolean(), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
   Type.Object({ ...base, kind: Type.Literal('revolve'), sketchId: identifier, angle: scalar, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
+  Type.Object({ ...base, kind: Type.Literal('loft'), sketchIds: Type.Array(identifier, { minItems: MIN_CAD_LOFT_SECTIONS, maxItems: MAX_CAD_LOFT_SECTIONS, uniqueItems: true }), ruled: Type.Boolean(), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
   Type.Object({ ...base, kind: Type.Union([Type.Literal('fillet'), Type.Literal('chamfer')]), targetId: identifier, radius: scalar, selection: Type.Optional(Type.Union([CadEdgeSelectionSchema, Type.Null()])) }, strict),
   Type.Object({ ...base, kind: Type.Literal('shell'), targetId: identifier, thickness: scalar, opening: CadFaceQuerySchema }, strict),
   Type.Object({ ...base, kind: Type.Literal('boolean'), targetId: identifier, toolId: identifier, operation: Type.Union([Type.Literal('union'), Type.Literal('cut'), Type.Literal('intersect')]) }, strict),
@@ -53,27 +55,25 @@ export const CadDocumentSchema = Type.Object({
   features: Type.Array(CadFeatureSchema, { maxItems: 256 })
 }, strict);
 
-export function cadFeatureDependencies(feature: CadFeature): string[] {
+/** Separate sketch generators from solid operands once for dependency consumers. */
+export function cadFeatureInputs(feature: CadFeature): { readonly sketchIds: readonly string[]; readonly bodyIds: readonly string[] } {
   switch (feature.kind) {
-    case 'sketch': case 'imported': return [];
-    case 'extrude': case 'revolve': return feature.targetId === null ? [feature.sketchId] : [feature.sketchId, feature.targetId];
-    case 'fillet': case 'chamfer': case 'shell': return [feature.targetId];
-    case 'boolean': return [feature.targetId, feature.toolId];
-    case 'transform': case 'linear-pattern': case 'circular-pattern': case 'mirror': return [feature.sourceId];
+    case 'sketch': case 'imported': return { sketchIds: [], bodyIds: [] };
+    case 'extrude': case 'revolve': return { sketchIds: [feature.sketchId], bodyIds: feature.targetId === null ? [] : [feature.targetId] };
+    case 'loft': return { sketchIds: feature.sketchIds, bodyIds: feature.targetId === null ? [] : [feature.targetId] };
+    case 'fillet': case 'chamfer': case 'shell': return { sketchIds: [], bodyIds: [feature.targetId] };
+    case 'boolean': return { sketchIds: [], bodyIds: [feature.targetId, feature.toolId] };
+    case 'transform': case 'linear-pattern': case 'circular-pattern': case 'mirror': return { sketchIds: [], bodyIds: [feature.sourceId] };
     default: { const exhaustive: never = feature; return exhaustive; }
   }
 }
+export function cadFeatureDependencies(feature: CadFeature): string[] {
+  const inputs = cadFeatureInputs(feature);
+  return [...inputs.sketchIds, ...inputs.bodyIds];
+}
 /** Successful active operations replace these history bodies; mirrors preserve their source. */
 export function cadConsumedBodyIds(feature: CadFeature): readonly string[] {
-  if (feature.suppressed) return [];
-  switch (feature.kind) {
-    case 'sketch': case 'imported': case 'mirror': return [];
-    case 'extrude': case 'revolve': return feature.targetId === null ? [] : [feature.targetId];
-    case 'fillet': case 'chamfer': case 'shell': return [feature.targetId];
-    case 'boolean': return [feature.targetId, feature.toolId];
-    case 'transform': case 'linear-pattern': case 'circular-pattern': return [feature.sourceId];
-    default: { const exhaustive: never = feature; return exhaustive; }
-  }
+  return feature.suppressed || feature.kind === 'mirror' ? [] : cadFeatureInputs(feature).bodyIds;
 }
 export function cadVisibleBodyIds(features: readonly CadFeature[]): readonly string[] {
   const visible = new Set<string>();
@@ -118,18 +118,23 @@ export function parseCadDocument(value: unknown): CadDocument {
   const e = (value: number | string) => evaluateCadScalar(value, document.parameters);
   for (const feature of document.features) {
     if (previous.has(feature.id)) throw new CadError('duplicate-id', `Duplicate feature ID "${feature.id}".`);
-    for (const id of cadFeatureDependencies(feature)) {
+    const inputs = cadFeatureInputs(feature);
+    for (const id of inputs.sketchIds) {
+      if (previous.get(id)?.kind !== 'sketch') throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding sketch "${id}".`);
+    }
+    for (const id of inputs.bodyIds) {
       const referenced = previous.get(id);
       if (!referenced) throw new CadError('invalid-reference', `Feature "${feature.name}" references missing or later feature "${id}".`);
-      if (id !== ('sketchId' in feature ? feature.sketchId : null) && referenced.kind === 'sketch') throw new CadError('invalid-reference', 'A solid operation cannot target a sketch.');
+      if (referenced.kind === 'sketch') throw new CadError('invalid-reference', 'A solid operation cannot target a sketch.');
     }
-    const solidDependencies = feature.kind === 'extrude' || feature.kind === 'revolve'
-      ? feature.targetId === null ? [] : [feature.targetId]
-      : cadFeatureDependencies(feature);
+    const solidDependencies = inputs.bodyIds;
     if (!feature.suppressed) for (const id of solidDependencies) {
       if (!visibleBodies.has(id)) throw new CadError('unavailable-body', `Feature "${feature.name}" references suppressed or already consumed body "${id}". Select its current successor.`);
     }
-    let instances = solidDependencies.reduce((total, id) => total + (expandedInstances.get(id) ?? 1), 0) || 1;
+    const operandInstances = solidDependencies.reduce((total, id) => total + (expandedInstances.get(id) ?? 1), 0);
+    // Loft adds one generated operand before join/cut. Keep the existing
+    // Pad/Revolve preflight counts unchanged for saved-history compatibility.
+    let instances = feature.kind === 'loft' ? operandInstances + 1 : operandInstances || 1;
     if (feature.kind === 'linear-pattern' || feature.kind === 'circular-pattern') instances *= feature.count;
     if (instances > MAX_CAD_PATTERN_INSTANCES) throw new CadError('feature-limit', 'Nested pattern expansion exceeds 1000 solid instances.');
     switch (feature.kind) {
@@ -159,6 +164,11 @@ export function parseCadDocument(value: unknown): CadDocument {
           const angle = e(feature.angle);
           if (angle <= 1e-7 || angle > 360) throw new CadError('invalid-dimension', 'Revolve angle must be greater than zero and at most 360 degrees.');
         }
+        break;
+      }
+      case 'loft': {
+        if (feature.operation === 'new' && feature.targetId !== null || feature.operation !== 'new' && feature.targetId === null) throw new CadError('invalid-operation', 'New bodies have no target; join and cut require a target body.');
+        if (!feature.suppressed) resolveCadLoftSections(feature, previous, document.parameters);
         break;
       }
       case 'fillet': case 'chamfer': {

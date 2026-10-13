@@ -5,9 +5,10 @@ import { CadError } from '@/domain/cad/cadError';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { cadVisibleBodyIds } from '@/domain/cad/cadSchema';
 import { CadTopologyQuerySummary } from './CadTopologyQuerySummary';
+import { CadLoftSections } from './CadLoftSections';
 
 export const featureLabels: Record<CadFeature['kind'], string> = {
-  sketch: 'Sketch', imported: 'Imported solid', extrude: 'Pad / Pocket', revolve: 'Revolve', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / Rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
+  sketch: 'Sketch', imported: 'Imported solid', extrude: 'Pad / Pocket', revolve: 'Revolve', loft: 'Loft', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / Rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
 };
 
 export function SelectField<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: readonly { value: T; label: string; disabled?: boolean }[]; onChange(value: T): void }) {
@@ -45,10 +46,17 @@ export function CadFeatureEditor({ feature, document, isNew, onApply, onCancel, 
   const featureIndex = document.features.findIndex((entry) => entry.id === feature.id);
   const preceding = featureIndex < 0 ? document.features : document.features.slice(0, featureIndex);
   const visibleIds = cadVisibleBodyIds(preceding);
-  const bodies = preceding.filter((entry) => visibleIds.includes(entry.id) && (!currentBodyIds || currentBodyIds.includes(entry.id))).map((entry) => ({ value: entry.id, label: entry.name }));
+  const bodies = preceding.filter((entry) => visibleIds.includes(entry.id) && (!isNew || !currentBodyIds || currentBodyIds.includes(entry.id))).map((entry) => ({ value: entry.id, label: entry.name }));
   const sketches = preceding.filter((entry) => entry.kind === 'sketch' && !entry.suppressed).map((entry) => ({ value: entry.id, label: entry.name }));
   const scalar = (label: string, value: CadScalar, onChange: (next: CadScalar) => void, unit?: string) => <ScalarField label={label} value={value} parameters={document.parameters} onChange={onChange} unit={unit} />;
-  const body = (label: string, value: string, onChange: (next: string) => void) => <SelectField label={label} value={value} options={bodies} onChange={onChange} />;
+  const body = (label: string, value: string, onChange: (next: string) => void) => {
+    // A suppressed feature can retain unavailable inputs. Never let the native
+    // select display its first available body as if it were the stored input.
+    const options = value && !bodies.some(entry => entry.value === value)
+      ? [{ value, label: `${document.features.find(entry => entry.id === value)?.name ?? 'Body'} (unavailable)`, disabled: true }, ...bodies]
+      : bodies;
+    return <SelectField label={label} value={value} options={options} onChange={onChange} />;
+  };
   let fields: React.ReactNode;
   switch (draft.kind) {
     case 'imported': fields = <><dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Format</dt><dd>{draft.source.format.toUpperCase()}</dd>{draft.source.format === 'stl' && <><dt>Source units</dt><dd>{draft.source.units === 'inch' ? 'inch' : 'mm'}</dd></>}</dl><p className="cad-inspector-note">Imported geometry is fixed. Add features to modify the solid.</p></>; break;
@@ -61,6 +69,7 @@ export function CadFeatureEditor({ feature, document, isNew, onApply, onCancel, 
         {draft.operation !== 'new' && body('Target body', draft.targetId ?? '', (targetId) => update({ ...draft, targetId }))}
       </>; break;
     }
+    case 'loft': fields = <><CadLoftSections document={document} featureId={feature.id} sketchIds={draft.sketchIds} onChange={sketchIds => update({ ...draft, sketchIds })} /><SelectField label="Transition" value={draft.ruled ? 'ruled' : 'smooth'} options={[{ value: 'smooth', label: 'Smooth' }, { value: 'ruled', label: 'Ruled' }]} onChange={transition => update({ ...draft, ruled: transition === 'ruled' })} /><SelectField label="Operation" value={draft.operation} options={operationOptions} onChange={operation => update({ ...draft, operation, targetId: operation === 'new' ? null : draft.targetId ?? bodies.at(-1)?.value ?? null })} />{draft.operation !== 'new' && body('Target body', draft.targetId ?? '', targetId => update({ ...draft, targetId }))}</>; break;
     case 'fillet':
     case 'chamfer': fields = <>{body('Body', draft.targetId, (targetId) => update({ ...draft, targetId }))}<SelectField label="Scope" value={draft.selection ? 'selected' : 'all'} options={[{ value: 'all', label: 'All edges of the body' }, { value: 'selected', label: capturedEdges ? `Selected edges (${capturedEdges.expectedCount})` : 'Selected edges, pick before starting', disabled: !capturedEdges }]} onChange={(scope) => update({ ...draft, selection: scope === 'selected' ? capturedEdges : null })} />{scalar(draft.kind === 'fillet' ? 'Radius' : 'Distance', draft.radius, (radius) => update({ ...draft, radius }))}{draft.selection ? <CadTopologyQuerySummary selection={draft.selection} /> : <p className="cad-inspector-note">Applies to every edge of the body. To use selected edges, cancel, pick edges and start this operation again.</p>}</>; break;
     case 'shell': fields = <>{body('Body', draft.targetId, (targetId) => update({ ...draft, targetId }))}{scalar('Wall thickness', draft.thickness, (thickness) => update({ ...draft, thickness }))}<p className="cad-inspector-note">Removes one planar opening face and offsets the remaining walls inward. Thickness must fit inside the body.</p><CadTopologyQuerySummary selection={draft.opening} /></>; break;

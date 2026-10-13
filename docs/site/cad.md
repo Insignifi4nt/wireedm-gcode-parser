@@ -20,6 +20,8 @@ Use **File → Rebuild model** if a cancelled operation or restarted worker inva
 
 **File → Capture view PNG** saves the current sketch or solid viewport. The capture includes the current draft, which may be unsaved. Finish property edits and wait for the current solid rebuild before capture. The Agent panel in the notification bell keeps the captured PNG available to download again.
 
+If 3D graphics are interrupted, the view redraws when the browser recovers. **Retry 3D view** creates a fresh view if needed, retaining the document and resetting the camera to Isometric. Capture is unavailable while graphics are lost.
+
 ## Parameters and history
 
 Named parameters are numeric values. Dimensions accept numbers or expressions such as `width / 2`, `thickness + 3`, and `(pitch * 4) - diameter`. Expressions support `+`, `-`, `*`, `/` and parentheses, without executing JavaScript. Dimensions are millimetres; angles are degrees.
@@ -27,6 +29,8 @@ Named parameters are numeric values. Dimensions accept numbers or expressions su
 Each accepted edit is one undo step. Undo/redo changes the draft without rewriting saved storage. History is bounded to 50 steps and a memory budget. Invalid edits leave the previous draft intact. Deleting a feature with dependents requires explicit cascade deletion; reordering must preserve dependency order.
 
 **Pattern → Linear pattern** repeats a body by XYZ spacing. **Pattern → Circular pattern** repeats it around a world X, Y or Z axis through the entered centre. Count includes the original body. Angular extent is the total sweep: 4 instances over 360° appear at 0°, 90°, 180° and 270°; 3 over 180° appear at 0°, 90° and 180°. Negative extents reverse direction. Centres and extents accept parameter expressions. Copies are fused where they overlap, and the pattern replaces its source body. To create repeated holes, pattern a separate cutting body, then subtract that pattern with Boolean Cut. Patterns have 2–100 instances and share a 1,000 expanded-instance limit.
+
+**Loft** builds a solid between 2–16 ordered sketch sections. Create the sketches on the same reference plane with different plane offsets, then add and reorder them in Properties. Offsets must progress in one direction; the app does not sort them for you. Each section needs one closed material boundary without holes. Construction geometry is excluded. Smooth uses fitted native surfaces; Ruled connects each pair of sections directly. Choose New body, Join or Cut as with Pad. If smooth fitting extends beyond the first or last section plane, adjust the section spacing or use Ruled. The resulting solid supports STEP/STL export and later features. Final-solid CAM sections still require analytic lines and circular arcs; unsupported fitted curves are rejected explicitly.
 
 Choose Body, Face or Edge in the viewport to change the selection filter. Ctrl/Cmd-click adds or removes edges on the same body. The inspector can also list exact topology for keyboard selection. A selection belongs to the current build and clears when that build changes. Saved edge and opening selections use geometric conditions with exact match counts: an ambiguous match fails rather than choosing an arbitrary edge. A tangent edge chain must be selected completely when the solid engine would propagate the operation along it.
 

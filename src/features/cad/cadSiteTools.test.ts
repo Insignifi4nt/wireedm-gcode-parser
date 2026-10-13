@@ -1,9 +1,53 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CadFeatureSchema } from '@/domain/cad/cadSchema';
+import { Value } from '@sinclair/typebox/value';
+import { CadDocumentSchema, CadFeatureSchema } from '@/domain/cad/cadSchema';
+import { CadEditSchema } from '@/domain/cad/cadOperations';
 import { cadSiteTools } from './cadSiteTools';
 import type { CadController } from './useCadController';
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('keeps registered feature envelopes compact while rejecting invalid complete edits before the controller', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid feature reached the controller'); });
+    const edit = cadSiteTools(controller).find(item => item.name === 'cad_edit_document');
+    if (!edit) throw new Error('Missing edit tool');
+    const complete = { kind: 'circular-pattern', id: 'array', name: 'Array', suppressed: false,
+      sourceId: 'body', count: 4, axis: 'z', center: [0, 0, 0], angle: 360 };
+    const envelope = { kind: 'circular-pattern', id: 'array', name: 'Array', suppressed: false };
+    for (const feature of [envelope, { ...complete, count: 101 }, { ...complete, center: [0, 0] },
+      { ...complete, angle: { value: 360 } }, { ...complete, unexpected: true }]) {
+      const input = { expectedVersion: 'current', edits: [{ kind: 'add-feature', feature }] };
+      expect(Value.Check(edit.inputSchema, input)).toBe(true);
+      expect(await edit.execute(input)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    const update = { expectedVersion: 'current', edits: [{ kind: 'update-feature', feature: envelope }] };
+    expect(Value.Check(edit.inputSchema, update)).toBe(true);
+    expect(await edit.execute(update)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    let reads = 0;
+    const accessor = { ...complete, get count() { reads++; return 4; } };
+    expect(await edit.execute({ expectedVersion: 'current', edits: [{ kind: 'add-feature', feature: accessor }] }))
+      .toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    const abort = new AbortController(); abort.abort();
+    expect(await edit.execute(update, { signal: abort.signal })).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    expect(reads).toBe(0); expect(controller).not.toHaveBeenCalled();
+    expect(JSON.stringify(edit.inputSchema).length).toBeLessThan(JSON.stringify(CadEditSchema).length / 3);
+    expect(Value.Check(edit.inputSchema, { ...update, unknown: true })).toBe(false);
+    expect(Value.Check(edit.inputSchema, { ...update, edits: Array(129).fill(update.edits[0]) })).toBe(false);
+  });
+  it('retains full import validation behind the compact document registration', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid document reached the controller'); });
+    const tool = cadSiteTools(controller).find(item => item.name === 'cad_import_document');
+    if (!tool) throw new Error('Missing import tool');
+    const document = { format: 'wireedm-cad', schemaVersion: 1, id: 'part', name: 'Part', units: 'mm', parameters: {},
+      features: [{ id: 'import', name: 'Imported', kind: 'imported', suppressed: false,
+        source: { format: 'stl', fileName: 'mesh.stl', encoding: 'base64', data: 'AAAA' } }] };
+    const input = { expectedVersion: 'current', document };
+    expect(Value.Check(tool.inputSchema, input)).toBe(true);
+    expect(await tool.execute(input)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(controller).not.toHaveBeenCalled();
+    expect(JSON.stringify(tool.inputSchema).length).toBeLessThan(JSON.stringify(CadDocumentSchema).length / 3);
+    expect(Value.Check(tool.inputSchema, { ...input, document: { ...document, unknown: true } })).toBe(false);
+    expect(Value.Check(tool.inputSchema, { ...input, document: { ...document, features: Array(257).fill(document.features[0]) } })).toBe(false);
+  });
   it('rejects inherited and accessor arguments before schema reads or any shared operation', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('A malformed request reached the controller'); });
     const tool = cadSiteTools(controller).find(item => item.name === 'cad_create_document');

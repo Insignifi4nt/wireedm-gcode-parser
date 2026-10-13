@@ -40,6 +40,31 @@ async function context(page: Page) {
   if (!('version' in value) || typeof value.version !== 'string' || !('documentId' in value) || typeof value.documentId !== 'string') throw new Error('Invalid CAD context');
   return { ...value, version: value.version, documentId: value.documentId };
 }
+
+async function expectRenderedSolidCapture(page: Page, capture: object) {
+  if (!('previewUrl' in capture) || typeof capture.previewUrl !== 'string') throw new Error('Missing captured preview URL');
+  const pixels = await page.evaluate(async (url) => {
+    const image = new Image(); image.src = url; await image.decode();
+    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Unable to inspect capture pixels');
+    context.drawImage(image, 0, 0);
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+    let opaque = 0, body = 0;
+    for (let y = Math.floor(canvas.height * .2); y < canvas.height * .8; y += 3) {
+      for (let x = Math.floor(canvas.width * .2); x < canvas.width * .8; x += 3) {
+        const offset = 4 * (y * canvas.width + x);
+        if (data[offset + 3] > 0) {
+          opaque++;
+          if (data[offset] + data[offset + 1] + data[offset + 2] > 300) body++;
+        }
+      }
+    }
+    return { opaque, body };
+  }, capture.previewUrl);
+  expect(pixels.opaque, 'Solid PNG must contain rendered pixels, not a lost-context transparent image').toBeGreaterThan(1000);
+  expect(pixels.body, 'Solid PNG must contain the fitted body, not just its dark background and grid').toBeGreaterThan(100);
+}
 const edits = [
   { kind: 'set-parameter', name: 'width', value: 60 },
   { kind: 'add-feature', feature: { id: 'outline', name: 'Manufacturing outline', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
@@ -66,6 +91,107 @@ async function createBox(page: Page) {
   expect(build).toMatchObject({ bodies: [{ volumeMm3: expect.closeTo(1000, 7) }] });
   return { draft, buildId: build.buildId };
 }
+
+test('graphics loss rejects blank captures and restores the same CAD draft automatically or by retry', async ({ page }) => {
+  const { draft } = await createBox(page);
+  await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'fit' } });
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: draft.version }));
+  const loseGraphics = () => page.locator('.cad-webgl canvas').evaluate(canvas => {
+    const surface = canvas as HTMLCanvasElement & { restoreCadTestContext?: () => void };
+    const extension = surface.getContext('webgl2')?.getExtension('WEBGL_lose_context');
+    if (!extension) throw new Error('The test renderer must expose context loss controls');
+    surface.restoreCadTestContext = () => extension.restoreContext();
+    extension.loseContext();
+  });
+  await loseGraphics();
+  await expect(page.getByText('The 3D graphics context was interrupted.', { exact: true })).toBeVisible();
+  expect(await rawCall(page, 'cad_capture_preview', { expectedVersion: draft.version }))
+    .toMatchObject({ ok: false, error: { code: 'CAPTURE_UNAVAILABLE' } });
+  expect(await context(page)).toMatchObject({ version: draft.version, documentId: draft.documentId, featureCount: 2 });
+  await page.locator('.cad-webgl canvas').evaluate(canvas => {
+    const restore = (canvas as HTMLCanvasElement & { restoreCadTestContext?: () => void }).restoreCadTestContext;
+    if (!restore) throw new Error('Missing original graphics context');
+    restore();
+  });
+  await expect(page.getByRole('button', { name: 'Retry 3D view', exact: true })).toBeHidden();
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: draft.version }));
+  await loseGraphics();
+  await page.getByRole('button', { name: 'Retry 3D view', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Retry 3D view', exact: true })).toBeHidden();
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: draft.version }));
+  expect(await context(page)).toMatchObject({ version: draft.version, documentId: draft.documentId, featureCount: 2 });
+  expect(await call(page, 'cad_build', { expectedVersion: draft.version }))
+    .toMatchObject({ buildId: expect.any(String), bodies: [{ volumeMm3: expect.closeTo(1000, 7) }] });
+});
+
+test('ordered loft sections rebuild parametrically and carry an exact bored section into CAM', async ({ page }) => {
+  await prepare(page);
+  const initial = await context(page);
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Tapered bushing' });
+  const blank = await context(page);
+  expect(await call(page, 'cad_describe_features', { kind: 'loft' })).toMatchObject({ schema: {
+    required: expect.arrayContaining(['sketchIds', 'ruled', 'operation', 'targetId'])
+  } });
+  const sectionSketch = (id: string, name: string, offset: number | string, radius: number): CadSketchFeature => ({
+    id, name, kind: 'sketch', plane: 'XY', offset, suppressed: false,
+    profiles: [{ id: `${id}_circle`, name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius } }]
+  });
+  await call(page, 'cad_edit_document', { expectedVersion: blank.version, edits: [
+    { kind: 'set-parameter', name: 'rise', value: 20 },
+    { kind: 'add-feature', feature: sectionSketch('lower', 'Lower section', 0, 12) },
+    { kind: 'add-feature', feature: sectionSketch('upper', 'Upper section', 'rise', 8) }
+  ] });
+  const sections = await context(page);
+  await call(page, 'cad_set_viewport', { expectedVersion: sections.version, command: { kind: 'select-feature', featureId: 'lower' } });
+  await page.getByRole('button', { name: 'Loft', exact: true }).click();
+  await expect(page.getByLabel('Section 1', { exact: true })).toHaveValue('lower');
+  await expect(page.getByLabel('Section 2', { exact: true })).toHaveValue('upper');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  const created = await context(page);
+  const features = await call(page, 'cad_read_features', { expectedVersion: created.version });
+  const loft = (features as { items: CadFeature[] }).items.find(feature => feature.kind === 'loft');
+  expect(loft).toMatchObject({ sketchIds: ['lower', 'upper'], ruled: false, operation: 'new', targetId: null });
+  if (!loft) throw new Error('Missing applied loft');
+  expect(await call(page, 'cad_build', { expectedVersion: created.version })).toMatchObject({ diagnostics: [], totalBodies: 1,
+    bodies: [{ volumeMm3: expect.closeTo(6080 * Math.PI / 3, 5) }] });
+  await page.getByRole('button', { name: 'Move section 1 down', exact: true }).click();
+  const movedSection = page.getByLabel('Section 2', { exact: true });
+  await expect(movedSection).toBeFocused();
+  await expect(movedSection).toHaveValue('lower');
+  await movedSection.press('Alt+ArrowDown');
+  await expect.poll(() => movedSection.evaluate(select => select.matches(':open'))).toBe(true);
+  await movedSection.press('Escape');
+  await expect.poll(() => movedSection.evaluate(select => select.matches(':open'))).toBe(false);
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible();
+  await movedSection.press('Escape');
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeHidden();
+  await expect(page.getByLabel('Section 1', { exact: true })).toHaveValue('lower');
+  expect(await context(page)).toMatchObject({ version: created.version, workflowOpen: false });
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: created.version,
+    edits: [{ kind: 'set-parameter', name: 'rise', value: 0 }] })).toMatchObject({ ok: false });
+  expect(await context(page)).toMatchObject({ version: created.version, parameters: { rise: 20 } });
+  await call(page, 'cad_edit_document', { expectedVersion: created.version, edits: [
+    { kind: 'set-parameter', name: 'rise', value: 30 },
+    { kind: 'add-feature', feature: sectionSketch('bore_sketch', 'Bore outline', 0, 3) },
+    { kind: 'add-feature', feature: { id: 'bored', name: 'Bored bushing', kind: 'extrude', suppressed: false,
+      sketchId: 'bore_sketch', distance: 'rise', symmetric: false, operation: 'cut', targetId: loft.id } }
+  ] });
+  const bored = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: bored.version })).toMatchObject({ diagnostics: [], totalBodies: 1,
+    bodies: [{ featureId: 'bored', volumeMm3: expect.closeTo(2770 * Math.PI, 5) }] });
+  const section = { bodyId: 'bored', plane: 'XY', offset: 'rise / 2' };
+  expect(await call(page, 'cad_inspect_section', { expectedVersion: bored.version, section })).toMatchObject({ contourCount: 2,
+    entities: { items: expect.arrayContaining([{ type: 'circle', layer: 'CAD_SECTION', center: { x: 0, y: 0 }, radius: expect.closeTo(10, 6) },
+      { type: 'circle', layer: 'CAD_SECTION', center: { x: 0, y: 0 }, radius: expect.closeTo(3, 6) }]) } });
+  await call(page, 'cad_set_viewport', { expectedVersion: bored.version, command: { kind: 'select-feature', featureId: 'bored' } });
+  await page.getByRole('button', { name: 'Fit model', exact: true }).click();
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: bored.version }));
+  await page.screenshot({ path: 'tmp/cad-loft-bushing.png' });
+  expect(await call(page, 'cad_send_section_to_cam', { expectedVersion: bored.version, section })).toMatchObject({
+    opened: true, section: { contourCount: 2, offset: 15 }
+  });
+  await expect(page.locator('[data-preview-model="upid"]')).toBeVisible();
+});
 
 test('human and agent share a parametric circular bolt-hole pattern through exact CAM handoff', async ({ page }) => {
   await prepare(page);
@@ -115,7 +241,9 @@ test('human and agent share a parametric circular bolt-hole pattern through exac
   expect(await call(page, 'cad_inspect_section', { expectedVersion: drilled.version, section })).toMatchObject({ contourCount: 5 });
   await call(page, 'cad_set_viewport', { expectedVersion: drilled.version, command: { kind: 'select-feature', featureId: 'drilled_flange' } });
   await page.getByRole('button', { name: 'Fit model', exact: true }).click();
-  expect(await call(page, 'cad_capture_preview', { expectedVersion: drilled.version })).toMatchObject({ source: '3d', draftVersion: drilled.version });
+  const circularCapture = await call(page, 'cad_capture_preview', { expectedVersion: drilled.version });
+  expect(circularCapture).toMatchObject({ source: '3d', draftVersion: drilled.version });
+  await expectRenderedSolidCapture(page, circularCapture);
   await page.screenshot({ path: 'tmp/cad-circular-flange.png' });
   await call(page, 'cad_save_document', { expectedVersion: drilled.version });
   await page.reload();

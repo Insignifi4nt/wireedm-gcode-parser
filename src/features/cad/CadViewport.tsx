@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { CadMesh } from '@/domain/cad/cadDocument';
 import type { CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import { captureCanvas } from '@/features/editor/captureEditorPreview';
+import { ToolError } from '@/features/webmcp/siteTools';
 import type { CadNamedView, CadRenderedViewControls } from './cadViewportControls';
 import { pickTopology, type CadPickMode, type CadTopologyHit } from './cadTopologyPicking';
 import { createCadTopologyHighlights } from './cadTopologyHighlights';
@@ -33,7 +34,9 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
   const highlight = useRef<(() => void) | null>(null);
   const uploadedMeshes = useRef<readonly CadMesh[] | null>(null);
   const orbit = useRef<OrbitControls | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
+  const [graphicsFailure, setGraphicsFailure] = useState<'unavailable' | 'lost' | null>(null);
+  const [contextGeneration, setContextGeneration] = useState(0);
+  const unavailable = graphicsFailure !== null;
   const [gridVisible, setGridVisible] = useState(true);
   const [viewName, setViewName] = useState<CadNamedView | 'Custom'>('Isometric');
 
@@ -42,7 +45,8 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
     if (!container) return;
     let renderer: THREE.WebGLRenderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
-    catch { setUnavailable(true); return; }
+    catch { setGraphicsFailure('unavailable'); return; }
+    setGraphicsFailure(null); setGridVisible(true); setViewName('Isometric');
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
@@ -74,12 +78,14 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
     scene.add(solids);
     scene.add(highlights.objects);
     let frame: number | null = null;
+    let disposed = false;
     let pendingHover: PointerEvent | null = null;
     let namedDirection = camera.position.clone().sub(controls.target).normalize();
     const viewState: { view: CadNamedView | 'Custom'; gridVisible: boolean; revision: number; hoveredTopology: CadTopologyHit | null } = { view: 'Isometric', gridVisible: true, revision: 0, hoveredTopology: null };
     const render = () => {
       if (frame !== null) return;
       frame = requestAnimationFrame(() => {
+        if (disposed || renderer.getContext().isContextLost()) { frame = null; return; }
         const event = pendingHover; pendingHover = null;
         if (event && !down && !event.buttons && !data.current.interactionLocked && data.current.pickingEnabled && data.current.pickMode !== 'body') {
           setRay(event); setHover(hitTopology());
@@ -203,6 +209,23 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
       viewState.revision++; render();
     };
     const onStart = () => { pendingHover = null; setHover(null); };
+    const contextLost = () => {
+      if (disposed) return;
+      if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
+      pendingHover = null;
+      viewState.revision++;
+      setGraphicsFailure('lost');
+    };
+    const contextRestored = () => {
+      if (disposed) return;
+      // Three restores its GPU resources first. Demand rendering must then redraw
+      // the retained scene rather than waiting for the next pointer interaction.
+      viewState.revision++;
+      setGraphicsFailure(null);
+      resize();
+    };
+    renderer.domElement.addEventListener('webglcontextlost', contextLost);
+    renderer.domElement.addEventListener('webglcontextrestored', contextRestored);
     controls.addEventListener('change', onChange);
     controls.addEventListener('start', onStart);
     renderer.domElement.addEventListener('pointerdown', pointerDown);
@@ -222,7 +245,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
     };
     updateHighlights();
     controller.current = {
-      getState: () => Object.freeze({ mode: 'solid', available: true, view: viewState.view, gridVisible: viewState.gridVisible, zoom: camera.zoom, revision: viewState.revision,
+      getState: () => Object.freeze({ mode: 'solid', available: !disposed && !renderer.getContext().isContextLost(), view: viewState.view, gridVisible: viewState.gridVisible, zoom: camera.zoom, revision: viewState.revision,
         hoveredTopology: viewState.hoveredTopology ? Object.freeze({ ...viewState.hoveredTopology, pick: Object.freeze({ ...viewState.hoveredTopology.pick }) }) : null }),
       fit,
       setGrid(visible) { grid.visible = visible; viewState.gridVisible = visible; viewState.revision++; setGridVisible(visible); render(); },
@@ -237,13 +260,19 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
       },
       async capture(signal) {
         signal.throwIfAborted();
+        const assertGraphicsAvailable = () => {
+          if (disposed || renderer.getContext().isContextLost()) throw new ToolError('CAPTURE_UNAVAILABLE', 'The 3D graphics context is unavailable. Wait for recovery or retry the 3D view.');
+        };
+        assertGraphicsAvailable();
         if (uploadedMeshes.current !== data.current.meshes) update();
         updateSelection();
         updateHighlights();
         controls.update();
         if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
         renderer.render(scene, camera);
+        assertGraphicsAvailable();
         const image = captureCanvas(renderer.domElement, '3d');
+        assertGraphicsAvailable();
         signal.throwIfAborted();
         return image;
       },
@@ -251,6 +280,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
     const publishedControls = controller.current;
     publish.current?.(publishedControls);
     return () => {
+      disposed = true;
       observer.disconnect();
       controls.removeEventListener('change', onChange);
       controls.removeEventListener('start', onStart);
@@ -261,6 +291,8 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
       renderer.domElement.removeEventListener('pointermove', pointerMove);
       renderer.domElement.removeEventListener('pointerleave', pointerLeave);
       renderer.domElement.removeEventListener('pointercancel', pointerCancel);
+      renderer.domElement.removeEventListener('webglcontextlost', contextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', contextRestored);
       if (frame !== null) cancelAnimationFrame(frame);
       disposeSolids();
       highlights.dispose();
@@ -269,6 +301,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
       axes.geometry.dispose();
       for (const material of Array.isArray(axes.material) ? axes.material : [axes.material]) material.dispose();
       renderer.dispose();
+      renderer.forceContextLoss();
       renderer.domElement.remove();
       controller.current = null;
       redraw.current = null;
@@ -277,7 +310,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
       uploadedMeshes.current = null;
       publish.current?.(null, publishedControls);
     };
-  }, []);
+  }, [contextGeneration]);
 
   useEffect(() => { if (uploadedMeshes.current !== meshes) redraw.current?.(); }, [meshes]);
   useEffect(() => { recolor.current?.(); }, [selectedId]);
@@ -298,7 +331,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
         {(['body', 'face', 'edge'] satisfies CadPickMode[]).map((mode) => <button key={mode} disabled={interactionLocked || unavailable || !pickingEnabled} aria-pressed={pickMode === mode} title={`Pick ${mode === 'body' ? 'bodies' : `${mode}s`}`} onClick={() => onPickMode(mode)}>{mode === 'body' ? 'Body' : mode === 'face' ? 'Face' : 'Edge'}</button>)}
       </>}
     </div>
-    {unavailable ? <div className="cad-view-message"><strong>3D graphics are unavailable in this browser.</strong><span>Sketch editing and document operations remain available. Enable WebGL to view solids.</span></div> : meshes.length === 0 ? <div className="cad-view-message"><strong>Your part starts with a sketch</strong><span>Create a sketch on a reference plane, then draw a profile and add a Pad or Revolve.</span></div> : null}
+    {unavailable ? <div className="cad-view-message" role="status"><strong>{graphicsFailure === 'lost' ? 'The 3D graphics context was interrupted.' : '3D graphics are unavailable in this browser.'}</strong><span>{graphicsFailure === 'lost' ? 'Waiting for recovery. Retry the view if it stays blank; your CAD document is retained.' : 'Sketch editing and document operations remain available. Enable WebGL to view solids.'}</span><button type="button" disabled={interactionLocked} onClick={() => setContextGeneration(generation => generation + 1)}>Retry 3D view</button></div> : meshes.length === 0 ? <div className="cad-view-message"><strong>Your part starts with a sketch</strong><span>Create a sketch on a reference plane, then draw a profile and add a Pad or Revolve.</span></div> : null}
     {topologySelection?.picks.length ? <div className="cad-view-caption">{topologySelection.picks.length} {topologySelection.picks[0].kind}{topologySelection.picks.length === 1 ? '' : 's'} selected</div> : null}
     <div className="cad-view-help">{pickMode === 'edge' ? 'Ctrl / Cmd click to toggle edges · ' : ''}Drag to orbit · Right drag to pan · Scroll to zoom</div>
   </div>;

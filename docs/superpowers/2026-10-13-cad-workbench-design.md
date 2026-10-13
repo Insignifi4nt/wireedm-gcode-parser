@@ -8,7 +8,7 @@ Build a desktop parametric CAD workspace inside Wire EDM Workbench, with direct 
 
 Use a persistent specification tree, visible reference planes, a central model/sketch viewport, a focused property editor and compact chronological history. CATIA familiarity informs the Sketch → Pad/Pocket flow. Onshape informs exact feature IDs, dependency ordering and predictable feature selection. Fusion informs context-specific sketch/solid tools and discoverable downstream manufacturing. The design uses its own compact visual language rather than copying assets or branding.
 
-Dimensions accept safe arithmetic over named parameters. Sketches contain dimensioned rectangle, circle, polygon and slot profiles, with explicit material boundaries, holes and construction geometry. Drawing gestures and agent batches call the same validated edits and undo history. Every operation has real behavior; unsupported capabilities have no decorative controls.
+Dimensions accept safe arithmetic over named parameters. Sketches contain dimensioned rectangle, circle, polygon, slot and analytic line/arc path profiles. Material regions derive automatically from contour nesting; construction geometry is explicit. Drawing gestures and agent batches call the same validated edits and undo history. Every operation has real behavior; unsupported capabilities have no decorative controls.
 
 Reference material:
 
@@ -30,4 +30,4 @@ Reference material:
 
 Tests cover analytic geometry, expressions, graph edits, measurements, true WASM solids, export structure, both storage adapters, cancellation, stale writes, undo, real UI drawing and native agent transport. Cross-boundary tests validate CAD-derived UPID with the ordinary portable reader; unit-only geometry success is insufficient.
 
-Capabilities still requiring separate design and implementation include a general geometric constraint solver, arbitrary face-attached sketches, selective edge references, assemblies, imported B-rep feature reconstruction, surfacing and production drawings. Agent-focused continuation emphasizes reproducible typed documents, exact measurements, final-solid sections and stable semantic selection before adding broad toolbars.
+Capabilities still requiring separate design and implementation include a general geometric constraint solver, arbitrary face-attached sketches, assemblies, imported B-rep feature reconstruction, surfacing and production drawings. Exact topology inspection, selective edge references, final-solid sections, circular patterns and ordered lofts have since been implemented and reviewed. Agent-focused continuation emphasizes reproducible typed documents, exact measurements and stable semantic selection before adding broad toolbars.

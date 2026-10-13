@@ -25,6 +25,18 @@
 .cad-pattern-menu button { display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px 8px; color: #becbd3; background: transparent; border: 1px solid transparent; border-radius: 3px; font: inherit; cursor: pointer; text-align: left; }
 .cad-pattern-menu button:hover, .cad-pattern-menu button:focus-visible { background: #27323b; color: #eef5f8; }
 .cad-pattern-menu button:focus-visible { outline: 1px solid #67c8da; outline-offset: -1px; }
+.cad-loft-sections .cad-field-section { display: flex; justify-content: space-between; }
+.cad-loft-sections .cad-field-section small { color: #8098a8; font-size: 10px; }
+.cad-loft-section-list { max-height: 240px; overflow-y: auto; list-style: none; margin: 0 0 7px; padding: 0; }
+.cad-loft-section-row { display: grid; grid-template-columns: 15px minmax(0, 1fr) repeat(3, 20px); align-items: center; gap: 3px; padding: 4px 0; }
+.cad-loft-section-number { color: #8aa6b5; font-size: 10px; text-align: center; }
+.cad-loft-section-row select { width: 100%; padding: 4px; }
+.cad-loft-section-row button { padding: 4px 2px; }
+.cad-loft-section-row small { grid-column: 2 / -1; font-size: 10px; margin: 0; }
+.cad-loft-section-metadata { color: #8098a8; }
+.cad-loft-section-add { display: grid; grid-template-columns: minmax(0, 1fr) 26px; gap: 4px; }
+.cad-loft-section-add select { width: 100%; padding: 4px; }
+.cad-loft-section-add button { padding: 4px; border-color: #35434e; }
 .cad-toolbar { display: flex; flex-shrink: 0; align-items: center; background: #1a2229; border-bottom: 1px solid #34404a; height: 36px; padding: 2px 8px; overflow-x: auto; }
 .cad-tool-group { display: flex; align-items: center; height: 27px; padding: 0 7px; border-right: 1px solid #34404a; gap: 2px; flex-shrink: 0; }
 .cad-tool-group:first-child { padding-left: 0; }
@@ -102,6 +114,7 @@
 .cad-view-message { position: absolute; inset: 35% 15% auto; pointer-events: none; display: flex; flex-direction: column; text-align: center; gap: 9px; color: #708b9b; font-size: 12px; max-width: 460px; margin: auto; }
 .cad-view-message strong { font-size: 17px; font-weight: 450; color: #a7bdca; letter-spacing: .2px; }
 .cad-view-message span { line-height: 1.7; max-width: 360px; margin: auto; }
+.cad-view-message button { pointer-events: auto; align-self: center; border: 1px solid #3a5261; border-radius: 3px; padding: 5px 10px; color: #c2d8e3; background: #223540; font-size: 11px; }
 .cad-view-caption { position: absolute; bottom: 14px; left: 16px; color: #b1c5d1; font-size: 10px; pointer-events: none; }
 .cad-view-caption span { color: #7893a4; margin-left: 10px; font-size: 10px; letter-spacing: .5px; }
 .cad-view-help { position: absolute; bottom: 14px; right: 16px; color: #708b9b; font-size: 10px; pointer-events: none; }

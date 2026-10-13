@@ -15,6 +15,7 @@ import { object, page, pageFields, siteTool, ToolError } from '@/features/webmcp
 import { jsonByteLength, summarizeDiagnostic } from '@/features/webmcp/diagnosticSummaries';
 import { CadSessionError } from './cadSession';
 import type { CadController } from './useCadController';
+import { CadToolDocumentEnvelope, CadToolEditEnvelope } from './cadToolSchemas';
 
 const id = Type.String({ minLength: 1, maxLength: 160 });
 const version = { expectedVersion: id };
@@ -30,6 +31,7 @@ const featureDescriptions: Record<CadFeature['kind'], string> = {
   imported: 'An independent solid from an original STEP or STL file. Original source bytes are preserved in the document. STEP retains exact BRep; STL is faceted and requires explicit mm/inch source units. Native validation rejects open or invalid solids.',
   extrude: 'Pad the preceding sketch, symmetrically if requested. New creates a body; join/cut consumes and replaces targetId.',
   revolve: 'Revolve the preceding sketch around its local x or y axis by degrees. New creates a body; join/cut replaces targetId.',
+  loft: 'Build a solid through 2–16 unique sketchIds in their supplied order. Each active sketch must have one closed material boundary without holes; construction geometry is ignored. All sections share XY, XZ or YZ with strictly increasing or decreasing evaluated offsets separated beyond modeling precision. No sorting or dropped contours. ruled=true connects consecutive sections directly; false uses fitted native smooth surfaces. New creates a body; join/cut replaces targetId while retaining sketches. Invalid solids and end-plane overshoot fail. STEP preserves the resulting BRep; some section curves cannot transfer to analytic-only CAM.',
   fillet: 'Round current target edges. Absent/null selection means all edges; supplied geometric queries must match their exact expected counts. Replaces targetId; invalid radii report a build diagnostic.',
   chamfer: 'Chamfer current target edges. The radius field is the distance in mm. Optional geometric selection must match exact counts; absent/null retains all-edge semantics.',
   shell: 'Hollow a current solid inward by positive thickness in mm, opening exactly one planar face selected by geometric predicates. Ambiguous selections and invalid walls fail explicitly.',
@@ -43,7 +45,7 @@ const featureDescriptions: Record<CadFeature['kind'], string> = {
 /** No code execution or hidden controller shortcuts: agents use the visible CAD operations. */
 export function cadSiteTools(getController: () => CadController) {
   function tool<S extends TSchema>(name: string, description: string, schema: S,
-    execute: (cad: CadController, input: Static<S>, signal: AbortSignal) => unknown | Promise<unknown>, readOnly = true) {
+    execute: (cad: CadController, input: Static<S>, signal: AbortSignal) => unknown | Promise<unknown>, readOnly = true, discoverySchema?: TSchema) {
     const operation = siteTool(name, description, schema, async (input, signal) => {
       try { return await execute(getController(), input, signal); }
       catch (error) {
@@ -51,7 +53,7 @@ export function cadSiteTools(getController: () => CadController) {
         throw error;
       }
     }, readOnly);
-    return { ...operation, execute(input: unknown, options?: { signal?: AbortSignal }) {
+    return { ...operation, inputSchema: discoverySchema ?? operation.inputSchema, execute(input: unknown, options?: { signal?: AbortSignal }) {
       // Validate portable own data before TypeBox reads fields or a handler runs.
       if (!options?.signal?.aborted && !isCadImportData(input)) return Promise.resolve({ ok: false,
         error: { code: 'INVALID_ARGUMENT', message: 'CAD tool arguments must contain their own complete JSON data fields.' } });
@@ -67,7 +69,7 @@ export function cadSiteTools(getController: () => CadController) {
       buildState: cad.buildState, buildVersion: cad.buildVersion, buildId: cad.build?.buildId ?? null,
       ...diagnosticSummary(cad.build?.diagnostics ?? []),
       supported: { sketches: ['rectangle', 'circle', 'polygon', 'slot', 'path'], planes: ['XY', 'XZ', 'YZ'],
-        solids: ['imported', 'extrude', 'revolve', 'fillet', 'chamfer', 'shell', 'boolean', 'transform', 'linear-pattern', 'circular-pattern', 'mirror'],
+        solids: ['imported', 'extrude', 'revolve', 'loft', 'fillet', 'chamfer', 'shell', 'boolean', 'transform', 'linear-pattern', 'circular-pattern', 'mirror'],
         imports: ['cad-json', 'dxf', 'step', 'stl'],
         exports: ['cad-json', 'dxf', 'step', 'stl'], expressions: 'Finite arithmetic: + - * / and parentheses over named numeric parameters. Millimeters and degrees.' },
       camHandoff: 'Choose a sketch or exact planar section of a final solid. Local 2D millimeter contours become a new detached CAM project. Sections preserve lines/arcs; unsupported curves are rejected. CAD is saved first; CAM retains its own revisions and installed machine checks.',
@@ -97,10 +99,10 @@ export function cadSiteTools(getController: () => CadController) {
     tool('cad_create_document', 'Create a blank CAD draft with a fresh identity. Does not save. Save an existing nonempty draft before replacing it.', object({ ...version, name: Type.String({ minLength: 1, maxLength: 160 }) }), (cad, input) => {
       cad.newDocument(input.name, input.expectedVersion); return context(cad);
     }, false),
-    tool('cad_import_document', 'Import a complete validated wireedm-cad document as a NEW unsaved draft with a fresh identity. Uses the same operation as visible CAD JSON Import; preserves expressions and feature IDs, never overwrites saved CAD. Refuses unsaved CAD/CAM drafts, stale versions and active workflows. 4 MiB maximum. This accepts typed declarative CAD data, not Python, OpenSCAD, KCL or executable source.', object({ ...version, document: CadDocumentSchema }), async (cad, input, signal) => {
+    tool('cad_import_document', 'Import a complete validated wireedm-cad document as a NEW unsaved draft with a fresh identity. Call cad_describe_features for complete feature schemas; the compact feature envelope does not relax validation. Uses the visible CAD JSON Import operation; preserves expressions and feature IDs, never overwrites saved CAD. Refuses unsaved CAD/CAM drafts, stale versions and active workflows. 4 MiB maximum. Typed declarative CAD data only, not executable source.', object({ ...version, document: CadDocumentSchema }), async (cad, input, signal) => {
       const imported = await cad.importDocumentValue(input.document, input.expectedVersion, signal);
       return { ...context(cad), imported: imported.imported, sourceDocumentId: imported.sourceDocumentId };
-    }, false),
+    }, false, object({ ...version, document: CadToolDocumentEnvelope })),
     tool('cad_import_solid', 'Import a STEP or watertight STL file as a fresh unsaved CAD document using the same native checks as File > Import. STEP accepts UTF-8 text and embedded units. STL accepts standard padded base64 with explicit mm/inch units and produces faceted geometry. Preserves original source; maximum 2 MiB decoded. Refuses unsaved CAD/CAM work and open workflows. Native parsing, topology and positive-volume validation must succeed before changing the draft.', object({ ...version, source: CadSolidImportSourceSchema }),
       (cad, input, signal) => cad.importSolidSource(input.source, input.expectedVersion, signal), false),
     tool('cad_import_dxf', 'Import a complete exact DXF as a fresh CAD document containing an editable planar sketch. Preserves original text, circular arcs and analytic nesting. Uses declared units; missing/unknown units require explicit mm/inch/cm/m. Conflicting unit overrides, open/branching contours, unsupported curves and approximation are rejected. Maximum 2 MiB UTF-8. Uses the same cancellable worker operation as File > Import and refuses unsaved work or active workflows.', object({ ...version, source: CadDxfImportSourceSchema }),
@@ -132,9 +134,9 @@ export function cadSiteTools(getController: () => CadController) {
       if (!feature) throw new ToolError('NOT_FOUND', 'Feature does not exist. Read cad_read_features.');
       return { version: input.expectedVersion, feature };
     }),
-    tool('cad_edit_document', 'Apply an atomic batch of typed edits to the shared CAD draft. This is one undo step and does not save. Add/update complete feature definitions, set named numeric parameters, rename, reorder, or explicitly cascade deletion. Rejects invalid geometry, references, stale versions and active UI workflows. No arbitrary code.', object({ ...version, edits: Type.Array(CadEditSchema, { minItems: 1, maxItems: 128 }) }), (cad, input) => {
+    tool('cad_edit_document', 'Apply an atomic batch of typed edits to the shared CAD draft. One undo step; does not save. Call cad_describe_features for complete add/update definitions; the compact feature envelope does not relax validation. Set named numeric parameters, rename, reorder, or explicitly cascade deletion. Rejects invalid geometry, references, stale versions and active UI workflows. No arbitrary code.', object({ ...version, edits: Type.Array(CadEditSchema, { minItems: 1, maxItems: 128 }) }), (cad, input) => {
       cad.edit(input.edits, input.expectedVersion, true); return context(cad);
-    }, false),
+    }, false, object({ ...version, edits: Type.Array(CadToolEditEnvelope, { minItems: 1, maxItems: 128 }) })),
     tool('cad_history', 'Undo or redo one CAD edit batch. Draft versions always advance; saved storage is unchanged until Save.', object({ ...version, direction: Type.Union([Type.Literal('undo'), Type.Literal('redo')]) }), (cad, input) => {
       if (input.direction === 'undo') cad.undo(input.expectedVersion); else cad.redo(input.expectedVersion);
       return context(cad);

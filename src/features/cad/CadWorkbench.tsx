@@ -22,6 +22,8 @@ import type { CadRenderedViewControls, CadWorkbenchViewportControls } from './ca
 import { useCadPanelLayout } from './useCadPanelLayout';
 import { CadPatternCommand } from './CadPatternCommand';
 import { CAD_PANEL_LIMITS } from './cadPanelLayout';
+import { initialCadLoftSketchIds, inspectCadLoftCandidates } from './cadLoftUi';
+import { createCadSelectEscapeGuard } from './cadSelectEscape';
 import './cad-workbench.css';
 
 export interface CadWorkbenchProps {
@@ -57,7 +59,7 @@ export interface CadWorkbenchProps {
 }
 
 const featureIcons: Record<CadFeature['kind'], LucideIcon> = {
-  sketch: PencilRuler, imported: Box, extrude: Box, revolve: RotateCw, fillet: CircleDot, chamfer: Scissors, shell: Box, boolean: Layers, transform: Move3D, 'linear-pattern': Copy, 'circular-pattern': RotateCw, mirror: Copy,
+  sketch: PencilRuler, imported: Box, extrude: Box, revolve: RotateCw, loft: Layers, fillet: CircleDot, chamfer: Scissors, shell: Box, boolean: Layers, transform: Move3D, 'linear-pattern': Copy, 'circular-pattern': RotateCw, mirror: Copy,
 };
 
 function featureDraft(kind: CadFeature['kind'], document: CadDocument, selected: CadFeature | undefined, bodyIds: readonly string[], plane: CadPlane = 'XY'): CadFeature {
@@ -71,6 +73,7 @@ function featureDraft(kind: CadFeature['kind'], document: CadDocument, selected:
     case 'imported': throw new Error('Use File > Import to add an external solid.');
     case 'extrude': if (!sketch) throw new Error('Create a sketch with a closed profile before adding a Pad.'); return { ...base, kind, sketchId: sketch.id, distance: 10, symmetric: false, operation: 'new', targetId: null };
     case 'revolve': if (!sketch) throw new Error('Create a sketch with a closed profile before adding a Revolve.'); return { ...base, kind, sketchId: sketch.id, angle: 360, axis: 'y', operation: 'new', targetId: null };
+    case 'loft': return { ...base, kind, sketchIds: initialCadLoftSketchIds(inspectCadLoftCandidates(document), selected?.kind === 'sketch' ? selected.id : undefined), ruled: false, operation: 'new', targetId: null };
     case 'fillet':
     case 'chamfer': if (!body) throw new Error('Create a solid body first.'); return { ...base, kind, targetId: body.id, radius: 1 };
     case 'shell': throw new Error('Pick one planar face before starting an inward shell.');
@@ -205,8 +208,9 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     setCancelSignal((value) => value + 1); setNewFeature(null); setDrawingPending(false); setEditorPending(false); setParameterPending(false); setDeleteFeature(null); setFileMenu(false); setTool('select'); setError(null);
     setParameterName(''); setParameterValue(''); setNameDraft(document.name); setNamePending(false);
   }, [document.name]);
-  const hotkeys = useRef({ pending, storageBusy, props, cancel });
-  hotkeys.current = { pending, storageBusy, props, cancel };
+  const selectEscapeGuard = useMemo(() => createCadSelectEscapeGuard(window.document), []);
+  const hotkeys = useRef({ pending, storageBusy, props, cancel, selectEscapeGuard });
+  hotkeys.current = { pending, storageBusy, props, cancel, selectEscapeGuard };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
@@ -220,7 +224,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
         if (!current.pending && !current.storageBusy) run(current.props.onSave);
         return;
       }
-      if (target instanceof HTMLElement && target.tagName === 'SELECT') return;
+      if (target instanceof HTMLSelectElement && (event.key !== 'Escape' || !current.selectEscapeGuard(target))) return;
       if (event.key === 'Escape') { event.preventDefault(); current.cancel(); return; }
       if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA'].includes(target.tagName))) return;
       if (!modifier || !['z', 'y'].includes(event.key.toLowerCase())) return;
@@ -326,7 +330,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
 
     <div className="cad-toolbar" aria-label="CAD tools" inert={deleteFeature ? true : undefined}>
       <div className="cad-tool-group">{toolButton('Sketch', PencilRuler, () => startFeature('sketch'), locked)}</div>
-      {sketch ? <><div className="cad-tool-group">{toolButton('Select', CornerDownRight, () => setTool('select'), drawingPending || editorPending, tool === 'select')}{toolButton('Rectangle', Square, () => { setTool('rectangle'); setProfileId(null); }, drawingPending || editorPending, tool === 'rectangle')}{toolButton('Circle', Circle, () => { setTool('circle'); setProfileId(null); }, drawingPending || editorPending, tool === 'circle')}{toolButton('Slot', Square, () => { setTool('slot'); setProfileId(null); }, drawingPending || editorPending, tool === 'slot')}{toolButton('Polyline', PencilRuler, () => { setTool('polygon'); setProfileId(null); }, drawingPending || editorPending, tool === 'polygon')}</div><div className="cad-sketch-options"><label><input type="checkbox" checked={construction} disabled={drawingPending || editorPending} onChange={(event) => setConstruction(event.target.checked)} /> Construction</label></div></> : <><div className="cad-tool-group">{toolButton('Pad / Pocket', Box, () => startFeature('extrude'), locked || !hasSketch)}{toolButton('Revolve', RotateCw, () => startFeature('revolve'), locked || !hasSketch)}</div><div className="cad-tool-group">{toolButton('Fillet', CircleDot, () => startFeature('fillet'), locked || !hasBody)}{toolButton('Chamfer', Scissors, () => startFeature('chamfer'), locked || !hasBody)}{toolButton('Shell', Box, () => startFeature('shell'), locked || !topologyReady || !props.onResolveSelection || topologySelection?.picks[0]?.kind !== 'face')}{toolButton('Boolean', Layers, () => startFeature('boolean'), locked || currentBodyIds.length < 2)}</div><div className="cad-tool-group">{toolButton('Move', Move3D, () => startFeature('transform'), locked || !hasBody)}<CadPatternCommand disabled={locked || !hasBody} onChoose={kind => startFeature(kind)} />{toolButton('Mirror', Copy, () => startFeature('mirror'), locked || !hasBody)}</div></>}
+      {sketch ? <><div className="cad-tool-group">{toolButton('Select', CornerDownRight, () => setTool('select'), drawingPending || editorPending, tool === 'select')}{toolButton('Rectangle', Square, () => { setTool('rectangle'); setProfileId(null); }, drawingPending || editorPending, tool === 'rectangle')}{toolButton('Circle', Circle, () => { setTool('circle'); setProfileId(null); }, drawingPending || editorPending, tool === 'circle')}{toolButton('Slot', Square, () => { setTool('slot'); setProfileId(null); }, drawingPending || editorPending, tool === 'slot')}{toolButton('Polyline', PencilRuler, () => { setTool('polygon'); setProfileId(null); }, drawingPending || editorPending, tool === 'polygon')}</div><div className="cad-sketch-options"><label><input type="checkbox" checked={construction} disabled={drawingPending || editorPending} onChange={(event) => setConstruction(event.target.checked)} /> Construction</label></div></> : <><div className="cad-tool-group">{toolButton('Pad / Pocket', Box, () => startFeature('extrude'), locked || !hasSketch)}{toolButton('Revolve', RotateCw, () => startFeature('revolve'), locked || !hasSketch)}{toolButton('Loft', Layers, () => startFeature('loft'), locked || document.features.filter(feature => feature.kind === 'sketch' && !feature.suppressed).length < 2, false, 'Loft through ordered sketch sections')}</div><div className="cad-tool-group">{toolButton('Fillet', CircleDot, () => startFeature('fillet'), locked || !hasBody)}{toolButton('Chamfer', Scissors, () => startFeature('chamfer'), locked || !hasBody)}{toolButton('Shell', Box, () => startFeature('shell'), locked || !topologyReady || !props.onResolveSelection || topologySelection?.picks[0]?.kind !== 'face')}{toolButton('Boolean', Layers, () => startFeature('boolean'), locked || currentBodyIds.length < 2)}</div><div className="cad-tool-group">{toolButton('Move', Move3D, () => startFeature('transform'), locked || !hasBody)}<CadPatternCommand disabled={locked || !hasBody} onChoose={kind => startFeature(kind)} />{toolButton('Mirror', Copy, () => startFeature('mirror'), locked || !hasBody)}</div></>}
       {sketch && <button className="cad-finish-sketch cad-primary" disabled={locked} onClick={finishSketch}>Finish sketch</button>}
     </div>
     {(error || props.errorMessage) && <div className="cad-error-banner" role="alert"><span>{error || props.errorMessage}</span><button aria-label="Dismiss local error" onClick={() => setError(null)}><X size={13} /></button></div>}
