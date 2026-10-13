@@ -37,7 +37,9 @@ export function resolveEditorProgramTreeAction(node: EditorProgramTreeNode): Edi
       case 'EXECUTION_PLAN_INITIAL_WIRE_REQUIRED': return action('machining.initial-wire');
       case 'EXECUTION_PLAN_THREADING_REQUIRED':
       case 'EXECUTION_PLAN_THREADING_INVALID': return action('machining.between-contours', node.operationId);
-      case 'EXECUTION_PLAN_COMPENSATION_UNRESOLVED': return action('machining.contour-setup', node.operationId);
+      case 'EXECUTION_PLAN_COMPENSATION_UNRESOLVED':
+        return action(node.diagnostic.operationId !== node.operationId
+          ? 'machining.participation' : 'machining.contour-setup', node.operationId);
       case 'EXECUTION_PLAN_TRANSITION_REVIEW_REQUIRED':
         return action(node.diagnostic.operationId !== node.operationId
           ? 'machining.participation' : 'machining.entry-exit', node.operationId);
@@ -77,6 +79,30 @@ export function resolveEditorProgramTreeAction(node: EditorProgramTreeNode): Edi
     }
   }
   return action('machining.contour-setup', node.operationId, exactAction);
+}
+
+export function editorExecutionDiagnosticReviewLabel(node: Extract<EditorProgramTreeNode, { kind: 'diagnostic' }>): string | null {
+  switch (node.diagnostic.code) {
+    case 'EXECUTION_PLAN_INITIAL_WIRE_REQUIRED': return 'Review initial wire position';
+    case 'EXECUTION_PLAN_THREADING_REQUIRED':
+    case 'EXECUTION_PLAN_THREADING_INVALID': return 'Review threading transition';
+    case 'EXECUTION_PLAN_COMPENSATION_UNRESOLVED':
+      return node.diagnostic.operationId !== node.operationId
+        ? 'Review partial-path compensation' : 'Review contour compensation';
+    case 'EXECUTION_PLAN_TRANSITION_REVIEW_REQUIRED':
+      return node.diagnostic.operationId !== node.operationId
+        ? 'Review partial entry / exit' : 'Review entry / exit';
+    case 'EXECUTION_PLAN_DEGENERATE_TRANSITION': return 'Review entry / exit';
+    case 'EXECUTION_PLAN_PROGRAM_STOP_INVALID': return 'Review program stops';
+    case 'EXECUTION_PLAN_EMPTY':
+    case 'EXECUTION_PLAN_MACHINING_UNRESOLVED': return 'Review machining participation';
+    case 'EXECUTION_PLAN_INVALID_UPID':
+    case 'EXECUTION_PLAN_DISCONTINUOUS_GEOMETRY': return null;
+    default: {
+      const exhaustive: never = node.diagnostic.code;
+      return exhaustive;
+    }
+  }
 }
 
 function action(

@@ -2968,7 +2968,7 @@ export function EditorPage({
     const panelChildren = (
       <>
         {panelId === 'path-diagnostics' && programTree && (
-          <EditorExecutionDiagnostics diagnostics={programTree.diagnostics} onResolve={openEditorWorkflowForTarget} />
+          <EditorExecutionDiagnostics diagnostics={programTree.diagnostics} operations={programTree.operations} onResolve={openEditorWorkflowForTarget} />
         )}
         {children}
         {ownedMutatingWorkflow && (
