@@ -189,6 +189,7 @@
 .cad-profile.is-selected { stroke: #8ce9f5; fill: #7ae3ee22; }
 .cad-profile.is-construction { stroke: #628594; fill: none; }
 .cad-profile-preview { stroke: #71d2e1; fill: #56c7d214; pointer-events: none; }
+.cad-curve-viewport .cad-profile, .cad-curve-viewport .cad-profile.is-selected, .cad-curve-viewport .cad-profile-preview { fill: none; }
 .cad-sketch-vertex { fill: #84dcea; stroke: #143645; }
 .cad-crosshair { stroke: #9cdae4; pointer-events: none; }
 .cad-plane-label { font-size: 10px; letter-spacing: .5px; margin-right: 7px; }

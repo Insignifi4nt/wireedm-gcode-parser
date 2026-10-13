@@ -1,10 +1,11 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Camera, Scene } from 'three';
+import { AxesHelper, GridHelper, LineSegments, Mesh, Vector3, type Camera, type Scene } from 'three';
 import type { CadMesh } from '@/domain/cad/cadDocument';
 import { CadViewport } from './CadViewport';
 import type { CadRenderedViewControls } from './cadViewportControls';
+import { prepareCadCurveReferences } from './cadCurveRendering';
 
 interface MockRenderer {
   readonly domElement: HTMLCanvasElement;
@@ -95,5 +96,83 @@ describe('CAD WebGL context lifecycle', () => {
     const currentRevision = currentControls().getState().revision;
     await act(async () => old.domElement.dispatchEvent(new Event('webglcontextrestored')));
     expect(currentControls().getState().revision).toBe(currentRevision);
+  });
+});
+
+describe('versioned Curve reference rendering', () => {
+  it('selects reference curves in Body mode without intercepting Face or Edge picks', async () => {
+    const references = prepareCadCurveReferences([{ id: 'rail', name: 'Rail', kind: 'curve', plane: 'XY', offset: 5, suppressed: false,
+      segments: [{ kind: 'line', start: [0, 0], end: [20, 0] }] }], {});
+    const onSelect = vi.fn(); const onTopologyPick = vi.fn();
+    const render = async (pickMode: 'body' | 'face' | 'edge') => {
+      await act(async () => root.render(<CadViewport meshes={[mesh]} references={references} referenceVersion="v1" selectedId={null}
+        pickMode={pickMode} onSelect={onSelect} onTopologyPick={onTopologyPick} onControlsReady={value => { controls = value; }} />));
+    };
+    await render('body'); await currentControls().capture(new AbortController().signal);
+    const camera = renderer().render.mock.calls.at(-1)![1]; const point = new Vector3(10, 0, 5).project(camera);
+    const canvas = renderer().domElement;
+    canvas.setPointerCapture = vi.fn(); canvas.releasePointerCapture = vi.fn();
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) });
+    const pick = async () => {
+      await act(async () => {
+        for (const type of ['pointerdown', 'pointerup']) canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, clientX: (point.x + 1) * 400, clientY: (1 - point.y) * 300 }));
+      });
+    };
+    await pick(); expect(onSelect).toHaveBeenLastCalledWith('rail'); onSelect.mockClear();
+    await render('face'); await pick(); await render('edge'); await pick();
+    expect(onSelect).not.toHaveBeenCalled(); expect(onTopologyPick).toHaveBeenCalledTimes(2);
+  });
+  it('renders and captures references without meshes, advances installed version and releases replaced geometry', async () => {
+    const references = prepareCadCurveReferences([{ id: 'rail', name: 'Rail', kind: 'curve', plane: 'XZ', offset: 4, suppressed: false,
+      segments: [{ kind: 'line', start: [0, 0], end: [20, 0] }] }], {});
+    const publish = (value: CadRenderedViewControls | null) => { controls = value; };
+    await act(async () => root.render(<CadViewport meshes={[]} references={references} referenceVersion="v1" selectedId="rail" onSelect={vi.fn()} onControlsReady={publish} pickingEnabled={false} />));
+    expect(currentControls().getState()).toMatchObject({ mode: 'solid', available: true, referenceVersion: 'v1' });
+    await currentControls().capture(new AbortController().signal); const scene = renderer().render.mock.calls.at(-1)![0];
+    let line: LineSegments | null = null; let bodies = 0;
+    scene.traverse(object => { if (object instanceof LineSegments && object.userData.featureId === 'rail') line = object; if (object instanceof Mesh) bodies++; });
+    expect(bodies).toBe(0); if (!line) throw new Error('Curve reference not uploaded');
+    const original: LineSegments = line; const disposed = vi.spyOn(original.geometry, 'dispose');
+    const guides = scene.children.filter(object => object instanceof GridHelper || object instanceof AxesHelper);
+    expect(guides).toHaveLength(2);
+    for (const guide of guides) {
+      if (!(guide instanceof LineSegments)) throw new Error('Guide geometry missing');
+      for (const material of Array.isArray(guide.material) ? guide.material : [guide.material]) expect(material.depthWrite).toBe(false);
+      expect(guide.renderOrder).toBeLessThan(original.renderOrder);
+    }
+    for (const material of Array.isArray(original.material) ? original.material : [original.material]) expect(material.depthTest).toBe(true);
+    await act(async () => root.render(<CadViewport meshes={[]} references={references} referenceVersion="v1" selectedId={null} onSelect={vi.fn()} onControlsReady={publish} pickingEnabled={false} />));
+    expect(disposed).not.toHaveBeenCalled();
+    const moved = references.map(reference => ({ ...reference, positions: [0, -8, 0, 20, -8, 0] }));
+    const beforeRevision = currentControls().getState().revision;
+    await act(async () => root.render(<CadViewport meshes={[]} references={moved} referenceVersion="v2" selectedId="rail" onSelect={vi.fn()} onControlsReady={publish} pickingEnabled={false} />));
+    expect(disposed).toHaveBeenCalledTimes(1); expect(currentControls().getState()).toMatchObject({ referenceVersion: 'v2' }); expect(currentControls().getState().revision).toBeGreaterThan(beforeRevision);
+    await currentControls().capture(new AbortController().signal); let coordinates: readonly number[] = [];
+    renderer().render.mock.calls.at(-1)![0].traverse(object => {
+      if (object instanceof LineSegments && object.userData.featureId === 'rail') {
+        const position=object.geometry.getAttribute('position');
+        coordinates=Array.from({length:position.count},(_,index)=>new Vector3().fromBufferAttribute(position,index).applyMatrix4(object.matrixWorld).toArray()).flat();
+      }
+    });
+    expect(coordinates).toEqual([0, -8, 0, 20, -8, 0]);
+    await act(async () => root.render(<CadViewport meshes={[]} references={[]} referenceVersion="v3" selectedId={null} onSelect={vi.fn()} onControlsReady={publish} pickingEnabled={false} />));
+    expect(currentControls().getState()).toMatchObject({ referenceVersion: null });
+  });
+  it('keeps small far-origin curves distinct in GPU coordinates and restores their world placement',async()=>{
+    const references=prepareCadCurveReferences([{id:'far_rail',name:'Far rail',kind:'curve',plane:'XY',offset:7,suppressed:false,
+      segments:[{kind:'arc',center:[100000000,100000000],radius:1,startAngle:0,sweep:180}]}],{});
+    await act(async()=>root.render(<CadViewport meshes={[]} references={references} referenceVersion="far1" selectedId={null} onSelect={vi.fn()} onControlsReady={value=>{controls=value;}} pickingEnabled={false}/>));
+    await currentControls().capture(new AbortController().signal);const scene=renderer().render.mock.calls.at(-1)![0];
+    const lines:LineSegments[]=[];scene.traverse(object=>{if(object instanceof LineSegments&&object.userData.featureId==='far_rail') lines.push(object);});
+    expect(lines).toHaveLength(1);const line=lines[0];const position=line.geometry.getAttribute('position');
+    const localPoints=Array.from({length:position.count},(_,index)=>new Vector3().fromBufferAttribute(position,index));
+    expect(new Set(localPoints.map(point=>point.toArray().join(','))).size).toBeGreaterThan(50);
+    expect(Math.max(...localPoints.flatMap(point=>point.toArray().map(Math.abs)))).toBeLessThan(2);
+    expect(line.position.x).toBeCloseTo(100000000,6);expect(line.position.y).toBeCloseTo(100000000.5,6);expect(line.position.z).toBe(7);
+    for(let index=0;index<localPoints.length;index++) {
+      const world=localPoints[index].clone().applyMatrix4(line.matrixWorld);
+      expect(world.distanceTo(new Vector3(...references[0].positions.slice(index*3,index*3+3)))).toBeLessThan(1e-6);
+    }
+    expect(currentControls().getState()).toMatchObject({referenceVersion:'far1',available:true});
   });
 });

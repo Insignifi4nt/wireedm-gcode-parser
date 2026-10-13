@@ -2,13 +2,10 @@ import type { CadProfile, CadSketchFeature, CadSketchProfile } from './cadDocume
 import { CadError } from './cadError';
 import { evaluateCadAngle, evaluateCadScalar } from './cadExpression';
 import type { DxfEntity, DxfPoint } from '@/domain/dxf/types';
-import { createArcSegment, createLineSegment, pathBounds, signedAreaOfPath } from '@/domain/path-intel/segments';
+import { pathBounds, signedAreaOfPath } from '@/domain/path-intel/segments';
 import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
-import type { PathSegment } from '@/domain/path-intel/types';
-
-export type ResolvedCadPathSegment =
-  | { readonly kind: 'line'; readonly start: readonly [number, number]; readonly end: readonly [number, number] }
-  | { readonly kind: 'arc'; readonly center: readonly [number, number]; readonly radius: number; readonly startAngle: number; readonly sweep: number };
+import { cadAnalyticSegments, cadPathClosureTolerance, resolveCadPathSegments, type ResolvedCadPathSegment } from './cadAnalyticSegments';
+export { cadPathClosureTolerance, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 
 export type ResolvedCadProfile =
   | { kind: 'rectangle'; x: number; y: number; width: number; height: number; cornerRadius: number }
@@ -34,27 +31,13 @@ export function resolveCadProfile(profile: CadProfile, parameters: Readonly<Reco
     case 'circle': return { kind: profile.kind, x: e(profile.x), y: e(profile.y), radius: e(profile.radius) };
     case 'slot': return { kind: profile.kind, x: e(profile.x), y: e(profile.y), length: e(profile.length), width: e(profile.width), angle: evaluateCadAngle(profile.angle, parameters) };
     case 'polygon': return { kind: profile.kind, points: profile.points.map(([x, y]) => [e(x), e(y)]) };
-    case 'path': return { kind: profile.kind, segments: profile.segments.map(segment => segment.kind === 'line'
-      ? { kind: segment.kind, start: [e(segment.start[0]), e(segment.start[1])], end: [e(segment.end[0]), e(segment.end[1])] }
-      : { kind: segment.kind, center: [e(segment.center[0]), e(segment.center[1])], radius: e(segment.radius), startAngle: evaluateCadAngle(segment.startAngle, parameters), sweep: e(segment.sweep) }) };
+    case 'path': return { kind: profile.kind, segments: resolveCadPathSegments(profile.segments, parameters) };
     default: { const exhaustive: never = profile; return exhaustive; }
   }
 }
 
 function analyticPath(profile: Extract<ResolvedCadProfile, { kind: 'path' }>) {
-  const segments: PathSegment[] = profile.segments.map((segment, index) => {
-    const source = { sourceEntityIndex: index, sourceEntityType: segment.kind, layer: null, exact: true };
-    const id = `boundary_${index}`;
-    if (segment.kind === 'line') return createLineSegment({ id, source, start: { x: segment.start[0], y: segment.start[1] }, end: { x: segment.end[0], y: segment.end[1] } });
-    if (segment.radius <= tolerance || segment.radius > 1e6 || Math.abs(segment.sweep) > 360 || segment.sweep === 0) throw new CadError('invalid-profile', 'Path arcs need a positive radius and a nonzero sweep of at most one turn.');
-    const angle = segment.startAngle * Math.PI / 180; const sweep = segment.sweep * Math.PI / 180;
-    const center = { x: segment.center[0], y: segment.center[1] };
-    const at = (value: number) => ({ x: center.x + segment.radius * Math.cos(value), y: center.y + segment.radius * Math.sin(value) });
-    return createArcSegment({ id, source, center, radius: segment.radius, start: at(angle), end: at(angle + sweep), sweepRadians: sweep, clockwise: sweep < 0 });
-  });
-  const refs = segments.map(segment => ({ segmentId: segment.id, reversed: false }));
-  const byId = new Map(segments.map(segment => [segment.id, segment]));
-  return { segments, refs, byId };
+  return cadAnalyticSegments(profile.segments);
 }
 
 type AnalyticPath = ReturnType<typeof analyticPath>;
@@ -75,11 +58,6 @@ function analyticPathToEntities(path: AnalyticPath, layer: string): CadAnalyticB
 export function cadAnalyticPathMetrics(profile: Extract<ResolvedCadProfile, { kind: 'path' }>) {
   const path = analyticPath(profile);
   return { signedArea: signedAreaOfPath(path.refs, path.byId), length: path.segments.reduce((total, segment) => total + segment.length, 0), bounds: pathBounds(path.refs, path.byId) };
-}
-
-/** Endpoint equality allows arithmetic roundoff, never a physical gap repair. */
-export function cadPathClosureTolerance(points: readonly DxfPoint[]): number {
-  return Math.max(1e-12, 8 * Number.EPSILON * Math.max(1, ...points.flatMap(point => [Math.abs(point.x), Math.abs(point.y)])));
 }
 
 /** Closed, counterclockwise analytic contours. Rectangle x/y is lower-left; slot x/y is its centre. */

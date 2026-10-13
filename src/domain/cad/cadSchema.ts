@@ -10,21 +10,20 @@ import { CadDxfImportSourceSchema, parseCadDxfImportSource } from './cadDxfSourc
 import { isCadImportData } from './cadImportData';
 import { MAX_CAD_PATTERN_COUNT, MAX_CAD_PATTERN_INSTANCES, MIN_CAD_PATTERN_COUNT, resolveCadCircularPattern } from './cadPatterns';
 import { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS, resolveCadLoftSections } from './cadLoft';
+import { CadCurveFeatureSchema, resolveCadCurve } from './cadCurve';
+import { CadFeatureBaseSchemaFields, CadIdentifierSchema, CadLabelSchema, CadNumberSchema, CadPathSegmentSchema, CadPlaneSchema, CadPoint2Schema, CadScalarSchema } from './cadPrimitives';
+export { CadPathSegmentSchema } from './cadPrimitives';
 
 const strict = { additionalProperties: false };
-const identifier = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' });
-const label = Type.String({ minLength: 1, maxLength: 160, pattern: '\\S' });
-const number = Type.Number({ minimum: -1e9, maximum: 1e9 });
-const scalar = Type.Union([number, Type.String({ minLength: 1, maxLength: 512 })]);
-const plane = Type.Union([Type.Literal('XY'), Type.Literal('XZ'), Type.Literal('YZ')]);
-const point2 = Type.Tuple([scalar, scalar]);
+const identifier = CadIdentifierSchema;
+const label = CadLabelSchema;
+const number = CadNumberSchema;
+const scalar = CadScalarSchema;
+const plane = CadPlaneSchema;
+const point2 = CadPoint2Schema;
 const point3 = Type.Tuple([scalar, scalar, scalar]);
 const solidOperation = Type.Union([Type.Literal('new'), Type.Literal('join'), Type.Literal('cut')]);
-const base = { id: identifier, name: label, suppressed: Type.Boolean() };
-export const CadPathSegmentSchema = Type.Union([
-  Type.Object({ kind: Type.Literal('line'), start: point2, end: point2 }, strict),
-  Type.Object({ kind: Type.Literal('arc'), center: point2, radius: scalar, startAngle: scalar, sweep: scalar }, strict)
-]);
+const base = CadFeatureBaseSchemaFields;
 export const CadProfileSchema = Type.Union([
   Type.Object({ kind: Type.Literal('rectangle'), x: scalar, y: scalar, width: scalar, height: scalar, cornerRadius: scalar }, strict),
   Type.Object({ kind: Type.Literal('circle'), x: scalar, y: scalar, radius: scalar }, strict),
@@ -35,6 +34,7 @@ export const CadProfileSchema = Type.Union([
 export const CadSketchProfileSchema = Type.Object({ id: identifier, name: label, construction: Type.Boolean(),
   role: Type.Optional(Type.Union([Type.Literal('outer'), Type.Literal('hole')])), geometry: CadProfileSchema }, strict);
 export const CadFeatureSchema = Type.Union([
+  CadCurveFeatureSchema,
   Type.Object({ ...base, kind: Type.Literal('imported'), source: CadSolidImportSourceSchema }, strict),
   Type.Object({ ...base, kind: Type.Literal('sketch'), plane, offset: scalar, profiles: Type.Array(CadSketchProfileSchema, { maxItems: 256 }), source: Type.Optional(CadDxfImportSourceSchema) }, strict),
   Type.Object({ ...base, kind: Type.Literal('extrude'), sketchId: identifier, distance: scalar, symmetric: Type.Boolean(), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
@@ -56,20 +56,31 @@ export const CadDocumentSchema = Type.Object({
 }, strict);
 
 /** Separate sketch generators from solid operands once for dependency consumers. */
-export function cadFeatureInputs(feature: CadFeature): { readonly sketchIds: readonly string[]; readonly bodyIds: readonly string[] } {
+export function cadFeatureInputs(feature: CadFeature): { readonly sketchIds: readonly string[]; readonly curveIds: readonly string[]; readonly bodyIds: readonly string[] } {
+  const curveIds: readonly string[] = [];
   switch (feature.kind) {
-    case 'sketch': case 'imported': return { sketchIds: [], bodyIds: [] };
-    case 'extrude': case 'revolve': return { sketchIds: [feature.sketchId], bodyIds: feature.targetId === null ? [] : [feature.targetId] };
-    case 'loft': return { sketchIds: feature.sketchIds, bodyIds: feature.targetId === null ? [] : [feature.targetId] };
-    case 'fillet': case 'chamfer': case 'shell': return { sketchIds: [], bodyIds: [feature.targetId] };
-    case 'boolean': return { sketchIds: [], bodyIds: [feature.targetId, feature.toolId] };
-    case 'transform': case 'linear-pattern': case 'circular-pattern': case 'mirror': return { sketchIds: [], bodyIds: [feature.sourceId] };
+    case 'sketch': case 'curve': case 'imported': return { sketchIds: [], curveIds, bodyIds: [] };
+    case 'extrude': case 'revolve': return { sketchIds: [feature.sketchId], curveIds, bodyIds: feature.targetId === null ? [] : [feature.targetId] };
+    case 'loft': return { sketchIds: feature.sketchIds, curveIds, bodyIds: feature.targetId === null ? [] : [feature.targetId] };
+    case 'fillet': case 'chamfer': case 'shell': return { sketchIds: [], curveIds, bodyIds: [feature.targetId] };
+    case 'boolean': return { sketchIds: [], curveIds, bodyIds: [feature.targetId, feature.toolId] };
+    case 'transform': case 'linear-pattern': case 'circular-pattern': case 'mirror': return { sketchIds: [], curveIds, bodyIds: [feature.sourceId] };
     default: { const exhaustive: never = feature; return exhaustive; }
   }
 }
 export function cadFeatureDependencies(feature: CadFeature): string[] {
   const inputs = cadFeatureInputs(feature);
-  return [...inputs.sketchIds, ...inputs.bodyIds];
+  return [...inputs.sketchIds, ...inputs.curveIds, ...inputs.bodyIds];
+}
+/** References are never candidates for solid operations or topology selection. */
+export type CadBodyFeature = Exclude<CadFeature, { readonly kind: 'sketch' | 'curve' }>;
+export function cadFeatureProducesBody(feature: CadFeature): feature is CadBodyFeature {
+  switch (feature.kind) {
+    case 'sketch': case 'curve': return false;
+    case 'imported': case 'extrude': case 'revolve': case 'loft': case 'fillet': case 'chamfer': case 'shell':
+    case 'boolean': case 'transform': case 'linear-pattern': case 'circular-pattern': case 'mirror': return true;
+    default: { const exhaustive: never = feature; return exhaustive; }
+  }
 }
 /** Successful active operations replace these history bodies; mirrors preserve their source. */
 export function cadConsumedBodyIds(feature: CadFeature): readonly string[] {
@@ -79,7 +90,7 @@ export function cadVisibleBodyIds(features: readonly CadFeature[]): readonly str
   const visible = new Set<string>();
   for (const feature of features) {
     cadConsumedBodyIds(feature).forEach(id => visible.delete(id));
-    if (feature.kind !== 'sketch' && !feature.suppressed) visible.add(feature.id);
+    if (cadFeatureProducesBody(feature) && !feature.suppressed) visible.add(feature.id);
   }
   return [...visible];
 }
@@ -95,7 +106,7 @@ export function parseCadDocument(value: unknown): CadDocument {
   let sourceCharacters = 0;
   for (const feature of value.features) {
     if (feature.kind === 'imported') sourceCharacters += feature.source.data.length;
-    if (feature.kind === 'sketch' && feature.source) sourceCharacters += feature.source.text.length;
+    if ((feature.kind === 'sketch' || feature.kind === 'curve') && feature.source) sourceCharacters += feature.source.text.length;
     if (sourceCharacters > MAX_CAD_DOCUMENT_BYTES) throw new CadError('document-size', 'CAD documents must be at most 4 MiB including original imported files.');
   }
   // A boundary input may have inherited fields or accessors. Validate semantics
@@ -122,10 +133,13 @@ export function parseCadDocument(value: unknown): CadDocument {
     for (const id of inputs.sketchIds) {
       if (previous.get(id)?.kind !== 'sketch') throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding sketch "${id}".`);
     }
+    for (const id of inputs.curveIds) {
+      if (previous.get(id)?.kind !== 'curve') throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding reference curve "${id}".`);
+    }
     for (const id of inputs.bodyIds) {
       const referenced = previous.get(id);
       if (!referenced) throw new CadError('invalid-reference', `Feature "${feature.name}" references missing or later feature "${id}".`);
-      if (referenced.kind === 'sketch') throw new CadError('invalid-reference', 'A solid operation cannot target a sketch.');
+      if (!cadFeatureProducesBody(referenced)) throw new CadError('invalid-reference', `A solid operation cannot target ${referenced.kind === 'sketch' ? 'a sketch' : 'a reference curve'}.`);
     }
     const solidDependencies = inputs.bodyIds;
     if (!feature.suppressed) for (const id of solidDependencies) {
@@ -134,11 +148,17 @@ export function parseCadDocument(value: unknown): CadDocument {
     const operandInstances = solidDependencies.reduce((total, id) => total + (expandedInstances.get(id) ?? 1), 0);
     // Loft adds one generated operand before join/cut. Keep the existing
     // Pad/Revolve preflight counts unchanged for saved-history compatibility.
-    let instances = feature.kind === 'loft' ? operandInstances + 1 : operandInstances || 1;
+    let instances = feature.kind === 'curve' ? 0 : feature.kind === 'loft' ? operandInstances + 1 : operandInstances || 1;
     if (feature.kind === 'linear-pattern' || feature.kind === 'circular-pattern') instances *= feature.count;
     if (instances > MAX_CAD_PATTERN_INSTANCES) throw new CadError('feature-limit', 'Nested pattern expansion exceeds 1000 solid instances.');
     switch (feature.kind) {
       case 'imported': parseCadSolidImportSource(feature.source); break;
+      case 'curve': {
+        geometryBudget += feature.segments.length;
+        if (geometryBudget > 8192) throw new CadError('geometry-limit', 'Document contains too many sketch or reference curve edges.');
+        resolveCadCurve(feature, document.parameters);
+        break;
+      }
       case 'sketch': {
         e(feature.offset);
         if (feature.source) parseCadDxfImportSource(feature.source);
@@ -199,7 +219,7 @@ export function parseCadDocument(value: unknown): CadDocument {
     previous.set(feature.id, feature);
     expandedInstances.set(feature.id, instances);
     cadConsumedBodyIds(feature).forEach(id => visibleBodies.delete(id));
-    if (feature.kind !== 'sketch' && !feature.suppressed) visibleBodies.add(feature.id);
+    if (cadFeatureProducesBody(feature) && !feature.suppressed) visibleBodies.add(feature.id);
   }
   // Detach from callers, then freeze the complete history so neither a caller's
   // edit payload nor a UI/tool snapshot can mutate an accepted revision later.

@@ -1,5 +1,6 @@
 import { Value } from '@sinclair/typebox/value';
 import type { CadDocument, CadMesh } from '@/domain/cad/cadDocument';
+import { cadFeatureProducesBody } from '@/domain/cad/cadSchema';
 import { parseCadTopologyPickSet, type CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import { ToolError } from '@/features/webmcp/siteTools';
 import { CadViewportCommandSchema, type CadRenderedViewControls, type CadViewportCapture, type CadViewportState, type CadWorkbenchViewportControls } from './cadViewportControls';
@@ -11,8 +12,10 @@ export interface CadViewportBindings extends Omit<CadViewportState, 'documentId'
   readonly meshes: readonly CadMesh[];
   selectFeature(id: string | null): void;
   editSketch(id: string): void;
+  editCurve(id: string): void;
   selectProfile(id: string | null): void;
   finishSketch(): void;
+  finishCurve(): void;
   selectTopology(selection: CadTopologyPickSet | null, additive: boolean): void;
   setPickMode(mode: CadPickMode): void;
   updateView(action: () => void): void;
@@ -29,7 +32,7 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
   function getState(): CadViewportState {
     const bindings = getBindings();
     return Object.freeze({ documentId: bindings.document.id, documentVersion: bindings.documentVersion, dirty: bindings.dirty,
-      selectedFeatureId: bindings.selectedFeatureId, selectedProfileId: bindings.selectedProfileId, sketchId: bindings.sketchId,
+      selectedFeatureId: bindings.selectedFeatureId, selectedProfileId: bindings.selectedProfileId, sketchId: bindings.sketchId, curveId: bindings.curveId,
       workflowOpen: bindings.workflowOpen, busy: bindings.busy, buildVersion: bindings.buildVersion,
       buildId: bindings.buildId, pickMode: bindings.pickMode, topologySelection: bindings.topologySelection ? parseCadTopologyPickSet(bindings.topologySelection) : null,
       buildState: bindings.buildState, visibleBodyIds: Object.freeze([...bindings.visibleBodyIds]), view: bindings.rendered?.getState() ?? null });
@@ -37,7 +40,7 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
   // Busy may change because the caller acquires the capture lock. Only visual content matters.
   function visualIdentity(state: CadViewportState) {
     return JSON.stringify([state.documentId, state.documentVersion, state.selectedFeatureId, state.selectedProfileId,
-      state.sketchId, state.view?.mode === 'solid' ? [state.buildVersion, state.buildId, state.buildState, state.pickMode, state.topologySelection] : null, state.view]);
+      state.sketchId, state.curveId, state.view?.mode === 'solid' ? [state.buildVersion, state.buildId, state.buildState, state.pickMode, state.topologySelection] : null, state.view]);
   }
   return {
     getState,
@@ -53,6 +56,9 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
           case 'edit-sketch':
             if (!bindings.document.features.some((feature) => feature.kind === 'sketch' && feature.id === command.sketchId && !feature.suppressed)) throw new ToolError('NOT_FOUND', 'Choose an active sketch in the current CAD draft.');
             bindings.editSketch(command.sketchId); return;
+          case 'edit-curve':
+            if (!bindings.document.features.some((feature) => feature.kind === 'curve' && feature.id === command.curveId && !feature.suppressed)) throw new ToolError('NOT_FOUND', 'Choose an active curve in the current CAD draft.');
+            bindings.editCurve(command.curveId); return;
           case 'select-profile': {
             const sketch = bindings.document.features.find((feature) => feature.kind === 'sketch' && feature.id === bindings.sketchId);
             if (sketch?.kind !== 'sketch') throw new ToolError('WRONG_VIEW', 'Open the sketch editor before selecting a profile.');
@@ -62,12 +68,15 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
           case 'finish-sketch':
             if (!bindings.sketchId) throw new ToolError('WRONG_VIEW', 'No sketch editor is open.');
             bindings.finishSketch(); return;
+          case 'finish-curve':
+            if (!bindings.curveId) throw new ToolError('WRONG_VIEW', 'No curve editor is open.');
+            bindings.finishCurve(); return;
           case 'set-pick-mode':
-            if (bindings.sketchId || !rendered) throw new ToolError('WRONG_VIEW', 'Open the solid viewport before selecting faces or edges.');
+            if (bindings.sketchId || bindings.curveId || !rendered) throw new ToolError('WRONG_VIEW', 'Open the solid viewport before selecting faces or edges.');
             if (bindings.buildState !== 'ready' || bindings.buildVersion !== bindings.documentVersion) throw new ToolError('STALE_STATE', 'Wait for the current CAD draft to finish building before picking topology.');
             bindings.setPickMode(command.mode); return;
           case 'select-topology': {
-            if (bindings.sketchId || !rendered) throw new ToolError('WRONG_VIEW', 'Open the solid viewport before selecting topology.');
+            if (bindings.sketchId || bindings.curveId || !rendered) throw new ToolError('WRONG_VIEW', 'Open the solid viewport before selecting topology.');
             const selection = parseCadTopologyPickSet(command.selection);
             try { validateTopologySelection(selection, { documentVersion: bindings.documentVersion, buildId: bindings.buildId, meshes: bindings.meshes,
               ready: bindings.buildState === 'ready' && bindings.buildVersion === bindings.documentVersion }); }
@@ -76,7 +85,7 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
           }
           case 'clear-topology': bindings.selectTopology(null, false); return;
           case 'set-view':
-            if (bindings.sketchId || !rendered?.setView) throw new ToolError('WRONG_VIEW', 'Finish sketch editing before selecting a named solid view.');
+            if (bindings.sketchId || bindings.curveId || !rendered?.setView) throw new ToolError('WRONG_VIEW', 'Finish sketch or curve editing before selecting a named solid view.');
             rendered.setView(command.view); return;
           case 'fit':
             if (!rendered) throw new ToolError('VIEW_UNAVAILABLE', 'Wait for the viewport to load.');
@@ -94,14 +103,20 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
       const rendered = bindings.rendered;
       const before = getState();
       if (!rendered || !before.view?.available) throw new ToolError('CAPTURE_UNAVAILABLE', 'Wait for a visible CAD viewport to load.');
-      if (before.view.mode === 'solid' && (bindings.buildState !== 'ready' || bindings.buildVersion !== bindings.documentVersion)) throw new ToolError('STALE_STATE', 'Wait for this exact CAD draft to finish building before capturing its solid view.');
+      const hasCurves = bindings.document.features.some(feature => feature.kind === 'curve' && !feature.suppressed);
+      const requiresBuild = !hasCurves || bindings.document.features.some(feature => cadFeatureProducesBody(feature) && !feature.suppressed);
+      if (before.view.mode === 'solid') {
+        if (requiresBuild && (bindings.buildState !== 'ready' || bindings.buildVersion !== bindings.documentVersion)) throw new ToolError('STALE_STATE', 'Wait for this exact CAD draft to finish building before capturing its solid view.');
+        if (hasCurves && before.view.referenceVersion !== bindings.documentVersion) throw new ToolError('STALE_STATE', 'Wait for the current reference curves to appear before capturing the view.');
+      }
       const image = await rendered.capture(signal);
       signal.throwIfAborted();
       const after = getState();
       if (after.documentId !== before.documentId || after.documentVersion !== before.documentVersion) throw new ToolError('STALE_STATE', 'The CAD draft changed during capture. Read context and capture again.');
       if (after.workflowOpen || visualIdentity(after) !== visualIdentity(before)) throw new ToolError('STALE_VIEW', 'The CAD view changed during capture. Capture the current view again.');
       return Object.freeze({ image, contentSource: 'cad-draft', documentId: before.documentId, documentVersion: before.documentVersion,
-        dirty: before.dirty, sketchId: before.sketchId, buildVersion: before.view.mode === 'solid' ? before.buildVersion : null, viewState: before });
+        dirty: before.dirty, sketchId: before.sketchId, curveId: before.curveId,
+        buildVersion: before.view.mode === 'solid' && requiresBuild ? before.buildVersion : null, viewState: before });
     },
   };
 }

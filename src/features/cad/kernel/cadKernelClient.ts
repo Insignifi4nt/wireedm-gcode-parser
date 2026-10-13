@@ -7,6 +7,7 @@ import { parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, ty
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
 import { parseCadSolidImportSource, cadSolidImportBytes, type CadSolidImportSource, type CadSolidImportResult } from '../../../domain/cad/cadImports';
 import { parseCadDxfImportInput, type CadDxfImportInput, type CadDxfImportResult } from '../../../domain/cad/cadDxfImport';
+import { parseCadDxfCurveImportInput, type CadDxfCurveImportInput, type CadDxfCurveImportResult } from '../../../domain/cad/cadCurveDxf';
 
 export interface CadKernelClient {
   build(document: CadDocument, signal?: AbortSignal): Promise<CadBuildResult>;
@@ -16,6 +17,7 @@ export interface CadKernelClient {
   resolveTopologyPicks(document: CadDocument, request: CadTopologyResolvePicksRequest, signal?: AbortSignal): Promise<CadTopologyResolvePicksResult>;
   importSolid(source: CadSolidImportSource, signal?: AbortSignal): Promise<CadSolidImportResult>;
   importDxf(input: CadDxfImportInput, signal?: AbortSignal): Promise<CadDxfImportResult>;
+  importDxfCurve(input: CadDxfCurveImportInput, signal?: AbortSignal): Promise<CadDxfCurveImportResult>;
   dispose(): void;
 }
 export interface CadWorkerTransport {
@@ -48,6 +50,11 @@ function matchesTopologyRequest(request: CadKernelRequest, reply: CadKernelReply
     && reply.result.sketch.source.units === request.input.units
     && (request.input.sketchId === undefined || reply.result.sketch.id === request.input.sketchId)
     && (request.input.name === undefined || reply.result.sketch.name === request.input.name);
+  if (request.kind === 'import-dxf-curve') return reply.kind === 'dxf-curve-imported'
+    && reply.result.curve.source?.fileName === request.input.fileName && reply.result.curve.source.text === request.input.text
+    && reply.result.curve.source.units === request.input.units
+    && (request.input.curveId === undefined || reply.result.curve.id === request.input.curveId)
+    && (request.input.name === undefined || reply.result.curve.name === request.input.name);
   if (reply.kind === 'topology-inspected') {
     if (request.kind !== 'inspect-topology' || reply.result.buildId !== request.inspection.expectedBuildId || reply.result.bodyId !== request.inspection.bodyId) return false;
     const result = reply.result; const selection = request.inspection.selection;
@@ -115,6 +122,7 @@ export function createCadKernelClient(makeWorker: () => CadWorkerTransport = () 
     if (queue.length >= 4) return Promise.reject(new Error('The CAD queue is full. Wait for the current operations to finish.'));
     const validated = command.kind === 'import-solid' ? { ...command, source: parseCadSolidImportSource(command.source) }
       : command.kind === 'import-dxf' ? { ...command, input: parseCadDxfImportInput(command.input) }
+      : command.kind === 'import-dxf-curve' ? { ...command, input: parseCadDxfCurveImportInput(command.input) }
       : { ...command, document: parseCadDocument(command.document) };
     return new Promise((resolve, reject) => {
       const payload: CadKernelRequest = structuredClone({ ...validated, id: ++id });
@@ -162,6 +170,11 @@ export function createCadKernelClient(makeWorker: () => CadWorkerTransport = () 
     async importDxf(input, signal) {
       const reply = await request({ kind: 'import-dxf', input: parseCadDxfImportInput(input) }, signal);
       if (reply.kind !== 'dxf-imported') throw new Error('Unexpected CAD DXF import response.');
+      return reply.result;
+    },
+    async importDxfCurve(input, signal) {
+      const reply = await request({ kind: 'import-dxf-curve', input: parseCadDxfCurveImportInput(input) }, signal);
+      if (reply.kind !== 'dxf-curve-imported') throw new Error('Unexpected CAD Curve DXF import response.');
       return reply.result;
     },
     dispose() {

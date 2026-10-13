@@ -88,13 +88,13 @@ describe('loft section eligibility and order', () => {
 describe('typed loft inputs and atomic saved-history compatibility', () => {
   it('partitions section inputs from solid targets and consumes only an active target', () => {
     const joined: CadLoftFeature = { ...loft, operation: 'join', targetId: 'pad' };
-    expect(cadFeatureInputs(joined)).toEqual({ sketchIds: ['first', 'last'], bodyIds: ['pad'] });
+    expect(cadFeatureInputs(joined)).toEqual({ sketchIds: ['first', 'last'], curveIds: [], bodyIds: ['pad'] });
     expect(cadFeatureDependencies(joined)).toEqual(['first', 'last', 'pad']);
     expect(cadConsumedBodyIds(joined)).toEqual(['pad']); expect(cadConsumedBodyIds(loft)).toEqual([]);
     expect(cadConsumedBodyIds({ ...joined, suppressed: true })).toEqual([]);
     expect(cadVisibleBodyIds(document([first, last, pad, joined]).features)).toEqual(['loft']);
     expect(cadConsumedBodyIds({ kind: 'mirror', id: 'mirror', name: 'Mirror', suppressed: false, sourceId: 'pad', plane: 'XY' })).toEqual([]);
-    expect(cadFeatureInputs(pad)).toEqual({ sketchIds: ['first'], bodyIds: [] });
+    expect(cadFeatureInputs(pad)).toEqual({ sketchIds: ['first'], curveIds: [], bodyIds: [] });
   });
   it('rejects malformed complete features, invalid targets, later references and active suppressed sections', () => {
     const blank = createCadDocument('Part', 'cad_loft');

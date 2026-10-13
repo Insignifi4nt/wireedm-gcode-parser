@@ -1,7 +1,7 @@
 import type { CadProfile } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
 import {
-  copyCadConstructionPoint, createCadConstructionLine, createCadPathProfile, createCadThreePointArc,
+  copyCadConstructionPoint, createCadConstructionLine, createCadOpenCurveSegments, createCadPathProfile, createCadThreePointArc,
   MAX_CAD_PATH_CONSTRUCTION_EDGES, type CadConstructedArc, type CadConstructionPoint, type CadPathConstructionStep
 } from '@/domain/cad/cadPathConstruction';
 import { cadPathClosureTolerance, type ResolvedCadPathSegment } from '@/domain/cad/cadSketchGeometry';
@@ -89,4 +89,13 @@ export function closeCadPathDraft(draft: CadPathDraft): Extract<CadProfile, { ki
   const steps: readonly CadPathConstructionStep[] = draft.segments.map(segment => segment.kind === 'line'
     ? { kind: 'line', end: segment.end } : { kind: 'arc', end: segment.end, through: segment.through });
   return createCadPathProfile(draft.start, steps);
+}
+
+/** A reference curve keeps the authored direction and never gains a closing edge. */
+export function finishCadCurveDraft(draft: CadPathDraft): readonly ResolvedCadPathSegment[] {
+  if (draft.kind === 'idle') throw new CadError('empty-curve', 'Place the first curve point before finishing.');
+  if (draft.kind === 'arc-through') throw new CadError('incomplete-arc', 'Finish the arc through point or undo its endpoint before finishing.');
+  const steps: readonly CadPathConstructionStep[] = draft.segments.map(segment => segment.kind === 'line'
+    ? { kind: 'line', end: segment.end } : { kind: 'arc', end: segment.end, through: segment.through });
+  return createCadOpenCurveSegments(draft.start, steps);
 }

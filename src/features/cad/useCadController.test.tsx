@@ -14,8 +14,9 @@ import { cadSiteTools } from './cadSiteTools';
 import type { CadViewportCapture, CadViewportState } from './cadViewportControls';
 import { loadEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { importCadDxfSketch, type CadDxfImportInput, type CadDxfImportResult } from '@/domain/cad/cadDxfImport';
+import { importCadDxfCurve, type CadDxfCurveImportInput, type CadDxfCurveImportResult } from '@/domain/cad/cadCurveDxf';
 
-const kernel = vi.hoisted(() => ({ build: vi.fn(), section: vi.fn(), export: vi.fn(), importSolid: vi.fn(), importDxf: vi.fn(), inspectTopology: vi.fn(), resolveTopologyPicks: vi.fn(), dispose: vi.fn() }));
+const kernel = vi.hoisted(() => ({ build: vi.fn(), section: vi.fn(), export: vi.fn(), importSolid: vi.fn(), importDxf: vi.fn(), importDxfCurve: vi.fn(), inspectTopology: vi.fn(), resolveTopologyPicks: vi.fn(), dispose: vi.fn() }));
 vi.mock('./kernel/cadKernelClient', () => ({ createCadKernelClient: () => kernel }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root | undefined;
@@ -58,6 +59,92 @@ async function harness(withGeometry = false, allowHandoff = false) {
 }
 
 describe('CAD controller asynchronous guards', () => {
+  const curveDxf = '0\nSECTION\n2\nENTITIES\n0\nLINE\n10\n0\n20\n0\n11\n20\n21\n0\n0\nENDSEC\n0\nEOF\n';
+  const curveSource = { format: 'dxf' as const, fileName: 'Rail.dxf', text: curveDxf, units: 'mm' as const };
+  const curveInput = { fileName: curveSource.fileName, text: curveSource.text, units: curveSource.units };
+  it.each(['sketch', 'curve'] as const)('keeps committed %s import receipts bounded when malformed unit metadata is very large', async kind => {
+    const h = await harness(); const before = h.session.getSnapshot();
+    const raw = 'x'.repeat(40_000);
+    const header = ['0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', raw, '0', 'ENDSEC', ''].join('\n');
+    const source = { ...curveSource, text: header + (kind === 'curve' ? curveDxf : dxfText) };
+    kernel.importDxfCurve.mockImplementation(async (input: CadDxfCurveImportInput) => importCadDxfCurve(input));
+    kernel.importDxf.mockImplementation(async (input: CadDxfImportInput) => importCadDxfSketch(input));
+    const tool = cadSiteTools(h.cad).find(tool => tool.name === (kind === 'curve' ? 'cad_import_curve_dxf' : 'cad_import_dxf'));
+    if (!tool) throw new Error('Import tool missing');
+    await act(async () => {
+      expect(await tool.execute({ expectedVersion: before.version, source })).toMatchObject({ ok: true, data: {
+        imported: true, unitDeclaration: { status: 'malformed', rawValue: raw.slice(0, 160), rawValueTruncated: true, rawValueLength: 40_000 }
+      } });
+    });
+    expect(h.session.getSnapshot().document.features[0]).toMatchObject({ kind, source });
+    await act(async () => { await h.cad().save(); });
+    expect((await loadCadDocument(h.workbench().adapter, h.session.getSnapshot().document.id)).document.features[0]).toMatchObject({ source });
+  });
+  it('imports, measures, saves and reloads an independent curve without automatic solid work or CAM writes', async () => {
+    const h = await harness(); const before = h.session.getSnapshot();
+    kernel.importDxfCurve.mockImplementation(async (input: CadDxfCurveImportInput) => importCadDxfCurve(input));
+    const tool = cadSiteTools(h.cad).find(tool => tool.name === 'cad_import_curve_dxf');
+    const measure = cadSiteTools(h.cad).find(tool => tool.name === 'cad_measure_curve');
+    if (!tool || !measure) throw new Error('Missing Curve tools');
+    await act(async () => { expect(await tool.execute({ expectedVersion: before.version, source: curveSource })).toMatchObject({ ok: true, data: { imported: true, curveId: expect.any(String), scaleToMillimeters: 1 } }); });
+    const accepted = h.session.getSnapshot(); const curve = accepted.document.features[0];
+    expect(curve).toMatchObject({ kind: 'curve', source: curveSource });
+    expect(accepted.document.id).not.toBe(before.document.id);
+    expect(accepted.savedVersion).toBeNull(); expect(accepted.dirty).toBe(true);
+    await expect(measure.execute({ expectedVersion: accepted.version, curveId: curve.id })).resolves.toMatchObject({ ok: true, data: { version: accepted.version, curveId: curve.id, lengthMm: 20, startMm: [0, 0], endMm: [20, 0] } });
+    expect(h.session.getSnapshot()).toBe(accepted);
+    await act(async () => { await h.cad().save(); });
+    expect((await loadCadDocument(h.workbench().adapter, accepted.document.id)).document).toEqual(accepted.document);
+    expect(kernel.build).not.toHaveBeenCalled(); expect(h.workbench().manifest.projects).toHaveLength(0);
+    await expect(measure.execute({ expectedVersion: before.version, curveId: curve.id })).resolves.toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    await act(async () => h.session.setWorkflowOpen(true));
+    await expect(measure.execute({ expectedVersion: accepted.version, curveId: curve.id })).resolves.toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  });
+  it.each(['cancelled', 'changed', 'workflow', 'storage'] as const)('rejects a late curve import after %s without replacing accepted work', async cause => {
+    const h = await harness(); const before = h.session.getSnapshot();
+    const pending = deferred<CadDxfCurveImportResult>(); kernel.importDxfCurve.mockReturnValueOnce(pending.promise);
+    const abort = new AbortController(); let operation: Promise<unknown> | undefined;
+    await act(async () => { operation = h.cad().importDxfCurveSource(curveSource, before.version, abort.signal); });
+    await vi.waitFor(() => expect(kernel.importDxfCurve).toHaveBeenCalled());
+    if (cause === 'cancelled') abort.abort();
+    if (cause === 'changed') await act(async () => h.session.edit([{ kind: 'rename-document', name: 'Keep this' }]));
+    if (cause === 'workflow') await act(async () => h.session.setWorkflowOpen(true));
+    if (cause === 'storage') await h.switchWorkbench(await openWorkbench('curve-other-store'));
+    const retained = h.session.getSnapshot();
+    await act(async () => {
+      pending.resolve(importCadDxfCurve(curveInput));
+      await expect(operation).rejects.toMatchObject(cause === 'cancelled' ? { name: 'AbortError' } : { code: cause === 'workflow' ? 'WORKFLOW_OPEN' : 'STALE_STATE' });
+    });
+    expect(h.session.getSnapshot()).toBe(retained); expect(h.workbench().manifest.projects).toHaveLength(0);
+  });
+  it('rejects substituted curve originals and closed DXF without changing the draft', async () => {
+    const h = await harness(); const before = h.session.getSnapshot();
+    const imported = importCadDxfCurve(curveInput);
+    kernel.importDxfCurve.mockResolvedValueOnce({ ...imported, curve: { ...imported.curve, source: { ...curveSource, text: `${curveDxf} ` } } });
+    await act(async () => { await expect(h.cad().importDxfCurveSource(curveSource, before.version)).rejects.toMatchObject({ code: 'INVALID_IMPORT_RESULT' }); });
+    kernel.importDxfCurve.mockImplementation(async (input: CadDxfCurveImportInput) => importCadDxfCurve(input));
+    await act(async () => { await expect(h.cad().importDxfCurveSource({ ...curveSource, text: dxfText }, before.version)).rejects.toThrow(); });
+    expect(h.session.getSnapshot()).toBe(before);
+  });
+  it('routes the visible explicit Curve import choice through the same worker and cancels curve exports before downloads', async () => {
+    const h = await harness();
+    kernel.importDxfCurve.mockImplementation(async (input: CadDxfCurveImportInput) => importCadDxfCurve(input));
+    const file = new File([curveDxf], 'Rail.dxf');
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(curveDxf).buffer });
+    await act(async () => { await h.cad().importDocument(file); });
+    expect(h.session.getSnapshot().workflowOpen).toBe(true);
+    await act(async () => { await h.cad().confirmImport('mm', 'curve'); });
+    const accepted = h.session.getSnapshot();
+    expect(accepted.workflowOpen).toBe(false); expect(accepted.document.features[0].kind).toBe('curve');
+    expect(kernel.importDxf).not.toHaveBeenCalled();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const abort = new AbortController(); const tool = cadSiteTools(h.cad).find(tool => tool.name === 'cad_export_curve_dxf');
+    if (!tool) throw new Error('Curve export missing');
+    let operation: Promise<unknown> | undefined;
+    await act(async () => { operation = tool.execute({ expectedVersion: accepted.version, curveId: accepted.document.features[0].id }, { signal: abort.signal }); abort.abort(); });
+    await expect(operation).resolves.toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    expect(click).not.toHaveBeenCalled(); expect(h.session.getSnapshot()).toBe(accepted);
+  });
   it('edits and saves circular patterns through the shared versioned tool boundary', async () => {
     const h = await harness(true);
     const tools = cadSiteTools(h.cad);
@@ -284,11 +371,11 @@ describe('CAD controller asynchronous guards', () => {
   it('captures bounded real-image data with CAD draft provenance and exposes only its local artifact receipt', async () => {
     const h = await harness(true); const snapshot = h.session.getSnapshot();
     const state: CadViewportState = { documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
-      selectedFeatureId: null, selectedProfileId: null, sketchId: null, workflowOpen: false, busy: false, buildVersion: snapshot.version,
+      selectedFeatureId: null, selectedProfileId: null, sketchId: null, curveId: null, workflowOpen: false, busy: false, buildVersion: snapshot.version,
       buildState: 'ready', buildId: 'build-preview', pickMode: 'body', topologySelection: null,
       visibleBodyIds: [], view: { mode: 'solid', available: true, view: 'Top', gridVisible: true, zoom: 1, revision: 0 } };
     const capture: CadViewportCapture = { contentSource: 'cad-draft', documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
-      sketchId: null, buildVersion: snapshot.version, viewState: state,
+      sketchId: null, curveId: null, buildVersion: snapshot.version, viewState: state,
       image: { source: '3d', width: 1, height: 1, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDSkAAAAASUVORK5CYII=' } };
     h.cad().setViewportControls({ getState: () => state, apply: vi.fn(), capture: async () => capture });
     let receipt: unknown;

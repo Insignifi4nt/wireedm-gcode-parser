@@ -68,7 +68,7 @@ export function isCadDxfImportResult(value: unknown): value is CadDxfImportResul
 }
 
 /** The shared parser is intentionally tolerant; CAD authoring requires a complete file. */
-function assertCompleteDxf(text: string): void {
+export function assertCompleteCadDxf(text: string): void {
   const lines = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
   if (lines.length % 2 !== 0) throw new CadError('dxf-incomplete', 'DXF group-code/value pairs are incomplete. Preserve the original file.');
@@ -103,7 +103,7 @@ function assertCompleteDxf(text: string): void {
 export function importCadDxfSketch(input: CadDxfImportInput): CadDxfImportResult {
   input = parseCadDxfImportInput(input);
   const source = parseCadDxfImportSource({ format: 'dxf', fileName: input.fileName, text: input.text, ...(input.units !== undefined ? { units: input.units } : {}) });
-  assertCompleteDxf(source.text);
+  assertCompleteCadDxf(source.text);
   const parsed = parseDxf(source.text);
   if (parsed.unsupportedEntities.length || parsed.warnings.length || parsed.entities.some(entity => entity.type === 'line' && entity.approximation)) {
     throw new CadError('dxf-inexact', 'DXF contains unsupported, omitted or approximated geometry. CAD requires complete exact lines, circular arcs and circles.');

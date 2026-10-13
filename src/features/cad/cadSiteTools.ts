@@ -16,8 +16,9 @@ import { jsonByteLength, summarizeDiagnostic } from '@/features/webmcp/diagnosti
 import { CadSessionError } from './cadSession';
 import type { CadController } from './useCadController';
 import { CadToolDocumentEnvelope, CadToolEditEnvelope } from './cadToolSchemas';
-import { CadConstructionPointSchema, CadPathConstructionStepSchema, createCadPathProfile } from '@/domain/cad/cadPathConstruction';
+import { CadConstructionPointSchema, CadPathConstructionStepSchema, createCadPathProfile, createCadOpenCurveSegments } from '@/domain/cad/cadPathConstruction';
 import { cadAnalyticPathMetrics, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
+import { resolveCadCurve } from '@/domain/cad/cadCurve';
 
 const id = Type.String({ minLength: 1, maxLength: 160 });
 const version = { expectedVersion: id };
@@ -31,6 +32,7 @@ function diagnosticSummary(diagnostics: readonly CadDiagnostic[]) {
   return { diagnostics: summaries, omittedDiagnostics: diagnostics.length - summaries.length };
 }
 const featureDescriptions: Record<CadFeature['kind'], string> = {
+  curve: 'An ordered open reference chain of 1–2048 exact lines and circular arcs in XY, XZ or YZ at an evaluated offset. Dimensions accept parameter expressions. Segments must connect within modeling precision without closing, crossing, touching nonadjacent segments or overlapping. Sharp corners are allowed. Curves are independent references, never solid bodies or closed material profiles. Retains original DXF source when imported; exact open DXF export preserves traversal in local millimeters.',
   sketch: 'Plane-local closed profiles with optional construction geometry. Nesting automatically determines material, voids and islands. Dimensions accept finite arithmetic over document parameters.',
   imported: 'An independent solid from an original STEP or STL file. Original source bytes are preserved in the document. STEP retains exact BRep; STL is faceted and requires explicit mm/inch source units. Native validation rejects open or invalid solids.',
   extrude: 'Pad the preceding sketch, symmetrically if requested. New creates a body; join/cut consumes and replaces targetId.',
@@ -66,21 +68,33 @@ export function cadSiteTools(getController: () => CadController) {
   }
   function context(cad: CadController) {
     const state = cad.session.getSnapshot();
+    const onlyCurves = state.document.features.length > 0 && state.document.features.every(feature => feature.kind === 'curve');
     return { open: cad.isOpen(), version: state.version, documentId: state.document.id, name: state.document.name,
       units: state.document.units, dirty: state.dirty, savedVersion: state.savedVersion,
       featureCount: state.document.features.length, parameters: state.document.parameters,
       canUndo: state.canUndo, canRedo: state.canRedo, workflowOpen: state.workflowOpen, busy: cad.isBusy(),
       buildState: cad.buildState, buildVersion: cad.buildVersion, buildId: cad.build?.buildId ?? null,
       ...diagnosticSummary(cad.build?.diagnostics ?? []),
-      supported: { sketches: ['rectangle', 'circle', 'polygon', 'slot', 'path'], planes: ['XY', 'XZ', 'YZ'],
+      supported: { sketches: ['rectangle', 'circle', 'polygon', 'slot', 'path'], references: ['curve'], planes: ['XY', 'XZ', 'YZ'],
         solids: ['imported', 'extrude', 'revolve', 'loft', 'fillet', 'chamfer', 'shell', 'boolean', 'transform', 'linear-pattern', 'circular-pattern', 'mirror'],
         imports: ['cad-json', 'dxf', 'step', 'stl'],
         exports: ['cad-json', 'dxf', 'step', 'stl'], expressions: 'Finite arithmetic: + - * / and parentheses over named numeric parameters. Millimeters and degrees.' },
       camHandoff: 'Choose a sketch or exact planar section of a final solid. Local 2D millimeter contours become a new detached CAM project. Sections preserve lines/arcs; unsupported curves are rejected. CAD is saved first; CAM retains its own revisions and installed machine checks.',
       nextSteps: state.workflowOpen ? ['Finish or cancel the visible CAD editor.'] : !cad.isOpen() ? ['cad_open_workspace', 'cad_create_document', 'cad_list_documents']
+        : onlyCurves ? ['cad_read_features', 'cad_measure_curve', 'cad_edit_document', 'cad_save_document', 'cad_export_curve_dxf']
         : ['cad_read_features', 'cad_edit_document', 'cad_measure_sketch', 'cad_build', 'cad_save_document', 'cad_send_to_cam'] };
   }
   return [
+    tool('cad_construct_curve', 'Construct and measure an open analytic line/arc reference curve from numeric plane-local millimeter points. Start at start, then follow 1–128 ordered steps: line to end, or circular arc to end passing through through. Preserves direction and major/minor arcs. Never adds a closing edge. Rejects closed, disconnected, crossing, overlapping or numerically uncertain geometry. Returns segments for a Curve feature without opening, changing or saving a document. Insert with cad_edit_document and the current version; use cad_describe_features kind=curve for the complete feature schema.', pathConstructionSchema, (_cad, input) => {
+      const segments = createCadOpenCurveSegments(input.start, input.steps);
+      const curve = resolveCadCurve({ id: 'constructed', name: 'Curve', kind: 'curve', plane: 'XY', offset: 0, suppressed: false, segments }, {});
+      return { segments, units: 'mm', segmentCount: segments.length, lengthMm: curve.length,
+        startMm: curve.start, endMm: curve.end, boundsMm: curve.bounds, persisted: false };
+    }),
+    tool('cad_import_curve_dxf', 'Import one complete open planar line/arc chain from DXF as a fresh unsaved Curve document. Uses File > Import > Curve checks. Preserves exact source text, direction of ordered polylines, and exact circular arcs. Missing/unknown units require explicit mm/inch/cm/m; conflicting overrides, closed/multiple/branching chains, unsupported entities and approximations fail before replacing the draft. Maximum 2 MiB UTF-8. Refuses unsaved work, active workflows and stale versions; supports cancellation.', object({ ...version, source: CadDxfImportSourceSchema }),
+      (cad, input, signal) => cad.importDxfCurveSource(input.source, input.expectedVersion, signal), false),
+    tool('cad_measure_curve', 'Measure one exact open Curve in local and world millimeters: analytic length, bounds, ordered start/end points, plane and offset. Uses expressions in the current version. Curves are reference geometry without material area or CAM contour roles. No document or storage changes.', object({ ...version, curveId: id }), async (cad, input, signal) => ({ version: input.expectedVersion, ...await cad.measureCurve(input.curveId, input.expectedVersion, signal) })),
+    tool('cad_export_curve_dxf', 'Request an exact open Curve DXF download in local millimeters. Writes an ordered open LWPOLYLINE with signed circular bulges, preserving traversal. Does not close the curve, project a solid or assign CAM roles. Fails if DXF cannot preserve exact support within modeling precision.', object({ ...version, curveId: id }), (cad, input, signal) => cad.exportCurveDxf(input.curveId, input.expectedVersion, signal), false),
     tool('cad_get_context', 'Read the shared CAD draft version, parameters, supported operations, saved state and build diagnostics. Millimeters, desktop CAD. No storage writes.', object({}), cad => context(cad)),
     tool('cad_construct_path', 'Construct and measure a closed analytic line/arc profile from numeric plane-local millimeter points. Start at start, then follow 1–128 ordered steps: line to end, or circular arc to end passing through through. Arcs may be clockwise/counterclockwise and major/minor. Adds a final straight closing edge when the last endpoint differs from start. Uses the same construction and geometry checks as sketch Path drawing. Rejects ambiguous, out-of-range, crossing or zero-area geometry. Returns numeric geometry for a sketch profile; does not open, edit or save a document and does not bind expressions. Use cad_edit_document with the current version to insert it.', pathConstructionSchema, (_cad, input) => {
       const geometry = createCadPathProfile(input.start, input.steps);
@@ -153,9 +167,9 @@ export function cadSiteTools(getController: () => CadController) {
       if (input.direction === 'undo') cad.undo(input.expectedVersion); else cad.redo(input.expectedVersion);
       return context(cad);
     }, false),
-    tool('cad_get_viewport', 'Read current CAD selection, sketch mode, named view, grid state and the exact displayed build version. Use this to verify a view change before capture.', object(version), (cad, input) => cad.readViewport(input.expectedVersion)),
-    tool('cad_set_viewport', 'Use visible CAD viewport operations: named view, fit/grid, feature/profile selection, sketch mode, body/face/edge pick mode and exact-build topology selection. Does not edit geometry or save. Active workflows block changes. Read cad_get_viewport after applying.', object({ ...version, command: CadViewportCommandSchema }), (cad, input) => cad.changeViewport(input.command, input.expectedVersion), false),
-    tool('cad_capture_preview', 'Capture actual current CAD sketch/solid preview pixels as a bounded PNG, with document version, view state and SHA-256. The returned local blob URL is not a public URL or desktop screenshot. Both 2D and 3D are CAD draft content, including unsaved changes. Stale builds/views are rejected. Optional download requests a browser save; a visible CAD preview PNG link supports retry.', object({ ...version, download: Type.Optional(Type.Boolean()) }), (cad, input, signal) => cad.captureViewport(input.expectedVersion, input.download ?? false, signal), false),
+    tool('cad_get_viewport', 'Read CAD selection, sketch/curve editor identity, named view, grid state, displayed build version and installed referenceVersion. Use this to verify a view change before capture.', object(version), (cad, input) => cad.readViewport(input.expectedVersion)),
+    tool('cad_set_viewport', 'Use visible CAD viewport operations: named view, fit/grid, feature/profile selection, enter/finish sketch or curve editing, body/face/edge pick mode and exact-build topology selection. Does not edit geometry or save. Active workflows block changes. Read cad_get_viewport after applying.', object({ ...version, command: CadViewportCommandSchema }), (cad, input) => cad.changeViewport(input.command, input.expectedVersion), false),
+    tool('cad_capture_preview', 'Capture actual CAD sketch, curve or solid preview pixels as a bounded PNG with document version, view state and SHA-256. The browser-local blob URL is not a public URL or desktop screenshot. Both 2D and 3D show current draft content, including unsaved edits. Solid views require the current build; curve-only views require current installed referenceVersion without loading the solid engine. Stale geometry/views are rejected. Optional download requests a browser save; a visible CAD preview PNG link supports retry.', object({ ...version, download: Type.Optional(Type.Boolean()) }), (cad, input, signal) => cad.captureViewport(input.expectedVersion, input.download ?? false, signal), false),
     tool('cad_build', 'Evaluate current CAD history in the exact solid kernel and inspect paginated body volume (mm³), bounds (mm) and feature diagnostics. Follow nextBodyOffset with offset/limit on the same version. Lazy kernel initialization may take several seconds. Does not save or create CAM output.', object({ ...version, ...pageFields }), async (cad, input, signal) => {
       const result = await cad.inspectBuild(input.expectedVersion, signal);
       const bodies = page(result.meshes, input, mesh => ({ featureId: mesh.featureId, name: mesh.name, volumeMm3: mesh.volume, boundsMm: mesh.bounds, triangles: mesh.indices.length / 3,

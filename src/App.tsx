@@ -3,6 +3,7 @@ import { CadSession, hasCadDraftContent } from '@/features/cad/cadSession';
 import { useCadController } from '@/features/cad/useCadController';
 import { cadSiteTools } from '@/features/cad/cadSiteTools';
 import { CadLibraryDialog } from '@/features/cad/CadLibraryDialog';
+import { CadWorkspaceBoundary } from '@/features/cad/CadWorkspaceBoundary';
 import { useSiteTools } from '@/features/webmcp/siteTools';
 import { workbenchSiteTools, type DraftReadSnapshot, type WorkbenchToolState } from '@/features/webmcp/workbenchSiteTools';
 import { useWorkbenchActions } from '@/features/webmcp/useWorkbenchActions';
@@ -107,6 +108,9 @@ export default function App({ services }: AppProps = {}) {
           </div>
         </section>
       ) : cadOpen && app.connectedWorkbench ? (
+        <CadWorkspaceBoundary documentName={cad.snapshot.document.name} busy={cad.storageBusy || app.workbenchInteractionLocked}
+          onSave={cad.save} onDownloadDocument={cad.exportDocument}
+          onFailure={() => { cad.cancelImport(); closeCadSection(); }}>
         <Suspense fallback={<p className="p-4 text-xs" role="status">Opening CAD workspace…</p>}>
           <CadWorkbench
             document={cad.snapshot.document} documentVersion={cad.snapshot.version} build={cad.build} buildVersion={cad.buildVersion} buildState={cad.buildState}
@@ -119,7 +123,11 @@ export default function App({ services }: AppProps = {}) {
             onNewDocument={() => { cad.newDocument(); }} onImportDocument={async file => { await cad.importDocument(file); }}
             onExportDocument={() => { cad.exportDocument(); }}
             onExportSolid={async format => { await cad.exportSolid(format); }}
-            onExportDxf={async sketchId => { await cad.exportDxf(sketchId); }}
+            onExportDxf={async featureId => {
+              const feature = cad.session.getSnapshot().document.features.find(item => item.id === featureId);
+              if (feature?.kind === 'curve') await cad.exportCurveDxf(featureId);
+              else await cad.exportDxf(featureId);
+            }}
             onRebuild={async () => { await cad.inspectBuild(); }}
             onSendToCam={async sketchId => { await cad.sendToCam(sketchId); }}
             onViewportControlsReady={cad.setViewportControls}
@@ -138,6 +146,7 @@ export default function App({ services }: AppProps = {}) {
             onSend={(request, version, signal) => cad.sendSectionToCam(request, version, signal, 'section')} />}
           {cad.importFile && <CadImportDialog file={cad.importFile.file} onImport={cad.confirmImport} onCancel={cad.cancelImport} />}
         </Suspense>
+        </CadWorkspaceBoundary>
       ) : app.activeView === 'editor' && app.connectedWorkbench ? (
         <Suspense fallback={<p className="p-4 text-xs text-muted-foreground" role="status">Opening editor…</p>}><EditorPage
           importErrorMessage={app.editorImportErrorMessage}

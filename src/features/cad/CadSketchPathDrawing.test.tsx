@@ -18,7 +18,7 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 async function fixture(overrides: Partial<ComponentProps<typeof CadSketchCanvas>> = {}) {
-  const sketch: CadSketchFeature = overrides.sketch ?? { id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [] };
+  const sketch: CadSketchFeature = overrides.sketch?.kind === 'sketch' ? overrides.sketch : { id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [] };
   const session = new CadSession({ ...createCadDocument(), features: [sketch] });
   const added = vi.fn((geometry: CadProfile) => session.edit([{ kind: 'update-feature', feature: {
     ...sketch, profiles: [...sketch.profiles, { id: 'drawn', name: 'Path', construction: false, geometry }]

@@ -351,7 +351,7 @@ describe('CAD sketch interaction', () => {
     const pendingValue = pendingField.value;
     const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]');
     if (!canvas) throw new Error('Sketch canvas missing');
-    expect(canvas.getAttribute('tabindex')).toBe('-1'); expect(button('Line').disabled).toBe(true);
+    expect(canvas.getAttribute('tabindex')).toBe('-1');
     await canvasClick(300, 200); await canvasKey(' '); await canvasKey('ArrowRight'); await canvasKey(' ');
     expect(container.querySelector('[data-cad-path-segments]')).toBeNull(); expect(pendingField.value).toBe(pendingValue);
     expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: before.canUndo, workflowOpen: true });

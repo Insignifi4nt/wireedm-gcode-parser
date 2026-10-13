@@ -5,6 +5,7 @@ import { MAX_CAD_TOPOLOGY_PER_BODY, MAX_CAD_TOPOLOGY_ELEMENTS, isCadTopologyInsp
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
 import { isCadSolidImportResult, type CadSolidImportSource, type CadSolidImportResult } from '../../../domain/cad/cadImports';
 import { isCadDxfImportResult, type CadDxfImportInput, type CadDxfImportResult } from '../../../domain/cad/cadDxfImport';
+import { isCadDxfCurveImportResult, type CadDxfCurveImportInput, type CadDxfCurveImportResult } from '../../../domain/cad/cadCurveDxf';
 
 export type CadKernelRequest = { readonly id: number; readonly kind: 'build'; readonly document: CadDocument }
   | { readonly id: number; readonly kind: 'export'; readonly document: CadDocument; readonly format: 'step' | 'stl' }
@@ -12,7 +13,8 @@ export type CadKernelRequest = { readonly id: number; readonly kind: 'build'; re
   | { readonly id: number; readonly kind: 'inspect-topology'; readonly document: CadDocument; readonly inspection: CadTopologyInspectRequest }
   | { readonly id: number; readonly kind: 'resolve-topology-picks'; readonly document: CadDocument; readonly selection: CadTopologyResolvePicksRequest }
   | { readonly id: number; readonly kind: 'import-solid'; readonly source: CadSolidImportSource }
-  | { readonly id: number; readonly kind: 'import-dxf'; readonly input: CadDxfImportInput };
+  | { readonly id: number; readonly kind: 'import-dxf'; readonly input: CadDxfImportInput }
+  | { readonly id: number; readonly kind: 'import-dxf-curve'; readonly input: CadDxfCurveImportInput };
 export type CadKernelReply = { readonly id: number; readonly kind: 'built'; readonly result: CadBuildResult }
   | { readonly id: number; readonly kind: 'exported'; readonly blob: Blob }
   | { readonly id: number; readonly kind: 'sectioned'; readonly result: CadSectionResult }
@@ -20,6 +22,7 @@ export type CadKernelReply = { readonly id: number; readonly kind: 'built'; read
   | { readonly id: number; readonly kind: 'topology-resolved'; readonly result: CadTopologyResolvePicksResult }
   | { readonly id: number; readonly kind: 'solid-imported'; readonly result: CadSolidImportResult }
   | { readonly id: number; readonly kind: 'dxf-imported'; readonly result: CadDxfImportResult }
+  | { readonly id: number; readonly kind: 'dxf-curve-imported'; readonly result: CadDxfCurveImportResult }
   | { readonly id: number; readonly kind: 'error'; readonly message: string; readonly code?: string };
 
 /** The worker boundary receives structured clones, never executable model scripts. */
@@ -38,6 +41,7 @@ export function isCadKernelReply(value: unknown): value is CadKernelReply {
   if (value.kind === 'topology-resolved') return isCadTopologyResolvePicksResult(value.result);
   if (value.kind === 'solid-imported') return isCadSolidImportResult(value.result);
   if (value.kind === 'dxf-imported') return isCadDxfImportResult(value.result);
+  if (value.kind === 'dxf-curve-imported') return isCadDxfCurveImportResult(value.result);
   if (value.kind !== 'built' || typeof value.result !== 'object' || value.result === null) return false;
   const result = value.result;
   if (!('buildId' in result) || typeof result.buildId !== 'string' || !result.buildId.length || result.buildId.length > 128

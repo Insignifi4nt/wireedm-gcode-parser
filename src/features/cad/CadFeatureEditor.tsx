@@ -1,28 +1,17 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { Check, X } from 'lucide-react';
-import type { CadDocument, CadFeature, CadPathSegment, CadPlane, CadProfile, CadScalar, CadSketchProfile } from '@/domain/cad/cadDocument';
+import type { CadDocument, CadFeature, CadPlane, CadProfile, CadScalar, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
-import { evaluateCadScalar } from '@/domain/cad/cadExpression';
+import { ScalarField, SelectField } from './CadFields';
+export { ScalarField, SelectField } from './CadFields';
+import { CadPathSegmentFields } from './CadPathSegmentFields';
 import { cadVisibleBodyIds } from '@/domain/cad/cadSchema';
 import { CadTopologyQuerySummary } from './CadTopologyQuerySummary';
 import { CadLoftSections } from './CadLoftSections';
 
 export const featureLabels: Record<CadFeature['kind'], string> = {
-  sketch: 'Sketch', imported: 'Imported solid', extrude: 'Pad / Pocket', revolve: 'Revolve', loft: 'Loft', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / Rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
+  sketch: 'Sketch', curve: 'Curve', imported: 'Imported solid', extrude: 'Pad / Pocket', revolve: 'Revolve', loft: 'Loft', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / Rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
 };
-
-export function SelectField<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: readonly { value: T; label: string; disabled?: boolean }[]; onChange(value: T): void }) {
-  return <label className="cad-field"><span>{label}</span><select value={value} onChange={(event) => { const option = options.find((entry) => entry.value === event.target.value); if (option && !option.disabled) onChange(option.value); }}>{options.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}</select></label>;
-}
-
-export function ScalarField({ label, value, parameters, onChange, unit = 'mm' }: { label: string; value: CadScalar; parameters: CadDocument['parameters']; onChange(value: CadScalar): void; unit?: string }) {
-  let resolved: string;
-  let invalid = false;
-  try { resolved = `${Number(evaluateCadScalar(value, parameters).toFixed(6))} ${unit}`; }
-  catch (error) { invalid = true; resolved = error instanceof Error ? error.message : 'Invalid expression'; }
-  const showResult = invalid || typeof value === 'string' && !Number.isFinite(Number(value));
-  return <label className={`cad-field ${invalid ? 'is-invalid' : ''}`}><span>{label}<small>{unit}</small></span><input value={value} spellCheck={false} title="Number or parameter expression, e.g. width / 2" aria-invalid={invalid || undefined} onChange={(event) => onChange(event.target.value)} />{showResult && <small className="cad-field-hint">{resolved}</small>}</label>;
-}
 
 const planeOptions = (['XY', 'XZ', 'YZ'] satisfies CadPlane[]).map((value) => ({ value, label: `${value} plane` }));
 const operationOptions = [{ value: 'new', label: 'New body' }, { value: 'join', label: 'Join to body' }, { value: 'cut', label: 'Cut from body' }] satisfies { value: 'new' | 'join' | 'cut'; label: string }[];
@@ -61,6 +50,7 @@ export function CadFeatureEditor({ feature, document, isNew, onApply, onCancel, 
   switch (draft.kind) {
     case 'imported': fields = <><dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Format</dt><dd>{draft.source.format.toUpperCase()}</dd>{draft.source.format === 'stl' && <><dt>Source units</dt><dd>{draft.source.units === 'inch' ? 'inch' : 'mm'}</dd></>}</dl><p className="cad-inspector-note">Imported geometry is fixed. Add features to modify the solid.</p></>; break;
     case 'sketch': fields = <><SelectField label="Reference plane" value={draft.plane} options={planeOptions} onChange={(plane) => update({ ...draft, plane })} />{scalar('Plane offset', draft.offset, (offset) => update({ ...draft, offset }))}{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
+    case 'curve': fields = <><SelectField label="Reference plane" value={draft.plane} options={planeOptions} onChange={plane => update({ ...draft, plane })} />{scalar('Plane offset', draft.offset, offset => update({ ...draft, offset }))}<CadPathSegmentFields label="Curve" segments={draft.segments} parameters={document.parameters} onChange={segments => update({ ...draft, segments })} />{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
     case 'extrude':
     case 'revolve': {
       fields = <><SelectField label="Profile sketch" value={draft.sketchId} options={sketches} onChange={(sketchId) => update({ ...draft, sketchId })} />
@@ -109,7 +99,7 @@ export function CadProfileEditor({ profile, document, onApply, onCancel, onPendi
     case 'circle': fields = <>{scalar('Center X', geometry.x, (x) => update({ ...draft, geometry: { ...geometry, x } }))}{scalar('Center Y', geometry.y, (y) => update({ ...draft, geometry: { ...geometry, y } }))}{scalar('Radius', geometry.radius, (radius) => update({ ...draft, geometry: { ...geometry, radius } }))}</>; break;
     case 'slot': fields = <>{scalar('Center X', geometry.x, (x) => update({ ...draft, geometry: { ...geometry, x } }))}{scalar('Center Y', geometry.y, (y) => update({ ...draft, geometry: { ...geometry, y } }))}{scalar('Length', geometry.length, (length) => update({ ...draft, geometry: { ...geometry, length } }))}{scalar('Width', geometry.width, (width) => update({ ...draft, geometry: { ...geometry, width } }))}{scalar('Angle', geometry.angle, (angle) => update({ ...draft, geometry: { ...geometry, angle } }), 'deg')}</>; break;
     case 'polygon': fields = <>{geometry.points.map((point, index) => <div className="cad-vertex-fields" key={index}><span>Vertex {index + 1}</span>{scalar('X', point[0], (x) => update({ ...draft, geometry: { ...geometry, points: geometry.points.map((entry, i) => i === index ? [x, entry[1]] : entry) } }))}{scalar('Y', point[1], (y) => update({ ...draft, geometry: { ...geometry, points: geometry.points.map((entry, i) => i === index ? [entry[0], y] : entry) } }))}</div>)}</>; break;
-    case 'path': fields = <CadPathSegmentEditor path={geometry} parameters={document.parameters} onChange={path => update({ ...draft, geometry: path })} />; break;
+    case 'path': fields = <CadPathSegmentFields segments={geometry.segments} parameters={document.parameters} onChange={segments => update({ ...draft, geometry: { ...geometry, segments } })} />; break;
   }
   return <form className="cad-property-form" onSubmit={(event) => {
     event.preventDefault();
@@ -127,38 +117,4 @@ export function CadProfileEditor({ profile, document, onApply, onCancel, onPendi
     {error && <p role="alert" className="cad-error">{error}</p>}
     {changed && <div className="cad-form-actions"><button type="button" onClick={onCancel}><X size={13} /> Cancel</button><button type="submit" className="cad-primary" disabled={!changed}><Check size={13} /> Apply</button></div>}
   </form>;
-}
-
-function CadPathSegmentEditor({ path, parameters, onChange }: {
-  path: Extract<CadProfile, { kind: 'path' }>;
-  parameters: CadDocument['parameters'];
-  onChange(path: Extract<CadProfile, { kind: 'path' }>): void;
-}) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const index = Math.min(selectedIndex, path.segments.length - 1);
-  const segment = path.segments[index];
-  if (!segment) return null;
-  const update = (next: CadPathSegment) => onChange({ ...path, segments: path.segments.map((entry, position) => position === index ? next : entry) });
-  const scalar = (label: string, value: CadScalar, onChangeScalar: (value: CadScalar) => void, unit?: string) => <ScalarField label={label} value={value} parameters={parameters} onChange={onChangeScalar} unit={unit} />;
-  return <>
-    <div className="cad-path-segment-picker">
-      <button type="button" aria-label="Previous path segment" disabled={index === 0} onClick={() => setSelectedIndex(index - 1)}>‹</button>
-      <label className="cad-field"><span>Segment <small>{segment.kind === 'line' ? 'Line' : 'Arc'} / {path.segments.length}</small></span><input aria-label="Path segment" type="number" min={1} max={path.segments.length} step={1} value={index + 1}
-        onKeyDown={event => { if (event.key === 'Enter') event.preventDefault(); }}
-        onChange={event => { const value = Number(event.target.value); if (Number.isInteger(value) && value >= 1 && value <= path.segments.length) setSelectedIndex(value - 1); }} /></label>
-      <button type="button" aria-label="Next path segment" disabled={index === path.segments.length - 1} onClick={() => setSelectedIndex(index + 1)}>›</button>
-    </div>
-    {segment.kind === 'line' ? <>
-      {scalar('Start X', segment.start[0], x => update({ ...segment, start: [x, segment.start[1]] }))}
-      {scalar('Start Y', segment.start[1], y => update({ ...segment, start: [segment.start[0], y] }))}
-      {scalar('End X', segment.end[0], x => update({ ...segment, end: [x, segment.end[1]] }))}
-      {scalar('End Y', segment.end[1], y => update({ ...segment, end: [segment.end[0], y] }))}
-    </> : <>
-      {scalar('Center X', segment.center[0], x => update({ ...segment, center: [x, segment.center[1]] }))}
-      {scalar('Center Y', segment.center[1], y => update({ ...segment, center: [segment.center[0], y] }))}
-      {scalar('Radius', segment.radius, radius => update({ ...segment, radius }))}
-      {scalar('Start angle', segment.startAngle, startAngle => update({ ...segment, startAngle }), 'deg')}
-      {scalar('Sweep', segment.sweep, sweep => update({ ...segment, sweep }), 'deg')}
-    </>}
-  </>;
 }

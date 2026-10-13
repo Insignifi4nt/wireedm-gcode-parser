@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import type { CadDxfUnits } from '@/domain/cad/cadDxfSource';
 
 export function CadImportDialog({ file, onImport, onCancel }: {
-  file: File; onImport(units: CadDxfUnits | 'file'): Promise<unknown>; onCancel(): void;
+  file: File; onImport(units: CadDxfUnits | 'file', dxfKind?: 'sketch' | 'curve'): Promise<unknown>; onCancel(): void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const pending = useRef(false);
   const [units, setUnits] = useState<CadDxfUnits | 'file'>(/\.stl$/i.test(file.name) ? 'mm' : 'file');
+  const [dxfKind, setDxfKind] = useState<'sketch' | 'curve'>('sketch');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const stl = /\.stl$/i.test(file.name);
@@ -15,7 +16,7 @@ export function CadImportDialog({ file, onImport, onCancel }: {
   async function confirm() {
     if (pending.current) return;
     pending.current = true; setBusy(true); setError(null);
-    try { await onImport(units); }
+    try { await onImport(units, dxf ? dxfKind : undefined); }
     catch (cause) { if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(cause instanceof Error ? cause.message : 'Import failed.'); }
     finally { pending.current = false; setBusy(false); }
   }
@@ -24,7 +25,10 @@ export function CadImportDialog({ file, onImport, onCancel }: {
     onCancel={event => { event.preventDefault(); onCancel(); }}>
     <form onSubmit={event => { event.preventDefault(); void confirm(); }}>
       <h2 className="truncate text-sm font-medium" title={file.name}>{file.name}</h2>
-      <p className="mt-1 text-xs text-muted-foreground">{stl ? 'STL · Faceted solid' : dxf ? 'DXF · Planar sketch' : 'STEP · Exact solid'} · {(file.size / 1024).toFixed(1)} KiB</p>
+      <p className="mt-1 text-xs text-muted-foreground">{stl ? 'STL · Faceted solid' : dxf ? 'DXF' : 'STEP · Exact solid'} · {(file.size / 1024).toFixed(1)} KiB</p>
+      {dxf && <label className="mt-4 block text-xs">Import as<select className="ml-4 border border-border bg-background px-2 py-1" value={dxfKind} disabled={busy}
+        onChange={event => setDxfKind(event.target.value === 'curve' ? 'curve' : 'sketch')}>
+        <option value="sketch">Sketch · Closed contours</option><option value="curve">Curve · Open chain</option></select></label>}
       {stl || dxf ? <label className="mt-4 block text-xs">Source units<select autoFocus className="ml-4 border border-border bg-background px-2 py-1" value={units} disabled={busy}
         onChange={event => { const next = event.target.value; if (next === 'mm' || next === 'inch' || next === 'cm' || next === 'm' || next === 'file') setUnits(next); }}>
         {dxf && <option value="file">Use file declaration</option>}<option value="mm">Millimeters</option><option value="inch">Inches</option>{dxf && <><option value="cm">Centimeters</option><option value="m">Meters</option></>}</select></label>

@@ -4,6 +4,7 @@ import type { CadProfile } from './cadDocument';
 import { CadError } from './cadError';
 import { isCadImportData } from './cadImportData';
 import { cadPathClosureTolerance, validateCadSketchGeometry, type ResolvedCadPathSegment } from './cadSketchGeometry';
+import { resolveCadCurve } from './cadCurve';
 
 export type CadConstructionPoint = readonly [number, number];
 export type CadPathConstructionStep =
@@ -73,6 +74,16 @@ export function createCadThreePointArc(value: unknown): CadConstructedArc {
 
 /** A standalone closed contour; the application's whole-sketch gate still checks nesting. */
 export function createCadPathProfile(start: CadConstructionPoint, steps: readonly CadPathConstructionStep[]): Extract<CadProfile, { kind: 'path' }> {
+  const { first, current, segments } = constructCadSegments(start, steps);
+  if (current[0] !== first[0] || current[1] !== first[1]) segments.push(createCadConstructionLine(current, first));
+  if (segments.length > MAX_CAD_PATH_CONSTRUCTION_EDGES) throw new CadError('construction-limit', 'The closing edge must fit within the 2048-edge path limit.');
+  const profile = Object.freeze({ kind: 'path' as const, segments: Object.freeze(segments) });
+  validateCadSketchGeometry({ id: 'construction', name: 'Construction', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+    profiles: [{ id: 'contour', name: 'Contour', construction: false, geometry: profile }] }, {});
+  return profile;
+}
+
+function constructCadSegments(start: CadConstructionPoint, steps: readonly CadPathConstructionStep[]) {
   const input = { start, steps };
   if (!isCadImportData(input) || !Value.Check(pathInputSchema, input)) throw new CadError('invalid-construction', 'A path needs 1–2048 numeric line or arc steps.');
   const first = copyCadConstructionPoint(start); let current = first;
@@ -81,10 +92,11 @@ export function createCadPathProfile(start: CadConstructionPoint, steps: readonl
     segments.push(step.kind === 'line' ? createCadConstructionLine(current, step.end) : createCadThreePointArc({ start: current, end: step.end, through: step.through }));
     current = copyCadConstructionPoint(step.end);
   }
-  if (current[0] !== first[0] || current[1] !== first[1]) segments.push(createCadConstructionLine(current, first));
-  if (segments.length > MAX_CAD_PATH_CONSTRUCTION_EDGES) throw new CadError('construction-limit', 'The closing edge must fit within the 2048-edge path limit.');
-  const profile = Object.freeze({ kind: 'path' as const, segments: Object.freeze(segments) });
-  validateCadSketchGeometry({ id: 'construction', name: 'Construction', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
-    profiles: [{ id: 'contour', name: 'Contour', construction: false, geometry: profile }] }, {});
-  return profile;
+  return { first, current, segments };
+}
+
+/** Numeric authoring only; retain supplied endpoints and never insert a closing edge. */
+export function createCadOpenCurveSegments(start: CadConstructionPoint, steps: readonly CadPathConstructionStep[]): readonly ResolvedCadPathSegment[] {
+  const { segments } = constructCadSegments(start, steps);
+  return resolveCadCurve({ id: 'construction', name: 'Reference curve', kind: 'curve', suppressed: false, plane: 'XY', offset: 0, segments }, {}).segments;
 }

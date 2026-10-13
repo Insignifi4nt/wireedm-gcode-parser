@@ -120,9 +120,11 @@ describe('feature compatibility and inward shell history', () => {
     ]) expect(() => parseCadDocument({ ...part(), features: [...baseFeatures, { ...shellFeature, opening: query }] })).toThrow(CadError);
     for (const thickness of [-1, 0, 1e-8, 1e6 + 1]) expect(() => part([...baseFeatures, { ...shellFeature, thickness }])).toThrow('thickness must be positive');
   });
-  it('rejects missing, consumed, sketch and suppressed-body shell references', () => {
+  it('rejects missing, consumed, sketch, curve and suppressed-body shell references', () => {
     expect(() => part([...baseFeatures, { ...shellFeature, targetId: 'missing' }])).toThrow('missing or later');
     expect(() => part([...baseFeatures, { ...shellFeature, targetId: 'profile' }])).toThrow('cannot target a sketch');
+    expect(() => part([...baseFeatures, { kind: 'curve', id: 'rail', name: 'Rail', suppressed: false, plane: 'XY', offset: 0,
+      segments: [{ kind: 'line', start: [0, 0], end: [10, 0] }] }, { ...shellFeature, targetId: 'rail' }])).toThrow('cannot target a reference curve');
     expect(() => part([...baseFeatures, edgeFeature, shellFeature])).toThrow('already consumed');
     expect(() => part([baseFeatures[0], { ...baseFeatures[1], suppressed: true }, shellFeature])).toThrow('suppressed');
   });

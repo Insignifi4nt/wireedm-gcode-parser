@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadDocument, CadFeature, CadMesh, CadPlane, CadScalar, CadSketchFeature } from '@/domain/cad/cadDocument';
 import * as loftDomain from '@/domain/cad/cadLoft';
-import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import { cadFeatureProducesBody, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadWorkbench } from './CadWorkbench';
 import { initialCadLoftSketchIds, inspectCadLoftCandidates } from './cadLoftUi';
 import { CadSession } from './cadSession';
@@ -29,7 +29,7 @@ async function mount(initial = sectionDocument()) {
   const session = new CadSession(initial);
   function Harness() {
     const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
-    const meshes: CadMesh[] = snapshot.document.features.filter(feature => feature.kind !== 'sketch').map(feature => ({ featureId: feature.id, name: feature.name,
+    const meshes: CadMesh[] = snapshot.document.features.filter(cadFeatureProducesBody).map(feature => ({ featureId: feature.id, name: feature.name,
       positions: [], normals: [], indices: [], edges: [], faceGroups: [], edgeGroups: [], volume: 100, bounds: { min: [-10, -10, 0], max: [10, 10, 20] } }));
     return <CadWorkbench document={snapshot.document} documentVersion={snapshot.version} buildVersion={snapshot.version} buildState="ready"
       build={{ buildId: snapshot.version, meshes, durationMs: 0, diagnostics: [] }} dirty={snapshot.dirty} canUndo={snapshot.canUndo} canRedo={snapshot.canRedo}

@@ -123,6 +123,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
       const consumed: string[] = [];
       switch (feature.kind) {
         case 'sketch': sketches.set(feature.id, feature); continue;
+        case 'curve': continue; // Exact reference geometry produces and consumes no native body.
         case 'imported': {
           const imported = loadCadSolidImport(feature.source);
           result = own(imported.shape); instances = boundedInstances(imported.analysis.solidCount); break;

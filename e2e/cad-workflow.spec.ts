@@ -620,6 +620,163 @@ test('agent path construction remains read-only before exact solid, DXF and save
     .toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(250 * Math.PI, 7) }] });
 });
 
+test('agent open curves stay exact through reference rendering, DXF exchange and saved history without loading the solid engine', async ({ page }) => {
+  const wasmRequests: string[] = [];
+  page.context().on('request', request => { if (/\.wasm(?:\?|$)/.test(request.url())) wasmRequests.push(request.url()); });
+  await prepare(page); const initial = await context(page);
+  const constructed = await call(page, 'cad_construct_curve', { start: [0, 0], steps: [
+    { kind: 'line', end: [20, 0] }, { kind: 'arc', end: [20, 20], through: [30, 10] }
+  ] });
+  expect(constructed).toMatchObject({ persisted: false, segmentCount: 2, lengthMm: expect.closeTo(20 + 10 * Math.PI, 8) });
+  expect(await context(page)).toMatchObject({ version: initial.version, open: false });
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Open reference rail' });
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'elevation', value: 7 },
+    { kind: 'add-feature', feature: { id: 'rail', name: 'Bend rail', kind: 'curve', suppressed: false, plane: 'XZ', offset: 'elevation', segments: constructed.segments } }
+  ] });
+  const created = await context(page);
+  expect(await call(page, 'cad_measure_curve', { expectedVersion: created.version, curveId: 'rail' })).toMatchObject({ lengthMm: expect.closeTo(20 + 10 * Math.PI, 8), startWorldMm: [0, -7, 0], endWorldMm: [20, -7, 20] });
+  await expect.poll(async () => rawCall(page, 'cad_get_viewport', { expectedVersion: created.version })).toMatchObject({ ok: true, data: { buildState: 'idle', buildVersion: null, visibleBodyIds: [], view: { available: true, referenceVersion: created.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: created.version, command: { kind: 'fit' } });
+  const capture = await call(page, 'cad_capture_preview', { expectedVersion: created.version });
+  expect(capture).toMatchObject({ source: '3d', curveId: null, viewState: { buildVersion: null, view: { referenceVersion: created.version } } });
+  if (typeof capture.previewUrl !== 'string') throw new Error('Missing reference preview');
+  const referencePixels = await page.evaluate(async url => {
+    const image = new Image(); image.src = url; await image.decode();
+    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+    const context = canvas.getContext('2d'); if (!context) throw new Error('Missing pixels'); context.drawImage(image, 0, 0);
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data; let count = 0;
+    for (let index = 0; index < data.length; index += 4) if (data[index] > 100 && data[index + 1] > 140 && data[index + 2] > 140 && data[index + 3] > 0) count++;
+    return count;
+  }, capture.previewUrl);
+  expect(referencePixels).toBeGreaterThan(100);
+  await call(page, 'cad_set_viewport', { expectedVersion: created.version, command: { kind: 'edit-curve', curveId: 'rail' } });
+  expect(await call(page, 'cad_capture_preview', { expectedVersion: created.version })).toMatchObject({ source: '2d', curveId: 'rail', sketchId: null, viewState: { view: { mode: 'curve', plane: 'XZ' } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: created.version, command: { kind: 'finish-curve' } });
+  const downloadPromise = page.waitForEvent('download');
+  await call(page, 'cad_export_curve_dxf', { expectedVersion: created.version, curveId: 'rail' });
+  const path = await (await downloadPromise).path(); if (!path) throw new Error('Missing Curve DXF');
+  const text = await readFile(path, 'utf8'); expect(text).toContain('LWPOLYLINE');
+  await call(page, 'cad_save_document', { expectedVersion: created.version });
+  await call(page, 'cad_import_curve_dxf', { expectedVersion: created.version, source: { format: 'dxf', fileName: 'Rail.dxf', text } });
+  const imported = await context(page);
+  const features = await call(page, 'cad_read_features', { expectedVersion: imported.version });
+  if (!Array.isArray(features.items)) throw new Error('Missing Curve features');
+  const curve = features.items[0] as CadFeature;
+  expect(curve).toMatchObject({ kind: 'curve', plane: 'XY', offset: 0, source: { text } });
+  expect(await call(page, 'cad_measure_curve', { expectedVersion: imported.version, curveId: curve.id })).toMatchObject({ lengthMm: expect.closeTo(20 + 10 * Math.PI, 8), startMm: [0, 0], endMm: [expect.closeTo(20, 12), 20] });
+  await call(page, 'cad_save_document', { expectedVersion: imported.version });
+  expect(wasmRequests, 'Reference authoring, measurement and DXF import must not request either solid WASM engine').toEqual([]);
+  await page.reload(); await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+  const reloaded = await context(page);
+  await call(page, 'cad_open_document', { expectedVersion: reloaded.version, documentId: imported.documentId });
+  expect(await call(page, 'cad_get_feature', { expectedVersion: (await context(page)).version, featureId: curve.id })).toMatchObject({ feature: curve });
+  await expect(page.getByLabel('3D model viewport')).toBeVisible();
+  await expect.poll(async () => rawCall(page, 'cad_get_viewport', { expectedVersion: (await context(page)).version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: expect.any(String) } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: (await context(page)).version, command: { kind: 'select-feature', featureId: curve.id } });
+  await page.screenshot({ path: 'tmp/cad-open-curve.png' });
+});
+
+test('small exact reference arcs remain visible far from the world origin', async ({ page }) => {
+  await prepare(page); const initial = await context(page);
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Far reference' });
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'add-feature', feature: { id: 'far', name: 'Far arc', kind: 'curve', plane: 'XY', offset: 0, suppressed: false,
+      segments: [{ kind: 'arc', center: [100000000, 100000000], radius: 1, startAngle: 0, sweep: 180 }] } }
+  ] });
+  const accepted = await context(page);
+  await expect.poll(async () => rawCall(page, 'cad_get_viewport', { expectedVersion: accepted.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: accepted.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'set-view', view: 'Top' } });
+  await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'fit' } });
+  const capture = await call(page, 'cad_capture_preview', { expectedVersion: accepted.version });
+  if (typeof capture.previewUrl !== 'string') throw new Error('Missing far-origin preview');
+  const pixels = await page.evaluate(async url => {
+    const image = new Image(); image.src = url; await image.decode();
+    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+    const context = canvas.getContext('2d'); if (!context) throw new Error('Missing pixels'); context.drawImage(image, 0, 0);
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data; let count = 0;
+    for (let index = 0; index < data.length; index += 4) if (data[index] > 100 && data[index + 1] > 140 && data[index + 2] > 140 && data[index + 3] > 0) count++;
+    return count;
+  }, capture.previewUrl);
+  expect(pixels, 'R1 reference arc must not collapse when uploaded to Float32 graphics buffers').toBeGreaterThan(80);
+});
+
+test('a missing CAD view module retains the accepted draft and live agent tools for save and download recovery', async ({ page }) => {
+  const modulePattern = '**/assets/CadWorkbench-*.js';
+  await page.route(modulePattern, route => route.abort('failed'));
+  await prepare(page); const initial = await context(page);
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Recovered rail' });
+  const feature = { id: 'rail', name: 'Preserved rail', kind: 'curve', suppressed: false, plane: 'XY', offset: 0,
+    segments: [{ kind: 'line', start: [0, 0], end: [25, 0] }] };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature }] });
+  await expect(page.getByRole('alert')).toHaveText('The CAD workspace could not be displayed.');
+  const retained = await context(page); expect(retained).toMatchObject({ featureCount: 1, dirty: true, workflowOpen: false });
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download CAD document', exact: true }).click();
+  const path = await (await downloadPromise).path(); if (!path) throw new Error('Missing recovered JSON');
+  expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ id: retained.documentId, features: [feature] });
+  await page.getByRole('button', { name: 'Save current document', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Document saved.' })).toBeVisible();
+  expect(await context(page)).toMatchObject({ version: retained.version, dirty: false, savedVersion: expect.any(String) });
+  await page.unroute(modulePattern); await page.reload();
+  await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+  await call(page, 'cad_open_document', { expectedVersion: (await context(page)).version, documentId: retained.documentId });
+  await expect(page.getByLabel('3D model viewport')).toBeVisible();
+  expect(await call(page, 'cad_get_feature', { expectedVersion: (await context(page)).version, featureId: feature.id })).toMatchObject({ feature });
+});
+
+test('a missing import dialog cancels its workflow and preserves the saved CAD document', async ({ page }) => {
+  await page.route('**/assets/CadImportDialog-*.js', route => route.abort('failed'));
+  const { draft } = await createBox(page);
+  await call(page, 'cad_save_document', { expectedVersion: draft.version });
+  await page.locator('.cad-header input[type=file]').setInputFiles({ name: 'Pending.dxf', mimeType: 'application/dxf', buffer: Buffer.from('0\nEOF\n') });
+  await expect(page.getByRole('alert')).toHaveText('The CAD workspace could not be displayed.');
+  expect(await context(page)).toMatchObject({ version: draft.version, documentId: draft.documentId, dirty: false, workflowOpen: false, featureCount: 2 });
+  await page.getByRole('button', { name: 'Save current document', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Document saved.' })).toBeVisible();
+});
+
+test('human Curve creation keeps name, plane and geometry atomic and uses the explicit DXF import choice', async ({ page }) => {
+  await prepare(page); await page.getByRole('button', { name: 'Design in CAD' }).click();
+  const blank = await context(page);
+  await page.getByRole('button', { name: 'Curve', exact: true }).click();
+  await page.getByLabel('Name', { exact: true }).fill('Cancelled rail');
+  const canvas = page.getByLabel('Curve drawing canvas');
+  await canvas.focus(); await canvas.press('Space'); await canvas.press('ArrowRight'); await canvas.press('Space');
+  expect(await context(page)).toMatchObject({ version: blank.version, featureCount: 0, workflowOpen: true });
+  await canvas.press('Escape');
+  expect(await context(page)).toMatchObject({ version: blank.version, featureCount: 0, workflowOpen: false });
+  await page.getByRole('button', { name: 'Curve', exact: true }).click();
+  await page.getByLabel('Name', { exact: true }).fill('Mounting rail');
+  await page.getByRole('combobox', { name: 'Reference plane', exact: true }).selectOption('YZ');
+  await page.getByRole('textbox', { name: 'Plane offset mm', exact: true }).fill('5');
+  await canvas.focus(); await canvas.press('Space');
+  for (let index = 0; index < 4; index++) await canvas.press('ArrowRight');
+  await canvas.press('Space');
+  await page.getByRole('button', { name: '3-point Arc', exact: true }).click(); await canvas.focus();
+  for (let index = 0; index < 4; index++) await canvas.press('ArrowUp');
+  await canvas.press('Space'); await canvas.press('ArrowRight'); await canvas.press('ArrowRight');
+  await canvas.press('ArrowDown'); await canvas.press('ArrowDown'); await canvas.press('Space');
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: blank.version, edits: [{ kind: 'rename-document', name: 'Interrupted' }] })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  await page.getByRole('button', { name: 'Finish curve', exact: true }).click();
+  const accepted = await context(page); expect(accepted).toMatchObject({ featureCount: 1, workflowOpen: false });
+  const features = await call(page, 'cad_read_features', { expectedVersion: accepted.version });
+  if (!Array.isArray(features.items)) throw new Error('Missing Curve'); const curve = features.items[0] as CadFeature;
+  expect(curve).toMatchObject({ name: 'Mounting rail', kind: 'curve', plane: 'YZ', offset: '5', segments: [{ kind: 'line', start: [0, 0], end: [20, 0] }, { kind: 'arc', radius: 10, sweep: 180 }] });
+  await page.getByRole('button', { name: 'Undo', exact: true }).click(); expect(await context(page)).toMatchObject({ featureCount: 0 });
+  await page.getByRole('button', { name: 'Redo', exact: true }).click(); const redone = await context(page);
+  await call(page, 'cad_save_document', { expectedVersion: redone.version });
+  const downloadPromise = page.waitForEvent('download'); await call(page, 'cad_export_curve_dxf', { expectedVersion: redone.version, curveId: curve.id });
+  const path = await (await downloadPromise).path(); if (!path) throw new Error('Missing Curve download');
+  const bytes = await readFile(path);
+  await page.locator('.cad-header input[type=file]').setInputFiles({ name: 'Mounting rail.dxf', mimeType: 'application/dxf', buffer: bytes });
+  const dialog = page.getByRole('dialog', { name: 'Import CAD file' });
+  await dialog.getByLabel('Import as').selectOption('curve'); await dialog.getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  const imported = await context(page); const importedFeatures = await call(page, 'cad_read_features', { expectedVersion: imported.version });
+  expect(importedFeatures).toMatchObject({ items: [{ kind: 'curve', source: { text: bytes.toString('utf8') } }] });
+});
+
 test('human mixed path drawing retains invalid points and commits one exact undo step', async ({ page }) => {
   await prepare(page);
   await page.getByRole('button', { name: 'Design in CAD' }).click();

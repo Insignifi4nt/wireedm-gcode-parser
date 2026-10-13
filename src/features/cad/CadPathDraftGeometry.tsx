@@ -1,6 +1,5 @@
 import { memo } from 'react';
 import type { ResolvedCadPathSegment } from '@/domain/cad/cadSketchGeometry';
-import type { CadPathDraftSegment } from './cadPathDrawing';
 import { cadArcSvgPath } from './cadSketchSvg';
 
 /** Render only the numeric segment supplied; partial chains are never closed or validated here. */
@@ -14,6 +13,6 @@ export function CadPathSegmentGeometry({ segment }: { segment: ResolvedCadPathSe
     startAngle, endAngle, sweepRadians: sweep, clockwise: sweep < 0, start: at(startAngle), end: at(endAngle) })} />;
 }
 
-export const CadPathDraftGeometry = memo(function CadPathDraftGeometry({ segments }: { segments: readonly CadPathDraftSegment[] }) {
-  return <g data-cad-path-segments className="cad-profile cad-profile-preview">{segments.map((segment, index) => <CadPathSegmentGeometry key={index} segment={segment} />)}</g>;
+export const CadPathDraftGeometry = memo(function CadPathDraftGeometry({ segments, preview = true }: { segments: readonly ResolvedCadPathSegment[]; preview?: boolean }) {
+  return <g data-cad-path-segments className={`cad-profile ${preview ? 'cad-profile-preview' : ''}`}>{segments.map((segment, index) => <CadPathSegmentGeometry key={index} segment={segment} />)}</g>;
 });

@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { CadError } from '@/domain/cad/cadError';
-import { closeCadPathDraft, createCadPathDraft, previewCadPathDraft, updateCadPathDraft, type CadPathDraft } from './cadPathDrawing';
+import { closeCadPathDraft, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, updateCadPathDraft, type CadPathDraft } from './cadPathDrawing';
 
 describe('pending mixed path drawing', () => {
+  it('finishes an open curve without closure, strips transient picks and retains failed drafts', () => {
+    let draft = updateCadPathDraft(createCadPathDraft('arc'), { kind: 'point', point: [5, 0] });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [0, 5] });
+    const pending = JSON.stringify(draft); expect(() => finishCadCurveDraft(draft)).toThrow('through point'); expect(JSON.stringify(draft)).toBe(pending);
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [-5, 0] }); const original = JSON.stringify(draft);
+    expect(finishCadCurveDraft(draft)).toMatchObject([{ kind: 'arc', radius: 5, sweep: -270 }]);
+    expect(finishCadCurveDraft(draft)[0]).not.toHaveProperty('through'); expect(JSON.stringify(draft)).toBe(original);
+    let closed = updateCadPathDraft(createCadPathDraft(), { kind: 'point', point: [0, 0] });
+    for (const point of [[5, 0], [5, 5], [0, 0]] as const) closed = updateCadPathDraft(closed, { kind: 'point', point });
+    const before = JSON.stringify(closed); expect(() => finishCadCurveDraft(closed)).toThrow('open'); expect(JSON.stringify(closed)).toBe(before);
+  });
   it('captures an arc endpoint then its through point and keeps logical endpoints', () => {
     let draft = createCadPathDraft('arc');
     draft = updateCadPathDraft(draft, { kind: 'point', point: [5, 0] });

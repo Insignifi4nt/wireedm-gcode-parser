@@ -15,8 +15,10 @@ export const CadViewportCommandSchema = Type.Union([
   Type.Object({ kind: Type.Literal('set-grid'), visible: Type.Boolean() }, strict),
   Type.Object({ kind: Type.Literal('select-feature'), featureId: Type.Union([id, Type.Null()]) }, strict),
   Type.Object({ kind: Type.Literal('edit-sketch'), sketchId: id }, strict),
+  Type.Object({ kind: Type.Literal('edit-curve'), curveId: id }, strict),
   Type.Object({ kind: Type.Literal('select-profile'), profileId: Type.Union([id, Type.Null()]) }, strict),
   Type.Object({ kind: Type.Literal('finish-sketch') }, strict),
+  Type.Object({ kind: Type.Literal('finish-curve') }, strict),
   Type.Object({ kind: Type.Literal('set-pick-mode'), mode: CadPickModeSchema }, strict),
   Type.Object({ kind: Type.Literal('select-topology'), selection: CadTopologyPickSetSchema, additive: Type.Boolean() }, strict),
   Type.Object({ kind: Type.Literal('clear-topology') }, strict)
@@ -24,8 +26,8 @@ export const CadViewportCommandSchema = Type.Union([
 export type CadViewportCommand = Static<typeof CadViewportCommandSchema>;
 
 export type CadRenderedViewState =
-  | { readonly mode: 'solid'; readonly available: boolean; readonly view: CadNamedView | 'Custom'; readonly gridVisible: boolean; readonly zoom: number; readonly revision: number; readonly hoveredTopology?: CadTopologyHit | null }
-  | { readonly mode: 'sketch'; readonly available: boolean; readonly plane: CadPlane; readonly gridVisible: boolean; readonly snapEnabled: boolean; readonly gridStepMm: number; readonly centerMm: readonly [number, number]; readonly heightSpanMm: number; readonly revision: number };
+  | { readonly mode: 'solid'; readonly available: boolean; readonly view: CadNamedView | 'Custom'; readonly gridVisible: boolean; readonly zoom: number; readonly revision: number; readonly hoveredTopology?: CadTopologyHit | null; readonly referenceVersion?: string | null }
+  | { readonly mode: 'sketch' | 'curve'; readonly available: boolean; readonly plane: CadPlane; readonly gridVisible: boolean; readonly snapEnabled: boolean; readonly gridStepMm: number; readonly centerMm: readonly [number, number]; readonly heightSpanMm: number; readonly revision: number };
 
 export interface CadRenderedViewControls {
   getState(): CadRenderedViewState;
@@ -42,6 +44,7 @@ export interface CadViewportState {
   readonly selectedFeatureId: string | null;
   readonly selectedProfileId: string | null;
   readonly sketchId: string | null;
+  readonly curveId: string | null;
   readonly workflowOpen: boolean;
   readonly busy: boolean;
   readonly buildVersion: string | null;
@@ -61,6 +64,7 @@ export interface CadViewportCapture {
   readonly documentVersion: string;
   readonly dirty: boolean;
   readonly sketchId: string | null;
+  readonly curveId: string | null;
   readonly buildVersion: string | null;
   readonly viewState: CadViewportState;
 }

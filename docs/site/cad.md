@@ -24,7 +24,13 @@ Use **File → Rebuild model** if a cancelled operation or restarted worker inva
 
 If 3D graphics are interrupted, the view redraws when the browser recovers. **Retry 3D view** creates a fresh view if needed, retaining the document and resetting the camera to Isometric. Capture is unavailable while graphics are lost.
 
+If the CAD view itself cannot load, its recovery panel keeps the accepted document available. Use **Save current document** or **Download CAD document** before reloading the page. A download request is not confirmation that the browser saved the file.
+
 ## Parameters and history
+
+**Curve** creates an independent open chain of exact lines and circular arcs. Choose a reference plane and offset, name it, then draw with Line or 3-point Arc. **Finish curve** accepts the complete chain as one undo step; Cancel discards its name, placement and geometry together. Curves can have sharp corners but cannot close, cross, overlap or touch themselves. Double-click a saved curve to inspect its planar view and edit its segment dimensions in Properties. Length, bounds and endpoints remain analytic, including parameter expressions.
+
+Curves appear alongside solids in the 3D view and can be selected directly. They are reference geometry, without material regions or machining roles. Curve-only documents do not load the solid engine. Sweep features are not yet available.
 
 Named parameters are numeric values. Dimensions accept numbers or expressions such as `width / 2`, `thickness + 3`, and `(pitch * 4) - diameter`. Expressions support `+`, `-`, `*`, `/` and parentheses, without executing JavaScript. Dimensions are millimetres; angles are degrees.
 
@@ -63,6 +69,7 @@ Sections must cut through material and produce closed, unbranched contours made 
 - **STEP** imports and exports exact solid geometry. Imported bodies support subsequent solid operations; their original feature history is not reconstructed.
 - **STL** imports closed faceted solids and exports tessellated solids. Choose millimeters or inches when importing because STL has no unit declaration. A mesh does not recover analytic curved surfaces. Imports accept one connected closed shell with 4–4,000 triangles; open, nonmanifold and multi-shell meshes are rejected.
 - **DXF** imports exact closed contours as an XY sketch and exports the selected sketch in local millimetres, excluding construction profiles. Lines, circles and circular arcs remain analytic. Import uses declared units; choose source units when the declaration is missing. Unsupported curves, approximations, open contours, nonzero elevation and thickness are rejected. Select a segment in Properties to edit its line endpoints or arc dimensions, including parameter expressions. Apply validates the entire closed path; match adjacent endpoints when editing joints. Typed agent operations use the same validation.
+- For an open DXF chain, choose **Import as → Curve**. The complete file must describe one connected open planar chain. Unsupported entities, nonzero polyline widths, branching and mixed open/closed geometry are rejected. Select a Curve and use **Export curve DXF** to retain its ordered lines and circular arcs in an open polyline, in local millimetres. Its reference plane and offset remain in CAD JSON; DXF exchanges its local 2D geometry.
 - Full workbench backup includes saved CAD documents. Unsaved drafts are outside backup.
 
 Imported STEP, STL and DXF originals remain embedded in the CAD document. Each source is limited to 2 MiB; the entire CAD JSON document, including originals, is limited to 4 MiB. Native topology is limited to 10,000 faces/edges per body and 25,000 per build. Sketch complexity and pattern instances also have limits. Browser download requests do not prove a file was saved to disk. Keep a portable CAD copy before extensive experiments.

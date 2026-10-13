@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
 import type { CadBuildResult, CadDocument } from '@/domain/cad/cadDocument';
-import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import { cadFeatureProducesBody, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { listCadDocuments, loadCadDocument, saveCadDocument, MAX_CAD_FILE_BYTES, type CadLibraryEntry } from '@/domain/cad/cadStorage';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { parseCadSectionRequest, type CadSectionRequest } from '@/domain/cad/cadSection';
@@ -13,6 +13,7 @@ import { preparePreviewCapture, downloadPreviewCapture, type PreviewCaptureArtif
 import { createCadTopologyActions } from './cadTopologyActions';
 import { cadBytesToBase64, cadSolidImportBytes, isCadSolidImportResult, MAX_CAD_IMPORT_BYTES, parseCadSolidImportSource, type CadSolidImportSource } from '@/domain/cad/cadImports';
 import { parseCadDxfImportSource, type CadDxfUnits } from '@/domain/cad/cadDxfSource';
+import type { DxfUnitDeclaration } from '@/domain/dxf/types';
 
 type App = Pick<ReturnType<typeof useWorkbenchAppController>, 'connectedWorkbench' | 'workbenchInteractionLocked' | 'runAgentWorkbenchOperation'>;
 type Kernel = ReturnType<typeof import('./kernel/cadKernelClient').createCadKernelClient>;
@@ -23,8 +24,13 @@ export function downloadCadBlob(blob: Blob, name: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 const fileBase = (name: string) => name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').slice(0, 100) || 'part';
-type CadPreviewArtifact = PreviewCaptureArtifact & { documentId: string; viewState: CadViewportState; sketchId: string | null };
-const viewIdentity = (state: CadViewportState) => JSON.stringify([state.documentVersion, state.buildVersion, state.buildId, state.selectedFeatureId, state.selectedProfileId, state.sketchId, state.pickMode, state.topologySelection, state.view]);
+function importUnitReceipt(declaration: DxfUnitDeclaration) {
+  if (declaration.status !== 'malformed' || declaration.rawValue === null || declaration.rawValue.length <= 160) return declaration;
+  // The exact declaration remains in the saved original; keep committed tool receipts bounded.
+  return { ...declaration, rawValue: declaration.rawValue.slice(0, 160), rawValueTruncated: true, rawValueLength: declaration.rawValue.length };
+}
+type CadPreviewArtifact = PreviewCaptureArtifact & { documentId: string; viewState: CadViewportState; sketchId: string | null; curveId: string | null };
+const viewIdentity = (state: CadViewportState) => JSON.stringify([state.documentVersion, state.buildVersion, state.buildId, state.selectedFeatureId, state.selectedProfileId, state.sketchId, state.curveId, state.pickMode, state.topologySelection, state.view]);
 
 export function useCadController(app: App, session: CadSession, open: boolean, setOpen: (open: boolean) => void,
   getCamDraft: () => DraftReadSnapshot | null) {
@@ -92,8 +98,8 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     const controller = new AbortController();
     buildAbort.current?.abort(); buildAbort.current = controller;
     setBuildVersion(null);
-    setBuildState(snapshot.document.features.some(feature => feature.kind !== 'sketch' && !feature.suppressed) ? 'building' : 'idle');
-    if (!snapshot.document.features.some(feature => feature.kind !== 'sketch' && !feature.suppressed)) {
+    setBuildState(snapshot.document.features.some(feature => cadFeatureProducesBody(feature) && !feature.suppressed) ? 'building' : 'idle');
+    if (!snapshot.document.features.some(feature => cadFeatureProducesBody(feature) && !feature.suppressed)) {
       setBuild(null); return () => controller.abort();
     }
     const timer = setTimeout(() => {
@@ -263,10 +269,28 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       const document = parseCadDocument({ ...createCadDocument(result.sketch.name), features: [result.sketch] });
       session.replace(document); setBuild(null); setBuildVersion(null); setBuildState('idle'); changeOpen(true); setImportFile(null);
       return { imported: true, documentId: document.id, version: session.getSnapshot().version, sketchId: result.sketch.id,
-        unitDeclaration: result.unitDeclaration, scaleToMillimeters: result.scaleToMillimeters, sourceEntityCount: result.sourceEntityCount, contourCount: result.contourCount };
+        unitDeclaration: importUnitReceipt(result.unitDeclaration), scaleToMillimeters: result.scaleToMillimeters, sourceEntityCount: result.sourceEntityCount, contourCount: result.contourCount };
     });
   }
-  async function confirmImport(units: CadDxfUnits | 'file') {
+  async function importDxfCurveSource(value: unknown, expectedVersion = session.getSnapshot().version, signal?: AbortSignal, scope?: 'import') {
+    const workbench = connected(); session.assertVersion(expectedVersion); assertCanSwitch(); requireCleanReplacement(scope);
+    const source = parseCadDxfImportSource(value);
+    return run(async () => {
+      signal?.throwIfAborted(); const client = await getKernel(); signal?.throwIfAborted();
+      const result = await client.importDxfCurve({ fileName: source.fileName, text: source.text, ...(source.units ? { units: source.units } : {}) }, signal);
+      signal?.throwIfAborted(); session.assertVersion(expectedVersion); assertCanSwitch(); requireCleanReplacement(scope);
+      if (current.current.app.connectedWorkbench?.adapter !== workbench.adapter) throw new ToolError('STALE_STATE', 'Storage changed during CAD import.');
+      const original = result.curve.source;
+      if (!original || original.format !== 'dxf' || original.fileName !== source.fileName || original.text !== source.text || original.units !== source.units) {
+        throw new ToolError('INVALID_IMPORT_RESULT', 'DXF import did not preserve the supplied original.');
+      }
+      const document = parseCadDocument({ ...createCadDocument(result.curve.name), features: [result.curve] });
+      session.replace(document); setBuild(null); setBuildVersion(null); setBuildState('idle'); changeOpen(true); setImportFile(null);
+      return { imported: true, documentId: document.id, version: session.getSnapshot().version, curveId: result.curve.id,
+        unitDeclaration: importUnitReceipt(result.unitDeclaration), scaleToMillimeters: result.scaleToMillimeters, sourceEntityCount: result.sourceEntityCount };
+    });
+  }
+  async function confirmImport(units: CadDxfUnits | 'file', dxfKind: 'sketch' | 'curve' = 'sketch') {
     const pending = importFile;
     if (!pending) throw new ToolError('IMPORT_UNAVAILABLE', 'Choose a CAD file first.');
     connected(); session.assertVersion(pending.version); requireCleanReplacement('import');
@@ -275,8 +299,9 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       const bytes = new Uint8Array(await pending.file.arrayBuffer());
       controller.signal.throwIfAborted();
       if (current.current.app.connectedWorkbench?.adapter !== pending.adapter) throw new ToolError('STALE_STATE', 'Storage changed during CAD import.');
-      if (/\.dxf$/i.test(pending.file.name)) return await importDxfSource({ format: 'dxf', fileName: pending.file.name,
+      if (/\.dxf$/i.test(pending.file.name)) return await (dxfKind === 'curve' ? importDxfCurveSource : importDxfSource)({ format: 'dxf', fileName: pending.file.name,
         text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes), ...(units === 'file' ? {} : { units }) }, pending.version, controller.signal, 'import');
+      if (dxfKind !== 'sketch') throw new ToolError('INVALID_IMPORT_KIND', 'Curve import requires a DXF file.');
       if (/\.stl$/i.test(pending.file.name) && units !== 'mm' && units !== 'inch') throw new ToolError('INVALID_UNITS', 'Choose millimeters or inches for STL.');
       const source: CadSolidImportSource = /\.stl$/i.test(pending.file.name)
         ? { format: 'stl', fileName: pending.file.name, encoding: 'base64', data: cadBytesToBase64(bytes), units: units === 'inch' ? 'inch' : 'mm' }
@@ -289,6 +314,12 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     const { measureCadSketch } = await import('@/domain/cad/cadMeasurements');
     signal?.throwIfAborted(); session.assertVersion(expectedVersion); session.assertWorkflowClosed();
     return measureCadSketch(session.getSnapshot().document, sketchId);
+  }
+  async function measureCurve(curveId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
+    editable(expectedVersion); session.assertWorkflowClosed();
+    const { measureCadCurve } = await import('@/domain/cad/cadCurveMeasurements');
+    signal?.throwIfAborted(); session.assertVersion(expectedVersion); session.assertWorkflowClosed();
+    return measureCadCurve(session.getSnapshot().document, curveId);
   }
   function getViewport(expectedVersion = session.getSnapshot().version) {
     editable(expectedVersion);
@@ -314,7 +345,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
         signal.throwIfAborted(); session.assertVersion(expectedVersion); session.assertWorkflowClosed();
         if (viewport.current !== controls || viewIdentity(controls.getState()) !== viewIdentity(captured.viewState)) throw new ToolError('STALE_VIEW', 'The CAD view changed during capture. Capture the current view again.');
       } catch (error) { URL.revokeObjectURL(prepared.previewUrl); throw error; }
-      const artifact: CadPreviewArtifact = { ...prepared, fileName: `cad-preview-${captured.image.source}.png`, documentId: captured.documentId, sketchId: captured.sketchId, viewState: captured.viewState };
+      const artifact: CadPreviewArtifact = { ...prepared, fileName: `cad-preview-${captured.image.source}.png`, documentId: captured.documentId, sketchId: captured.sketchId, curveId: captured.curveId, viewState: captured.viewState };
       const previous = previewUrl.current;
       previewUrl.current = artifact.previewUrl; setPreviewArtifact(artifact);
       if (previous) window.setTimeout(() => URL.revokeObjectURL(previous), 60_000);
@@ -429,10 +460,20 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     downloadCadBlob(new Blob([text], { type: 'application/dxf' }), fileName);
     return { fileName, downloadRequested: true };
   }
+  async function exportCurveDxf(curveId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
+    editable(expectedVersion); session.assertWorkflowClosed();
+    const { cadCurveToDxf } = await import('@/domain/cad/cadCurveDxf');
+    signal?.throwIfAborted(); session.assertVersion(expectedVersion); session.assertWorkflowClosed();
+    const document = session.getSnapshot().document;
+    const text = cadCurveToDxf(document, curveId);
+    const fileName = `${fileBase(document.name)}.dxf`;
+    downloadCadBlob(new Blob([text], { type: 'application/dxf' }), fileName);
+    return { fileName, downloadRequested: true, curveId, version: expectedVersion };
+  }
   function back() { connected(); session.assertWorkflowClosed(); changeOpen(false); }
   const isBusy = () => busy.current;
   return { session, snapshot, open, enter, edit, save, list, showLibrary, library, libraryDiagnostic, closeLibrary: () => setLibrary(null),
-    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importFile, confirmImport, cancelImport, measureSketch, exportDocument, exportSolid, exportDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
+    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, measureCurve, exportDocument, exportSolid, exportDxf, exportCurveDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
     setViewportControls, readViewport: (expectedVersion: string) => getViewport(expectedVersion).getState(), changeViewport, captureViewport, previewArtifact,
     inspectTopology: topology.inspect, resolveTopologyPicks: topology.resolve,
     build, buildVersion, buildState, errorMessage, setErrorMessage, storageBusy, isBusy, isOpen: () => current.current.open,

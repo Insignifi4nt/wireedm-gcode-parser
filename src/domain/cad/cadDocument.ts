@@ -32,7 +32,13 @@ export interface CadSketchFeature extends CadFeatureBase {
   /** Original import lineage remains exact even after editable geometry changes. */
   readonly source?: CadDxfImportSource;
 }
-export type CadFeature = CadSketchFeature
+/** Ordered open reference geometry. It produces no material or solid body. */
+export interface CadCurveFeature extends CadFeatureBase {
+  readonly kind: 'curve'; readonly plane: CadPlane; readonly offset: CadScalar;
+  readonly segments: readonly CadPathSegment[];
+  readonly source?: CadDxfImportSource;
+}
+export type CadFeature = CadSketchFeature | CadCurveFeature
   | (CadFeatureBase & { readonly kind: 'imported'; readonly source: CadSolidImportSource })
   | (CadFeatureBase & { readonly kind: 'extrude'; readonly sketchId: string; readonly distance: CadScalar; readonly symmetric: boolean; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })
   | (CadFeatureBase & { readonly kind: 'revolve'; readonly sketchId: string; readonly angle: CadScalar; readonly axis: 'x' | 'y'; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })

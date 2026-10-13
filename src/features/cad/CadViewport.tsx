@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Box, Grid2X2, Maximize2 } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -9,10 +9,14 @@ import { ToolError } from '@/features/webmcp/siteTools';
 import type { CadNamedView, CadRenderedViewControls } from './cadViewportControls';
 import { pickTopology, type CadPickMode, type CadTopologyHit } from './cadTopologyPicking';
 import { createCadTopologyHighlights } from './cadTopologyHighlights';
+import { pickCadCurveReference, type CadCurveViewportReference } from './cadCurveRendering';
+const NO_REFERENCES: readonly CadCurveViewportReference[] = Object.freeze([]);
 
-export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, interactionLocked = false,
+export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersion = null, selectedId, onSelect, onControlsReady, interactionLocked = false,
   pickMode = 'body', topologySelection = null, onPickMode, onTopologyPick, pickingEnabled = true }: {
   meshes: readonly CadMesh[];
+  references?: readonly CadCurveViewportReference[];
+  referenceVersion?: string | null;
   selectedId: string | null;
   onSelect(id: string | null): void;
   onControlsReady?(controls: CadRenderedViewControls | null, released?: CadRenderedViewControls): void;
@@ -27,12 +31,14 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
   const controller = useRef<CadRenderedViewControls | null>(null);
   const publish = useRef(onControlsReady);
   publish.current = onControlsReady;
-  const data = useRef({ meshes, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, pickingEnabled });
-  data.current = { meshes, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, pickingEnabled };
+  const data = useRef({ meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, pickingEnabled });
+  data.current = { meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, pickingEnabled };
   const redraw = useRef<(() => void) | null>(null);
   const recolor = useRef<(() => void) | null>(null);
   const highlight = useRef<(() => void) | null>(null);
   const uploadedMeshes = useRef<readonly CadMesh[] | null>(null);
+  const uploadedReferences = useRef<readonly CadCurveViewportReference[] | null>(null);
+  const uploadReferences = useRef<(() => void) | null>(null);
   const orbit = useRef<OrbitControls | null>(null);
   const [graphicsFailure, setGraphicsFailure] = useState<'unavailable' | 'lost' | null>(null);
   const [contextGeneration, setContextGeneration] = useState(0);
@@ -67,21 +73,29 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
     scene.add(light);
     const grid = new THREE.GridHelper(1000, 100, 0x465666, 0x293640);
     grid.rotation.x = Math.PI / 2;
+    for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) material.depthWrite = false;
+    grid.renderOrder = -2;
     scene.add(grid);
     const axes = new THREE.AxesHelper(30);
+    for (const material of Array.isArray(axes.material) ? axes.material : [axes.material]) material.depthWrite = false;
+    axes.renderOrder = -1;
     scene.add(axes);
     const solids = new THREE.Group();
+    const referenceLines = new THREE.Group();
+    const pickableReferences: THREE.LineSegments[] = [];
     const pickableBodies: THREE.Mesh[] = [];
     const pickableEdges: THREE.LineSegments[] = [];
     const meshByObject = new Map<THREE.Object3D, CadMesh>();
     const highlights = createCadTopologyHighlights();
     scene.add(solids);
+    scene.add(referenceLines);
     scene.add(highlights.objects);
     let frame: number | null = null;
     let disposed = false;
     let pendingHover: PointerEvent | null = null;
     let namedDirection = camera.position.clone().sub(controls.target).normalize();
     const viewState: { view: CadNamedView | 'Custom'; gridVisible: boolean; revision: number; hoveredTopology: CadTopologyHit | null } = { view: 'Isometric', gridVisible: true, revision: 0, hoveredTopology: null };
+    let installedReferenceVersion: string | null = null;
     const render = () => {
       if (frame !== null) return;
       frame = requestAnimationFrame(() => {
@@ -108,6 +122,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
     };
     const fit = () => {
       const bounds = new THREE.Box3().setFromObject(solids);
+      for (const reference of data.current.references) bounds.union(new THREE.Box3(new THREE.Vector3(...reference.bounds.min), new THREE.Vector3(...reference.bounds.max)));
       const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
       const size = bounds.isEmpty() ? new THREE.Vector3(100, 100, 100) : bounds.getSize(new THREE.Vector3());
       const direction = camera.position.clone().sub(controls.target).normalize();
@@ -133,6 +148,32 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
       }
     };
     let firstBody = true;
+    const disposeReferences = () => {
+      for (const line of pickableReferences) { line.geometry.dispose(); if (line.material instanceof THREE.LineBasicMaterial) line.material.dispose(); referenceLines.remove(line); }
+      pickableReferences.length = 0;
+    };
+    const updateReferences = () => {
+      if (uploadedReferences.current !== data.current.references) {
+        disposeReferences();
+        for (const reference of data.current.references) {
+          // Float32 world vertices lose small curves far from the origin. Keep
+          // GPU coordinates local; Three composes the world/camera translations
+          // in double precision before uploading the model-view matrix.
+          const origin = reference.bounds.min.map((value, axis) => value / 2 + reference.bounds.max[axis] / 2);
+          const positions = reference.positions.map((value, index) => value - origin[index % 3]);
+          const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+          const line = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: reference.featureId === data.current.selectedId ? 0xf0c779 : 0x89b9c6 }));
+          line.renderOrder = 1;
+          line.position.set(origin[0], origin[1], origin[2]);
+          line.userData.featureId = reference.featureId; referenceLines.add(line); line.updateMatrixWorld(true); pickableReferences.push(line);
+        }
+        uploadedReferences.current = data.current.references;
+      }
+      installedReferenceVersion = data.current.references.length ? data.current.referenceVersion : null;
+      viewState.revision++;
+      if (firstBody && data.current.references.length) { firstBody = false; fit(); }
+      render();
+    };
     const update = () => {
       uploadedMeshes.current = data.current.meshes;
       disposeSolids();
@@ -178,6 +219,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
         if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) child.material.color.setHex(selected ? 0x79c8e6 : 0xa3b0bf);
         else if (child instanceof THREE.LineSegments && child.material instanceof THREE.LineBasicMaterial) child.material.color.setHex(selected ? 0xb5eafd : 0x344452);
       }
+      for (const line of pickableReferences) if (line.material instanceof THREE.LineBasicMaterial) line.material.color.setHex(line.userData.featureId === data.current.selectedId ? 0xf0c779 : 0x89b9c6);
       render();
     };
     const raycaster = new THREE.Raycaster();
@@ -196,9 +238,14 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
     const pointerLeave = () => { pendingHover = null; setHover(null); };
     const pointerCancel = () => { pendingHover = null; down = null; setHover(null); };
     const pointerUp = (event: PointerEvent) => {
-      if (event.button !== 0 || !down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4 || data.current.interactionLocked || !data.current.pickingEnabled) { down = null; return; }
+      if (event.button !== 0 || !down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4 || data.current.interactionLocked) { down = null; return; }
       down = null;
       setRay(event);
+      if (data.current.pickMode === 'body') {
+        const referenceId = pickCadCurveReference({ raycaster, references: pickableReferences, bodies: pickableBodies, camera, viewportHeight: container.clientHeight });
+        if (referenceId) { data.current.onSelect(referenceId); return; }
+      }
+      if (!data.current.pickingEnabled) return;
       if (data.current.pickMode !== 'body') { data.current.onTopologyPick?.(hitTopology(), event.ctrlKey || event.metaKey); return; }
       const hit = raycaster.intersectObjects(pickableBodies, false)[0];
       const id: unknown = hit?.object.userData.featureId;
@@ -237,7 +284,9 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
     observer.observe(container);
     resize();
     update();
+    updateReferences();
     redraw.current = update;
+    uploadReferences.current = updateReferences;
     recolor.current = updateSelection;
     highlight.current = () => {
       if (!data.current.pickingEnabled || viewState.hoveredTopology?.pick.kind !== data.current.pickMode) viewState.hoveredTopology = null;
@@ -245,7 +294,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
     };
     updateHighlights();
     controller.current = {
-      getState: () => Object.freeze({ mode: 'solid', available: !disposed && !renderer.getContext().isContextLost(), view: viewState.view, gridVisible: viewState.gridVisible, zoom: camera.zoom, revision: viewState.revision,
+      getState: () => Object.freeze({ mode: 'solid', available: !disposed && !renderer.getContext().isContextLost(), view: viewState.view, gridVisible: viewState.gridVisible, zoom: camera.zoom, revision: viewState.revision, referenceVersion: installedReferenceVersion,
         hoveredTopology: viewState.hoveredTopology ? Object.freeze({ ...viewState.hoveredTopology, pick: Object.freeze({ ...viewState.hoveredTopology.pick }) }) : null }),
       fit,
       setGrid(visible) { grid.visible = visible; viewState.gridVisible = visible; viewState.revision++; setGridVisible(visible); render(); },
@@ -265,6 +314,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
         };
         assertGraphicsAvailable();
         if (uploadedMeshes.current !== data.current.meshes) update();
+        if (uploadedReferences.current !== data.current.references || installedReferenceVersion !== (data.current.references.length ? data.current.referenceVersion : null)) updateReferences();
         updateSelection();
         updateHighlights();
         controls.update();
@@ -295,6 +345,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
       renderer.domElement.removeEventListener('webglcontextrestored', contextRestored);
       if (frame !== null) cancelAnimationFrame(frame);
       disposeSolids();
+      disposeReferences();
       highlights.dispose();
       grid.geometry.dispose();
       for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) material.dispose();
@@ -308,11 +359,13 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
       recolor.current = null;
       highlight.current = null;
       uploadedMeshes.current = null;
+      uploadedReferences.current = null; uploadReferences.current = null;
       publish.current?.(null, publishedControls);
     };
   }, [contextGeneration]);
 
   useEffect(() => { if (uploadedMeshes.current !== meshes) redraw.current?.(); }, [meshes]);
+  useLayoutEffect(() => { uploadReferences.current?.(); }, [references, referenceVersion]);
   useEffect(() => { recolor.current?.(); }, [selectedId]);
   useEffect(() => { highlight.current?.(); }, [topologySelection, pickMode, meshes, pickingEnabled, interactionLocked]);
   useEffect(() => { if (orbit.current) orbit.current.enabled = !interactionLocked; }, [interactionLocked]);
@@ -331,7 +384,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
         {(['body', 'face', 'edge'] satisfies CadPickMode[]).map((mode) => <button key={mode} disabled={interactionLocked || unavailable || !pickingEnabled} aria-pressed={pickMode === mode} title={`Pick ${mode === 'body' ? 'bodies' : `${mode}s`}`} onClick={() => onPickMode(mode)}>{mode === 'body' ? 'Body' : mode === 'face' ? 'Face' : 'Edge'}</button>)}
       </>}
     </div>
-    {unavailable ? <div className="cad-view-message" role="status"><strong>{graphicsFailure === 'lost' ? 'The 3D graphics context was interrupted.' : '3D graphics are unavailable in this browser.'}</strong><span>{graphicsFailure === 'lost' ? 'Waiting for recovery. Retry the view if it stays blank; your CAD document is retained.' : 'Sketch editing and document operations remain available. Enable WebGL to view solids.'}</span><button type="button" disabled={interactionLocked} onClick={() => setContextGeneration(generation => generation + 1)}>Retry 3D view</button></div> : meshes.length === 0 ? <div className="cad-view-message"><strong>Your part starts with a sketch</strong><span>Create a sketch on a reference plane, then draw a profile and add a Pad or Revolve.</span></div> : null}
+    {unavailable ? <div className="cad-view-message" role="status"><strong>{graphicsFailure === 'lost' ? 'The 3D graphics context was interrupted.' : '3D graphics are unavailable in this browser.'}</strong><span>{graphicsFailure === 'lost' ? 'Waiting for recovery. Retry the view if it stays blank; your CAD document is retained.' : 'Sketch editing and document operations remain available. Enable WebGL to view solids.'}</span><button type="button" disabled={interactionLocked} onClick={() => setContextGeneration(generation => generation + 1)}>Retry 3D view</button></div> : meshes.length === 0 && references.length === 0 ? <div className="cad-view-message"><strong>Your part starts with a sketch</strong><span>Create a sketch on a reference plane, then draw a profile and add a Pad or Revolve.</span></div> : null}
     {topologySelection?.picks.length ? <div className="cad-view-caption">{topologySelection.picks.length} {topologySelection.picks[0].kind}{topologySelection.picks.length === 1 ? '' : 's'} selected</div> : null}
     <div className="cad-view-help">{pickMode === 'edge' ? 'Ctrl / Cmd click to toggle edges · ' : ''}Drag to orbit · Right drag to pan · Scroll to zoom</div>
   </div>;
