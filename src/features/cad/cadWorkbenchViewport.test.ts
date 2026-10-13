@@ -14,7 +14,7 @@ function setup(mode: 'solid' | 'sketch' | 'curve' = 'solid') {
     document: createCadDocument('Measured part', 'part'), documentVersion: 'version-1', dirty: true,
     selectedFeatureId: null, selectedProfileId: null, sketchId: mode === 'sketch' ? 'sketch-1' : null, curveId: mode === 'curve' ? 'curve-1' : null,
     workflowOpen: false, busy: false, buildVersion: mode === 'solid' ? 'version-1' : null,
-    buildState: mode === 'solid' ? 'ready' : 'idle', visibleBodyIds: [],
+    buildState: mode === 'solid' ? 'ready' : 'idle', visibleBodyIds: [], visibleReferenceIds: [],
     buildId: mode === 'solid' ? 'build-1' : null, pickMode: 'body', topologySelection: null, meshes: [],
     rendered: { getState: () => Object.freeze(state), fit: vi.fn(), setGrid: vi.fn(), setView: vi.fn(), capture },
     selectFeature: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: (action) => action(),
@@ -32,14 +32,14 @@ describe('shared CAD viewport controls', () => {
   }] };
   it('captures installed reference geometry without a native solid build and rejects stale uploads', async () => {
     const context = setup();
-    context.update({ document: referenceDocument, buildState: 'idle', buildVersion: null, buildId: null });
+    context.update({ document: referenceDocument, visibleReferenceIds: ['curve-1'], buildState: 'idle', buildVersion: null, buildId: null });
     await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_STATE' });
     expect(context.capture).not.toHaveBeenCalled();
-    context.updateView({ mode: 'solid', available: true, referenceVersion: 'version-1', view: 'Isometric', gridVisible: true, zoom: 1, revision: 2 });
+    context.updateView({ mode: 'solid', available: true, referenceVersion: 'version-1', referenceFeatureIds: ['curve-1'], view: 'Isometric', gridVisible: true, zoom: 1, revision: 2 });
     await expect(context.controls.capture(new AbortController().signal)).resolves.toMatchObject({ buildVersion: null, curveId: null,
       viewState: { buildState: 'idle', view: { referenceVersion: 'version-1' } }, image: { source: '3d' } });
     context.capture.mockImplementationOnce(async () => {
-      context.updateView({ mode: 'solid', available: true, referenceVersion: 'version-2', view: 'Isometric', gridVisible: true, zoom: 1, revision: 3 }); return png;
+      context.updateView({ mode: 'solid', available: true, referenceVersion: 'version-2', referenceFeatureIds: ['curve-1'], view: 'Isometric', gridVisible: true, zoom: 1, revision: 3 }); return png;
     });
     await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
   });
@@ -51,6 +51,50 @@ describe('shared CAD viewport controls', () => {
     context.updateView({ mode: 'solid', available: true, referenceVersion: 'version-1', view: 'Isometric', gridVisible: true, zoom: 1, revision: 2 });
     await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_STATE' });
     expect(context.capture).not.toHaveBeenCalled();
+  });
+  const sketchReference = { id: 'section', name: 'Section', kind: 'sketch' as const, plane: 'YZ' as const, offset: 12, suppressed: false,
+    profiles: [{ id: 'boundary', name: 'Boundary', construction: false, geometry: { kind: 'circle' as const, x: 0, y: 0, radius: 3 } }] };
+  it('captures installed world-space sketch outlines without a solid build and rejects an old selection layer', async () => {
+    const context = setup();
+    context.update({ document: { ...createCadDocument('Sections', 'part'), features: [sketchReference] },
+      visibleReferenceIds: ['section'], buildState: 'idle', buildVersion: null, buildId: null });
+    const view = { mode: 'solid' as const, available: true, referenceVersion: 'version-1', view: 'Isometric' as const, gridVisible: false, zoom: 1, revision: 2 };
+    for (const referenceFeatureIds of [undefined, [], ['old-section']]) {
+      context.updateView({ ...view, referenceFeatureIds });
+      await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_STATE' });
+    }
+    expect(context.capture).not.toHaveBeenCalled();
+    context.updateView({ ...view, referenceFeatureIds: Object.freeze(['section']) });
+    const captured = await context.controls.capture(new AbortController().signal);
+    expect(captured).toMatchObject({ buildVersion: null, sketchId: null, curveId: null, image: { source: '3d' },
+      viewState: { buildState: 'idle', view: { referenceVersion: 'version-1', referenceFeatureIds: ['section'] } } });
+    if (captured.viewState.view?.mode !== 'solid') throw new Error('Expected world-space sketch capture');
+    expect(Object.isFrozen(captured.viewState.view.referenceFeatureIds)).toBe(true);
+  });
+  it('requires a completed empty reference upload when a solid hides its source sketches', async () => {
+    const context = setup();
+    context.update({ document: { ...createCadDocument('Solid', 'part'), features: [sketchReference,
+      { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false, sketchId: 'section', distance: 10, symmetric: false, operation: 'new', targetId: null }] },
+      visibleReferenceIds: [] });
+    const view = { mode: 'solid' as const, available: true, view: 'Isometric' as const, gridVisible: true, zoom: 1, revision: 2 };
+    context.updateView({ ...view, referenceVersion: 'version-1', referenceFeatureIds: ['section'] });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_STATE' });
+    context.updateView({ ...view, referenceVersion: 'older', referenceFeatureIds: [] });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_STATE' });
+    expect(context.capture).not.toHaveBeenCalled();
+    context.updateView({ ...view, referenceVersion: 'version-1', referenceFeatureIds: [] });
+    await expect(context.controls.capture(new AbortController().signal)).resolves.toMatchObject({ buildVersion: 'version-1' });
+    context.capture.mockImplementationOnce(async () => { context.update({ visibleReferenceIds: ['section'] }); return png; });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
+  });
+  it('does not mistake empty or suppressed sketches for an installed reference scene', async () => {
+    for (const feature of [{ ...sketchReference, profiles: [] }, { ...sketchReference, suppressed: true }]) {
+      const context = setup();
+      context.update({ document: { ...createCadDocument('Empty', 'part'), features: [feature] }, buildState: 'idle', buildVersion: null, buildId: null });
+      context.updateView({ mode: 'solid', available: true, referenceVersion: 'version-1', referenceFeatureIds: [], view: 'Isometric', gridVisible: true, zoom: 1, revision: 2 });
+      await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_STATE' });
+      expect(context.capture).not.toHaveBeenCalled();
+    }
   });
   it('identifies planar Curve captures and routes editor commands without sketch profiles or solid topology', async () => {
     const context = setup('curve'); context.update({ document: referenceDocument });

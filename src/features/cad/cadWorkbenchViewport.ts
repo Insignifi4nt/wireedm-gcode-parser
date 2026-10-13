@@ -10,6 +10,8 @@ export interface CadViewportBindings extends Omit<CadViewportState, 'documentId'
   readonly document: CadDocument;
   readonly rendered: CadRenderedViewControls | null;
   readonly meshes: readonly CadMesh[];
+  /** Sorted unique feature IDs expected in the current world-space reference layer. */
+  readonly visibleReferenceIds: readonly string[];
   selectFeature(id: string | null): void;
   editSketch(id: string): void;
   editCurve(id: string): void;
@@ -41,6 +43,13 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
   function visualIdentity(state: CadViewportState) {
     return JSON.stringify([state.documentId, state.documentVersion, state.selectedFeatureId, state.selectedProfileId,
       state.sketchId, state.curveId, state.view?.mode === 'solid' ? [state.buildVersion, state.buildId, state.buildState, state.pickMode, state.topologySelection] : null, state.view]);
+  }
+  function referencesInstalled(bindings: CadViewportBindings, state: CadViewportState): boolean {
+    if (state.view?.mode !== 'solid') return true;
+    const installed = state.view.referenceFeatureIds;
+    return installed !== undefined && state.view.referenceVersion === bindings.documentVersion
+      && installed.length === bindings.visibleReferenceIds.length
+      && installed.every((id, index) => id === bindings.visibleReferenceIds[index]);
   }
   return {
     getState,
@@ -103,17 +112,18 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
       const rendered = bindings.rendered;
       const before = getState();
       if (!rendered || !before.view?.available) throw new ToolError('CAPTURE_UNAVAILABLE', 'Wait for a visible CAD viewport to load.');
-      const hasCurves = bindings.document.features.some(feature => feature.kind === 'curve' && !feature.suppressed);
-      const requiresBuild = !hasCurves || bindings.document.features.some(feature => cadFeatureProducesBody(feature) && !feature.suppressed);
+      const hasReferences = bindings.document.features.some(feature => !feature.suppressed && (feature.kind === 'curve' || feature.kind === 'sketch' && feature.profiles.length > 0));
+      const requiresBuild = !hasReferences || bindings.document.features.some(feature => cadFeatureProducesBody(feature) && !feature.suppressed);
       if (before.view.mode === 'solid') {
         if (requiresBuild && (bindings.buildState !== 'ready' || bindings.buildVersion !== bindings.documentVersion)) throw new ToolError('STALE_STATE', 'Wait for this exact CAD draft to finish building before capturing its solid view.');
-        if (hasCurves && before.view.referenceVersion !== bindings.documentVersion) throw new ToolError('STALE_STATE', 'Wait for the current reference curves to appear before capturing the view.');
+        if (hasReferences && !referencesInstalled(bindings, before)) throw new ToolError('STALE_STATE', 'Wait for the current sketch and curve references to appear before capturing the view.');
       }
       const image = await rendered.capture(signal);
       signal.throwIfAborted();
       const after = getState();
       if (after.documentId !== before.documentId || after.documentVersion !== before.documentVersion) throw new ToolError('STALE_STATE', 'The CAD draft changed during capture. Read context and capture again.');
       if (after.workflowOpen || visualIdentity(after) !== visualIdentity(before)) throw new ToolError('STALE_VIEW', 'The CAD view changed during capture. Capture the current view again.');
+      if (hasReferences && !referencesInstalled(getBindings(), after)) throw new ToolError('STALE_VIEW', 'The visible CAD references changed during capture. Capture the current view again.');
       return Object.freeze({ image, contentSource: 'cad-draft', documentId: before.documentId, documentVersion: before.documentVersion,
         dirty: before.dirty, sketchId: before.sketchId, curveId: before.curveId,
         buildVersion: before.view.mode === 'solid' && requiresBuild ? before.buildVersion : null, viewState: before });

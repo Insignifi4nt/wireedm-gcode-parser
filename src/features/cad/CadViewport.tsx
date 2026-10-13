@@ -9,8 +9,10 @@ import { ToolError } from '@/features/webmcp/siteTools';
 import type { CadNamedView, CadRenderedViewControls } from './cadViewportControls';
 import { pickTopology, type CadPickMode, type CadTopologyHit } from './cadTopologyPicking';
 import { createCadTopologyHighlights } from './cadTopologyHighlights';
-import { pickCadCurveReference, type CadCurveViewportReference } from './cadCurveRendering';
-const NO_REFERENCES: readonly CadCurveViewportReference[] = Object.freeze([]);
+import { pickCadCurveReference } from './cadCurveRendering';
+import { cadReferenceFeatureIds, type CadViewportReference } from './cadViewportReferences';
+import { cadLocalRenderPositions, cadRenderOrigin } from './cadRenderCoordinates';
+const NO_REFERENCES: readonly CadViewportReference[] = Object.freeze([]);
 export interface CadViewportEmptyAction {
   readonly label: string;
   readonly description: string;
@@ -20,7 +22,7 @@ export interface CadViewportEmptyAction {
 export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersion = null, selectedId, onSelect, onControlsReady, interactionLocked = false,
   pickMode = 'body', topologySelection = null, onPickMode, onTopologyPick, pickingEnabled = true, emptyAction = null }: {
   meshes: readonly CadMesh[];
-  references?: readonly CadCurveViewportReference[];
+  references?: readonly CadViewportReference[];
   referenceVersion?: string | null;
   selectedId: string | null;
   onSelect(id: string | null): void;
@@ -43,7 +45,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
   const recolor = useRef<(() => void) | null>(null);
   const highlight = useRef<(() => void) | null>(null);
   const uploadedMeshes = useRef<readonly CadMesh[] | null>(null);
-  const uploadedReferences = useRef<readonly CadCurveViewportReference[] | null>(null);
+  const uploadedReferences = useRef<readonly CadViewportReference[] | null>(null);
   const uploadReferences = useRef<(() => void) | null>(null);
   const orbit = useRef<OrbitControls | null>(null);
   const [graphicsFailure, setGraphicsFailure] = useState<'unavailable' | 'lost' | null>(null);
@@ -67,12 +69,17 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     const camera = new THREE.OrthographicCamera(-100, 100, 100, -100, 0.01, 100000);
     camera.up.set(0, 0, 1);
     camera.position.set(160, -180, 140);
-    const controls = new OrbitControls(camera, renderer.domElement);
+    const createOrbitControls = () => {
+      const next = new OrbitControls(camera, renderer.domElement);
+      next.enableDamping = false;
+      next.screenSpacePanning = true;
+      next.minZoom = 0.01;
+      next.maxZoom = 10000;
+      next.enabled = !data.current.interactionLocked;
+      return next;
+    };
+    let controls = createOrbitControls();
     orbit.current = controls;
-    controls.enableDamping = false;
-    controls.screenSpacePanning = true;
-    controls.minZoom = 0.01;
-    controls.maxZoom = 10000;
     scene.add(new THREE.HemisphereLight(0xd7e6ff, 0x383b43, 2));
     const light = new THREE.DirectionalLight(0xffffff, 3);
     light.position.set(100, -100, 200);
@@ -89,6 +96,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     const solids = new THREE.Group();
     const referenceLines = new THREE.Group();
     const pickableReferences: THREE.LineSegments[] = [];
+    const installedReferences = new Map<string, { reference: CadViewportReference; line: THREE.LineSegments }>();
     const pickableBodies: THREE.Mesh[] = [];
     const pickableEdges: THREE.LineSegments[] = [];
     const meshByObject = new Map<THREE.Object3D, CadMesh>();
@@ -102,6 +110,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     let namedDirection = camera.position.clone().sub(controls.target).normalize();
     const viewState: { view: CadNamedView | 'Custom'; gridVisible: boolean; revision: number; hoveredTopology: CadTopologyHit | null } = { view: 'Isometric', gridVisible: true, revision: 0, hoveredTopology: null };
     let installedReferenceVersion: string | null = null;
+    let installedReferenceFeatureIds: readonly string[] = Object.freeze([]);
     const render = () => {
       if (frame !== null) return;
       frame = requestAnimationFrame(() => {
@@ -110,7 +119,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         if (event && !down && !event.buttons && !data.current.interactionLocked && data.current.pickingEnabled && data.current.pickMode !== 'body') {
           setRay(event); setHover(hitTopology());
         }
-        renderer.render(scene, camera); frame = null;
+        updateReferenceStyles(); renderer.render(scene, camera); frame = null;
       });
     };
     const resize = () => {
@@ -126,19 +135,26 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       highlights.resize(width, height);
       render();
     };
-    const fit = () => {
-      const bounds = new THREE.Box3().setFromObject(solids);
-      for (const reference of data.current.references) bounds.union(new THREE.Box3(new THREE.Vector3(...reference.bounds.min), new THREE.Vector3(...reference.bounds.max)));
-      const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
-      const size = bounds.isEmpty() ? new THREE.Vector3(100, 100, 100) : bounds.getSize(new THREE.Vector3());
-      const direction = camera.position.clone().sub(controls.target).normalize();
-      controls.target.copy(center);
-      camera.position.copy(center).addScaledVector(direction, Math.max(200, size.length() * 3));
-      camera.far = Math.max(100000, size.length() * 10);
-      camera.zoom = Math.min(camera.right - camera.left, camera.top - camera.bottom) / Math.max(20, size.length() * 1.18);
-      camera.updateProjectionMatrix();
-      controls.update();
-      render();
+    // A reference-only scene and its first solid have separate initial frames.
+    // Later rebuilds, or an explicitly chosen camera, never trigger another fit.
+    let fittedReferences = false, fittedSolid = false, userFramed = false, fittingAutomatically = false;
+    const fit = (automatic = false) => {
+      if (!automatic) userFramed = true;
+      fittingAutomatically = automatic;
+      try {
+        const bounds = new THREE.Box3().setFromObject(solids);
+        for (const reference of data.current.references) bounds.union(new THREE.Box3(new THREE.Vector3(...reference.bounds.min), new THREE.Vector3(...reference.bounds.max)));
+        const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
+        const size = bounds.isEmpty() ? new THREE.Vector3(100, 100, 100) : bounds.getSize(new THREE.Vector3());
+        const direction = camera.position.clone().sub(controls.target).normalize();
+        controls.target.copy(center);
+        camera.position.copy(center).addScaledVector(direction, Math.max(200, size.length() * 3));
+        camera.far = Math.max(100000, size.length() * 10);
+        camera.zoom = Math.min(camera.right - camera.left, camera.top - camera.bottom) / Math.max(20, size.length() * 1.18);
+        camera.updateProjectionMatrix();
+        controls.update();
+        render();
+      } finally { fittingAutomatically = false; }
     };
     const disposeSolids = () => {
       pickableBodies.length = 0;
@@ -153,57 +169,88 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         solids.remove(child);
       }
     };
-    let firstBody = true;
     const disposeReferences = () => {
-      for (const line of pickableReferences) { line.geometry.dispose(); if (line.material instanceof THREE.LineBasicMaterial) line.material.dispose(); referenceLines.remove(line); }
+      for (const { line } of installedReferences.values()) disposeReference(line);
+      installedReferences.clear();
       pickableReferences.length = 0;
+    };
+    const disposeReference = (line: THREE.LineSegments) => {
+      line.geometry.dispose();
+      for (const material of Array.isArray(line.material) ? line.material : [line.material]) material.dispose();
+      referenceLines.remove(line);
+    };
+    const referenceColor = (reference: CadViewportReference) => reference.featureId === data.current.selectedId ? 0xf0c779 : reference.construction ? 0x698594 : 0x89b9c6;
+    const updateReferenceStyles = () => {
+      const worldPerPixel = (camera.top - camera.bottom) / camera.zoom / Math.max(1, container.clientHeight);
+      for (const { reference, line } of installedReferences.values()) {
+        if (line.material instanceof THREE.LineBasicMaterial) line.material.color.setHex(referenceColor(reference));
+        if (line.material instanceof THREE.LineDashedMaterial) { line.material.dashSize = worldPerPixel * 6; line.material.gapSize = worldPerPixel * 4; }
+      }
     };
     const updateReferences = () => {
       if (uploadedReferences.current !== data.current.references) {
-        disposeReferences();
+        const wanted = new Map(data.current.references.map(reference => [reference.referenceId, reference]));
+        for (const [id, installed] of installedReferences) {
+          if (wanted.get(id) === installed.reference) continue;
+          disposeReference(installed.line); installedReferences.delete(id);
+        }
         for (const reference of data.current.references) {
+          if (installedReferences.has(reference.referenceId)) continue;
           // Float32 world vertices lose small curves far from the origin. Keep
           // GPU coordinates local; Three composes the world/camera translations
           // in double precision before uploading the model-view matrix.
-          const origin = reference.bounds.min.map((value, axis) => value / 2 + reference.bounds.max[axis] / 2);
-          const positions = reference.positions.map((value, index) => value - origin[index % 3]);
-          const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-          const line = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: reference.featureId === data.current.selectedId ? 0xf0c779 : 0x89b9c6 }));
+          const origin = cadRenderOrigin(reference.bounds);
+          const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(reference.positions, origin), 3));
+          const material = reference.construction ? new THREE.LineDashedMaterial({ color: referenceColor(reference), depthWrite: false }) : new THREE.LineBasicMaterial({ color: referenceColor(reference) });
+          const line = new THREE.LineSegments(geometry, material);
+          if (reference.construction) line.computeLineDistances();
           line.renderOrder = 1;
           line.position.set(origin[0], origin[1], origin[2]);
-          line.userData.featureId = reference.featureId; referenceLines.add(line); line.updateMatrixWorld(true); pickableReferences.push(line);
+          line.userData.featureId = reference.featureId; line.userData.referenceId = reference.referenceId; referenceLines.add(line); line.updateMatrixWorld(true);
+          installedReferences.set(reference.referenceId, { reference, line });
         }
+        pickableReferences.length = 0; installedReferences.forEach(({ line }) => pickableReferences.push(line));
         uploadedReferences.current = data.current.references;
       }
-      installedReferenceVersion = data.current.references.length ? data.current.referenceVersion : null;
+      installedReferenceVersion = data.current.referenceVersion;
+      installedReferenceFeatureIds = cadReferenceFeatureIds(data.current.references);
       viewState.revision++;
-      if (firstBody && data.current.references.length) { firstBody = false; fit(); }
+      if (!fittedReferences && !fittedSolid && data.current.references.length && !data.current.meshes.length) {
+        fittedReferences = true;
+        if (!userFramed) fit(true);
+      }
       render();
     };
     const update = () => {
       uploadedMeshes.current = data.current.meshes;
       disposeSolids();
       for (const mesh of data.current.meshes) {
+        const origin = cadRenderOrigin(mesh.bounds);
         const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(mesh.positions, 3));
+        geometry.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(mesh.positions, origin), 3));
         geometry.setAttribute('normal', new THREE.Float32BufferAttribute(mesh.normals, 3));
         geometry.setIndex([...mesh.indices]);
         const selected = mesh.featureId === data.current.selectedId;
         const material = new THREE.MeshStandardMaterial({ color: selected ? 0x79c8e6 : 0xa3b0bf, roughness: 0.55, metalness: 0.18, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
         const body = new THREE.Mesh(geometry, material);
+        body.position.set(...origin);
         body.userData.featureId = mesh.featureId;
         solids.add(body);
         pickableBodies.push(body);
         meshByObject.set(body, mesh);
         const edges = new THREE.BufferGeometry();
-        edges.setAttribute('position', new THREE.Float32BufferAttribute(mesh.edges, 3));
+        edges.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(mesh.edges, origin), 3));
         const lines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: selected ? 0xb5eafd : 0x344452 }));
+        lines.position.set(...origin);
         lines.userData.featureId = mesh.featureId;
         solids.add(lines);
         pickableEdges.push(lines);
         meshByObject.set(lines, mesh);
       }
-      if (firstBody && data.current.meshes.length) { firstBody = false; fit(); }
+      if (!fittedSolid && data.current.meshes.length) {
+        fittedSolid = true;
+        if (!userFramed) fit(true);
+      }
       viewState.hoveredTopology = null;
       updateHighlights();
       render();
@@ -225,7 +272,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) child.material.color.setHex(selected ? 0x79c8e6 : 0xa3b0bf);
         else if (child instanceof THREE.LineSegments && child.material instanceof THREE.LineBasicMaterial) child.material.color.setHex(selected ? 0xb5eafd : 0x344452);
       }
-      for (const line of pickableReferences) if (line.material instanceof THREE.LineBasicMaterial) line.material.color.setHex(line.userData.featureId === data.current.selectedId ? 0xf0c779 : 0x89b9c6);
+      updateReferenceStyles();
       render();
     };
     const raycaster = new THREE.Raycaster();
@@ -258,10 +305,20 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       data.current.onSelect(typeof id === 'string' ? id : null);
     };
     const onChange = () => {
+      if (!fittingAutomatically) userFramed = true;
       if (viewState.view !== 'Custom' && camera.position.clone().sub(controls.target).normalize().distanceToSquared(namedDirection) > 1e-12) { viewState.view = 'Custom'; setViewName('Custom'); }
       viewState.revision++; render();
     };
     const onStart = () => { pendingHover = null; setHover(null); };
+    const attachOrbitListeners = (instance: OrbitControls) => {
+      instance.addEventListener('change', onChange);
+      instance.addEventListener('start', onStart);
+    };
+    const releaseOrbitControls = (instance: OrbitControls) => {
+      instance.removeEventListener('change', onChange);
+      instance.removeEventListener('start', onStart);
+      instance.dispose();
+    };
     const contextLost = () => {
       if (disposed) return;
       if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
@@ -279,8 +336,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     };
     renderer.domElement.addEventListener('webglcontextlost', contextLost);
     renderer.domElement.addEventListener('webglcontextrestored', contextRestored);
-    controls.addEventListener('change', onChange);
-    controls.addEventListener('start', onStart);
+    attachOrbitListeners(controls);
     renderer.domElement.addEventListener('pointerdown', pointerDown);
     renderer.domElement.addEventListener('pointerup', pointerUp);
     renderer.domElement.addEventListener('pointermove', pointerMove);
@@ -300,14 +356,25 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     };
     updateHighlights();
     controller.current = {
-      getState: () => Object.freeze({ mode: 'solid', available: !disposed && !renderer.getContext().isContextLost(), view: viewState.view, gridVisible: viewState.gridVisible, zoom: camera.zoom, revision: viewState.revision, referenceVersion: installedReferenceVersion,
+      getState: () => Object.freeze({ mode: 'solid', available: !disposed && !renderer.getContext().isContextLost(), view: viewState.view, gridVisible: viewState.gridVisible, zoom: camera.zoom, revision: viewState.revision, referenceVersion: installedReferenceVersion, referenceFeatureIds: installedReferenceFeatureIds,
         hoveredTopology: viewState.hoveredTopology ? Object.freeze({ ...viewState.hoveredTopology, pick: Object.freeze({ ...viewState.hoveredTopology.pick }) }) : null }),
       fit,
       setGrid(visible) { grid.visible = visible; viewState.gridVisible = visible; viewState.revision++; setGridVisible(visible); render(); },
       setView(name) {
         const direction = name === 'Top' ? new THREE.Vector3(0, 0, 1) : name === 'Front' ? new THREE.Vector3(0, -1, 0) : name === 'Right' ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(1, -1.2, 0.9).normalize();
         const distance = Math.max(1000, camera.position.distanceTo(controls.target));
-        camera.up.set(0, name === 'Top' ? 1 : 0, name === 'Top' ? 0 : 1);
+        const up = new THREE.Vector3(0, name === 'Top' ? 1 : 0, name === 'Top' ? 0 : 1);
+        if (!camera.up.equals(up)) {
+          const target = controls.target.clone();
+          releaseOrbitControls(controls);
+          camera.up.copy(up);
+          // OrbitControls captures the up basis at construction. Its constructor
+          // also updates the camera before our retained target is restored.
+          controls = createOrbitControls();
+          controls.target.copy(target);
+          orbit.current = controls;
+          attachOrbitListeners(controls);
+        }
         camera.position.copy(controls.target).addScaledVector(direction, distance);
         namedDirection = direction.clone().normalize();
         viewState.view = name; viewState.revision++; setViewName(name);
@@ -320,12 +387,12 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         };
         assertGraphicsAvailable();
         if (uploadedMeshes.current !== data.current.meshes) update();
-        if (uploadedReferences.current !== data.current.references || installedReferenceVersion !== (data.current.references.length ? data.current.referenceVersion : null)) updateReferences();
+        if (uploadedReferences.current !== data.current.references || installedReferenceVersion !== data.current.referenceVersion) updateReferences();
         updateSelection();
         updateHighlights();
         controls.update();
         if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
-        renderer.render(scene, camera);
+        updateReferenceStyles(); renderer.render(scene, camera);
         assertGraphicsAvailable();
         const image = captureCanvas(renderer.domElement, '3d');
         assertGraphicsAvailable();
@@ -338,9 +405,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     return () => {
       disposed = true;
       observer.disconnect();
-      controls.removeEventListener('change', onChange);
-      controls.removeEventListener('start', onStart);
-      controls.dispose();
+      releaseOrbitControls(controls);
       orbit.current = null;
       renderer.domElement.removeEventListener('pointerdown', pointerDown);
       renderer.domElement.removeEventListener('pointerup', pointerUp);

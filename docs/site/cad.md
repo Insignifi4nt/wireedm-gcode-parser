@@ -22,6 +22,8 @@ For a polygon, use the Vertex picker in Properties to reach a point and edit X/Y
 
 Use **File → Rebuild model** if a cancelled operation or restarted worker invalidates an exact selection. The visible shape can remain available while its cached topology needs rebuilding; select faces or edges again after the rebuild.
 
+Existing sketches and curves fit their geometry when opened for editing, including drawings far from the origin. Later dimension changes keep the current view; use **Fit** or **F** to reframe.
+
 **File → Capture view PNG** saves the current sketch or solid viewport. The capture includes the current draft, which may be unsaved. Finish property edits and wait for the current solid rebuild before capture. The Agent panel in the notification bell keeps the captured PNG available to download again.
 
 If 3D graphics are interrupted, the view redraws when the browser recovers. **Retry 3D view** creates a fresh view if needed, retaining the document and resetting the camera to Isometric. Capture is unavailable while graphics are lost.
@@ -32,13 +34,17 @@ If the CAD view itself cannot load, its recovery panel keeps the accepted docume
 
 **Curve** creates an independent open chain of exact lines and circular arcs. Choose a reference plane and offset, name it, then draw with Line or 3-point Arc. **Finish curve** accepts the complete chain as one undo step; Cancel discards its name, placement and geometry together. Curves can have sharp corners but cannot close, cross, overlap or touch themselves. Double-click a saved curve to inspect its planar view and edit its segment dimensions in Properties. Length, bounds and endpoints remain analytic, including parameter expressions.
 
-Curves appear alongside solids in the 3D view and can be selected directly. They are reference geometry, without material regions or machining roles. Curve-only documents do not load the solid engine.
+Sketch outlines and Curves appear at their actual plane and offset in 3D. Before solids exist, all active sketches are visible; afterward, select a sketch or feature to reveal its source sketches. Construction outlines are dashed. Curves remain visible alongside solids. In Body mode, click a visible outline to select its feature; double-click its tree entry to edit. Sketch/Curve-only viewing and PNG capture do not load the solid engine. Curves are reference geometry, without material regions or machining roles.
 
 Named parameters are numeric values. Dimensions accept numbers or expressions such as `width / 2`, `thickness + 3`, and `(pitch * 4) - diameter`. Expressions support `+`, `-`, `*`, `/` and parentheses, without executing JavaScript. Dimensions are millimetres; angles are degrees.
 
 Each accepted edit is one undo step. Undo/redo changes the draft without rewriting saved storage. History is bounded to 50 steps and a memory budget. Invalid edits leave the previous draft intact. Deleting a feature with dependents requires explicit cascade deletion; reordering must preserve dependency order.
 
 **Pattern → Linear pattern** repeats a body by XYZ spacing. **Pattern → Circular pattern** repeats it around a world X, Y or Z axis through the entered centre. Count includes the original body. Angular extent is the total sweep: 4 instances over 360° appear at 0°, 90°, 180° and 270°; 3 over 180° appear at 0°, 90° and 180°. Negative extents reverse direction. Centres and extents accept parameter expressions. Copies are fused where they overlap, and the pattern replaces its source body. To create repeated holes, pattern a separate cutting body, then subtract that pattern with Boolean Cut. Patterns have 2–100 instances and share a 1,000 expanded-instance limit.
+
+For a through hole or cutout, use **Pad / Pocket → Cut from body → Through all**. Choose the target and a direction from the sketch plane, or **Both directions** to cross the entire target. The displayed axis follows the sketch normal: +Z for XY, −Y for XZ and +X for YZ. The cut follows changes to the target thickness; it does not store an oversized depth. Nested contours keep their material/void meaning, and construction geometry stays excluded. **Distance** retains the existing specified-depth behavior. Switching extent is a pending edit until Apply; Cancel preserves the accepted feature.
+
+Through-all rejects a cut that misses all material, erases the whole target, or cannot be confirmed at native precision. Its required target span is limited to one million millimetres. Failed cuts retain the preceding solid for inspection and block export until repaired.
 
 **Loft** builds a solid between 2–16 ordered sketch sections. Create the sketches on the same reference plane with different plane offsets, then add and reorder them in Properties. Offsets must progress in one direction; the app does not sort them for you. Each section needs one closed material boundary without holes. Construction geometry is excluded. Smooth uses fitted native surfaces; Ruled connects each pair of sections directly. Choose New body, Join or Cut as with Pad. If smooth fitting extends beyond the first or last section plane, adjust the section spacing or use Ruled. The resulting solid supports STEP/STL export and later features. Final-solid CAM sections still require analytic lines and circular arcs; unsupported fitted curves are rejected explicitly.
 

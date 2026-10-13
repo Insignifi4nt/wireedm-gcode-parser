@@ -6,6 +6,7 @@ import { WORKBENCH_FILE_TRANSACTION_PATH } from '@/domain/storage/workbenchFileT
 import { createWorkbenchBackup, removeUnreferencedWorkbenchFiles, restoreWorkbenchBackup } from '@/domain/storage/workbenchBackup';
 import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
+import type { CadPocketFeature } from './cadDocument';
 import { createCadDocument, parseCadDocument } from './cadSchema';
 import { importCadDxfSketch } from './cadDxfImport';
 import { importCadDxfCurve } from './cadCurveDxf';
@@ -49,6 +50,38 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     expect(reopened.document.features[1]).toMatchObject({ source: { text }, segments: curve.segments });
     expect(reopened.document.features[2]).toEqual(document.features[2]);
     expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+  });
+  it('round trips Through-all Pocket, its exact sources and editable expressions without saving inactive dimensions', async () => {
+    const text = '\uFEFF0\r\nSECTION\r\n2\r\nENTITIES\r\n0\r\nCIRCLE\r\n10\r\n0\r\n20\r\n0\r\n40\r\n2\r\n0\r\nENDSEC\r\n0\r\nEOF\r\n';
+    const imported = importCadDxfSketch({ fileName: 'Profile.dxf', text, units: 'mm', sketchId: 'section' }).sketch;
+    const section = { ...imported, offset: 'station', profiles: imported.profiles.map(profile => ({ ...profile,
+      geometry: { kind: 'circle' as const, x: 0, y: 0, radius: 'radius' } })) };
+    const pocket: CadPocketFeature = { id: 'pocket', name: 'Through all', kind: 'pocket', suppressed: false,
+      sketchId: 'section', targetId: 'target', extent: { kind: 'through-all', direction: 'both' } };
+    const originalStep = '\uFEFFISO-10303-21;\r\n/* exact source 名称 */\r\nEND-ISO-10303-21;\r\n';
+    const document = parseCadDocument({ ...createCadDocument('Pocket originals', 'cad_pocket_save'), parameters: { radius: 2, station: 3 }, features: [
+      section, { kind: 'imported', id: 'target', name: 'Original target', suppressed: false,
+        source: { format: 'step', fileName: 'Target.step', encoding: 'utf8', data: originalStep } }, pocket,
+    ] });
+    const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const path = cadDocumentPath(document.id); const original = await adapter.readExactText?.(path);
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(document);
+    const writes = vi.spyOn(adapter, 'writeText');
+    for (const extra of [{ distance: 10 }, { operation: 'cut' }, { symmetric: true },
+      { extent: { kind: 'through-all' as const, direction: 'both' as const, distance: 10 } }]) {
+      const invalid = { ...document, features: [section, document.features[1], { ...pocket, ...extra }] };
+      await expect(saveCadDocument(adapter, invalid, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow();
+    }
+    expect(writes).not.toHaveBeenCalled();
+    expect(await adapter.readExactText?.(path)).toBe(original);
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+    const next = await saveCadDocument(adapter, { ...document, parameters: { radius: 4, station: -20 } },
+      { expectedSavedVersion: saved.savedVersion });
+    const reopened = await loadCadDocument(adapter, document.id);
+    expect(reopened).toEqual(next);
+    expect(reopened.document.features[0]).toMatchObject({ source: { text }, offset: 'station', profiles: [{ geometry: { radius: 'radius' } }] });
+    expect(reopened.document.features[1]).toMatchObject({ source: { data: originalStep } });
+    expect(reopened.document.features[2]).toEqual(pocket);
   });
   it('preserves an external edit made after the optimistic read and before the transaction captures its original', async () => {
     const document = parseCadDocument({ ...createCadDocument('Original', 'cad_external_race'), features: [{

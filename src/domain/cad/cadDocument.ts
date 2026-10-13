@@ -42,7 +42,11 @@ export interface CadSweepFeature extends CadFeatureBase {
   readonly kind: 'sweep'; readonly sketchId: string; readonly curveId: string;
   readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null;
 }
-export type CadFeature = CadSketchFeature | CadCurveFeature | CadSweepFeature
+export interface CadPocketFeature extends CadFeatureBase {
+  readonly kind: 'pocket'; readonly sketchId: string; readonly targetId: string;
+  readonly extent: { readonly kind: 'through-all'; readonly direction: 'positive' | 'negative' | 'both' };
+}
+export type CadFeature = CadSketchFeature | CadCurveFeature | CadSweepFeature | CadPocketFeature
   | (CadFeatureBase & { readonly kind: 'imported'; readonly source: CadSolidImportSource })
   | (CadFeatureBase & { readonly kind: 'extrude'; readonly sketchId: string; readonly distance: CadScalar; readonly symmetric: boolean; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })
   | (CadFeatureBase & { readonly kind: 'revolve'; readonly sketchId: string; readonly angle: CadScalar; readonly axis: 'x' | 'y'; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })

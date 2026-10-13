@@ -26,7 +26,7 @@ import { initialCadLoftSketchIds, inspectCadLoftCandidates } from './cadLoftUi';
 import { createCadSelectEscapeGuard } from './cadSelectEscape';
 import { CadCurveCreationFields } from './CadCurveCreationFields';
 import { CadCurveMeasurements } from './CadCurveMeasurements';
-import { prepareCadCurveReferences } from './cadCurveRendering';
+import { cadReferenceFeatureIds, prepareCadViewportReferences, selectCadViewportReferences } from './cadViewportReferences';
 import { initialCadSweepSourceIds, inspectCadSweepCandidates } from './cadSweepUi';
 const NO_MESHES: readonly CadBuildResult['meshes'][number][] = Object.freeze([]);
 import './cad-workbench.css';
@@ -64,7 +64,7 @@ export interface CadWorkbenchProps {
 }
 
 const featureIcons: Record<CadFeature['kind'], LucideIcon> = {
-  sketch: PencilRuler, curve: Spline, imported: Box, extrude: Box, revolve: RotateCw, loft: Layers, sweep: Spline, fillet: CircleDot, chamfer: Scissors, shell: Box, boolean: Layers, transform: Move3D, 'linear-pattern': Copy, 'circular-pattern': RotateCw, mirror: Copy,
+  sketch: PencilRuler, curve: Spline, imported: Box, extrude: Box, pocket: Box, revolve: RotateCw, loft: Layers, sweep: Spline, fillet: CircleDot, chamfer: Scissors, shell: Box, boolean: Layers, transform: Move3D, 'linear-pattern': Copy, 'circular-pattern': RotateCw, mirror: Copy,
 };
 
 function featureDraft(kind: CadFeature['kind'], document: CadDocument, selected: CadFeature | undefined, bodyIds: readonly string[], plane: CadPlane = 'XY'): CadFeature {
@@ -78,6 +78,7 @@ function featureDraft(kind: CadFeature['kind'], document: CadDocument, selected:
     case 'curve': return { ...base, kind, plane, offset: 0, segments: [] };
     case 'imported': throw new Error('Use File > Import to add an external solid.');
     case 'extrude': if (!sketch) throw new Error('Create a sketch with a closed profile before adding a Pad.'); return { ...base, kind, sketchId: sketch.id, distance: 10, symmetric: false, operation: 'new', targetId: null };
+    case 'pocket': if (!sketch || !body) throw new Error('Through-all Pocket requires a closed sketch and a target body.'); return { ...base, kind, sketchId: sketch.id, targetId: body.id, extent: { kind: 'through-all', direction: 'both' } };
     case 'revolve': if (!sketch) throw new Error('Create a sketch with a closed profile before adding a Revolve.'); return { ...base, kind, sketchId: sketch.id, angle: 360, axis: 'y', operation: 'new', targetId: null };
     case 'loft': return { ...base, kind, sketchIds: initialCadLoftSketchIds(inspectCadLoftCandidates(document), selected?.kind === 'sketch' ? selected.id : undefined), ruled: false, operation: 'new', targetId: null };
     case 'sweep': return { ...base, kind, ...initialCadSweepSourceIds(inspectCadSweepCandidates(document), selected?.id), operation: 'new', targetId: null };
@@ -150,7 +151,9 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const curveCreation = newFeature?.kind === 'curve' ? newFeature : null;
   const canvasReference = curveCreation ?? curve ?? sketch;
   const selectedCurve = selected?.kind === 'curve' ? selected : curve;
-  const references = useMemo(() => prepareCadCurveReferences(document.features, document.parameters), [document.features, document.parameters]);
+  const preparedReferences = useMemo(() => prepareCadViewportReferences(document.features, document.parameters), [document.features, document.parameters]);
+  const references = useMemo(() => selectCadViewportReferences(preparedReferences, document.features, selectedId), [preparedReferences, document.features, selectedId]);
+  const visibleReferenceIds = useMemo(() => cadReferenceFeatureIds(references), [references]);
   const hasActiveBodyFeatures = document.features.some(feature => !feature.suppressed && cadFeatureProducesBody(feature));
   const displayedMeshes = hasActiveBodyFeatures ? build?.meshes ?? NO_MESHES : NO_MESHES;
   useEffect(() => { if (!hasActiveBodyFeatures) setPickMode('body'); }, [hasActiveBodyFeatures]);
@@ -334,7 +337,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   viewportBindings.current = {
     document, documentVersion: props.documentVersion, dirty, selectedFeatureId: selected?.id ?? null, selectedProfileId: profile?.id ?? null,
     sketchId: sketch?.id ?? null, curveId: curve?.id ?? null, workflowOpen: pending, busy: storageBusy, buildVersion: props.buildVersion,
-    buildState, visibleBodyIds: currentBodyIds, rendered: renderedControls.current,
+    buildState, visibleBodyIds: currentBodyIds, visibleReferenceIds, rendered: renderedControls.current,
     buildId: topologyReady ? build?.buildId ?? null : null, pickMode, topologySelection, meshes: build?.meshes ?? [],
     selectFeature: choose,
     editSketch: (id) => { const target = document.features.find((feature) => feature.kind === 'sketch' && feature.id === id); if (target?.kind === 'sketch') editSketch(target); },
@@ -382,7 +385,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       </aside>
       {panelLayout.kind === 'resizable' && <RailResizeHandle label="Resize CAD model tree" side="left" className="cad-panel-resizer" data-cad-panel-resizer
         width={panelLayout.treeWidth} minWidth={CAD_PANEL_LIMITS.tree.minimum} maxWidth={panelLayout.treeMaximum} onWidthChange={panels.setTreeWidth} />}
-      <section className="cad-center" aria-label="Modeling area">{canvasReference ? <CadSketchCanvas key={canvasReference.id} sketch={canvasReference} parameters={document.parameters} tool={tool} selectedProfileId={profileId} onSelectProfile={canvasReference.kind === 'curve' ? () => undefined : selectProfile} onAddProfile={addProfile} onAddCurve={addCurve} onCancelCurve={cancel} curveCreation={Boolean(curveCreation)} onPendingChange={setDrawingPending} onError={setError} cancelSignal={cancelSignal} interactionLocked={curveCreation ? editorPending || parameterPending || namePending || storageBusy || deleteFeature !== null || resolvingTopology !== null : pendingOutsideDrawing || storageBusy} viewLocked={curveCreation ? drawingPending || storageBusy : locked} onControlsReady={publishRenderedControls} /> : <CadViewport emptyAction={emptyAction} meshes={displayedMeshes} references={references} referenceVersion={props.documentVersion} selectedId={selectedId} onSelect={choose} interactionLocked={locked} onControlsReady={publishRenderedControls} pickMode={pickMode} topologySelection={topologySelection} pickingEnabled={topologyReady} onPickMode={props.onInspectTopology && props.onResolveSelection ? (mode) => run(() => viewportControls.apply({ kind: 'set-pick-mode', mode })) : undefined} onTopologyPick={pickTopology} />}
+      <section className="cad-center" aria-label="Modeling area">{canvasReference ? <CadSketchCanvas key={`${document.id}/${canvasReference.id}`} sketch={canvasReference} parameters={document.parameters} tool={tool} selectedProfileId={profileId} onSelectProfile={canvasReference.kind === 'curve' ? () => undefined : selectProfile} onAddProfile={addProfile} onAddCurve={addCurve} onCancelCurve={cancel} curveCreation={Boolean(curveCreation)} onPendingChange={setDrawingPending} onError={setError} cancelSignal={cancelSignal} interactionLocked={curveCreation ? editorPending || parameterPending || namePending || storageBusy || deleteFeature !== null || resolvingTopology !== null : pendingOutsideDrawing || storageBusy} viewLocked={curveCreation ? drawingPending || storageBusy : locked} onControlsReady={publishRenderedControls} /> : <CadViewport emptyAction={emptyAction} meshes={displayedMeshes} references={references} referenceVersion={props.documentVersion} selectedId={selectedId} onSelect={choose} interactionLocked={locked} onControlsReady={publishRenderedControls} pickMode={pickMode} topologySelection={topologySelection} pickingEnabled={topologyReady} onPickMode={props.onInspectTopology && props.onResolveSelection ? (mode) => run(() => viewportControls.apply({ kind: 'set-pick-mode', mode })) : undefined} onTopologyPick={pickTopology} />}
         {buildState === 'building' && <div className="cad-build-overlay" role="status"><Loader2 size={13} className="cad-spin" /> Building solid geometry…</div>}
         {build?.diagnostics.length ? <div className="cad-diagnostics" role="alert">{build.diagnostics.map((diagnostic, index) => <button key={`${diagnostic.code}-${index}`} disabled={locked} onClick={() => diagnostic.featureId && choose(diagnostic.featureId)}><span>!</span>{diagnostic.featureId ? `${document.features.find((entry) => entry.id === diagnostic.featureId)?.name ?? 'Feature'}: ` : ''}{diagnostic.message}</button>)}</div> : null}
         {document.features.length > 0 && <div className="cad-timeline" aria-label="Feature history"><span className="cad-timeline-label">HISTORY</span>{document.features.map((feature, index) => { const Icon = featureIcons[feature.kind]; return <button key={feature.id} className={selectedId === feature.id ? 'is-selected' : ''} disabled={locked} title={`${index + 1}. ${feature.name}${feature.suppressed ? ' · suppressed' : ''}`} aria-label={`Select ${feature.name} in history`} onClick={() => choose(feature.id)}><Icon size={16} /><small>{index + 1}</small></button>; })}</div>}

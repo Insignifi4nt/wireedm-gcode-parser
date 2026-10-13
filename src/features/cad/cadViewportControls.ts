@@ -26,7 +26,7 @@ export const CadViewportCommandSchema = Type.Union([
 export type CadViewportCommand = Static<typeof CadViewportCommandSchema>;
 
 export type CadRenderedViewState =
-  | { readonly mode: 'solid'; readonly available: boolean; readonly view: CadNamedView | 'Custom'; readonly gridVisible: boolean; readonly zoom: number; readonly revision: number; readonly hoveredTopology?: CadTopologyHit | null; readonly referenceVersion?: string | null }
+  | { readonly mode: 'solid'; readonly available: boolean; readonly view: CadNamedView | 'Custom'; readonly gridVisible: boolean; readonly zoom: number; readonly revision: number; readonly hoveredTopology?: CadTopologyHit | null; readonly referenceVersion?: string | null; readonly referenceFeatureIds?: readonly string[] }
   | { readonly mode: 'sketch' | 'curve'; readonly available: boolean; readonly plane: CadPlane; readonly gridVisible: boolean; readonly snapEnabled: boolean; readonly gridStepMm: number; readonly centerMm: readonly [number, number]; readonly heightSpanMm: number; readonly revision: number };
 
 export interface CadRenderedViewControls {

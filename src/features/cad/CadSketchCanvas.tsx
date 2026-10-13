@@ -3,7 +3,7 @@ import { Check, Grid2X2, Magnet, Maximize2, Undo2, X } from 'lucide-react';
 import type { CadCurveFeature, CadPathSegment, CadProfile, CadSketchFeature, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { resolveCadCurve } from '@/domain/cad/cadCurve';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
-import { cadAnalyticPathMetrics, cadProfileToEntities, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
+import { cadProfileToEntities, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
 import type { DxfEntity } from '@/domain/dxf/types';
 import { captureSvgPreview } from '@/features/editor/captureEditorPreview';
 import { ToolError } from '@/features/webmcp/siteTools';
@@ -13,6 +13,7 @@ import { cadArcSvgPath } from './cadSketchSvg';
 import { createCadSketchProfilePicker } from './cadSketchPicking';
 import { cadPathDraftEndpoint, closeCadPathDraft, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, updateCadPathDraft, type CadPathDrawingAction } from './cadPathDrawing';
 import { CadPathDraftGeometry, CadPathSegmentGeometry } from './CadPathDraftGeometry';
+import { cadProfileReferenceGeometry } from './cadViewportReferences';
 
 function AnalyticEntity({ entity }: { entity: DxfEntity }) {
   switch (entity.type) {
@@ -72,6 +73,7 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
   const [center, setCenter] = useState<SketchPoint>([0, 0]);
   const [span, setSpan] = useState(160);
   const [aspect, setAspect] = useState(1.3);
+  const measuredAspect = useRef(aspect);
   const [snap, setSnap] = useState(true);
   const [grid, setGrid] = useState(true);
   const [gridStep, setGridStep] = useState(5);
@@ -101,10 +103,11 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
   const currentView = useRef<CadRenderedViewState>({ mode: sketch.kind, available: false, plane: sketch.plane, gridVisible: grid, snapEnabled: snap, gridStepMm: gridStep, centerMm: center, heightSpanMm: span, revision: viewRevision.current.revision });
   currentView.current = Object.freeze({ mode: sketch.kind, available: Boolean(svg.current), plane: sketch.plane, gridVisible: grid, snapEnabled: snap, gridStepMm: gridStep, centerMm: Object.freeze([...center] satisfies [number, number]), heightSpanMm: span, revision: viewRevision.current.revision });
   const fitView = useRef<(() => void) | null>(null);
+  const initialCursorFit = useRef(false);
   useLayoutEffect(() => {
     const container = host.current;
     if (!container) return;
-    const measure = () => { if (container.clientWidth && container.clientHeight) setAspect(container.clientWidth / container.clientHeight); };
+    const measure = () => { if (container.clientWidth && container.clientHeight) { measuredAspect.current = container.clientWidth / container.clientHeight; setAspect(measuredAspect.current); } };
     // Commit the actual aspect before another task can see capture availability.
     // ResizeObserver's first asynchronous delivery then repeats this measurement.
     measure();
@@ -175,31 +178,26 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
     if (savedCurve) coordinates.push([savedCurve.bounds.minX, savedCurve.bounds.minY], [savedCurve.bounds.maxX, savedCurve.bounds.maxY]);
     for (const profile of profiles) {
       try {
-        const geometry = resolveCadProfile(profile.geometry, parameters);
-        switch (geometry.kind) {
-          case 'rectangle': coordinates.push([geometry.x, geometry.y], [geometry.x + geometry.width, geometry.y + geometry.height]); break;
-          case 'circle': coordinates.push([geometry.x - geometry.radius, geometry.y - geometry.radius], [geometry.x + geometry.radius, geometry.y + geometry.radius]); break;
-          case 'polygon': coordinates.push(...geometry.points); break;
-          case 'path': {
-            const bounds = cadAnalyticPathMetrics(geometry).bounds;
-            coordinates.push([bounds.minX, bounds.minY], [bounds.maxX, bounds.maxY]); break;
-          }
-          case 'slot': {
-            const angle = geometry.angle * Math.PI / 180;
-            for (const [x, y] of [[-geometry.length / 2, -geometry.width / 2], [geometry.length / 2, geometry.width / 2], [-geometry.length / 2, geometry.width / 2], [geometry.length / 2, -geometry.width / 2]]) coordinates.push([geometry.x + x * Math.cos(angle) - y * Math.sin(angle), geometry.y + x * Math.sin(angle) + y * Math.cos(angle)]);
-            break;
-          }
-        }
+        const { bounds } = cadProfileReferenceGeometry(profile.geometry, parameters);
+        coordinates.push([bounds.minX, bounds.minY], [bounds.maxX, bounds.maxY]);
       } catch { /* Invalid profiles retain their diagnostic in the property editor. */ }
     }
     if (!coordinates.length) { setCenter([0, 0]); setSpan(160); return; }
     const xs = coordinates.map((point) => point[0]), ys = coordinates.map((point) => point[1]);
     const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-    setCenter([(minX + maxX) / 2, (minY + maxY) / 2]);
-    setSpan(Math.max(20, maxY - minY, (maxX - minX) / aspect) * 1.25);
+    const target: SketchPoint = [minX / 2 + maxX / 2, minY / 2 + maxY / 2];
+    const heightSpan = Math.max(20, maxY - minY, (maxX - minX) / measuredAspect.current) * 1.25;
+    setCenter(target); setSpan(heightSpan);
+    if (initialCursorFit.current) {
+      const snapped = snapSketchPoint(target, gridStep, snap);
+      setCursor(Math.abs(snapped[0] - target[0]) <= heightSpan * measuredAspect.current / 2 && Math.abs(snapped[1] - target[1]) <= heightSpan / 2 ? snapped : target);
+    }
   };
   fitView.current = fit;
-  useLayoutEffect(() => { if (sketch.kind === 'curve' && !curveCreation) fitView.current?.(); }, [sketch.id, sketch.kind, curveCreation]);
+  useLayoutEffect(() => {
+    if (curveCreation) return;
+    initialCursorFit.current = true; fitView.current?.(); initialCursorFit.current = false;
+  }, [sketch.id, sketch.kind, curveCreation]);
   const pathPreview = useMemo(() => tool === 'path' ? previewCadPathDraft(pathDraft, cursor) : { kind: 'none' as const }, [tool, pathDraft, cursor]);
   const pathMode = pathDraft.kind === 'arc-through' ? 'arc' : pathDraft.mode;
   const pathEnd = pathDraft.kind === 'idle' ? null : cadPathDraftEndpoint(pathDraft);

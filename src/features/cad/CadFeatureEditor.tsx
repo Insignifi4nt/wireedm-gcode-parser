@@ -10,15 +10,16 @@ import { cadVisibleBodyIds } from '@/domain/cad/cadSchema';
 import { CadTopologyQuerySummary } from './CadTopologyQuerySummary';
 import { CadLoftSections } from './CadLoftSections';
 import { CadSweepSources } from './CadSweepSources';
+import { CadExtrudeFields } from './CadExtrudeFields';
 
 export const featureLabels: Record<CadFeature['kind'], string> = {
-  sketch: 'Sketch', curve: 'Curve', imported: 'Imported solid', extrude: 'Pad / Pocket', revolve: 'Revolve', loft: 'Loft', sweep: 'Sweep', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / Rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
+  sketch: 'Sketch', curve: 'Curve', imported: 'Imported solid', extrude: 'Pad / Pocket', pocket: 'Pocket', revolve: 'Revolve', loft: 'Loft', sweep: 'Sweep', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / Rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
 };
 
 const planeOptions = (['XY', 'XZ', 'YZ'] satisfies CadPlane[]).map((value) => ({ value, label: `${value} plane` }));
 const operationOptions = [{ value: 'new', label: 'New body' }, { value: 'join', label: 'Join to body' }, { value: 'cut', label: 'Cut from body' }] satisfies { value: 'new' | 'join' | 'cut'; label: string }[];
 
-export function CadFeatureEditor({ feature, document, isNew, onApply, onCancel, onPendingChange, currentBodyIds }: {
+interface CadFeatureEditorProps {
   feature: CadFeature;
   document: CadDocument;
   isNew: boolean;
@@ -26,7 +27,16 @@ export function CadFeatureEditor({ feature, document, isNew, onApply, onCancel, 
   onCancel(): void;
   onPendingChange(pending: boolean): void;
   currentBodyIds?: readonly string[];
-}) {
+}
+
+export function CadFeatureEditor(props: CadFeatureEditorProps) {
+  // Accepted same-ID kind conversions must reset the form before an old draft
+  // is rendered against incompatible source fields. Local extent toggles keep
+  // the accepted kind until Apply, so their dormant expressions remain intact.
+  return <CadFeatureEditorForm key={`${props.feature.id}/${props.feature.kind}`} {...props} />;
+}
+
+function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onPendingChange, currentBodyIds }: CadFeatureEditorProps) {
   const [draft, setDraft] = useState(feature);
   const [changed, setChanged] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,9 +65,13 @@ export function CadFeatureEditor({ feature, document, isNew, onApply, onCancel, 
     case 'sketch': fields = <><SelectField label="Reference plane" value={draft.plane} options={planeOptions} onChange={(plane) => update({ ...draft, plane })} />{scalar('Plane offset', draft.offset, (offset) => update({ ...draft, offset }))}{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
     case 'curve': fields = <><SelectField label="Reference plane" value={draft.plane} options={planeOptions} onChange={plane => update({ ...draft, plane })} />{scalar('Plane offset', draft.offset, offset => update({ ...draft, offset }))}<CadPathSegmentFields label="Curve" segments={draft.segments} parameters={document.parameters} onChange={segments => update({ ...draft, segments })} />{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
     case 'extrude':
+    case 'pocket': {
+      if (feature.kind !== 'extrude' && feature.kind !== 'pocket') throw new Error('Extrude editor source changed.');
+      fields = <CadExtrudeFields feature={draft} initialFeature={feature} document={document} bodies={bodies} sketches={sketches} onChange={update} />; break;
+    }
     case 'revolve': {
       fields = <><SelectField label="Profile sketch" value={draft.sketchId} options={sketches} onChange={(sketchId) => update({ ...draft, sketchId })} />
-        {draft.kind === 'extrude' ? <>{scalar('Length', draft.distance, (distance) => update({ ...draft, distance }))}<label className="cad-check"><input type="checkbox" checked={draft.symmetric} onChange={(event) => update({ ...draft, symmetric: event.target.checked })} /> Symmetric about sketch plane</label></> : <>{scalar('Angle', draft.angle, (angle) => update({ ...draft, angle }), 'deg')}<SelectField label="Sketch axis" value={draft.axis} options={[{ value: 'x', label: 'Horizontal X' }, { value: 'y', label: 'Vertical Y' }]} onChange={(axis) => update({ ...draft, axis })} /></>}
+        {scalar('Angle', draft.angle, (angle) => update({ ...draft, angle }), 'deg')}<SelectField label="Sketch axis" value={draft.axis} options={[{ value: 'x', label: 'Horizontal X' }, { value: 'y', label: 'Vertical Y' }]} onChange={(axis) => update({ ...draft, axis })} />
         <SelectField label="Operation" value={draft.operation} options={operationOptions} onChange={(operation) => update({ ...draft, operation, targetId: operation === 'new' ? null : draft.targetId ?? bodies.at(-1)?.value ?? null })} />
         {draft.operation !== 'new' && body('Target body', draft.targetId ?? '', (targetId) => update({ ...draft, targetId }))}
       </>; break;

@@ -92,6 +92,58 @@ async function createBox(page: Page) {
   return { draft, buildId: build.buildId };
 }
 
+test('human Through-all Pocket follows target changes and exports an exact agent CAM section', async ({ page }) => {
+  const { draft } = await createBox(page);
+  expect(await call(page, 'cad_describe_features', { kind: 'pocket' })).toMatchObject({ kind: 'pocket', description: expect.stringContaining('through-all') });
+  await call(page, 'cad_edit_document', { expectedVersion: draft.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'bore', name: 'Bore profile', kind: 'sketch', suppressed: false, plane: 'XY', offset: 'height / 2',
+    profiles: [{ id: 'circle', name: 'Bore', construction: false, geometry: { kind: 'circle', x: 10, y: 5, radius: 2 } }],
+  } }] });
+  const before = await context(page);
+  await call(page, 'cad_build', { expectedVersion: before.version });
+  await call(page, 'cad_set_viewport', { expectedVersion: before.version, command: { kind: 'select-feature', featureId: 'bore' } });
+  await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
+  const properties = page.getByRole('complementary', { name: 'Feature properties' });
+  await properties.getByLabel('Name', { exact: true }).fill('Through bore');
+  await properties.getByRole('combobox', { name: 'Operation', exact: true }).selectOption('cut');
+  await properties.getByRole('combobox', { name: 'Extent', exact: true }).selectOption('through-all');
+  await properties.getByRole('combobox', { name: 'Direction', exact: true }).selectOption('both');
+  await expect(properties.getByRole('combobox', { name: 'Target body', exact: true })).toHaveValue('pad');
+  await expect(properties.getByRole('textbox', { name: 'Length mm', exact: true })).toHaveCount(0);
+  expect(await context(page)).toMatchObject({ version: before.version, workflowOpen: true });
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: before.version, edits: [{ kind: 'set-parameter', name: 'height', value: 9 }] }))
+    .toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  await properties.getByRole('button', { name: 'Apply', exact: true }).click();
+  const accepted = await context(page);
+  const features = await call(page, 'cad_read_features', { expectedVersion: accepted.version });
+  if (!Array.isArray(features.items)) throw new Error('Missing Pocket history');
+  const pocket = features.items.at(-1) as CadFeature;
+  expect(pocket).toMatchObject({ kind: 'pocket', sketchId: 'bore', targetId: 'pad', extent: { kind: 'through-all', direction: 'both' } });
+  expect(pocket).not.toHaveProperty('distance'); expect(pocket).not.toHaveProperty('operation');
+  expect(await call(page, 'cad_build', { expectedVersion: accepted.version })).toMatchObject({ diagnostics: [], bodies: [{ featureId: pocket.id, volumeMm3: expect.closeTo((200 - 4 * Math.PI) * 5, 6) }] });
+  await properties.getByRole('combobox', { name: 'Extent', exact: true }).selectOption('distance');
+  await properties.getByRole('textbox', { name: 'Length mm', exact: true }).fill('height / 3');
+  await properties.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(await context(page)).toMatchObject({ version: accepted.version, workflowOpen: false });
+  expect(await call(page, 'cad_get_feature', { expectedVersion: accepted.version, featureId: pocket.id })).toMatchObject({ feature: pocket });
+  await call(page, 'cad_edit_document', { expectedVersion: accepted.version, edits: [{ kind: 'set-parameter', name: 'height', value: 9 }] });
+  const resized = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: resized.version })).toMatchObject({ diagnostics: [], bodies: [{ featureId: pocket.id, volumeMm3: expect.closeTo((200 - 4 * Math.PI) * 9, 6) }] });
+  await call(page, 'cad_set_viewport', { expectedVersion: resized.version, command: { kind: 'select-feature', featureId: null } });
+  await call(page, 'cad_set_viewport', { expectedVersion: resized.version, command: { kind: 'fit' } });
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: resized.version }));
+  await page.screenshot({ path: 'tmp/cad-through-all-pocket.png' });
+  const downloadPromise = page.waitForEvent('download');
+  await call(page, 'cad_export_solid', { expectedVersion: resized.version, format: 'step' });
+  const path = await (await downloadPromise).path(); if (!path) throw new Error('Missing Pocket STEP');
+  expect(await readFile(path, 'utf8')).toContain('ISO-10303-21;');
+  const section = { bodyId: pocket.id, plane: 'XY', offset: 8 };
+  expect(await call(page, 'cad_inspect_section', { expectedVersion: resized.version, section }))
+    .toMatchObject({ contourCount: 2, offset: 8 });
+  expect(await call(page, 'cad_send_section_to_cam', { expectedVersion: resized.version, section }))
+    .toMatchObject({ opened: true, section: { contourCount: 2, offset: 8 } });
+});
+
 test('compact polygon properties retain multiple vertex edits and commit one shared history step', async ({ page }) => {
   await prepare(page);
   const initial = await context(page);
@@ -184,6 +236,8 @@ test('ordered loft sections rebuild parametrically and carry an exact bored sect
     { kind: 'add-feature', feature: sectionSketch('upper', 'Upper section', 'rise', 8) }
   ] });
   const sections = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: sections.version }))
+    .toMatchObject({ ok: true, data: { documentVersion: sections.version, view: { available: true } } });
   await call(page, 'cad_set_viewport', { expectedVersion: sections.version, command: { kind: 'select-feature', featureId: 'lower' } });
   await page.getByRole('button', { name: 'Loft', exact: true }).click();
   await expect(page.getByLabel('Section 1', { exact: true })).toHaveValue('lower');
@@ -789,6 +843,118 @@ test('agent open curves stay exact through reference rendering, DXF exchange and
   await page.screenshot({ path: 'tmp/cad-open-curve.png' });
 });
 
+test('world-space sketch sections render without WASM and follow the selected feature sources', async ({ page }) => {
+  const wasmRequests: string[] = [];
+  page.context().on('request', request => { if (/\.wasm(?:\?|$)/.test(request.url())) wasmRequests.push(request.url()); });
+  await prepare(page); const initial = await context(page);
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Visible loft sections' });
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'add-feature', feature: { id: 'lower', name: 'Lower section', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false,
+      profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 12 } },
+        { id: 'construction', name: 'Construction guide', construction: true, geometry: { kind: 'circle', x: 0, y: 0, radius: 16 } }] } },
+    { kind: 'add-feature', feature: { id: 'upper', name: 'Upper section', kind: 'sketch', plane: 'XY', offset: 20, suppressed: false,
+      profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 8 } }] } },
+  ] });
+  const sections = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: sections.version }))
+    .toMatchObject({ ok: true, data: { buildState: 'idle', buildVersion: null, visibleBodyIds: [],
+      view: { referenceVersion: sections.version, referenceFeatureIds: ['lower', 'upper'] } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: sections.version, command: { kind: 'set-grid', visible: false } });
+  await call(page, 'cad_set_viewport', { expectedVersion: sections.version, command: { kind: 'fit' } });
+  const capture = await call(page, 'cad_capture_preview', { expectedVersion: sections.version });
+  if (typeof capture.previewUrl !== 'string') throw new Error('Missing world-space sketch preview');
+  const pixels = await page.evaluate(async url => {
+    const image = new Image(); image.src = url; await image.decode();
+    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+    const context = canvas.getContext('2d'); if (!context) throw new Error('Missing pixels'); context.drawImage(image, 0, 0);
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let cyan = 0; for (let index = 0; index < data.length; index += 4) if (data[index] > 100 && data[index + 1] > 140 && data[index + 2] > 140 && data[index + 3] > 0) cyan++;
+    return cyan;
+  }, capture.previewUrl);
+  expect(pixels, 'Both Sketch sections must render before a Loft or solid engine exists').toBeGreaterThan(150);
+  await page.screenshot({ path: 'tmp/cad-world-sketch-sections.png' });
+  expect(wasmRequests, 'Sketch reference preparation and capture must not initialize WASM').toEqual([]);
+  await call(page, 'cad_edit_document', { expectedVersion: sections.version, edits: [
+    { kind: 'add-feature', feature: { id: 'loft', name: 'Loft', kind: 'loft', suppressed: false,
+      sketchIds: ['lower', 'upper'], ruled: true, operation: 'new', targetId: null } }
+  ] });
+  const solid = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: solid.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(6080 * Math.PI / 3, 6) }] });
+  await call(page, 'cad_set_viewport', { expectedVersion: solid.version, command: { kind: 'select-feature', featureId: null } });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: solid.version }))
+    .toMatchObject({ ok: true, data: { view: { referenceVersion: solid.version, referenceFeatureIds: [] } } });
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: solid.version }));
+  await call(page, 'cad_set_viewport', { expectedVersion: solid.version, command: { kind: 'select-feature', featureId: 'loft' } });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: solid.version }))
+    .toMatchObject({ ok: true, data: { view: { referenceVersion: solid.version, referenceFeatureIds: ['lower', 'upper'] } } });
+  expect(await call(page, 'cad_capture_preview', { expectedVersion: solid.version }))
+    .toMatchObject({ viewState: { selectedFeatureId: 'loft', view: { referenceFeatureIds: ['lower', 'upper'] } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: solid.version, command: { kind: 'select-feature', featureId: 'upper' } });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: solid.version }))
+    .toMatchObject({ ok: true, data: { view: { referenceFeatureIds: ['upper'] } } });
+  expect(await context(page)).toMatchObject({ version: solid.version, featureCount: 3, workflowOpen: false });
+});
+
+test('the first solid fits after reference-only viewing while later rebuilds preserve the camera', async ({ page }) => {
+  await prepare(page); const initial = await context(page);
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Tall pin' });
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'height', value: 300 },
+    { kind: 'add-feature', feature: { id: 'section', name: 'Pin section', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false,
+      profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 2 } }] } }
+  ] });
+  const outlined = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: outlined.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: outlined.version, referenceFeatureIds: ['section'] } } });
+  const before = await call(page, 'cad_get_viewport', { expectedVersion: outlined.version });
+  const outlineZoom = (before.view as { zoom: number }).zoom;
+  await call(page, 'cad_edit_document', { expectedVersion: outlined.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'pin', name: 'Pin', kind: 'extrude', suppressed: false, sketchId: 'section', distance: 'height', symmetric: false, operation: 'new', targetId: null
+  } }] });
+  const padded = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: padded.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(1200 * Math.PI, 5) }] });
+  await expect.poll(async () => {
+    const result = await rawCall(page, 'cad_get_viewport', { expectedVersion: padded.version }) as { ok: boolean; data?: { view?: { zoom?: number } } };
+    return result.ok && typeof result.data?.view?.zoom === 'number' ? result.data.view.zoom : outlineZoom;
+  }).toBeLessThan(outlineZoom / 10);
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: padded.version }));
+  await page.screenshot({ path: 'tmp/cad-first-solid-fit.png' });
+  const framed = await call(page, 'cad_get_viewport', { expectedVersion: padded.version });
+  await call(page, 'cad_edit_document', { expectedVersion: padded.version, edits: [{ kind: 'set-parameter', name: 'height', value: 600 }] });
+  const longer = await context(page);
+  await call(page, 'cad_build', { expectedVersion: longer.version });
+  expect((await call(page, 'cad_get_viewport', { expectedVersion: longer.version })).view).toMatchObject({ zoom: (framed.view as { zoom: number }).zoom });
+});
+
+test('far-origin imported Sketch fits on entry and keeps its view across dimension edits', async ({ page }) => {
+  await prepare(page); const initial = await context(page);
+  const text = '0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\n0\n10\n100000000\n20\n100000000\n40\n12\n0\nENDSEC\n0\nEOF\n';
+  const imported = await call(page, 'cad_import_dxf', { expectedVersion: initial.version, source: { format: 'dxf', fileName: 'far-circle.dxf', text } });
+  if (typeof imported.sketchId !== 'string') throw new Error('Missing imported Sketch ID');
+  const accepted = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: accepted.version }))
+    .toMatchObject({ ok: true, data: { view: { referenceVersion: accepted.version, referenceFeatureIds: [imported.sketchId] } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'edit-sketch', sketchId: imported.sketchId } });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: accepted.version }))
+    .toMatchObject({ ok: true, data: { view: { mode: 'sketch', available: true, centerMm: [100000000, 100000000], heightSpanMm: 30 } } });
+  expect(await call(page, 'cad_capture_preview', { expectedVersion: accepted.version })).toMatchObject({ source: '2d', sketchId: imported.sketchId });
+  const feature = await call(page, 'cad_get_feature', { expectedVersion: accepted.version, featureId: imported.sketchId });
+  const sketch = feature.feature as CadSketchFeature;
+  expect(sketch).toMatchObject({ kind: 'sketch', source: { text } });
+  // Reposition the exact imported profile by a parameter-independent plane-local transform
+  // in its public analytic definition. The existing canvas keeps the user's frame.
+  const profile = sketch.profiles[0];
+  if (profile.geometry.kind !== 'circle') throw new Error('Expected an exact imported circle');
+  await call(page, 'cad_edit_document', { expectedVersion: accepted.version, edits: [{ kind: 'update-feature', feature: { ...sketch,
+    profiles: [{ ...profile, geometry: { ...profile.geometry, x: 100000100 } }] } }] });
+  const changed = await context(page);
+  expect(await call(page, 'cad_get_viewport', { expectedVersion: changed.version }))
+    .toMatchObject({ view: { mode: 'sketch', centerMm: [100000000, 100000000], heightSpanMm: 30 } });
+  await call(page, 'cad_set_viewport', { expectedVersion: changed.version, command: { kind: 'fit' } });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: changed.version }))
+    .toMatchObject({ ok: true, data: { view: { centerMm: [100000100, 100000000], heightSpanMm: 30 } } });
+});
+
 test('small exact reference arcs remain visible far from the world origin', async ({ page }) => {
   await prepare(page); const initial = await context(page);
   await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Far reference' });
@@ -811,6 +977,60 @@ test('small exact reference arcs remain visible far from the world origin', asyn
     return count;
   }, capture.previewUrl);
   expect(pixels, 'R1 reference arc must not collapse when uploaded to Float32 graphics buffers').toBeGreaterThan(80);
+});
+
+test('small far-origin solids retain rendered faces, edges and physical topology picking', async ({ page }) => {
+  await prepare(page); const initial = await context(page);
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Far precision block' });
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'add-feature', feature: { id: 'section', name: 'Square', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false,
+      profiles: [{ id: 'square', name: 'Square', construction: false, geometry: { kind: 'rectangle', x: -1, y: -1, width: 2, height: 2, cornerRadius: 0 } }] } },
+    { kind: 'add-feature', feature: { id: 'pad', name: 'Block', kind: 'extrude', suppressed: false, sketchId: 'section', distance: 2, symmetric: false, operation: 'new', targetId: null } },
+    { kind: 'add-feature', feature: { id: 'far', name: 'Far block', kind: 'transform', suppressed: false, sourceId: 'pad', translation: [100000000, 100000000, 100000000], rotation: [0, 0, 0] } },
+  ] });
+  const accepted = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: accepted.version })).toMatchObject({ diagnostics: [], bodies: [{ featureId: 'far', volumeMm3: expect.closeTo(8, 6) }] });
+  await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'select-feature', featureId: null } });
+  await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'set-view', view: 'Top' } });
+  await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'fit' } });
+  await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'set-grid', visible: false } });
+  await expect(page.getByLabel('Named view')).toHaveValue('Top');
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: accepted.version }));
+  // Keep the same selected-body colour in both images so the pixel difference
+  // measures the translucent face highlight, not a change in body selection.
+  await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'select-feature', featureId: 'far' } });
+  await page.getByRole('button', { name: 'Face', exact: true }).click();
+  const beforeFace = await call(page, 'cad_capture_preview', { expectedVersion: accepted.version });
+  const canvas = page.locator('.cad-viewport canvas');
+  const bounds = await canvas.boundingBox(); if (!bounds) throw new Error('Missing solid canvas');
+  await canvas.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: accepted.version }))
+    .toMatchObject({ ok: true, data: { topologySelection: { bodyId: 'far', picks: [{ kind: 'face' }] } } });
+  const highlighted = await call(page, 'cad_capture_preview', { expectedVersion: accepted.version });
+  await expectRenderedSolidCapture(page, highlighted);
+  if (typeof highlighted.previewUrl !== 'string' || typeof beforeFace.previewUrl !== 'string') throw new Error('Missing face capture');
+  const faceHighlightPixels = await page.evaluate(async urls => {
+    const pixels = async (url: string) => {
+      const image = new Image(); image.src = url; await image.decode(); const canvas = document.createElement('canvas');
+      canvas.width = image.width; canvas.height = image.height; const context = canvas.getContext('2d'); if (!context) throw new Error('Missing pixels');
+      context.drawImage(image, 0, 0); return context.getImageData(0, 0, canvas.width, canvas.height).data;
+    };
+    const [before, after] = await Promise.all(urls.map(pixels));
+    let count = 0; for (let i = 0; i < after.length; i += 4) if (after[i] > before[i] + 12 && after[i + 2] < before[i + 2] - 2 && after[i + 3] > 0) count++;
+    return count;
+  }, [beforeFace.previewUrl, highlighted.previewUrl]);
+  expect(faceHighlightPixels, 'The selected native face highlight must not collapse at 1e8 mm').toBeGreaterThan(100);
+  await page.screenshot({ path: 'tmp/cad-far-origin-face.png' });
+  await page.getByRole('button', { name: 'Edge', exact: true }).click();
+  const current = await call(page, 'cad_get_viewport', { expectedVersion: accepted.version });
+  const view = current.view as { zoom: number };
+  const pixelsPerMm = bounds.height * view.zoom / 170;
+  await canvas.click({ position: { x: bounds.width / 2 + pixelsPerMm, y: bounds.height / 2 } });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: accepted.version }))
+    .toMatchObject({ ok: true, data: { topologySelection: { bodyId: 'far', picks: [{ kind: 'edge' }] } } });
+  const edgeCapture = await call(page, 'cad_capture_preview', { expectedVersion: accepted.version });
+  await expectRenderedSolidCapture(page, edgeCapture);
+  expect(await context(page)).toMatchObject({ version: accepted.version });
 });
 
 test('a missing CAD view module retains the accepted draft and live agent tools for save and download recovery', async ({ page }) => {

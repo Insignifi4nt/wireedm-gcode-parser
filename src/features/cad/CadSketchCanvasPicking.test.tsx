@@ -69,15 +69,16 @@ describe('sketch canvas profile picking', () => {
 
   it('uses the updated pan and zoom transform with six screen pixels of outline tolerance', async () => {
     const h = await fixture([{ ...circle('guide', 0, 0, 10), construction: true }]);
+    const initialBox = h.svg.getAttribute('viewBox'); const initialSpan = Number(initialBox!.split(' ')[3]);
     await act(async () => h.svg.dispatchEvent(new MouseEvent('pointerdown', { button: 2, clientX: 410, clientY: 320, bubbles: true })));
     await act(async () => h.svg.dispatchEvent(new MouseEvent('pointermove', { buttons: 2, clientX: 510, clientY: 380, bubbles: true })));
     await act(async () => h.svg.dispatchEvent(new MouseEvent('pointerup', { button: 2, bubbles: true })));
-    expect(h.svg.getAttribute('viewBox')).not.toBe('-106.66666666666666 -80 213.33333333333331 160');
-    await h.click(10 + 5 * 160 / 600, 0); expect(h.selected).toHaveBeenLastCalledWith('guide');
+    expect(h.svg.getAttribute('viewBox')).not.toBe(initialBox);
+    await h.click(10 + 5 * initialSpan / 600, 0); expect(h.selected).toHaveBeenLastCalledWith('guide');
     await act(async () => h.svg.dispatchEvent(new WheelEvent('wheel', { deltaY: -Math.log(2) * 1000, bubbles: true })));
-    expect(Number(h.svg.getAttribute('viewBox')!.split(' ')[3])).toBeCloseTo(80);
-    await h.click(10 + 5 * 80 / 600, 0); expect(h.selected).toHaveBeenLastCalledWith('guide');
-    await h.click(10 + 7 * 80 / 600, 0); expect(h.selected).toHaveBeenLastCalledWith(null);
+    expect(Number(h.svg.getAttribute('viewBox')!.split(' ')[3])).toBeCloseTo(initialSpan / 2);
+    await h.click(10 + 5 * initialSpan / 2 / 600, 0); expect(h.selected).toHaveBeenLastCalledWith('guide');
+    await h.click(10 + 7 * initialSpan / 2 / 600, 0); expect(h.selected).toHaveBeenLastCalledWith(null);
   });
 
   it('keeps keyboard and assistive activation while rejecting locked and non-left clicks', async () => {

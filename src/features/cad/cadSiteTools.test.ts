@@ -6,6 +6,24 @@ import { cadSiteTools } from './cadSiteTools';
 import type { CadController } from './useCadController';
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('discovers strict Through-all Pocket and rejects inactive distance fields before shared operations', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid Pocket reached the controller'); });
+    const edit = cadSiteTools(controller).find(entry => entry.name === 'cad_edit_document');
+    if (!edit) throw new Error('Missing edit tool');
+    const complete = { kind: 'pocket', id: 'cut', name: 'Through bore', suppressed: false, sketchId: 'bore', targetId: 'stock', extent: { kind: 'through-all', direction: 'both' } };
+    for (const feature of [{ ...complete, distance: 100 }, { ...complete, symmetric: true }, { ...complete, operation: 'cut' },
+      { ...complete, extent: { kind: 'through-all', direction: 'up' } }, { ...complete, targetId: null }]) {
+      const input = { expectedVersion: 'current', edits: [{ kind: 'add-feature', feature }] };
+      expect(Value.Check(edit.inputSchema, input)).toBe(true);
+      expect(await edit.execute(input)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(controller).not.toHaveBeenCalled();
+    const discovery = cadSiteTools(() => ({} as CadController)).find(entry => entry.name === 'cad_describe_features');
+    expect(await discovery?.execute({ kind: 'pocket' })).toMatchObject({ ok: true, data: {
+      kind: 'pocket', description: expect.stringContaining('XZ -Y'), schema: { additionalProperties: false,
+        required: expect.arrayContaining(['sketchId', 'targetId', 'extent']), properties: { extent: { additionalProperties: false } } },
+    } });
+  });
   it('discovers Sweep and rejects incomplete geometry edits behind compact registration', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid feature reached the controller'); });
     const tools = cadSiteTools(controller); const edit = tools.find(entry => entry.name === 'cad_edit_document');

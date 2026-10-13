@@ -471,7 +471,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   async function exportDxf(sketchId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed();
     const { cadSketchToDxf } = await import('@/domain/cad/cadCam');
-    signal?.throwIfAborted(); session.assertVersion(expectedVersion); session.assertWorkflowClosed();
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
     const document = session.getSnapshot().document;
     const text = cadSketchToDxf(document, sketchId);
     const fileName = `${fileBase(document.name)}.dxf`;
@@ -481,7 +481,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   async function exportCurveDxf(curveId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed();
     const { cadCurveToDxf } = await import('@/domain/cad/cadCurveDxf');
-    signal?.throwIfAborted(); session.assertVersion(expectedVersion); session.assertWorkflowClosed();
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
     const document = session.getSnapshot().document;
     const text = cadCurveToDxf(document, curveId);
     const fileName = `${fileBase(document.name)}.dxf`;

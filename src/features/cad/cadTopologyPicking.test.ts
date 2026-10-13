@@ -3,21 +3,24 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import type { CadMesh } from '@/domain/cad/cadDocument';
 import { mergeTopologySelection, orthographicPixelSize, pickTopology, topologyGroupAt, validateTopologySelection } from './cadTopologyPicking';
+import { cadLocalRenderPositions, cadRenderOrigin } from './cadRenderCoordinates';
 
-function scene(edgeHeight = 5) {
+function scene(edgeHeight = 5, worldOffset = 0, scale = 1) {
   const camera = new THREE.OrthographicCamera(-50, 50, 50, -50, 0.1, 1000);
-  camera.position.set(0, 0, 100); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
-  const mesh: CadMesh = { featureId: 'body', name: 'Body', positions: [-20, -20, 5, 20, -20, 5, 20, 20, 5, -20, 20, 5],
-    normals: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2, 0, 2, 3], edges: [0, -10, edgeHeight, 0, 10, edgeHeight],
+  camera.position.set(worldOffset, worldOffset, worldOffset + 100); camera.lookAt(worldOffset, worldOffset, worldOffset); camera.updateMatrixWorld();
+  const positioned = (values: readonly number[]) => values.map(value => value * scale + worldOffset);
+  const mesh: CadMesh = { featureId: 'body', name: 'Body', positions: positioned([-20, -20, 5, 20, -20, 5, 20, 20, 5, -20, 20, 5]),
+    normals: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2, 0, 2, 3], edges: positioned([0, -10, edgeHeight, 0, 10, edgeHeight]),
     faceGroups: [{ start: 0, count: 6, key: 'face' }], edgeGroups: [{ start: 0, count: 2, key: 'edge' }], volume: 0,
-    bounds: { min: [-20, -20, 0], max: [20, 20, 5] } };
-  const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(mesh.positions, 3)); geometry.setIndex([...mesh.indices]);
-  const body = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); body.updateMatrixWorld();
-  const lineGeometry = new THREE.BufferGeometry(); lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(mesh.edges, 3));
-  const lines = new THREE.LineSegments(lineGeometry, new THREE.LineBasicMaterial()); lines.updateMatrixWorld();
+    bounds: { min: [worldOffset - 20 * scale, worldOffset - 20 * scale, worldOffset], max: [worldOffset + 20 * scale, worldOffset + 20 * scale, worldOffset + 5 * scale] } };
+  const origin = cadRenderOrigin(mesh.bounds);
+  const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(mesh.positions, origin), 3)); geometry.setIndex([...mesh.indices]);
+  const body = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); body.position.set(...origin); body.updateMatrixWorld();
+  const lineGeometry = new THREE.BufferGeometry(); lineGeometry.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(mesh.edges, origin), 3));
+  const lines = new THREE.LineSegments(lineGeometry, new THREE.LineBasicMaterial()); lines.position.set(...origin); lines.updateMatrixWorld();
   const raycaster = new THREE.Raycaster();
   const pick = (mode: 'edge' | 'face', x: number, y = 0) => {
-    const projected = new THREE.Vector3(x, y, edgeHeight).project(camera);
+    const projected = new THREE.Vector3(x * scale + worldOffset, y * scale + worldOffset, edgeHeight * scale + worldOffset).project(camera);
     raycaster.setFromCamera(new THREE.Vector2(projected.x, projected.y), camera);
     return pickTopology({ mode, raycaster, bodies: [body], edges: [lines], meshByObject: new Map<THREE.Object3D, CadMesh>([[body, mesh], [lines, mesh]]), camera, viewportHeight: 1000 });
   };
@@ -25,6 +28,16 @@ function scene(edgeHeight = 5) {
 }
 
 describe('CAD topology picking', () => {
+  it('picks far-origin two-millimetre faces and edges while retaining solid occlusion', () => {
+    const visible = scene(5, 100000000, .05);
+    try {
+      expect(visible.pick('face', 5, -5)).toEqual({ bodyId: 'body', pick: { kind: 'face', key: 'face' } });
+      expect(visible.pick('edge', 0)).toEqual({ bodyId: 'body', pick: { kind: 'edge', key: 'edge' } });
+    } finally { visible.dispose(); }
+    const hidden = scene(4.99, 100000000, .05);
+    try { expect(hidden.pick('edge', 0)).toBeNull(); }
+    finally { hidden.dispose(); }
+  });
   it('maps triangle-index and line-vertex group boundaries without mixing XYZ offsets', () => {
     const groups = [{ start: 0, count: 6, key: 'first' }, { start: 6, count: 3, key: 'second' }];
     expect(topologyGroupAt(groups, 5)?.key).toBe('first'); expect(topologyGroupAt(groups, 6)?.key).toBe('second');

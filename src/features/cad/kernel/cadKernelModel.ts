@@ -16,6 +16,9 @@ import { resolveCadLoftSections } from '../../../domain/cad/cadLoft';
 import { buildCadLoftSolid } from './cadKernelLoft';
 import { resolveCadSweepInputs } from '../../../domain/cad/cadSweep';
 import { buildCadSweepSolid } from './cadKernelSweep';
+import { resolveCadPocketInputs } from '../../../domain/cad/cadPocket';
+import { buildCadPocketCut } from './cadKernelPocket';
+import { meshCadKernelPreview } from './cadKernelMeshing';
 import { MAX_CAD_TOPOLOGY_ELEMENTS, parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
 
@@ -47,12 +50,10 @@ function validateSolid(shape: Shape3D) {
 }
 
 function shapeMesh(shape: Shape3D, feature: CadFeature, topology: CadKernelTopology): CadMesh {
-  const mesh = shape.mesh(meshOptions);
-  if (mesh.triangles.length > 3_000_000) throw new CadError('mesh-limit', 'The preview exceeds one million triangles. Simplify the model.');
   const box = shape.boundingBox;
   try {
     const [min, max] = box.bounds;
-    const edgeMesh = shape.meshEdges(meshOptions);
+    const { mesh, edgeMesh } = meshCadKernelPreview(shape, { min, max }, meshOptions);
     return { featureId: feature.id, name: feature.name, positions: mesh.vertices, normals: mesh.normals, indices: mesh.triangles,
       edges: edgeMesh.lines, ...topology.meshGroups(mesh, edgeMesh), volume: measureVolume(shape), bounds: { min, max } };
   } finally { box.delete(); }
@@ -118,7 +119,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
     }
   }
 
-  for (const feature of document.features) {
+  for (const [featureIndex, feature] of document.features.entries()) {
     if (feature.suppressed) continue;
     try {
       let result: Shape3D;
@@ -167,6 +168,13 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
             consumed.push(feature.targetId);
           } else result = own(buildCadSweepSolid(inputs));
           break;
+        }
+        case 'pocket': {
+          const target = body(feature.targetId);
+          const prefix = new Map(document.features.slice(0, featureIndex).map(entry => [entry.id, entry]));
+          const inputs = resolveCadPocketInputs(feature, prefix, document.parameters);
+          instances = boundedInstances(inputs.regionCount + instancesOf(feature.targetId));
+          result = own(buildCadPocketCut(target, inputs)); consumed.push(feature.targetId); break;
         }
         case 'fillet': case 'chamfer': {
           const target = body(feature.targetId);

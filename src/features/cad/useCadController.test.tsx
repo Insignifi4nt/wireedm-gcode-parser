@@ -435,6 +435,35 @@ describe('CAD controller asynchronous guards', () => {
     expect(JSON.stringify(receipt)).not.toContain('base64');
     expect(h.cad().previewArtifact?.previewUrl).toMatch(/^blob:/);
   });
+  it('keeps maximum-length reference visibility and capture receipts within the public tool budget', async () => {
+    const h = await harness();
+    const features: CadFeature[] = Array.from({ length: 256 }, (_, index) => ({ id: `s${String(index).padStart(3, '0')}${'x'.repeat(92)}`,
+      name: `Section ${index}`, kind: 'sketch', plane: 'XY', offset: index, suppressed: false,
+      profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 2 } }] }));
+    await act(async () => h.session.replace(parseCadDocument({ ...createCadDocument('Many sections', 'many_sections'), features })));
+    const snapshot = h.session.getSnapshot();
+    const state: CadViewportState = { documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
+      selectedFeatureId: features[0].id, selectedProfileId: null, sketchId: null, curveId: null, workflowOpen: false, busy: false,
+      buildVersion: null, buildState: 'idle', buildId: null, pickMode: 'body', topologySelection: null, visibleBodyIds: [],
+      view: { mode: 'solid', available: true, view: 'Isometric', gridVisible: false, zoom: 1, revision: 1,
+        referenceVersion: snapshot.version, referenceFeatureIds: Object.freeze(features.map(feature => feature.id).sort()) } };
+    h.cad().setViewportControls({ getState: () => state, apply: vi.fn(), capture: async () => ({ contentSource: 'cad-draft', documentId: snapshot.document.id,
+      documentVersion: snapshot.version, dirty: true, sketchId: null, curveId: null, buildVersion: null, viewState: state,
+      image: { source: '3d', width: 1, height: 1, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDSkAAAAASUVORK5CYII=' } }) });
+    const tools = cadSiteTools(h.cad);
+    for (const name of ['cad_get_viewport', 'cad_capture_preview']) {
+      const tool = tools.find(entry => entry.name === name); if (!tool) throw new Error(`Missing ${name}`);
+      let result: unknown;
+      await act(async () => { result = await tool.execute({ expectedVersion: snapshot.version }); });
+      expect(result).toMatchObject({ ok: true });
+      const text = JSON.stringify(result);
+      expect(text).toContain(features[255].id);
+      expect(new TextEncoder().encode(text).length).toBeLessThan(32 * 1024);
+      expect(text).not.toContain('base64');
+    }
+    expect(kernel.build).not.toHaveBeenCalled();
+    expect(h.session.getSnapshot()).toBe(snapshot);
+  });
   it('lets agents reconstruct large CAD definitions through versioned bounded text chunks', async () => {
     const h = await harness(true); const state = h.session.getSnapshot();
     const tools = cadSiteTools(h.cad); const read = tools.find(tool => tool.name === 'cad_read_document');
@@ -642,5 +671,46 @@ describe('CAD controller asynchronous guards', () => {
     await act(async () => { operation = tool.execute({ expectedVersion: h.session.getSnapshot().version, sketchId: 'sketch' }, { signal: abort.signal }); abort.abort(); });
     await expect(operation).resolves.toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
     expect(click).not.toHaveBeenCalled();
+  });
+  it.each(['sketch', 'curve'] as const)('rejects a %s DXF tool export when CAD closes during its lazy import', async kind => {
+    const h = await harness(true);
+    if (kind === 'curve') await act(async () => h.session.edit([{ kind: 'add-feature', feature: {
+      kind: 'curve', id: 'rail', name: 'Rail', suppressed: false, plane: 'XY', offset: 0,
+      segments: [{ kind: 'line', start: [0, 0], end: [10, 0] }]
+    } }]));
+    const version = h.session.getSnapshot().version;
+    const tool = cadSiteTools(h.cad).find(entry => entry.name === (kind === 'curve' ? 'cad_export_curve_dxf' : 'cad_export_dxf'));
+    if (!tool) throw new Error('DXF export tool missing');
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    await act(async () => {
+      const pending = tool.execute({ expectedVersion: version, ...(kind === 'curve' ? { curveId: 'rail' } : { sketchId: 'sketch' }) });
+      h.cad().back();
+      await expect(pending).resolves.toMatchObject({ ok: false, error: { code: 'CAD_NOT_OPEN' } });
+    });
+    expect(click).not.toHaveBeenCalled();
+    expect(h.session.getSnapshot().version).toBe(version);
+  });
+  it.each(['sketch', 'curve'] as const)('rejects a %s DXF export when another operation acquires the lock during its lazy import', async kind => {
+    const h = await harness(true);
+    if (kind === 'curve') await act(async () => h.session.edit([{ kind: 'add-feature', feature: {
+      kind: 'curve', id: 'rail', name: 'Rail', suppressed: false, plane: 'XY', offset: 0,
+      segments: [{ kind: 'line', start: [0, 0], end: [10, 0] }]
+    } }]));
+    const version = h.session.getSnapshot().version;
+    const result = deferred<Blob>(); kernel.export.mockReturnValue(result.promise);
+    const abort = new AbortController();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    await act(async () => {
+      const pending = kind === 'curve' ? h.cad().exportCurveDxf('rail', version) : h.cad().exportDxf('sketch', version);
+      const competing = h.cad().exportSolid('step', version, abort.signal);
+      expect(h.cad().isBusy()).toBe(true);
+      try { await expect(pending).rejects.toMatchObject({ code: 'BUSY' }); }
+      finally {
+        abort.abort(); result.resolve(new Blob(['STEP']));
+        await expect(competing).rejects.toMatchObject({ name: 'AbortError' });
+      }
+    });
+    expect(click).not.toHaveBeenCalled();
+    expect(h.cad().isBusy()).toBe(false);
   });
 });

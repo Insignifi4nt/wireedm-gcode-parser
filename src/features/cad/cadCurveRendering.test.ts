@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import type { CadCurveFeature, CadPathSegment } from '@/domain/cad/cadDocument';
 import { MAX_CAD_REFERENCE_DISPLAY_SEGMENTS, pickCadCurveReference, prepareCadCurveReferences } from './cadCurveRendering';
+import { cadLocalRenderPositions, cadRenderOrigin } from './cadRenderCoordinates';
 
 const line = (plane: CadCurveFeature['plane'] = 'XY', offset = 0): CadCurveFeature => ({ id: 'rail', name: 'Rail', kind: 'curve', suppressed: false, plane, offset,
   segments: [{ kind: 'line', start: [0, 0], end: [10, 0] }] });
@@ -36,6 +37,29 @@ describe('curve display geometry', () => {
 });
 
 describe('reference feature picking', () => {
+  it.each([0, 100000000])('keeps a reference behind a solid silhouette hidden at world offset %s', worldOffset => {
+    const camera = new THREE.OrthographicCamera(-20, 20, 20, -20, .01, 1000);
+    camera.position.set(worldOffset, worldOffset, worldOffset + 100); camera.lookAt(worldOffset, worldOffset, worldOffset); camera.updateMatrixWorld();
+    const prepared = prepareCadCurveReferences([{ ...line(), segments: [{ kind: 'line', start: [worldOffset - 5, worldOffset + .9], end: [worldOffset + 5, worldOffset + .9] }], offset: worldOffset }], {})[0];
+    const origin = cadRenderOrigin(prepared.bounds);
+    const geometry = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(prepared.positions, origin), 3));
+    const lines = new THREE.LineSegments(geometry); lines.position.set(...origin); lines.userData.featureId = 'rail'; lines.updateMatrixWorld();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(12, 2, 2)); body.position.set(worldOffset, worldOffset, worldOffset + 1); body.updateMatrixWorld();
+    const raycaster = new THREE.Raycaster();
+    const pick = () => pickCadCurveReference({ raycaster, references: [lines], bodies: [body], camera, viewportHeight: 400 });
+    try {
+      // Pointer is four pixels from the line and just outside the solid's silhouette.
+      // The line itself is still behind the solid, so a pointer-ray miss cannot reveal it.
+      const point = new THREE.Vector3(worldOffset, worldOffset + 1.3, worldOffset).project(camera);
+      raycaster.setFromCamera(new THREE.Vector2(point.x, point.y), camera);
+      expect(raycaster.intersectObject(body)).toEqual([]); expect(pick()).toBeNull();
+      // The same outline in front remains selectable, including from outside the silhouette.
+      lines.position.z += 3; lines.updateMatrixWorld(); expect(pick()).toBe('rail');
+      const outsideTolerance = new THREE.Vector3(worldOffset, worldOffset + 1.6, worldOffset).project(camera);
+      raycaster.setFromCamera(new THREE.Vector2(outsideTolerance.x, outsideTolerance.y), camera); expect(pick()).toBeNull();
+    } finally { geometry.dispose(); body.geometry.dispose(); }
+  });
+
   it.each([1, 2])('uses six pixels at zoom %s without relying on body topology', zoom => {
     const camera = new THREE.OrthographicCamera(-20, 20, 20, -20, 0.01, 1000); camera.position.set(5, 0, 100); camera.zoom = zoom;
     camera.lookAt(5, 0, 0); camera.updateProjectionMatrix(); camera.updateMatrixWorld(); const raycaster = new THREE.Raycaster(); const lines = reference();

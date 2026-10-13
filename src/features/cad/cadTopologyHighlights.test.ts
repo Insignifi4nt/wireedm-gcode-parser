@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import type { CadMesh } from '@/domain/cad/cadDocument';
 import { createCadTopologyHighlights } from './cadTopologyHighlights';
 
@@ -10,6 +11,33 @@ const mesh: CadMesh = { featureId: 'body', name: 'Body', positions: [0, 0, 0, 10
   volume: 0, bounds: { min: [0, 0, 0], max: [10, 10, 0] } };
 
 describe('CAD rendered topology highlights', () => {
+  it('retains distinct face and edge highlight vertices at large world coordinates without mutating native arrays', () => {
+    const positions = [100000000, -100000000, 200000000, 100000002, -100000000, 200000000, 100000002, -99999998, 200000000];
+    // This accepted 2 mm triangle collapses when world coordinates reach Float32 first.
+    expect(new Float32Array(positions)[0]).toBe(new Float32Array(positions)[3]);
+    const far: CadMesh = { ...mesh, positions: Object.freeze(positions),
+      edges: Object.freeze([...positions.slice(0, 6), ...positions.slice(3, 9)]),
+      bounds: { min: [100000000, -100000000, 200000000], max: [100000002, -99999998, 200000000] } };
+    const original = JSON.stringify(far); const highlights = createCadTopologyHighlights();
+    const meshes = [far];
+    const selection = { bodyId: 'body', documentVersion: 'far', buildId: 'far-build', picks: [{ kind: 'edge', key: 'second' }] } satisfies Parameters<typeof highlights.update>[0]['selection'];
+    highlights.update({ meshes, selection, hover: { bodyId: 'body', pick: { kind: 'face', key: 'face' } } });
+    try {
+      const edge = highlights.objects.children[0]?.children[0];
+      const face = highlights.objects.children[1]?.children[0];
+      if (!(edge instanceof LineSegments2) || !(face instanceof THREE.Mesh)) throw new Error('Far-origin highlight missing');
+      expect(edge.position.toArray()).toEqual([100000001, -99999999, 200000000]);
+      expect(face.position.toArray()).toEqual(edge.position.toArray());
+      expect(Array.from(face.geometry.getAttribute('position').array)).toEqual([-1, -1, 0, 1, -1, 0, 1, 1, 0]);
+      const start = edge.geometry.getAttribute('instanceStart'), end = edge.geometry.getAttribute('instanceEnd');
+      expect(new THREE.Vector3().fromBufferAttribute(start, 0).toArray()).toEqual([1, -1, 0]);
+      expect(new THREE.Vector3().fromBufferAttribute(end, 0).toArray()).toEqual([1, 1, 0]);
+      face.updateMatrixWorld(true); edge.updateMatrixWorld(true);
+      expect(new THREE.Vector3().fromBufferAttribute(face.geometry.getAttribute('position'), 2).applyMatrix4(face.matrixWorld).toArray()).toEqual(positions.slice(6, 9));
+      expect(new THREE.Vector3().fromBufferAttribute(end, 0).applyMatrix4(edge.matrixWorld).toArray()).toEqual(positions.slice(6, 9));
+      expect(JSON.stringify(far)).toBe(original);
+    } finally { highlights.dispose(); }
+  });
   it('retains selected geometry while hovering other edges, resizes line widths and disposes every layer', () => {
     const highlights = createCadTopologyHighlights();
     const meshes = [mesh];
