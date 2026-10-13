@@ -7,7 +7,7 @@ const report: PackageAuthoringResult = {
   report: { ok: true, operation: 'check-post', appVersion: 'existing-app-version', details: { contentHash: 'existing-post-hash' } }
 };
 
-class PackageWorker {
+class PackageWorker extends EventTarget {
   static instances: PackageWorker[] = [];
   static startError: Error | null = null;
   static postError: Error | null = null;
@@ -19,6 +19,7 @@ class PackageWorker {
     if (PackageWorker.postError) throw PackageWorker.postError;
   });
   constructor(readonly url: URL, readonly options: WorkerOptions) {
+    super();
     if (PackageWorker.startError) throw PackageWorker.startError;
     PackageWorker.instances.push(this);
   }
@@ -80,12 +81,28 @@ describe('cancellable package worker', () => {
     expectReleased(PackageWorker.instances[0]);
   });
 
-  it('retains worker failures and releases the failed check', async () => {
+  it.each(['onerror', 'onmessageerror'] as const)('retains %s failures and releases the failed check', async event => {
     const task = startPackageTool(request);
-    const failed = expect(task.result).rejects.toThrow('The package check could not run. Reload this page and try again.');
-    PackageWorker.instances[0].onerror?.();
-    await failed;
-    expectReleased(PackageWorker.instances[0]);
+    const outcome = task.result.catch(error => error);
+    const worker = PackageWorker.instances[0];
+    const removeListener = vi.spyOn(worker, 'removeEventListener');
+    if (event === 'onmessageerror') worker.dispatchEvent(new MessageEvent('messageerror'));
+    else worker.onerror?.();
+    try { expectReleased(worker); }
+    finally { task.cancel(); }
+    expect(await outcome).toEqual(new Error('The package check could not run. Reload this page and try again.'));
+    expect(removeListener).toHaveBeenCalledWith('messageerror', expect.any(Function));
+  });
+
+  it('settles an undefined terminal reply immediately instead of waiting for a deadline', async () => {
+    const task = startPackageTool(request);
+    const worker = PackageWorker.instances[0];
+    const reply = new MessageEvent<PackageAuthoringResult>('message');
+    // The constructor defaults undefined to null; real Worker.postMessage(undefined) retains undefined.
+    Object.defineProperty(reply, 'data', { value: undefined });
+    worker.onmessage?.(reply);
+    expectReleased(worker);
+    expect(await task.result).toBeUndefined();
   });
 
   it('retains the exact request cloning error and releases the worker', async () => {

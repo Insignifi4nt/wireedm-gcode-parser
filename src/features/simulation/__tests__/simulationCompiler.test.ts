@@ -74,7 +74,8 @@ describe('local simulation compilation lifecycle', () => {
     const { document, settings } = compilationInput();
     const pending = compileSimulationAsync(document, settings, new AbortController().signal);
     const worker = CompilationWorker.instances[0];
-    worker[event]?.();
+    if (event === 'onmessageerror') worker.dispatchEvent(new MessageEvent('messageerror'));
+    else worker.onerror?.();
     expect(await pending).toMatchObject({ ok: false, diagnostics: [{ code: 'SIMULATION_WORKER_FAILED' }] });
     expectReleased(worker);
   });

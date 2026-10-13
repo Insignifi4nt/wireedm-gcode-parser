@@ -3,7 +3,7 @@ import { compileSimulation, type SimulationCompileResult } from '@/domain/simula
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { defaultSimulationSettings } from '../simulationDefaults';
 
-export class CompilationWorker {
+export class CompilationWorker extends EventTarget {
   static instances: CompilationWorker[] = [];
   static failPost = false;
   onmessage: ((event: MessageEvent<SimulationCompileResult>) => void) | null = null;
@@ -11,7 +11,7 @@ export class CompilationWorker {
   onmessageerror: (() => void) | null = null;
   terminate = vi.fn();
   postMessage = vi.fn(() => { if (CompilationWorker.failPost) throw new DOMException('Cannot clone', 'DataCloneError'); });
-  constructor(readonly url: URL, readonly options: WorkerOptions) { CompilationWorker.instances.push(this); }
+  constructor(readonly url: URL, readonly options: WorkerOptions) { super(); CompilationWorker.instances.push(this); }
   reply(data: SimulationCompileResult) { this.onmessage?.({ data } as MessageEvent<SimulationCompileResult>); }
 }
 

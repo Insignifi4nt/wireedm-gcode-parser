@@ -8,14 +8,14 @@ import { MachineSetupPanel } from './MachineSetupPanel';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-class TestWorker {
+class TestWorker extends EventTarget {
   static instances: TestWorker[] = [];
   onmessage: ((event: MessageEvent<MachineImportWorkerResponse>) => void) | null = null;
   onerror: (() => void) | null = null;
   onmessageerror: (() => void) | null = null;
   postMessage = vi.fn();
   terminate = vi.fn();
-  constructor() { TestWorker.instances.push(this); }
+  constructor() { super(); TestWorker.instances.push(this); }
   send(data: MachineImportWorkerResponse) { this.onmessage?.({ data } as MessageEvent<MachineImportWorkerResponse>); }
 }
 
@@ -105,6 +105,31 @@ describe('MachineSetupPanel', () => {
     expect(onMachineChange).toHaveBeenCalledExactlyOnceWith(replacement);
     expect(onPlacementChange).toHaveBeenCalledExactlyOnceWith({ x: 0, y: 0, z: 0, rotation: 0 });
     expect(container.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it('retains its current model and alignment after a native message-error event and ignores a queued successful reply', async () => {
+    await render();
+    await chooseFile(new File(['STEP source'], 'replacement.step'));
+    const worker = TestWorker.instances[0];
+    const queuedReply = worker.onmessage;
+    await act(async () => worker.dispatchEvent(new MessageEvent('messageerror')));
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('The local STEP parser stopped unexpectedly. Try a smaller model.');
+    expect(container.textContent).toContain('existing.step');
+    for (const [key, value] of Object.entries(placement)) expect(input(`Machine ${key}`).value).toBe(String(value));
+    expect(onMachineChange).not.toHaveBeenCalled();
+    expect(onPlacementChange).not.toHaveBeenCalled();
+    expect(worker.terminate).toHaveBeenCalledOnce();
+    expect(worker.onmessage).toBeNull();
+    expect(worker.onerror).toBeNull();
+    await act(async () => {
+      queuedReply?.(new MessageEvent('message', { data: { type: 'result', result: { ok: true, model: model('late') } } }));
+      worker.dispatchEvent(new MessageEvent('messageerror'));
+    });
+    expect(onMachineChange).not.toHaveBeenCalled();
+    expect(onPlacementChange).not.toHaveBeenCalled();
+    expect(worker.terminate).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain('existing.step');
   });
 
   it('cancels an active worker, preserves the current model, and ignores a late successful reply', async () => {
