@@ -62,6 +62,39 @@ describe('CAD dimensions and strict document boundaries', () => {
     errorCode(() => applyCadEdits(parsed, [{ kind: 'set-parameter', name: '__proto__', value: 1 }]), 'invalid-parameter');
     errorCode(() => parseCadDocument(Object.create(input)), 'invalid-document');
   });
+  it('reuses only its own deeply frozen accepted revisions and revalidates new edits and clones', () => {
+    const input = { ...createCadDocument('Part', 'cad_test'), parameters: { diameter: 10 }, features: [sketch([
+      { ...circle('circle', 1), geometry: { kind: 'circle', x: 0, y: 0, radius: 'diameter / 2' } },
+    ])] };
+    const accepted = parseCadDocument(input);
+    expect(accepted).not.toBe(input);
+    expect(parseCadDocument(accepted)).toBe(accepted);
+    const feature = accepted.features[0];
+    if (feature.kind !== 'sketch') throw new Error('Expected sketch');
+    expect(Object.isFrozen(accepted.features)).toBe(true);
+    expect(Object.isFrozen(feature)).toBe(true);
+    expect(Object.isFrozen(feature.profiles)).toBe(true);
+    expect(Object.isFrozen(feature.profiles[0].geometry)).toBe(true);
+    expect(Reflect.set(feature.profiles[0].geometry, 'radius', 0)).toBe(false);
+    expect(() => Object.setPrototypeOf(feature, {})).toThrow(TypeError);
+
+    input.parameters.diameter = 0;
+    expect(() => parseCadDocument(input)).toThrow(CadError);
+    expect(accepted.parameters.diameter).toBe(10);
+    const clone = structuredClone({ ...accepted });
+    const validatedClone = parseCadDocument(clone);
+    expect(validatedClone).not.toBe(accepted);
+    expect(validatedClone).not.toBe(clone);
+    clone.parameters = { diameter: 0 };
+    expect(() => parseCadDocument(clone)).toThrow(CadError);
+    expect(() => parseCadDocument(Object.freeze({ ...accepted, parameters: Object.freeze({ diameter: 0 }) }))).toThrow(CadError);
+    expect(() => applyCadEdits(accepted, [{ kind: 'set-parameter', name: 'diameter', value: 0 }])).toThrow(CadError);
+    const edited = applyCadEdits(accepted, [{ kind: 'set-parameter', name: 'diameter', value: 20 }]);
+    expect(edited).not.toBe(accepted);
+    expect(parseCadDocument(edited)).toBe(edited);
+    expect(edited.parameters.diameter).toBe(20);
+    expect(accepted.parameters.diameter).toBe(10);
+  });
   it('rejects extra properties, duplicate IDs, unknown fields, nonfinite values and wrong units', () => {
     const blank = createCadDocument('Part', 'cad_test');
     expect(() => parseCadDocument({ ...blank, surprise: true })).toThrow(CadError);

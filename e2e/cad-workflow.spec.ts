@@ -92,6 +92,48 @@ async function createBox(page: Page) {
   return { draft, buildId: build.buildId };
 }
 
+test('compact polygon properties retain multiple vertex edits and commit one shared history step', async ({ page }) => {
+  await prepare(page);
+  const initial = await context(page);
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Editable polygon' });
+  const blank = await context(page);
+  await call(page, 'cad_edit_document', { expectedVersion: blank.version, edits: [
+    { kind: 'set-parameter', name: 'width', value: 20 },
+    { kind: 'add-feature', feature: { id: 'outline', name: 'Outline', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+      profiles: [{ id: 'boundary', name: 'Boundary', construction: false, geometry: { kind: 'polygon', points: [[0, 0], [20, 0], [20, 10], [0, 10]] } }] } },
+  ] });
+  const draft = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: draft.version }))
+    .toMatchObject({ ok: true, data: { documentVersion: draft.version } });
+  await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'edit-sketch', sketchId: 'outline' } });
+  await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'select-profile', profileId: 'boundary' } });
+  const properties = page.getByRole('complementary', { name: 'Feature properties' });
+  await expect(properties.locator('input')).toHaveCount(5);
+  await page.getByLabel('Polygon vertex', { exact: true }).fill('2');
+  await properties.getByRole('textbox', { name: 'X mm', exact: true }).fill('width + 5');
+  await page.getByRole('button', { name: 'Next polygon vertex' }).click();
+  await properties.getByRole('textbox', { name: 'X mm', exact: true }).fill('width + 5');
+  await page.getByRole('button', { name: 'Previous polygon vertex' }).click();
+  await expect(properties.getByRole('textbox', { name: /^X mm/ })).toHaveValue('width + 5');
+  await page.getByLabel('Polygon vertex', { exact: true }).press('Enter');
+  expect(await context(page)).toMatchObject({ version: draft.version, workflowOpen: true });
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: draft.version, edits: [{ kind: 'rename-document', name: 'Blocked' }] }))
+    .toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  await properties.getByRole('button', { name: 'Apply', exact: true }).click();
+  const edited = await context(page);
+  expect(edited.version).not.toBe(draft.version);
+  expect(await call(page, 'cad_measure_sketch', { expectedVersion: edited.version, sketchId: 'outline' }))
+    .toMatchObject({ materialAreaMm2: 250 });
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  const undone = await context(page);
+  expect(await call(page, 'cad_measure_sketch', { expectedVersion: undone.version, sketchId: 'outline' }))
+    .toMatchObject({ materialAreaMm2: 200 });
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  const redone = await context(page);
+  expect(await call(page, 'cad_measure_sketch', { expectedVersion: redone.version, sketchId: 'outline' }))
+    .toMatchObject({ materialAreaMm2: 250 });
+});
+
 test('graphics loss rejects blank captures and restores the same CAD draft automatically or by retry', async ({ page }) => {
   const { draft } = await createBox(page);
   await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'fit' } });

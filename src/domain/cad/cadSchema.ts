@@ -55,6 +55,10 @@ export const CadDocumentSchema = Type.Object({
   features: Type.Array(CadFeatureSchema, { maxItems: 256 })
 }, strict);
 
+// Only this parser's detached, deeply frozen successful outputs are trusted.
+// Mutable inputs, lookalikes and structured clones still cross the full boundary.
+const acceptedDocuments = new WeakSet<CadDocument>();
+
 /** Separate sketch generators from solid operands once for dependency consumers. */
 export function cadFeatureInputs(feature: CadFeature): { readonly sketchIds: readonly string[]; readonly curveIds: readonly string[]; readonly bodyIds: readonly string[] } {
   const curveIds: readonly string[] = [];
@@ -97,6 +101,7 @@ export function cadVisibleBodyIds(features: readonly CadFeature[]): readonly str
 
 /** Strict boundary parser. Never rewrites IDs, geometry, units or saved expressions. */
 export function parseCadDocument(value: unknown): CadDocument {
+  if (typeof value === 'object' && value !== null && acceptedDocuments.has(value as CadDocument)) return value as CadDocument;
   if (!isCadImportData(value)) throw new CadError('invalid-document', 'CAD documents must contain their own complete JSON data fields.');
   if (!Value.Check(CadDocumentSchema, value)) {
     const error = Value.Errors(CadDocumentSchema, value).First();
@@ -229,6 +234,7 @@ export function parseCadDocument(value: unknown): CadDocument {
     Object.freeze(value);
   }
   freeze(document);
+  acceptedDocuments.add(document);
   return document;
 }
 

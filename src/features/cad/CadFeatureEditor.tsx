@@ -5,6 +5,7 @@ import { CadError } from '@/domain/cad/cadError';
 import { ScalarField, SelectField } from './CadFields';
 export { ScalarField, SelectField } from './CadFields';
 import { CadPathSegmentFields } from './CadPathSegmentFields';
+import { CadPolygonVertexFields } from './CadPolygonVertexFields';
 import { cadVisibleBodyIds } from '@/domain/cad/cadSchema';
 import { CadTopologyQuerySummary } from './CadTopologyQuerySummary';
 import { CadLoftSections } from './CadLoftSections';
@@ -98,7 +99,7 @@ export function CadProfileEditor({ profile, document, onApply, onCancel, onPendi
     case 'rectangle': fields = <>{scalar('Origin X', geometry.x, (x) => update({ ...draft, geometry: { ...geometry, x } }))}{scalar('Origin Y', geometry.y, (y) => update({ ...draft, geometry: { ...geometry, y } }))}{scalar('Width', geometry.width, (width) => update({ ...draft, geometry: { ...geometry, width } }))}{scalar('Height', geometry.height, (height) => update({ ...draft, geometry: { ...geometry, height } }))}{scalar('Corner radius', geometry.cornerRadius, (cornerRadius) => update({ ...draft, geometry: { ...geometry, cornerRadius } }))}</>; break;
     case 'circle': fields = <>{scalar('Center X', geometry.x, (x) => update({ ...draft, geometry: { ...geometry, x } }))}{scalar('Center Y', geometry.y, (y) => update({ ...draft, geometry: { ...geometry, y } }))}{scalar('Radius', geometry.radius, (radius) => update({ ...draft, geometry: { ...geometry, radius } }))}</>; break;
     case 'slot': fields = <>{scalar('Center X', geometry.x, (x) => update({ ...draft, geometry: { ...geometry, x } }))}{scalar('Center Y', geometry.y, (y) => update({ ...draft, geometry: { ...geometry, y } }))}{scalar('Length', geometry.length, (length) => update({ ...draft, geometry: { ...geometry, length } }))}{scalar('Width', geometry.width, (width) => update({ ...draft, geometry: { ...geometry, width } }))}{scalar('Angle', geometry.angle, (angle) => update({ ...draft, geometry: { ...geometry, angle } }), 'deg')}</>; break;
-    case 'polygon': fields = <>{geometry.points.map((point, index) => <div className="cad-vertex-fields" key={index}><span>Vertex {index + 1}</span>{scalar('X', point[0], (x) => update({ ...draft, geometry: { ...geometry, points: geometry.points.map((entry, i) => i === index ? [x, entry[1]] : entry) } }))}{scalar('Y', point[1], (y) => update({ ...draft, geometry: { ...geometry, points: geometry.points.map((entry, i) => i === index ? [entry[0], y] : entry) } }))}</div>)}</>; break;
+    case 'polygon': fields = <CadPolygonVertexFields points={geometry.points} parameters={document.parameters} onChange={points => update({ ...draft, geometry: { ...geometry, points } })} />; break;
     case 'path': fields = <CadPathSegmentFields segments={geometry.segments} parameters={document.parameters} onChange={segments => update({ ...draft, geometry: { ...geometry, segments } })} />; break;
   }
   return <form className="cad-property-form" onSubmit={(event) => {
