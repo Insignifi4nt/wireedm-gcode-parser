@@ -216,8 +216,15 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           const spacing = feature.spacing.map(number);
           result = source;
           for (let index = 1; index < feature.count; index++) {
-            const instance = own(own(source.clone()).translate(spacing[0] * index, spacing[1] * index, spacing[2] * index));
-            result = own(result.fuse(instance));
+            const clone = own(source.clone());
+            const instance = own(clone.translate(spacing[0] * index, spacing[1] * index, spacing[2] * index));
+            // Translation consumes its input wrapper. Keep the original seed
+            // and current union while building, just as for circular patterns.
+            shapes.delete(clone);
+            const previous = result;
+            result = own(previous.fuse(instance));
+            instance.delete(); shapes.delete(instance);
+            if (previous !== source) { previous.delete(); shapes.delete(previous); }
           }
           consumed.push(feature.sourceId); break;
         }
