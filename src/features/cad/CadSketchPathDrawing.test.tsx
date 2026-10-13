@@ -138,7 +138,7 @@ describe('mixed line and three-point arc drawing', () => {
     await h.point(0, 0); await h.click('3-point Arc'); await h.point(20, 0); await h.render({ cancelSignal: 1 });
     expect(h.session.getSnapshot()).toEqual(before);
     await h.render({ interactionLocked: true }); await h.point(0, 0); await h.key(' ');
-    expect(h.session.getSnapshot()).toEqual(before); expect(h.button('Line').disabled).toBe(true); expect(h.added).not.toHaveBeenCalled();
+    expect(h.session.getSnapshot()).toEqual(before); expect(h.svg.getAttribute('tabindex')).toBe('-1'); expect(h.added).not.toHaveBeenCalled();
   });
 
   it('does not trap keyboard movement inside the anchor snap radius at a distant zoom', async () => {

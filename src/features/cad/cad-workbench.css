@@ -129,7 +129,6 @@
 .cad-workbench .cad-timeline button { flex-shrink: 0; position: relative; width: 29px; height: 29px; border: 1px solid #3a4a56; padding-bottom: 11px; color: #9abaca; background: #1e2b35; }
 .cad-timeline button small { position: absolute; bottom: 1px; font-size: 10px; color: #8aa2af; }
 .cad-workbench .cad-timeline button.is-selected { border-color: #5b9bab; background: #2b4754; color: #c1edf5; }
-.cad-timeline-empty { font-size: 10px; color: #627e90; }
 .cad-properties { border-left: 1px solid #34404a; background: #171f26; overflow-y: auto; min-height: 0; min-width: 0; }
 .cad-panel-heading { position: sticky; top: 0; background: #1b252d; border-bottom: 1px solid #35444f; height: 29px; padding: 6px 12px; font-size: 10px; letter-spacing: 1px; color: #92a9b7; display: flex; align-items: center; justify-content: space-between; z-index: 1; }
 .cad-panel-heading button { padding: 3px; color: #8fa5b2; }
