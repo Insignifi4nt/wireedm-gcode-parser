@@ -22,9 +22,10 @@ function validateFile(file: VerifiedFile) {
     || !Number.isSafeInteger(file.byteLength) || file.byteLength <= 0 || file.byteLength > maxArchiveBytes
     || !/^[a-f0-9]{64}$/.test(file.sha256)) throw new Error('Invalid pinned third-party file manifest.');
 }
-function validateArchive(archive: SourceArchive) {
+function validateArchive(archive: SourceArchive, repositories: readonly string[] = ['kovacsv/occt-import-js', 'Open-Cascade-SAS/OCCT']) {
   validateFile(archive);
-  if (!/^https:\/\/codeload\.github\.com\/(?:kovacsv\/occt-import-js|Open-Cascade-SAS\/OCCT)\/tar\.gz\/[a-f0-9]{40}$/.test(archive.url)) {
+  const match = /^https:\/\/codeload\.github\.com\/([^/]+\/[^/]+)\/tar\.gz\/[a-f0-9]{40}$/.exec(archive.url);
+  if (!match || !repositories.includes(match[1])) {
     throw new Error('Third-party archives must use a pinned official source URL.');
   }
 }
@@ -39,8 +40,8 @@ export async function verifyPinnedFile(filePath: string, expected: VerifiedFile)
   if (digest.digest('hex') !== expected.sha256) throw new Error(`Third-party SHA-256 mismatch: ${filePath}`);
 }
 
-export async function obtainSourceArchive(cache: string, archive: SourceArchive, fetchSource: typeof fetch = fetch) {
-  validateArchive(archive);
+export async function obtainSourceArchive(cache: string, archive: SourceArchive, fetchSource: typeof fetch = fetch, repositories?: readonly string[]) {
+  validateArchive(archive, repositories);
   await mkdir(cache, { recursive: true });
   const destination = path.join(cache, archive.fileName);
   try {
@@ -84,7 +85,7 @@ async function loadManifest(root: string) {
     || !/^\d+\.\d+\.\d+$/.test(manifest.packageVersion) || !/^[a-f0-9]{40}$/.test(manifest.gitHead)
     || manifest.submodule.path !== 'occt' || !/^[a-f0-9]{40}$/.test(manifest.submodule.commit)
     || manifest.archives.length !== 2 || manifest.installedArtifacts.length !== 2) throw new Error('Invalid STEP source distribution manifest.');
-  manifest.archives.forEach(validateArchive); manifest.installedArtifacts.forEach(validateFile);
+  manifest.archives.forEach(archive => validateArchive(archive)); manifest.installedArtifacts.forEach(validateFile);
   if (manifest.archives[0].url !== `https://codeload.github.com/kovacsv/occt-import-js/tar.gz/${manifest.gitHead}`
     || manifest.archives[1].url !== `https://codeload.github.com/Open-Cascade-SAS/OCCT/tar.gz/${manifest.submodule.commit}`) {
     throw new Error('Source archives do not match the importer and submodule revisions.');

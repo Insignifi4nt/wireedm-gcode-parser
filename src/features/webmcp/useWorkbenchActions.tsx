@@ -30,7 +30,7 @@ const resolution = Type.Union([
   object({ kind: Type.Literal('replace-existing'), machineId: identifier, activate: activation })
 ]);
 
-export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnapshot | null>) {
+export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnapshot | null>, isExternalBusy: () => boolean = () => false) {
   const busy = useRef(false);
   const preparedDxf = useRef<{ id: string; workbench: ConnectedWorkbenchCatalog; preparation: DxfImportPreparation } | null>(null);
   const preparedPackage = useRef<{ id: string; prepared: PreparedMachinePackageInstallation } | null>(null);
@@ -47,8 +47,9 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     if (capture) window.setTimeout(() => URL.revokeObjectURL(capture.previewUrl), 60_000);
   }, [capture]);
 
+  const isBusy = () => busy.current || app.workbenchInteractionLocked || isExternalBusy();
   function connected(expected?: string) {
-    if (busy.current || app.workbenchInteractionLocked) throw new ToolError('BUSY', 'Another workbench operation is running.');
+    if (isBusy()) throw new ToolError('BUSY', 'Another workbench operation is running.');
     if (!app.connectedWorkbench) throw new ToolError('WORKBENCH_UNAVAILABLE', 'Wait for the workbench to open.');
     if (expected && expected !== workbenchVersion) throw new ToolError('STALE_STATE', 'Read edm_workflow_context again.');
     return app.connectedWorkbench;
@@ -96,14 +97,14 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
   }
   const tools = [
     siteTool('edm_workflow_context', 'Read mutation version, direct-input limits, prepared imports and the most recent generated artifact. Import tools accept supplied text or package base64; browser storage belongs to this browser.', object({}), () => ({
-      version: workbenchVersion, busy: busy.current || app.workbenchInteractionLocked,
+      version: workbenchVersion, busy: isBusy(),
       inputFile: null,
       recovery: app.recoveryControls ? { source: app.recoveryControls.source, receipt: app.recoveryControls.receipt } : null,
       inputLimits: { textUtf8Bytes: 1024 * 1024, machinePackageBytes: 32 * 1024 * 1024, packageEncoding: 'base64' },
       dxfPreparationId: preparedDxf.current?.id ?? null, packagePreparationId: preparedPackage.current?.id ?? null,
       artifact: artifact.current ? artifactSummary(artifact.current) : null,
       capture,
-      nextSteps: busy.current || app.workbenchInteractionLocked ? ['Wait for the running operation, then read edm_workflow_context again.']
+      nextSteps: isBusy() ? ['Wait for the running operation, then read edm_workflow_context again.']
         : !app.connectedWorkbench && app.recoveryControls ? ['edm_export_recovery', 'Review Settings > Storage.']
         : !app.connectedWorkbench ? ['Review the storage connection diagnostic in Settings.']
         : !draftRef.current ? ['edm_list_projects', 'edm_open_project', 'edm_prepare_dxf', 'edm_import_upid']
@@ -115,7 +116,7 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     siteTool('edm_export_recovery', 'Capture and request a download of readable original logical text and diagnostics from the failed or unavailable storage source in edm_workflow_context.recovery. Does not repair, restore, delete, initialize or execute posts. Omissions and non-atomic reads are explicit. Returns an archive receipt, not file contents or proof that the browser saved it. Set downloadPrepared:true to retry the captured download without rereading storage.',
       object({ sourceId: identifier, downloadPrepared: Type.Optional(Type.Boolean()) }), async (input, signal) => {
         // Recovery may run without a connected catalog, but shares the live agent operation gate.
-        if (busy.current) throw new ToolError('BUSY', 'Another workbench operation is running.');
+        if (isBusy()) throw new ToolError('BUSY', 'Another workbench operation is running.');
         busy.current = true;
         try { return await app.handleExportRecovery({ ...input, signal }); }
         finally { busy.current = false; }
@@ -326,7 +327,7 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     return current;
   }
   const previewControl = capture && <a className="px-2 text-xs text-muted-foreground underline" href={capture.previewUrl} download={capture.fileName} title={`Download captured ${capture.source.toUpperCase()} preview (${capture.contentSource === 'saved-project' ? 'saved project' : capture.dirty ? 'unsaved draft' : 'saved draft'})`}>Preview PNG</a>;
-  return { tools, previewControl, isBusy: () => busy.current || app.workbenchInteractionLocked };
+  return { tools, previewControl, isBusy };
 }
 
 function artifactSummary(artifact: ControllerProgramArtifact) {

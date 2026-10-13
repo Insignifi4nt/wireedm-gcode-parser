@@ -1,0 +1,53 @@
+{
+  "format": "wire-edm-cad-kernel-sources",
+  "schemaVersion": 1,
+  "packageName": "replicad-opencascadejs",
+  "packageVersion": "1.1.0",
+  "gitHead": "e4b05f67dc4e2393a876ce8c5064a9c93db05bf1",
+  "bindingGeneratorCommit": "ebd263f15337b440b391492af073662707e86482",
+  "occtCommit": "b8f597c677811d1f9f4d8a97f5ae2825c0353a42",
+  "archives": [
+    {
+      "fileName": "replicad-e4b05f67dc4e2393a876ce8c5064a9c93db05bf1.tar.gz",
+      "url": "https://codeload.github.com/sgenoud/replicad/tar.gz/e4b05f67dc4e2393a876ce8c5064a9c93db05bf1",
+      "byteLength": 17426998,
+      "sha256": "92180710da11a6e67ab75eaac8b494b29d32011415c22e29f7fecb1c796da783"
+    },
+    {
+      "fileName": "opencascade.js-ebd263f15337b440b391492af073662707e86482.tar.gz",
+      "url": "https://codeload.github.com/tauCAD/opencascade.js/tar.gz/ebd263f15337b440b391492af073662707e86482",
+      "byteLength": 4449501,
+      "sha256": "1e0342c8dbdc04d1835c776d5e95ab25fcad56a5f4cafcbecad92a959b6b00b7"
+    },
+    {
+      "fileName": "OCCT-b8f597c677811d1f9f4d8a97f5ae2825c0353a42.tar.gz",
+      "url": "https://codeload.github.com/Open-Cascade-SAS/OCCT/tar.gz/b8f597c677811d1f9f4d8a97f5ae2825c0353a42",
+      "byteLength": 45131814,
+      "sha256": "dba62b81078dd43cec23feba89432be301582341001edad1b93342ad8bda35ea"
+    },
+    {
+      "fileName": "rapidjson-24b5e7a8b27f42fa16b96fc70aade9106cf7102f.tar.gz",
+      "url": "https://codeload.github.com/Tencent/rapidjson/tar.gz/24b5e7a8b27f42fa16b96fc70aade9106cf7102f",
+      "byteLength": 1116703,
+      "sha256": "2d2601a82d2d3b7e143a3c8d43ef616671391034bc46891a9816b79cf2d3e7a8"
+    },
+    {
+      "fileName": "freetype-de8b92dd7ec634e9e2b25ef534c54a3537555c11.tar.gz",
+      "url": "https://codeload.github.com/freetype/freetype/tar.gz/de8b92dd7ec634e9e2b25ef534c54a3537555c11",
+      "byteLength": 2496556,
+      "sha256": "14791d34053acf30394912a8b963277bee60b35fbb3038795d86555ba0415a44"
+    }
+  ],
+  "installedArtifacts": [
+    {
+      "fileName": "replicad_single.js",
+      "byteLength": 60124,
+      "sha256": "018e57538fcb773f0124eae60aee4de693d3aae01c55b2b883a874911ab121c3"
+    },
+    {
+      "fileName": "replicad_single.wasm",
+      "byteLength": 22980267,
+      "sha256": "4c9f22e9f3828dca6f3c95405934cdbe624e593c35266f47f392ab337478dbde"
+    }
+  ]
+}

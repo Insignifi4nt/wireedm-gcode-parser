@@ -24,6 +24,7 @@ Browser storage belongs to its origin. Production GitHub Pages, local preview an
 | Project-declared source paths, often under `imports/` or `projects/` | Exact original input; use the project document's ownership list |
 | `editor/<id>.<extension>` | Editable external programs retained from schema-1 imports; current projects declare these paths as owned external-gcode files |
 | `projects/<id>/revisions/<revision-id>.wireedm-job.json` | Immutable job snapshot with exact machine/post state |
+| `cad/documents/<id>.cad.json` | Saved parametric CAD document, independent of the CAM project catalog; retain all `cad/` files |
 | `posts/library.json` | Validated installed post snapshots and exact references |
 | `machines/library.json` | Physical machines, exact setups and active binding |
 | `exports/` | Retained output if present; not proof of a disposable orphan |
@@ -37,6 +38,9 @@ Browser storage belongs to its origin. Production GitHub Pages, local preview an
 Trash retains project-owned files. A missing index reference is not authorization to delete a file. Backups and journals must not be removed by generic cache cleanup.
 
 ## Current safeguards
+
+- CAD documents use an additive `wireedm-cad-save` schema-1 envelope containing an independently validated `wireedm-cad` schema-1 document. Both adapters use the shared mutation lock and exact before/after file journal. Saving compares the loaded file's exact SHA-256; a conflicting save, malformed existing file or interrupted transaction cannot silently replace it. Imports get fresh document IDs. CAD files are limited to 4 MiB and library enumeration is bounded with explicit diagnostics. There is no catalog migration or automatic rewrite of prior CAM projects, packages or revisions.
+- Full backups include the exact logical CAD files; restore retains them on the same empty-destination terms as other workbench files. Storage inspection labels the whole `cad/` namespace for retention, and reviewed cleanup excludes it, including unknown future documents and malformed files. Unsaved CAD drafts and kernel caches are not durable backups. CAD-to-CAM handoff saves its source first and creates a separate CAM project; its source save and CAM creation are separate commits, so a failed CAM handoff can leave a valid CAD save without creating a CAM project.
 
 - All persistent mutations use Web Locks; in-process serialization also protects adapter operations. External programs writing a folder are not coordinated.
 - Both legacy migrations validate the proposed catalog and project ownership before replacing data. V1 preserves exact catalog/project originals, including a UTF-8 BOM, and uses the file journal for interruption recovery. Its former `projects/<id>/project.json` layout is indexed as `projects/<id>.json` after upgrade; the old document stays unchanged. External programs retain both the original import and the independently edited `editor/<id>.<extension>` file. Matching backups and interrupted current project images allow retry; conflicting project backups or destination files block writes. V2 verifies its exact catalog backup before its single manifest replacement; a matching backup allows retry, a conflicting backup blocks it. Backup/quota failures leave the original manifest intact.

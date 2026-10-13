@@ -28,7 +28,7 @@ let container: HTMLDivElement;
 beforeEach(() => vi.stubGlobal('File', NodeFile));
 afterEach(() => { act(() => root?.unmount()); container?.remove(); window.localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-async function harness(overrides: Partial<AppServices> = {}) {
+async function harness(overrides: Partial<AppServices> = {}, isExternalBusy: () => boolean = () => false) {
   let tools: SiteTool[] = [];
   let app!: ReturnType<typeof useWorkbenchAppController>;
   let draft!: { current: DraftReadSnapshot | null };
@@ -37,7 +37,7 @@ async function harness(overrides: Partial<AppServices> = {}) {
   function Harness() {
     draft = useRef<DraftReadSnapshot | null>(null);
     app = useWorkbenchAppController({ ...createDxfImportServices(directDxfProcessor), connectRememberedWorkbenchDirectory: async () => ({ status: 'missing' }), generateControllerArtifact: generate, downloadTextFile: download, ...overrides }, () => draft.current);
-    const actions = useWorkbenchActions(app, draft);
+    const actions = useWorkbenchActions(app, draft, isExternalBusy);
     tools = [...workbenchSiteTools(() => ({ workbench: app.connectedWorkbench, draft: draft.current, busy: actions.isBusy() })), ...actions.tools];
     return actions.previewControl;
   }
@@ -51,6 +51,21 @@ async function harness(overrides: Partial<AppServices> = {}) {
   const execute = (name: string, input: unknown, signal?: AbortSignal) => tools.find(tool => tool.name === name)!.execute(input, { signal });
   return { call, execute, app: () => app, draft: () => draft, generate, download };
 }
+
+it('reports the shared CAD operation gate and blocks imports and recovery until it clears', async () => {
+  let cadBusy = true;
+  const h = await harness({}, () => cadBusy);
+  const context = await h.call('edm_workflow_context', {});
+  expect(context).toMatchObject({ ok: true, data: { busy: true,
+    nextSteps: ['Wait for the running operation, then read edm_workflow_context again.'] } });
+  expect(await h.call('edm_prepare_dxf', { expectedVersion: context.data.version,
+    source: { fileName: 'part.dxf', text } })).toMatchObject({ ok: false, error: { code: 'BUSY' } });
+  expect(await h.call('edm_export_recovery', { sourceId: 'recovery' })).toMatchObject({ ok: false, error: { code: 'BUSY' } });
+  cadBusy = false;
+  expect(await h.call('edm_workflow_context', {})).toMatchObject({ ok: true, data: { busy: false } });
+  expect(await h.call('edm_prepare_dxf', { expectedVersion: context.data.version,
+    source: { fileName: 'part.dxf', text } })).toMatchObject({ ok: true });
+});
 
 async function packageSource() {
   const built = await buildMachinePackageArchive(await machinePackageFixture());

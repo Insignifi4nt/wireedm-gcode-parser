@@ -10,6 +10,13 @@ const signal = new AbortController().signal;
 afterEach(() => vi.restoreAllMocks());
 
 describe('editor preview PNG artifacts', () => {
+  it('preserves explicit CAD draft provenance for 3D captures without changing CAM defaults', async () => {
+    const cad = await preparePreviewCapture({ ...pngCapture, source: '3d' }, { ...identity, projectId: null, contentSource: 'cad-draft' }, signal);
+    const cam = await preparePreviewCapture({ ...pngCapture, source: '3d' }, identity, signal);
+    expect(cad).toMatchObject({ contentSource: 'cad-draft', projectId: null, dirty: true });
+    expect(cam.contentSource).toBe('saved-project');
+    URL.revokeObjectURL(cad.previewUrl); URL.revokeObjectURL(cam.previewUrl);
+  });
   it('retains exact PNG bytes behind a local preview URL and downloads only that artifact', async () => {
     let blob!: Blob;
     vi.spyOn(URL, 'createObjectURL').mockImplementation(value => { blob = value as Blob; return 'blob:preview'; });

@@ -31,6 +31,8 @@ test('dashboard menus support keyboard entry and resume the native tab order', a
   await expect(page.getByRole('button', { name: /^Show revisions for project / })).toBeFocused();
   await exportTrigger.press('ArrowDown');
   await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Design in CAD', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Import DXF as Path Project', exact: true })).toBeFocused();
 });
 

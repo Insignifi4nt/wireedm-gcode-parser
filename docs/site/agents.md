@@ -1,5 +1,70 @@
 # Use the app with an agent
 
+## CAD workspace
+
+CAD and CAM are separate documents with separate draft versions. Begin with `cad_get_context`. Open the retained workspace with `cad_open_workspace`, or create a blank document with `cad_create_document`, its current `expectedVersion` and a name. Unsaved CAD or CAM work blocks replacement. No repository, terminal, local path or browser file access is needed to author CAD.
+
+| Tool | Purpose |
+| --- | --- |
+| `cad_get_context` | Draft version, parameters, saved version, pending workflow and build diagnostics |
+| `cad_describe_features` | Compact feature catalog or one exact accepted feature schema |
+| `cad_import_document` | Import a complete typed CAD document as a fresh unsaved draft, using the visible JSON Import operation |
+| `cad_list_documents`, `cad_open_document` | Browse and reopen the active workbench's saved CAD library |
+| `cad_read_features`, `cad_get_feature` | Exact feature IDs, dimensions, roles and references; follow pagination |
+| `cad_read_document` | Complete CAD JSON in bounded, versioned text chunks, including large sketches |
+| `cad_edit_document` | Atomic typed edit batch, one shared UI undo step; no save |
+| `cad_history` | Undo/redo using the current expected version |
+| `cad_get_viewport`, `cad_set_viewport` | Inspect selection and displayed build; set named views, fit/grid, select features and enter/finish sketches |
+| `cad_capture_preview` | Actual 2D/3D draft pixels as a bounded local PNG artifact with version, view and SHA-256 |
+| `cad_build` | Real solid evaluation: body volumes in mm³, bounds in mm and feature errors |
+| `cad_measure_sketch` | Analytic sketch area in mm², perimeter in mm, bounds and paginated per-profile measurements |
+| `cad_save_document` | Persist the reviewed draft with storage conflict checks and a receipt |
+| `cad_send_to_cam` | Save CAD, then create/open a new CAM project from the selected sketch |
+| `cad_inspect_section` | Exact final-solid section curves and closed-contour count; paginated entities |
+| `cad_send_section_to_cam` | Save CAD, then create/open a new CAM project from a final-solid section |
+| `cad_export_document`, `cad_export_solid`, `cad_export_dxf` | Request CAD JSON, STEP/STL, or selected-sketch DXF downloads |
+
+Use the exact `expectedVersion` returned by context. Accepted edits and undo/redo change it. Saved versions are content fingerprints, independent of draft, CAM, UPID and app versions. Read fresh context after a stale rejection. Cancellation writes nothing before the journal begins; once writing begins, inspect the receipt before retrying. Active visible drawing or feature editing returns `WORKFLOW_OPEN`; finish or cancel it.
+
+Use `cad_describe_features` with an optional `kind` to discover a complete feature schema. `cad_read_document` accepts optional `offset` and `length` (up to 4,096 UTF-16 code units). Concatenate each exact `text` chunk until `nextOffset` is null, using the same expected version, then parse JSON. This supports large profiles that exceed a single feature-page response. `cad_build` returns up to a page of bodies; use `nextBodyOffset` as `offset` and retain the same version to inspect remaining bodies.
+
+For visual inspection, call `cad_set_viewport` with `command: { "kind": "set-view", "view": "Top" }`, then read `cad_get_viewport`. Other commands include `fit`, `set-grid` with `visible`, `select-feature` with `featureId`, `edit-sketch` with `sketchId`, `select-profile` with `profileId`, and `finish-sketch`. Call `cad_capture_preview` with the current version and optionally `download: true`. The receipt contains a browser-local `previewUrl`, dimensions, exact PNG hash and view state. Both solid and sketch captures identify `contentSource: "cad-draft"`; they may contain unsaved edits. Solid capture requires the displayed `buildVersion` to match the draft. A changed camera, pending workflow or stale build rejects capture. The notification bell's Agent panel retains a **CAD preview PNG** download link. This is the modelling viewport, not a desktop screenshot; whether an agent can inspect its local image URL depends on the browser.
+
+After creating a document, `cad_edit_document` accepts this example `edits` array with the current `expectedVersion`:
+
+```json
+[
+  { "kind": "set-parameter", "name": "width", "value": 60 },
+  { "kind": "set-parameter", "name": "thickness", "value": 10 },
+  { "kind": "add-feature", "feature": {
+    "id": "outline", "name": "Manufacturing outline", "kind": "sketch", "suppressed": false,
+    "plane": "XY", "offset": 0,
+    "profiles": [
+      { "id": "plate", "name": "Plate", "construction": false, "role": "outer",
+        "geometry": { "kind": "rectangle", "x": 0, "y": 0, "width": "width", "height": 40, "cornerRadius": 3 } },
+      { "id": "hole", "name": "Bore", "construction": false, "role": "hole",
+        "geometry": { "kind": "circle", "x": "width / 2", "y": 20, "radius": 5 } }
+    ]
+  } },
+  { "kind": "add-feature", "feature": {
+    "id": "pad", "name": "Pad", "kind": "extrude", "suppressed": false,
+    "sketchId": "outline", "distance": "thickness", "symmetric": false, "operation": "new", "targetId": null
+  } }
+]
+```
+
+Read fresh context, call `cad_measure_sketch` with `sketchId: "outline"` and the current `expectedVersion`, then build and inspect volume, bounds and diagnostics. Measurements report exact primitive formulas and polygon integrals, independent of the viewport mesh. `materialAreaMm2` subtracts nested holes and adds material islands; `boundaryLengthMm` includes every cut boundary. Construction profiles remain in the paginated `profiles.items`, but do not affect totals or `boundsMm`. Bounds and lengths use the sketch's local coordinates; `plane` and `offsetMm` locate it in the model. Empty sketches report zero totals and null bounds. Follow `profiles.nextOffset` using the same version; optional `offset` and `limit` select a page.
+
+Save and call `cad_send_to_cam` with `sketchId: "outline"`. **Handoff transfers the sketch's local 2D contours, not a projection or section of the final solid.** Solid modifications do not rewrite the sketch. Read `edm_get_context` after handoff and continue the normal CAM planning, saving and installed-post workflow.
+
+To transfer the finished solid instead, call `cad_inspect_section` with the current `expectedVersion` and `section: { "bodyId": "pad", "plane": "XY", "offset": "thickness / 2" }`. Use a current visible body ID from `cad_build`. Offsets follow +Z for XY, −Y for XZ, +X for YZ; coordinates in the returned entities are local to that plane. Follow `entities.nextOffset` using `offset`/`limit` and the same document version. After inspecting, pass the same section to `cad_send_section_to_cam`. It recomputes and validates the section, saves CAD and returns a CAM project ID plus source save fingerprint and resolved plane/offset. It does not trust a mesh or previously returned curves. Tangent, open or branching sections and non-circular curves are rejected. Cancel the visible section dialog before agent calls.
+
+For a complete reproducible part, call `cad_import_document` with `{ "expectedVersion": "<current CAD version>", "document": <complete CAD document> }`. The document must contain `format: "wireedm-cad"`, `schemaVersion: 1`, a portable lowercase `id`, `name`, `units: "mm"`, a numeric `parameters` object and an ordered `features` array. Use the same complete feature definitions shown above. Expressions, feature IDs and parameters are preserved; the imported draft receives a fresh document ID and is not saved automatically. Imports cannot overwrite a saved document or replace meaningful unsaved work. JSON imports are limited to 4 MiB. Python, OpenSCAD, build123d and KCL source are not accepted. To make a variant, import the typed document, change its parameters with an atomic edit batch, measure, build and save under its fresh identity.
+
+Use full definitions for `update-feature`; omitted properties are not patches. Expressions are bounded arithmetic over numeric parameters, never code. Dimensions are millimetres and angles are degrees. See [CAD design](cad.md) for modelling and export limits. CAD currently provides dimension-driven primitives and history, not a general constraint solver or assemblies.
+
+## CAM and machine-package tools
+
 An agent in a browser with WebMCP support can discover tools on the open app page. The same pages remain usable through their ordinary controls. Open the relevant page before asking the agent to work; a cloud browser has its own files and project library.
 
 Start with `edm_get_context` and `edm_workflow_context`. They identify the current draft, available edit/capture callbacks, workbench version, recent generated artifact and useful next actions. Open the notification bell and select **Agent** to check tool readiness, open this guide and review running, completed, failed and cancelled calls. This history does not store tool arguments or project contents.

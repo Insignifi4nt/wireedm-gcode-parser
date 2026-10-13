@@ -28,6 +28,7 @@ interface DashboardPageProps {
   latestImport: ImportedDxfProject | null;
   pendingDxfImport: PendingDashboardDxfImport | null;
   onOpenEditor: () => void;
+  onOpenCad?: () => void;
   onOpenLatestImportInEditor: () => void;
   onOpenProject: (projectId: string) => void | Promise<void>;
   onDeleteProject: (projectId: string) => Promise<void>;
@@ -59,6 +60,7 @@ export function DashboardPage({
   latestImport,
   pendingDxfImport,
   onOpenEditor,
+  onOpenCad,
   onOpenLatestImportInEditor,
   onOpenProject,
   onDeleteProject,
@@ -133,6 +135,7 @@ export function DashboardPage({
             onImportUpidFile={onImportUpidFile}
             onImportProgramFile={onImportProgramFile}
             onOpenEditor={onOpenEditor}
+            onOpenCad={onOpenCad}
             onInspectGCode={() => setInspectingGCode(true)}
             programErrorMessage={programImportErrorMessage}
             programImporting={programImportStatus === 'importing'}

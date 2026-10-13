@@ -1,7 +1,7 @@
 {
   "name": "wire-edm-workbench",
   "homepage": "https://insignifi4nt.github.io/wireedm-gcode-parser",
-  "version": "0.0.696",
+  "version": "0.0.697",
   "description": "A local-first Wire EDM workbench with controller-neutral CAM state and complete installable machine packages.",
   "type": "module",
   "scripts": {
@@ -27,8 +27,8 @@
     "pw:seed": "node scripts/seed-playwright-workbench.mjs",
     "pw:seed:reload": "node scripts/seed-playwright-workbench.mjs --reload",
     "postbuild": "npm run docs:build && npm run docs:check && npm run third-party:bundle",
-    "third-party:bundle": "tsx scripts/distribute-step-sources.ts",
-    "third-party:check": "tsx scripts/distribute-step-sources.ts --check",
+    "third-party:bundle": "tsx scripts/distribute-step-sources.ts && tsx scripts/distribute-cad-sources.ts",
+    "third-party:check": "tsx scripts/distribute-step-sources.ts --check && tsx scripts/distribute-cad-sources.ts --check",
     "docs:build": "node scripts/build-documentation.mjs",
     "docs:check": "node scripts/check-documentation.mjs",
     "release:check": "node scripts/check-release.mjs",
@@ -56,6 +56,8 @@
     "quickjs-emscripten": "^0.32.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "replicad": "1.1.0",
+    "replicad-opencascadejs": "1.1.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss": "^4.1.17",
     "three": "0.186.0",

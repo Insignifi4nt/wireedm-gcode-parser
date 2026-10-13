@@ -17,7 +17,7 @@ export interface PreviewCaptureArtifact {
   readonly draftVersion: string;
   readonly dirty: boolean;
   readonly source: EditorPreviewCapture['source'];
-  readonly contentSource: 'editor-draft' | 'saved-project';
+  readonly contentSource: 'editor-draft' | 'saved-project' | 'cad-draft';
   readonly width: number;
   readonly height: number;
   readonly mimeType: 'image/png';
@@ -29,7 +29,7 @@ export interface PreviewCaptureArtifact {
 
 export async function preparePreviewCapture(
   image: EditorPreviewCapture,
-  identity: Pick<PreviewCaptureArtifact, 'projectId' | 'draftVersion' | 'dirty'>,
+  identity: Pick<PreviewCaptureArtifact, 'projectId' | 'draftVersion' | 'dirty'> & { contentSource?: PreviewCaptureArtifact['contentSource'] },
   signal: AbortSignal
 ): Promise<PreviewCaptureArtifact> {
   signal.throwIfAborted();
@@ -58,7 +58,7 @@ export async function preparePreviewCapture(
   signal.throwIfAborted();
   return {
     ...identity, captureId: crypto.randomUUID(), source: image.source,
-    contentSource: image.source === '3d' ? 'saved-project' : 'editor-draft', width: image.width, height: image.height,
+    contentSource: identity.contentSource ?? (image.source === '3d' ? 'saved-project' : 'editor-draft'), width: image.width, height: image.height,
     mimeType: 'image/png', byteLength: bytes.length,
     sha256: Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join(''),
     fileName: `editor-preview-${image.source}.png`,

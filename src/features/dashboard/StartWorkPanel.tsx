@@ -16,6 +16,7 @@ export interface StartWorkPanelProps {
   onImportUpidFile: (file: File) => void | Promise<void>;
   onImportProgramFile: (file: File) => void | Promise<void>;
   onOpenEditor: () => void;
+  onOpenCad?: () => void;
   onInspectGCode?: () => void;
 }
 
@@ -31,6 +32,7 @@ export function StartWorkPanel({
   onImportUpidFile,
   onImportProgramFile,
   onOpenEditor,
+  onOpenCad,
   onInspectGCode
 }: StartWorkPanelProps) {
   const dxfInputRef = useRef<HTMLInputElement>(null);
@@ -74,6 +76,11 @@ export function StartWorkPanel({
         <h3 className="text-xs font-semibold">Start Work</h3>
       </div>
       <div className="grid gap-3 p-3 text-[11px]">
+        {onOpenCad && <div className="grid gap-1 border-b border-border pb-3">
+          <span className="technical-label">Design &amp; manufacturing</span>
+          <Button disabled={!connected || isImporting} onClick={onOpenCad} variant="outline" type="button">Design in CAD</Button>
+          <p className="text-[10px] text-muted-foreground">Parametric sketches, solid models and exact sketch or section handoff to CAM.</p>
+        </div>}
         <input
           ref={dxfInputRef}
           accept=".dxf,application/dxf"

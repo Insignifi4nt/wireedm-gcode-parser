@@ -82,7 +82,7 @@ export async function prepareWorkbenchBackup(text: string): Promise<PreparedWork
     summary: Object.freeze({ name: workbench.manifest.name, files: files.length, projects: workbench.manifest.projects.length,
       trashedProjects: workbench.manifest.deletedProjects?.length ?? 0, machines: workbench.machines.machines.length,
       posts: workbench.posts.installations.length, revisions }),
-    unreferencedPaths: Object.freeze(files.map(({ path }) => path).filter((path) => !referenced.has(path) && !/^(legacy|transactions|posts|machines)\//i.test(path) && !/\.wireedm-job\.json$/i.test(path)))
+    unreferencedPaths: Object.freeze(files.map(({ path }) => path).filter((path) => !referenced.has(path) && !/^(legacy|transactions|posts|machines|cad)\//i.test(path) && !/\.wireedm-job\.json$/i.test(path)))
   });
   preparedFiles.set(prepared, files);
   return prepared;
