@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import type { CadTopologyDescriptor } from '../src/domain/cad/cadTopology';
+import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
 
 // Exercise the production tool registrations without a browser-specific WebMCP transport.
 // Native WebMCP interoperability is also checked separately in the Codex in-app browser.
@@ -112,6 +113,35 @@ test('one compact header and real face picking create an inward shell', async ({
   expect(await call(page, 'cad_build', { expectedVersion: changed.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(424, 7) }] });
 });
 
+test('CAD panel resizing preserves pending dimensions and restores preferred widths', async ({ page }) => {
+  const { draft } = await createBox(page);
+  await page.locator('.cad-tree-row').filter({ hasText: 'Pad' }).click();
+  const length = page.getByLabel('Length', { exact: false });
+  await length.fill('height + 2');
+  const treeHandle = page.getByRole('separator', { name: 'Resize CAD model tree' });
+  const propertiesHandle = page.getByRole('separator', { name: 'Resize CAD properties' });
+  await treeHandle.press('End');
+  await propertiesHandle.press('End');
+  const treeWidth = await treeHandle.getAttribute('aria-valuenow');
+  const propertiesWidth = await propertiesHandle.getAttribute('aria-valuenow');
+  if (!treeWidth || !propertiesWidth) throw new Error('Missing accessible panel widths');
+  expect(await context(page)).toMatchObject({ version: draft.version, workflowOpen: true });
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect(length).toHaveValue('height + 2');
+  await expect.poll(async () => (await page.locator('.cad-viewport canvas').boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(240);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(treeHandle).toHaveAttribute('aria-valuenow', treeWidth);
+  await expect(propertiesHandle).toHaveAttribute('aria-valuenow', propertiesWidth);
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  const changed = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: changed.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(1400, 6) }] });
+  await call(page, 'cad_set_viewport', { expectedVersion: changed.version, command: { kind: 'select-feature', featureId: null } });
+  await expect(propertiesHandle).not.toBeVisible();
+  await call(page, 'cad_set_viewport', { expectedVersion: changed.version, command: { kind: 'select-feature', featureId: 'pad' } });
+  await expect(propertiesHandle).toHaveAttribute('aria-valuenow', propertiesWidth);
+});
+
 test('STEP and STL exports import as standalone solids with preserved originals', async ({ page }) => {
   test.setTimeout(120_000);
   const { draft } = await createBox(page);
@@ -200,6 +230,61 @@ test('DXF exchange preserves exact rounded contours and reconstructs a standalon
   const opened = await context(page);
   expect(await call(page, 'cad_get_feature', { expectedVersion: opened.version, featureId: imported.sketchId })).toMatchObject({ feature: { source } });
   expect(await call(page, 'cad_build', { expectedVersion: opened.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(expectedVolume, 5) }] });
+});
+
+test('an imported path is selected by its interior and edited atomically through segment fields', async ({ page }) => {
+  const { draft } = await createBox(page);
+  await call(page, 'cad_save_document', { expectedVersion: draft.version });
+  const download = page.waitForEvent('download');
+  await call(page, 'cad_export_dxf', { expectedVersion: draft.version, sketchId: 'outline' });
+  const path = await (await download).path();
+  if (!path) throw new Error('Missing DXF download');
+  const source = { format: 'dxf', fileName: 'editable-footprint.dxf', text: await readFile(path, 'utf8') };
+  const imported = await call(page, 'cad_import_dxf', { expectedVersion: draft.version, source });
+  if (typeof imported.sketchId !== 'string') throw new Error('Missing imported sketch ID');
+  const before = await context(page);
+  await call(page, 'cad_edit_document', { expectedVersion: before.version, edits: [{ kind: 'set-parameter', name: 'tipX', value: 30 }] });
+  const current = await context(page);
+  const result = await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: imported.sketchId });
+  expect(result).toMatchObject({ feature: { kind: 'sketch', source } });
+  const feature = result.feature as CadSketchFeature;
+  const profile = feature.profiles[0];
+  if (profile.geometry.kind !== 'path') throw new Error('Expected an exact imported path');
+  const segments = profile.geometry.segments;
+  const segmentIndex = segments.findIndex(segment => segment.kind === 'line' && segment.end[0] === 20 && segment.end[1] === 0);
+  if (segmentIndex < 0) throw new Error('Expected the lower right vertex');
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: imported.sketchId } });
+  await page.getByRole('button', { name: 'Fit sketch', exact: true }).click();
+  // A genuine pointer click inside the shape must select it even though the
+  // drawing uses transparent fills. Read only the visible SVG view transform.
+  const point = await page.getByLabel('Sketch drawing canvas').evaluate(element => {
+    const canvas = element as SVGSVGElement;
+    const rect = canvas.getBoundingClientRect(); const view = canvas.viewBox.baseVal;
+    return { x: rect.x + (10 - view.x) / view.width * rect.width, y: rect.y + (-5 - view.y) / view.height * rect.height };
+  });
+  await page.mouse.click(point.x, point.y);
+  await expect(page.getByLabel('Path segment', { exact: true })).toBeVisible();
+  await page.getByLabel('Path segment', { exact: true }).fill(String(segmentIndex + 1));
+  await page.getByLabel('End X', { exact: false }).fill('tipX');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.locator('.cad-property-form [role="alert"]')).toContainText('continuous and closed');
+  expect(await context(page)).toMatchObject({ version: current.version, workflowOpen: true });
+  await page.getByLabel('Path segment', { exact: true }).fill(String((segmentIndex + 1) % segments.length + 1));
+  await page.getByLabel('Start X', { exact: false }).fill('tipX');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.locator('.cad-property-form [role="alert"]')).not.toBeVisible();
+  const changed = await context(page);
+  expect(changed.version).not.toBe(current.version); expect(changed.workflowOpen).toBe(false);
+  expect(await call(page, 'cad_get_feature', { expectedVersion: changed.version, featureId: imported.sketchId })).toMatchObject({ feature: { source } });
+  expect(await call(page, 'cad_measure_sketch', { expectedVersion: changed.version, sketchId: imported.sketchId })).toMatchObject({ materialAreaMm2: expect.closeTo(250, 6) });
+  await page.screenshot({ path: 'tmp/cad-path-editor.png' });
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await call(page, 'cad_edit_document', { expectedVersion: changed.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'edited_pad', name: 'Edited footprint pad', kind: 'extrude', suppressed: false, sketchId: imported.sketchId,
+    distance: 5, symmetric: false, operation: 'new', targetId: null
+  } }] });
+  const solid = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: solid.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(1250, 6) }] });
 });
 
 test('agent hollows one planar face and carries a parameterized wall section into CAM', async ({ page }) => {

@@ -25,6 +25,15 @@ function errorCode(operation: () => unknown, code: string) {
 }
 
 describe('CAD dimensions and strict document boundaries', () => {
+  it('rejects direct accessor, inherited and sparse edit payloads before evaluating them or changing an input', () => {
+    const initial = createCadDocument();
+    let reads = 0;
+    expect(() => applyCadEdits(initial, [{ kind: 'rename-document', get name() { reads++; return 'Changed'; } }])).toThrow(CadError);
+    expect(reads).toBe(0);
+    expect(() => applyCadEdits(initial, [Object.create({ kind: 'rename-document', name: 'Changed' })])).toThrow(CadError);
+    expect(() => applyCadEdits(initial, Array(1))).toThrow(CadError);
+    expect(initial.name).toBe('Untitled part');
+  });
   it('evaluates arithmetic precedence, scientific literals, unary signs and named parameters', () => {
     expect(evaluateCadScalar('width * (2 + height) / -2 + 1e-2', { width: 10, height: 3 })).toBe(-24.99);
     expect(evaluateCadScalar('--.5', {})).toBe(.5);
@@ -83,6 +92,16 @@ describe('CAD dimensions and strict document boundaries', () => {
 });
 
 describe('atomic CAD edits', () => {
+  it('validates the feature identity even when moving a feature before itself would be a no-op', () => {
+    const original = document([sketch([circle('a', 2)])]);
+    expect(applyCadEdits(original, [{ kind: 'move-feature', featureId: 'sketch1', beforeId: 'sketch1' }])).toEqual(original);
+    errorCode(() => applyCadEdits(original, [
+      { kind: 'rename-document', name: 'Changed' },
+      { kind: 'move-feature', featureId: 'missing', beforeId: 'missing' },
+    ]), 'missing-feature');
+    expect(original.name).toBe('Part');
+    expect(original.features[0].id).toBe('sketch1');
+  });
   it('updates parameter expressions without modifying saved input', () => {
     const profile = { ...circle('a', 2), geometry: { kind: 'circle', x: 0, y: 0, radius: 'diameter / 2' } } satisfies CadSketchProfile;
     const original = document([sketch([profile]), extrude], { diameter: 10 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { CadTopologyDescriptor, CadTopologyInspectRequest, CadTopologyInspectResult, CadTopologyPick, CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import type { CadPickMode } from './cadTopologyPicking';
 
@@ -33,16 +33,24 @@ export function CadTopologyInspector({ bodyId, buildId, documentVersion, pickMod
   selection: CadTopologyPickSet | null; locked: boolean; onInspect: CadInspectTopology;
   onSelect(pick: CadTopologyPick, additive: boolean): void; onClear(): void;
 }) {
+  const contentId = useId();
   const [browse, setBrowse] = useState(false);
   const [offset, setOffset] = useState(0);
   const [inspection, setInspection] = useState<Inspection | null>(null);
   const callback = useRef(onInspect); callback.current = onInspect;
   const topology = pickMode === 'face' ? 'face' : 'edge';
   const last = selection?.picks.at(-1);
-  const identity = JSON.stringify([bodyId, buildId, documentVersion, topology, browse, offset, last?.kind, last?.key]);
+  const disclosureIdentity = JSON.stringify([bodyId, buildId, documentVersion, pickMode, selection]);
+  const automaticallyExpanded = pickMode !== 'body' || Boolean(last);
+  const [disclosure, setDisclosure] = useState({ identity: disclosureIdentity, expanded: automaticallyExpanded });
+  const expanded = disclosure.identity === disclosureIdentity ? disclosure.expanded : automaticallyExpanded;
+  const identity = JSON.stringify([bodyId, buildId, documentVersion, topology, expanded, browse, offset, last?.kind, last?.key]);
+  useEffect(() => {
+    setDisclosure(current => current.identity === disclosureIdentity ? current : { identity: disclosureIdentity, expanded: automaticallyExpanded });
+  }, [disclosureIdentity, automaticallyExpanded]);
   useEffect(() => { setOffset(0); setBrowse(false); }, [bodyId, buildId, documentVersion, pickMode]);
   useEffect(() => {
-    if (!last && !browse) { setInspection(null); return; }
+    if (!expanded || !last && !browse) { setInspection(null); return; }
     const abort = new AbortController();
     setInspection({ identity, kind: 'loading' });
     const request: CadTopologyInspectRequest = { bodyId, expectedBuildId: buildId, selection: browse
@@ -57,12 +65,15 @@ export function CadTopologyInspector({ bodyId, buildId, documentVersion, pickMod
   const current = inspection?.identity === identity ? inspection : null;
   const selectedDescriptor = !browse && current?.kind === 'ready' ? current.result.descriptors[0] : null;
   return <section className="cad-topology-inspector" aria-label="Exact topology inspector">
-    <div className="cad-topology-heading"><span>TOPOLOGY</span>{selection?.picks.length ? <button disabled={locked} onClick={onClear}>Clear selection</button> : null}</div>
+    <div className="cad-topology-heading"><button type="button" className="cad-topology-disclosure" aria-label="Inspect topology" aria-expanded={expanded} aria-controls={contentId}
+      onClick={() => setDisclosure({ identity: disclosureIdentity, expanded: !expanded })}><span aria-hidden="true">{expanded ? '▾' : '▸'}</span> Inspect topology</button>{selection?.picks.length ? <button disabled={locked} onClick={onClear}>Clear selection</button> : null}</div>
+    <div id={contentId} className="cad-topology-content" hidden={!expanded}>{expanded && <>
     <p className="cad-inspector-note">{selection?.picks.length ? `${selection.picks.length} ${selection.picks[0].kind}${selection.picks.length === 1 ? '' : 's'} selected. ` : ''}Pick faces or edges on the model, or select them from the exact list.</p>
     <div className="cad-topology-actions"><button disabled={locked} aria-pressed={browse} onClick={() => { setBrowse(!browse); setOffset(0); }}>{browse ? 'Show selected' : `Browse ${topology === 'edge' ? 'edges' : 'faces'}`}</button></div>
     {current?.kind === 'loading' && <p role="status" className="cad-inspector-note">Inspecting exact geometry…</p>}
     {current?.kind === 'error' && <p role="alert" className="cad-error">{current.message}</p>}
     {selectedDescriptor && <><TopologyDetails descriptor={selectedDescriptor} />{selectedDescriptor.kind === 'edge' && selectedDescriptor.curveType === 'other' && <p className="cad-inspector-note">Selective fillet and chamfer support straight and circular edges. This edge can be inspected.</p>}{selectedDescriptor.kind === 'face' && selectedDescriptor.surfaceType !== 'plane' && <p className="cad-inspector-note">Shell requires one planar opening face.</p>}</>}
     {browse && current?.kind === 'ready' && <><div className="cad-topology-list" aria-label={`Exact ${topology} list`}>{current.result.descriptors.map((descriptor, index) => <button key={descriptor.key} disabled={locked} aria-pressed={Boolean(selection?.picks.some((pick) => pick.key === descriptor.key && pick.kind === descriptor.kind))} onClick={(event) => onSelect({ kind: descriptor.kind, key: descriptor.key }, event.ctrlKey || event.metaKey)}><span>{offset + index + 1}. {descriptorName(descriptor)}</span><small>{number(descriptor.kind === 'edge' ? descriptor.length : descriptor.area)} {descriptor.kind === 'edge' ? 'mm' : 'mm²'}</small></button>)}</div><div className="cad-topology-pagination"><button disabled={offset === 0 || locked} onClick={() => setOffset(Math.max(0, offset - 8))}>Previous</button><span>{current.result.total} {topology === 'edge' ? 'edges' : 'faces'}</span><button disabled={current.result.nextOffset === null || locked} onClick={() => { if (current.result.nextOffset !== null) setOffset(current.result.nextOffset); }}>Next</button></div></>}
+    </>}</div>
   </section>;
 }

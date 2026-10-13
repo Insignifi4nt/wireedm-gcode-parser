@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, Grid2X2, Magnet, Maximize2, X } from 'lucide-react';
 import type { CadProfile, CadSketchFeature, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
@@ -9,6 +9,7 @@ import { ToolError } from '@/features/webmcp/siteTools';
 import type { CadRenderedViewControls, CadRenderedViewState } from './cadViewportControls';
 import { closeSketchPolygon, snapSketchPoint, twoPointSketchProfile, type SketchPoint, type SketchTool } from './cadSketchInteraction';
 import { cadArcSvgPath } from './cadSketchSvg';
+import { createCadSketchProfilePicker } from './cadSketchPicking';
 
 function AnalyticEntity({ entity }: { entity: DxfEntity }) {
   switch (entity.type) {
@@ -65,7 +66,20 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
   const [snap, setSnap] = useState(true);
   const [grid, setGrid] = useState(true);
   const [gridStep, setGridStep] = useState(5);
-  const pan = useRef<{ x: number; y: number; center: SketchPoint } | null>(null);
+  const pan = useRef<{ x: number; y: number; center: SketchPoint; pointerId: number; buttonMask: number; element: SVGSVGElement } | null>(null);
+  const finishPan = useCallback((pointerId?: number) => {
+    const active = pan.current;
+    if (!active || pointerId !== undefined && pointerId !== active.pointerId) return;
+    pan.current = null;
+    try { if (active.element.hasPointerCapture?.(active.pointerId)) active.element.releasePointerCapture(active.pointerId); }
+    catch { /* Capture may already have ended when the browser cancelled the pointer. */ }
+  }, []);
+  useEffect(() => {
+    const blurred = () => finishPan();
+    window.addEventListener('blur', blurred);
+    return () => { window.removeEventListener('blur', blurred); finishPan(); };
+  }, [finishPan]);
+  const profilePicker = useMemo(() => createCadSketchProfilePicker(sketch.profiles, parameters), [sketch.profiles, parameters]);
   const width = span * aspect;
   const viewRevision = useRef({ signature: '', revision: 0 });
   const viewSignature = JSON.stringify([sketch.plane, center, span, aspect, grid, snap, gridStep]);
@@ -105,11 +119,12 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
   }, [onControlsReady]);
   useEffect(() => { setPoints([]); }, [sketch.id, tool, cancelSignal]);
   useLayoutEffect(() => { onPendingChange(points.length > 0); }, [points.length, onPendingChange]);
-  const getPoint = (event: { clientX: number; clientY: number }): SketchPoint => {
+  const getRawPoint = (event: { clientX: number; clientY: number }): SketchPoint | null => {
     const rect = svg.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0 || rect.height === 0) return [0, 0];
-    return snapSketchPoint([center[0] + (event.clientX - rect.left - rect.width / 2) / rect.width * width, center[1] - (event.clientY - rect.top - rect.height / 2) / rect.height * span], gridStep, snap);
+    if (!rect || rect.width === 0 || rect.height === 0) return null;
+    return [center[0] + (event.clientX - rect.left - rect.width / 2) / rect.width * width, center[1] - (event.clientY - rect.top - rect.height / 2) / rect.height * span];
   };
+  const getPoint = (event: { clientX: number; clientY: number }): SketchPoint => snapSketchPoint(getRawPoint(event) ?? [0, 0], gridStep, snap);
   const add = (geometry: CadProfile) => {
     try { onAddProfile(geometry); setPoints([]); }
     catch (error) { onError(error instanceof Error ? error.message : 'Unable to add this profile.'); }
@@ -167,14 +182,24 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
     <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role="application" tabIndex={interactionLocked ? -1 : 0} aria-label="Sketch drawing canvas" aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio="none"
       onContextMenu={(event) => event.preventDefault()}
       onWheel={(event) => { if (!event.ctrlKey && !event.metaKey) setSpan((current) => Math.max(0.1, Math.min(100000, current * Math.exp(event.deltaY * 0.001)))); }}
-      onPointerDown={(event) => { if (event.button === 1 || event.button === 2) { pan.current = { x: event.clientX, y: event.clientY, center }; event.currentTarget.setPointerCapture(event.pointerId); } else if (event.button === 0 && !interactionLocked) event.currentTarget.focus(); }}
-      onPointerUp={() => { pan.current = null; }}
-      onPointerCancel={() => { pan.current = null; }}
-      onLostPointerCapture={() => { pan.current = null; }}
+      onPointerDown={(event) => {
+        if (pan.current || event.isPrimary === false) return;
+        if (event.button === 1 || event.button === 2) {
+          pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, buttonMask: event.button === 1 ? 4 : 2, element: event.currentTarget };
+          try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); }
+        } else if (event.button === 0 && !interactionLocked) event.currentTarget.focus();
+      }}
+      onPointerUp={(event) => finishPan(event.pointerId)}
+      onPointerCancel={(event) => finishPan(event.pointerId)}
+      onLostPointerCapture={(event) => finishPan(event.pointerId)}
       onPointerMove={(event) => {
-        if (pan.current) {
+        const active = pan.current;
+        if (active) {
+          if (event.pointerId !== active.pointerId) return;
+          if (!(event.buttons & active.buttonMask)) { finishPan(event.pointerId); return; }
           const rect = event.currentTarget.getBoundingClientRect();
-          setCenter([pan.current.center[0] - (event.clientX - pan.current.x) / rect.width * width, pan.current.center[1] + (event.clientY - pan.current.y) / rect.height * span]);
+          if (!rect.width || !rect.height) { finishPan(event.pointerId); return; }
+          setCenter([active.center[0] - (event.clientX - active.x) / rect.width * width, active.center[1] + (event.clientY - active.y) / rect.height * span]);
         } else setCursor(getPoint(event));
       }}
       onKeyDown={(event) => {
@@ -192,14 +217,20 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
         else if (event.key.toLowerCase() === 'f' && !viewLocked) { event.preventDefault(); fit(); }
       }}
       onClick={(event) => {
-        if (event.button === 0) placePoint(getPoint(event));
+        // Chromium's click PointerEvent reports isPrimary=false even for the
+        // primary mouse; primary-pointer filtering belongs to pointerdown.
+        if (event.button !== 0 || interactionLocked) return;
+        if (tool === 'select') {
+          const point = getRawPoint(event); const rect = svg.current?.getBoundingClientRect();
+          if (point && rect?.height) onSelectProfile(profilePicker.pick(point, span / rect.height));
+        } else placePoint(getPoint(event));
       }}>
       <defs><pattern id="cad-sketch-grid" width={gridStep} height={gridStep} patternUnits="userSpaceOnUse"><path d={`M ${gridStep} 0 H 0 V ${gridStep}`} fill="none" stroke="#29373f" strokeWidth={span / 1000} /></pattern></defs>
       {grid && span / gridStep < 2000 && <rect x={center[0] - width / 2} y={-center[1] - span / 2} width={width} height={span} fill="url(#cad-sketch-grid)" />}
       <path d={`M ${center[0] - width / 2} 0 H ${center[0] + width / 2}`} className="cad-axis-x" strokeWidth={span / 700} />
       <path d={`M 0 ${-center[1] - span / 2} V ${-center[1] + span / 2}`} className="cad-axis-y" strokeWidth={span / 700} />
       <g transform="scale(1,-1)" strokeWidth={span / 450}>
-        {sketch.profiles.map((profile) => <g key={profile.id} role="button" aria-label={`Select ${profile.name} profile`} aria-pressed={profile.id === selectedProfileId} tabIndex={tool === 'select' && !interactionLocked ? 0 : -1} className={`cad-profile ${profile.construction ? 'is-construction' : ''} ${profile.id === selectedProfileId ? 'is-selected' : ''}`} strokeDasharray={profile.construction ? `${span / 80} ${span / 120}` : undefined} onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && tool === 'select' && !interactionLocked) { event.preventDefault(); event.stopPropagation(); onSelectProfile(profile.id); } }} onClick={(event) => { if (event.button === 0 && tool === 'select' && !interactionLocked) { event.stopPropagation(); onSelectProfile(profile.id); } }}><SafeProfile profile={profile} parameters={parameters} /></g>)}
+        {sketch.profiles.map((profile) => <g key={profile.id} role="button" aria-label={`Select ${profile.name} profile`} aria-pressed={profile.id === selectedProfileId} tabIndex={tool === 'select' && !interactionLocked ? 0 : -1} className={`cad-profile ${profile.construction ? 'is-construction' : ''} ${profile.id === selectedProfileId ? 'is-selected' : ''}`} strokeDasharray={profile.construction ? `${span / 80} ${span / 120}` : undefined} onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && tool === 'select' && !interactionLocked) { event.preventDefault(); event.stopPropagation(); onSelectProfile(profile.id); } }} onClick={(event) => { if (event.detail === 0 && event.button === 0 && tool === 'select' && !interactionLocked) { event.stopPropagation(); onSelectProfile(profile.id); } }}><SafeProfile profile={profile} parameters={parameters} /></g>)}
         {preview && <g className="cad-profile cad-profile-preview"><ProfileGeometry geometry={preview} parameters={parameters} /></g>}
         {tool === 'polygon' && points.length > 0 && <polyline className="cad-profile cad-profile-preview" points={[...points, cursor].map(([x, y]) => `${x},${y}`).join(' ')} />}
         {points.map(([x, y], index) => <circle key={index} cx={x} cy={y} r={span / 170} className="cad-sketch-vertex" />)}

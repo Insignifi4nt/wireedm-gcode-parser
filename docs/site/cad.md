@@ -2,6 +2,8 @@
 
 Open **Design in CAD** from Start Work. The desktop workspace keeps the feature tree on the left, the sketch or solid view in the centre, and the selected feature's dimensions on the right. The timeline follows the same feature history. Nothing is uploaded to a modelling service.
 
+Drag a divider beside the feature tree or properties panel to resize it. You can also focus a divider and use Left/Right arrows; hold Shift for a one-pixel step, or use Home/End for the width limits. Preferred widths return when the window expands or the properties panel reopens, and resizing preserves pending edits.
+
 ## Design a part
 
 1. Create a sketch on XY, XZ or YZ. Draw a closed Rectangle, Circle, Polygon or Slot. Use the numeric editor for exact position and size. Rectangles support rounded corners; slots have an angle. Construction profiles remain visible for reference but do not enter solids or CAM exports.
@@ -11,6 +13,8 @@ Open **Design in CAD** from Start Work. The desktop workspace keeps the feature 
 5. Save the document. Saved CAD documents appear in the CAD library. Returning to the workbench retains the in-memory draft; save before closing the browser or changing documents.
 
 Use isometric, top, front or right views, fit the part, and navigate with the viewport mouse controls. Rendering updates on demand. The solid engine loads only when needed, so its first operation can take longer. Rebuilding and failed models are labelled; export cannot silently use a failed history.
+
+In sketch Select mode, click inside a contour or near its outline. Nested interiors select the innermost contour; construction geometry is selected by its outline. Picking uses the pointer position independently of grid snapping. Escape discards pending dimensions or parameter edits. Ctrl/Cmd+S saves only after those edits are applied or cancelled; Ctrl/Cmd+Z in a text field keeps its normal text-editing behavior.
 
 Use **File → Rebuild model** if a cancelled operation or restarted worker invalidates an exact selection. The visible shape can remain available while its cached topology needs rebuilding; select faces or edges again after the rebuild.
 
@@ -23,6 +27,8 @@ Named parameters are numeric values. Dimensions accept numbers or expressions su
 Each accepted edit is one undo step. Undo/redo changes the draft without rewriting saved storage. History is bounded to 50 steps and a memory budget. Invalid edits leave the previous draft intact. Deleting a feature with dependents requires explicit cascade deletion; reordering must preserve dependency order.
 
 Choose Body, Face or Edge in the viewport to change the selection filter. Ctrl/Cmd-click adds or removes edges on the same body. The inspector can also list exact topology for keyboard selection. A selection belongs to the current build and clears when that build changes. Saved edge and opening selections use geometric conditions with exact match counts: an ambiguous match fails rather than choosing an arbitrary edge. A tangent edge chain must be selected completely when the solid engine would propagate the operation along it.
+
+In Body mode, expand **Inspect topology** to browse the exact edge list. Face and Edge selections open this inspector automatically; close it when you want more space for feature dimensions.
 
 This release provides dimension-driven profiles and parametric feature history. It does not provide a general geometric constraint solver, assemblies, freeform surface authoring, arbitrary face sketching, or reconstruction of an imported solid's original feature history.
 
@@ -48,7 +54,7 @@ Sections must cut through material and produce closed, unbranched contours made 
 - **CAD JSON** preserves parameters and feature history. Import assigns a fresh identity, protecting existing saves.
 - **STEP** imports and exports exact solid geometry. Imported bodies support subsequent solid operations; their original feature history is not reconstructed.
 - **STL** imports closed faceted solids and exports tessellated solids. Choose millimeters or inches when importing because STL has no unit declaration. A mesh does not recover analytic curved surfaces. Imports accept one connected closed shell with 4–4,000 triangles; open, nonmanifold and multi-shell meshes are rejected.
-- **DXF** imports exact closed contours as an XY sketch and exports the selected sketch in local millimetres, excluding construction profiles. Lines, circles and circular arcs remain analytic. Import uses declared units; choose source units when the declaration is missing. Unsupported curves, approximations, open contours, nonzero elevation and thickness are rejected. Imported line/arc paths retain exact segments; their segment dimensions are currently editable through typed agent operations, while the properties panel offers name and construction state.
+- **DXF** imports exact closed contours as an XY sketch and exports the selected sketch in local millimetres, excluding construction profiles. Lines, circles and circular arcs remain analytic. Import uses declared units; choose source units when the declaration is missing. Unsupported curves, approximations, open contours, nonzero elevation and thickness are rejected. Select a segment in Properties to edit its line endpoints or arc dimensions, including parameter expressions. Apply validates the entire closed path; match adjacent endpoints when editing joints. Typed agent operations use the same validation.
 - Full workbench backup includes saved CAD documents. Unsaved drafts are outside backup.
 
 Imported STEP, STL and DXF originals remain embedded in the CAD document. Each source is limited to 2 MiB; the entire CAD JSON document, including originals, is limited to 4 MiB. Native topology is limited to 10,000 faces/edges per body and 25,000 per build. Sketch complexity and pattern instances also have limits. Browser download requests do not prove a file was saved to disk. Keep a portable CAD copy before extensive experiments.

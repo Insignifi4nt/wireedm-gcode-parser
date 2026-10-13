@@ -49,7 +49,7 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function PreviousEditorHeader() {
   const { setHeaderContent } = useAppRail();
@@ -119,6 +119,36 @@ function viewport() {
   if (!currentViewport) throw new Error('Viewport controls unavailable.');
   return currentViewport;
 }
+function panelResizeFixture(initialWidth = 1440) {
+  let measuredWidth = initialWidth;
+  const observers = new Map<Element, () => void>();
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('cad-body') ? measuredWidth : 0; });
+  vi.stubGlobal('ResizeObserver', class {
+    private elements = new Set<Element>();
+    constructor(private callback: () => void) {}
+    observe(element: Element) { this.elements.add(element); observers.set(element, this.callback); }
+    disconnect() { for (const element of this.elements) observers.delete(element); }
+  });
+  return async (width: number) => {
+    measuredWidth = width;
+    const body = container.querySelector('.cad-body');
+    if (!body) throw new Error('CAD body missing');
+    await act(async () => observers.get(body)?.());
+  };
+}
+function resizeHandle(label: string) {
+  const element = [...container.querySelectorAll<HTMLElement>('[role="separator"]')].find(element => element.getAttribute('aria-label') === label);
+  if (!element) throw new Error(`Resize handle ${label} missing`);
+  return element;
+}
+async function resizeKey(label: string, key: string, shiftKey = false) {
+  await act(async () => resizeHandle(label).dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true })));
+}
+function resizePointer(type: string, clientX: number, pointerId = 17) {
+  const event = new MouseEvent(type, { clientX, button: 0, buttons: type === 'pointerdown' || type === 'pointermove' ? 1 : 0, bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'pointerId', { value: pointerId });
+  return event;
+}
 
 const topologyBuild: CadBuildResult = { buildId: 'build-1', meshes: [{ featureId: 'pad', name: 'Pad 1', positions: [0, 0, 10, 50, 0, 10, 50, 40, 10], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2],
   edges: [0, 0, 10, 50, 0, 10], faceGroups: [{ start: 0, count: 3, key: 'face-1' }], edgeGroups: [{ start: 0, count: 2, key: 'edge-1' }], volume: 20_000,
@@ -149,6 +179,88 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('discards an edited part name on focused Escape without changing document, version or undo/redo history', async () => {
+    await mount(solidDocument());
+    await act(async () => {
+      currentSession.edit([{ kind: 'rename-document', name: 'Reviewed part' }]);
+      currentSession.edit([{ kind: 'set-parameter', name: 'width', value: 50 }]); currentSession.undo();
+    });
+    const before = currentSession.getSnapshot(); expect(before.canUndo).toBe(true); expect(before.canRedo).toBe(true);
+    const name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]'); if (!name) throw new Error('Part name missing');
+    name.focus(); await input(name, 'Discard this rename'); expect(currentSession.getSnapshot().workflowOpen).toBe(true);
+    await act(async () => name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(name.value).toBe('Reviewed part'); expect(document.activeElement).toBe(name);
+    expect(currentSession.getSnapshot()).toEqual(before); expect(currentDocument).toBe(before.document);
+    await act(async () => name.blur());
+    expect(currentSession.getSnapshot()).toEqual(before); expect(currentSession.getSnapshot().workflowOpen).toBe(false);
+  });
+  it('leaves composing Enter and Escape to the part-name input method', async () => {
+    await mount(solidDocument()); const before = currentSession.getSnapshot();
+    const name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]'); if (!name) throw new Error('Part name missing');
+    name.focus(); await input(name, '部品');
+    for (const key of ['Enter', 'Escape']) {
+      const composing = new KeyboardEvent('keydown', { key, isComposing: true, bubbles: true, cancelable: true });
+      await act(async () => name.dispatchEvent(composing));
+      expect(composing.defaultPrevented).toBe(false); expect(name.value).toBe('部品'); expect(document.activeElement).toBe(name);
+      expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: true });
+    }
+    await act(async () => name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(currentSession.getSnapshot()).toEqual(before);
+  });
+  it('preserves rail preferences through inspector collapse and compact/desktop transitions', async () => {
+    const resizeWorkspace = panelResizeFixture();
+    await mount(solidDocument()); const before = currentDocument; const version = currentSession.getSnapshot().version;
+    expect(resizeHandle('Resize CAD model tree').getAttribute('aria-valuenow')).toBe('220');
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    await resizeKey('Resize CAD model tree', 'ArrowRight'); await resizeKey('Resize CAD properties', 'ArrowLeft');
+    expect(resizeHandle('Resize CAD model tree').getAttribute('aria-valuenow')).toBe('230');
+    expect(resizeHandle('Resize CAD properties').getAttribute('aria-valuenow')).toBe('282');
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: null }));
+    expect(container.querySelector('[aria-label="Resize CAD properties"]')).toBeNull();
+    await resizeWorkspace(1023); expect(container.querySelector('[role="separator"]')).toBeNull();
+    await resizeWorkspace(1440); expect(resizeHandle('Resize CAD model tree').getAttribute('aria-valuenow')).toBe('230');
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    expect(resizeHandle('Resize CAD properties').getAttribute('aria-valuenow')).toBe('282');
+    expect(currentDocument).toBe(before); expect(currentSession.getSnapshot().version).toBe(version);
+  });
+  it('constrains oversized rails to usable canvas then restores their preferred widths on expansion', async () => {
+    const resizeWorkspace = panelResizeFixture();
+    await mount(solidDocument()); await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    await resizeKey('Resize CAD model tree', 'End'); await resizeKey('Resize CAD properties', 'End');
+    expect(resizeHandle('Resize CAD model tree').getAttribute('aria-valuenow')).toBe('420');
+    expect(resizeHandle('Resize CAD properties').getAttribute('aria-valuenow')).toBe('520');
+    await resizeWorkspace(1024);
+    expect(resizeHandle('Resize CAD model tree').getAttribute('aria-valuenow')).toBe('180');
+    expect(resizeHandle('Resize CAD properties').getAttribute('aria-valuenow')).toBe('356');
+    expect(container.querySelector<HTMLElement>('.cad-body')?.style.gridTemplateColumns).toBe('180px 4px minmax(480px, 1fr) 4px 356px');
+    await resizeKey('Resize CAD model tree', 'ArrowRight');
+    expect(resizeHandle('Resize CAD model tree').getAttribute('aria-valuenow')).toBe('180');
+    await resizeWorkspace(1440);
+    expect(resizeHandle('Resize CAD model tree').getAttribute('aria-valuenow')).toBe('420');
+    expect(resizeHandle('Resize CAD properties').getAttribute('aria-valuenow')).toBe('520');
+  });
+  it('resizes with the pointer and keyboard without committing or remounting pending numeric/name fields', async () => {
+    panelResizeFixture(); await mount(solidDocument()); await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    const before = currentDocument; const version = currentSession.getSnapshot().version; const length = field('Length');
+    length.focus(); await input(length, '25');
+    await act(async () => {
+      resizeHandle('Resize CAD model tree').dispatchEvent(resizePointer('pointerdown', 100));
+      window.dispatchEvent(resizePointer('pointermove', 210)); window.dispatchEvent(resizePointer('pointercancel', 210));
+    });
+    expect(resizeHandle('Resize CAD model tree').getAttribute('aria-valuenow')).toBe('330');
+    await act(async () => window.dispatchEvent(resizePointer('pointermove', 500)));
+    expect(resizeHandle('Resize CAD model tree').getAttribute('aria-valuenow')).toBe('330');
+    expect(field('Length')).toBe(length); expect(length.value).toBe('25'); expect(currentSession.getSnapshot().workflowOpen).toBe(true);
+    expect(currentDocument).toBe(before); expect(currentSession.getSnapshot().version).toBe(version);
+    await click('Cancel');
+    const name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]'); if (!name) throw new Error('Part name missing');
+    name.focus(); await input(name, 'Pending rename');
+    await act(async () => resizeHandle('Resize CAD model tree').focus()); await resizeKey('Resize CAD model tree', 'ArrowRight', true);
+    expect(name.value).toBe('Pending rename'); expect(currentDocument).toBe(before); expect(currentSession.getSnapshot().version).toBe(version);
+    expect(currentSession.getSnapshot().workflowOpen).toBe(true); expect(resizeHandle('Resize CAD model tree').getAttribute('aria-valuenow')).toBe('331');
+    await resizeKey('Resize CAD model tree', 'Escape');
+    expect(name.value).toBe(before.name); expect(currentSession.getSnapshot().workflowOpen).toBe(false); expect(currentSession.getSnapshot().canUndo).toBe(false);
+  });
   it('reclaims empty property space and restores the editor on selection without changing geometry or history', async () => {
     await mount(solidDocument(), { build: topologyBuild, buildState: 'ready' });
     const before = currentDocument; const version = currentSession.getSnapshot().version; const controls = viewport();
@@ -270,6 +382,42 @@ describe('CAD sketch interaction', () => {
     expect(workflow).toHaveBeenLastCalledWith(false);
   });
 
+  it('owns Save while editing and cancels scalar drafts with Escape without intercepting native text undo', async () => {
+    await mount(solidDocument(), { build: topologyBuild, buildState: 'ready' });
+    await click('Select Pad 1 in history');
+    const before = currentSession.getSnapshot();
+    await input(field('Length'), 'invalid + 2');
+    const nativeUndo = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true });
+    await act(async () => field('Length').dispatchEvent(nativeUndo));
+    expect(nativeUndo.defaultPrevented).toBe(false); expect(undo).not.toHaveBeenCalled();
+    for (const modifier of ['ctrlKey', 'metaKey']) {
+      const saveKey = new KeyboardEvent('keydown', { key: 's', [modifier]: true, bubbles: true, cancelable: true });
+      await act(async () => field('Length').dispatchEvent(saveKey));
+      expect(saveKey.defaultPrevented).toBe(true);
+    }
+    expect(save).not.toHaveBeenCalled(); expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: true });
+    const composingEscape = new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true });
+    await act(async () => field('Length').dispatchEvent(composingEscape));
+    expect(field('Length').value).toBe('invalid + 2'); expect(composingEscape.defaultPrevented).toBe(false);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    await act(async () => field('Length').dispatchEvent(escape));
+    expect(escape.defaultPrevented).toBe(true); expect(field('Length').value).toBe('10');
+    expect(currentSession.getSnapshot()).toEqual(before);
+    const saveKey = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true });
+    await act(async () => field('Length').dispatchEvent(saveKey));
+    expect(saveKey.defaultPrevented).toBe(true); expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels pending parameter fields from the focused input without changing geometry or history', async () => {
+    await mount(solidDocument()); await click('Parameters');
+    const before = currentSession.getSnapshot();
+    await input(field('Name'), 'wall'); await input(field('Value'), '3');
+    expect(currentSession.getSnapshot().workflowOpen).toBe(true);
+    await act(async () => field('Value').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(field('Name').value).toBe(''); expect(field('Value').value).toBe('');
+    expect(currentSession.getSnapshot()).toEqual(before);
+  });
+
   it('uses the current body when starting a modification from a consumed historical feature', async () => {
     const initial = applyCadEdits(createCadDocument(), [
       { kind: 'add-feature', feature: { id: 'sketch', name: 'Outline', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [{ id: 'rectangle', name: 'Plate', construction: false, role: 'outer', geometry: { kind: 'rectangle', x: 0, y: 0, width: 50, height: 40, cornerRadius: 0 } }] } },
@@ -365,7 +513,7 @@ describe('CAD sketch interaction', () => {
   it('selects exact topology through keyboard-accessible rows and persists only verified geometric selectors', async () => {
     const resolve = vi.fn(resolveTopology);
     await mount(solidDocument(), { build: topologyBuild, buildState: 'ready', onInspectTopology: inspectTopology, onResolveSelection: resolve });
-    await click('Select Pad 1 in history'); await click('Browse edges'); await click('1. Straight edge50 mm');
+    await click('Select Pad 1 in history'); await click('Inspect topology'); await click('Browse edges'); await click('1. Straight edge50 mm');
     expect(viewport().getState().topologySelection?.picks).toEqual([{ kind: 'edge', key: 'edge-1' }]);
     expect(container.querySelector('.cad-topology-details')?.textContent).toContain('Straight edge');
     await click('Fillet');
@@ -510,7 +658,8 @@ describe('CAD sketch interaction', () => {
     const view = viewport().getState().view;
     if (view?.mode !== 'sketch') throw new Error('Sketch view missing.');
     expect(view.centerMm[0]).toBeCloseTo(10, 6); expect(view.centerMm[1]).toBeCloseTo(5, 6);
-    expect(container.querySelector('.cad-property-form')?.textContent).toContain('Segment dimensions are read-only');
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Path segment"]')?.value).toBe('1');
+    expect(field('End X').value).toBe('20');
     await input(field('Name'), 'Renamed contour'); await click('Apply');
     const sketch = currentDocument.features[0];
     expect(sketch.kind === 'sketch' && sketch.profiles[0]).toMatchObject({ name: 'Renamed contour', geometry });

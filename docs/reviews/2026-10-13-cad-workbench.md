@@ -55,4 +55,33 @@ Final local verification for this continuation:
 - Full production Chromium: 100 pass, one existing externally seeded-workbench case skipped. The 11 CAD-specific checks also pass independently, covering exact selected chamfer, real face-click shell, parameterized shell section, STEP/STL/DXF round trips with preserved originals, visible STL unit review, save/reload, sketch capture and human/agent workflow protection. The complete run retains existing CAM, storage, package installation and controller-export behavior.
 - Native WebMCP in the Codex browser reopens the original saved plate with unchanged exact volume, lists its 12 native faces, resolves its top planar face into geometric conditions and captures a 1,159 × 734 sketch PNG after the initial-layout timing correction. Real view changes still reject stale captures. The single-header layout and collapsed empty inspector were visually checked.
 
-The local continuation stays on the same CAD branch and existing PR #12; there is no additional app version bump or separate PR. General constraint solving, assemblies, freeform surfaces and arbitrary-face sketching remain future work. Imported analytic path segment editing is currently available through typed document operations; its properties panel exposes name and construction state.
+The local continuation stays on the same CAD branch and existing PR #12; there is no additional app version bump or separate PR. General constraint solving, assemblies, freeform surfaces and arbitrary-face sketching remain future work. At this checkpoint, imported analytic path segment editing was available through typed document operations; its properties panel exposed name and construction state. The follow-up below adds its segment editor.
+
+## Local interaction and performance follow-up
+
+CAD panels now resize with pointer or keyboard input. Preferred widths survive inspector collapse and narrower windows, while desktop resizing reserves a 480 px canvas. Width preferences are presentation state and do not alter documents or pending dimension drafts. Independent review found and fixed a shared rail lifecycle defect: pointer capture, blur, lost capture, released-button detection and unmount cleanup now prevent dragging from continuing after the mouse was released outside the browser. Existing CAM rail behavior has focused regression coverage.
+
+Escape discards pending profile, feature, parameter and part-name edits. Save shortcuts belong to the app even while a draft prevents saving; they neither commit pending fields nor open the browser's Save Page dialog. Text inputs retain native text undo. Composition keystrokes remain with the input method. Exact topology browsing starts collapsed in Body mode, expands for face/edge selection and cancels its request when closed.
+
+Imported analytic paths now expose a bounded line/arc segment editor. Users can enter expressions for endpoints, centres, radii and angles, navigating one segment at a time. Applying validates the entire contour atomically; invalid continuity leaves both the original document and the provisional fields intact. Source DXF bytes remain preserved, and edits never silently repair adjacent joints. Sketch picking uses the unsnapped pointer location, exact boundary distances within six screen pixels and the innermost non-construction interior. Construction profiles remain selectable on their boundaries.
+
+History no longer serializes every retained document on each edit. Incremental immutable document lengths preserve the previous 50-step/8 MiB serialized-character budget, including brackets and commas. Exact-boundary tests cover trimming, undo/redo, failed edits, no-op edits and saved baselines. This is the existing history budget, not a measurement of total browser heap consumption.
+
+Sketch validation prepares each analytic path once per resolution and reuses its edges and exact containment representation. Padded conservative contour bounds discard impossible containment candidates; surviving candidates still use the same analytic predicates. Nothing is cached across parameter changes. Independent comparison against the previous implementation passed 720 mixed-scale, winding, arc, nesting and parameter-change cases. This proves equivalence for those cases, not universal numerical correctness.
+
+Controlled local measurements used Node 22.23.2 on an Intel Core i9-14900HX, alternating before/after order, three warmups and 15 measured pairs, without concurrent builds or test runs. These are separate measurements of each optimization, not an end-to-end frame-rate guarantee:
+
+| Operation and fixture | Before median | After median |
+| --- | ---: | ---: |
+| Full-history edit, 1,000 imported edges | 119.47 ms | 20.23 ms |
+| Full-history edit, 2,000 imported edges | 149.83 ms | 44.16 ms |
+| Full-history edit, 64 × 100 imported edges | 382.64 ms | 264.84 ms |
+| Region resolution, 20 disjoint 100-edge paths | 12.11 ms | 6.15 ms |
+| Region resolution, 20 nested 100-edge paths | 32.53 ms | 18.85 ms |
+| Region resolution, 64 disjoint 100-edge paths | 171.82 ms | 46.73 ms |
+
+The ordinary 100-feature region fixture stayed near 0.6 ms; improvements are workload-dependent. Document validation and expression evaluation still contribute to larger edits. Geometry remains exact and the CAD/CAM handoff contract is unchanged.
+
+Follow-up verification: all 246 Vitest files / 2,503 tests pass (348 pure-domain and 2,155 browser tests), with four workers. Production TypeScript/build passes. The affected CAD/kernel/CAM-layout production cases pass across focused runs, including all 11 CAD workflows, an imported line/arc path edited atomically into a 1,250 mm³ solid, pending dimensions surviving panel resizing and real mouse dragging on CAM rails. Browser testing caught and corrected Chromium click events reporting `isPrimary: false` despite a primary pointer sequence; click selection uses the actual button and workflow guards. The former synthetic CAM drag helper omitted pressed-button state and now uses real Playwright mouse input. Sketch panning also ends on blur, lost capture, released original button or unmount and ignores unrelated pointers.
+
+Native browser inspection confirms the original saved plate retains its exact volume and its properties panel resizes without changing the document. The topology inspector stays collapsed until requested. This checkpoint remains local on the same branch and PR, with the same candidate version.

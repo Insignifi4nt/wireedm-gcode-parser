@@ -18,18 +18,24 @@ export class CadSessionError extends Error {
 export function hasCadDraftContent(document: CadDocument): boolean {
   return document.features.length > 0 || Object.keys(document.parameters).length > 0 || document.name !== 'Untitled part';
 }
+interface HistoryEntry { readonly document: CadDocument; readonly textLength: number }
+const MAX_HISTORY_STEPS = 50;
+const MAX_HISTORY_CHARACTERS = 8 * 1024 * 1024;
 
 /** The UI and agents edit exactly this draft; every accepted batch is one undo step. */
 export class CadSession {
   private listeners = new Set<() => void>();
-  private past: CadDocument[] = [];
-  private future: CadDocument[] = [];
+  private past: HistoryEntry[] = [];
+  private future: HistoryEntry[] = [];
+  private pastTextLength = 0;
+  private currentText: string;
   private savedText: string | null = null;
   private workflows = new Set<'editor' | 'section' | 'import'>();
   private snapshot: CadSessionSnapshot;
   constructor(document = createCadDocument()) {
     this.snapshot = Object.freeze({ document: parseCadDocument(document), version: crypto.randomUUID(), savedVersion: null,
       dirty: true, canUndo: false, canRedo: false, workflowOpen: false });
+    this.currentText = JSON.stringify(this.snapshot.document);
   }
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -52,25 +58,25 @@ export class CadSession {
   edit = (edits: readonly CadEdit[], expectedVersion = this.snapshot.version) => {
     this.assertVersion(expectedVersion);
     const next = applyCadEdits(this.snapshot.document, edits);
-    if (JSON.stringify(next) === JSON.stringify(this.snapshot.document)) return this.snapshot;
-    this.past.push(this.snapshot.document);
-    // History is bounded by both count and bytes, not only feature count.
-    while (this.past.length > 50 || this.past.length > 1 && JSON.stringify(this.past).length > 8 * 1024 * 1024) this.past.shift();
+    const text = JSON.stringify(next);
+    if (text === this.currentText) return this.snapshot;
+    this.pushPast(this.currentEntry());
     this.future = [];
-    this.changed(next);
+    this.changed(next, text);
     return this.snapshot;
   };
   undo = (expectedVersion = this.snapshot.version) => {
     this.assertVersion(expectedVersion); this.assertWorkflowClosed();
     const previous = this.past.pop();
     if (!previous) return;
-    this.future.push(this.snapshot.document); this.changed(previous);
+    this.pastTextLength -= previous.textLength;
+    this.future.push(this.currentEntry()); this.changed(previous.document);
   };
   redo = (expectedVersion = this.snapshot.version) => {
     this.assertVersion(expectedVersion); this.assertWorkflowClosed();
     const next = this.future.pop();
     if (!next) return;
-    this.past.push(this.snapshot.document); this.changed(next);
+    this.pushPast(this.currentEntry()); this.changed(next.document);
   };
   replace(document: CadDocument, saved: SavedCadDocument | null = null) {
     const parsed = parseCadDocument(document);
@@ -78,24 +84,37 @@ export class CadSession {
       throw new CadSessionError('INVALID_SAVE_RECEIPT', 'The saved CAD receipt does not describe the document being opened.');
     }
     this.workflows.clear();
-    this.past = []; this.future = [];
-    this.savedText = saved ? JSON.stringify(parsed) : null;
+    this.past = []; this.future = []; this.pastTextLength = 0;
+    this.currentText = JSON.stringify(parsed);
+    this.savedText = saved ? this.currentText : null;
     this.publish({ document: parsed, version: crypto.randomUUID(), savedVersion: saved?.savedVersion ?? null,
       dirty: !saved, canUndo: false, canRedo: false, workflowOpen: false });
   }
   markSaved(saved: SavedCadDocument, expectedVersion: string) {
     this.assertVersion(expectedVersion);
     const savedText = JSON.stringify(parseCadDocument(saved.document));
-    if (savedText !== JSON.stringify(this.snapshot.document)) throw new CadSessionError('INVALID_SAVE_RECEIPT', 'The saved CAD receipt does not describe the reviewed draft.');
+    if (savedText !== this.currentText) throw new CadSessionError('INVALID_SAVE_RECEIPT', 'The saved CAD receipt does not describe the reviewed draft.');
     this.savedText = savedText;
-    this.publish({ ...this.snapshot, savedVersion: saved.savedVersion, dirty: JSON.stringify(this.snapshot.document) !== this.savedText });
+    this.publish({ ...this.snapshot, savedVersion: saved.savedVersion, dirty: false });
   }
   detachStorage() {
     this.savedText = null;
     this.publish({ ...this.snapshot, savedVersion: null, dirty: true });
   }
-  private changed(document: CadDocument) {
-    this.publish({ ...this.snapshot, document, version: crypto.randomUUID(), dirty: JSON.stringify(document) !== this.savedText,
+  private currentEntry(): HistoryEntry { return { document: this.snapshot.document, textLength: this.currentText.length }; }
+  private pushPast(entry: HistoryEntry) {
+    this.past.push(entry); this.pastTextLength += entry.textLength;
+    // Preserve the original serialized-array character budget, including brackets
+    // and commas. Only immutable document lengths are retained; no history text.
+    while (this.past.length > MAX_HISTORY_STEPS || this.past.length > 1
+      && this.pastTextLength + this.past.length + 1 > MAX_HISTORY_CHARACTERS) {
+      const removed = this.past.shift();
+      if (removed) this.pastTextLength -= removed.textLength;
+    }
+  }
+  private changed(document: CadDocument, text = JSON.stringify(document)) {
+    this.currentText = text;
+    this.publish({ ...this.snapshot, document, version: crypto.randomUUID(), dirty: text !== this.savedText,
       canUndo: this.past.length > 0, canRedo: this.future.length > 0 });
   }
   private publish(snapshot: CadSessionSnapshot) {

@@ -3,6 +3,7 @@ import { Value } from '@sinclair/typebox/value';
 import type { CadDocument, CadFeature } from './cadDocument';
 import { CadError } from './cadError';
 import { CadFeatureSchema, cadFeatureDependencies, parseCadDocument } from './cadSchema';
+import { isCadImportData } from './cadImportData';
 
 export type CadEdit =
   | { readonly kind: 'add-feature'; readonly feature: CadFeature; readonly beforeId?: string }
@@ -28,6 +29,7 @@ export const CadEditSchema = Type.Union([
 
 /** Validates the complete final document once; a failed batch never mutates the input. */
 export function applyCadEdits(document: CadDocument, edits: readonly CadEdit[]): CadDocument {
+  if (!isCadImportData(edits) || !Array.isArray(edits)) throw new CadError('invalid-edit', 'CAD edits must contain their own complete JSON data fields.');
   if (edits.length > 256) throw new CadError('edit-limit', 'An edit batch may contain at most 256 edits.');
   let features = [...document.features];
   const parameters = { ...document.parameters };
@@ -60,8 +62,9 @@ export function applyCadEdits(document: CadDocument, edits: readonly CadEdit[]):
         features = features.filter(feature => !deleted.has(feature.id)); break;
       }
       case 'move-feature': {
+        const previousIndex = indexOf(edit.featureId);
         if (edit.beforeId === edit.featureId) break;
-        const [feature] = features.splice(indexOf(edit.featureId), 1);
+        const [feature] = features.splice(previousIndex, 1);
         const index = edit.beforeId === null ? features.length : indexOf(edit.beforeId);
         features.splice(index, 0, feature); break;
       }

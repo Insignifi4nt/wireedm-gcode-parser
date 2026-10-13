@@ -101,6 +101,37 @@ describe('automatic planar material regions', () => {
   it('keeps valid micrometre-scale concentric contours nested', () => {
     expect(summarize(sketch([circle('base', 4e-6), circle('void', 1e-6)]))[0].voids).toEqual([{ id: 'void', depth: 1, parentId: 'base' }]);
   });
+  it.each([1, -1])('finds regions beyond arc endpoints and resolves changed path expressions, winding=%s', direction => {
+    // The two semicircle endpoints both have x=0. Bounds must include the
+    // circular extrema, and may not replace exact containment with a box test.
+    const profiles = [contour('curved', { kind: 'path', segments: [
+      { kind: 'arc', center: ['location', 0], radius: 10, startAngle: 90, sweep: direction * 180 },
+      { kind: 'arc', center: ['location', 0], radius: 10, startAngle: 90 + direction * 180, sweep: direction * 180 }
+    ] }), circle('near_extremum', .2, 9.2), circle('outside_curve', .2, 9, 9)];
+    const feature = sketch(profiles);
+    const original = summarize(feature, { location: 0 });
+    expect(original).toEqual([
+      { id: 'curved', depth: 0, parentId: null, voids: [{ id: 'near_extremum', depth: 1, parentId: 'curved' }] },
+      { id: 'outside_curve', depth: 0, parentId: null, voids: [] }
+    ]);
+    expect(summarize(feature, { location: -30 })).toEqual(profiles.map(profile => ({ id: profile.id, depth: 0, parentId: null, voids: [] })));
+    expect(summarize(feature, { location: 0 })).toEqual(original);
+  });
+  it('keeps nested and disjoint detailed paths independent of winding and contour order', () => {
+    const profiles = Array.from({ length: 8 }, (_, group) => [2, 0, 1].map(depth => {
+      const radius = 12 - depth * 4;
+      const points = Array.from({ length: 100 }, (_, index) => {
+        const angle = (group % 2 ? -1 : 1) * index / 100 * 2 * Math.PI;
+        return [group * 40 + radius * Math.cos(angle), radius * Math.sin(angle)] as const;
+      });
+      return contour(`group${group}_level${depth}`, { kind: 'path', segments: points.map((start, index) => ({ kind: 'line', start, end: points[(index + 1) % points.length] })) });
+    })).flat();
+    expect(summarize(sketch(profiles))).toEqual(Array.from({ length: 8 }, (_, group) => [
+      { id: `group${group}_level2`, depth: 2, parentId: `group${group}_level1`, voids: [] },
+      { id: `group${group}_level0`, depth: 0, parentId: null, voids: [{ id: `group${group}_level1`, depth: 1, parentId: `group${group}_level0` }] }
+    ]).flat());
+    expect(measureCadSketch(document(profiles), 'sketch').materialAreaMm2).toBeCloseTo(8 * (12 ** 2 - 8 ** 2 + 4 ** 2) * 50 * Math.sin(2 * Math.PI / 100), 8);
+  });
 });
 
 describe('exact touching, overlapping and legacy contour boundaries', () => {

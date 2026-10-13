@@ -35,7 +35,10 @@
 .cad-error-banner span { flex: 1; }
 .cad-body { --cad-tree-width: 220px; --cad-properties-width: 272px; --cad-center-min: 260px; display: grid; grid-template-columns: var(--cad-tree-width) minmax(var(--cad-center-min), 1fr) var(--cad-properties-width); flex: 1; min-height: 0; }
 .cad-body.is-properties-collapsed { grid-template-columns: var(--cad-tree-width) minmax(var(--cad-center-min), 1fr); }
-.cad-model-panel { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #34404a; background: #171f26; }
+.cad-model-panel { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-right: 1px solid #34404a; background: #171f26; }
+.cad-panel-resizer { min-height: 0; background: transparent; }
+.cad-panel-resizer:hover { background: #426474; }
+.cad-panel-resizer:focus-visible { background: #5f9bab; outline: 1px solid var(--cad-accent); outline-offset: -1px; }
 .cad-panel-tabs { display: flex; padding: 3px 8px 0; gap: 4px; border-bottom: 1px solid #34404a; height: 29px; flex-shrink: 0; }
 .cad-panel-tabs button { border-radius: 0; padding: 2px 7px 3px; border-bottom: 2px solid transparent; }
 .cad-panel-tabs button[aria-pressed=true] { color: #e5f3f8; border-bottom-color: var(--cad-accent); }
@@ -65,6 +68,9 @@
 .cad-topology-inspector { padding: 11px 13px; border-bottom: 1px solid #35444f; }
 .cad-topology-heading { display: flex; align-items: center; justify-content: space-between; color: #92a9b7; font-size: 10px; letter-spacing: .8px; }
 .cad-topology-heading button { padding: 2px 5px; font-size: 12px; letter-spacing: 0; }
+.cad-topology-heading .cad-topology-disclosure { display: inline-flex; align-items: center; gap: 5px; padding: 1px 0; border-color: transparent; background: transparent; color: #92a9b7; font-size: 10px; }
+.cad-topology-disclosure:hover { color: #d5e4ed; }
+.cad-topology-disclosure:focus-visible { outline: 1px solid #86b9d0; outline-offset: 3px; }
 .cad-topology-inspector .cad-inspector-note { font-size: 10px; margin: 8px 0; }
 .cad-topology-actions { display: flex; margin-bottom: 8px; }
 .cad-topology-actions button { font-size: 12px; border-color: #3a505e; padding: 4px 7px; }
@@ -107,7 +113,7 @@
 .cad-timeline button small { position: absolute; bottom: 1px; font-size: 10px; color: #8aa2af; }
 .cad-workbench .cad-timeline button.is-selected { border-color: #5b9bab; background: #2b4754; color: #c1edf5; }
 .cad-timeline-empty { font-size: 10px; color: #627e90; }
-.cad-properties { border-left: 1px solid #34404a; background: #171f26; overflow-y: auto; min-height: 0; }
+.cad-properties { border-left: 1px solid #34404a; background: #171f26; overflow-y: auto; min-height: 0; min-width: 0; }
 .cad-panel-heading { position: sticky; top: 0; background: #1b252d; border-bottom: 1px solid #35444f; height: 29px; padding: 6px 12px; font-size: 10px; letter-spacing: 1px; color: #92a9b7; display: flex; align-items: center; justify-content: space-between; z-index: 1; }
 .cad-panel-heading button { padding: 3px; color: #8fa5b2; }
 .cad-property-form { padding: 13px 13px 15px; }
@@ -118,6 +124,9 @@
 .cad-field > span { display: flex; justify-content: space-between; color: #a6bac7; font-size: 12px; }
 .cad-field > span small { font-size: 10px; color: #728d9e; }
 .cad-field input, .cad-field select { width: 100%; min-height: 29px; }
+.cad-path-segment-picker { display: grid; grid-template-columns: 26px minmax(0, 1fr) 26px; gap: 6px; align-items: end; margin: 12px 0; }
+.cad-path-segment-picker .cad-field { margin: 0; }
+.cad-path-segment-picker button { height: 29px; padding: 3px; border-color: #35434e; }
 .cad-field-hint { font-size: 10px; color: #6f8d9e; margin-top: -2px; overflow-wrap: anywhere; }
 .cad-field.is-invalid input { border-color: #ae7e5c; }
 .cad-field.is-invalid .cad-field-hint { color: #d4a780; }

@@ -1,8 +1,61 @@
 import { describe, expect, it } from 'vitest';
-import { createCadDocument } from '@/domain/cad/cadSchema';
+import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from './cadSession';
 
 describe('shared CAD editing session', () => {
+  it('preserves redo and the saved baseline after a no-op or rejected accessor payload', () => {
+    const session = new CadSession(); const initial = session.getSnapshot();
+    session.markSaved({ document: initial.document, savedVersion: 'saved', updatedAt: '2026-10-13T12:00:00.000Z' }, initial.version);
+    session.edit([{ kind: 'rename-document', name: 'Changed' }]); session.undo();
+    const restored = session.getSnapshot(); expect(restored).toMatchObject({ dirty: false, canRedo: true });
+    expect(session.edit([{ kind: 'rename-document', name: 'Untitled part' }])).toBe(restored);
+    let reads = 0;
+    expect(() => session.edit([{ kind: 'rename-document', get name() { ++reads; return 'Unreviewed'; } }])).toThrow();
+    expect(reads).toBe(0); expect(session.getSnapshot()).toBe(restored);
+    session.redo(); expect(session.getSnapshot()).toMatchObject({ dirty: true, canRedo: false });
+    expect(session.getSnapshot().document.name).toBe('Changed');
+    session.undo(); expect(session.getSnapshot()).toMatchObject({ dirty: false, savedVersion: 'saved', canRedo: true });
+  });
+  it('retains exactly fifty real edit steps, excludes no-ops, and clears redo after branching', () => {
+    const session = new CadSession();
+    for (let index = 1; index <= 60; index++) session.edit([{ kind: 'set-parameter', name: 'width', value: index }]);
+    const current = session.getSnapshot();
+    expect(session.edit([{ kind: 'set-parameter', name: 'width', value: 60 }])).toBe(current);
+    let undone = 0;
+    while (session.getSnapshot().canUndo) { session.undo(); undone++; }
+    expect(undone).toBe(50); expect(session.getSnapshot().document.parameters.width).toBe(10);
+    while (session.getSnapshot().canRedo) session.redo();
+    expect(session.getSnapshot().document.parameters.width).toBe(60);
+    session.undo(); session.edit([{ kind: 'set-parameter', name: 'width', value: 100 }]);
+    expect(session.getSnapshot().canRedo).toBe(false);
+  });
+  it.each([{ textLength: 1_048_574, retained: 8 }, { textLength: 1_048_575, retained: 7 }])('preserves the exact serialized-array bound at document length $textLength', ({ textLength, retained }) => {
+    // The original is a valid DXF circle with a long, preserved DXF comment.
+    const sourceText = '999\n\n0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n10\n0\n20\n0\n40\n2\n0\nENDSEC\n0\nEOF\n';
+    const base = { ...createCadDocument('state_000', 'cad_history'), features: [{ id: 'sketch', name: 'Sketch', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+      profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 2 } }], source: { format: 'dxf', fileName: 'history.dxf', text: sourceText } }] };
+    const text = sourceText.replace('999\n\n', `999\n${'x'.repeat(textLength - JSON.stringify(base).length)}\n`);
+    const document = parseCadDocument({ ...base, features: [{ ...base.features[0], source: { ...base.features[0].source, text } }] });
+    expect(JSON.stringify(document).length).toBe(textLength);
+    const session = new CadSession(document);
+    for (let index = 1; index <= 12; index++) session.edit([{ kind: 'rename-document', name: `state_${String(index).padStart(3, '0')}` }]);
+    let undone = 0;
+    while (session.getSnapshot().canUndo) { session.undo(); undone++; }
+    expect(undone).toBe(retained);
+    expect(session.getSnapshot().document.name).toBe(`state_${String(12 - retained).padStart(3, '0')}`);
+    while (session.getSnapshot().canRedo) session.redo();
+    const beforeSave = session.getSnapshot();
+    session.markSaved({ document: beforeSave.document, savedVersion: 'history-save', updatedAt: '2026-10-13T12:00:00.000Z' }, beforeSave.version);
+    session.undo(); expect(session.getSnapshot().dirty).toBe(true);
+    session.redo(); expect(session.getSnapshot().dirty).toBe(false);
+    session.detachStorage(); session.undo(); session.redo();
+    expect(session.getSnapshot()).toMatchObject({ dirty: true, savedVersion: null });
+    expect(session.getSnapshot().document.features[0]).toMatchObject({ source: { text } });
+    session.replace(createCadDocument());
+    expect(session.getSnapshot()).toMatchObject({ canUndo: false, canRedo: false });
+    session.edit([{ kind: 'rename-document', name: 'After replacement' }]); session.undo();
+    expect(session.getSnapshot().document.name).toBe('Untitled part');
+  });
   it('keeps public snapshots immutable and rejects foreign save receipts before changing state or history', () => {
     const session = new CadSession();
     session.edit([{ kind: 'rename-document', name: 'Reviewed' }]);
