@@ -152,7 +152,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           break;
         }
         case 'loft': {
-          const sections = resolveCadLoftSections(feature, sketches, document.parameters);
+          const sections = resolveCadLoftSections(feature, references, document.parameters, frameLookup);
           if (feature.operation !== 'new') {
             if (!feature.targetId) throw new CadError('missing-target', 'Join and cut need a target body.');
             const target = body(feature.targetId);

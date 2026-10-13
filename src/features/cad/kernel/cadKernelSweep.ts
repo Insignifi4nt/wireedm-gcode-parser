@@ -51,7 +51,8 @@ function validateSweepSolid(shape: Shape3D) {
 /** Exact line extrusions and signed circular revolutions, never a fitted pipe frame. */
 export function buildCadSweepSolid(resolved: CadResolvedSweepInputs): Shape3D {
   const curvePlane = requireCadPrincipalPlane(resolved.curve.plane, 'Sweep');
-  const oc = getOC(); const basis = cadKernelPlaneBasis(resolved.section.plane);
+  const sectionPlane = requireCadPrincipalPlane(resolved.section.plane, 'Sweep');
+  const oc = getOC(); const basis = cadKernelPlaneBasis(sectionPlane);
   const offset = resolved.section.offset;
   const origin: SimplePoint = [basis.normal[0] * offset, basis.normal[1] * offset, basis.normal[2] * offset];
   const planes: Plane[] = []; const drawings: Drawing[] = []; const sketches: Sketch[] = [];

@@ -6,6 +6,20 @@ import { cadSiteTools } from './cadSiteTools';
 import type { CadController } from './useCadController';
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('bounds ordered Loft preflight and rejects repair or source payloads before reaching operations', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid Loft inspection reached the controller'); });
+    const inspect = cadSiteTools(controller).find(entry => entry.name === 'cad_inspect_loft');
+    if (!inspect) throw new Error('Missing Loft inspection');
+    const input = { expectedVersion: 'current', sketchIds: ['lower', 'upper'] };
+    expect(Value.Check(inspect.inputSchema, input)).toBe(true);
+    for (const invalid of [{ ...input, sketchIds: ['lower'] }, { ...input, sketchIds: ['lower', 'lower'] },
+      { ...input, sketchIds: Array.from({ length: 17 }, (_, i) => `section_${i}`) },
+      { ...input, sketchIds: ['lower', 'not an id'] }, { ...input, autoSort: true }, { ...input, includeGeometry: true },
+      { ...input, ruled: false }, { ...input, targetId: 'body' }]) {
+      expect(await inspect.execute(invalid)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(controller).not.toHaveBeenCalled();
+  });
   it('discovers world datums and rejects inactive placement fields before shared operations', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid datum reached the controller'); });
     const tools = cadSiteTools(controller); const edit = tools.find(entry => entry.name === 'cad_edit_document');

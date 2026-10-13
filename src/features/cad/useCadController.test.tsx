@@ -59,6 +59,60 @@ async function harness(withGeometry = false, allowHandoff = false) {
 }
 
 describe('CAD controller asynchronous guards', () => {
+  async function loftHarness() {
+    const h = await harness(true);
+    await act(async () => h.cad().edit([{ kind: 'add-feature', feature: {
+      id: 'upper', kind: 'sketch', name: 'Upper section', plane: 'XY', offset: 20, suppressed: false,
+      profiles: [{ id: 'upper_circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 6 } }],
+    } }]));
+    const tool = cadSiteTools(h.cad).find(entry => entry.name === 'cad_inspect_loft');
+    if (!tool) throw new Error('Loft inspection tool missing');
+    return { ...h, tool };
+  }
+  it('preflights an ordered Loft through the shared read-only operation without building or saving', async () => {
+    const h = await loftHarness(); const before = h.session.getSnapshot();
+    const input = { expectedVersion: before.version, sketchIds: ['sketch', 'upper'] };
+    expect(await h.tool.execute(input)).toMatchObject({ ok: true, data: {
+      version: before.version, eligible: true, nativeBuildRequired: true, persisted: false,
+      scope: 'new-feature-at-end', stationOrigin: 'principal-origin',
+      sections: [{ sketchId: 'sketch', stationMm: 0 }, { sketchId: 'upper', stationMm: 20 }] } });
+    expect(await h.tool.execute({ ...input, sketchIds: ['sketch', 'missing'] }))
+      .toMatchObject({ ok: true, data: { eligible: false, code: 'invalid-reference', persisted: false } });
+    expect(await h.tool.execute({ ...input, expectedVersion: 'old' })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    expect(await h.tool.execute({ ...input, repair: true })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    const abort = new AbortController(); abort.abort();
+    expect(await h.tool.execute(input, { signal: abort.signal })).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    await act(async () => h.session.setWorkflowOpen(true));
+    expect(await h.tool.execute(input)).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    await act(async () => h.session.setWorkflowOpen(false));
+    expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().version).toBe(before.version);
+    expect(before.savedVersion).toBeNull(); expect(kernel.build).not.toHaveBeenCalled();
+    expect(h.workbench().manifest.projects).toHaveLength(0);
+  });
+  it.each(['close', 'workflow', 'version', 'cancel', 'busy'] as const)('rechecks %s while loading Loft preflight', async change => {
+    const h = await loftHarness(); const before = h.session.getSnapshot();
+    const abort = new AbortController(); const competingAbort = new AbortController();
+    const exported = deferred<Blob>(); kernel.export.mockReturnValue(exported.promise);
+    await act(async () => {
+      const pending = h.cad().inspectLoft(['sketch', 'upper'], before.version, abort.signal);
+      let competing: Promise<unknown> | undefined;
+      if (change === 'close') h.cad().back();
+      if (change === 'workflow') h.session.setWorkflowOpen(true);
+      if (change === 'version') h.session.edit([{ kind: 'rename-document', name: 'Newer Loft' }]);
+      if (change === 'cancel') abort.abort();
+      if (change === 'busy') competing = h.cad().exportSolid('step', before.version, competingAbort.signal);
+      try {
+        await expect(pending).rejects.toMatchObject(change === 'cancel' ? { name: 'AbortError' }
+          : { code: { close: 'CAD_NOT_OPEN', workflow: 'WORKFLOW_OPEN', version: 'STALE_STATE', busy: 'BUSY' }[change] });
+      } finally {
+        if (competing) {
+          competingAbort.abort(); exported.resolve(new Blob(['STEP']));
+          await expect(competing).rejects.toMatchObject({ name: 'AbortError' });
+        }
+      }
+    });
+    expect(kernel.build).not.toHaveBeenCalled();
+  });
   async function planeHarness() {
     const h = await harness();
     await act(async () => h.cad().edit([

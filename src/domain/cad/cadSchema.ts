@@ -176,7 +176,7 @@ export function parseCadDocument(value: unknown): CadDocument {
       }
       case 'loft': {
         if (feature.operation === 'new' && feature.targetId !== null || feature.operation !== 'new' && feature.targetId === null) throw new CadError('invalid-operation', 'New bodies have no target; join and cut require a target body.');
-        if (!feature.suppressed) resolveCadLoftSections(feature, previous, document.parameters);
+        if (!feature.suppressed) resolveCadLoftSections(feature, previous, document.parameters, datumLookup);
         break;
       }
       case 'sweep': {

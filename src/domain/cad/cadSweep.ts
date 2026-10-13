@@ -19,9 +19,10 @@ export const MAX_CAD_SWEEP_WORK = 2048;
 export { CAD_SWEEP_NATIVE_PRECISION, CAD_SWEEP_TOPOLOGY_TOLERANCE } from './cadSweepClearance';
 export const CadSweepFeatureSchema = Type.Object({ ...CadFeatureBaseSchemaFields, kind: Type.Literal('sweep'), sketchId: CadIdentifierSchema, curveId: CadIdentifierSchema,
   operation: Type.Union([Type.Literal('new'), Type.Literal('join'), Type.Literal('cut')]), targetId: Type.Union([CadIdentifierSchema, Type.Null()]) }, { additionalProperties: false });
-export type CadSweepSketchInspection = { readonly eligible: true; readonly section: CadLoftSection } | { readonly eligible: false; readonly code: string; readonly message: string };
+export type CadSweepSection = Omit<CadLoftSection, 'plane'> & { readonly plane: CadPlane };
+export type CadSweepSketchInspection = { readonly eligible: true; readonly section: CadSweepSection } | { readonly eligible: false; readonly code: string; readonly message: string };
 export interface CadResolvedSweepInputs {
-  readonly section: CadLoftSection;
+  readonly section: CadSweepSection;
   readonly curveFeature: CadCurveFeature;
   readonly curve: CadResolvedCurve;
   readonly frame: { readonly tangent: CadNumericPoint3; readonly normal: CadNumericPoint3; readonly binormal: CadNumericPoint3 };
@@ -33,8 +34,10 @@ export type CadSweepInspection = { readonly eligible: true; readonly inputs: Cad
 
 /** Same one-boundary contract as Loft, with operation-specific diagnostics. */
 export function inspectCadSweepSketch(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): CadSweepSketchInspection {
+  if (typeof sketch.plane !== 'string') return { eligible: false, code: 'unsupported-datum-operation',
+    message: 'Sweep does not yet support datum placement. Use a principal-plane section; the local reference geometry remains valid.' };
   const inspection = inspectCadLoftSketch(sketch, parameters);
-  return inspection.eligible ? inspection : { ...inspection, code: inspection.code === 'unsupported-loft-section' ? 'unsupported-sweep-section' : inspection.code,
+  return inspection.eligible ? { eligible: true, section: Object.freeze({ ...inspection.section, plane: sketch.plane }) } : { ...inspection, code: inspection.code === 'unsupported-loft-section' ? 'unsupported-sweep-section' : inspection.code,
     message: inspection.message.replaceAll('Loft', 'Sweep') };
 }
 const dot = (a: CadNumericPoint3, b: CadNumericPoint3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -60,7 +63,7 @@ export function resolveCadSweepInputs(feature: CadSweepFeature, precedingFeature
   if (curveFeature.suppressed) throw new CadError('suppressed-curve', `Sweep curve "${curveFeature.name}" is suppressed.`);
   const curvePlane = requireCadPrincipalPlane(curveFeature.plane, 'Sweep');
   const section = sectionInspection.section; const curve = resolveCadCurve(curveFeature, parameters);
-  const basis = cadPlaneBasis(section.plane);
+  const basis = cadPlaneBasis(requireCadPrincipalPlane(section.plane, 'Sweep'));
   const anchor = { x: dot(curve.startWorld, basis.u), y: dot(curve.startWorld, basis.v) };
   const localRadius = cadSweepProfileRadius(section.geometry, anchor);
   const angularResidual = Math.hypot(...cross(basis.normal, curve.startTangentWorld));

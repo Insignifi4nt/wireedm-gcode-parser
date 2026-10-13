@@ -120,6 +120,36 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     expect(reopened.features[1]).toMatchObject({ source: { text }, plane, offset: 'station', profiles: imported.profiles });
     expect(reopened.features[2]).toMatchObject({ source: { text: railText }, plane, segments: rail.segments });
   });
+  it('round trips frame-aware Loft expressions and exact section sources while rejecting collapsed or incompatible stations before writes', async () => {
+    const text = '\uFEFF0\r\nSECTION\r\n2\r\nENTITIES\r\n0\r\nCIRCLE\r\n10\r\n0\r\n20\r\n0\r\n40\r\n5\r\n0\r\nENDSEC\r\n0\r\nEOF\r\n';
+    const imported = importCadDxfSketch({ fileName: 'Loft section.dxf', text, units: 'mm', sketchId: 'first' }).sketch;
+    const datum: CadDatumPlaneFeature = { kind: 'datum-plane', id: 'plane', name: 'Tilted sections', suppressed: false,
+      definition: { kind: 'world', basePlane: 'XY', origin: [37, -24, 11], rotation: ['tilt', -37, 61] } };
+    const plane = { kind: 'datum-plane', featureId: 'plane' } as const;
+    const first = { ...imported, plane, offset: 2 };
+    const last = { ...first, id: 'last', name: 'Last section', offset: 'height' };
+    const loft: Extract<CadFeature, { kind: 'loft' }> = { kind: 'loft', id: 'loft', name: 'Loft', suppressed: false,
+      sketchIds: ['first', 'last'], ruled: false, operation: 'new', targetId: null };
+    const document = parseCadDocument({ ...createCadDocument('Placed Loft', 'cad_loft_frames'),
+      parameters: { tilt: 23, height: 20 }, features: [datum, first, last, loft] });
+    const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const path = cadDocumentPath(document.id); const original = await adapter.readExactText?.(path);
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(document);
+    const writes = vi.spyOn(adapter, 'writeText');
+    await expect(saveCadDocument(adapter, { ...document, parameters: { ...document.parameters, height: 2 } },
+      { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('separated');
+    await expect(saveCadDocument(adapter, { ...document, features: [datum, first, { ...last, plane: 'XZ' }, loft] },
+      { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('same oriented');
+    expect(writes).not.toHaveBeenCalled();
+    expect(await adapter.readExactText?.(path)).toBe(original);
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+    await saveCadDocument(adapter, { ...document, parameters: { tilt: 90, height: 30 } }, { expectedSavedVersion: saved.savedVersion });
+    const reopened = (await loadCadDocument(adapter, document.id)).document;
+    expect(reopened.features[0]).toEqual(datum);
+    expect(reopened.features[1]).toMatchObject({ source: { text }, plane, profiles: imported.profiles });
+    expect(reopened.features[2]).toMatchObject({ source: { text }, offset: 'height' });
+    expect(reopened.features[3]).toEqual(loft);
+  });
   it('preserves an external edit made after the optimistic read and before the transaction captures its original', async () => {
     const document = parseCadDocument({ ...createCadDocument('Original', 'cad_external_race'), features: [{
       id: 'source', name: 'Exact original', kind: 'imported', suppressed: true,

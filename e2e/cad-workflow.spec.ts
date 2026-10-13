@@ -289,6 +289,73 @@ test('ordered loft sections rebuild parametrically and carry an exact bored sect
   await expect(page.locator('[data-preview-model="upid"]')).toBeVisible();
 });
 
+test('datum Loft preflight and human section editing preserve placement through exact native rebuild and STEP', async ({ page }) => {
+  const wasmRequests: string[] = [];
+  page.context().on('request', request => { if (/\.wasm(?:\?|$)/.test(request.url())) wasmRequests.push(request.url()); });
+  await prepare(page);
+  await call(page, 'cad_create_document', { expectedVersion: (await context(page)).version, name: 'Tilted transition' });
+  const placement = { kind: 'datum-plane' as const, featureId: 'mount' };
+  const section = (id: string, offset: number | string, radius: number): CadSketchFeature => ({
+    kind: 'sketch', id, name: id === 'lower' ? 'Lower section' : 'Upper section', suppressed: false, plane: placement, offset,
+    profiles: [{ id: `${id}_circle`, name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius } }],
+  });
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'height', value: 20 },
+    { kind: 'set-parameter', name: 'tilt', value: 30 },
+    { kind: 'add-feature', feature: { kind: 'datum-plane', id: 'mount', name: 'Mounting plane', suppressed: false,
+      definition: { kind: 'world', basePlane: 'XY', origin: [30, -20, 12], rotation: ['tilt', 0, 15] } } },
+    { kind: 'add-feature', feature: section('lower', 2, 10) },
+    { kind: 'add-feature', feature: section('upper', 'height + 2', 6) },
+  ] });
+  const sources = await context(page);
+  expect(await call(page, 'cad_inspect_loft', { expectedVersion: sources.version, sketchIds: ['lower', 'upper'] }))
+    .toMatchObject({ eligible: true, persisted: false, nativeBuildRequired: true, stationOrigin: 'first-placed-section',
+      sections: [{ sketchId: 'lower', offsetMm: 2, stationMm: 0 }, { sketchId: 'upper', offsetMm: 22, stationMm: expect.closeTo(20, 10) }] });
+  expect(await rawCall(page, 'cad_inspect_loft', { expectedVersion: sources.version, sketchIds: ['lower', 'upper'], autoSort: true }))
+    .toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: sources.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: sources.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: sources.version, command: { kind: 'select-feature', featureId: 'lower' } });
+  expect(wasmRequests).toEqual([]);
+  await page.getByRole('button', { name: 'Loft', exact: true }).click();
+  await expect(page.getByLabel('Section 1', { exact: true })).toHaveValue('lower');
+  await expect(page.getByLabel('Section 2', { exact: true })).toHaveValue('upper');
+  expect(await rawCall(page, 'cad_inspect_loft', { expectedVersion: sources.version, sketchIds: ['lower', 'upper'] }))
+    .toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  const created = await context(page);
+  const history = await call(page, 'cad_read_features', { expectedVersion: created.version });
+  const loft = (history as { items: CadFeature[] }).items.find(feature => feature.kind === 'loft');
+  if (!loft) throw new Error('Missing datum Loft');
+  expect(loft).toMatchObject({ sketchIds: ['lower', 'upper'], ruled: false });
+  expect(await call(page, 'cad_build', { expectedVersion: created.version })).toMatchObject({ diagnostics: [],
+    bodies: [{ featureId: loft.id, volumeMm3: expect.closeTo(3920 * Math.PI / 3, 5) }] });
+  await page.getByRole('button', { name: 'Move section 1 down', exact: true }).click();
+  await expect(page.getByLabel('Section 1', { exact: true })).toHaveValue('upper');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(await context(page)).toMatchObject({ version: created.version, workflowOpen: false });
+  await expect(page.getByLabel('Section 1', { exact: true })).toHaveValue('lower');
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: created.version,
+    edits: [{ kind: 'set-parameter', name: 'height', value: 0 }] })).toMatchObject({ ok: false });
+  expect(await context(page)).toMatchObject({ version: created.version, parameters: { height: 20, tilt: 30 } });
+  await call(page, 'cad_edit_document', { expectedVersion: created.version,
+    edits: [{ kind: 'set-parameter', name: 'height', value: 30 }, { kind: 'set-parameter', name: 'tilt', value: 60 }] });
+  const revised = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: revised.version })).toMatchObject({ diagnostics: [],
+    bodies: [{ featureId: loft.id, volumeMm3: expect.closeTo(1960 * Math.PI, 5) }] });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: revised.version }))
+    .toMatchObject({ ok: true, data: { buildVersion: revised.version, view: { available: true, referenceVersion: revised.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: revised.version, command: { kind: 'fit' } });
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: revised.version }));
+  await page.screenshot({ path: 'tmp/cad-datum-loft.png' });
+  const downloaded = page.waitForEvent('download');
+  await call(page, 'cad_export_solid', { expectedVersion: revised.version, format: 'step' });
+  const download = await downloaded; const path = await download.path();
+  if (!path) throw new Error('Missing datum Loft STEP');
+  expect(await readFile(path, 'utf8')).toContain('MANIFOLD_SOLID_BREP');
+  expect(await call(page, 'cad_save_document', { expectedVersion: revised.version })).toMatchObject({ saved: true });
+});
+
 test('Sweep preflight repairs placement before human creation and exact agent CAM handoff', async ({ page, context: browserContext }) => {
   const wasmRequests: string[] = [];
   browserContext.on('request', request => { if (/\.wasm(?:\?|$)/.test(request.url())) wasmRequests.push(request.url()); });

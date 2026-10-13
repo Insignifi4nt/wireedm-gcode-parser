@@ -327,6 +327,12 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
     return { version: expectedVersion, ...inspectCadPlane(session.getSnapshot().document, featureId), persisted: false };
   }
+  async function inspectLoft(sketchIds: readonly string[], expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
+    editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
+    const { inspectCadLoft } = await import('@/domain/cad/cadLoftInspection');
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
+    return { version: expectedVersion, ...inspectCadLoft(session.getSnapshot().document, sketchIds), persisted: false };
+  }
   async function inspectSweep(sketchId: string, curveId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
     const { inspectCadSweepInputs, MAX_CAD_SWEEP_SEGMENTS, MAX_CAD_SWEEP_WORK } = await import('@/domain/cad/cadSweep');
@@ -497,7 +503,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   function back() { connected(); session.assertWorkflowClosed(); changeOpen(false); }
   const isBusy = () => busy.current;
   return { session, snapshot, open, enter, edit, save, list, showLibrary, library, libraryDiagnostic, closeLibrary: () => setLibrary(null),
-    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, measureCurve, inspectPlane, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
+    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, measureCurve, inspectPlane, inspectLoft, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
     setViewportControls, readViewport: (expectedVersion: string) => getViewport(expectedVersion).getState(), changeViewport, captureViewport, previewArtifact,
     inspectTopology: topology.inspect, resolveTopologyPicks: topology.resolve,
     build, buildVersion, buildState, errorMessage, setErrorMessage, storageBusy, isBusy, isOpen: () => current.current.open,

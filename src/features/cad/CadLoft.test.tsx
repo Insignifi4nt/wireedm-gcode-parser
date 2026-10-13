@@ -1,7 +1,7 @@
 import { act, useSyncExternalStore } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CadDocument, CadFeature, CadMesh, CadPlane, CadScalar, CadSketchFeature } from '@/domain/cad/cadDocument';
+import type { CadDatumPlaneFeature, CadDocument, CadFeature, CadMesh, CadPlane, CadScalar, CadSketchFeature } from '@/domain/cad/cadDocument';
 import * as loftDomain from '@/domain/cad/cadLoft';
 import { cadFeatureProducesBody, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadWorkbench } from './CadWorkbench';
@@ -51,6 +51,55 @@ function select(label: string): HTMLSelectElement {
 async function choose(label: string, value: string) { await act(async () => { const field = select(label); field.value = value; field.dispatchEvent(new Event('change', { bubbles: true })); }); }
 function loft(feature: CadFeature | undefined) { if (feature?.kind !== 'loft') throw new Error('Loft missing'); return feature; }
 const ids = () => [...container.querySelectorAll<HTMLSelectElement>('.cad-loft-section-row select')].map(field => field.value);
+
+describe('common-frame Loft section authoring', () => {
+  const basePlane: CadDatumPlaneFeature = { id: 'mount', name: 'Mount', kind: 'datum-plane', suppressed: false,
+    definition: { kind: 'world', basePlane: 'XY', origin: [10, 20, 30], rotation: [90, 0, 0] } };
+  const upperPlane: CadDatumPlaneFeature = { ...basePlane, id: 'upper', name: 'Upper support', definition: { ...basePlane.definition, origin: [15, 0, 30] } };
+  const twisted: CadDatumPlaneFeature = { ...basePlane, id: 'twisted', name: 'Twisted support', definition: { ...basePlane.definition, rotation: [90, 10, 0] } };
+  const onPlane = (id: string, featureId: string, offset: CadScalar = 0): CadSketchFeature => ({ ...sketch(id, offset), plane: { kind: 'datum-plane', featureId },
+    source: { format: 'dxf', fileName: `${id}.dxf`, text: 'Exact authored source', units: 'mm' } });
+  function documentWithFrames() {
+    return parseCadDocument({ ...createCadDocument('Mount transition'), features: [basePlane, upperPlane, twisted,
+      onPlane('Base', 'mount'), onPlane('Top', 'upper'), onPlane('Twisted', 'twisted')] });
+  }
+  it('defaults to compatible authored history and displays actual normal stations instead of isolated zero offsets', async () => {
+    const initial = documentWithFrames();
+    expect(initialCadLoftSketchIds(inspectCadLoftCandidates(initial))).toEqual(['Base', 'Top']);
+    const session = await mount(initial); const before = session.getSnapshot(); await click('Loft');
+    expect(ids()).toEqual(['Base', 'Top']);
+    const rows = [...container.querySelectorAll('.cad-loft-section-metadata')];
+    expect(rows[0].textContent).toBe('Mount · station 0 mm'); expect(rows[1].textContent).toBe('Upper support · station 20 mm');
+    expect(rows[1].getAttribute('title')).toContain('Authored offset: 0 mm'); expect(rows[1].getAttribute('title')).toContain('5, 0 mm');
+    expect(select('Section 2').querySelector<HTMLOptionElement>('option[value="Twisted"]')?.disabled).toBe(true);
+    expect(select('Section 2').querySelector('option[value="Twisted"]')?.textContent).toContain('Incompatible frame');
+    await click('Apply'); expect(loft(session.getSnapshot().document.features.at(-1)).sketchIds).toEqual(['Base', 'Top']);
+    expect(session.getSnapshot().document.features.slice(0, before.document.features.length)).toEqual(before.document.features);
+    await act(async () => session.undo()); expect(session.getSnapshot().document).toEqual(before.document);
+    await act(async () => session.redo()); expect(loft(session.getSnapshot().document.features.at(-1)).sketchIds).toEqual(['Base', 'Top']);
+  });
+  it('uses the first placed section as station zero for tilted frames and retains invalid drafts for explicit correction', async () => {
+    const tilted = { ...basePlane, definition: { ...basePlane.definition, rotation: [30, 0, 0] as const } };
+    const initial = parseCadDocument({ ...createCadDocument(), parameters: { height: 20 }, features: [tilted,
+      onPlane('Base', 'mount', 7), onPlane('Middle', 'mount', '7 + height / 2'), onPlane('Top', 'mount', '7 + height')] });
+    const session = await mount(initial); const before = session.getSnapshot(); await click('Loft'); await click('Add section');
+    expect([...container.querySelectorAll('.cad-loft-section-metadata')].map(row => row.textContent)).toEqual(['Mount · station 0 mm', 'Mount · station 10 mm', 'Mount · station 20 mm']);
+    await click('Move section 3 up'); expect(ids()).toEqual(['Base', 'Top', 'Middle']);
+    expect(container.querySelectorAll('.cad-loft-section-metadata')).toHaveLength(0);
+    await click('Apply'); const message = container.querySelector('[role="alert"]')?.textContent ?? '';
+    expect(message).toContain('increase or decrease strictly'); expect(container.textContent?.split(message).length).toBe(2);
+    expect(session.getSnapshot().document).toBe(before.document); expect(session.getSnapshot().version).toBe(before.version);
+    await click('Cancel'); expect(session.getSnapshot()).toEqual(before);
+  });
+  it('preserves a now-incompatible selected section after changing the first frame and shows no fabricated station', async () => {
+    const session = await mount(documentWithFrames()); const before = session.getSnapshot(); await click('Loft'); await choose('Section 1', 'Twisted');
+    expect(ids()).toEqual(['Twisted', 'Top']); expect(select('Section 2').selectedOptions[0].textContent).toBe('Top — Incompatible frame');
+    expect(select('Section 2').getAttribute('aria-invalid')).toBe('true'); expect(container.querySelectorAll('.cad-loft-section-metadata')).toHaveLength(0);
+    await click('Apply'); expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(session.getSnapshot().document).toBe(before.document); expect(session.getSnapshot().version).toBe(before.version);
+    await click('Cancel'); expect(session.getSnapshot()).toEqual(before);
+  });
+});
 
 describe('ordered loft section authoring', () => {
   it('uses history order, preserves an eligible selected section and never sorts offsets', () => {
