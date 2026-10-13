@@ -15,7 +15,7 @@ async function openCad(page: Page) {
   await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible();
 }
 async function importDocument(page: Page, features: unknown[]) {
-  await page.locator('.cad-workbench input[type=file]').setInputFiles({ name: 'kernel.wireedm-cad', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(document(features))) });
+  await page.locator('.cad-header input[type=file]').setInputFiles({ name: 'kernel.wireedm-cad', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(document(features))) });
 }
 
 test('lazy production WASM worker constructs exact Boolean solids and exports STEP and binary STL', async ({ page }) => {
@@ -27,7 +27,7 @@ test('lazy production WASM worker constructs exact Boolean solids and exports ST
   expect(wasmRequests).toEqual([]);
   await importDocument(page, [source('Sketch_A', 0), pad('Box_A', 'Sketch_A'), source('Sketch_B', 10), pad('Box_B', 'Sketch_B'),
     { ...base('Cut_result'), kind: 'boolean', targetId: 'Box_A', toolId: 'Box_B', operation: 'cut' }]);
-  await expect(page.locator('.cad-tree-footer')).toContainText('1 solid bodies', { timeout: 60_000 });
+  await expect(page.locator('.cad-statusbar')).toContainText('1 bodies', { timeout: 60_000 });
   await page.locator('.cad-tree-row').filter({ hasText: 'Cut_result' }).click();
   await expect(page.locator('.cad-solid-info')).toContainText('500 mm³');
   expect(wasmRequests).toHaveLength(1);
@@ -58,7 +58,7 @@ test('an impossible edge operation retains the exact preceding body and reports 
   await openCad(page);
   await importDocument(page, [source('Sketch_A', 0), pad('Box_A', 'Sketch_A'),
     { ...base('Impossible_fillet'), kind: 'fillet', targetId: 'Box_A', radius: 100 }]);
-  await expect(page.locator('.cad-tree-footer')).toContainText('1 solid bodies', { timeout: 60_000 });
+  await expect(page.locator('.cad-statusbar')).toContainText('1 bodies', { timeout: 60_000 });
   await expect(page.locator('.cad-diagnostics')).toContainText('Rebuild stopped here');
   await page.locator('.cad-tree-row').filter({ hasText: 'Box_A' }).click();
   await expect(page.locator('.cad-solid-info')).toContainText('1,000 mm³');

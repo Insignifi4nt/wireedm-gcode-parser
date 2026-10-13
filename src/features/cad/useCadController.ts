@@ -10,6 +10,9 @@ import { ToolError } from '@/features/webmcp/siteTools';
 import { CadSession, hasCadDraftContent } from './cadSession';
 import type { CadViewportCommand, CadWorkbenchViewportControls, CadViewportState } from './cadViewportControls';
 import { preparePreviewCapture, downloadPreviewCapture, type PreviewCaptureArtifact } from '@/features/webmcp/previewCapture';
+import { createCadTopologyActions } from './cadTopologyActions';
+import { cadBytesToBase64, cadSolidImportBytes, isCadSolidImportResult, MAX_CAD_IMPORT_BYTES, parseCadSolidImportSource, type CadSolidImportSource } from '@/domain/cad/cadImports';
+import { parseCadDxfImportSource, type CadDxfUnits } from '@/domain/cad/cadDxfSource';
 
 type App = Pick<ReturnType<typeof useWorkbenchAppController>, 'connectedWorkbench' | 'workbenchInteractionLocked' | 'runAgentWorkbenchOperation'>;
 type Kernel = ReturnType<typeof import('./kernel/cadKernelClient').createCadKernelClient>;
@@ -21,7 +24,7 @@ export function downloadCadBlob(blob: Blob, name: string) {
 }
 const fileBase = (name: string) => name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').slice(0, 100) || 'part';
 type CadPreviewArtifact = PreviewCaptureArtifact & { documentId: string; viewState: CadViewportState; sketchId: string | null };
-const viewIdentity = (state: CadViewportState) => JSON.stringify([state.documentVersion, state.buildVersion, state.selectedFeatureId, state.selectedProfileId, state.sketchId, state.view]);
+const viewIdentity = (state: CadViewportState) => JSON.stringify([state.documentVersion, state.buildVersion, state.buildId, state.selectedFeatureId, state.selectedProfileId, state.sketchId, state.pickMode, state.topologySelection, state.view]);
 
 export function useCadController(app: App, session: CadSession, open: boolean, setOpen: (open: boolean) => void,
   getCamDraft: () => DraftReadSnapshot | null) {
@@ -29,10 +32,14 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   const [build, setBuild] = useState<CadBuildResult | null>(null);
   const [buildVersion, setBuildVersion] = useState<string | null>(null);
   const [buildState, setBuildState] = useState<'idle' | 'building' | 'ready' | 'error'>('idle');
+  const liveBuild = useRef({ result: build, version: buildVersion, state: buildState });
+  liveBuild.current = { result: build, version: buildVersion, state: buildState };
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [storageBusy, setStorageBusy] = useState(false);
   const [library, setLibrary] = useState<CadLibraryEntry[] | null>(null);
   const [libraryDiagnostic, setLibraryDiagnostic] = useState<string | null>(null);
+  const [importFile, setImportFile] = useState<{ file: File; version: string; adapter: NonNullable<App['connectedWorkbench']>['adapter'] } | null>(null);
+  const importAbort = useRef<AbortController | null>(null);
   const [previewArtifact, setPreviewArtifact] = useState<CadPreviewArtifact | null>(null);
   const previewUrl = useRef<string | null>(null);
   const viewport = useRef<CadWorkbenchViewportControls | null>(null);
@@ -51,10 +58,21 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     kernel.current ??= import('./kernel/cadKernelClient').then(module => module.createCadKernelClient());
     return kernel.current;
   }
+  function publishBuild(result: CadBuildResult, version: string) {
+    const state = result.diagnostics.length ? 'error' : 'ready';
+    liveBuild.current = { result, version, state };
+    setBuild(result); setBuildVersion(version); setBuildState(state);
+  }
   useLayoutEffect(() => {
     const adapter = app.connectedWorkbench?.adapter;
-    const previous = boundAdapter.current; boundAdapter.current = adapter;
-    if (!previous || !adapter || previous === adapter) return;
+    const previous = boundAdapter.current;
+    if (previous === adapter) return;
+    importAbort.current?.abort(); setImportFile(null); session.setWorkflowOpen(false, 'import');
+    // Retain the last store through a disconnect so reconnecting elsewhere cannot
+    // reuse its saved fingerprint. A disconnect alone preserves the current draft.
+    if (!adapter) return;
+    boundAdapter.current = adapter;
+    if (!previous) return;
     const state = session.getSnapshot();
     // A saved fingerprint belongs to one adapter. Never reuse it in a new store.
     // Unexpected dirty switches preserve the in-memory work as an unsaved copy.
@@ -63,13 +81,14 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     setLibrary(null); setLibraryDiagnostic(null); setBuild(null); setBuildVersion(null); setErrorMessage(null);
   }, [app.connectedWorkbench?.adapter, session]);
   useEffect(() => () => {
+    importAbort.current?.abort();
     buildAbort.current?.abort();
     void kernel.current?.then(value => value.dispose()); kernel.current = null;
     if (previewUrl.current) { const url = previewUrl.current; window.setTimeout(() => URL.revokeObjectURL(url), 60_000); }
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !app.connectedWorkbench?.adapter) return;
     const controller = new AbortController();
     buildAbort.current?.abort(); buildAbort.current = controller;
     setBuildVersion(null);
@@ -79,15 +98,15 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     }
     const timer = setTimeout(() => {
       void getKernel().then(client => client.build(snapshot.document, controller.signal)).then(result => {
-        if (controller.signal.aborted) return;
-        setBuild(result); setBuildVersion(snapshot.version); setBuildState(result.diagnostics.length ? 'error' : 'ready');
+        if (controller.signal.aborted || session.getSnapshot().version !== snapshot.version) return;
+        publishBuild(result, snapshot.version);
       }).catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setBuildState('error'); setErrorMessage(error instanceof Error ? error.message : 'CAD kernel could not build this model.');
       });
     }, 80);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [open, snapshot.document]);
+  }, [open, snapshot.document, app.connectedWorkbench?.adapter]);
 
   useEffect(() => {
     const meaningful = hasCadDraftContent(snapshot.document);
@@ -116,7 +135,11 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   async function run<T>(action: () => Promise<T>) {
     connected(); busy.current = true; setStorageBusy(true); setErrorMessage(null);
     try { return await action(); }
-    catch (error) { setErrorMessage(error instanceof Error ? error.message : 'CAD operation failed.'); throw error; }
+    catch (error) {
+      const aborted = (error instanceof Error || error instanceof DOMException) && error.name === 'AbortError';
+      if (!aborted) setErrorMessage(error instanceof Error ? error.message : 'CAD operation failed.');
+      throw error;
+    }
     finally { busy.current = false; setStorageBusy(false); }
   }
   function enter() { connected(); assertCanSwitch(); changeOpen(true); }
@@ -148,8 +171,8 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     const result = await list(); setLibrary(result.entries);
     setLibraryDiagnostic([result.truncated ? 'The library listing is incomplete.' : '', ...result.diagnostics.map(d => `${d.path}: ${d.message}`)].filter(Boolean).join(' ') || null);
   }
-  function requireCleanReplacement() {
-    session.assertWorkflowClosed();
+  function requireCleanReplacement(scope?: 'import') {
+    session.assertWorkflowClosed(scope);
     const state = session.getSnapshot();
     if (state.dirty && hasCadDraftContent(state.document)) throw new ToolError('UNSAVED_DRAFT', 'Save the current CAD draft before opening another document.');
   }
@@ -171,10 +194,20 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   }
   async function importDocument(file: File) {
     const workbench = connected(); assertCanSwitch(); requireCleanReplacement();
+    if (/\.(step|stp|stl|dxf)$/i.test(file.name)) {
+      if (!file.size || file.size > MAX_CAD_IMPORT_BYTES) throw new ToolError('FILE_TOO_LARGE', 'CAD geometry files must be nonempty and at most 2 MiB.');
+      setImportFile({ file, version: session.getSnapshot().version, adapter: workbench.adapter }); session.setWorkflowOpen(true, 'import');
+      return;
+    }
     if (file.size > MAX_CAD_FILE_BYTES) throw new ToolError('FILE_TOO_LARGE', 'CAD imports must be 4 MiB or smaller.');
     const expected = session.getSnapshot().version;
     return run(async () => {
-      return acceptImportedDocument(JSON.parse(await file.text()), workbench, expected);
+      const bytes = await file.arrayBuffer();
+      if (bytes.byteLength > MAX_CAD_FILE_BYTES) throw new ToolError('FILE_TOO_LARGE', 'CAD imports must be 4 MiB or smaller.');
+      let text: string;
+      try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+      catch { throw new ToolError('INVALID_ENCODING', 'CAD JSON must contain valid UTF-8. The draft has not changed.'); }
+      return acceptImportedDocument(JSON.parse(text), workbench, expected);
     });
   }
   function acceptImportedDocument(value: unknown, workbench: NonNullable<App['connectedWorkbench']>, expectedVersion: string, signal?: AbortSignal) {
@@ -189,6 +222,67 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   async function importDocumentValue(value: unknown, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     const workbench = connected(); session.assertVersion(expectedVersion); assertCanSwitch(); requireCleanReplacement();
     return run(async () => acceptImportedDocument(value, workbench, expectedVersion, signal));
+  }
+  function cancelImport() {
+    importAbort.current?.abort(); importAbort.current = null;
+    setImportFile(null); session.setWorkflowOpen(false, 'import'); setErrorMessage(null);
+  }
+  async function importSolidSource(value: unknown, expectedVersion = session.getSnapshot().version, signal?: AbortSignal, scope?: 'import') {
+    const workbench = connected(); session.assertVersion(expectedVersion); assertCanSwitch(); requireCleanReplacement(scope);
+    const source = parseCadSolidImportSource(value);
+    return run(async () => {
+      signal?.throwIfAborted();
+      const client = await getKernel();
+      signal?.throwIfAborted();
+      const analysis = await client.importSolid(source, signal);
+      signal?.throwIfAborted(); session.assertVersion(expectedVersion); assertCanSwitch(); requireCleanReplacement(scope);
+      if (current.current.app.connectedWorkbench?.adapter !== workbench.adapter) throw new ToolError('STALE_STATE', 'Storage changed during CAD import.');
+      if (!isCadSolidImportResult(analysis) || analysis.format !== source.format || analysis.fileName !== source.fileName || analysis.sourceBytes !== cadSolidImportBytes(source).length) {
+        throw new ToolError('INVALID_IMPORT_RESULT', 'CAD import did not return a matching validated solid.');
+      }
+      const document = parseCadDocument({ ...createCadDocument(source.fileName.replace(/\.(step|stp|stl)$/i, '')), features: [{
+        id: `import_${crypto.randomUUID()}`, name: source.fileName, kind: 'imported', suppressed: false, source
+      }] });
+      session.replace(document); setBuild(null); setBuildVersion(null); setBuildState('idle'); changeOpen(true);
+      setImportFile(null);
+      return { imported: true, documentId: document.id, version: session.getSnapshot().version, ...analysis };
+    });
+  }
+  async function importDxfSource(value: unknown, expectedVersion = session.getSnapshot().version, signal?: AbortSignal, scope?: 'import') {
+    const workbench = connected(); session.assertVersion(expectedVersion); assertCanSwitch(); requireCleanReplacement(scope);
+    const source = parseCadDxfImportSource(value);
+    return run(async () => {
+      signal?.throwIfAborted(); const client = await getKernel(); signal?.throwIfAborted();
+      const result = await client.importDxf({ fileName: source.fileName, text: source.text, ...(source.units ? { units: source.units } : {}) }, signal);
+      signal?.throwIfAborted(); session.assertVersion(expectedVersion); assertCanSwitch(); requireCleanReplacement(scope);
+      if (current.current.app.connectedWorkbench?.adapter !== workbench.adapter) throw new ToolError('STALE_STATE', 'Storage changed during CAD import.');
+      const original = result.sketch.source;
+      if (!original || original.format !== 'dxf' || original.fileName !== source.fileName || original.text !== source.text || original.units !== source.units) {
+        throw new ToolError('INVALID_IMPORT_RESULT', 'DXF import did not preserve the supplied original.');
+      }
+      const document = parseCadDocument({ ...createCadDocument(result.sketch.name), features: [result.sketch] });
+      session.replace(document); setBuild(null); setBuildVersion(null); setBuildState('idle'); changeOpen(true); setImportFile(null);
+      return { imported: true, documentId: document.id, version: session.getSnapshot().version, sketchId: result.sketch.id,
+        unitDeclaration: result.unitDeclaration, scaleToMillimeters: result.scaleToMillimeters, sourceEntityCount: result.sourceEntityCount, contourCount: result.contourCount };
+    });
+  }
+  async function confirmImport(units: CadDxfUnits | 'file') {
+    const pending = importFile;
+    if (!pending) throw new ToolError('IMPORT_UNAVAILABLE', 'Choose a CAD file first.');
+    connected(); session.assertVersion(pending.version); requireCleanReplacement('import');
+    const controller = new AbortController(); importAbort.current = controller;
+    try {
+      const bytes = new Uint8Array(await pending.file.arrayBuffer());
+      controller.signal.throwIfAborted();
+      if (current.current.app.connectedWorkbench?.adapter !== pending.adapter) throw new ToolError('STALE_STATE', 'Storage changed during CAD import.');
+      if (/\.dxf$/i.test(pending.file.name)) return await importDxfSource({ format: 'dxf', fileName: pending.file.name,
+        text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes), ...(units === 'file' ? {} : { units }) }, pending.version, controller.signal, 'import');
+      if (/\.stl$/i.test(pending.file.name) && units !== 'mm' && units !== 'inch') throw new ToolError('INVALID_UNITS', 'Choose millimeters or inches for STL.');
+      const source: CadSolidImportSource = /\.stl$/i.test(pending.file.name)
+        ? { format: 'stl', fileName: pending.file.name, encoding: 'base64', data: cadBytesToBase64(bytes), units: units === 'inch' ? 'inch' : 'mm' }
+        : { format: 'step', fileName: pending.file.name, encoding: 'utf8', data: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) };
+      return await importSolidSource(source, pending.version, controller.signal, 'import');
+    } finally { if (importAbort.current === controller) importAbort.current = null; }
   }
   async function measureSketch(sketchId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed();
@@ -253,9 +347,15 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     const document = session.getSnapshot().document;
     const result = await (await getKernel()).build(document, signal);
     signal?.throwIfAborted(); session.assertVersion(expectedVersion); session.assertWorkflowClosed();
-    setBuild(result); setBuildVersion(expectedVersion); setBuildState(result.diagnostics.length ? 'error' : 'ready');
+    publishBuild(result, expectedVersion);
     return result;
   }
+  const topology = createCadTopologyActions({
+    assertReadable: (expectedVersion, scope) => { editable(expectedVersion); session.assertWorkflowClosed(scope); },
+    getDocument: () => session.getSnapshot().document,
+    getBuild: () => liveBuild.current,
+    getKernel
+  });
   async function inspectSection(request: CadSectionRequest, expectedVersion: string, signal?: AbortSignal, scope?: 'section') {
     editable(expectedVersion); session.assertWorkflowClosed(scope);
     const section = { ...parseCadSectionRequest(request) };
@@ -308,7 +408,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
         });
         committed = true;
         if (value.opened) changeOpen(false);
-      else setErrorMessage(`CAM project "${value.projectId}" was created, but could not open. Return to Workbench and open it from Projects. ${value.error ?? ''}`.trim());
+        else setErrorMessage(`CAM project "${value.projectId}" was created, but could not open. Return to Workbench and open it from Projects. ${value.error ?? ''}`.trim());
         return value;
       } finally { if (scope && !committed) session.setWorkflowOpen(true, scope); }
     });
@@ -332,8 +432,9 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   function back() { connected(); session.assertWorkflowClosed(); changeOpen(false); }
   const isBusy = () => busy.current;
   return { session, snapshot, open, enter, edit, save, list, showLibrary, library, libraryDiagnostic, closeLibrary: () => setLibrary(null),
-    openDocument, newDocument, importDocument, importDocumentValue, measureSketch, exportDocument, exportSolid, exportDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
+    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importFile, confirmImport, cancelImport, measureSketch, exportDocument, exportSolid, exportDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
     setViewportControls, readViewport: (expectedVersion: string) => getViewport(expectedVersion).getState(), changeViewport, captureViewport, previewArtifact,
+    inspectTopology: topology.inspect, resolveTopologyPicks: topology.resolve,
     build, buildVersion, buildState, errorMessage, setErrorMessage, storageBusy, isBusy, isOpen: () => current.current.open,
     undo: (expected?: string) => { editable(expected); session.undo(expected); },
     redo: (expected?: string) => { editable(expected); session.redo(expected); }

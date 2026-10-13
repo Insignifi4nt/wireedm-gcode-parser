@@ -2,11 +2,24 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Check, Grid2X2, Magnet, Maximize2, X } from 'lucide-react';
 import type { CadProfile, CadSketchFeature, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
-import { resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
+import { cadAnalyticPathMetrics, cadProfileToEntities, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
+import type { DxfEntity } from '@/domain/dxf/types';
 import { captureSvgPreview } from '@/features/editor/captureEditorPreview';
 import { ToolError } from '@/features/webmcp/siteTools';
 import type { CadRenderedViewControls, CadRenderedViewState } from './cadViewportControls';
 import { closeSketchPolygon, snapSketchPoint, twoPointSketchProfile, type SketchPoint, type SketchTool } from './cadSketchInteraction';
+import { cadArcSvgPath } from './cadSketchSvg';
+
+function AnalyticEntity({ entity }: { entity: DxfEntity }) {
+  switch (entity.type) {
+    case 'line': return <line x1={entity.start.x} y1={entity.start.y} x2={entity.end.x} y2={entity.end.y} />;
+    case 'circle': return <circle cx={entity.center.x} cy={entity.center.y} r={entity.radius} />;
+    case 'arc': return <path d={cadArcSvgPath(entity)} />;
+    case 'polyline':
+    case 'lwpolyline': throw new Error('CAD path previews require analytic line, arc or circle entities.');
+    default: { const exhaustive: never = entity; throw exhaustive; }
+  }
+}
 
 function ProfileGeometry({ geometry, parameters }: { geometry: CadProfile; parameters: Readonly<Record<string, number>> }) {
   const value = (scalar: number | string) => evaluateCadScalar(scalar, parameters);
@@ -14,6 +27,7 @@ function ProfileGeometry({ geometry, parameters }: { geometry: CadProfile; param
     case 'rectangle': return <rect x={value(geometry.x)} y={value(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />;
     case 'circle': return <circle cx={value(geometry.x)} cy={value(geometry.y)} r={value(geometry.radius)} />;
     case 'polygon': return <polygon points={geometry.points.map(([x, y]) => `${value(x)},${value(y)}`).join(' ')} />;
+    case 'path': return <g>{cadProfileToEntities(resolveCadProfile(geometry, parameters)).map((entity, index) => <AnalyticEntity key={index} entity={entity} />)}</g>;
     case 'slot': {
       const x = value(geometry.x), y = value(geometry.y), length = value(geometry.length), width = value(geometry.width);
       return <rect x={x - length / 2} y={y - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${x} ${y})`} />;
@@ -26,7 +40,7 @@ function SafeProfile({ profile, parameters }: { profile: CadSketchProfile; param
   catch { return null; }
 }
 
-export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, onSelectProfile, onAddProfile, onPendingChange, onError, onFinish, cancelSignal, interactionLocked = false, onControlsReady, viewLocked = false }: {
+export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, onSelectProfile, onAddProfile, onPendingChange, onError, cancelSignal, interactionLocked = false, onControlsReady, viewLocked = false }: {
   sketch: CadSketchFeature;
   parameters: Readonly<Record<string, number>>;
   tool: SketchTool;
@@ -35,7 +49,6 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
   onAddProfile(geometry: CadProfile): void;
   onPendingChange(pending: boolean): void;
   onError(message: string): void;
-  onFinish(): void;
   cancelSignal: number;
   interactionLocked?: boolean;
   onControlsReady?(controls: CadRenderedViewControls | null, released?: CadRenderedViewControls): void;
@@ -61,6 +74,17 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
   currentView.current = Object.freeze({ mode: 'sketch', available: Boolean(svg.current), plane: sketch.plane, gridVisible: grid, snapEnabled: snap, gridStepMm: gridStep, centerMm: Object.freeze([...center] satisfies [number, number]), heightSpanMm: span, revision: viewRevision.current.revision });
   const fitView = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
+    const container = host.current;
+    if (!container) return;
+    const measure = () => { if (container.clientWidth && container.clientHeight) setAspect(container.clientWidth / container.clientHeight); };
+    // Commit the actual aspect before another task can see capture availability.
+    // ResizeObserver's first asynchronous delivery then repeats this measurement.
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+  useLayoutEffect(() => {
     const controls: CadRenderedViewControls = {
       getState: () => Object.freeze({ ...currentView.current, available: Boolean(svg.current) }),
       fit: () => fitView.current?.(),
@@ -81,13 +105,6 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
   }, [onControlsReady]);
   useEffect(() => { setPoints([]); }, [sketch.id, tool, cancelSignal]);
   useLayoutEffect(() => { onPendingChange(points.length > 0); }, [points.length, onPendingChange]);
-  useEffect(() => {
-    const container = host.current;
-    if (!container) return;
-    const observer = new ResizeObserver(() => { if (container.clientHeight) setAspect(container.clientWidth / container.clientHeight); });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, []);
   const getPoint = (event: { clientX: number; clientY: number }): SketchPoint => {
     const rect = svg.current?.getBoundingClientRect();
     if (!rect || rect.width === 0 || rect.height === 0) return [0, 0];
@@ -110,6 +127,10 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
           case 'rectangle': coordinates.push([geometry.x, geometry.y], [geometry.x + geometry.width, geometry.y + geometry.height]); break;
           case 'circle': coordinates.push([geometry.x - geometry.radius, geometry.y - geometry.radius], [geometry.x + geometry.radius, geometry.y + geometry.radius]); break;
           case 'polygon': coordinates.push(...geometry.points); break;
+          case 'path': {
+            const bounds = cadAnalyticPathMetrics(geometry).bounds;
+            coordinates.push([bounds.minX, bounds.minY], [bounds.maxX, bounds.maxY]); break;
+          }
           case 'slot': {
             const angle = geometry.angle * Math.PI / 180;
             for (const [x, y] of [[-geometry.length / 2, -geometry.width / 2], [geometry.length / 2, geometry.width / 2], [-geometry.length / 2, geometry.width / 2], [geometry.length / 2, -geometry.width / 2]]) coordinates.push([geometry.x + x * Math.cos(angle) - y * Math.sin(angle), geometry.y + x * Math.sin(angle) + y * Math.cos(angle)]);
@@ -178,7 +199,7 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
       <path d={`M ${center[0] - width / 2} 0 H ${center[0] + width / 2}`} className="cad-axis-x" strokeWidth={span / 700} />
       <path d={`M 0 ${-center[1] - span / 2} V ${-center[1] + span / 2}`} className="cad-axis-y" strokeWidth={span / 700} />
       <g transform="scale(1,-1)" strokeWidth={span / 450}>
-        {sketch.profiles.map((profile) => <g key={profile.id} role="button" aria-label={`Select ${profile.name} profile`} aria-pressed={profile.id === selectedProfileId} tabIndex={tool === 'select' && !interactionLocked ? 0 : -1} className={`cad-profile ${profile.construction ? 'is-construction' : ''} ${profile.role === 'hole' ? 'is-hole' : ''} ${profile.id === selectedProfileId ? 'is-selected' : ''}`} strokeDasharray={profile.construction ? `${span / 80} ${span / 120}` : undefined} onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && tool === 'select' && !interactionLocked) { event.preventDefault(); event.stopPropagation(); onSelectProfile(profile.id); } }} onClick={(event) => { if (event.button === 0 && tool === 'select' && !interactionLocked) { event.stopPropagation(); onSelectProfile(profile.id); } }}><SafeProfile profile={profile} parameters={parameters} /></g>)}
+        {sketch.profiles.map((profile) => <g key={profile.id} role="button" aria-label={`Select ${profile.name} profile`} aria-pressed={profile.id === selectedProfileId} tabIndex={tool === 'select' && !interactionLocked ? 0 : -1} className={`cad-profile ${profile.construction ? 'is-construction' : ''} ${profile.id === selectedProfileId ? 'is-selected' : ''}`} strokeDasharray={profile.construction ? `${span / 80} ${span / 120}` : undefined} onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && tool === 'select' && !interactionLocked) { event.preventDefault(); event.stopPropagation(); onSelectProfile(profile.id); } }} onClick={(event) => { if (event.button === 0 && tool === 'select' && !interactionLocked) { event.stopPropagation(); onSelectProfile(profile.id); } }}><SafeProfile profile={profile} parameters={parameters} /></g>)}
         {preview && <g className="cad-profile cad-profile-preview"><ProfileGeometry geometry={preview} parameters={parameters} /></g>}
         {tool === 'polygon' && points.length > 0 && <polyline className="cad-profile cad-profile-preview" points={[...points, cursor].map(([x, y]) => `${x},${y}`).join(' ')} />}
         {points.map(([x, y], index) => <circle key={index} cx={x} cy={y} r={span / 170} className="cad-sketch-vertex" />)}
@@ -186,9 +207,9 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
       </g>
     </svg>
     <p id={instructionsId} className="cad-sr-only">{instruction}. Keyboard: arrow keys move the cursor, Shift moves ten grid steps, Space or Enter adds a point, Enter closes a polyline after three vertices, Backspace removes the last vertex, Escape cancels drawing, F fits the sketch.</p>
-    <div className="cad-view-tools"><span className="cad-plane-label">{sketch.plane} · SKETCH</span><button aria-label="Fit sketch" disabled={viewLocked} onClick={fit}><Maximize2 size={14} /></button><button aria-label="Toggle sketch grid" disabled={viewLocked} aria-pressed={grid} onClick={() => setGrid(!grid)}><Grid2X2 size={14} /></button><button aria-label="Toggle grid snapping" disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><Magnet size={14} /></button><label className="cad-grid-step">Grid <input aria-label="Grid spacing" disabled={viewLocked} type="number" min="0.01" value={gridStep} onChange={(event) => { const value = Number(event.target.value); if (value > 0 && Number.isFinite(value)) setGridStep(value); }} /> mm</label></div>
-    <div className="cad-sketch-instruction"><span>{interactionLocked ? 'Apply or cancel the property changes to continue drawing.' : instruction}</span>{tool === 'polygon' && points.length >= 3 && <button disabled={interactionLocked} onClick={close}><Check size={13} /> Close profile</button>}{points.length > 0 && <button onClick={() => setPoints([])}><X size={13} /> Cancel drawing</button>}<button className="cad-primary" disabled={points.length > 0 || interactionLocked} onClick={onFinish}><Check size={13} /> Finish sketch</button></div>
-    <div className="cad-view-caption">{sketch.name} <span>{cursor[0].toFixed(2)}, {cursor[1].toFixed(2)} mm</span></div>
+    <div className="cad-view-tools"><span className="cad-plane-label">{sketch.plane}</span><button aria-label="Fit sketch" disabled={viewLocked} onClick={fit}><Maximize2 size={14} /></button><button aria-label="Toggle sketch grid" disabled={viewLocked} aria-pressed={grid} onClick={() => setGrid(!grid)}><Grid2X2 size={14} /></button><button aria-label="Toggle grid snapping" disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><Magnet size={14} /></button><label className="cad-grid-step">Grid <input aria-label="Grid spacing" disabled={viewLocked} type="number" min="0.01" value={gridStep} onChange={(event) => { const value = Number(event.target.value); if (value > 0 && Number.isFinite(value)) setGridStep(value); }} /> mm</label></div>
+    {(tool !== 'select' || points.length > 0 || interactionLocked) && <div className="cad-sketch-instruction"><span>{interactionLocked ? 'Apply or cancel the property changes to continue drawing.' : instruction}</span>{tool === 'polygon' && points.length >= 3 && <button disabled={interactionLocked} onClick={close}><Check size={13} /> Close profile</button>}{points.length > 0 && <button onClick={() => setPoints([])}><X size={13} /> Cancel drawing</button>}</div>}
+    <div className="cad-view-caption">{cursor[0].toFixed(2)}, {cursor[1].toFixed(2)} mm</div>
     <div className="cad-view-help">Right drag to pan · Scroll to zoom · Esc cancels drawing</div>
   </div>;
 }

@@ -1,0 +1,59 @@
+import { cast, getOC, isShape3D, type Edge, type Face, type Shape3D } from 'replicad';
+import { CadError } from '../../../domain/cad/cadError';
+
+/** Explicit native builder lifetimes also cover rejected kernel operations. */
+export function applyCadEdgeOperation(shape: Shape3D, edges: readonly Edge[], kind: 'fillet' | 'chamfer', radius: number): Shape3D {
+  if (!edges.length) throw new CadError('selection-empty', 'Select at least one exact edge.');
+  const oc = getOC();
+  const builder = kind === 'fillet'
+    ? new oc.BRepFilletAPI_MakeFillet(shape.wrapped, oc.ChFi3d_FilletShape.ChFi3d_Rational)
+    : new oc.BRepFilletAPI_MakeChamfer(shape.wrapped);
+  try {
+    for (const edge of edges) builder.Add(radius, edge.wrapped);
+    // OC extends a selected edge through tangent contours. Never silently
+    // modify additional edges that the authored geometric selection omitted.
+    for (let contour = 1; contour <= builder.NbContours(); contour++) {
+      for (let index = 1; index <= builder.NbEdges(contour); index++) {
+        const propagated = builder.Edge(contour, index);
+        try {
+          if (!edges.some(edge => edge.wrapped.IsSame(propagated))) throw new CadError('selection-tangent-chain',
+            `OpenCascade would ${kind} additional tangent edges. Select the complete tangent chain explicitly before applying this operation.`);
+        } finally { propagated.delete(); }
+      }
+    }
+    builder.Build();
+    if (!builder.IsDone()) throw new CadError('kernel-operation-failed', `OpenCascade could not ${kind} the selected edges. Reduce the radius or revise the selection.`);
+    const raw = builder.Shape();
+    try {
+      const result = cast(raw);
+      if (isShape3D(result)) return result;
+      result.delete();
+      throw new CadError('invalid-solid', 'The selected edge operation did not produce a solid.');
+    } finally { raw.delete(); }
+  } finally { builder.delete(); }
+}
+
+export function applyCadShell(shape: Shape3D, opening: Face, thickness: number): Shape3D {
+  if (thickness <= 1e-7) throw new CadError('shell-thickness', 'Shell thickness must exceed the kernel tolerance of 0.0000001 mm.');
+  const solids = shape.solids;
+  try {
+    if (solids.length !== 1) throw new CadError('shell-components', 'Shell currently requires one connected solid. Choose a body without disconnected pattern instances.');
+  } finally { for (const solid of solids) solid.delete(); }
+  const oc = getOC();
+  const faces = new oc.NCollection_List_TopoDS_Shape();
+  const builder = new oc.BRepOffsetAPI_MakeThickSolid();
+  try {
+    faces.Append(opening.wrapped);
+    // OpenCascade uses negative offset for inward walls; the public feature is positive.
+    builder.MakeThickSolidByJoin(shape.wrapped, faces, -thickness, 1e-7,
+      oc.BRepOffset_Mode.BRepOffset_Skin, false, false, oc.GeomAbs_JoinType.GeomAbs_Arc, false);
+    if (!builder.IsDone()) throw new CadError('shell-failed', 'OpenCascade could not shell this body. Reduce the thickness or choose another planar opening.');
+    const raw = builder.Shape();
+    try {
+      const result = cast(raw);
+      if (isShape3D(result)) return result;
+      result.delete();
+      throw new CadError('invalid-solid', 'The shell did not produce a closed solid.');
+    } finally { raw.delete(); }
+  } finally { builder.delete(); faces.delete(); }
+}

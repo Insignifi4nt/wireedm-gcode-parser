@@ -1,9 +1,13 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import type { CadDiagnostic, CadDocument, CadFeature } from './cadDocument';
+import type { CadDiagnostic, CadDocument, CadFeature, CadProfile, CadSketchProfile } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { validateCadSketchGeometry } from './cadSketchGeometry';
+import { CadEdgeSelectionSchema, CadFaceQuerySchema, resolveCadEdgeSelection, validateCadShellOpening } from './cadTopology';
+import { CadSolidImportSourceSchema, MAX_CAD_DOCUMENT_BYTES, parseCadSolidImportSource } from './cadImports';
+import { CadDxfImportSourceSchema, parseCadDxfImportSource } from './cadDxfSource';
+import { isCadImportData } from './cadImportData';
 
 const strict = { additionalProperties: false };
 const identifier = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' });
@@ -15,17 +19,26 @@ const point2 = Type.Tuple([scalar, scalar]);
 const point3 = Type.Tuple([scalar, scalar, scalar]);
 const solidOperation = Type.Union([Type.Literal('new'), Type.Literal('join'), Type.Literal('cut')]);
 const base = { id: identifier, name: label, suppressed: Type.Boolean() };
+export const CadPathSegmentSchema = Type.Union([
+  Type.Object({ kind: Type.Literal('line'), start: point2, end: point2 }, strict),
+  Type.Object({ kind: Type.Literal('arc'), center: point2, radius: scalar, startAngle: scalar, sweep: scalar }, strict)
+]);
 export const CadProfileSchema = Type.Union([
   Type.Object({ kind: Type.Literal('rectangle'), x: scalar, y: scalar, width: scalar, height: scalar, cornerRadius: scalar }, strict),
   Type.Object({ kind: Type.Literal('circle'), x: scalar, y: scalar, radius: scalar }, strict),
   Type.Object({ kind: Type.Literal('polygon'), points: Type.Array(point2, { minItems: 3, maxItems: 2048 }) }, strict),
+  Type.Object({ kind: Type.Literal('path'), segments: Type.Array(CadPathSegmentSchema, { minItems: 1, maxItems: 2048 }) }, strict),
   Type.Object({ kind: Type.Literal('slot'), x: scalar, y: scalar, length: scalar, width: scalar, angle: scalar }, strict)
 ]);
+export const CadSketchProfileSchema = Type.Object({ id: identifier, name: label, construction: Type.Boolean(),
+  role: Type.Optional(Type.Union([Type.Literal('outer'), Type.Literal('hole')])), geometry: CadProfileSchema }, strict);
 export const CadFeatureSchema = Type.Union([
-  Type.Object({ ...base, kind: Type.Literal('sketch'), plane, offset: scalar, profiles: Type.Array(Type.Object({ id: identifier, name: label, construction: Type.Boolean(), role: Type.Union([Type.Literal('outer'), Type.Literal('hole')]), geometry: CadProfileSchema }, strict), { maxItems: 256 }) }, strict),
+  Type.Object({ ...base, kind: Type.Literal('imported'), source: CadSolidImportSourceSchema }, strict),
+  Type.Object({ ...base, kind: Type.Literal('sketch'), plane, offset: scalar, profiles: Type.Array(CadSketchProfileSchema, { maxItems: 256 }), source: Type.Optional(CadDxfImportSourceSchema) }, strict),
   Type.Object({ ...base, kind: Type.Literal('extrude'), sketchId: identifier, distance: scalar, symmetric: Type.Boolean(), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
   Type.Object({ ...base, kind: Type.Literal('revolve'), sketchId: identifier, angle: scalar, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
-  Type.Object({ ...base, kind: Type.Union([Type.Literal('fillet'), Type.Literal('chamfer')]), targetId: identifier, radius: scalar }, strict),
+  Type.Object({ ...base, kind: Type.Union([Type.Literal('fillet'), Type.Literal('chamfer')]), targetId: identifier, radius: scalar, selection: Type.Optional(Type.Union([CadEdgeSelectionSchema, Type.Null()])) }, strict),
+  Type.Object({ ...base, kind: Type.Literal('shell'), targetId: identifier, thickness: scalar, opening: CadFaceQuerySchema }, strict),
   Type.Object({ ...base, kind: Type.Literal('boolean'), targetId: identifier, toolId: identifier, operation: Type.Union([Type.Literal('union'), Type.Literal('cut'), Type.Literal('intersect')]) }, strict),
   Type.Object({ ...base, kind: Type.Literal('transform'), sourceId: identifier, translation: point3, rotation: point3 }, strict),
   Type.Object({ ...base, kind: Type.Literal('linear-pattern'), sourceId: identifier, count: Type.Integer({ minimum: 2, maximum: 100 }), spacing: point3 }, strict),
@@ -40,9 +53,9 @@ export const CadDocumentSchema = Type.Object({
 
 export function cadFeatureDependencies(feature: CadFeature): string[] {
   switch (feature.kind) {
-    case 'sketch': return [];
+    case 'sketch': case 'imported': return [];
     case 'extrude': case 'revolve': return feature.targetId === null ? [feature.sketchId] : [feature.sketchId, feature.targetId];
-    case 'fillet': case 'chamfer': return [feature.targetId];
+    case 'fillet': case 'chamfer': case 'shell': return [feature.targetId];
     case 'boolean': return [feature.targetId, feature.toolId];
     case 'transform': case 'linear-pattern': case 'mirror': return [feature.sourceId];
     default: { const exhaustive: never = feature; return exhaustive; }
@@ -52,9 +65,9 @@ export function cadFeatureDependencies(feature: CadFeature): string[] {
 export function cadConsumedBodyIds(feature: CadFeature): readonly string[] {
   if (feature.suppressed) return [];
   switch (feature.kind) {
-    case 'sketch': case 'mirror': return [];
+    case 'sketch': case 'imported': case 'mirror': return [];
     case 'extrude': case 'revolve': return feature.targetId === null ? [] : [feature.targetId];
-    case 'fillet': case 'chamfer': return [feature.targetId];
+    case 'fillet': case 'chamfer': case 'shell': return [feature.targetId];
     case 'boolean': return [feature.targetId, feature.toolId];
     case 'transform': case 'linear-pattern': return [feature.sourceId];
     default: { const exhaustive: never = feature; return exhaustive; }
@@ -71,9 +84,17 @@ export function cadVisibleBodyIds(features: readonly CadFeature[]): readonly str
 
 /** Strict boundary parser. Never rewrites IDs, geometry, units or saved expressions. */
 export function parseCadDocument(value: unknown): CadDocument {
+  if (!isCadImportData(value)) throw new CadError('invalid-document', 'CAD documents must contain their own complete JSON data fields.');
   if (!Value.Check(CadDocumentSchema, value)) {
     const error = Value.Errors(CadDocumentSchema, value).First();
     throw new CadError('invalid-document', `Invalid CAD document${error ? ` at ${error.path || '/'}: ${error.message}` : '.'}`);
+  }
+  // Bound embedded originals before cloning or entering native geometry code.
+  let sourceCharacters = 0;
+  for (const feature of value.features) {
+    if (feature.kind === 'imported') sourceCharacters += feature.source.data.length;
+    if (feature.kind === 'sketch' && feature.source) sourceCharacters += feature.source.text.length;
+    if (sourceCharacters > MAX_CAD_DOCUMENT_BYTES) throw new CadError('document-size', 'CAD documents must be at most 4 MiB including original imported files.');
   }
   // A boundary input may have inherited fields or accessors. Validate semantics
   // against its detached own-data snapshot, never against changing getters.
@@ -81,6 +102,7 @@ export function parseCadDocument(value: unknown): CadDocument {
   try { snapshot = structuredClone(value); }
   catch { throw new CadError('invalid-document', 'CAD document must contain portable declarative data.'); }
   if (!Value.Check(CadDocumentSchema, snapshot)) throw new CadError('invalid-document', 'CAD document must contain its own complete JSON fields.');
+  if (new TextEncoder().encode(JSON.stringify(snapshot)).length > MAX_CAD_DOCUMENT_BYTES) throw new CadError('document-size', 'CAD documents must be at most 4 MiB including original imported files.');
   const document: CadDocument = snapshot;
   if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/.test(document.id)) throw new CadError('invalid-document-id', 'Document ID is a reserved filesystem name.');
   for (const name of Object.keys(document.parameters)) {
@@ -109,13 +131,15 @@ export function parseCadDocument(value: unknown): CadDocument {
     if (feature.kind === 'linear-pattern') instances *= feature.count;
     if (instances > 1000) throw new CadError('feature-limit', 'Nested pattern expansion exceeds 1000 solid instances.');
     switch (feature.kind) {
+      case 'imported': parseCadSolidImportSource(feature.source); break;
       case 'sketch': {
         e(feature.offset);
+        if (feature.source) parseCadDxfImportSource(feature.source);
         const ids = new Set<string>();
         for (const profile of feature.profiles) {
           if (ids.has(profile.id)) throw new CadError('duplicate-id', `Duplicate profile ID "${profile.id}" in sketch "${feature.name}".`);
           ids.add(profile.id);
-          geometryBudget += profile.geometry.kind === 'polygon' ? profile.geometry.points.length : 8;
+          geometryBudget += profile.geometry.kind === 'polygon' ? profile.geometry.points.length : profile.geometry.kind === 'path' ? profile.geometry.segments.length : 8;
         }
         if (geometryBudget > 8192) throw new CadError('geometry-limit', 'Document contains too many sketch edges.');
         validateCadSketchGeometry(feature, document.parameters);
@@ -135,7 +159,16 @@ export function parseCadDocument(value: unknown): CadDocument {
         }
         break;
       }
-      case 'fillet': case 'chamfer': if (e(feature.radius) <= 1e-7 || e(feature.radius) > 1e6) throw new CadError('invalid-dimension', 'Edge radius must be positive and within one million millimetres.'); break;
+      case 'fillet': case 'chamfer': {
+        if (e(feature.radius) <= 1e-7 || e(feature.radius) > 1e6) throw new CadError('invalid-dimension', 'Edge radius must be positive and within one million millimetres.');
+        if (feature.selection) resolveCadEdgeSelection(feature.selection, document.parameters);
+        break;
+      }
+      case 'shell': {
+        if (e(feature.thickness) <= 1e-7 || e(feature.thickness) > 1e6) throw new CadError('invalid-dimension', 'Inward shell thickness must be positive and within one million millimetres.');
+        validateCadShellOpening(feature.opening, document.parameters);
+        break;
+      }
       case 'boolean': if (feature.targetId === feature.toolId) throw new CadError('invalid-operation', 'Boolean target and tool must be different bodies.'); break;
       case 'transform': feature.translation.forEach(e); feature.rotation.forEach(e); break;
       case 'linear-pattern': {
@@ -166,6 +199,21 @@ export function parseCadDocument(value: unknown): CadDocument {
 
 export function createCadDocument(name = 'Untitled part', id = `cad_${crypto.randomUUID()}`): CadDocument {
   return parseCadDocument({ format: 'wireedm-cad', schemaVersion: 1, id, name, units: 'mm', parameters: {}, features: [] });
+}
+
+/** Shared contour default for drawing and declarative authoring: nesting is automatic. */
+export function createCadSketchProfile(input: { readonly geometry: CadProfile; readonly id?: string; readonly name?: string; readonly construction?: boolean }): CadSketchProfile {
+  const value = { id: input.id ?? `contour_${crypto.randomUUID()}`, name: input.name ?? 'Contour', construction: input.construction ?? false, geometry: input.geometry };
+  if (!Value.Check(CadSketchProfileSchema, value)) throw new CadError('invalid-profile', 'Malformed sketch contour.');
+  let profile: CadSketchProfile;
+  try { profile = structuredClone(value); }
+  catch { throw new CadError('invalid-profile', 'Sketch contours must contain portable declarative data.'); }
+  if (!Value.Check(CadSketchProfileSchema, profile)) throw new CadError('invalid-profile', 'Sketch contours must contain their own complete fields.');
+  function freeze(item: unknown): void {
+    if (!item || typeof item !== 'object') return;
+    Object.values(item).forEach(freeze); Object.freeze(item);
+  }
+  freeze(profile); return profile;
 }
 
 export function validateCadDocument(document: CadDocument): readonly CadDiagnostic[] {

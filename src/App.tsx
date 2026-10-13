@@ -28,6 +28,7 @@ interface AppProps {
 const EditorPage = lazy(() => import('@/features/editor/EditorPage').then(({ EditorPage }) => ({ default: EditorPage })));
 const CadWorkbench = lazy(() => import('@/features/cad/CadWorkbench').then(({ CadWorkbench }) => ({ default: CadWorkbench })));
 const CadSectionDialog = lazy(() => import('@/features/cad/CadSectionDialog').then(({ CadSectionDialog }) => ({ default: CadSectionDialog })));
+const CadImportDialog = lazy(() => import('@/features/cad/CadImportDialog').then(({ CadImportDialog }) => ({ default: CadImportDialog })));
 
 export default function App({ services }: AppProps = {}) {
   const [onboardingOpen, setOnboardingOpen] = useState(() => !hasDismissedOnboarding());
@@ -119,8 +120,11 @@ export default function App({ services }: AppProps = {}) {
             onExportDocument={() => { cad.exportDocument(); }}
             onExportSolid={async format => { await cad.exportSolid(format); }}
             onExportDxf={async sketchId => { await cad.exportDxf(sketchId); }}
+            onRebuild={async () => { await cad.inspectBuild(); }}
             onSendToCam={async sketchId => { await cad.sendToCam(sketchId); }}
             onViewportControlsReady={cad.setViewportControls}
+            onInspectTopology={(request, version, signal) => cad.inspectTopology(request, version, signal, 'editor')}
+            onResolveSelection={(request, version, signal) => cad.resolveTopologyPicks(request, version, signal, 'editor')}
             onCaptureViewport={async () => { await cad.captureViewport(cad.snapshot.version, true); }}
             onSectionForCam={bodyId => {
               cadSession.assertWorkflowClosed();
@@ -132,6 +136,7 @@ export default function App({ services }: AppProps = {}) {
             onClose={closeCadSection}
             onInspect={(request, version, signal) => cad.inspectSection(request, version, signal, 'section')}
             onSend={(request, version, signal) => cad.sendSectionToCam(request, version, signal, 'section')} />}
+          {cad.importFile && <CadImportDialog file={cad.importFile.file} onImport={cad.confirmImport} onCancel={cad.cancelImport} />}
         </Suspense>
       ) : app.activeView === 'editor' && app.connectedWorkbench ? (
         <Suspense fallback={<p className="p-4 text-xs text-muted-foreground" role="status">Opening editor…</p>}><EditorPage

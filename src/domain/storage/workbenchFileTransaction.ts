@@ -23,6 +23,11 @@ export class WorkbenchFileGuardError extends Error {
   constructor(readonly reason: unknown) { super('File transaction cancelled before writing.'); }
 }
 
+/** A caller's optimistic original must be the same image retained for recovery. */
+export class WorkbenchFileConflictError extends Error {
+  constructor(readonly path: string) { super(`File changed before transaction capture: ${path}`); }
+}
+
 export function isPortableStoragePath(path: string) {
   return path.length <= 1024 && path.split('/').length <= 17 && path.split('/').every((part) =>
     part.length > 0 && part !== '.' && part !== '..' && !/[<>:"\\|?*\u0000-\u001f]/.test(part)
@@ -85,7 +90,7 @@ export async function recoverWorkbenchFileTransaction(adapter: WorkbenchStorageA
 
 /** Caller holds the lock. Write the catalog last; exact before/after images permit crash recovery. */
 export async function commitWorkbenchFileTransaction(
-  adapter: WorkbenchStorageAdapter, changes: readonly { path: string; contents: string | null }[],
+  adapter: WorkbenchStorageAdapter, changes: readonly { path: string; contents: string | null; expectedPrevious?: string | null }[],
   beforeWrite?: () => void
 ) {
   if (!changes.length) return;
@@ -93,7 +98,11 @@ export async function commitWorkbenchFileTransaction(
   const ordered = [...changes].sort((a, b) => Number(a.path === 'workbench.json') - Number(b.path === 'workbench.json'));
   checkFiles(ordered.map(({ path, contents }) => ({ path, previous: null, next: contents })));
   const files: Transaction['files'] = [];
-  for (const { path, contents } of ordered) files.push({ path, previous: await readExact(adapter, path), next: contents });
+  for (const { path, contents, expectedPrevious } of ordered) {
+    const previous = await readExact(adapter, path);
+    if (expectedPrevious !== undefined && previous !== expectedPrevious) throw new WorkbenchFileConflictError(path);
+    files.push({ path, previous, next: contents });
+  }
   checkFiles(files);
   const transaction: Transaction = { format: 'wire-edm-file-transaction', schemaVersion: 1, files };
   if (!Value.Check(schema, transaction)) throw new Error('File transaction exceeds its file limit.');

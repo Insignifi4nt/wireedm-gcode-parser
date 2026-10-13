@@ -3,24 +3,34 @@ import { Box, Grid2X2, Maximize2 } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { CadMesh } from '@/domain/cad/cadDocument';
+import type { CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import { captureCanvas } from '@/features/editor/captureEditorPreview';
 import type { CadNamedView, CadRenderedViewControls } from './cadViewportControls';
+import { pickTopology, type CadPickMode, type CadTopologyHit } from './cadTopologyPicking';
+import { createCadTopologyHighlights } from './cadTopologyHighlights';
 
-export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, interactionLocked = false }: {
+export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, interactionLocked = false,
+  pickMode = 'body', topologySelection = null, onPickMode, onTopologyPick, pickingEnabled = true }: {
   meshes: readonly CadMesh[];
   selectedId: string | null;
   onSelect(id: string | null): void;
   onControlsReady?(controls: CadRenderedViewControls | null, released?: CadRenderedViewControls): void;
   interactionLocked?: boolean;
+  pickMode?: CadPickMode;
+  topologySelection?: CadTopologyPickSet | null;
+  onPickMode?(mode: CadPickMode): void;
+  onTopologyPick?(hit: CadTopologyHit | null, additive: boolean): void;
+  pickingEnabled?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const controller = useRef<CadRenderedViewControls | null>(null);
   const publish = useRef(onControlsReady);
   publish.current = onControlsReady;
-  const data = useRef({ meshes, selectedId, onSelect });
-  data.current = { meshes, selectedId, onSelect };
+  const data = useRef({ meshes, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, pickingEnabled });
+  data.current = { meshes, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, pickingEnabled };
   const redraw = useRef<(() => void) | null>(null);
   const recolor = useRef<(() => void) | null>(null);
+  const highlight = useRef<(() => void) | null>(null);
   const uploadedMeshes = useRef<readonly CadMesh[] | null>(null);
   const orbit = useRef<OrbitControls | null>(null);
   const [unavailable, setUnavailable] = useState(false);
@@ -58,12 +68,24 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
     scene.add(axes);
     const solids = new THREE.Group();
     const pickableBodies: THREE.Mesh[] = [];
+    const pickableEdges: THREE.LineSegments[] = [];
+    const meshByObject = new Map<THREE.Object3D, CadMesh>();
+    const highlights = createCadTopologyHighlights();
     scene.add(solids);
+    scene.add(highlights.objects);
     let frame: number | null = null;
-    const viewState: { view: CadNamedView | 'Custom'; gridVisible: boolean; revision: number } = { view: 'Isometric', gridVisible: true, revision: 0 };
+    let pendingHover: PointerEvent | null = null;
+    let namedDirection = camera.position.clone().sub(controls.target).normalize();
+    const viewState: { view: CadNamedView | 'Custom'; gridVisible: boolean; revision: number; hoveredTopology: CadTopologyHit | null } = { view: 'Isometric', gridVisible: true, revision: 0, hoveredTopology: null };
     const render = () => {
       if (frame !== null) return;
-      frame = requestAnimationFrame(() => { frame = null; renderer.render(scene, camera); });
+      frame = requestAnimationFrame(() => {
+        const event = pendingHover; pendingHover = null;
+        if (event && !down && !event.buttons && !data.current.interactionLocked && data.current.pickingEnabled && data.current.pickMode !== 'body') {
+          setRay(event); setHover(hitTopology());
+        }
+        renderer.render(scene, camera); frame = null;
+      });
     };
     const resize = () => {
       const width = Math.max(1, container.clientWidth);
@@ -75,6 +97,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
       camera.bottom = -halfHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+      highlights.resize(width, height);
       render();
     };
     const fit = () => {
@@ -92,6 +115,8 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
     };
     const disposeSolids = () => {
       pickableBodies.length = 0;
+      pickableEdges.length = 0;
+      meshByObject.clear();
       for (const child of [...solids.children]) {
         if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
           child.geometry.dispose();
@@ -116,14 +141,30 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
         body.userData.featureId = mesh.featureId;
         solids.add(body);
         pickableBodies.push(body);
+        meshByObject.set(body, mesh);
         const edges = new THREE.BufferGeometry();
         edges.setAttribute('position', new THREE.Float32BufferAttribute(mesh.edges, 3));
         const lines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: selected ? 0xb5eafd : 0x344452 }));
         lines.userData.featureId = mesh.featureId;
         solids.add(lines);
+        pickableEdges.push(lines);
+        meshByObject.set(lines, mesh);
       }
       if (firstBody && data.current.meshes.length) { firstBody = false; fit(); }
+      viewState.hoveredTopology = null;
+      updateHighlights();
       render();
+    };
+    const updateHighlights = () => {
+      if (highlights.update({ meshes: data.current.meshes, selection: data.current.topologySelection, hover: viewState.hoveredTopology })) {
+        viewState.revision++; render();
+      }
+    };
+    const setHover = (hit: CadTopologyHit | null) => {
+      const previous = viewState.hoveredTopology;
+      if (previous?.bodyId === hit?.bodyId && previous?.pick.key === hit?.pick.key) return;
+      viewState.hoveredTopology = hit;
+      updateHighlights();
     };
     const updateSelection = () => {
       for (const child of solids.children) {
@@ -135,30 +176,54 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
     };
     const raycaster = new THREE.Raycaster();
     let down: { x: number; y: number } | null = null;
-    const pointerDown = (event: PointerEvent) => { if (event.button === 0) down = { x: event.clientX, y: event.clientY }; };
-    const pointerUp = (event: PointerEvent) => {
-      if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) { down = null; return; }
-      down = null;
+    const setRay = (event: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
-      raycaster.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1), camera);
+      raycaster.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / Math.max(1, rect.width) * 2 - 1, -(event.clientY - rect.top) / Math.max(1, rect.height) * 2 + 1), camera);
+    };
+    const hitTopology = () => data.current.pickMode === 'body' ? null : pickTopology({ mode: data.current.pickMode,
+      raycaster, bodies: pickableBodies, edges: pickableEdges, meshByObject, camera, viewportHeight: container.clientHeight });
+    const pointerDown = (event: PointerEvent) => { pendingHover = null; setHover(null); if (event.button === 0) down = { x: event.clientX, y: event.clientY }; };
+    const pointerMove = (event: PointerEvent) => {
+      if (down || event.buttons || data.current.interactionLocked || !data.current.pickingEnabled || data.current.pickMode === 'body') { setHover(null); return; }
+      pendingHover = event; render();
+    };
+    const pointerLeave = () => { pendingHover = null; setHover(null); };
+    const pointerCancel = () => { pendingHover = null; down = null; setHover(null); };
+    const pointerUp = (event: PointerEvent) => {
+      if (event.button !== 0 || !down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4 || data.current.interactionLocked || !data.current.pickingEnabled) { down = null; return; }
+      down = null;
+      setRay(event);
+      if (data.current.pickMode !== 'body') { data.current.onTopologyPick?.(hitTopology(), event.ctrlKey || event.metaKey); return; }
       const hit = raycaster.intersectObjects(pickableBodies, false)[0];
       const id: unknown = hit?.object.userData.featureId;
       data.current.onSelect(typeof id === 'string' ? id : null);
     };
-    const onChange = () => { viewState.revision++; render(); };
-    const onStart = () => { viewState.view = 'Custom'; setViewName('Custom'); };
+    const onChange = () => {
+      if (viewState.view !== 'Custom' && camera.position.clone().sub(controls.target).normalize().distanceToSquared(namedDirection) > 1e-12) { viewState.view = 'Custom'; setViewName('Custom'); }
+      viewState.revision++; render();
+    };
+    const onStart = () => { pendingHover = null; setHover(null); };
     controls.addEventListener('change', onChange);
     controls.addEventListener('start', onStart);
     renderer.domElement.addEventListener('pointerdown', pointerDown);
     renderer.domElement.addEventListener('pointerup', pointerUp);
+    renderer.domElement.addEventListener('pointermove', pointerMove);
+    renderer.domElement.addEventListener('pointerleave', pointerLeave);
+    renderer.domElement.addEventListener('pointercancel', pointerCancel);
     const observer = new ResizeObserver(resize);
     observer.observe(container);
     resize();
     update();
     redraw.current = update;
     recolor.current = updateSelection;
+    highlight.current = () => {
+      if (!data.current.pickingEnabled || viewState.hoveredTopology?.pick.kind !== data.current.pickMode) viewState.hoveredTopology = null;
+      updateHighlights();
+    };
+    updateHighlights();
     controller.current = {
-      getState: () => Object.freeze({ mode: 'solid', available: true, view: viewState.view, gridVisible: viewState.gridVisible, zoom: camera.zoom, revision: viewState.revision }),
+      getState: () => Object.freeze({ mode: 'solid', available: true, view: viewState.view, gridVisible: viewState.gridVisible, zoom: camera.zoom, revision: viewState.revision,
+        hoveredTopology: viewState.hoveredTopology ? Object.freeze({ ...viewState.hoveredTopology, pick: Object.freeze({ ...viewState.hoveredTopology.pick }) }) : null }),
       fit,
       setGrid(visible) { grid.visible = visible; viewState.gridVisible = visible; viewState.revision++; setGridVisible(visible); render(); },
       setView(name) {
@@ -166,6 +231,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
         const distance = Math.max(1000, camera.position.distanceTo(controls.target));
         camera.up.set(0, name === 'Top' ? 1 : 0, name === 'Top' ? 0 : 1);
         camera.position.copy(controls.target).addScaledVector(direction, distance);
+        namedDirection = direction.clone().normalize();
         viewState.view = name; viewState.revision++; setViewName(name);
         controls.update(); render();
       },
@@ -173,6 +239,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
         signal.throwIfAborted();
         if (uploadedMeshes.current !== data.current.meshes) update();
         updateSelection();
+        updateHighlights();
         controls.update();
         if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
         renderer.render(scene, camera);
@@ -191,8 +258,12 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
       orbit.current = null;
       renderer.domElement.removeEventListener('pointerdown', pointerDown);
       renderer.domElement.removeEventListener('pointerup', pointerUp);
+      renderer.domElement.removeEventListener('pointermove', pointerMove);
+      renderer.domElement.removeEventListener('pointerleave', pointerLeave);
+      renderer.domElement.removeEventListener('pointercancel', pointerCancel);
       if (frame !== null) cancelAnimationFrame(frame);
       disposeSolids();
+      highlights.dispose();
       grid.geometry.dispose();
       for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) material.dispose();
       axes.geometry.dispose();
@@ -202,6 +273,7 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
       controller.current = null;
       redraw.current = null;
       recolor.current = null;
+      highlight.current = null;
       uploadedMeshes.current = null;
       publish.current?.(null, publishedControls);
     };
@@ -209,18 +281,25 @@ export function CadViewport({ meshes, selectedId, onSelect, onControlsReady, int
 
   useEffect(() => { if (uploadedMeshes.current !== meshes) redraw.current?.(); }, [meshes]);
   useEffect(() => { recolor.current?.(); }, [selectedId]);
+  useEffect(() => { highlight.current?.(); }, [topologySelection, pickMode, meshes, pickingEnabled, interactionLocked]);
   useEffect(() => { if (orbit.current) orbit.current.enabled = !interactionLocked; }, [interactionLocked]);
   return <div className="cad-viewport">
     <div className="cad-webgl" ref={host} aria-label="3D model viewport" />
     <div className="cad-view-tools" aria-label="Viewport controls">
       <Box size={14} />
-      {(['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).map((name) => <button key={name} disabled={interactionLocked || unavailable} aria-pressed={viewName === name} onClick={() => controller.current?.setView?.(name)}>{name}</button>)}
+      <select aria-label="Named view" value={viewName} disabled={interactionLocked || unavailable} onChange={(event) => {
+        const name = (['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).find((entry) => entry === event.target.value);
+        if (name) controller.current?.setView?.(name);
+      }}>{viewName === 'Custom' && <option value="Custom" disabled>Custom</option>}{(['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).map((name) => <option key={name} value={name}>{name}</option>)}</select>
       <span className="cad-divider" />
       <button title="Fit model" aria-label="Fit model" disabled={interactionLocked || unavailable} onClick={() => controller.current?.fit()}><Maximize2 size={14} /></button>
       <button title="Toggle grid" aria-label="Toggle grid" disabled={interactionLocked || unavailable} aria-pressed={gridVisible} onClick={() => controller.current?.setGrid(!gridVisible)}><Grid2X2 size={14} /></button>
+      {onPickMode && <><span className="cad-divider" />
+        {(['body', 'face', 'edge'] satisfies CadPickMode[]).map((mode) => <button key={mode} disabled={interactionLocked || unavailable || !pickingEnabled} aria-pressed={pickMode === mode} title={`Pick ${mode === 'body' ? 'bodies' : `${mode}s`}`} onClick={() => onPickMode(mode)}>{mode === 'body' ? 'Body' : mode === 'face' ? 'Face' : 'Edge'}</button>)}
+      </>}
     </div>
     {unavailable ? <div className="cad-view-message"><strong>3D graphics are unavailable in this browser.</strong><span>Sketch editing and document operations remain available. Enable WebGL to view solids.</span></div> : meshes.length === 0 ? <div className="cad-view-message"><strong>Your part starts with a sketch</strong><span>Create a sketch on a reference plane, then draw a profile and add a Pad or Revolve.</span></div> : null}
-    <div className="cad-view-caption">{viewName} <span>ORTHOGRAPHIC</span></div>
-    <div className="cad-view-help">Drag to orbit · Right drag to pan · Scroll to zoom</div>
+    {topologySelection?.picks.length ? <div className="cad-view-caption">{topologySelection.picks.length} {topologySelection.picks[0].kind}{topologySelection.picks.length === 1 ? '' : 's'} selected</div> : null}
+    <div className="cad-view-help">{pickMode === 'edge' ? 'Ctrl / Cmd click to toggle edges · ' : ''}Drag to orbit · Right drag to pan · Scroll to zoom</div>
   </div>;
 }

@@ -15,8 +15,9 @@ function setup(mode: 'solid' | 'sketch' = 'solid') {
     selectedFeatureId: null, selectedProfileId: null, sketchId: mode === 'sketch' ? 'sketch-1' : null,
     workflowOpen: false, busy: false, buildVersion: mode === 'solid' ? 'version-1' : null,
     buildState: mode === 'solid' ? 'ready' : 'idle', visibleBodyIds: [],
+    buildId: mode === 'solid' ? 'build-1' : null, pickMode: 'body', topologySelection: null, meshes: [],
     rendered: { getState: () => Object.freeze(state), fit: vi.fn(), setGrid: vi.fn(), setView: vi.fn(), capture },
-    selectFeature: vi.fn(), editSketch: vi.fn(), selectProfile: vi.fn(), finishSketch: vi.fn(), updateView: (action) => action(),
+    selectFeature: vi.fn(), editSketch: vi.fn(), selectProfile: vi.fn(), finishSketch: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: (action) => action(),
   };
   let current = bindings;
   return { controls: createCadWorkbenchViewportControls(() => current), capture,
@@ -78,5 +79,36 @@ describe('shared CAD viewport controls', () => {
     expect(context.bindings.rendered?.setGrid).toHaveBeenCalledWith(false);
     expect(() => context.controls.apply({ kind: 'select-feature', featureId: 'missing' })).toThrow('does not exist');
     expect(() => setup('sketch').controls.apply({ kind: 'set-view', view: 'Front' })).toThrow('Finish sketch');
+  });
+
+  it('rejects capture when topology highlights or the worker build identity change', async () => {
+    const context = setup();
+    context.capture.mockImplementationOnce(async () => { context.update({ buildId: 'rebuilt-2' }); return png; });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
+    context.update({ buildId: 'build-1' });
+    context.capture.mockImplementationOnce(async () => { context.update({ topologySelection: { bodyId: 'body', documentVersion: 'version-1', buildId: 'build-1', picks: [{ kind: 'edge', key: 'selected' }] } }); return png; });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
+    context.update({ topologySelection: null });
+    context.capture.mockImplementationOnce(async () => { context.updateView({ mode: 'solid', available: true, view: 'Isometric', gridVisible: true, zoom: 1, revision: 2, hoveredTopology: { bodyId: 'body', pick: { kind: 'face', key: 'hovered' } } }); return png; });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
+  });
+
+  it('validates declarative topology picks against the current mesh and exposes frozen selection provenance', () => {
+    const context = setup();
+    const mesh = { featureId: 'body', name: 'Body', positions: [], normals: [], indices: [], edges: [], faceGroups: [], edgeGroups: [{ start: 0, count: 2, key: 'edge' }], volume: 0, bounds: { min: [0, 0, 0], max: [1, 1, 1] } } satisfies CadViewportBindings['meshes'][number];
+    context.update({ meshes: [mesh] });
+    const selection = { bodyId: 'body', buildId: 'build-1', documentVersion: 'version-1', picks: [{ kind: 'edge', key: 'edge' }] } satisfies NonNullable<CadViewportBindings['topologySelection']>;
+    context.controls.apply({ kind: 'select-topology', selection, additive: false });
+    expect(context.bindings.selectTopology).toHaveBeenCalledWith(selection, false);
+    expect(() => context.controls.apply({ kind: 'select-topology', selection: { ...selection, buildId: 'older' }, additive: false })).toThrow('solid build changed');
+    expect(() => context.controls.apply({ kind: 'select-topology', selection: { ...selection, picks: [{ kind: 'edge', key: 'foreign' }] }, additive: false })).toThrow('does not belong');
+    context.controls.apply({ kind: 'set-pick-mode', mode: 'edge' });
+    expect(context.bindings.setPickMode).toHaveBeenCalledWith('edge');
+    context.update({ topologySelection: selection });
+    const state = context.controls.getState();
+    expect(Object.isFrozen(state.topologySelection?.picks)).toBe(true);
+    expect(state.topologySelection).toEqual(selection);
+    context.controls.apply({ kind: 'clear-topology' });
+    expect(context.bindings.selectTopology).toHaveBeenLastCalledWith(null, false);
   });
 });

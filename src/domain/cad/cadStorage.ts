@@ -1,10 +1,11 @@
-import { commitWorkbenchFileTransaction } from '@/domain/storage/workbenchFileTransaction';
+import { commitWorkbenchFileTransaction, WorkbenchFileConflictError } from '@/domain/storage/workbenchFileTransaction';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import type { CadDocument } from './cadDocument';
 import { parseCadDocument } from './cadSchema';
 
-export const MAX_CAD_FILE_BYTES = 4 * 1024 * 1024;
+export { MAX_CAD_DOCUMENT_BYTES as MAX_CAD_FILE_BYTES } from './cadImports';
+import { MAX_CAD_DOCUMENT_BYTES as MAX_CAD_FILE_BYTES } from './cadImports';
 const prefix = 'cad/documents/';
 export interface SavedCadDocument {
   readonly document: CadDocument;
@@ -83,9 +84,14 @@ export async function saveCadDocument(adapter: WorkbenchStorageAdapter, document
     if ((existing === null ? null : await fingerprint(existing)) !== options.expectedSavedVersion) {
       throw new CadStorageError('SAVED_DOCUMENT_CHANGED', 'This CAD document changed in storage. Export your draft, then reopen the saved document before editing.');
     }
-    await commitWorkbenchFileTransaction(adapter, [{ path, contents: raw }], () => {
-      options.signal?.throwIfAborted(); options.beforeWrite?.();
-    });
+    try {
+      await commitWorkbenchFileTransaction(adapter, [{ path, contents: raw, expectedPrevious: existing }], () => {
+        options.signal?.throwIfAborted(); options.beforeWrite?.();
+      });
+    } catch (error) {
+      if (error instanceof WorkbenchFileConflictError) throw new CadStorageError('SAVED_DOCUMENT_CHANGED', 'This CAD document changed in storage. Export your draft, then reopen the saved document before editing.');
+      throw error;
+    }
     return { document: validated, updatedAt, savedVersion };
   });
 }
@@ -112,7 +118,7 @@ export async function listCadDocuments(adapter: WorkbenchStorageAdapter, signal?
         diagnostics.push({ path, message: error instanceof Error ? error.message : 'Cannot read CAD document.' });
       }
     }
-    return { entries: entries.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), diagnostics,
+    return { entries: entries.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)), diagnostics,
       truncated: inventory.truncated || inventory.paths.filter(path => path.startsWith(prefix) && path.endsWith('.cad.json')).length > 500 };
   });
 }

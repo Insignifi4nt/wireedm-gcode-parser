@@ -44,7 +44,7 @@ export function cadSketchToDxf(document: CadDocument, sketchId: string): string 
     switch (entity.type) {
       case 'line': pair(10, entity.start.x); pair(20, entity.start.y); pair(30, 0); pair(11, entity.end.x); pair(21, entity.end.y); pair(31, 0); break;
       case 'circle': pair(10, entity.center.x); pair(20, entity.center.y); pair(30, 0); pair(40, entity.radius); break;
-      case 'arc': pair(10, entity.center.x); pair(20, entity.center.y); pair(30, 0); pair(40, entity.radius); pair(50, entity.startAngle * 180 / Math.PI); pair(51, entity.endAngle * 180 / Math.PI); break;
+      case 'arc': pair(10, entity.center.x); pair(20, entity.center.y); pair(30, 0); pair(40, entity.radius); pair(50, (entity.clockwise ? entity.endAngle : entity.startAngle) * 180 / Math.PI); pair(51, (entity.clockwise ? entity.startAngle : entity.endAngle) * 180 / Math.PI); break;
       case 'polyline': case 'lwpolyline': throw new CadError('unsupported-entity', 'CAD exports analytic line, arc and circle entities.');
       default: { const exhaustive: never = entity; throw exhaustive; }
     }

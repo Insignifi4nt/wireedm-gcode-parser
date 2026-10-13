@@ -3,6 +3,19 @@ import { createCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from './cadSession';
 
 describe('shared CAD editing session', () => {
+  it('keeps public snapshots immutable and rejects foreign save receipts before changing state or history', () => {
+    const session = new CadSession();
+    session.edit([{ kind: 'rename-document', name: 'Reviewed' }]);
+    const before = session.getSnapshot();
+    expect(Object.isFrozen(before)).toBe(true);
+    expect(() => Object.assign(before, { version: 'forged', dirty: false })).toThrow();
+    const foreign = { document: createCadDocument('Foreign'), savedVersion: 'foreign-save', updatedAt: '2026-10-13T12:00:00.000Z' };
+    expect(() => session.markSaved(foreign, before.version)).toThrow('reviewed draft');
+    expect(() => session.replace(before.document, foreign)).toThrow('document being opened');
+    expect(session.getSnapshot()).toBe(before);
+    expect(before.canUndo).toBe(true); expect(before.dirty).toBe(true); expect(before.savedVersion).toBeNull();
+    session.undo(); expect(session.getSnapshot().document.name).toBe('Untitled part');
+  });
   it('retains independent dialog and editor guards until both workflows finish', () => {
     const session = new CadSession();
     session.setWorkflowOpen(true, 'section');
@@ -12,8 +25,11 @@ describe('shared CAD editing session', () => {
     expect(() => session.assertWorkflowClosed('section')).not.toThrow();
     session.setWorkflowOpen(true);
     expect(() => session.assertWorkflowClosed('section')).toThrow('Finish or cancel');
+    expect(() => session.assertWorkflowClosed('editor')).toThrow('Finish or cancel');
     session.setWorkflowOpen(false, 'section');
     expect(session.getSnapshot().workflowOpen).toBe(true);
+    expect(() => session.assertWorkflowClosed('editor')).not.toThrow();
+    expect(() => session.assertWorkflowClosed()).toThrow('Finish or cancel');
     session.setWorkflowOpen(false);
     expect(session.getSnapshot().workflowOpen).toBe(false);
   });

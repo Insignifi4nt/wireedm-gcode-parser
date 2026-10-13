@@ -9,14 +9,18 @@ CAD and CAM are separate documents with separate draft versions. Begin with `cad
 | `cad_get_context` | Draft version, parameters, saved version, pending workflow and build diagnostics |
 | `cad_describe_features` | Compact feature catalog or one exact accepted feature schema |
 | `cad_import_document` | Import a complete typed CAD document as a fresh unsaved draft, using the visible JSON Import operation |
+| `cad_import_solid` | Import original STEP text or base64 STL with explicit source units into a validated standalone CAD body |
+| `cad_import_dxf` | Import an exact closed DXF drawing directly as a standalone CAD sketch, with explicit units when needed |
 | `cad_list_documents`, `cad_open_document` | Browse and reopen the active workbench's saved CAD library |
-| `cad_read_features`, `cad_get_feature` | Exact feature IDs, dimensions, roles and references; follow pagination |
+| `cad_read_features`, `cad_get_feature` | Exact feature IDs, dimensions and references; follow pagination |
 | `cad_read_document` | Complete CAD JSON in bounded, versioned text chunks, including large sketches |
 | `cad_edit_document` | Atomic typed edit batch, one shared UI undo step; no save |
 | `cad_history` | Undo/redo using the current expected version |
 | `cad_get_viewport`, `cad_set_viewport` | Inspect selection and displayed build; set named views, fit/grid, select features and enter/finish sketches |
 | `cad_capture_preview` | Actual 2D/3D draft pixels as a bounded local PNG artifact with version, view and SHA-256 |
 | `cad_build` | Real solid evaluation: body volumes in mm³, bounds in mm and feature errors |
+| `cad_inspect_topology` | Paginated exact face/edge geometry pinned to a successful build |
+| `cad_resolve_topology` | Convert current picks into strict geometric selectors for fillet, chamfer or inward shell |
 | `cad_measure_sketch` | Analytic sketch area in mm², perimeter in mm, bounds and paginated per-profile measurements |
 | `cad_save_document` | Persist the reviewed draft with storage conflict checks and a receipt |
 | `cad_send_to_cam` | Save CAD, then create/open a new CAM project from the selected sketch |
@@ -37,12 +41,12 @@ After creating a document, `cad_edit_document` accepts this example `edits` arra
   { "kind": "set-parameter", "name": "width", "value": 60 },
   { "kind": "set-parameter", "name": "thickness", "value": 10 },
   { "kind": "add-feature", "feature": {
-    "id": "outline", "name": "Manufacturing outline", "kind": "sketch", "suppressed": false,
+    "id": "outline", "name": "Plate sketch", "kind": "sketch", "suppressed": false,
     "plane": "XY", "offset": 0,
     "profiles": [
-      { "id": "plate", "name": "Plate", "construction": false, "role": "outer",
+      { "id": "plate", "name": "Plate", "construction": false,
         "geometry": { "kind": "rectangle", "x": 0, "y": 0, "width": "width", "height": 40, "cornerRadius": 3 } },
-      { "id": "hole", "name": "Bore", "construction": false, "role": "hole",
+      { "id": "hole", "name": "Bore", "construction": false,
         "geometry": { "kind": "circle", "x": "width / 2", "y": 20, "radius": 5 } }
     ]
   } },
@@ -60,6 +64,20 @@ Save and call `cad_send_to_cam` with `sketchId: "outline"`. **Handoff transfers 
 To transfer the finished solid instead, call `cad_inspect_section` with the current `expectedVersion` and `section: { "bodyId": "pad", "plane": "XY", "offset": "thickness / 2" }`. Use a current visible body ID from `cad_build`. Offsets follow +Z for XY, −Y for XZ, +X for YZ; coordinates in the returned entities are local to that plane. Follow `entities.nextOffset` using `offset`/`limit` and the same document version. After inspecting, pass the same section to `cad_send_section_to_cam`. It recomputes and validates the section, saves CAD and returns a CAM project ID plus source save fingerprint and resolved plane/offset. It does not trust a mesh or previously returned curves. Tangent, open or branching sections and non-circular curves are rejected. Cancel the visible section dialog before agent calls.
 
 For a complete reproducible part, call `cad_import_document` with `{ "expectedVersion": "<current CAD version>", "document": <complete CAD document> }`. The document must contain `format: "wireedm-cad"`, `schemaVersion: 1`, a portable lowercase `id`, `name`, `units: "mm"`, a numeric `parameters` object and an ordered `features` array. Use the same complete feature definitions shown above. Expressions, feature IDs and parameters are preserved; the imported draft receives a fresh document ID and is not saved automatically. Imports cannot overwrite a saved document or replace meaningful unsaved work. JSON imports are limited to 4 MiB. Python, OpenSCAD, build123d and KCL source are not accepted. To make a variant, import the typed document, change its parameters with an atomic edit batch, measure, build and save under its fresh identity.
+
+New sketch profiles omit `role`: nesting automatically creates material, voids and islands. Existing documents with explicit legacy roles remain readable without rewriting their original fields. Removing the legacy field in an explicit profile update opts that contour into automatic nesting.
+
+For DXF, call `cad_import_dxf` with `source: { "format": "dxf", "fileName": "profile.dxf", "text": "<complete DXF text>" }` and the current version. Recognized declared units are used automatically. For unitless files add `units: "mm"`, `"inch"`, `"cm"` or `"m"`; an explicit value conflicting with the file declaration is rejected. The result is a fresh CAD document containing an XY sketch, including exact original text as source provenance. Imported paths contain analytic line/arc segments and participate in pads, revolves, parameters, measurement and DXF export. Closed geometry is required: import does not bridge gaps, drop unsupported entities or approximate splines. Nonzero geometry elevation and thickness are rejected. The source limit is 2 MiB of UTF-8. Parsing runs in a cancellable local worker.
+
+For imported solids, call `cad_import_solid` with the current version and `source: { "format": "step", "fileName": "part.step", "encoding": "utf8", "data": "<complete STEP text>" }`. STL uses `format: "stl"`, `encoding: "base64"`, a `.stl` filename and required `units: "mm"` or `"inch"`. Base64 must be standard padded encoding without whitespace or a data URL prefix. Each source is limited to 2 MiB decoded, and the entire CAD document remains limited to 4 MiB. Native checks must succeed before the draft changes. A successful receipt reports representation, volume, bounds and solid count; originals remain inside the saved CAD document. STL produces faceted geometry, not recovered analytic curves. Use `cad_read_document` for imported feature data larger than a feature page.
+
+For exact selection, first call `cad_build` and retain its `buildId`, current document version and body ID. Call `cad_inspect_topology` with `{ "expectedVersion": "<version>", "expectedBuildId": "<buildId>", "bodyId": "<bodyId>", "kind": "edge", "limit": 10 }`. Use `kind: "face"` for faces. Follow the returned `nextOffset`, which may advance by fewer than the requested number of rows. Edge descriptors distinguish lines, circles and other curves; faces distinguish planes, cylinders and other surfaces.
+
+Pass selected descriptor keys to `cad_resolve_topology` as `picks: [{ "kind": "edge", "key": "<key>" }]` with the same body, build and document IDs and `purpose: "fillet"` or `"chamfer"`. Use the returned `selection` in a feature definition. For Shell, pass exactly one planar face pick with `purpose: "shell"` and use the returned `opening` with positive `thickness`. The tool resolves at most 32 picks. It does not add a feature or change the draft.
+
+Saved selectors contain geometric predicates and exact expected match counts. Every predicate in a query must match; edge queries form a deduplicated union. Captured coordinates are numeric and may stop matching after upstream dimensions change. Where appropriate, explicitly replace a coordinate or plane offset with a parameter expression and preserve the expected count. For example, a box's top opening can use `{ "kind": "faces", "expectedCount": 1, "predicates": [{ "kind": "plane", "normal": [0, 0, 1], "offset": "height" }] }`. Ambiguous matches, missing geometry, unsupported curves and incomplete tangent chains fail visibly. Build keys are temporary: `STALE_BUILD` requires rebuilding, inspecting and selecting again. Never persist raw topology keys as feature references.
+
+To show a selection, `cad_set_viewport` accepts `set-pick-mode` with `mode: "body"`, `"face"` or `"edge"`, `clear-topology`, and `select-topology` with `additive` plus `selection: { "documentVersion": "<version>", "buildId": "<buildId>", "bodyId": "<bodyId>", "picks": [...] }`. A viewport selection does not create a feature. Read `cad_get_viewport` or capture the current view to verify it.
 
 Use full definitions for `update-feature`; omitted properties are not patches. Expressions are bounded arithmetic over numeric parameters, never code. Dimensions are millimetres and angles are degrees. See [CAD design](cad.md) for modelling and export limits. CAD currently provides dimension-driven primitives and history, not a general constraint solver or assemblies.
 

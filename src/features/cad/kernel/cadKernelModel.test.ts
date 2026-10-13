@@ -58,6 +58,33 @@ describe('real OpenCascade CAD kernel', () => {
       expect(model.result.meshes[0].volume).toBeCloseTo((200 - 8 * Math.PI) * 5, 5);
     });
   });
+  it('infers material and void regions from unlabeled mixed analytic profiles independent of profile order', () => {
+    const automatic: CadSketchFeature = { ...sketch('sketch', rectangle), profiles: [
+      { id: 'island', name: 'Island', construction: false, geometry: { kind: 'circle', x: 10, y: 6, radius: .5 } },
+      { id: 'void', name: 'Void', construction: false, geometry: { kind: 'path', segments: [
+        { kind: 'arc', center: [10, 5], radius: 3, startAngle: 180, sweep: -180 },
+        { kind: 'line', start: [13, 5], end: [7, 5] },
+      ] } },
+      { id: 'boundary', name: 'Boundary', construction: false, geometry: rectangle },
+    ] };
+    built([automatic, extrude('body', 'sketch')], model => {
+      expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes[0].volume).toBeCloseTo((200 - 4.25 * Math.PI) * 5, 5);
+      expect(model.section({ bodyId: 'body', plane: 'XY', offset: 2 }).contourCount).toBe(3);
+    });
+  });
+  it('constructs clockwise concave circular arcs and full-circle path profiles without approximating them', () => {
+    const scalloped: CadProfile = { kind: 'path', segments: [
+      { kind: 'line', start: [0, 0], end: [20, 0] }, { kind: 'line', start: [20, 0], end: [20, 10] },
+      { kind: 'line', start: [20, 10], end: [13, 10] }, { kind: 'arc', center: [10, 10], radius: 3, startAngle: 0, sweep: -180 },
+      { kind: 'line', start: [7, 10], end: [0, 10] }, { kind: 'line', start: [0, 10], end: [0, 0] },
+    ] };
+    built([sketch('sketch', scalloped), extrude('body', 'sketch')], model => {
+      expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes[0].volume).toBeCloseTo((200 - 4.5 * Math.PI) * 5, 5);
+    });
+    for (const sweep of [360, -360]) built([sketch('sketch', { kind: 'path', segments: [{ kind: 'arc', center: [10, 5], radius: 2, startAngle: 45, sweep }] }), extrude('body', 'sketch')], model => {
+      expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes[0].volume).toBeCloseTo(20 * Math.PI, 5);
+    });
+  });
 
   it.each(['XY', 'XZ', 'YZ'] satisfies CadSketchFeature['plane'][])('uses consistent axes and symmetric extrusion on %s', plane => {
     built([sketch('sketch', rectangle, plane), { ...base('body'), kind: 'extrude', sketchId: 'sketch', distance: 6, symmetric: true, operation: 'new', targetId: null }], model => {

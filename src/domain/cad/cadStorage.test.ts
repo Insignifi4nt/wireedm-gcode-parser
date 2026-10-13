@@ -6,8 +6,9 @@ import { WORKBENCH_FILE_TRANSACTION_PATH } from '@/domain/storage/workbenchFileT
 import { createWorkbenchBackup, removeUnreferencedWorkbenchFiles, restoreWorkbenchBackup } from '@/domain/storage/workbenchBackup';
 import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
-import { createCadDocument } from './cadSchema';
-import { cadDocumentPath, listCadDocuments, loadCadDocument, saveCadDocument } from './cadStorage';
+import { createCadDocument, parseCadDocument } from './cadSchema';
+import { importCadDxfSketch } from './cadDxfImport';
+import { cadDocumentPath, listCadDocuments, loadCadDocument, saveCadDocument, MAX_CAD_FILE_BYTES } from './cadStorage';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -26,6 +27,50 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     await expect(saveCadDocument(adapter, { ...document, name: 'Stale' }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('changed in storage');
     expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(next.savedVersion);
     expect((await listCadDocuments(adapter)).entries).toMatchObject([{ id: 'cad_bracket', name: 'Edited' }]);
+  });
+  it('preserves an external edit made after the optimistic read and before the transaction captures its original', async () => {
+    const document = parseCadDocument({ ...createCadDocument('Original', 'cad_external_race'), features: [{
+      id: 'source', name: 'Exact original', kind: 'imported', suppressed: true,
+      source: { format: 'step', fileName: 'original.step', encoding: 'utf8', data: '\uFEFFISO-10303-21;\r\n/* Original 名称 */\r\nEND-ISO-10303-21;\r\n' },
+    }] });
+    const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const path = cadDocumentPath(document.id);
+    const original = await adapter.readExactText?.(path);
+    if (!original || !adapter.readBoundedExactText) throw new Error('Expected exact bounded adapter');
+    const external = original.replace('"name":"Original"', '"name":"Externally edited"');
+    const read = adapter.readBoundedExactText.bind(adapter);
+    let changed = false;
+    vi.spyOn(adapter, 'readBoundedExactText').mockImplementation(async (target, limit, signal) => {
+      const result = await read(target, limit, signal);
+      if (target === path && !changed) { changed = true; await adapter.writeText(path, external); }
+      return result;
+    });
+    await expect(saveCadDocument(adapter, { ...document, name: 'Stale local draft' }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('changed in storage');
+    expect(await adapter.readExactText?.(path)).toBe(external);
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+  });
+  it('preserves embedded source text and bytes through save, conflict and backup in both adapters', async () => {
+    const opened = await initializeWorkbenchCatalog(adapter);
+    if (!opened.ok) throw new Error(opened.error.message);
+    const originalDxf = '\uFEFF0\r\nSECTION\r\n2\r\nENTITIES\r\n0\r\nCIRCLE\r\n10\r\n0\r\n20\r\n0\r\n40\r\n2\r\n0\r\nENDSEC\r\n0\r\nEOF\r\n';
+    const sketch = importCadDxfSketch({ fileName: 'source.dxf', text: originalDxf, units: 'mm' }).sketch;
+    const document = parseCadDocument({ ...createCadDocument('Imported originals', 'cad_originals'), features: [sketch,
+      { id: 'step', name: 'STEP source', kind: 'imported', suppressed: true, source: { format: 'step', fileName: 'source.step', encoding: 'utf8', data: '\uFEFFISO-10303-21;\r\n/* 名称 */\r\nEND-ISO-10303-21;\r\n' } },
+      { id: 'stl', name: 'STL source', kind: 'imported', suppressed: true, source: { format: 'stl', fileName: 'source.stl', encoding: 'base64', data: 'AP/+AR+AAw==', units: 'inch' } }
+    ] });
+    const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const exact = await adapter.readExactText?.(cadDocumentPath(document.id));
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(document);
+    await expect(saveCadDocument(adapter, { ...document, name: 'Stale source' }, { expectedSavedVersion: 'wrong-fingerprint' })).rejects.toThrow();
+    expect(await adapter.readExactText?.(cadDocumentPath(document.id))).toBe(exact);
+    const backup = await createWorkbenchBackup(opened.workbench);
+    const restoredAdapter = createBrowserCacheAdapter(localStorage, { namespace: 'restored-originals' });
+    const restored = await initializeWorkbenchCatalog(restoredAdapter);
+    if (!restored.ok) throw new Error(restored.error.message);
+    await restoreWorkbenchBackup(restoredAdapter, backup);
+    expect(await restoredAdapter.readExactText?.(cadDocumentPath(document.id))).toBe(exact);
+    expect((await loadCadDocument(restoredAdapter, document.id)).document).toEqual(document);
+    expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(saved.savedVersion);
   });
   it('rejects invalid data and prewrite cancellation without changing exact originals', async () => {
     const document = createCadDocument('Original', 'cad_original');
@@ -121,6 +166,30 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     const library = await listCadDocuments(adapter);
     expect(library.diagnostics).toHaveLength(1);
     expect(await adapter.readExactText?.('cad/documents/cad_broken.cad.json')).toBe('{original broken bytes');
+  });
+  it('sorts valid saved timestamps by their actual time while preserving their exact originals', async () => {
+    const saves = [
+      { document: createCadDocument('Earlier', 'cad_earlier'), updatedAt: '2026-10-13T07:00:00+02:00' },
+      { document: createCadDocument('Later', 'cad_later'), updatedAt: '2026-10-13T06:00:00Z' },
+    ];
+    const originals = saves.map(save => JSON.stringify({ format: 'wireedm-cad-save', schemaVersion: 1, ...save }));
+    for (let index = 0; index < saves.length; index++) await adapter.writeText(cadDocumentPath(saves[index].document.id), originals[index]);
+    expect((await listCadDocuments(adapter)).entries.map(entry => entry.id)).toEqual(['cad_later', 'cad_earlier']);
+    for (let index = 0; index < saves.length; index++) expect(await adapter.readExactText?.(cadDocumentPath(saves[index].document.id))).toBe(originals[index]);
+  });
+  it('rejects oversized stored originals without truncating or replacing them, including compressed cache files', async () => {
+    const document = createCadDocument('Original', 'cad_oversized'); const path = cadDocumentPath(document.id);
+    const exact = JSON.stringify({ format: 'wireedm-cad-save', schemaVersion: 1, updatedAt: '2026-10-13T00:00:00.000Z', document })
+      + ' '.repeat(MAX_CAD_FILE_BYTES);
+    await adapter.writeText(path, exact);
+    const write = vi.spyOn(adapter, 'writeText');
+    await expect(loadCadDocument(adapter, document.id)).rejects.toMatchObject({ code: 'FILE_TOO_LARGE' });
+    await expect(saveCadDocument(adapter, document, { expectedSavedVersion: null })).rejects.toMatchObject({ code: 'FILE_TOO_LARGE' });
+    const library = await listCadDocuments(adapter);
+    expect(library.entries).toEqual([]); expect(library.diagnostics).toMatchObject([{ path, message: expect.stringContaining('4 MiB') }]);
+    expect(write).not.toHaveBeenCalled();
+    expect(await adapter.readExactText?.(path)).toBe(exact);
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
   });
   it('includes CAD in full backup and excludes it from unreferenced-file cleanup', async () => {
     const opened = await initializeWorkbenchCatalog(adapter);

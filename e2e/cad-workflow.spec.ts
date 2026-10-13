@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import type { CadTopologyDescriptor } from '../src/domain/cad/cadTopology';
 
 // Exercise the production tool registrations without a browser-specific WebMCP transport.
 // Native WebMCP interoperability is also checked separately in the Codex in-app browser.
@@ -42,11 +43,185 @@ const edits = [
   { kind: 'set-parameter', name: 'width', value: 60 },
   { kind: 'add-feature', feature: { id: 'outline', name: 'Manufacturing outline', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
     profiles: [
-      { id: 'plate', name: 'Plate', construction: false, role: 'outer', geometry: { kind: 'rectangle', x: 0, y: 0, width: 'width', height: 40, cornerRadius: 3 } },
-      { id: 'bore', name: 'Bore', construction: false, role: 'hole', geometry: { kind: 'circle', x: 'width / 2', y: 20, radius: 5 } }
+      { id: 'plate', name: 'Plate', construction: false, geometry: { kind: 'rectangle', x: 0, y: 0, width: 'width', height: 40, cornerRadius: 3 } },
+      { id: 'bore', name: 'Bore', construction: false, geometry: { kind: 'circle', x: 'width / 2', y: 20, radius: 5 } }
     ] } },
   { kind: 'add-feature', feature: { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false, sketchId: 'outline', distance: 10, symmetric: false, operation: 'new', targetId: null } }
 ];
+
+async function createBox(page: Page) {
+  await prepare(page);
+  const initial = await context(page);
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Parametric housing' });
+  const created = await context(page);
+  await call(page, 'cad_edit_document', { expectedVersion: created.version, edits: [
+    { kind: 'set-parameter', name: 'width', value: 20 }, { kind: 'set-parameter', name: 'height', value: 5 },
+    { kind: 'add-feature', feature: { id: 'outline', name: 'Footprint', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+      profiles: [{ id: 'base', name: 'Base', construction: false, geometry: { kind: 'rectangle', x: 0, y: 0, width: 'width', height: 10, cornerRadius: 0 } }] } },
+    { kind: 'add-feature', feature: { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false, sketchId: 'outline', distance: 'height', symmetric: false, operation: 'new', targetId: null } }
+  ] });
+  const draft = await context(page);
+  const build = await call(page, 'cad_build', { expectedVersion: draft.version });
+  expect(build).toMatchObject({ bodies: [{ volumeMm3: expect.closeTo(1000, 7) }] });
+  return { draft, buildId: build.buildId };
+}
+
+test('agent selects exact top edges and chamfers only that rim', async ({ page }) => {
+  const { draft, buildId } = await createBox(page);
+  const topology = await call(page, 'cad_inspect_topology', { expectedVersion: draft.version, expectedBuildId: buildId, bodyId: 'pad', kind: 'edge', limit: 50 });
+  const descriptors = (topology as { descriptors: CadTopologyDescriptor[] }).descriptors;
+  const rim = descriptors.filter(edge => edge.kind === 'edge' && edge.curveType === 'line' && Math.abs(edge.start[2] - 5) < 1e-7 && Math.abs(edge.end[2] - 5) < 1e-7);
+  expect(rim).toHaveLength(4);
+  const picks = rim.map(edge => ({ kind: 'edge', key: edge.key }));
+  const resolved = await call(page, 'cad_resolve_topology', { expectedVersion: draft.version, expectedBuildId: buildId, bodyId: 'pad', purpose: 'chamfer', picks });
+  expect(resolved).toMatchObject({ purpose: 'chamfer', selection: { expectedCount: 4 } });
+  await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'select-topology', additive: false,
+    selection: { documentVersion: draft.version, buildId, bodyId: 'pad', picks } } });
+  await expect.poll(() => call(page, 'cad_get_viewport', { expectedVersion: draft.version })).toMatchObject({ topologySelection: { bodyId: 'pad', picks } });
+  const capture = await call(page, 'cad_capture_preview', { expectedVersion: draft.version });
+  expect(capture).toMatchObject({ source: '3d', viewState: { topologySelection: { picks } } });
+  await call(page, 'cad_edit_document', { expectedVersion: draft.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'chamfer', name: 'Top rim', kind: 'chamfer', suppressed: false, targetId: 'pad', radius: 1, selection: resolved.selection
+  } }] });
+  const changed = await context(page);
+  const built = await call(page, 'cad_build', { expectedVersion: changed.version });
+  expect(built).toMatchObject({ diagnostics: [], bodies: [{ featureId: 'chamfer', volumeMm3: expect.closeTo(1000 - 30 + 4 / 3, 6) }] });
+  await expect(rawCall(page, 'cad_inspect_topology', { expectedVersion: changed.version, expectedBuildId: buildId, bodyId: 'chamfer', kind: 'edge' })).resolves.toMatchObject({ ok: false, error: { code: 'STALE_BUILD' } });
+  const after = await call(page, 'cad_inspect_topology', { expectedVersion: changed.version, expectedBuildId: built.buildId, bodyId: 'chamfer', kind: 'edge', limit: 50 });
+  const bottom = (after as { descriptors: CadTopologyDescriptor[] }).descriptors.filter(edge => edge.kind === 'edge' && edge.curveType === 'line' && Math.abs(edge.start[2]) < 1e-7 && Math.abs(edge.end[2]) < 1e-7);
+  expect(bottom).toHaveLength(4);
+});
+
+test('one compact header and real face picking create an inward shell', async ({ page }) => {
+  const { draft } = await createBox(page);
+  await expect(page.locator('[data-app-header] .cad-header')).toHaveCount(1);
+  await expect(page.locator('.cad-workbench .cad-header')).toHaveCount(0);
+  await page.getByLabel('Named view').selectOption('Top');
+  await page.getByRole('button', { name: 'Fit model', exact: true }).click();
+  await page.getByRole('button', { name: 'Face', exact: true }).click();
+  const canvas = page.locator('.cad-viewport canvas');
+  const bounds = await canvas.boundingBox();
+  if (!bounds) throw new Error('Missing solid canvas');
+  expect(bounds.height).toBeGreaterThan(650);
+  await canvas.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
+  await expect.poll(() => call(page, 'cad_get_viewport', { expectedVersion: draft.version })).toMatchObject({ pickMode: 'face', topologySelection: { bodyId: 'pad', picks: [{ kind: 'face' }] } });
+  await page.getByRole('button', { name: 'Shell', exact: true }).click();
+  await expect(page.getByLabel('Wall thickness', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  const changed = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: changed.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(424, 7) }] });
+});
+
+test('STEP and STL exports import as standalone solids with preserved originals', async ({ page }) => {
+  test.setTimeout(120_000);
+  const { draft } = await createBox(page);
+  await call(page, 'cad_save_document', { expectedVersion: draft.version });
+  for (const format of ['step', 'stl'] as const) {
+    const before = await context(page);
+    const downloadPromise = page.waitForEvent('download');
+    await call(page, 'cad_export_solid', { expectedVersion: before.version, format });
+    const download = await downloadPromise; const path = await download.path();
+    if (!path) throw new Error('Missing geometry download');
+    const bytes = await readFile(path);
+    const source = format === 'step'
+      ? { format, fileName: 'exchange.step', encoding: 'utf8', data: bytes.toString('utf8') }
+      : { format, fileName: 'exchange.stl', encoding: 'base64', data: bytes.toString('base64'), units: 'mm' };
+    expect(await call(page, 'cad_import_solid', { expectedVersion: before.version, source })).toMatchObject({ imported: true, format, sourceBytes: bytes.length, volume: expect.closeTo(1000, 6) });
+    const imported = await context(page);
+    expect(imported.documentId).not.toBe(before.documentId);
+    expect(await call(page, 'cad_build', { expectedVersion: imported.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(1000, 6) }] });
+    const features = await call(page, 'cad_read_features', { expectedVersion: imported.version });
+    expect(features).toMatchObject({ items: [{ kind: 'imported', source }] });
+    await call(page, 'cad_save_document', { expectedVersion: imported.version });
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+    const reloaded = await context(page);
+    await call(page, 'cad_open_document', { expectedVersion: reloaded.version, documentId: imported.documentId });
+    const opened = await context(page);
+    expect(await call(page, 'cad_build', { expectedVersion: opened.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(1000, 6) }] });
+  }
+});
+
+test('visible STL import reviews source units before changing the draft', async ({ page }) => {
+  const { draft } = await createBox(page);
+  await call(page, 'cad_save_document', { expectedVersion: draft.version });
+  const downloadPromise = page.waitForEvent('download');
+  await call(page, 'cad_export_solid', { expectedVersion: draft.version, format: 'stl' });
+  const download = await downloadPromise; const path = await download.path();
+  if (!path) throw new Error('Missing STL download');
+  await page.locator('.cad-header input[type=file]').setInputFiles({ name: 'source.stl', mimeType: 'model/stl', buffer: await readFile(path) });
+  const pending = page.getByRole('dialog', { name: 'Import CAD file' });
+  await expect(pending).toBeVisible();
+  expect(await context(page)).toMatchObject({ documentId: draft.documentId, workflowOpen: true });
+  await pending.getByLabel('Source units').selectOption('inch');
+  await pending.getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(pending).not.toBeVisible();
+  const imported = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: imported.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(1000 * 25.4 ** 3, 3) }] });
+});
+
+test('DXF exchange preserves exact rounded contours and reconstructs a standalone editable part', async ({ page }) => {
+  await prepare(page);
+  const initial = await context(page);
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Drawing exchange' });
+  const empty = await context(page);
+  await call(page, 'cad_edit_document', { expectedVersion: empty.version, edits });
+  const original = await context(page);
+  await call(page, 'cad_save_document', { expectedVersion: original.version });
+  const downloadPromise = page.waitForEvent('download');
+  await call(page, 'cad_export_dxf', { expectedVersion: original.version, sketchId: 'outline' });
+  const path = await (await downloadPromise).path();
+  if (!path) throw new Error('Missing DXF download');
+  const text = await readFile(path, 'utf8');
+  const source = { format: 'dxf', fileName: 'rounded-plate.dxf', text };
+  const imported = await call(page, 'cad_import_dxf', { expectedVersion: original.version, source });
+  expect(imported).toMatchObject({ imported: true, contourCount: 2, scaleToMillimeters: 1 });
+  if (typeof imported.sketchId !== 'string') throw new Error('Missing imported sketch ID');
+  const draft = await context(page);
+  expect(draft.documentId).not.toBe(original.documentId);
+  const definitions = await call(page, 'cad_read_features', { expectedVersion: draft.version });
+  expect(definitions).toMatchObject({ items: [{ kind: 'sketch', plane: 'XY', source,
+    profiles: expect.arrayContaining([{ id: expect.any(String), name: expect.any(String), construction: false, geometry: { kind: 'path', segments: expect.any(Array) } }]) }] });
+  await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'edit-sketch', sketchId: imported.sketchId } });
+  await expect(page.getByLabel('Sketch drawing canvas')).toBeVisible();
+  await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'finish-sketch' } });
+  await call(page, 'cad_edit_document', { expectedVersion: draft.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'import_pad', name: 'Imported outline pad', kind: 'extrude', suppressed: false, sketchId: imported.sketchId,
+    distance: 10, symmetric: false, operation: 'new', targetId: null
+  } }] });
+  const solid = await context(page);
+  const expectedVolume = (60 * 40 - (4 - Math.PI) * 9 - Math.PI * 25) * 10;
+  expect(await call(page, 'cad_build', { expectedVersion: solid.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(expectedVolume, 5) }] });
+  await call(page, 'cad_save_document', { expectedVersion: solid.version });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+  const reloaded = await context(page);
+  await call(page, 'cad_open_document', { expectedVersion: reloaded.version, documentId: solid.documentId });
+  const opened = await context(page);
+  expect(await call(page, 'cad_get_feature', { expectedVersion: opened.version, featureId: imported.sketchId })).toMatchObject({ feature: { source } });
+  expect(await call(page, 'cad_build', { expectedVersion: opened.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(expectedVolume, 5) }] });
+});
+
+test('agent hollows one planar face and carries a parameterized wall section into CAM', async ({ page }) => {
+  const { draft, buildId } = await createBox(page);
+  const inspected = await call(page, 'cad_inspect_topology', { expectedVersion: draft.version, expectedBuildId: buildId, bodyId: 'pad', kind: 'face', limit: 50 });
+  const top = (inspected as { descriptors: CadTopologyDescriptor[] }).descriptors.filter(face => face.kind === 'face' && face.surfaceType === 'plane' && face.normal[2] > .999 && Math.abs(face.offset - 5) < 1e-7);
+  expect(top).toHaveLength(1);
+  const resolved = await call(page, 'cad_resolve_topology', { expectedVersion: draft.version, expectedBuildId: buildId, bodyId: 'pad', purpose: 'shell', picks: [{ kind: 'face', key: top[0].key }] });
+  expect(resolved).toMatchObject({ purpose: 'shell', opening: { expectedCount: 1 } });
+  const shell = { id: 'shell', name: 'Housing walls', kind: 'shell', suppressed: false, targetId: 'pad', thickness: 1,
+    opening: { kind: 'faces', expectedCount: 1, predicates: [{ kind: 'plane', normal: [0, 0, 1], offset: 'height' }] } };
+  await call(page, 'cad_edit_document', { expectedVersion: draft.version, edits: [{ kind: 'add-feature', feature: shell }] });
+  const hollow = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: hollow.version })).toMatchObject({ diagnostics: [], bodies: [{ featureId: 'shell', volumeMm3: expect.closeTo(424, 7) }] });
+  await call(page, 'cad_edit_document', { expectedVersion: hollow.version, edits: [{ kind: 'set-parameter', name: 'width', value: 24 }, { kind: 'set-parameter', name: 'height', value: 8 }] });
+  const resized = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: resized.version })).toMatchObject({ diagnostics: [], bodies: [{ featureId: 'shell', volumeMm3: expect.closeTo(688, 7) }] });
+  const section = { bodyId: 'shell', plane: 'XY', offset: 'height / 2' };
+  expect(await call(page, 'cad_inspect_section', { expectedVersion: resized.version, section })).toMatchObject({ contourCount: 2, entities: { total: 8 } });
+  expect(await call(page, 'cad_send_section_to_cam', { expectedVersion: resized.version, section })).toMatchObject({ opened: true, section: { contourCount: 2, offset: 4 } });
+  await expect(page.locator('[data-preview-model="upid"]')).toBeVisible();
+});
 
 test('agent builds, checks exact volume, exports, reopens and hands analytic geometry to CAM', async ({ page }) => {
   test.setTimeout(120_000);
@@ -110,6 +285,7 @@ test('final-solid section preview protects its workflow and creates clean CAM ge
   const request = { bodyId: 'pad', plane: 'XY', offset: 5 };
   const section = await call(page, 'cad_inspect_section', { expectedVersion: current.version, section: request, limit: 2 });
   expect(section).toMatchObject({ bodyId: 'pad', plane: 'XY', offset: 5, contourCount: 2, entities: { items: expect.any(Array), total: 10, nextOffset: 2 } });
+  await page.getByRole('button', { name: 'File', exact: true }).click();
   await page.getByRole('button', { name: 'Section for CAM', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Section for CAM' });
   await expect(dialog).toBeVisible();
@@ -138,21 +314,21 @@ test('human sketch drawing and dimensions share undo and active-workflow protect
   expect(current).toMatchObject({ workflowOpen: true });
   expect(await rawCall(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'rename-document', name: 'Interrupt drawing' }] })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
   await canvas.click({ position: { x: box.width * 0.6, y: box.height * 0.35 } });
-  await page.getByLabel('Width', { exact: false }).fill('50');
+  await page.getByLabel('Width', { exact: false }).fill('53');
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   current = await context(page);
   expect(current).toMatchObject({ workflowOpen: false });
   const features = await call(page, 'cad_read_features', { expectedVersion: current.version });
-  expect(features).toMatchObject({ items: [{ kind: 'sketch', profiles: [{ geometry: { kind: 'rectangle', width: '50' } }] }] });
+  expect(features).toMatchObject({ items: [{ kind: 'sketch', profiles: [{ geometry: { kind: 'rectangle', width: '53' } }] }] });
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   current = await context(page);
   const undone = await call(page, 'cad_read_features', { expectedVersion: current.version });
-  expect(undone).not.toMatchObject({ items: [{ profiles: [{ geometry: { width: '50' } }] }] });
+  expect(undone).not.toMatchObject({ items: [{ profiles: [{ geometry: { width: '53' } }] }] });
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(page.locator('.cad-statusbar')).toContainText('Ready', { timeout: 60_000 });
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.locator('.cad-statusbar')).toContainText('Document saved');
+  await expect.poll(() => context(page)).toMatchObject({ dirty: false, savedVersion: expect.any(String) });
 });

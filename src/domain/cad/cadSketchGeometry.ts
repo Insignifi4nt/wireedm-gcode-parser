@@ -1,12 +1,20 @@
-import type { CadProfile, CadSketchFeature } from './cadDocument';
+import type { CadProfile, CadSketchFeature, CadSketchProfile } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadAngle, evaluateCadScalar } from './cadExpression';
 import type { DxfEntity, DxfPoint } from '@/domain/dxf/types';
+import { createArcSegment, createLineSegment, pathBounds, signedAreaOfPath } from '@/domain/path-intel/segments';
+import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
+import type { PathSegment } from '@/domain/path-intel/types';
+
+export type ResolvedCadPathSegment =
+  | { readonly kind: 'line'; readonly start: readonly [number, number]; readonly end: readonly [number, number] }
+  | { readonly kind: 'arc'; readonly center: readonly [number, number]; readonly radius: number; readonly startAngle: number; readonly sweep: number };
 
 export type ResolvedCadProfile =
   | { kind: 'rectangle'; x: number; y: number; width: number; height: number; cornerRadius: number }
   | { kind: 'circle'; x: number; y: number; radius: number }
   | { kind: 'polygon'; points: readonly (readonly [number, number])[] }
+  | { kind: 'path'; segments: readonly ResolvedCadPathSegment[] }
   | { kind: 'slot'; x: number; y: number; length: number; width: number; angle: number };
 const tolerance = 1e-7;
 const tau = Math.PI * 2;
@@ -26,8 +34,37 @@ export function resolveCadProfile(profile: CadProfile, parameters: Readonly<Reco
     case 'circle': return { kind: profile.kind, x: e(profile.x), y: e(profile.y), radius: e(profile.radius) };
     case 'slot': return { kind: profile.kind, x: e(profile.x), y: e(profile.y), length: e(profile.length), width: e(profile.width), angle: evaluateCadAngle(profile.angle, parameters) };
     case 'polygon': return { kind: profile.kind, points: profile.points.map(([x, y]) => [e(x), e(y)]) };
+    case 'path': return { kind: profile.kind, segments: profile.segments.map(segment => segment.kind === 'line'
+      ? { kind: segment.kind, start: [e(segment.start[0]), e(segment.start[1])], end: [e(segment.end[0]), e(segment.end[1])] }
+      : { kind: segment.kind, center: [e(segment.center[0]), e(segment.center[1])], radius: e(segment.radius), startAngle: evaluateCadAngle(segment.startAngle, parameters), sweep: e(segment.sweep) }) };
     default: { const exhaustive: never = profile; return exhaustive; }
   }
+}
+
+function analyticPath(profile: Extract<ResolvedCadProfile, { kind: 'path' }>) {
+  const segments: PathSegment[] = profile.segments.map((segment, index) => {
+    const source = { sourceEntityIndex: index, sourceEntityType: segment.kind, layer: null, exact: true };
+    const id = `boundary_${index}`;
+    if (segment.kind === 'line') return createLineSegment({ id, source, start: { x: segment.start[0], y: segment.start[1] }, end: { x: segment.end[0], y: segment.end[1] } });
+    if (segment.radius <= tolerance || segment.radius > 1e6 || Math.abs(segment.sweep) > 360 || segment.sweep === 0) throw new CadError('invalid-profile', 'Path arcs need a positive radius and a nonzero sweep of at most one turn.');
+    const angle = segment.startAngle * Math.PI / 180; const sweep = segment.sweep * Math.PI / 180;
+    const center = { x: segment.center[0], y: segment.center[1] };
+    const at = (value: number) => ({ x: center.x + segment.radius * Math.cos(value), y: center.y + segment.radius * Math.sin(value) });
+    return createArcSegment({ id, source, center, radius: segment.radius, start: at(angle), end: at(angle + sweep), sweepRadians: sweep, clockwise: sweep < 0 });
+  });
+  const refs = segments.map(segment => ({ segmentId: segment.id, reversed: false }));
+  const byId = new Map(segments.map(segment => [segment.id, segment]));
+  return { segments, refs, byId };
+}
+
+export function cadAnalyticPathMetrics(profile: Extract<ResolvedCadProfile, { kind: 'path' }>) {
+  const path = analyticPath(profile);
+  return { signedArea: signedAreaOfPath(path.refs, path.byId), length: path.segments.reduce((total, segment) => total + segment.length, 0), bounds: pathBounds(path.refs, path.byId) };
+}
+
+/** Endpoint equality allows arithmetic roundoff, never a physical gap repair. */
+export function cadPathClosureTolerance(points: readonly DxfPoint[]): number {
+  return Math.max(1e-12, 8 * Number.EPSILON * Math.max(1, ...points.flatMap(point => [Math.abs(point.x), Math.abs(point.y)])));
 }
 
 /** Closed, counterclockwise analytic contours. Rectangle x/y is lower-left; slot x/y is its centre. */
@@ -41,6 +78,20 @@ export function cadProfileToEntities(profile: ResolvedCadProfile, layer = 'CAD')
     entities.push({ type: 'arc', layer, center, radius, startAngle, endAngle, clockwise: false, sweepRadians: endAngle - startAngle, start: point(startAngle), end: point(endAngle) });
   };
   switch (profile.kind) {
+    case 'path': {
+      const path = analyticPath(profile);
+      const reverse = signedAreaOfPath(path.refs, path.byId) < 0;
+      const ordered = reverse ? [...path.segments].reverse() : path.segments;
+      return ordered.map(segment => {
+        if (segment.kind === 'circle') return { type: 'circle', layer, center: segment.center, radius: segment.radius };
+        if (segment.kind === 'line') return { type: 'line', layer, start: reverse ? segment.end : segment.start, end: reverse ? segment.start : segment.end };
+        if (Math.abs(segment.sweepRadians) === tau) return { type: 'circle', layer, center: segment.center, radius: segment.radius };
+        const sweep = reverse ? -segment.sweepRadians : segment.sweepRadians;
+        const startAngle = reverse ? segment.startAngleRadians + segment.sweepRadians : segment.startAngleRadians;
+        return { type: 'arc', layer, center: segment.center, radius: segment.radius, startAngle, endAngle: startAngle + sweep,
+          sweepRadians: sweep, clockwise: sweep < 0, start: reverse ? segment.end : segment.start, end: reverse ? segment.start : segment.end };
+      });
+    }
     case 'circle': return [{ type: 'circle', layer, center: { x: profile.x, y: profile.y }, radius: profile.radius }];
     case 'polygon': {
       const points = profile.points.map(([x, y]) => ({ x, y }));
@@ -79,7 +130,23 @@ export function cadProfileToEntities(profile: ResolvedCadProfile, layer = 'CAD')
 }
 
 export function cadSketchToEntities(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): DxfEntity[] {
-  return sketch.profiles.filter(profile => !profile.construction).flatMap(profile => cadProfileToEntities(resolveCadProfile(profile.geometry, parameters), `CAD_${profile.role.toUpperCase()}`));
+  const regions = resolveCadSketchRegions(sketch, parameters);
+  const contours = new Map(regions.flatMap(region => [region.boundary, ...region.voids]).map(contour => [contour.profile.id, contour]));
+  // Keep original contour order for existing exact DXF/CAM handoffs.
+  return sketch.profiles.filter(profile => !profile.construction).flatMap(profile => {
+    const contour = contours.get(profile.id);
+    if (!contour) throw new CadError('invalid-profile', 'The sketch contour has no resolved material region.');
+    return cadProfileToEntities(contour.geometry, contour.depth % 2 === 0 ? 'CAD_OUTER' : 'CAD_HOLE');
+  });
+}
+
+export interface CadResolvedSketchContour {
+  readonly profile: CadSketchProfile; readonly geometry: ResolvedCadProfile;
+  readonly depth: number; readonly parentId: string | null; readonly point: DxfPoint;
+}
+/** Every even-depth boundary adds material; its immediate children leave voids. */
+export interface CadSketchRegion {
+  readonly boundary: CadResolvedSketchContour; readonly voids: readonly CadResolvedSketchContour[];
 }
 
 export type CadAnalyticBoundary = Extract<DxfEntity, { type: 'line' | 'arc' | 'circle' }>;
@@ -122,18 +189,22 @@ function onCurve(entity: Boundary, point: DxfPoint): boolean {
   if (Math.abs(Math.hypot(point.x - entity.center.x, point.y - entity.center.y) - entity.radius) > tolerance) return false;
   if (entity.type === 'circle') return true;
   const angle = Math.atan2(point.y - entity.center.y, point.x - entity.center.x);
-  const delta = ((angle - entity.startAngle) % tau + tau) % tau;
-  const sweep = entity.sweepRadians ?? ((entity.endAngle - entity.startAngle) % tau + tau) % tau;
+  const delta = ((entity.clockwise ? entity.startAngle - angle : angle - entity.startAngle) % tau + tau) % tau;
+  const sweep = Math.abs(entity.sweepRadians ?? ((entity.clockwise ? entity.startAngle - entity.endAngle : entity.endAngle - entity.startAngle) % tau + tau) % tau);
   return delta <= sweep + tolerance / entity.radius || tau - delta <= tolerance / entity.radius;
 }
-export function cadBoundariesIntersect(first: Boundary, second: Boundary): boolean {
+export function cadBoundariesIntersect(first: Boundary, second: Boundary, allowedJoins: readonly DxfPoint[] = []): boolean {
+  const intersects = (point: DxfPoint) => onCurve(first, point) && onCurve(second, point)
+    && !allowedJoins.some(join => Math.hypot(point.x - join.x, point.y - join.y) <= cadPathClosureTolerance([point, join]));
   if (first.type === 'line' && second.type === 'line') {
     const a = subtract(first.end, first.start); const b = subtract(second.end, second.start);
     const denominator = cross(a, b); const delta = subtract(second.start, first.start);
-    if (Math.abs(denominator) < 1e-14) return onCurve(first, second.start) || onCurve(first, second.end) || onCurve(second, first.start) || onCurve(second, first.end);
+    if (Math.abs(denominator) < 1e-14) return [first.start, first.end, second.start, second.end,
+      { x: (first.start.x + first.end.x) / 2, y: (first.start.y + first.end.y) / 2 },
+      { x: (second.start.x + second.end.x) / 2, y: (second.start.y + second.end.y) / 2 }].some(intersects);
     const t = cross(delta, b) / denominator;
     const point = { x: first.start.x + t * a.x, y: first.start.y + t * a.y };
-    return onCurve(first, point) && onCurve(second, point);
+    return intersects(point);
   }
   if (first.type === 'line' || second.type === 'line') {
     const line = first.type === 'line' ? first : second;
@@ -141,24 +212,37 @@ export function cadBoundariesIntersect(first: Boundary, second: Boundary): boole
     if (line.type !== 'line' || circle.type === 'line') return false;
     const vector = subtract(line.end, line.start); const delta = subtract(line.start, circle.center);
     const lengthSquared = vector.x ** 2 + vector.y ** 2;
+    const join = allowedJoins.find(point => onCurve(line, point) && onCurve(circle, point));
+    if (join) {
+      // One root is the already validated join. Deflate the quadratic to avoid
+      // sqrt roundoff inventing two crossings beside a tangent shared endpoint.
+      const radial = subtract(join, circle.center);
+      const other = -2 * (radial.x * vector.x + radial.y * vector.y) / lengthSquared;
+      return intersects({ x: join.x + other * vector.x, y: join.y + other * vector.y });
+    }
     const projection = -(delta.x * vector.x + delta.y * vector.y) / lengthSquared;
     const closest = { x: line.start.x + projection * vector.x, y: line.start.y + projection * vector.y };
     const distanceSquared = (closest.x - circle.center.x) ** 2 + (closest.y - circle.center.y) ** 2;
     const remainder = circle.radius ** 2 - distanceSquared;
     if (remainder < -tolerance * Math.max(1, circle.radius)) return false;
     const shift = Math.sqrt(Math.max(0, remainder) / lengthSquared);
-    return [projection - shift, projection + shift].some(t => { const point = { x: line.start.x + t * vector.x, y: line.start.y + t * vector.y }; return onCurve(line, point) && onCurve(circle, point); });
+    return [projection - shift, projection + shift].some(t => intersects({ x: line.start.x + t * vector.x, y: line.start.y + t * vector.y }));
   }
   const delta = subtract(second.center, first.center); const distance = Math.hypot(delta.x, delta.y);
   if (distance <= tolerance && Math.abs(first.radius - second.radius) <= tolerance) {
     if (first.type === 'circle' || second.type === 'circle') return true;
-    return onCurve(first, second.start) || onCurve(first, second.end) || onCurve(second, first.start) || onCurve(second, first.end);
+    const midpoint = (edge: Extract<Boundary, { type: 'arc' }>) => {
+      const sweep = edge.sweepRadians ?? (edge.clockwise ? -1 : 1) * ((edge.clockwise ? edge.startAngle - edge.endAngle : edge.endAngle - edge.startAngle) % tau + tau) % tau;
+      const angle = edge.startAngle + sweep / 2;
+      return { x: edge.center.x + edge.radius * Math.cos(angle), y: edge.center.y + edge.radius * Math.sin(angle) };
+    };
+    return [first.start, first.end, second.start, second.end, midpoint(first), midpoint(second)].some(intersects);
   }
   if (distance <= tolerance || distance > first.radius + second.radius + tolerance || distance < Math.abs(first.radius - second.radius) - tolerance) return false;
   const along = (first.radius ** 2 - second.radius ** 2 + distance ** 2) / (2 * distance);
   const height = Math.sqrt(Math.max(0, first.radius ** 2 - along ** 2));
   const base = { x: first.center.x + delta.x * along / distance, y: first.center.y + delta.y * along / distance };
-  return [-1, 1].some(sign => { const point = { x: base.x - sign * delta.y * height / distance, y: base.y + sign * delta.x * height / distance }; return onCurve(first, point) && onCurve(second, point); });
+  return [-1, 1].some(sign => intersects({ x: base.x - sign * delta.y * height / distance, y: base.y + sign * delta.x * height / distance }));
 }
 
 export function cadProfileContainsPoint(profile: ResolvedCadProfile, point: DxfPoint): boolean {
@@ -179,11 +263,13 @@ export function cadProfileContainsPoint(profile: ResolvedCadProfile, point: DxfP
       profile.points.forEach(([x, y], index) => { const [nx, ny] = profile.points[(index + 1) % profile.points.length]; if ((y > point.y) !== (ny > point.y) && point.x < (nx - x) * (point.y - y) / (ny - y) + x) inside = !inside; });
       return inside;
     }
+    case 'path': { const path = analyticPath(profile); return closedPathContainsPoint(path.refs, point, path.byId); }
     default: { const exhaustive: never = profile; return exhaustive; }
   }
 }
 
-export function validateCadSketchGeometry(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): void {
+/** Infer regions from exact analytic contours, independent of authored orientation or CAM. */
+export function resolveCadSketchRegions(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): readonly CadSketchRegion[] {
   const profiles = sketch.profiles.map(profile => ({ profile, geometry: resolveCadProfile(profile.geometry, parameters) }));
   for (const { profile, geometry } of profiles) {
     const positive = (value: number) => value > tolerance && value <= 1e6;
@@ -202,6 +288,27 @@ export function validateCadSketchGeometry(sketch: CadSketchFeature, parameters: 
         }
         break;
       }
+      case 'path': {
+        const path = analyticPath(geometry);
+        if (!path.segments.length || path.segments.some(segment => segment.length <= tolerance)) throw new CadError('invalid-profile', `Path "${profile.name}" contains a zero-length or unsupported edge.`);
+        const endpoints = path.segments.flatMap(segment => [segment.start, segment.end]);
+        const continuity = cadPathClosureTolerance(endpoints);
+        path.segments.forEach((segment, index) => {
+          const next = path.segments[(index + 1) % path.segments.length];
+          if (Math.hypot(segment.end.x - next.start.x, segment.end.y - next.start.y) > continuity) throw new CadError('open-profile', `Path "${profile.name}" must be continuous and closed without repairing gaps.`);
+        });
+        if (Math.abs(signedAreaOfPath(path.refs, path.byId)) <= tolerance ** 2) throw new CadError('invalid-profile', `Path "${profile.name}" has zero area.`);
+        const edges = boundary(cadProfileToEntities(geometry));
+        for (const [i, j] of cadBoundaryCandidatePairs(edges)) {
+          const first = edges[i]; const second = edges[j]; const joins: DxfPoint[] = [];
+          if (first.type !== 'circle' && second.type !== 'circle') {
+            if (j === i + 1) joins.push(first.end);
+            if (i === 0 && j === edges.length - 1) joins.push(first.start);
+          }
+          if (cadBoundariesIntersect(first, second, joins)) throw new CadError('self-intersection', `Path "${profile.name}" intersects itself.`);
+        }
+        break;
+      }
       default: { const exhaustive: never = geometry; throw exhaustive; }
     }
   }
@@ -216,12 +323,27 @@ export function validateCadSketchGeometry(sketch: CadSketchFeature, parameters: 
       throw new CadError('profile-intersection', `Profiles "${firstContour.profile.name}" and "${secondContour.profile.name}" overlap or touch.`);
     }
   }
-  for (const contour of contours) {
+  const nested = contours.map(contour => {
     const first = contour.edges[0];
     if (first === undefined) throw new CadError('invalid-profile', 'Profile has no edges.');
     const point = first.type === 'circle' ? { x: first.center.x + first.radius, y: first.center.y } : first.start;
     const containers = contours.filter(other => other !== contour && cadProfileContainsPoint(other.geometry, point));
     const expectedRole = containers.length % 2 === 0 ? 'outer' : 'hole';
-    if (contour.profile.role !== expectedRole) throw new CadError('invalid-profile-role', `Profile "${contour.profile.name}" must be ${expectedRole} at nesting depth ${containers.length}.`);
-  }
+    // Old saves retain their authored constraint and diagnostics. Missing role is
+    // automatic; never add, erase or repair legacy fields while parsing a save.
+    if (contour.profile.role !== undefined && contour.profile.role !== expectedRole) throw new CadError('invalid-profile-role', `Legacy profile "${contour.profile.name}" conflicts with its nesting depth ${containers.length}.`);
+    return { ...contour, point, containers, depth: containers.length };
+  });
+  const depths = new Map(nested.map(contour => [contour.profile, contour.depth]));
+  const resolved: CadResolvedSketchContour[] = nested.map(contour => {
+    const parent = contour.containers.find(container => depths.get(container.profile) === contour.depth - 1);
+    return { profile: contour.profile, geometry: contour.geometry, point: contour.point, depth: contour.depth, parentId: parent?.profile.id ?? null };
+  });
+  return resolved.filter(contour => contour.depth % 2 === 0).map(boundary => ({ boundary,
+    voids: resolved.filter(contour => contour.parentId === boundary.profile.id && contour.depth === boundary.depth + 1)
+  }));
+}
+
+export function validateCadSketchGeometry(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): void {
+  resolveCadSketchRegions(sketch, parameters);
 }

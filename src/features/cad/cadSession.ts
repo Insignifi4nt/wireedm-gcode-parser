@@ -25,25 +25,25 @@ export class CadSession {
   private past: CadDocument[] = [];
   private future: CadDocument[] = [];
   private savedText: string | null = null;
-  private workflows = new Set<'editor' | 'section'>();
+  private workflows = new Set<'editor' | 'section' | 'import'>();
   private snapshot: CadSessionSnapshot;
   constructor(document = createCadDocument()) {
-    this.snapshot = { document: parseCadDocument(document), version: crypto.randomUUID(), savedVersion: null,
-      dirty: true, canUndo: false, canRedo: false, workflowOpen: false };
+    this.snapshot = Object.freeze({ document: parseCadDocument(document), version: crypto.randomUUID(), savedVersion: null,
+      dirty: true, canUndo: false, canRedo: false, workflowOpen: false });
   }
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   assertVersion(expected: string) {
     if (this.snapshot.version !== expected) throw new CadSessionError('STALE_STATE', 'The CAD draft changed. Read cad_get_context again.');
   }
-  assertWorkflowClosed(except?: 'section') {
-    if ([...this.workflows].some(scope => scope !== except)) throw new CadSessionError('WORKFLOW_OPEN', 'Finish or cancel the active CAD drawing, feature editor or section dialog first.');
+  assertWorkflowClosed(except?: 'editor' | 'section' | 'import') {
+    if ([...this.workflows].some(scope => scope !== except)) throw new CadSessionError('WORKFLOW_OPEN', 'Finish or cancel the active CAD editor, import or section dialog first.');
   }
   assertStorageSwitchAllowed() {
     this.assertWorkflowClosed();
     if (this.snapshot.dirty && hasCadDraftContent(this.snapshot.document)) throw new CadSessionError('UNSAVED_DRAFT', 'Save the CAD draft before switching workbench storage.');
   }
-  setWorkflowOpen = (open: boolean, scope: 'editor' | 'section' = 'editor') => {
+  setWorkflowOpen = (open: boolean, scope: 'editor' | 'section' | 'import' = 'editor') => {
     if (open) this.workflows.add(scope); else this.workflows.delete(scope);
     const workflowOpen = this.workflows.size > 0;
     if (this.snapshot.workflowOpen === workflowOpen) return;
@@ -74,6 +74,9 @@ export class CadSession {
   };
   replace(document: CadDocument, saved: SavedCadDocument | null = null) {
     const parsed = parseCadDocument(document);
+    if (saved && JSON.stringify(parseCadDocument(saved.document)) !== JSON.stringify(parsed)) {
+      throw new CadSessionError('INVALID_SAVE_RECEIPT', 'The saved CAD receipt does not describe the document being opened.');
+    }
     this.workflows.clear();
     this.past = []; this.future = [];
     this.savedText = saved ? JSON.stringify(parsed) : null;
@@ -82,7 +85,9 @@ export class CadSession {
   }
   markSaved(saved: SavedCadDocument, expectedVersion: string) {
     this.assertVersion(expectedVersion);
-    this.savedText = JSON.stringify(saved.document);
+    const savedText = JSON.stringify(parseCadDocument(saved.document));
+    if (savedText !== JSON.stringify(this.snapshot.document)) throw new CadSessionError('INVALID_SAVE_RECEIPT', 'The saved CAD receipt does not describe the reviewed draft.');
+    this.savedText = savedText;
     this.publish({ ...this.snapshot, savedVersion: saved.savedVersion, dirty: JSON.stringify(this.snapshot.document) !== this.savedText });
   }
   detachStorage() {
@@ -94,7 +99,7 @@ export class CadSession {
       canUndo: this.past.length > 0, canRedo: this.future.length > 0 });
   }
   private publish(snapshot: CadSessionSnapshot) {
-    this.snapshot = snapshot;
+    this.snapshot = Object.freeze(snapshot);
     for (const listener of this.listeners) listener();
   }
 }

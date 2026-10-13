@@ -2,7 +2,7 @@ import type { CadDocument, CadPlane, CadProfile } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { parseCadDocument } from './cadSchema';
-import { resolveCadProfile, type ResolvedCadProfile } from './cadSketchGeometry';
+import { cadAnalyticPathMetrics, resolveCadProfile, resolveCadSketchRegions, type ResolvedCadProfile } from './cadSketchGeometry';
 
 export interface CadBounds2 {
   readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number;
@@ -23,6 +23,10 @@ export interface CadSketchMeasurement {
 
 function profileMeasurement(profile: ResolvedCadProfile): Pick<CadProfileMeasurement, 'areaMm2' | 'perimeterMm' | 'boundsMm'> {
   switch (profile.kind) {
+    case 'path': {
+      const measured = cadAnalyticPathMetrics(profile);
+      return { areaMm2: Math.abs(measured.signedArea), perimeterMm: measured.length, boundsMm: measured.bounds };
+    }
     case 'rectangle': return {
       areaMm2: profile.width * profile.height - (4 - Math.PI) * profile.cornerRadius ** 2,
       perimeterMm: 2 * (profile.width + profile.height) - 8 * profile.cornerRadius + 2 * Math.PI * profile.cornerRadius,
@@ -66,8 +70,12 @@ export function measureCadSketch(document: CadDocument, sketchId: string): CadSk
   const validated = parseCadDocument(document);
   const sketch = validated.features.find(feature => feature.id === sketchId);
   if (sketch?.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose an existing sketch to measure.');
+  const regions = resolveCadSketchRegions(sketch, validated.parameters);
+  const depths = new Map(regions.flatMap(region => [region.boundary, ...region.voids]).map(contour => [contour.profile.id, contour.depth]));
   const profiles = sketch.profiles.map(profile => ({ profileId: profile.id, name: profile.name, kind: profile.geometry.kind,
-    role: profile.role, construction: profile.construction, ...profileMeasurement(resolveCadProfile(profile.geometry, validated.parameters)) }));
+    role: profile.construction && profile.role !== undefined ? profile.role
+      : (depths.get(profile.id) ?? 0) % 2 === 0 ? 'outer' as const : 'hole' as const,
+    construction: profile.construction, ...profileMeasurement(resolveCadProfile(profile.geometry, validated.parameters)) }));
   const cuts = profiles.filter(profile => !profile.construction);
   const boundsMm = cuts.reduce<CadBounds2 | null>((bounds, profile) => bounds === null ? profile.boundsMm : {
     minX: Math.min(bounds.minX, profile.boundsMm.minX), minY: Math.min(bounds.minY, profile.boundsMm.minY),

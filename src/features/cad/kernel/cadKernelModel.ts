@@ -2,17 +2,24 @@ import { CompoundSketch, draw, drawCircle, drawRoundedRectangle, exportSTEP, get
 import type { CadBuildResult, CadDocument, CadFeature, CadMesh, CadScalar, CadSketchFeature } from '../../../domain/cad/cadDocument';
 import { evaluateCadAngle, evaluateCadScalar } from '../../../domain/cad/cadExpression';
 import { CadError } from '../../../domain/cad/cadError';
-import { cadProfileContainsPoint, cadProfileToEntities, resolveCadProfile, type ResolvedCadProfile } from '../../../domain/cad/cadSketchGeometry';
+import { cadProfileToEntities, resolveCadSketchRegions, type ResolvedCadProfile } from '../../../domain/cad/cadSketchGeometry';
 import type { CadSectionRequest, CadSectionResult } from '../../../domain/cad/cadSection';
 import { cadKernelPlaneBasis } from './cadKernelPlane';
 import { sectionCadKernelShape } from './cadKernelSection';
 import { cadMeshScalarCount, MAX_CAD_PREVIEW_SCALARS } from './cadKernelLimits';
+import { CadKernelTopology } from './cadKernelTopology';
+import { applyCadEdgeOperation, applyCadShell } from './cadKernelOperations';
+import { loadCadSolidImport } from './cadKernelImport';
+import { MAX_CAD_TOPOLOGY_ELEMENTS, parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
+  type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
 
 /** BRep state stays inside the worker. Only tessellation and export bytes leave it. */
 export interface CadKernelModel {
   readonly result: CadBuildResult;
   export(format: 'step' | 'stl'): Blob;
   section(request: CadSectionRequest): CadSectionResult;
+  inspectTopology(request: CadTopologyInspectRequest): CadTopologyInspectResult;
+  resolveTopologyPicks(request: CadTopologyResolvePicksRequest): CadTopologyResolvePicksResult;
   dispose(): void;
 }
 
@@ -20,25 +27,33 @@ const meshOptions = { tolerance: 0.05, angularTolerance: 0.15 };
 
 function profileDrawing(profile: ResolvedCadProfile, drawings: Drawing[]): Drawing {
   const own = (drawing: Drawing) => { drawings.push(drawing); return drawing; };
+  function analyticBoundary(): Drawing {
+    const entities = cadProfileToEntities(profile); const first = entities[0];
+    if (entities.length === 1 && first?.type === 'circle') return own(own(drawCircle(first.radius)).translate(first.center.x, first.center.y));
+    if (entities.length === 1 && first?.type === 'arc' && Math.abs(first.endAngle - first.startAngle) === 2 * Math.PI) {
+      return own(own(drawCircle(first.radius)).translate(first.center.x, first.center.y));
+    }
+    if (!first || first.type !== 'line' && first.type !== 'arc') throw new CadError('invalid-profile', 'A profile needs a closed analytic boundary of lines and circular arcs.');
+    const pen = draw([first.start.x, first.start.y]);
+    for (const entity of entities) {
+      if (entity.type === 'line') pen.lineTo([entity.end.x, entity.end.y]);
+      else if (entity.type === 'arc') {
+        // Signed sweep preserves clockwise as well as major circular arcs.
+        const midAngle = (entity.startAngle + entity.endAngle) / 2;
+        pen.threePointsArcTo([entity.end.x, entity.end.y], [entity.center.x + entity.radius * Math.cos(midAngle), entity.center.y + entity.radius * Math.sin(midAngle)]);
+      } else throw new CadError('invalid-profile', 'This boundary contains an unsupported curve.');
+    }
+    return own(pen.close());
+  }
   switch (profile.kind) {
     case 'rectangle': {
       if (profile.cornerRadius === 0) return own(own(drawRoundedRectangle(profile.width, profile.height)).translate(profile.x + profile.width / 2, profile.y + profile.height / 2));
       // Explicit analytic arcs also handle radius exactly half the shorter side.
       // Replicad's tangent-arc primitive fails on the zero-length straight edges.
-      const entities = cadProfileToEntities(profile);
-      const first = entities[0];
-      if (!first || first.type !== 'line' && first.type !== 'arc') throw new CadError('invalid-profile', 'A rounded rectangle needs a closed analytic boundary.');
-      const pen = draw([first.start.x, first.start.y]);
-      for (const entity of entities) {
-        if (entity.type === 'line') pen.lineTo([entity.end.x, entity.end.y]);
-        else if (entity.type === 'arc') {
-          const midAngle = (entity.startAngle + entity.endAngle) / 2;
-          pen.threePointsArcTo([entity.end.x, entity.end.y], [entity.center.x + entity.radius * Math.cos(midAngle), entity.center.y + entity.radius * Math.sin(midAngle)]);
-        } else throw new CadError('invalid-profile', 'Rounded rectangle boundaries must contain lines and circular arcs.');
-      }
-      return own(pen.close());
+      return analyticBoundary();
     }
     case 'circle': return own(own(drawCircle(profile.radius)).translate(profile.x, profile.y));
+    case 'path': return analyticBoundary();
     case 'slot': {
       // The rectangle primitive cannot accept radius equal to half its shorter side.
       const halfStraight = (profile.length - profile.width) / 2;
@@ -75,22 +90,24 @@ function validateSolid(shape: Shape3D) {
   if (!Number.isFinite(volume) || volume <= 1e-9) throw new CadError('empty-solid', 'The operation must produce a closed solid with positive volume.');
 }
 
-function shapeMesh(shape: Shape3D, feature: CadFeature): CadMesh {
+function shapeMesh(shape: Shape3D, feature: CadFeature, topology: CadKernelTopology): CadMesh {
   const mesh = shape.mesh(meshOptions);
   if (mesh.triangles.length > 3_000_000) throw new CadError('mesh-limit', 'The preview exceeds one million triangles. Simplify the model.');
   const box = shape.boundingBox;
   try {
     const [min, max] = box.bounds;
+    const edgeMesh = shape.meshEdges(meshOptions);
     return { featureId: feature.id, name: feature.name, positions: mesh.vertices, normals: mesh.normals, indices: mesh.triangles,
-      edges: shape.meshEdges(meshOptions).lines, volume: measureVolume(shape), bounds: { min, max } };
+      edges: edgeMesh.lines, ...topology.meshGroups(mesh, edgeMesh), volume: measureVolume(shape), bounds: { min, max } };
   } finally { box.delete(); }
 }
 
 /** Operations commit only after exact topology validation and successful meshing. */
 export function buildCadKernelModel(document: CadDocument): CadKernelModel {
   const started = performance.now();
+  const buildId = crypto.randomUUID();
   const shapes = new Set<Shape3D>();
-  const bodies = new Map<string, { shape: Shape3D; feature: CadFeature; mesh: CadMesh; instances: number }>();
+  const bodies = new Map<string, { shape: Shape3D; feature: CadFeature; mesh: CadMesh; instances: number; topology: CadKernelTopology }>();
   const visible = new Set<string>();
   const sketches = new Map<string, CadSketchFeature>();
   const diagnostics: CadBuildResult['diagnostics'][number][] = [];
@@ -123,25 +140,19 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
     const drawings: Drawing[] = [];
     const consumedSketches: Sketch[] = [];
     try {
-      const contours = sketch.profiles.filter(profile => !profile.construction).map(profile => {
-        const geometry = resolveCadProfile(profile.geometry, document.parameters);
-        const drawing = profileDrawing(geometry, drawings);
-        const [x, y] = drawing.blueprint.firstPoint;
-        return { profile, geometry, drawing, point: { x, y } };
-      });
-      const nested = contours.map(contour => ({ ...contour, depth: contours.filter(other => other !== contour && cadProfileContainsPoint(other.geometry, contour.point)).length }));
+      const regions = resolveCadSketchRegions(sketch, document.parameters);
       let result: Shape3D | undefined;
-      for (const contour of nested.filter(item => item.profile.role === 'outer')) {
-        const boundaries = [contour, ...nested.filter(item => item.profile.role === 'hole' && item.depth === contour.depth + 1 && cadProfileContainsPoint(contour.geometry, item.point))];
-        const wires = boundaries.map(item => { const wire = item.drawing.blueprint.sketchOnPlane(plane); consumedSketches.push(wire); return wire; });
+      for (const region of regions) {
+        const boundaries = [region.boundary, ...region.voids];
+        const wires = boundaries.map(item => { const drawing = profileDrawing(item.geometry, drawings); const wire = drawing.blueprint.sketchOnPlane(plane); consumedSketches.push(wire); return wire; });
         const first = wires[0];
-        if (!first) throw new CadError('empty-sketch', 'A solid feature needs a non-construction outer profile.');
+        if (!first) throw new CadError('empty-sketch', 'A solid feature needs a closed non-construction profile.');
         const sketched = wires.length === 1 ? first : new CompoundSketch(wires);
         const shape = own(feature.kind === 'extrude' ? sketched.extrude(distance) : sketched.revolve(feature.axis === 'x' ? orientation.u : orientation.v, { origin, angle: number(feature.angle) }));
         validateSolid(shape);
         result = result ? own(result.fuse(shape)) : shape;
       }
-      if (!result) throw new CadError('empty-sketch', 'A solid feature needs at least one non-construction outer profile.');
+      if (!result) throw new CadError('empty-sketch', 'A solid feature needs at least one closed non-construction profile.');
       return result;
     } finally {
       for (const sketched of consumedSketches) sketched.delete();
@@ -158,8 +169,13 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
       const consumed: string[] = [];
       switch (feature.kind) {
         case 'sketch': sketches.set(feature.id, feature); continue;
+        case 'imported': {
+          const imported = loadCadSolidImport(feature.source);
+          result = own(imported.shape); instances = boundedInstances(imported.analysis.solidCount); break;
+        }
         case 'extrude': case 'revolve': {
-          instances = sketches.get(feature.sketchId)?.profiles.filter(profile => !profile.construction && profile.role === 'outer').length ?? 1;
+          const sourceSketch = sketches.get(feature.sketchId);
+          instances = sourceSketch ? resolveCadSketchRegions(sourceSketch, document.parameters).length : 1;
           if (feature.targetId !== null) instances = boundedInstances(instances + instancesOf(feature.targetId));
           result = fromSketch(feature);
           if (feature.operation !== 'new') {
@@ -173,7 +189,25 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         case 'fillet': case 'chamfer': {
           const target = body(feature.targetId);
           instances = instancesOf(feature.targetId);
-          result = own(feature.kind === 'fillet' ? target.fillet(number(feature.radius)) : target.chamfer(number(feature.radius)));
+          const topology = bodies.get(feature.targetId)?.topology;
+          if (!topology) throw new CadError('missing-body', 'The selected target body is unavailable.');
+          result = own(feature.selection ? applyCadEdgeOperation(target, topology.selectedEdges(feature.selection, document.parameters), feature.kind, number(feature.radius))
+            : feature.kind === 'fillet' ? target.fillet(number(feature.radius)) : target.chamfer(number(feature.radius)));
+          consumed.push(feature.targetId); break;
+        }
+        case 'shell': {
+          const target = body(feature.targetId); const topology = bodies.get(feature.targetId)?.topology;
+          if (!topology) throw new CadError('missing-body', 'The shell target body is unavailable.');
+          instances = instancesOf(feature.targetId);
+          result = own(applyCadShell(target, topology.selectedFace(feature.opening, document.parameters), number(feature.thickness)));
+          if (!(measureVolume(result) < measureVolume(target) - 1e-9)) throw new CadError('shell-failed', 'The inward shell did not remove material. Reduce its thickness or choose another opening.');
+          const originalBox = target.boundingBox; const shellBox = result.boundingBox;
+          try {
+            const [originalMin, originalMax] = originalBox.bounds; const [shellMin, shellMax] = shellBox.bounds;
+            if (shellMin.some((value, axis) => value < originalMin[axis] - 1e-6) || shellMax.some((value, axis) => value > originalMax[axis] + 1e-6)) {
+              throw new CadError('shell-failed', 'The kernel shell extended outside the original body instead of producing inward walls.');
+            }
+          } finally { originalBox.delete(); shellBox.delete(); }
           consumed.push(feature.targetId); break;
         }
         case 'boolean': {
@@ -208,11 +242,16 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         default: { const exhaustive: never = feature; throw new Error(`Unsupported feature: ${exhaustive}`); }
       }
       validateSolid(result);
-      const mesh = shapeMesh(result, feature);
-      const retainedScalars = [...bodies.entries()].reduce((total, [id, entry]) => total + (consumed.includes(id) ? 0 : cadMeshScalarCount(entry.mesh)), 0);
-      if (retainedScalars + cadMeshScalarCount(mesh) > MAX_CAD_PREVIEW_SCALARS) throw new CadError('mesh-limit', 'The complete model exceeds the bounded preview buffer budget. Simplify the geometry or reduce body and pattern counts.');
-      bodies.set(feature.id, { shape: result, feature, mesh, instances });
-      for (const id of consumed) { visible.delete(id); bodies.delete(id); }
+      const topology = new CadKernelTopology(result);
+      try {
+        const retainedTopology = [...bodies.entries()].reduce((total, [id, entry]) => total + (consumed.includes(id) ? 0 : entry.topology.count), 0);
+        if (retainedTopology + topology.count > MAX_CAD_TOPOLOGY_ELEMENTS) throw new CadError('topology-limit', `The complete model may contain at most ${MAX_CAD_TOPOLOGY_ELEMENTS} distinct faces and edges. Simplify the model.`);
+        const mesh = shapeMesh(result, feature, topology);
+        const retainedScalars = [...bodies.entries()].reduce((total, [id, entry]) => total + (consumed.includes(id) ? 0 : cadMeshScalarCount(entry.mesh)), 0);
+        if (retainedScalars + cadMeshScalarCount(mesh) > MAX_CAD_PREVIEW_SCALARS) throw new CadError('mesh-limit', 'The complete model exceeds the bounded preview buffer budget. Simplify the geometry or reduce body and pattern counts.');
+        for (const id of consumed) { visible.delete(id); bodies.get(id)?.topology.dispose(); bodies.delete(id); }
+        bodies.set(feature.id, { shape: result, feature, mesh, instances, topology });
+      } catch (error) { topology.dispose(); throw error; }
       visible.add(feature.id);
       releaseTransientShapes();
     } catch (error) {
@@ -225,7 +264,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
   }
   let disposed = false;
   return {
-    result: { meshes: [...visible].flatMap(id => { const found = bodies.get(id); return found ? [found.mesh] : []; }), diagnostics, durationMs: performance.now() - started },
+    result: { buildId, meshes: [...visible].flatMap(id => { const found = bodies.get(id); return found ? [found.mesh] : []; }), diagnostics, durationMs: performance.now() - started },
     export(format) {
       if (disposed) throw new Error('CAD model has been disposed.');
       if (diagnostics.length) throw new CadError('invalid-export', 'Fix the feature diagnostics before exporting. The retained preview is not the requested model.');
@@ -240,9 +279,27 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
       if (diagnostics.length) throw new CadError('invalid-section', 'Fix the model diagnostics before extracting a section. The retained preview is not the requested solid.');
       return sectionCadKernelShape(body(request.bodyId), { bodyId: request.bodyId, plane: request.plane, offset: number(request.offset) });
     },
+    inspectTopology(request) {
+      const parsed = parseCadTopologyInspectRequest(request);
+      if (disposed || parsed.expectedBuildId !== buildId) throw new CadError('STALE_BUILD', 'The topology snapshot is stale. Rebuild the current document and select again.');
+      body(parsed.bodyId);
+      const topology = bodies.get(parsed.bodyId)?.topology;
+      if (!topology) throw new CadError('missing-body', 'The topology body is unavailable.');
+      return topology.inspect(parsed, buildId);
+    },
+    resolveTopologyPicks(request) {
+      const parsed = parseCadTopologyResolvePicksRequest(request);
+      if (disposed || parsed.expectedBuildId !== buildId) throw new CadError('STALE_BUILD', 'The topology snapshot is stale. Rebuild the current document and select again.');
+      if (diagnostics.length) throw new CadError('invalid-selection', 'Fix the feature diagnostics before applying a topology selection.');
+      body(parsed.bodyId);
+      const topology = bodies.get(parsed.bodyId)?.topology;
+      if (!topology) throw new CadError('missing-body', 'The selected topology body is unavailable.');
+      return topology.resolvePicks(parsed, buildId, document.parameters);
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
+      for (const entry of bodies.values()) entry.topology.dispose();
       for (const shape of shapes) {
         // Replicad transforms consume their input wrapper; delete is idempotent.
         shape.delete();

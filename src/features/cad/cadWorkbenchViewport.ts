@@ -1,15 +1,20 @@
 import { Value } from '@sinclair/typebox/value';
-import type { CadDocument } from '@/domain/cad/cadDocument';
+import type { CadDocument, CadMesh } from '@/domain/cad/cadDocument';
+import { parseCadTopologyPickSet, type CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import { ToolError } from '@/features/webmcp/siteTools';
 import { CadViewportCommandSchema, type CadRenderedViewControls, type CadViewportCapture, type CadViewportState, type CadWorkbenchViewportControls } from './cadViewportControls';
+import { validateTopologySelection, type CadPickMode } from './cadTopologyPicking';
 
 export interface CadViewportBindings extends Omit<CadViewportState, 'documentId' | 'view'> {
   readonly document: CadDocument;
   readonly rendered: CadRenderedViewControls | null;
+  readonly meshes: readonly CadMesh[];
   selectFeature(id: string | null): void;
   editSketch(id: string): void;
   selectProfile(id: string | null): void;
   finishSketch(): void;
+  selectTopology(selection: CadTopologyPickSet | null, additive: boolean): void;
+  setPickMode(mode: CadPickMode): void;
   updateView(action: () => void): void;
 }
 
@@ -26,12 +31,13 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
     return Object.freeze({ documentId: bindings.document.id, documentVersion: bindings.documentVersion, dirty: bindings.dirty,
       selectedFeatureId: bindings.selectedFeatureId, selectedProfileId: bindings.selectedProfileId, sketchId: bindings.sketchId,
       workflowOpen: bindings.workflowOpen, busy: bindings.busy, buildVersion: bindings.buildVersion,
+      buildId: bindings.buildId, pickMode: bindings.pickMode, topologySelection: bindings.topologySelection ? parseCadTopologyPickSet(bindings.topologySelection) : null,
       buildState: bindings.buildState, visibleBodyIds: Object.freeze([...bindings.visibleBodyIds]), view: bindings.rendered?.getState() ?? null });
   }
   // Busy may change because the caller acquires the capture lock. Only visual content matters.
   function visualIdentity(state: CadViewportState) {
     return JSON.stringify([state.documentId, state.documentVersion, state.selectedFeatureId, state.selectedProfileId,
-      state.sketchId, state.view?.mode === 'solid' ? state.buildVersion : null, state.view?.mode === 'solid' ? state.buildState : null, state.view]);
+      state.sketchId, state.view?.mode === 'solid' ? [state.buildVersion, state.buildId, state.buildState, state.pickMode, state.topologySelection] : null, state.view]);
   }
   return {
     getState,
@@ -56,6 +62,19 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
           case 'finish-sketch':
             if (!bindings.sketchId) throw new ToolError('WRONG_VIEW', 'No sketch editor is open.');
             bindings.finishSketch(); return;
+          case 'set-pick-mode':
+            if (bindings.sketchId || !rendered) throw new ToolError('WRONG_VIEW', 'Open the solid viewport before selecting faces or edges.');
+            if (bindings.buildState !== 'ready' || bindings.buildVersion !== bindings.documentVersion) throw new ToolError('STALE_STATE', 'Wait for the current CAD draft to finish building before picking topology.');
+            bindings.setPickMode(command.mode); return;
+          case 'select-topology': {
+            if (bindings.sketchId || !rendered) throw new ToolError('WRONG_VIEW', 'Open the solid viewport before selecting topology.');
+            const selection = parseCadTopologyPickSet(command.selection);
+            try { validateTopologySelection(selection, { documentVersion: bindings.documentVersion, buildId: bindings.buildId, meshes: bindings.meshes,
+              ready: bindings.buildState === 'ready' && bindings.buildVersion === bindings.documentVersion }); }
+            catch (error) { throw new ToolError('STALE_STATE', error instanceof Error ? error.message : 'Select topology from the current build.'); }
+            bindings.selectTopology(selection, command.additive); return;
+          }
+          case 'clear-topology': bindings.selectTopology(null, false); return;
           case 'set-view':
             if (bindings.sketchId || !rendered?.setView) throw new ToolError('WRONG_VIEW', 'Finish sketch editing before selecting a named solid view.');
             rendered.setView(command.view); return;

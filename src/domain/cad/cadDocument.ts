@@ -1,30 +1,43 @@
+import type { CadEdgeSelection, CadFaceQuery } from './cadTopology';
+import type { CadSolidImportSource } from './cadImports';
+import type { CadDxfImportSource } from './cadDxfSource';
+
 /** Millimetres and degrees. Strings are arithmetic expressions over named parameters. */
 export type CadScalar = number | string;
 export type CadPoint2 = readonly [CadScalar, CadScalar];
 export type CadPoint3 = readonly [CadScalar, CadScalar, CadScalar];
 export type CadPlane = 'XY' | 'XZ' | 'YZ';
+export type CadPathSegment =
+  | { readonly kind: 'line'; readonly start: CadPoint2; readonly end: CadPoint2 }
+  | { readonly kind: 'arc'; readonly center: CadPoint2; readonly radius: CadScalar; readonly startAngle: CadScalar; readonly sweep: CadScalar };
 
 export type CadProfile =
   | { readonly kind: 'rectangle'; readonly x: CadScalar; readonly y: CadScalar; readonly width: CadScalar; readonly height: CadScalar; readonly cornerRadius: CadScalar }
   | { readonly kind: 'circle'; readonly x: CadScalar; readonly y: CadScalar; readonly radius: CadScalar }
   | { readonly kind: 'polygon'; readonly points: readonly CadPoint2[] }
+  | { readonly kind: 'path'; readonly segments: readonly CadPathSegment[] }
   | { readonly kind: 'slot'; readonly x: CadScalar; readonly y: CadScalar; readonly length: CadScalar; readonly width: CadScalar; readonly angle: CadScalar };
 
 export interface CadSketchProfile {
   readonly id: string;
   readonly name: string;
   readonly construction: boolean;
-  readonly role: 'outer' | 'hole';
+  /** Legacy save constraint only. New contours omit this; material regions derive from nesting. */
+  readonly role?: 'outer' | 'hole';
   readonly geometry: CadProfile;
 }
 export interface CadFeatureBase { readonly id: string; readonly name: string; readonly suppressed: boolean }
 export interface CadSketchFeature extends CadFeatureBase {
   readonly kind: 'sketch'; readonly plane: CadPlane; readonly offset: CadScalar; readonly profiles: readonly CadSketchProfile[];
+  /** Original import lineage remains exact even after editable geometry changes. */
+  readonly source?: CadDxfImportSource;
 }
 export type CadFeature = CadSketchFeature
+  | (CadFeatureBase & { readonly kind: 'imported'; readonly source: CadSolidImportSource })
   | (CadFeatureBase & { readonly kind: 'extrude'; readonly sketchId: string; readonly distance: CadScalar; readonly symmetric: boolean; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })
   | (CadFeatureBase & { readonly kind: 'revolve'; readonly sketchId: string; readonly angle: CadScalar; readonly axis: 'x' | 'y'; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })
-  | (CadFeatureBase & { readonly kind: 'fillet' | 'chamfer'; readonly targetId: string; readonly radius: CadScalar })
+  | (CadFeatureBase & { readonly kind: 'fillet' | 'chamfer'; readonly targetId: string; readonly radius: CadScalar; readonly selection?: CadEdgeSelection | null })
+  | (CadFeatureBase & { readonly kind: 'shell'; readonly targetId: string; readonly thickness: CadScalar; readonly opening: CadFaceQuery })
   | (CadFeatureBase & { readonly kind: 'boolean'; readonly targetId: string; readonly toolId: string; readonly operation: 'union' | 'cut' | 'intersect' })
   | (CadFeatureBase & { readonly kind: 'transform'; readonly sourceId: string; readonly translation: CadPoint3; readonly rotation: CadPoint3 })
   | (CadFeatureBase & { readonly kind: 'linear-pattern'; readonly sourceId: string; readonly count: number; readonly spacing: CadPoint3 })
@@ -41,14 +54,17 @@ export interface CadDocument {
 }
 
 export interface CadDiagnostic { readonly code: string; readonly message: string; readonly featureId?: string }
+export interface CadMeshTopologyGroup { readonly start: number; readonly count: number; readonly key: string }
 export interface CadMesh {
   readonly featureId: string; readonly name: string;
   readonly positions: readonly number[]; readonly normals: readonly number[]; readonly indices: readonly number[];
   readonly edges: readonly number[];
+  readonly faceGroups: readonly CadMeshTopologyGroup[]; readonly edgeGroups: readonly CadMeshTopologyGroup[];
   readonly volume: number;
   readonly bounds: { readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number] };
 }
 export interface CadBuildResult {
+  readonly buildId: string;
   readonly meshes: readonly CadMesh[];
   readonly diagnostics: readonly CadDiagnostic[];
   readonly durationMs: number;
