@@ -338,6 +338,46 @@ describe('CAD sketch interaction', () => {
     expect(workflow).toHaveBeenLastCalledWith(false);
   });
 
+  it.each(['name', 'parameter'] as const)('blocks a new path while a %s edit is pending without losing either field or history', async editor => {
+    await mount(); await click('Sketch'); await click('Apply'); await click('Path');
+    const before = currentSession.getSnapshot();
+    let pendingField: HTMLInputElement;
+    if (editor === 'name') {
+      const name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]');
+      if (!name) throw new Error('Part name missing'); pendingField = name; await input(name, 'Pending rename');
+    } else {
+      await click('Parameters'); pendingField = field('Name'); await input(pendingField, 'wall'); await input(field('Value'), '3');
+    }
+    const pendingValue = pendingField.value;
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]');
+    if (!canvas) throw new Error('Sketch canvas missing');
+    expect(canvas.getAttribute('tabindex')).toBe('-1'); expect(button('Line').disabled).toBe(true);
+    await canvasClick(300, 200); await canvasKey(' '); await canvasKey('ArrowRight'); await canvasKey(' ');
+    expect(container.querySelector('[data-cad-path-segments]')).toBeNull(); expect(pendingField.value).toBe(pendingValue);
+    expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: before.canUndo, workflowOpen: true });
+    if (editor === 'name') await act(async () => pendingField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    else await click('Cancel');
+    expect(currentSession.getSnapshot()).toEqual(before); expect(button('Line').disabled).toBe(false);
+    await canvasKey(' '); await canvasKey('ArrowRight'); await canvasKey(' ');
+    expect(container.querySelector('[data-cad-path-segments]')).not.toBeNull(); expect(button('Undo last').disabled).toBe(false);
+    await click('Cancel drawing'); expect(currentSession.getSnapshot()).toEqual(before);
+  });
+
+  it('locks shared actions during a mixed path and cancels it without a document or history change', async () => {
+    await mount(); await click('Sketch'); await click('Apply'); await click('Path');
+    const before = currentSession.getSnapshot();
+    await click('3-point Arc'); await canvasKey(' '); await canvasKey('ArrowUp'); await canvasKey('ArrowUp'); await canvasKey(' ');
+    expect(currentSession.getSnapshot().workflowOpen).toBe(true);
+    for (const label of ['Finish sketch', 'Undo', 'Save', 'Rectangle', 'Polyline']) expect(button(label).disabled).toBe(true);
+    await canvasKey('z');
+    const controlUndo = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true });
+    await act(async () => container.querySelector('[aria-label="Sketch drawing canvas"]')!.dispatchEvent(controlUndo));
+    expect(controlUndo.defaultPrevented).toBe(true); expect(undo).not.toHaveBeenCalled();
+    await click('Undo last'); expect(button('Line').disabled).toBe(false); expect(button('Finish sketch').disabled).toBe(true);
+    await canvasKey('Escape'); expect(currentSession.getSnapshot()).toEqual(before);
+    expect(button('Finish sketch').disabled).toBe(false); expect(button('Rectangle').disabled).toBe(false);
+  });
+
   it('edits a profile with a named expression and leaves Ctrl+Z to focused inputs', async () => {
     await mount({ ...createCadDocument(), parameters: { plateWidth: 80 } });
     await click('Sketch'); await click('Apply'); await canvasClick(300, 200); await canvasClick(450, 100);

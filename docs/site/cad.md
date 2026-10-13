@@ -6,7 +6,7 @@ Drag a divider beside the feature tree or properties panel to resize it. You can
 
 ## Design a part
 
-1. Create a sketch on XY, XZ or YZ. Draw a closed Rectangle, Circle, Polygon or Slot. Use the numeric editor for exact position and size. Rectangles support rounded corners; slots have an angle. Construction profiles remain visible for reference but do not enter solids or CAM exports.
+1. Create a sketch on XY, XZ or YZ. Draw a closed Rectangle, Circle, Polygon, Slot or line/arc Path. Use the numeric editor for exact position and size. Rectangles support rounded corners; slots have an angle. Construction profiles remain visible for reference but do not enter solids or CAM exports.
 2. Draw nested contours normally. Enclosed contours create voids; another contour inside a void creates an island. CAD determines these regions automatically. Touching, crossing and self-intersecting contours are rejected. To combine overlapping solids, use separate sketches and a solid operation.
 3. Finish sketching and create a Pad (extrusion) or Revolve. Pad supports a symmetric extent. New body, Join and Cut explicitly control whether material is created, added or removed.
 4. Select a feature to edit its dimensions. Later features rebuild from the edited history. Pick edges before Fillet or Chamfer to limit the operation, or choose all edges. Pick one planar face before Shell to open that face and hollow the body inward. Transform, mirror, linear/circular pattern and Boolean union/cut/intersection operate on solid bodies.
@@ -15,6 +15,8 @@ Drag a divider beside the feature tree or properties panel to resize it. You can
 Use isometric, top, front or right views, fit the part, and navigate with the viewport mouse controls. Rendering updates on demand. The solid engine loads only when needed, so its first operation can take longer. Rebuilding and failed models are labelled; export cannot silently use a failed history.
 
 In sketch Select mode, click inside a contour or near its outline. Nested interiors select the innermost contour; construction geometry is selected by its outline. Picking uses the pointer position independently of grid snapping. Escape discards pending dimensions or parameter edits. Ctrl/Cmd+S saves only after those edits are applied or cancelled; Ctrl/Cmd+Z in a text field keeps its normal text-editing behavior.
+
+**Path** joins lines and circular arcs in one closed contour. Pick a start, then use **Line** to pick an endpoint, or **3-point Arc** to pick an endpoint followed by a point on the arc. The third point determines the arc's direction and short or long sweep. Switch modes while drawing. **Close profile** adds a straight closing edge when needed and accepts the whole contour as one undo step. Clicking the start alone does not save it. **Undo last** removes the most recent point or segment; **Cancel drawing** discards the pending path. On the focused canvas, arrows position the cursor, Space places a point, Backspace undoes and Escape cancels. Invalid closure retains the drawing for correction. Saved paths remain analytic and their segment dimensions can use parameter expressions.
 
 Use **File → Rebuild model** if a cancelled operation or restarted worker invalidates an exact selection. The visible shape can remain available while its cached topology needs rebuilding; select faces or edges again after the rebuild.
 

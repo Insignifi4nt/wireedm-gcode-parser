@@ -198,6 +198,12 @@
 .cad-sketch-instruction { position: absolute; bottom: 32px; left: 12px; right: 12px; display: flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid #42606f; background: #172d39ec; border-radius: 4px; font-size: 10px; color: #afcddc; }
 .cad-sketch-instruction > span { flex: 1; }
 .cad-sketch-instruction button { border-color: #42606f; font-size: 12px; padding: 3px 6px; }
+.cad-path-instruction { flex-wrap: wrap; }
+.cad-path-instruction > span { flex: 1 1 180px; }
+.cad-path-instruction button { flex-shrink: 0; }
+.cad-path-modes { display: flex; gap: 2px; }
+.cad-path-modes button[aria-pressed="true"] { background: #28526a; color: #e4f5ff; }
+.cad-path-invalid { fill: none; stroke: #dc987d; stroke-dasharray: 2 2; }
 .cad-dialog-backdrop { position: fixed; inset: 0; display: grid; place-items: center; background: #050c11aa; backdrop-filter: blur(2px); z-index: 30; }
 .cad-delete-dialog { width: min(460px, 90vw); border: 1px solid #536776; border-radius: 5px; box-shadow: 0 10px 40px #0008; background: #1a2630; padding: 22px; }
 .cad-delete-dialog h2 { font-size: 16px; font-weight: 500; color: #d4e5ee; margin: 0 0 14px; }

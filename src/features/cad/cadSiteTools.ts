@@ -16,9 +16,13 @@ import { jsonByteLength, summarizeDiagnostic } from '@/features/webmcp/diagnosti
 import { CadSessionError } from './cadSession';
 import type { CadController } from './useCadController';
 import { CadToolDocumentEnvelope, CadToolEditEnvelope } from './cadToolSchemas';
+import { CadConstructionPointSchema, CadPathConstructionStepSchema, createCadPathProfile } from '@/domain/cad/cadPathConstruction';
+import { cadAnalyticPathMetrics, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
 
 const id = Type.String({ minLength: 1, maxLength: 160 });
 const version = { expectedVersion: id };
+const pathConstructionSchema = object({ start: CadConstructionPointSchema,
+  steps: Type.Array(CadPathConstructionStepSchema, { minItems: 1, maxItems: 128 }) });
 const documentText = new WeakMap<CadDocument, string>();
 function diagnosticSummary(diagnostics: readonly CadDiagnostic[]) {
   const summaries = diagnostics.slice(0, 10).map(summarizeDiagnostic);
@@ -78,6 +82,14 @@ export function cadSiteTools(getController: () => CadController) {
   }
   return [
     tool('cad_get_context', 'Read the shared CAD draft version, parameters, supported operations, saved state and build diagnostics. Millimeters, desktop CAD. No storage writes.', object({}), cad => context(cad)),
+    tool('cad_construct_path', 'Construct and measure a closed analytic line/arc profile from numeric plane-local millimeter points. Start at start, then follow 1–128 ordered steps: line to end, or circular arc to end passing through through. Arcs may be clockwise/counterclockwise and major/minor. Adds a final straight closing edge when the last endpoint differs from start. Uses the same construction and geometry checks as sketch Path drawing. Rejects ambiguous, out-of-range, crossing or zero-area geometry. Returns numeric geometry for a sketch profile; does not open, edit or save a document and does not bind expressions. Use cad_edit_document with the current version to insert it.', pathConstructionSchema, (_cad, input) => {
+      const geometry = createCadPathProfile(input.start, input.steps);
+      const resolved = resolveCadProfile(geometry, {});
+      if (resolved.kind !== 'path') throw new ToolError('CONSTRUCTION_FAILED', 'The constructed profile is not an analytic path.');
+      const metrics = cadAnalyticPathMetrics(resolved);
+      return { geometry, units: 'mm', segmentCount: geometry.segments.length,
+        areaMm2: Math.abs(metrics.signedArea), perimeterMm: metrics.length, boundsMm: metrics.bounds, persisted: false };
+    }),
     tool('cad_describe_features', 'Discover exact CAD feature definitions and semantics without opening or changing a document. With no kind returns a compact catalog; provide kind for its JSON schema. Use complete feature definitions in add-feature/update-feature. Dimensions are mm, angles degrees.', object({ kind: Type.Optional(Type.Union(Object.keys(featureDescriptions).map(kind => Type.Literal(kind)))) }), (_cad, input) => {
       if (!input.kind) return { items: Object.entries(featureDescriptions).map(([kind, description]) => ({ kind, description })) };
       const kind = input.kind as CadFeature['kind'];

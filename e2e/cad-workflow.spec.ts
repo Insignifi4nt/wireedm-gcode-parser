@@ -576,6 +576,99 @@ test('final-solid section preview protects its workflow and creates clean CAM ge
   expect(cam).toMatchObject({ draft: { model: 'upid', dirty: false } });
 });
 
+test('agent path construction remains read-only before exact solid, DXF and saved CAD use', async ({ page }) => {
+  await prepare(page);
+  const initial = await context(page);
+  const constructed = await call(page, 'cad_construct_path', {
+    start: [0, -10], steps: [{ kind: 'arc', end: [0, 10], through: [10, 0] }]
+  });
+  expect(constructed).toMatchObject({ persisted: false, segmentCount: 2,
+    areaMm2: expect.closeTo(50 * Math.PI, 8), perimeterMm: expect.closeTo(10 * Math.PI + 20, 8) });
+  expect(await context(page)).toMatchObject({ version: initial.version, documentId: initial.documentId, featureCount: 0 });
+  if (!('geometry' in constructed)) throw new Error('Missing constructed geometry');
+  await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Exact D profile' });
+  const blank = await context(page);
+  await call(page, 'cad_edit_document', { expectedVersion: blank.version, edits: [
+    { kind: 'add-feature', feature: { id: 'd_outline', name: 'D outline', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+      profiles: [{ id: 'd_contour', name: 'D contour', construction: false, geometry: constructed.geometry }] } },
+    { kind: 'add-feature', feature: { id: 'd_pad', name: 'D pad', kind: 'extrude', suppressed: false,
+      sketchId: 'd_outline', distance: 5, symmetric: false, operation: 'new', targetId: null } }
+  ] });
+  const draft = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: draft.version }))
+    .toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(250 * Math.PI, 7) }] });
+  const section = await call(page, 'cad_inspect_section', { expectedVersion: draft.version,
+    section: { bodyId: 'd_pad', plane: 'XY', offset: 2.5 } });
+  expect(section).toMatchObject({ contourCount: 1, entities: { total: 2,
+    items: expect.arrayContaining([expect.objectContaining({ type: 'arc', center: expect.any(Object), radius: 10,
+      startAngle: expect.any(Number), endAngle: expect.any(Number) })]) } });
+  const downloadPromise = page.waitForEvent('download');
+  await call(page, 'cad_export_dxf', { expectedVersion: draft.version, sketchId: 'd_outline' });
+  const download = await downloadPromise; const path = await download.path();
+  if (!path) throw new Error('Missing analytic DXF download');
+  const dxf = await readFile(path, 'utf8');
+  expect(dxf).toMatch(/\bARC\b/); expect(dxf).toMatch(/\bLINE\b/);
+  await call(page, 'cad_save_document', { expectedVersion: draft.version });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+  const reloaded = await context(page);
+  await call(page, 'cad_open_document', { expectedVersion: reloaded.version, documentId: draft.documentId });
+  const reopened = await context(page);
+  expect(await call(page, 'cad_get_feature', { expectedVersion: reopened.version, featureId: 'd_outline' }))
+    .toMatchObject({ feature: { profiles: [{ geometry: constructed.geometry }] } });
+  expect(await call(page, 'cad_build', { expectedVersion: reopened.version }))
+    .toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(250 * Math.PI, 7) }] });
+});
+
+test('human mixed path drawing retains invalid points and commits one exact undo step', async ({ page }) => {
+  await prepare(page);
+  await page.getByRole('button', { name: 'Design in CAD' }).click();
+  await page.getByRole('button', { name: 'Sketch', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  const blank = await context(page);
+  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  await page.getByRole('button', { name: '3-point Arc', exact: true }).click();
+  const canvas = page.getByLabel('Sketch drawing canvas');
+  await canvas.focus(); await canvas.press('Space');
+  for (let index = 0; index < 4; index++) await canvas.press('ArrowUp');
+  await canvas.press('Space');
+  expect(await context(page)).toMatchObject({ workflowOpen: true, version: blank.version });
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: blank.version,
+    edits: [{ kind: 'rename-document', name: 'Interrupted path' }] }))
+    .toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  // The endpoint cannot also be its arc's through point; the draft must survive.
+  await canvas.press('Space');
+  expect(await context(page)).toMatchObject({ workflowOpen: true, version: blank.version });
+  await canvas.press('ArrowRight'); await canvas.press('ArrowRight');
+  await canvas.press('ArrowDown'); await canvas.press('ArrowDown'); await canvas.press('Space');
+  await page.getByRole('button', { name: 'Close profile', exact: true }).click();
+  let current = await context(page);
+  expect(current).toMatchObject({ workflowOpen: false, featureCount: 1 });
+  const features = await call(page, 'cad_read_features', { expectedVersion: current.version });
+  if (!('items' in features) || !Array.isArray(features.items)) throw new Error('Missing sketch');
+  const sketch = features.items[0] as CadSketchFeature;
+  expect(sketch.profiles).toHaveLength(1);
+  expect(sketch.profiles[0].geometry).toMatchObject({ kind: 'path', segments: [
+    { kind: 'arc', radius: 10, sweep: 180 }, { kind: 'line', start: [0, 20], end: [0, 0] }
+  ] });
+  expect(await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: sketch.id }))
+    .toMatchObject({ materialAreaMm2: expect.closeTo(50 * Math.PI, 8) });
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  current = await context(page);
+  expect(await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id }))
+    .toMatchObject({ feature: { profiles: [] } });
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  current = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: current.version }))
+    .toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(500 * Math.PI, 7) }] });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'fit' } });
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: current.version }));
+  await page.screenshot({ path: 'tmp/cad-drawn-path.png' });
+});
+
 test('human sketch drawing and dimensions share undo and active-workflow protection with agents', async ({ page }) => {
   await prepare(page);
   await page.getByRole('button', { name: 'Design in CAD' }).click();

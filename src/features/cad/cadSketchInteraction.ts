@@ -1,12 +1,19 @@
 import type { CadProfile } from '@/domain/cad/cadDocument';
 
 export type SketchPoint = readonly [number, number];
-export type SketchTool = 'select' | 'rectangle' | 'circle' | 'slot' | 'polygon';
+export type SketchTool = 'select' | 'rectangle' | 'circle' | 'slot' | 'polygon' | 'path';
 
 export function snapSketchPoint(point: SketchPoint, gridStep: number, enabled: boolean): SketchPoint {
   if (!enabled) return point;
   if (!Number.isFinite(gridStep) || gridStep <= 0) throw new Error('Grid spacing must be positive.');
   return [Math.round(point[0] / gridStep) * gridStep, Math.round(point[1] / gridStep) * gridStep];
+}
+
+/** The path anchor remains reachable at every zoom, including off-grid anchors. */
+export function snapSketchPathPoint(point: SketchPoint, start: SketchPoint | null, unitsPerPixel: number, gridStep: number, enabled: boolean): SketchPoint {
+  if (start && Number.isFinite(unitsPerPixel) && unitsPerPixel > 0
+    && Math.hypot(point[0] - start[0], point[1] - start[1]) <= 6 * unitsPerPixel) return start;
+  return snapSketchPoint(point, gridStep, enabled);
 }
 
 /** Rectangle origin is always its lower left corner, regardless of drawing direction. */
