@@ -7,6 +7,7 @@ export type CadScalar = number | string;
 export type CadPoint2 = readonly [CadScalar, CadScalar];
 export type CadPoint3 = readonly [CadScalar, CadScalar, CadScalar];
 export type CadPlane = 'XY' | 'XZ' | 'YZ';
+export type CadSketchPlane = CadPlane | { readonly kind: 'datum-plane'; readonly featureId: string };
 export type CadPathSegment =
   | { readonly kind: 'line'; readonly start: CadPoint2; readonly end: CadPoint2 }
   | { readonly kind: 'arc'; readonly center: CadPoint2; readonly radius: CadScalar; readonly startAngle: CadScalar; readonly sweep: CadScalar };
@@ -27,14 +28,18 @@ export interface CadSketchProfile {
   readonly geometry: CadProfile;
 }
 export interface CadFeatureBase { readonly id: string; readonly name: string; readonly suppressed: boolean }
+export interface CadDatumPlaneFeature extends CadFeatureBase {
+  readonly kind: 'datum-plane';
+  readonly definition: { readonly kind: 'world'; readonly basePlane: CadPlane; readonly origin: CadPoint3; readonly rotation: CadPoint3 };
+}
 export interface CadSketchFeature extends CadFeatureBase {
-  readonly kind: 'sketch'; readonly plane: CadPlane; readonly offset: CadScalar; readonly profiles: readonly CadSketchProfile[];
+  readonly kind: 'sketch'; readonly plane: CadSketchPlane; readonly offset: CadScalar; readonly profiles: readonly CadSketchProfile[];
   /** Original import lineage remains exact even after editable geometry changes. */
   readonly source?: CadDxfImportSource;
 }
 /** Ordered open reference geometry. It produces no material or solid body. */
 export interface CadCurveFeature extends CadFeatureBase {
-  readonly kind: 'curve'; readonly plane: CadPlane; readonly offset: CadScalar;
+  readonly kind: 'curve'; readonly plane: CadSketchPlane; readonly offset: CadScalar;
   readonly segments: readonly CadPathSegment[];
   readonly source?: CadDxfImportSource;
 }
@@ -46,7 +51,7 @@ export interface CadPocketFeature extends CadFeatureBase {
   readonly kind: 'pocket'; readonly sketchId: string; readonly targetId: string;
   readonly extent: { readonly kind: 'through-all'; readonly direction: 'positive' | 'negative' | 'both' };
 }
-export type CadFeature = CadSketchFeature | CadCurveFeature | CadSweepFeature | CadPocketFeature
+export type CadFeature = CadDatumPlaneFeature | CadSketchFeature | CadCurveFeature | CadSweepFeature | CadPocketFeature
   | (CadFeatureBase & { readonly kind: 'imported'; readonly source: CadSolidImportSource })
   | (CadFeatureBase & { readonly kind: 'extrude'; readonly sketchId: string; readonly distance: CadScalar; readonly symmetric: boolean; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })
   | (CadFeatureBase & { readonly kind: 'revolve'; readonly sketchId: string; readonly angle: CadScalar; readonly axis: 'x' | 'y'; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })

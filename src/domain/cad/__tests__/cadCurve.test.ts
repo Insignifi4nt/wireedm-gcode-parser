@@ -105,7 +105,7 @@ describe('curve document and history boundaries', () => {
     const pad: CadFeature = { kind: 'extrude', id: 'pad', name: 'Pad', suppressed: false, sketchId: 'profile', distance: 5, symmetric: false, operation: 'new', targetId: null };
     const accepted = document([reference, sketch, pad]);
     expect(cadFeatureProducesBody(reference)).toBe(false); expect(cadFeatureProducesBody(pad)).toBe(true);
-    expect(cadFeatureInputs(reference)).toEqual({ sketchIds: [], curveIds: [], bodyIds: [] });
+    expect(cadFeatureInputs(reference)).toEqual({ datumIds: [], sketchIds: [], curveIds: [], bodyIds: [] });
     expect(cadFeatureDependencies(reference)).toEqual([]); expect(cadConsumedBodyIds(reference)).toEqual([]); expect(cadVisibleBodyIds(accepted.features)).toEqual(['pad']);
     const move: CadFeature = { kind: 'transform', id: 'move', name: 'Move', suppressed: true, sourceId: 'rail', translation: [0, 0, 0], rotation: [0, 0, 0] };
     expectCode(() => document([reference, move]), 'invalid-reference');

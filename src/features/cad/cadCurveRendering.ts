@@ -6,7 +6,7 @@ export type CadCurveViewportReference = CadViewportReference;
 
 /** Compatibility wrapper; world sketches use the same bounded analytic sampler. */
 export function prepareCadCurveReferences(features: readonly CadFeature[], parameters: Readonly<Record<string, number>>): readonly CadViewportReference[] {
-  return prepareCadViewportReferences(features.filter(feature => feature.kind === 'curve'), parameters);
+  return Object.freeze(prepareCadViewportReferences(features.filter(feature => feature.kind === 'curve' || feature.kind === 'datum-plane'), parameters).filter(reference => reference.featureKind === 'curve'));
 }
 /** Reference features remain pickable without an evaluated solid build. */
 export function pickCadCurveReference({ raycaster, references, bodies, camera, viewportHeight }: {

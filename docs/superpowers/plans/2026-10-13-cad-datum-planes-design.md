@@ -1,6 +1,6 @@
 # Datum planes and sketch placement
 
-Status: design investigation only. Domain and kernel review agree on reusable frames and separate non-consuming references. No datum source/schema/UI changes are approved here, and arbitrary-frame native support still needs focused verification.
+Status: world datum slice implemented and verified locally after checkpoint 5dc6b1a. Domain/native, storage, UI and shared agent acceptance gates pass. Plane creation, local Sketch/Curve placement, Pad/Revolve and bounded inspection/capture are enabled. Face attachment and frame-aware Loft/Sweep/Pocket remain follow-on work. The historical proposals below explain the implementation decisions.
 
 ## Useful next slice
 
@@ -68,7 +68,7 @@ Test rotated circle/arc world extrema and viewer Fit, fixed-pixel reference pick
 
 ## Domain handoff — proposed implementation contract
 
-This section specifies the next runnable world-datum slice. It does not authorize implementation. UI recommendations remain separate. Add only `datumIds` to typed feature inputs now; `bodyReferenceIds` belongs to the later face definition and must not enter this slice speculatively.
+This section records the agreed world-datum contract implemented in this slice. Add only `datumIds` to typed feature inputs now; `bodyReferenceIds` belongs to the later face definition and must not enter this slice speculatively.
 
 ### Pure APIs and lookup ownership
 
@@ -140,9 +140,9 @@ Independent ignored native probes have now passed 13 direct-frame/rigid-transfor
 
 Add a world datum, dimension-driven tilted Sketch/Curve and Pad/Revolve through normal atomic edits. Compare native results with the same principal model transformed X→Y→Z then translated, including signed/symmetric pads, local revolve axis/pivot, holes and failures. Verify large reduced angles, exact cardinal frames, noncardinal amplified rejection and unchanged principal acceptance. Test suppression batches, invalid expressions, lookup immutability/cache boundaries, reorder/cascade, both-adapter exact-source roundtrip, local DXF parity and 3D reference bounds/picking/capture. Explicit parser tests must reject each not-yet-enabled datum Loft/Sweep/Pocket before publishing a draft. Enable those individually only after their described native regressions pass.
 
-## Proposed UI flow — not implemented
+## Implemented UI flow
 
-The following recommendations were checked against the current `CadWorkbench`, `CadFeatureEditor`, `CadCurveCreationFields`, `CadExtrudeFields`, `CadSketchCanvas` and world-reference renderer. They describe the world-datum slice only. They do not authorize production controls, face attachment, native support or document changes.
+The following recommendations were checked against the current `CadWorkbench`, `CadFeatureEditor`, `CadCurveCreationFields`, `CadExtrudeFields`, `CadSketchCanvas` and world-reference renderer. The implemented flow covers world datums only; face attachment remains outside this slice.
 
 ### Creation and editing
 

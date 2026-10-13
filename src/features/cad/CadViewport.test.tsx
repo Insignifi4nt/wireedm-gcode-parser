@@ -62,6 +62,52 @@ async function flushFrame() {
 }
 async function loseContext() { await act(async () => { renderer().lost = true; renderer().domElement.dispatchEvent(new Event('webglcontextlost')); }); }
 
+describe('datum glyph rendering', () => {
+  const datum = { id: 'mount', name: 'Mount', kind: 'datum-plane', suppressed: false, definition: { kind: 'world', basePlane: 'XY', origin: [1e8, 1e8, 1e8], rotation: [30, 0, 0] } } as const;
+  it('installs bounded plane resources and capture IDs, excludes glyphs from contour Fit and disposes them once', async () => {
+    const references = prepareCadViewportReferences([datum, { id: 'outline', name: 'Outline', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+      profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 2 } }] }], {});
+    const show = async (references: readonly CadViewportReference[], version: string) => {
+      await act(async () => root.render(<CadViewport meshes={[]} references={references} referenceVersion={version} selectedId="mount" onSelect={vi.fn()} onControlsReady={value => { controls = value; }} />));
+      await currentControls().capture(new AbortController().signal);
+    };
+    await show(references, 'v1'); expect(solidViewState()).toMatchObject({ zoom: 8.5, referenceVersion: 'v1', referenceFeatureIds: ['mount', 'outline'] });
+    const scene = renderer().render.mock.calls.at(-1)![0]; const objects: (Mesh | LineSegments)[] = [];
+    scene.traverse(object => { if (object.userData.featureId === 'mount' && (object instanceof Mesh || object instanceof LineSegments)) objects.push(object); });
+    expect(objects).toHaveLength(2);
+    const patch = objects.find(object => object instanceof Mesh)!; expect(patch.position.toArray().every(value => value > 1e8 - 20 && value < 1e8 + 20)).toBe(true);
+    expect(Array.from(patch.geometry.getAttribute('position').array).every(value => Math.abs(value) < 20)).toBe(true);
+    const disposed = objects.map(object => vi.spyOn(object.geometry, 'dispose'));
+    await show(references, 'v2'); expect(disposed.every(spy => spy.mock.calls.length === 0)).toBe(true);
+    await show([], 'v3'); expect(disposed.every(spy => spy.mock.calls.length === 1)).toBe(true);
+    expect(solidViewState()).toMatchObject({ referenceVersion: 'v3', referenceFeatureIds: [] });
+  });
+  it('fits datum-only scenes and prioritizes contours over the plane patch in Body picking', async () => {
+    const nearDatum = { ...datum, definition: { ...datum.definition, origin: [0, 0, 0] as const, rotation: [0, 0, 0] as const } };
+    const references = prepareCadViewportReferences([nearDatum, { id: 'outline', name: 'Outline', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false,
+      profiles: [{ id: 'rectangle', name: 'Rectangle', construction: false, geometry: { kind: 'rectangle', x: -1, y: -1, width: 2, height: 2, cornerRadius: 0 } }] }], {});
+    const selected = vi.fn(); const topology = vi.fn();
+    const show = async (outlines: readonly CadViewportReference[], mode: 'body' | 'face' = 'body') => {
+      await act(async () => root.render(<CadViewport meshes={[]} references={outlines} referenceVersion="current" selectedId={null} onSelect={selected}
+        onTopologyPick={topology} pickMode={mode} onControlsReady={value => { controls = value; }} />));
+      await currentControls().capture(new AbortController().signal);
+    };
+    await show(references.filter(reference => reference.featureKind === 'datum-plane'));
+    expect(solidViewState()).toMatchObject({ referenceFeatureIds: ['mount'] }); expect(solidViewState().zoom).toBeGreaterThan(1);
+    await show(references); await act(async () => currentControls().fit()); await currentControls().capture(new AbortController().signal);
+    const camera = renderer().render.mock.calls.at(-1)![1]; camera.updateMatrixWorld();
+    const point = new Vector3(1, 0, 0).project(camera);
+    const canvas = renderer().domElement;
+    canvas.setPointerCapture = vi.fn(); canvas.releasePointerCapture = vi.fn();
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) });
+    const pick = async () => { await act(async () => {
+      for (const type of ['pointerdown', 'pointerup']) renderer().domElement.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, clientX: (point.x + 1) * 400, clientY: (1 - point.y) * 300 }));
+    }); };
+    await pick(); expect(selected).toHaveBeenLastCalledWith('outline');
+    selected.mockClear(); await show(references, 'face'); await pick(); expect(selected).not.toHaveBeenCalled(); expect(topology).toHaveBeenCalledWith(null, false);
+  });
+});
+
 describe('initial reference and solid framing', () => {
   const references = prepareCadViewportReferences([{ id: 'section', name: 'Section', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false,
     profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 2 } }] }], {});

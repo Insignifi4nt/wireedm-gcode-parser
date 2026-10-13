@@ -1,31 +1,37 @@
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import type { CadCurveFeature, CadPlane } from './cadDocument';
+import type { CadCurveFeature, CadSketchPlane } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { isCadImportData } from './cadImportData';
 import { CadDxfImportSourceSchema, parseCadDxfImportSource } from './cadDxfSource';
-import { CadFeatureBaseSchemaFields, CadPathSegmentSchema, CadPlaneSchema, CadScalarSchema } from './cadPrimitives';
+import { CadFeatureBaseSchemaFields, CadPathSegmentSchema, CadSketchPlaneSchema, CadScalarSchema } from './cadPrimitives';
 import { cadAnalyticSegments, cadOrderedCurveEntities, cadPathClosureTolerance, resolveCadPathSegments,
   type CadOrderedCurveEntity, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 import { cadBoundariesIntersect, cadBoundaryCandidatePairs } from './cadSketchGeometry';
 import { angleIsOnSweep, nextDown, nextUp } from '@/domain/path-intel/segments';
 import type { Bounds2 } from '@/domain/path-intel/types';
-import { cadPlaneDirectionToWorld, cadPlanePointToWorld, type CadNumericPoint2, type CadNumericPoint3 } from './cadPlanes';
+import { cadPlanePointToWorld, type CadNumericPoint2, type CadNumericPoint3 } from './cadPlanes';
+import { cadFramePointToWorld, cadFrameDirectionToWorld, cadPrincipalFrame, resolveCadSketchPlacement, type CadDatumFrameLookup, type CadResolvedFrame, type CadResolvedPlacement } from './cadDatumPlanes';
+import { cadFrameEntityBounds } from './cadFrameBounds';
 
 export const MAX_CAD_CURVE_SEGMENTS = 2048;
-export const CadCurveFeatureSchema = Type.Object({ ...CadFeatureBaseSchemaFields, kind: Type.Literal('curve'), plane: CadPlaneSchema, offset: CadScalarSchema,
+export const CadCurveFeatureSchema = Type.Object({ ...CadFeatureBaseSchemaFields, kind: Type.Literal('curve'), plane: CadSketchPlaneSchema, offset: CadScalarSchema,
   segments: Type.Array(CadPathSegmentSchema, { minItems: 1, maxItems: MAX_CAD_CURVE_SEGMENTS }), source: Type.Optional(CadDxfImportSourceSchema)
 }, { additionalProperties: false });
 export interface CadBounds3 { readonly min: CadNumericPoint3; readonly max: CadNumericPoint3 }
-export interface CadResolvedCurve {
-  readonly plane: CadPlane; readonly offset: number;
+export interface CadCurveGeometry {
+  readonly plane: CadSketchPlane; readonly offset: number;
   readonly segments: readonly ResolvedCadPathSegment[]; readonly entities: readonly CadOrderedCurveEntity[];
   readonly start: CadNumericPoint2; readonly end: CadNumericPoint2;
   readonly startTangent: CadNumericPoint2; readonly endTangent: CadNumericPoint2;
+  readonly length: number; readonly bounds: Readonly<Bounds2>;
+}
+export interface CadResolvedCurve extends CadCurveGeometry {
+  readonly frame: CadResolvedFrame;
   readonly startWorld: CadNumericPoint3; readonly endWorld: CadNumericPoint3;
   readonly startTangentWorld: CadNumericPoint3; readonly endTangentWorld: CadNumericPoint3;
-  readonly length: number; readonly bounds: Readonly<Bounds2>; readonly worldBounds: CadBounds3;
+  readonly worldBounds: CadBounds3;
 }
 export type CadCurveInspection = { readonly eligible: true; readonly curve: CadResolvedCurve }
   | { readonly eligible: false; readonly code: string; readonly message: string };
@@ -52,7 +58,7 @@ function curveBounds(entities: readonly CadOrderedCurveEntity[]): Readonly<Bound
 }
 
 /** An open reference chain preserves authored order, clockwise direction and endpoints. */
-export function resolveCadCurve(curve: CadCurveFeature, parameters: Readonly<Record<string, number>>): CadResolvedCurve {
+export function resolveCadCurveGeometry(curve: CadCurveFeature, parameters: Readonly<Record<string, number>>): CadCurveGeometry {
   if (!isCadImportData(curve) || !Value.Check(CadCurveFeatureSchema, curve) || !isCadImportData(parameters)) throw new CadError('invalid-curve', 'A reference curve requires its own complete numeric or expression-backed plane and ordered segments.');
   if (curve.source) parseCadDxfImportSource(curve.source);
   const offset = evaluateCadScalar(curve.offset, parameters);
@@ -84,21 +90,38 @@ export function resolveCadCurve(curve: CadCurveFeature, parameters: Readonly<Rec
   const start = point(first.start); const end = point(last.end);
   const startTangent = tangent(segments[0], false); const endTangent = tangent(segments[segments.length - 1], true);
   const bounds = curveBounds(entities);
-  const corners = [[bounds.minX, bounds.minY], [bounds.maxX, bounds.maxY]].map(value => cadPlanePointToWorld(curve.plane, offset, [value[0], value[1]]));
-  const min: CadNumericPoint3 = Object.freeze([Math.min(corners[0][0], corners[1][0]), Math.min(corners[0][1], corners[1][1]), Math.min(corners[0][2], corners[1][2])]);
-  const max: CadNumericPoint3 = Object.freeze([Math.max(corners[0][0], corners[1][0]), Math.max(corners[0][1], corners[1][1]), Math.max(corners[0][2], corners[1][2])]);
   let length = 0; let correction = 0;
   for (const segment of analytic.segments) { const y = segment.length - correction; const next = length + y; correction = (next - length) - y; length = next; }
-  return Object.freeze({ plane: curve.plane, offset, segments, entities, start, end, startTangent, endTangent,
-    startWorld: cadPlanePointToWorld(curve.plane, offset, start), endWorld: cadPlanePointToWorld(curve.plane, offset, end),
-    startTangentWorld: cadPlaneDirectionToWorld(curve.plane, startTangent), endTangentWorld: cadPlaneDirectionToWorld(curve.plane, endTangent),
-    length, bounds, worldBounds: Object.freeze({ min, max }) });
+  return Object.freeze({ plane: typeof curve.plane === 'string' ? curve.plane : Object.freeze({ ...curve.plane }), offset, segments, entities, start, end, startTangent, endTangent, length, bounds });
 }
-
-export function inspectCadCurve(curve: CadCurveFeature, parameters: Readonly<Record<string, number>>): CadCurveInspection {
+export function placeCadCurveGeometry(local: CadCurveGeometry, placement: CadResolvedPlacement): CadResolvedCurve {
+  const matchingPlane = typeof local.plane === 'string' ? local.plane === placement.plane : typeof placement.plane !== 'string' && local.plane.featureId === placement.plane.featureId;
+  if (!matchingPlane || local.offset !== placement.offsetMm || placement.datumId !== (typeof local.plane === 'string' ? null : local.plane.featureId)) {
+    throw new CadError('invalid-curve-placement', 'Curve geometry and placement must describe the same authored plane and offset. Resolve the current feature again.');
+  }
+  let worldBounds: CadBounds3;
+  if (typeof local.plane === 'string') {
+    const principal = cadPrincipalFrame(local.plane);
+    if (placement.frame.origin.some(value => value !== 0) || ['u', 'v', 'normal'].some(axis => {
+      const key = axis === 'u' ? 'u' : axis === 'v' ? 'v' : 'normal';
+      return placement.frame[key].some((value, index) => value !== principal[key][index]);
+    })) throw new CadError('invalid-curve-placement', 'A principal Curve placement must preserve its declared principal basis.');
+    // Keep legacy principal bounds and exact zero components unchanged.
+    const a = cadPlanePointToWorld(local.plane, placement.offsetMm, [local.bounds.minX, local.bounds.minY]);
+    const b = cadPlanePointToWorld(local.plane, placement.offsetMm, [local.bounds.maxX, local.bounds.maxY]);
+    worldBounds = Object.freeze({ min: Object.freeze([Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.min(a[2], b[2])] as const), max: Object.freeze([Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.max(a[2], b[2])] as const) });
+  } else worldBounds = cadFrameEntityBounds(local.entities, placement.frame, placement.offsetMm);
+  return Object.freeze({ ...local, offset: placement.offsetMm, frame: placement.frame, worldBounds,
+    startWorld: cadFramePointToWorld(placement.frame, placement.offsetMm, local.start), endWorld: cadFramePointToWorld(placement.frame, placement.offsetMm, local.end),
+    startTangentWorld: cadFrameDirectionToWorld(placement.frame, local.startTangent), endTangentWorld: cadFrameDirectionToWorld(placement.frame, local.endTangent) });
+}
+export function resolveCadCurve(curve: CadCurveFeature, parameters: Readonly<Record<string, number>>, lookup?: CadDatumFrameLookup): CadResolvedCurve {
+  return placeCadCurveGeometry(resolveCadCurveGeometry(curve, parameters), resolveCadSketchPlacement(curve, parameters, lookup));
+}
+export function inspectCadCurve(curve: CadCurveFeature, parameters: Readonly<Record<string, number>>, lookup?: CadDatumFrameLookup): CadCurveInspection {
   try {
-    const resolved = resolveCadCurve(curve, parameters);
-    return curve.suppressed ? { eligible: false, code: 'suppressed-curve', message: `Reference curve "${curve.name}" is suppressed.` } : { eligible: true, curve: resolved };
+    const local = resolveCadCurveGeometry(curve, parameters);
+    return curve.suppressed ? { eligible: false, code: 'suppressed-curve', message: 'Reference curve "'+curve.name+'" is suppressed.' } : { eligible: true, curve: placeCadCurveGeometry(local, resolveCadSketchPlacement(curve, parameters, lookup)) };
   } catch (error) {
     if (error instanceof CadError) return { eligible: false, code: error.code, message: error.message };
     throw error;

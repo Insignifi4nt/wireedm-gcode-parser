@@ -895,6 +895,139 @@ test('world-space sketch sections render without WASM and follow the selected fe
   expect(await context(page)).toMatchObject({ version: solid.version, featureCount: 3, workflowOpen: false });
 });
 
+test('human datum creation, placement reuse and history share atomic pending-edit guards', async ({ page }) => {
+  const wasmRequests: string[] = [];
+  page.context().on('request', request => { if (/\.wasm(?:\?|$)/.test(request.url())) wasmRequests.push(request.url()); });
+  await prepare(page);
+  await call(page, 'cad_create_document', { expectedVersion: (await context(page)).version, name: 'Mounting references' });
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'set-parameter', name: 'tilt', value: 30 }] });
+  const before = await context(page);
+  await page.getByRole('button', { name: 'Plane', exact: true }).click();
+  const properties = page.getByRole('complementary', { name: 'Feature properties' });
+  await properties.getByRole('textbox', { name: 'Name', exact: true }).fill('Cancelled plane');
+  await properties.getByRole('textbox', { name: 'Origin X mm', exact: true }).fill('12');
+  expect(await context(page)).toMatchObject({ version: before.version, featureCount: 0, workflowOpen: true });
+  expect(await rawCall(page, 'cad_capture_preview', { expectedVersion: before.version })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  await properties.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(await context(page)).toMatchObject({ version: before.version, featureCount: 0, workflowOpen: false });
+  await page.getByRole('button', { name: 'Plane', exact: true }).click();
+  await properties.getByRole('textbox', { name: 'Name', exact: true }).fill('Mounting plane');
+  await properties.getByRole('textbox', { name: 'Origin X mm', exact: true }).fill('12');
+  await properties.getByRole('textbox', { name: 'Around X deg', exact: true }).fill('tilt');
+  await properties.getByRole('button', { name: 'Apply', exact: true }).click();
+  const accepted = await context(page);
+  const rows = await call(page, 'cad_read_features', { expectedVersion: accepted.version });
+  if (!Array.isArray(rows.items) || rows.items.length !== 1) throw new Error('Missing human datum');
+  const datum = rows.items[0] as CadFeature;
+  expect(datum).toMatchObject({ kind: 'datum-plane', name: 'Mounting plane', definition: { kind: 'world', basePlane: 'XY', origin: ['12', 0, 0], rotation: ['tilt', 0, 0] } });
+  await properties.getByRole('textbox', { name: 'Origin X mm', exact: true }).fill('24');
+  expect(await rawCall(page, 'cad_inspect_plane', { expectedVersion: accepted.version, featureId: datum.id })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  await properties.getByRole('textbox', { name: 'Origin X mm', exact: true }).press('Escape');
+  expect(await context(page)).toMatchObject({ version: accepted.version, workflowOpen: false });
+  expect(await call(page, 'cad_inspect_plane', { expectedVersion: accepted.version, featureId: datum.id })).toMatchObject({ frame: { origin: [12, 0, 0] } });
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  expect(await context(page)).toMatchObject({ featureCount: 0, workflowOpen: false });
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  const redone = await context(page);
+  expect(await call(page, 'cad_get_feature', { expectedVersion: redone.version, featureId: datum.id })).toMatchObject({ feature: datum });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: redone.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: redone.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: redone.version, command: { kind: 'select-feature', featureId: datum.id } });
+  await page.getByRole('button', { name: 'Sketch', exact: true }).click();
+  await expect(properties.getByRole('combobox', { name: 'Reference plane', exact: true })).toHaveValue(`datum:${datum.id}`);
+  expect(await context(page)).toMatchObject({ version: redone.version, featureCount: 1, workflowOpen: true });
+  await properties.getByRole('button', { name: 'Apply', exact: true }).click();
+  const sketched = await context(page); const history = await call(page, 'cad_read_features', { expectedVersion: sketched.version });
+  if (!Array.isArray(history.items)) throw new Error('Missing sketch history');
+  const sketch = history.items.at(-1) as CadSketchFeature;
+  expect(sketch).toMatchObject({ kind: 'sketch', plane: { kind: 'datum-plane', featureId: datum.id }, offset: 0, profiles: [] });
+  await expect(properties.getByRole('combobox', { name: 'Reference plane', exact: true })).toHaveValue(`datum:${datum.id}`);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: sketched.version })).toMatchObject({ ok: true, data: { view: { mode: 'sketch', plane: sketch.plane } } });
+  await page.screenshot({ path: 'tmp/cad-datum-sketch-editor.png' });
+  expect(wasmRequests).toEqual([]);
+});
+
+test('agent datum placement stays exact through reference capture, parametric solids, STEP and local CAM handoff', async ({ page }) => {
+  const wasmRequests: string[] = []; const errors: string[] = [];
+  page.context().on('request', request => { if (/\.wasm(?:\?|$)/.test(request.url())) wasmRequests.push(request.url()); });
+  page.on('pageerror', error => errors.push(error.message));
+  await prepare(page);
+  await call(page, 'cad_create_document', { expectedVersion: (await context(page)).version, name: 'Tilted mounting plate' });
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'tilt', value: 30 },
+    { kind: 'add-feature', feature: { id: 'mount', name: 'Mounting plane', kind: 'datum-plane', suppressed: false,
+      definition: { kind: 'world', basePlane: 'XY', origin: [30, -20, 12], rotation: ['tilt', 0, 15] } } },
+  ] });
+  const plane = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: plane.version }))
+    .toMatchObject({ ok: true, data: { buildState: 'idle', buildVersion: null, visibleBodyIds: [],
+      view: { available: true, referenceVersion: plane.version, referenceFeatureIds: ['mount'] } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: plane.version, command: { kind: 'set-grid', visible: false } });
+  await call(page, 'cad_set_viewport', { expectedVersion: plane.version, command: { kind: 'fit' } });
+  const planeCapture = await call(page, 'cad_capture_preview', { expectedVersion: plane.version });
+  expect(planeCapture).toMatchObject({ source: '3d', viewState: { buildVersion: null, view: { referenceFeatureIds: ['mount'] } } });
+  if (typeof planeCapture.previewUrl !== 'string') throw new Error('Missing datum capture');
+  const visiblePixels = await page.evaluate(async url => {
+    const image = new Image(); image.src = url; await image.decode();
+    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+    const context = canvas.getContext('2d'); if (!context) throw new Error('Missing pixels'); context.drawImage(image, 0, 0);
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let visible = 0; for (let i = 0; i < data.length; i += 4) if (Math.max(data[i], data[i + 1], data[i + 2]) > 100 && data[i + 3] > 0) visible++;
+    return visible;
+  }, planeCapture.previewUrl);
+  expect(visiblePixels, 'A plane-only draft needs a visible datum glyph').toBeGreaterThan(150);
+  const placement = { kind: 'datum-plane', featureId: 'mount' };
+  await call(page, 'cad_edit_document', { expectedVersion: plane.version, edits: [
+    { kind: 'add-feature', feature: { id: 'profile', name: 'Mounting profile', kind: 'sketch', suppressed: false, plane: placement, offset: 2,
+      profiles: [{ id: 'plate', name: 'Plate', construction: false, geometry: { kind: 'rectangle', x: -10, y: -5, width: 20, height: 10, cornerRadius: 0 } },
+        { id: 'hole', name: 'Hole', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 2 } }] } },
+    { kind: 'add-feature', feature: { id: 'rail', name: 'Datum guide', kind: 'curve', suppressed: false, plane: placement, offset: 2,
+      segments: [{ kind: 'line', start: [0, 0], end: [20, 0] }] } },
+  ] });
+  const references = await context(page);
+  const expectedOrigin = [30 + Math.sin(Math.PI / 12), -20 - Math.cos(Math.PI / 12), 12 + Math.sqrt(3)];
+  expect(await call(page, 'cad_inspect_plane', { expectedVersion: references.version, featureId: 'profile' })).toMatchObject({
+    featureKind: 'sketch', plane: placement, datumId: 'mount', offsetMm: 2, frame: { origin: [30, -20, 12] },
+    placedOriginMm: expectedOrigin.map(value => expect.closeTo(value, 10)), persisted: false });
+  expect(await call(page, 'cad_measure_curve', { expectedVersion: references.version, curveId: 'rail' })).toMatchObject({
+    lengthMm: 20, startWorldMm: expectedOrigin.map(value => expect.closeTo(value, 10)) });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: references.version }))
+    .toMatchObject({ ok: true, data: { view: { referenceVersion: references.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: references.version, command: { kind: 'edit-sketch', sketchId: 'profile' } });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: references.version }))
+    .toMatchObject({ ok: true, data: { view: { mode: 'sketch', available: true, plane: placement } } });
+  expect(await call(page, 'cad_capture_preview', { expectedVersion: references.version })).toMatchObject({ source: '2d', sketchId: 'profile', viewState: { view: { plane: placement } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: references.version, command: { kind: 'finish-sketch' } });
+  expect(wasmRequests, 'Datum-only references, local editing, inspection and capture must not initialize WASM').toEqual([]);
+  await call(page, 'cad_edit_document', { expectedVersion: references.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'pad', name: 'Mounting plate', kind: 'extrude', suppressed: false, sketchId: 'profile', distance: 5, symmetric: false, operation: 'new', targetId: null,
+  } }] });
+  const padded = await context(page); const volume = (200 - 4 * Math.PI) * 5;
+  expect(await call(page, 'cad_build', { expectedVersion: padded.version })).toMatchObject({ diagnostics: [], bodies: [{ featureId: 'pad', volumeMm3: expect.closeTo(volume, 6) }] });
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: padded.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'unsupported_pocket', name: 'Through all', kind: 'pocket', suppressed: false, sketchId: 'profile', targetId: 'pad', extent: { kind: 'through-all', direction: 'both' },
+  } }] })).toMatchObject({ ok: false, error: { code: 'unsupported-datum-operation' } });
+  expect(await context(page)).toMatchObject({ version: padded.version, featureCount: 4 });
+  await call(page, 'cad_edit_document', { expectedVersion: padded.version, edits: [{ kind: 'set-parameter', name: 'tilt', value: 60 }] });
+  const tilted = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: tilted.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(volume, 6) }] });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: tilted.version }))
+    .toMatchObject({ ok: true, data: { buildVersion: tilted.version, view: { available: true, referenceVersion: tilted.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: tilted.version, command: { kind: 'set-view', view: 'Isometric' } });
+  await call(page, 'cad_set_viewport', { expectedVersion: tilted.version, command: { kind: 'fit' } });
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: tilted.version }));
+  await page.screenshot({ path: 'tmp/cad-datum-mounting-plate.png' });
+  const downloaded = page.waitForEvent('download');
+  await call(page, 'cad_export_solid', { expectedVersion: tilted.version, format: 'step' });
+  const download = await downloaded; const path = await download.path();
+  if (!path) throw new Error('Missing tilted STEP export');
+  expect(await readFile(path, 'utf8')).toContain('MANIFOLD_SOLID_BREP');
+  expect(await call(page, 'cad_send_to_cam', { expectedVersion: tilted.version, sketchId: 'profile' }))
+    .toMatchObject({ opened: true, sourceDocumentId: tilted.documentId, sketchId: 'profile' });
+  await expect(page.locator('[data-preview-model="upid"]')).toBeVisible();
+  expect(await call(page, 'edm_get_context')).toMatchObject({ draft: { dirty: false, model: 'upid' } });
+  expect(errors).toEqual([]);
+});
+
 test('the first solid fits after reference-only viewing while later rebuilds preserve the camera', async ({ page }) => {
   await prepare(page); const initial = await context(page);
   await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Tall pin' });

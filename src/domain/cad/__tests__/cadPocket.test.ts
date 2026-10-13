@@ -312,7 +312,7 @@ describe('Through-all Pocket schema and atomic history', () => {
     expect(document([section(), base, feature]).features[2]).toEqual(feature);
   });
   it('has typed sketch/solid dependencies and consumes only its selected current target', () => {
-    expect(cadFeatureInputs(feature)).toEqual({ sketchIds: ['section'], curveIds: [], bodyIds: ['target'] });
+    expect(cadFeatureInputs(feature)).toEqual({ datumIds: [], sketchIds: ['section'], curveIds: [], bodyIds: ['target'] });
     expect(cadFeatureDependencies(feature)).toEqual(['section', 'target']);
     expect(cadFeatureProducesBody(feature)).toBe(true);
     const other: CadFeature = { ...base, id: 'other' };

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { CadDocument, CadFeature, CadScalar } from '@/domain/cad/cadDocument';
 import type { CadPocketDirection, CadPocketFeature } from '@/domain/cad/cadPocket';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
+import { CadPlacementNormal } from './CadPlacementNormal';
 import { ScalarField, SelectField } from './CadFields';
 
 type DistanceFeature = Extract<CadFeature, { kind: 'extrude' }>;
@@ -52,7 +53,7 @@ export function CadExtrudeFields({ feature, initialFeature, document, sketches, 
     onChange({ ...base, kind: 'pocket', targetId: feature.targetId || bodies.at(-1)?.value || '', extent: { kind: 'through-all', direction } });
   };
   const sketch = document.features.find(entry => entry.id === feature.sketchId && entry.kind === 'sketch');
-  const normal = sketch?.kind === 'sketch' && sketch.plane === 'XZ' ? ['−Y', '+Y'] : sketch?.kind === 'sketch' && sketch.plane === 'YZ' ? ['+X', '−X'] : ['+Z', '−Z'];
+  const normal = sketch?.kind === 'sketch' && typeof sketch.plane !== 'string' ? ['Along plane normal (+n)', 'Opposite plane normal (−n)'] : sketch?.kind === 'sketch' && sketch.plane === 'XZ' ? ['−Y', '+Y'] : sketch?.kind === 'sketch' && sketch.plane === 'YZ' ? ['+X', '−X'] : ['+Z', '−Z'];
   const updateDistance = (values: Partial<DistanceDraft>) => {
     if (feature.kind !== 'extrude') return;
     rememberedDistance.current = { distance: feature.distance, symmetric: feature.symmetric, ...values };
@@ -73,6 +74,7 @@ export function CadExtrudeFields({ feature, initialFeature, document, sketches, 
       ]} onChange={direction => onChange({ ...feature, extent: { kind: 'through-all', direction } })} />
       : <><ScalarField label="Length" value={feature.distance} parameters={document.parameters} onChange={(distance: CadScalar) => updateDistance({ distance })} />
         <label className="cad-check"><input type="checkbox" checked={feature.symmetric} onChange={event => updateDistance({ symmetric: event.target.checked })} /> Symmetric about sketch plane</label></>}
+    {sketch?.kind === 'sketch' && <CadPlacementNormal plane={sketch.plane} document={document} />}
     {operation !== 'new' && <SelectField label="Target body" value={targetId} options={availableOptions(bodies, targetId, 'Body')} onChange={value => onChange({ ...feature, targetId: value })} />}
   </>;
 }

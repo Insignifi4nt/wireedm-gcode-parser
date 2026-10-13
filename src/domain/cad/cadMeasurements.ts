@@ -1,8 +1,11 @@
-import type { CadDocument, CadPlane, CadProfile } from './cadDocument';
+import type { CadDocument, CadSketchPlane, CadProfile } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { parseCadDocument } from './cadSchema';
 import { cadAnalyticPathMetrics, resolveCadProfile, resolveCadSketchRegions, type ResolvedCadProfile } from './cadSketchGeometry';
+
+import { prepareCadDocumentFrames } from './cadDocumentFrames';
+import { resolveCadSketchPlacement, type CadResolvedFrame } from './cadDatumPlanes';
 
 export interface CadBounds2 {
   readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number;
@@ -13,7 +16,8 @@ export interface CadProfileMeasurement {
   readonly areaMm2: number; readonly perimeterMm: number; readonly boundsMm: CadBounds2;
 }
 export interface CadSketchMeasurement {
-  readonly sketchId: string; readonly name: string; readonly plane: CadPlane;
+  readonly sketchId: string; readonly name: string; readonly plane: CadSketchPlane;
+  readonly frame: CadResolvedFrame | null;
   readonly offsetMm: number; readonly suppressed: boolean;
   readonly coordinateSystem: 'sketch-local';
   readonly materialAreaMm2: number; readonly boundaryLengthMm: number;
@@ -71,6 +75,7 @@ export function measureCadSketch(document: CadDocument, sketchId: string): CadSk
   const sketch = validated.features.find(feature => feature.id === sketchId);
   if (sketch?.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose an existing sketch to measure.');
   const regions = resolveCadSketchRegions(sketch, validated.parameters);
+  const frame = sketch.suppressed ? null : resolveCadSketchPlacement(sketch, validated.parameters, prepareCadDocumentFrames(validated)).frame;
   const depths = new Map(regions.flatMap(region => [region.boundary, ...region.voids]).map(contour => [contour.profile.id, contour.depth]));
   const profiles = sketch.profiles.map(profile => ({ profileId: profile.id, name: profile.name, kind: profile.geometry.kind,
     role: profile.construction && profile.role !== undefined ? profile.role
@@ -81,7 +86,7 @@ export function measureCadSketch(document: CadDocument, sketchId: string): CadSk
     minX: Math.min(bounds.minX, profile.boundsMm.minX), minY: Math.min(bounds.minY, profile.boundsMm.minY),
     maxX: Math.max(bounds.maxX, profile.boundsMm.maxX), maxY: Math.max(bounds.maxY, profile.boundsMm.maxY)
   }, null);
-  return { sketchId: sketch.id, name: sketch.name, plane: sketch.plane, offsetMm: evaluateCadScalar(sketch.offset, validated.parameters),
+  return { sketchId: sketch.id, name: sketch.name, plane: sketch.plane, frame, offsetMm: evaluateCadScalar(sketch.offset, validated.parameters),
     suppressed: sketch.suppressed, coordinateSystem: 'sketch-local', profiles, boundsMm,
     cutContourCount: cuts.length,
     materialAreaMm2: cuts.reduce((area, profile) => area + (profile.role === 'outer' ? profile.areaMm2 : -profile.areaMm2), 0),

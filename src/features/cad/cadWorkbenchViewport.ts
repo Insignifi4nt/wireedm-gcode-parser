@@ -112,11 +112,11 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
       const rendered = bindings.rendered;
       const before = getState();
       if (!rendered || !before.view?.available) throw new ToolError('CAPTURE_UNAVAILABLE', 'Wait for a visible CAD viewport to load.');
-      const hasReferences = bindings.document.features.some(feature => !feature.suppressed && (feature.kind === 'curve' || feature.kind === 'sketch' && feature.profiles.length > 0));
+      const hasReferences = bindings.document.features.some(feature => !feature.suppressed && (feature.kind === 'datum-plane' || feature.kind === 'curve' || feature.kind === 'sketch' && feature.profiles.length > 0));
       const requiresBuild = !hasReferences || bindings.document.features.some(feature => cadFeatureProducesBody(feature) && !feature.suppressed);
       if (before.view.mode === 'solid') {
         if (requiresBuild && (bindings.buildState !== 'ready' || bindings.buildVersion !== bindings.documentVersion)) throw new ToolError('STALE_STATE', 'Wait for this exact CAD draft to finish building before capturing its solid view.');
-        if (hasReferences && !referencesInstalled(bindings, before)) throw new ToolError('STALE_STATE', 'Wait for the current sketch and curve references to appear before capturing the view.');
+        if (hasReferences && !referencesInstalled(bindings, before)) throw new ToolError('STALE_STATE', 'Wait for the current reference geometry to appear before capturing the view.');
       }
       const image = await rendered.capture(signal);
       signal.throwIfAborted();

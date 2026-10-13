@@ -148,7 +148,7 @@ describe('Sweep saved history compatibility and atomic operations', () => {
   });
   it('validates typed preceding references and dependency-aware deletion/cascade', () => {
     const original=document([section(),rail(),feature]);
-    expect(cadFeatureInputs(feature)).toEqual({sketchIds:['section'],curveIds:['rail'],bodyIds:[]});
+    expect(cadFeatureInputs(feature)).toEqual({sketchIds:['section'],curveIds:['rail'],bodyIds:[],datumIds:[]});
     expect(cadFeatureDependencies(feature)).toEqual(['section','rail']);
     expect(cadFeatureProducesBody(feature)).toBe(true); expect(cadVisibleBodyIds(original.features)).toEqual(['sweep']);
     expectCode(()=>document([feature,section(),rail()]),'invalid-reference');

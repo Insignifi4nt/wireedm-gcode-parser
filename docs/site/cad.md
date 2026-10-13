@@ -6,13 +6,17 @@ Drag a divider beside the feature tree or properties panel to resize it. You can
 
 ## Design a part
 
-1. Create a sketch on XY, XZ or YZ. Draw a closed Rectangle, Circle, Polygon, Slot or line/arc Path. Use the numeric editor for exact position and size. Rectangles support rounded corners; slots have an angle. Construction profiles remain visible for reference but do not enter solids or CAM exports.
+1. Create a sketch on XY, XZ, YZ or a datum plane. Draw a closed Rectangle, Circle, Polygon, Slot or line/arc Path. Use the numeric editor for exact position and size. Rectangles support rounded corners; slots have an angle. Construction profiles remain visible for reference but do not enter solids or CAM exports.
 2. Draw nested contours normally. Enclosed contours create voids; another contour inside a void creates an island. CAD determines these regions automatically. Touching, crossing and self-intersecting contours are rejected. To combine overlapping solids, use separate sketches and a solid operation.
 3. Finish sketching and create a Pad (extrusion) or Revolve. Pad supports a symmetric extent. New body, Join and Cut explicitly control whether material is created, added or removed.
 4. Select a feature to edit its dimensions. Later features rebuild from the edited history. Pick edges before Fillet or Chamfer to limit the operation, or choose all edges. Pick one planar face before Shell to open that face and hollow the body inward. Transform, mirror, linear/circular pattern and Boolean union/cut/intersection operate on solid bodies.
 5. Save the document. Saved CAD documents appear in the CAD library. Returning to the workbench retains the in-memory draft; save before closing the browser or changing documents.
 
 Use isometric, top, front or right views, fit the part, and navigate with the viewport mouse controls. Rendering updates on demand. The solid engine loads only when needed, so its first operation can take longer. Rebuilding and failed models are labelled; export cannot silently use a failed history.
+
+Use **Plane** for a translated or tilted sketch support. Choose its base plane, world origin and rotations around X, Y and Z, then Apply. Rotation turns the plane around its own origin in that world-axis order. These fields accept named parameters. Select the plane before creating a Sketch or Curve, or choose a preceding plane in the feature's placement field. Offset follows its normal; changing placement preserves local geometry. The small plane patch illustrates a reference, not a material face or a finite size.
+
+Datum planes support Sketches, Curves, Pads and Revolves. Loft, Sweep and Through-all Pocket currently require principal planes. Unsupported or numerically uncertain native placement is rejected explicitly; reducing distance from the world origin or simplifying the placement can resolve precision errors. Plane-only designs and references remain usable without loading the solid engine. Attaching a sketch directly to a changing solid face is not supported.
 
 In sketch Select mode, click inside a contour or near its outline. Nested interiors select the innermost contour; construction geometry is selected by its outline. Picking uses the pointer position independently of grid snapping. Escape discards pending dimensions or parameter edits. Ctrl/Cmd+S saves only after those edits are applied or cancelled; Ctrl/Cmd+Z in a text field keeps its normal text-editing behavior.
 
@@ -60,7 +64,7 @@ This release provides dimension-driven profiles and parametric feature history. 
 
 ## Send a sketch to CAM
 
-Select the intended sketch and use **File → Send to CAM**. The app saves the exact CAD draft first, then creates a new CAM project from that sketch's non-construction closed contours. Lines, circles, rounded corners and slot arcs stay analytic. XZ and YZ sketches transfer in their own two-dimensional coordinates, in millimetres.
+Select the intended sketch and use **File → Send to CAM**. The app saves the exact CAD draft first, then creates a new CAM project from that sketch's non-construction closed contours. Lines, circles, rounded corners and slot arcs stay analytic. Principal and datum-plane sketches transfer in their own two-dimensional coordinates, in millimetres.
 
 **This transfers the selected sketch, not the silhouette or section of the final solid.** Later pockets, transforms, patterns and fillets do not change the original sketch's contours. Select the actual manufacturing sketch and review the result. CAD and CAM are separate editable documents after transfer; later CAD changes require a new handoff and never overwrite an existing CAM project or saved revision.
 

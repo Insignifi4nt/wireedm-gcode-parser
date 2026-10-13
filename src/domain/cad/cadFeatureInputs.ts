@@ -1,10 +1,10 @@
 import type { CadFeature } from './cadDocument';
 
 /** Typed references stay independent of schema/geometry initialization. */
-export function cadFeatureInputs(feature: CadFeature): { readonly sketchIds: readonly string[]; readonly curveIds: readonly string[]; readonly bodyIds: readonly string[] } {
+function operandInputs(feature: CadFeature): { readonly sketchIds: readonly string[]; readonly curveIds: readonly string[]; readonly bodyIds: readonly string[] } {
   const curveIds: readonly string[] = [];
   switch (feature.kind) {
-    case 'sketch': case 'curve': case 'imported': return { sketchIds: [], curveIds, bodyIds: [] };
+    case 'datum-plane': case 'sketch': case 'curve': case 'imported': return { sketchIds: [], curveIds, bodyIds: [] };
     case 'extrude': case 'revolve': return { sketchIds: [feature.sketchId], curveIds, bodyIds: feature.targetId === null ? [] : [feature.targetId] };
     case 'pocket': return { sketchIds: [feature.sketchId], curveIds, bodyIds: [feature.targetId] };
     case 'loft': return { sketchIds: feature.sketchIds, curveIds, bodyIds: feature.targetId === null ? [] : [feature.targetId] };
@@ -15,14 +15,18 @@ export function cadFeatureInputs(feature: CadFeature): { readonly sketchIds: rea
     default: { const exhaustive: never = feature; return exhaustive; }
   }
 }
+export function cadFeatureInputs(feature: CadFeature) {
+  const datumIds: readonly string[] = (feature.kind === 'sketch' || feature.kind === 'curve') && typeof feature.plane !== 'string' ? [feature.plane.featureId] : [];
+  return { ...operandInputs(feature), datumIds };
+}
 export function cadFeatureDependencies(feature: CadFeature): string[] {
   const inputs = cadFeatureInputs(feature);
-  return [...inputs.sketchIds, ...inputs.curveIds, ...inputs.bodyIds];
+  return [...inputs.sketchIds, ...inputs.curveIds, ...inputs.bodyIds, ...inputs.datumIds];
 }
-export type CadBodyFeature = Exclude<CadFeature, { readonly kind: 'sketch' | 'curve' }>;
+export type CadBodyFeature = Exclude<CadFeature, { readonly kind: 'datum-plane' | 'sketch' | 'curve' }>;
 export function cadFeatureProducesBody(feature: CadFeature): feature is CadBodyFeature {
   switch (feature.kind) {
-    case 'sketch': case 'curve': return false;
+    case 'datum-plane': case 'sketch': case 'curve': return false;
     case 'imported': case 'extrude': case 'revolve': case 'loft': case 'sweep': case 'pocket': case 'fillet': case 'chamfer': case 'shell':
     case 'boolean': case 'transform': case 'linear-pattern': case 'circular-pattern': case 'mirror': return true;
     default: { const exhaustive: never = feature; return exhaustive; }

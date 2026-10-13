@@ -310,16 +310,22 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     } finally { if (importAbort.current === controller) importAbort.current = null; }
   }
   async function measureSketch(sketchId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
-    editable(expectedVersion); session.assertWorkflowClosed();
+    editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
     const { measureCadSketch } = await import('@/domain/cad/cadMeasurements');
-    signal?.throwIfAborted(); session.assertVersion(expectedVersion); session.assertWorkflowClosed();
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
     return measureCadSketch(session.getSnapshot().document, sketchId);
   }
   async function measureCurve(curveId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
-    editable(expectedVersion); session.assertWorkflowClosed();
+    editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
     const { measureCadCurve } = await import('@/domain/cad/cadCurveMeasurements');
-    signal?.throwIfAborted(); session.assertVersion(expectedVersion); session.assertWorkflowClosed();
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
     return measureCadCurve(session.getSnapshot().document, curveId);
+  }
+  async function inspectPlane(featureId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
+    editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
+    const { inspectCadPlane } = await import('@/domain/cad/cadPlaneInspection');
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
+    return { version: expectedVersion, ...inspectCadPlane(session.getSnapshot().document, featureId), persisted: false };
   }
   async function inspectSweep(sketchId: string, curveId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
@@ -491,7 +497,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   function back() { connected(); session.assertWorkflowClosed(); changeOpen(false); }
   const isBusy = () => busy.current;
   return { session, snapshot, open, enter, edit, save, list, showLibrary, library, libraryDiagnostic, closeLibrary: () => setLibrary(null),
-    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, measureCurve, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
+    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, measureCurve, inspectPlane, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
     setViewportControls, readViewport: (expectedVersion: string) => getViewport(expectedVersion).getState(), changeViewport, captureViewport, previewArtifact,
     inspectTopology: topology.inspect, resolveTopologyPicks: topology.resolve,
     build, buildVersion, buildState, errorMessage, setErrorMessage, storageBusy, isBusy, isOpen: () => current.current.open,

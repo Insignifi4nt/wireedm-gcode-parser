@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, Grid2X2, Magnet, Maximize2, Undo2, X } from 'lucide-react';
 import type { CadCurveFeature, CadPathSegment, CadProfile, CadSketchFeature, CadSketchProfile } from '@/domain/cad/cadDocument';
-import { resolveCadCurve } from '@/domain/cad/cadCurve';
+import { resolveCadCurveGeometry } from '@/domain/cad/cadCurve';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { cadProfileToEntities, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
 import type { DxfEntity } from '@/domain/dxf/types';
@@ -47,9 +47,10 @@ const SafeProfile = memo(function SafeProfile({ profile, parameters }: { profile
 
 const NO_PROFILES: readonly CadSketchProfile[] = Object.freeze([]);
 
-export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, onSelectProfile, onAddProfile, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onError, cancelSignal, interactionLocked = false, onControlsReady, viewLocked = false }: {
+export function CadSketchCanvas({ sketch, parameters, placementLabel, tool, selectedProfileId, onSelectProfile, onAddProfile, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onError, cancelSignal, interactionLocked = false, onControlsReady, viewLocked = false }: {
   sketch: CadSketchFeature | CadCurveFeature;
   parameters: Readonly<Record<string, number>>;
+  placementLabel?: string;
   tool: SketchTool;
   selectedProfileId: string | null;
   onSelectProfile(id: string | null): void;
@@ -93,15 +94,16 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
   const profiles = sketch.kind === 'sketch' ? sketch.profiles : NO_PROFILES;
   const savedCurve = useMemo(() => {
     if (sketch.kind !== 'curve' || !sketch.segments.length) return null;
-    try { return resolveCadCurve(sketch, parameters); } catch { return null; }
+    try { return resolveCadCurveGeometry(sketch, parameters); } catch { return null; }
   }, [sketch, parameters]);
   const profilePicker = useMemo(() => createCadSketchProfilePicker(profiles, parameters), [profiles, parameters]);
   const width = span * aspect;
+  const renderedPlane = useMemo(() => typeof sketch.plane === 'string' ? sketch.plane : Object.freeze({ ...sketch.plane }), [sketch.plane]);
   const viewRevision = useRef({ signature: '', revision: 0 });
   const viewSignature = JSON.stringify([sketch.plane, center, span, aspect, grid, snap, gridStep]);
   if (viewRevision.current.signature !== viewSignature) { viewRevision.current = { signature: viewSignature, revision: viewRevision.current.revision + 1 }; }
-  const currentView = useRef<CadRenderedViewState>({ mode: sketch.kind, available: false, plane: sketch.plane, gridVisible: grid, snapEnabled: snap, gridStepMm: gridStep, centerMm: center, heightSpanMm: span, revision: viewRevision.current.revision });
-  currentView.current = Object.freeze({ mode: sketch.kind, available: Boolean(svg.current), plane: sketch.plane, gridVisible: grid, snapEnabled: snap, gridStepMm: gridStep, centerMm: Object.freeze([...center] satisfies [number, number]), heightSpanMm: span, revision: viewRevision.current.revision });
+  const currentView = useRef<CadRenderedViewState>({ mode: sketch.kind, available: false, plane: renderedPlane, gridVisible: grid, snapEnabled: snap, gridStepMm: gridStep, centerMm: center, heightSpanMm: span, revision: viewRevision.current.revision });
+  currentView.current = Object.freeze({ mode: sketch.kind, available: Boolean(svg.current), plane: renderedPlane, gridVisible: grid, snapEnabled: snap, gridStepMm: gridStep, centerMm: Object.freeze([...center] satisfies [number, number]), heightSpanMm: span, revision: viewRevision.current.revision });
   const fitView = useRef<(() => void) | null>(null);
   const initialCursorFit = useRef(false);
   useLayoutEffect(() => {
@@ -291,7 +293,7 @@ export function CadSketchCanvas({ sketch, parameters, tool, selectedProfileId, o
       </g>
     </svg>
     <p id={instructionsId} className="cad-sr-only">{interactionLocked ? 'Drawing is paused while another edit or operation is active.' : instruction} Keyboard: arrow keys move the cursor, Shift moves ten grid steps, Space adds a point, Enter accepts an arc through-point or closes a ready path or polyline, Backspace undoes the last point or segment, Escape cancels drawing, F fits the sketch.</p>
-    <div className="cad-view-tools"><span className="cad-plane-label">{sketch.plane}</span><button aria-label={sketch.kind === 'curve' ? 'Fit curve' : 'Fit sketch'} disabled={viewLocked} onClick={fit}><Maximize2 size={14} /></button><button aria-label="Toggle sketch grid" disabled={viewLocked} aria-pressed={grid} onClick={() => setGrid(!grid)}><Grid2X2 size={14} /></button><button aria-label="Toggle grid snapping" disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><Magnet size={14} /></button><label className="cad-grid-step">Grid <input aria-label="Grid spacing" disabled={viewLocked} type="number" min="0.01" value={gridStep} onChange={(event) => { const value = Number(event.target.value); if (value > 0 && Number.isFinite(value)) setGridStep(value); }} /> mm</label></div>
+    <div className="cad-view-tools"><span className="cad-plane-label">{placementLabel ?? (typeof sketch.plane === 'string' ? sketch.plane : 'Datum plane')}</span><button aria-label={sketch.kind === 'curve' ? 'Fit curve' : 'Fit sketch'} disabled={viewLocked} onClick={fit}><Maximize2 size={14} /></button><button aria-label="Toggle sketch grid" disabled={viewLocked} aria-pressed={grid} onClick={() => setGrid(!grid)}><Grid2X2 size={14} /></button><button aria-label="Toggle grid snapping" disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><Magnet size={14} /></button><label className="cad-grid-step">Grid <input aria-label="Grid spacing" disabled={viewLocked} type="number" min="0.01" value={gridStep} onChange={(event) => { const value = Number(event.target.value); if (value > 0 && Number.isFinite(value)) setGridStep(value); }} /> mm</label></div>
     {!interactionLocked && (tool !== 'select' || points.length > 0) && <div className={`cad-sketch-instruction ${tool === 'path' ? 'cad-path-instruction' : ''}`} onKeyDown={event => {
       if (tool !== 'path' || !pathPending || interactionLocked || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key === 'Backspace' || event.key === 'Escape') { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }, true); }

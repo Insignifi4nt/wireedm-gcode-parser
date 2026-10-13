@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CadSketchFeature } from '@/domain/cad/cadDocument';
+import type { CadCurveFeature, CadSketchFeature } from '@/domain/cad/cadDocument';
 import { importCadDxfSketch } from '@/domain/cad/cadDxfImport';
 import type { EditorPreviewCapture } from '@/features/webmcp/previewCapture';
 import { CadSketchCanvas } from './CadSketchCanvas';
@@ -39,6 +39,17 @@ async function mount(feature = sketch, parameters: Readonly<Record<string, numbe
     onControlsReady={value => { controls = value; }} />));
 }
 describe('sketch preview capture layout', () => {
+  it('renders a datum Curve in unchanged local coordinates and publishes a frozen accepted reference', async () => {
+    const feature: CadCurveFeature = { id: 'rail', name: 'Rail', kind: 'curve', suppressed: false, plane: { kind: 'datum-plane', featureId: 'mount' }, offset: 4,
+      segments: [{ kind: 'line', start: [2, 3], end: [12, 3] }] };
+    await act(async () => root.render(<CadSketchCanvas sketch={feature} parameters={{}} placementLabel="Mount" tool="select" selectedProfileId={null}
+      onSelectProfile={vi.fn()} onAddProfile={vi.fn()} onPendingChange={vi.fn()} onError={vi.fn()} cancelSignal={0} onControlsReady={value => { controls = value; }} />));
+    expect(container.querySelector('.cad-plane-label')?.textContent).toBe('Mount');
+    expect(container.querySelector('.cad-profile line')?.getAttribute('x1')).toBe('2');
+    const state = currentControls().getState(); expect(state).toMatchObject({ mode: 'curve', plane: feature.plane, centerMm: [7, 3] });
+    if (state.mode === 'solid') throw new Error('Curve view unavailable'); expect(Object.isFrozen(state.plane)).toBe(true);
+    rasterize.mockResolvedValue(image); await expect(currentControls().capture(new AbortController().signal)).resolves.toBe(image);
+  });
   it('measures the visible aspect before publishing controls so initial observer delivery cannot stale capture', async () => {
     await mount(); expect(currentControls().getState().available).toBe(true);
     const rendered = container.querySelector('svg');

@@ -96,7 +96,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     const solids = new THREE.Group();
     const referenceLines = new THREE.Group();
     const pickableReferences: THREE.LineSegments[] = [];
-    const installedReferences = new Map<string, { reference: CadViewportReference; line: THREE.LineSegments }>();
+    const installedReferences = new Map<string, { reference: CadViewportReference; line: THREE.LineSegments; patch?: THREE.Mesh }>();
     const pickableBodies: THREE.Mesh[] = [];
     const pickableEdges: THREE.LineSegments[] = [];
     const meshByObject = new Map<THREE.Object3D, CadMesh>();
@@ -143,7 +143,9 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       fittingAutomatically = automatic;
       try {
         const bounds = new THREE.Box3().setFromObject(solids);
-        for (const reference of data.current.references) bounds.union(new THREE.Box3(new THREE.Vector3(...reference.bounds.min), new THREE.Vector3(...reference.bounds.max)));
+        const contours = data.current.references.filter(reference => reference.featureKind !== 'datum-plane');
+        const fitReferences = !bounds.isEmpty() || contours.length ? contours : data.current.references;
+        for (const reference of fitReferences) bounds.union(new THREE.Box3(new THREE.Vector3(...reference.bounds.min), new THREE.Vector3(...reference.bounds.max)));
         const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
         const size = bounds.isEmpty() ? new THREE.Vector3(100, 100, 100) : bounds.getSize(new THREE.Vector3());
         const direction = camera.position.clone().sub(controls.target).normalize();
@@ -170,11 +172,12 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       }
     };
     const disposeReferences = () => {
-      for (const { line } of installedReferences.values()) disposeReference(line);
+      for (const { line, patch } of installedReferences.values()) disposeReference(line, patch);
       installedReferences.clear();
       pickableReferences.length = 0;
     };
-    const disposeReference = (line: THREE.LineSegments) => {
+    const disposeReference = (line: THREE.LineSegments, patch?: THREE.Mesh) => {
+      if (patch) { patch.geometry.dispose(); for (const material of Array.isArray(patch.material) ? patch.material : [patch.material]) material.dispose(); referenceLines.remove(patch); }
       line.geometry.dispose();
       for (const material of Array.isArray(line.material) ? line.material : [line.material]) material.dispose();
       referenceLines.remove(line);
@@ -182,7 +185,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     const referenceColor = (reference: CadViewportReference) => reference.featureId === data.current.selectedId ? 0xf0c779 : reference.construction ? 0x698594 : 0x89b9c6;
     const updateReferenceStyles = () => {
       const worldPerPixel = (camera.top - camera.bottom) / camera.zoom / Math.max(1, container.clientHeight);
-      for (const { reference, line } of installedReferences.values()) {
+      for (const { reference, line, patch } of installedReferences.values()) {
+        if (patch && patch.material instanceof THREE.MeshBasicMaterial) { patch.material.color.setHex(referenceColor(reference)); patch.material.opacity = reference.featureId === data.current.selectedId ? .12 : .055; }
         if (line.material instanceof THREE.LineBasicMaterial) line.material.color.setHex(referenceColor(reference));
         if (line.material instanceof THREE.LineDashedMaterial) { line.material.dashSize = worldPerPixel * 6; line.material.gapSize = worldPerPixel * 4; }
       }
@@ -192,7 +196,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         const wanted = new Map(data.current.references.map(reference => [reference.referenceId, reference]));
         for (const [id, installed] of installedReferences) {
           if (wanted.get(id) === installed.reference) continue;
-          disposeReference(installed.line); installedReferences.delete(id);
+          disposeReference(installed.line, installed.patch); installedReferences.delete(id);
         }
         for (const reference of data.current.references) {
           if (installedReferences.has(reference.referenceId)) continue;
@@ -206,8 +210,14 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           if (reference.construction) line.computeLineDistances();
           line.renderOrder = 1;
           line.position.set(origin[0], origin[1], origin[2]);
-          line.userData.featureId = reference.featureId; line.userData.referenceId = reference.referenceId; referenceLines.add(line); line.updateMatrixWorld(true);
-          installedReferences.set(reference.referenceId, { reference, line });
+          line.userData.featureKind = reference.featureKind; line.userData.featureId = reference.featureId; line.userData.referenceId = reference.referenceId; referenceLines.add(line); line.updateMatrixWorld(true);
+          let patch: THREE.Mesh | undefined;
+          if (reference.planePatch) {
+            const patchGeometry = new THREE.BufferGeometry(); patchGeometry.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(reference.planePatch, origin), 3));
+            patch = new THREE.Mesh(patchGeometry, new THREE.MeshBasicMaterial({ color: referenceColor(reference), transparent: true, opacity: .055, side: THREE.DoubleSide, depthWrite: false }));
+            patch.position.set(...origin); patch.userData.featureId = reference.featureId; referenceLines.add(patch); patch.updateMatrixWorld(true);
+          }
+          installedReferences.set(reference.referenceId, { reference, line, patch });
         }
         pickableReferences.length = 0; installedReferences.forEach(({ line }) => pickableReferences.push(line));
         uploadedReferences.current = data.current.references;
@@ -295,8 +305,14 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       down = null;
       setRay(event);
       if (data.current.pickMode === 'body') {
-        const referenceId = pickCadCurveReference({ raycaster, references: pickableReferences, bodies: pickableBodies, camera, viewportHeight: container.clientHeight });
+        const referenceId = pickCadCurveReference({ raycaster, references: pickableReferences.filter(line => line.userData.featureKind !== 'datum-plane'), bodies: pickableBodies, camera, viewportHeight: container.clientHeight });
         if (referenceId) { data.current.onSelect(referenceId); return; }
+        const datumId = pickCadCurveReference({ raycaster, references: pickableReferences.filter(line => line.userData.featureKind === 'datum-plane'), bodies: pickableBodies, camera, viewportHeight: container.clientHeight });
+        if (datumId) { data.current.onSelect(datumId); return; }
+        const patches = [...installedReferences.values()].flatMap(entry => entry.patch ? [entry.patch] : []);
+        const patchHit = raycaster.intersectObjects(patches, false)[0];
+        const surface = raycaster.intersectObjects(pickableBodies, false)[0];
+        if (patchHit && (!surface || patchHit.distance <= surface.distance + 1e-7)) { data.current.onSelect(patchHit.object.userData.featureId); return; }
       }
       if (!data.current.pickingEnabled) return;
       if (data.current.pickMode !== 'body') { data.current.onTopologyPick?.(hitTopology(), event.ctrlKey || event.metaKey); return; }

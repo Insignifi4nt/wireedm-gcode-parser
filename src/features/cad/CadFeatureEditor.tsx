@@ -11,9 +11,12 @@ import { CadTopologyQuerySummary } from './CadTopologyQuerySummary';
 import { CadLoftSections } from './CadLoftSections';
 import { CadSweepSources } from './CadSweepSources';
 import { CadExtrudeFields } from './CadExtrudeFields';
+import { CadPlacementNormal } from './CadPlacementNormal';
+import { CadPlacementField } from './CadPlacementField';
+import { CadDatumPlaneFields } from './CadDatumPlaneFields';
 
 export const featureLabels: Record<CadFeature['kind'], string> = {
-  sketch: 'Sketch', curve: 'Curve', imported: 'Imported solid', extrude: 'Pad / Pocket', pocket: 'Pocket', revolve: 'Revolve', loft: 'Loft', sweep: 'Sweep', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / Rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
+  'datum-plane': 'Plane', sketch: 'Sketch', curve: 'Curve', imported: 'Imported solid', extrude: 'Pad / Pocket', pocket: 'Pocket', revolve: 'Revolve', loft: 'Loft', sweep: 'Sweep', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / Rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
 };
 
 const planeOptions = (['XY', 'XZ', 'YZ'] satisfies CadPlane[]).map((value) => ({ value, label: `${value} plane` }));
@@ -60,10 +63,11 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
   };
   let fields: React.ReactNode;
   switch (draft.kind) {
+    case 'datum-plane': fields = <CadDatumPlaneFields feature={draft} parameters={document.parameters} onChange={update} />; break;
     case 'sweep': fields = <><CadSweepSources document={document} featureId={feature.id} applyError={error} sketchId={draft.sketchId} curveId={draft.curveId} onChange={sources => update({ ...draft, ...sources })} /><SelectField label="Operation" value={draft.operation} options={operationOptions} onChange={operation => update({ ...draft, operation, targetId: operation === 'new' ? null : draft.targetId ?? bodies.at(-1)?.value ?? null })} />{draft.operation !== 'new' && body('Target body', draft.targetId ?? '', targetId => update({ ...draft, targetId }))}</>; break;
     case 'imported': fields = <><dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Format</dt><dd>{draft.source.format.toUpperCase()}</dd>{draft.source.format === 'stl' && <><dt>Source units</dt><dd>{draft.source.units === 'inch' ? 'inch' : 'mm'}</dd></>}</dl><p className="cad-inspector-note">Imported geometry is fixed. Add features to modify the solid.</p></>; break;
-    case 'sketch': fields = <><SelectField label="Reference plane" value={draft.plane} options={planeOptions} onChange={(plane) => update({ ...draft, plane })} />{scalar('Plane offset', draft.offset, (offset) => update({ ...draft, offset }))}{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
-    case 'curve': fields = <><SelectField label="Reference plane" value={draft.plane} options={planeOptions} onChange={plane => update({ ...draft, plane })} />{scalar('Plane offset', draft.offset, offset => update({ ...draft, offset }))}<CadPathSegmentFields label="Curve" segments={draft.segments} parameters={document.parameters} onChange={segments => update({ ...draft, segments })} />{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
+    case 'sketch': fields = <><CadPlacementField features={document.features} featureId={draft.id} plane={draft.plane} onChange={plane => update({ ...draft, plane })} />{scalar('Plane offset', draft.offset, (offset) => update({ ...draft, offset }))}<CadPlacementNormal plane={draft.plane} document={document} />{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
+    case 'curve': fields = <><CadPlacementField features={document.features} featureId={draft.id} plane={draft.plane} onChange={plane => update({ ...draft, plane })} />{scalar('Plane offset', draft.offset, offset => update({ ...draft, offset }))}<CadPlacementNormal plane={draft.plane} document={document} /><CadPathSegmentFields label="Curve" segments={draft.segments} parameters={document.parameters} onChange={segments => update({ ...draft, segments })} />{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
     case 'extrude':
     case 'pocket': {
       if (feature.kind !== 'extrude' && feature.kind !== 'pocket') throw new Error('Extrude editor source changed.');

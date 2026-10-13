@@ -10,6 +10,7 @@ import { evaluateCadScalar } from './cadExpression';
 import { resolveCadSketchRegions, cadProfileToEntities, type CadSketchRegion } from './cadSketchGeometry';
 import { cadFeatureProducesBody, cadVisibleBodyIds } from './cadFeatureInputs';
 import { cadPocketSectionScale } from './cadPocketSectionScale';
+import { requireCadPrincipalPlane } from './cadDatumPlanes';
 export {
   resolveCadPocketExtent,
   CAD_POCKET_NATIVE_PRECISION,
@@ -64,6 +65,7 @@ export function resolveCadPocketInputs(
     throw new CadError('invalid-reference', 'Pocket requires a preceding sketch and a preceding solid target.');
   }
   if (sketch.suppressed) throw new CadError('suppressed-sketch', `Pocket sketch "${sketch.name}" is suppressed.`);
+  const plane = requireCadPrincipalPlane(sketch.plane, 'Through-all Pocket');
   if (!cadVisibleBodyIds([...precedingFeatures.values()]).includes(feature.targetId))
     throw new CadError('unavailable-body', 'Pocket target is suppressed or consumed. Choose its current successor.');
   const offset = evaluateCadScalar(sketch.offset, parameters);
@@ -79,7 +81,7 @@ export function resolveCadPocketInputs(
     }
   return Object.freeze({
     sketch,
-    plane: sketch.plane,
+    plane,
     offset,
     regions: Object.freeze(regions),
     direction: feature.extent.direction,

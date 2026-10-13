@@ -1,10 +1,11 @@
-import { CompoundSketch, exportSTEP, getOC, makeCompound, measureVolume, Plane, type Drawing, type Shape3D, type SimplePoint, type Sketch } from 'replicad';
+import { CompoundSketch, exportSTEP, getOC, makeCompound, measureVolume, type Drawing, type Shape3D, type SimplePoint, type Sketch } from 'replicad';
 import type { CadBuildResult, CadDocument, CadFeature, CadMesh, CadScalar, CadSketchFeature } from '../../../domain/cad/cadDocument';
 import { evaluateCadAngle, evaluateCadScalar } from '../../../domain/cad/cadExpression';
 import { CadError } from '../../../domain/cad/cadError';
 import { resolveCadSketchRegions } from '../../../domain/cad/cadSketchGeometry';
 import type { CadSectionRequest, CadSectionResult } from '../../../domain/cad/cadSection';
-import { cadKernelPlaneBasis } from './cadKernelPlane';
+import { createCadKernelPlane } from './cadKernelPlane';
+import { resolveCadExtrudeRevolvePlacement, resolveCadWorldDatum, type CadDatumFrameLookup, type CadResolvedFrame } from '../../../domain/cad/cadDatumPlanes';
 import { cadKernelProfileDrawing } from './cadKernelSketch';
 import { sectionCadKernelShape } from './cadKernelSection';
 import { cadMeshScalarCount, MAX_CAD_PREVIEW_SCALARS } from './cadKernelLimits';
@@ -68,6 +69,8 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
   const visible = new Set<string>();
   const sketches = new Map<string, CadSketchFeature>();
   const references = new Map<string, CadFeature>();
+  const datumFrames = new Map<string, CadResolvedFrame>();
+  const frameLookup: CadDatumFrameLookup = Object.freeze({ get: (id: string) => datumFrames.get(id) });
   const diagnostics: CadBuildResult['diagnostics'][number][] = [];
   const number = (value: CadScalar) => evaluateCadScalar(value, document.parameters);
   const own = (shape: Shape3D) => { shapes.add(shape); return shape; };
@@ -89,15 +92,17 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
   function fromSketch(feature: Extract<CadFeature, { kind: 'extrude' | 'revolve' }>): Shape3D {
     const sketch = sketches.get(feature.sketchId);
     if (!sketch) throw new CadError('missing-sketch', 'The source sketch is unavailable or suppressed.');
-    const orientation = cadKernelPlaneBasis(sketch.plane);
-    const offset = number(sketch.offset);
+    const placement = resolveCadExtrudeRevolvePlacement(feature, sketch, document.parameters, frameLookup);
+    const orientation = placement.frame;
+    const offset = placement.offsetMm;
     const distance = feature.kind === 'extrude' ? number(feature.distance) : 0;
     const originOffset = offset - (feature.kind === 'extrude' && feature.symmetric ? distance / 2 : 0);
-    const origin: SimplePoint = [orientation.normal[0] * originOffset, orientation.normal[1] * originOffset, orientation.normal[2] * originOffset];
-    const plane = new Plane(origin, orientation.u, orientation.normal);
+    const plane = createCadKernelPlane(orientation, originOffset);
+    const revolutionAxis: SimplePoint = [...(feature.kind === 'revolve' && feature.axis === 'y' ? orientation.v : orientation.u)];
     const drawings: Drawing[] = [];
     const consumedSketches: Sketch[] = [];
     try {
+      const origin: SimplePoint = plane.origin.toTuple();
       const regions = resolveCadSketchRegions(sketch, document.parameters);
       let result: Shape3D | undefined;
       for (const region of regions) {
@@ -106,7 +111,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         const first = wires[0];
         if (!first) throw new CadError('empty-sketch', 'A solid feature needs a closed non-construction profile.');
         const sketched = wires.length === 1 ? first : new CompoundSketch(wires);
-        const shape = own(feature.kind === 'extrude' ? sketched.extrude(distance) : sketched.revolve(feature.axis === 'x' ? orientation.u : orientation.v, { origin, angle: number(feature.angle) }));
+        const shape = own(feature.kind === 'extrude' ? sketched.extrude(distance) : sketched.revolve(revolutionAxis, { origin, angle: number(feature.angle) }));
         validateSolid(shape);
         result = result ? own(result.fuse(shape)) : shape;
       }
@@ -126,6 +131,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
       let instances = 1;
       const consumed: string[] = [];
       switch (feature.kind) {
+        case 'datum-plane': datumFrames.set(feature.id, resolveCadWorldDatum(feature, document.parameters)); references.set(feature.id, feature); continue;
         case 'sketch': sketches.set(feature.id, feature); references.set(feature.id, feature); continue;
         case 'curve': references.set(feature.id, feature); continue; // Exact reference geometry produces and consumes no native body.
         case 'imported': {

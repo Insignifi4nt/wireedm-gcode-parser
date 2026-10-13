@@ -12,6 +12,7 @@ import { cadSweepProfileRadius, resolveCadSweepClearance, type CadSweepClearance
 import { cadOrderedCurveEntities } from './cadAnalyticSegments';
 import { cadProfileToEntities } from './cadSketchGeometry';
 import { nextUp } from '../path-intel/segments';
+import { requireCadPrincipalPlane } from './cadDatumPlanes';
 
 export const MAX_CAD_SWEEP_SEGMENTS = 64;
 export const MAX_CAD_SWEEP_WORK = 2048;
@@ -57,6 +58,7 @@ export function resolveCadSweepInputs(feature: CadSweepFeature, precedingFeature
   const sectionInspection = inspectCadSweepSketch(sketch, parameters);
   if (!sectionInspection.eligible) throw new CadError(sectionInspection.code, sectionInspection.message);
   if (curveFeature.suppressed) throw new CadError('suppressed-curve', `Sweep curve "${curveFeature.name}" is suppressed.`);
+  const curvePlane = requireCadPrincipalPlane(curveFeature.plane, 'Sweep');
   const section = sectionInspection.section; const curve = resolveCadCurve(curveFeature, parameters);
   const basis = cadPlaneBasis(section.plane);
   const anchor = { x: dot(curve.startWorld, basis.u), y: dot(curve.startWorld, basis.v) };
@@ -74,7 +76,7 @@ export function resolveCadSweepInputs(feature: CadSweepFeature, precedingFeature
   const sectionScale = Math.max(1, Math.abs(section.offset), Math.abs(anchor.x), Math.abs(anchor.y), profileRadius);
   const clearance = resolveCadSweepClearance(curve, profileRadius, sectionScale, planeResidual + profileRadius * angularResidual);
   return Object.freeze({ section, curveFeature, curve, frame: Object.freeze({ tangent: curve.startTangentWorld,
-    normal: cross(cadPlaneBasis(curve.plane).normal, curve.startTangentWorld), binormal: cadPlaneBasis(curve.plane).normal }),
+    normal: cross(cadPlaneBasis(curvePlane).normal, curve.startTangentWorld), binormal: cadPlaneBasis(curvePlane).normal }),
     clearance, sectionEdgeCount, nativeWork });
 }
 export function inspectCadSweepInputs(feature: CadSweepFeature, precedingFeatures: ReadonlyMap<string, CadFeature>, parameters: Readonly<Record<string, number>>): CadSweepInspection {

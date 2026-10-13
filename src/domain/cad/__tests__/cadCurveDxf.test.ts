@@ -41,6 +41,19 @@ describe('exact ordered open Curve DXF exchange', () => {
     expect(parsed.unitDeclaration).toMatchObject({status:'recognized',units:{code:4}});
     expect(result.curve).toMatchObject({plane:'XY',offset:0,segments:[line]}); expect(text).not.toContain('1001');
   });
+  it('exports datum Curve coordinates locally without resolving or baking the world frame', () => {
+    const imported = importCadDxfCurve({ fileName: 'original.dxf', text: dxf(polyline([{ x: 5, y: 0, bulge: Math.tan(-270 * Math.PI / 720) }, { x: 0, y: 5 }])) });
+    const placed: CadCurveFeature = { ...imported.curve, plane: { kind: 'datum-plane', featureId: 'datum' }, offset: 'height' };
+    const expected = exportCadCurveDxf(imported.curve, {});
+    expect(exportCadCurveDxf(placed, { height: 19 })).toBe(expected);
+    const document = parseCadDocument({ ...createCadDocument('Datum Curve'), parameters: { height: 19 }, features: [
+      { kind: 'datum-plane', id: 'datum', name: 'Tilt', suppressed: false, definition: { kind: 'world', basePlane: 'XZ', origin: [37, -24, 11], rotation: [23, -37, 61] } }, placed,
+    ] });
+    expect(cadCurveToDxf(document, placed.id)).toBe(expected);
+    const accepted = document.features[1]; if (accepted.kind !== 'curve') throw new Error('Expected Curve');
+    expect(accepted.source?.text).toBe(imported.curve.source?.text);
+    expect(accepted.plane).toEqual(placed.plane); expect(accepted.offset).toBe('height');
+  });
   it.each([90,-90,270,-270,2,-2,358,-358])('preserves signed %s-degree traversal, circular support and endpoints', sweep => {
     const {before,after,text}=roundtrip(curve([{kind:'arc',center:[5,-2],radius:3,startAngle:359,sweep}]));
     const original=before.entities[0]; const imported=after.entities[0];

@@ -6,7 +6,7 @@ import { WORKBENCH_FILE_TRANSACTION_PATH } from '@/domain/storage/workbenchFileT
 import { createWorkbenchBackup, removeUnreferencedWorkbenchFiles, restoreWorkbenchBackup } from '@/domain/storage/workbenchBackup';
 import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
-import type { CadPocketFeature } from './cadDocument';
+import type { CadDatumPlaneFeature, CadFeature, CadPocketFeature } from './cadDocument';
 import { createCadDocument, parseCadDocument } from './cadSchema';
 import { importCadDxfSketch } from './cadDxfImport';
 import { importCadDxfCurve } from './cadCurveDxf';
@@ -82,6 +82,43 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     expect(reopened.document.features[0]).toMatchObject({ source: { text }, offset: 'station', profiles: [{ geometry: { radius: 'radius' } }] });
     expect(reopened.document.features[1]).toMatchObject({ source: { data: originalStep } });
     expect(reopened.document.features[2]).toEqual(pocket);
+  });
+  it('retains datum expressions and local import originals, rejecting unavailable or unsupported placements before writes', async () => {
+    const text = '\uFEFF0\r\nSECTION\r\n2\r\nENTITIES\r\n0\r\nCIRCLE\r\n10\r\n0\r\n20\r\n0\r\n40\r\n2\r\n0\r\nENDSEC\r\n0\r\nEOF\r\n';
+    const railText = text.replace('CIRCLE\r\n10', 'LINE\r\n10').replace('40\r\n2', '11\r\n20\r\n21\r\n0');
+    const imported = importCadDxfSketch({ fileName: 'Section.dxf', text, units: 'mm', sketchId: 'section' }).sketch;
+    const rail = importCadDxfCurve({ fileName: 'Rail.dxf', text: railText, units: 'mm', curveId: 'rail' }).curve;
+    const datum: CadDatumPlaneFeature = { kind: 'datum-plane', id: 'plane', name: 'Tilt', suppressed: false,
+      definition: { kind: 'world', basePlane: 'XZ', origin: ['position', -24, 11], rotation: ['angle', -37, 61] } };
+    const plane = { kind: 'datum-plane', featureId: 'plane' } as const;
+    const section = { ...imported, plane, offset: 'station' };
+    const curve = { ...rail, plane, offset: 'station' };
+    const pad: Extract<CadFeature, { kind: 'extrude' }> = { kind: 'extrude', id: 'pad', name: 'Pad', suppressed: false,
+      sketchId: 'section', operation: 'new', targetId: null, distance: 'depth', symmetric: true };
+    const document = parseCadDocument({ ...createCadDocument('Datum originals', 'cad_datum_save'),
+      parameters: { position: 37, angle: 23, station: -3, depth: -10 }, features: [datum, section, curve, pad] });
+    const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const path = cadDocumentPath(document.id);
+    const exact = await adapter.readExactText?.(path);
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(document);
+    const writes = vi.spyOn(adapter, 'writeText');
+    await expect(saveCadDocument(adapter, { ...document, parameters: { ...document.parameters, position: 1e8 } },
+      { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('native precision');
+    await expect(saveCadDocument(adapter, { ...document, features: [{ ...datum, suppressed: true }, section, curve, pad] },
+      { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('must precede');
+    const pocket: CadPocketFeature = { kind: 'pocket', id: 'pocket', name: 'Pocket', suppressed: false,
+      sketchId: 'section', targetId: 'pad', extent: { kind: 'through-all', direction: 'both' } };
+    await expect(saveCadDocument(adapter, { ...document, features: [...document.features, pocket] },
+      { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('does not yet support datum placement');
+    expect(writes).not.toHaveBeenCalled();
+    expect(await adapter.readExactText?.(path)).toBe(exact);
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+    await saveCadDocument(adapter, { ...document, parameters: { ...document.parameters, angle: 90, station: 4 } },
+      { expectedSavedVersion: saved.savedVersion });
+    const reopened = (await loadCadDocument(adapter, document.id)).document;
+    expect(reopened.features[0]).toEqual(datum);
+    expect(reopened.features[1]).toMatchObject({ source: { text }, plane, offset: 'station', profiles: imported.profiles });
+    expect(reopened.features[2]).toMatchObject({ source: { text: railText }, plane, segments: rail.segments });
   });
   it('preserves an external edit made after the optimistic read and before the transaction captures its original', async () => {
     const document = parseCadDocument({ ...createCadDocument('Original', 'cad_external_race'), features: [{

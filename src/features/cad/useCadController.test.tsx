@@ -59,6 +59,67 @@ async function harness(withGeometry = false, allowHandoff = false) {
 }
 
 describe('CAD controller asynchronous guards', () => {
+  async function planeHarness() {
+    const h = await harness();
+    await act(async () => h.cad().edit([
+      { kind: 'add-feature', feature: { kind: 'datum-plane', id: 'mount', name: 'Mount', suppressed: false,
+        definition: { kind: 'world', basePlane: 'XY', origin: [10, -20, 30], rotation: [90, 0, 0] } } },
+      { kind: 'add-feature', feature: { kind: 'sketch', id: 'profile', name: 'Profile', suppressed: false,
+        plane: { kind: 'datum-plane', featureId: 'mount' }, offset: 3, profiles: [] } },
+    ]));
+    const tool = cadSiteTools(h.cad).find(entry => entry.name === 'cad_inspect_plane');
+    if (!tool) throw new Error('Plane inspection tool missing');
+    return { ...h, tool };
+  }
+  it('inspects accepted datum and sketch placement without native evaluation, saving or changing the draft', async () => {
+    const h = await planeHarness(); const before = h.session.getSnapshot();
+    expect(await h.tool.execute({ expectedVersion: before.version, featureId: 'profile' })).toMatchObject({ ok: true, data: {
+      version: before.version, featureId: 'profile', featureKind: 'sketch', units: 'mm', persisted: false,
+      datumId: 'mount', offsetMm: 3, placedOriginMm: [10, -23, 30],
+      frame: { origin: [10, -20, 30], normal: [0, -1, 0] } } });
+    expect(await h.tool.execute({ expectedVersion: before.version, featureId: 'mount' })).toMatchObject({ ok: true, data: {
+      featureKind: 'datum-plane', placedOriginMm: [10, -20, 30], offsetMm: 0 } });
+    expect(h.session.getSnapshot()).toBe(before);
+    expect(kernel.build).not.toHaveBeenCalled(); expect(h.workbench().manifest.projects).toHaveLength(0);
+    expect(before.savedVersion).toBeNull();
+  });
+  it('guards plane inspection with current version, workflow, cancellation and strict input', async () => {
+    const h = await planeHarness(); const before = h.session.getSnapshot();
+    const input = { expectedVersion: before.version, featureId: 'mount' };
+    expect(await h.tool.execute({ ...input, expectedVersion: 'old' })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    expect(await h.tool.execute({ ...input, includeGeometry: true })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    const abort = new AbortController(); abort.abort();
+    expect(await h.tool.execute(input, { signal: abort.signal })).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    await act(async () => h.session.setWorkflowOpen(true));
+    expect(await h.tool.execute(input)).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    await act(async () => h.session.setWorkflowOpen(false));
+    expect(h.session.getSnapshot().version).toBe(before.version);
+    expect(kernel.build).not.toHaveBeenCalled();
+  });
+  it.each(['close', 'workflow', 'version', 'cancel', 'busy'] as const)('rechecks %s changes while loading plane inspection', async change => {
+    const h = await planeHarness(); const before = h.session.getSnapshot();
+    const abort = new AbortController(); const competingAbort = new AbortController();
+    const exported = deferred<Blob>(); kernel.export.mockReturnValue(exported.promise);
+    await act(async () => {
+      const pending = h.cad().inspectPlane('mount', before.version, abort.signal);
+      let competing: Promise<unknown> | undefined;
+      if (change === 'close') h.cad().back();
+      if (change === 'workflow') h.session.setWorkflowOpen(true);
+      if (change === 'version') h.session.edit([{ kind: 'rename-document', name: 'Newer plane' }]);
+      if (change === 'cancel') abort.abort();
+      if (change === 'busy') competing = h.cad().exportSolid('step', before.version, competingAbort.signal);
+      try {
+        await expect(pending).rejects.toMatchObject(change === 'cancel' ? { name: 'AbortError' }
+          : { code: { close: 'CAD_NOT_OPEN', workflow: 'WORKFLOW_OPEN', version: 'STALE_STATE', busy: 'BUSY' }[change] });
+      } finally {
+        if (competing) {
+          competingAbort.abort(); exported.resolve(new Blob(['STEP']));
+          await expect(competing).rejects.toMatchObject({ name: 'AbortError' });
+        }
+      }
+    });
+    expect(kernel.build).not.toHaveBeenCalled();
+  });
   async function sweepHarness() {
     const h = await harness(true);
     await act(async () => h.cad().edit([{ kind: 'add-feature', feature: {
@@ -690,6 +751,31 @@ describe('CAD controller asynchronous guards', () => {
     expect(click).not.toHaveBeenCalled();
     expect(h.session.getSnapshot().version).toBe(version);
   });
+  it.each([['sketch', 'close'], ['curve', 'close'], ['sketch', 'busy'], ['curve', 'busy']] as const)
+    ('rechecks %s measurement after %s changes while its lazy module loads', async (kind, change) => {
+      const h = await harness(true);
+      if (kind === 'curve') await act(async () => h.session.edit([{ kind: 'add-feature', feature: {
+        kind: 'curve', id: 'rail', name: 'Rail', suppressed: false, plane: 'XY', offset: 0,
+        segments: [{ kind: 'line', start: [0, 0], end: [10, 0] }]
+      } }]));
+      const before = h.session.getSnapshot();
+      const result = deferred<Blob>(); kernel.export.mockReturnValue(result.promise);
+      const abort = new AbortController();
+      await act(async () => {
+        const pending = kind === 'curve' ? h.cad().measureCurve('rail', before.version) : h.cad().measureSketch('sketch', before.version);
+        let competing: Promise<unknown> | undefined;
+        if (change === 'close') h.cad().back();
+        else competing = h.cad().exportSolid('step', before.version, abort.signal);
+        try { await expect(pending).rejects.toMatchObject({ code: change === 'close' ? 'CAD_NOT_OPEN' : 'BUSY' }); }
+        finally {
+          if (competing) {
+            abort.abort(); result.resolve(new Blob(['STEP']));
+            await expect(competing).rejects.toMatchObject({ name: 'AbortError' });
+          }
+        }
+      });
+      expect(h.session.getSnapshot()).toBe(before);
+    });
   it.each(['sketch', 'curve'] as const)('rejects a %s DXF export when another operation acquires the lock during its lazy import', async kind => {
     const h = await harness(true);
     if (kind === 'curve') await act(async () => h.session.edit([{ kind: 'add-feature', feature: {

@@ -1,11 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import type { CadCurveFeature, CadFeature, CadPlane, CadProfile, CadSketchFeature } from '@/domain/cad/cadDocument';
+import type { CadCurveFeature, CadDatumPlaneFeature, CadFeature, CadPlane, CadProfile, CadSketchFeature } from '@/domain/cad/cadDocument';
+import { resolveCadWorldDatum, cadFramePointToWorld } from '@/domain/cad/cadDatumPlanes';
 import { cadReferenceFeatureIds, cadProfileReferenceGeometry, MAX_CAD_REFERENCE_DISPLAY_SEGMENTS, prepareCadViewportReferences, selectCadViewportReferences } from './cadViewportReferences';
 
 const sketch = (id = 'sketch', plane: CadPlane = 'XY', geometry: CadProfile = { kind: 'circle', x: 2, y: 3, radius: 1 }): CadSketchFeature => ({ id, name: id, kind: 'sketch', plane, offset: 'lift', suppressed: false,
   profiles: [{ id: 'profile', name: 'Profile', construction: false, geometry }] });
 const curve: CadCurveFeature = { id: 'rail', name: 'Rail', kind: 'curve', plane: 'XY', offset: 0, suppressed: false, segments: [{ kind: 'line', start: [0, 0], end: [20, 0] }] };
 const pad: CadFeature = { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false, sketchId: 'section', distance: 5, symmetric: false, operation: 'new', targetId: null };
+
+describe('datum reference geometry and visibility', () => {
+  const datum: CadDatumPlaneFeature = { id: 'mount', name: 'Mount', kind: 'datum-plane', suppressed: false, definition: { kind: 'world', basePlane: 'XZ', origin: [10, 20, 30], rotation: [30, 45, 10] } };
+  const section = { ...sketch('section'), plane: { kind: 'datum-plane', featureId: 'mount' } as const, offset: 4 };
+  it('places tilted contours analytically, retains exact source data and bounded glyphs', () => {
+    const features = [datum, section]; const before = JSON.stringify(features); const prepared = prepareCadViewportReferences(features, {});
+    const outline = prepared.find(reference => reference.featureKind === 'sketch')!; const glyph = prepared.find(reference => reference.featureKind === 'datum-plane')!;
+    expect(outline.positions.slice(0, 3)).toEqual(cadFramePointToWorld(resolveCadWorldDatum(datum, {}), 4, [3, 3]));
+    for (let index = 0; index < outline.positions.length; index += 3) for (let axis = 0; axis < 3; axis++) {
+      expect(outline.positions[index + axis]).toBeGreaterThanOrEqual(outline.bounds.min[axis] - 1e-12);
+      expect(outline.positions[index + axis]).toBeLessThanOrEqual(outline.bounds.max[axis] + 1e-12);
+    }
+    expect(glyph.positions).toHaveLength(54); expect(glyph.planePatch).toHaveLength(18); expect(Object.isFrozen(glyph.planePatch)).toBe(true);
+    expect(JSON.stringify(features)).toBe(before);
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, features, null))).toEqual(['section']);
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, features, 'section'))).toEqual(['mount', 'section']);
+  });
+  it('shows standalone active datums and selected body-source datums, suppressing unrelated glyphs', () => {
+    const other = { ...datum, id: 'other' }; const features = [datum, other, section, pad];
+    const prepared = prepareCadViewportReferences(features, {});
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, features, pad.id))).toEqual(['mount', 'section']);
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, features, null))).toEqual([]);
+    const onlyDatums = [datum, { ...other, suppressed: true }];
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepareCadViewportReferences(onlyDatums, {}), onlyDatums, null))).toEqual(['mount']);
+  });
+});
 
 describe('world-space Sketch reference preparation', () => {
   it.each(['XY', 'XZ', 'YZ'] satisfies CadPlane[])('uses exact bounds and shared signed placement on %s', plane => {

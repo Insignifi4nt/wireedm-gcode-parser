@@ -1,6 +1,7 @@
 import type { CadFeature, CadPlane, CadProfile } from '@/domain/cad/cadDocument';
 import { inspectCadCurve, type CadBounds3 } from '@/domain/cad/cadCurve';
-import { evaluateCadScalar } from '@/domain/cad/cadExpression';
+import { prepareCadDatumFrames, resolveCadSketchPlacement, resolveCadWorldDatum, cadFramePointToWorld, type CadResolvedFrame } from '@/domain/cad/cadDatumPlanes';
+import { cadFrameEntityBounds } from '@/domain/cad/cadFrameBounds';
 import { cadPlanePointToWorld } from '@/domain/cad/cadPlanes';
 import { cadFeatureDependencies, cadFeatureProducesBody } from '@/domain/cad/cadSchema';
 import { cadProfileToEntities, resolveCadProfile, type CadAnalyticBoundary } from '@/domain/cad/cadSketchGeometry';
@@ -10,7 +11,9 @@ import type { Bounds2 } from '@/domain/path-intel/types';
 export interface CadViewportReference {
   readonly referenceId: string;
   readonly featureId: string;
-  readonly featureKind: 'sketch' | 'curve';
+  readonly featureKind: 'sketch' | 'curve' | 'datum-plane';
+  /** Display-only triangles for a datum glyph; never native geometry. */
+  readonly planePatch?: readonly number[];
   readonly name: string;
   readonly construction: boolean;
   readonly positions: readonly number[];
@@ -19,7 +22,7 @@ export interface CadViewportReference {
 export const MAX_CAD_REFERENCE_DISPLAY_SEGMENTS = 32768;
 const MAX_REFERENCE_FEATURE_IDS = 256;
 interface ReferenceSource extends Omit<CadViewportReference, 'positions'> {
-  readonly plane: CadPlane;
+  readonly frame: CadResolvedFrame;
   readonly offset: number;
   readonly entities: readonly CadAnalyticBoundary[];
 }
@@ -45,29 +48,32 @@ function worldBounds(plane: CadPlane, offset: number, bounds: Bounds2): CadBound
 
 /** Prepare once per immutable accepted revision; all sources share one display budget. */
 export function prepareCadViewportReferences(features: readonly CadFeature[], parameters: Readonly<Record<string, number>>): readonly CadViewportReference[] {
+  const frames = prepareCadDatumFrames(features, parameters);
+  const glyphs = features.flatMap(feature => feature.kind === 'datum-plane' && !feature.suppressed ? [cadDatumReference(feature, resolveCadWorldDatum(feature, parameters))] : []);
   const sources = features.flatMap<ReferenceSource>(feature => {
     if (feature.suppressed) return [];
     if (feature.kind === 'curve') {
-      const result = inspectCadCurve(feature, parameters);
+      const result = inspectCadCurve(feature, parameters, frames);
       return result.eligible ? [{ referenceId: feature.id, featureId: feature.id, featureKind: 'curve', name: feature.name, construction: false,
-        plane: result.curve.plane, offset: result.curve.offset, entities: result.curve.entities, bounds: result.curve.worldBounds }] : [];
+        frame: resolveCadSketchPlacement(feature, parameters, frames).frame, offset: result.curve.offset, entities: result.curve.entities, bounds: result.curve.worldBounds }] : [];
     }
     if (feature.kind !== 'sketch') return [];
     return feature.profiles.flatMap<ReferenceSource>(profile => {
       try {
-        const geometry = cadProfileReferenceGeometry(profile.geometry, parameters); const offset = evaluateCadScalar(feature.offset, parameters);
+        const geometry = cadProfileReferenceGeometry(profile.geometry, parameters); const placement = resolveCadSketchPlacement(feature, parameters, frames); const offset = placement.offsetMm;
         if (!geometry.entities.length) return [];
         return [{ referenceId: `${feature.id}/${profile.id}`, featureId: feature.id, featureKind: 'sketch', name: feature.name, construction: profile.construction,
-          plane: feature.plane, offset, entities: geometry.entities, bounds: worldBounds(feature.plane, offset, geometry.bounds) }];
+          frame: placement.frame, offset, entities: geometry.entities, bounds: typeof feature.plane === 'string' ? worldBounds(feature.plane, offset, geometry.bounds) : cadFrameEntityBounds(geometry.entities, placement.frame, offset) }];
       } catch { return []; } // Invalid sources retain their feature/editor diagnostics.
     });
   });
   const edgeCount = sources.reduce((sum, source) => sum + source.entities.length, 0);
-  if (edgeCount > MAX_CAD_REFERENCE_DISPLAY_SEGMENTS) throw new Error('CAD source geometry exceeds the reference display budget.');
-  const perEdge = Math.max(1, Math.floor(MAX_CAD_REFERENCE_DISPLAY_SEGMENTS / Math.max(1, edgeCount)));
-  return Object.freeze(sources.map(source => {
+  const contourBudget = MAX_CAD_REFERENCE_DISPLAY_SEGMENTS - glyphs.reduce((sum, glyph) => sum + glyph.positions.length / 6, 0);
+  if (edgeCount > contourBudget) throw new Error('CAD source geometry exceeds the reference display budget.');
+  const perEdge = Math.max(1, Math.floor(contourBudget / Math.max(1, edgeCount)));
+  return Object.freeze([...glyphs, ...sources.map(source => {
     const positions: number[] = [];
-    const point = (value: { x: number; y: number }) => cadPlanePointToWorld(source.plane, source.offset, [value.x, value.y]);
+    const point = (value: { x: number; y: number }) => cadFramePointToWorld(source.frame, source.offset, [value.x, value.y]);
     for (const entity of source.entities) {
       if (entity.type === 'line') { positions.push(...point(entity.start), ...point(entity.end)); continue; }
       const startAngle = entity.type === 'circle' ? 0 : entity.startAngle;
@@ -80,29 +86,47 @@ export function prepareCadViewportReferences(features: readonly CadFeature[], pa
     }
     return Object.freeze({ referenceId: source.referenceId, featureId: source.featureId, featureKind: source.featureKind, name: source.name,
       construction: source.construction, positions: Object.freeze(positions), bounds: source.bounds });
-  }));
+  })]);
 }
 
 /** Selection controls view-only source visibility; saved geometry is never rewritten. */
 export function selectCadViewportReferences(prepared: readonly CadViewportReference[], features: readonly CadFeature[], selectedId: string | null): readonly CadViewportReference[] {
-  const visibleSketches = new Set<string>(); const byId = new Map(features.map(feature => [feature.id, feature]));
+  const visibleSketches = new Set<string>(); const visibleDatums = new Set<string>(); const byId = new Map(features.map(feature => [feature.id, feature]));
   const selected = selectedId ? byId.get(selectedId) : undefined;
   if (!features.some(feature => !feature.suppressed && cadFeatureProducesBody(feature))) {
     features.forEach(feature => { if (feature.kind === 'sketch' && !feature.suppressed) visibleSketches.add(feature.id); });
-  } else if (selected && !selected.suppressed) {
+  }
+  if (selected && !selected.suppressed) {
     const queue = [selected.id]; const visited = new Set<string>();
     while (queue.length) {
       const id = queue.pop(); if (!id || visited.has(id)) continue; visited.add(id);
       const feature = byId.get(id); if (!feature || feature.suppressed) continue;
       if (feature.kind === 'sketch') visibleSketches.add(feature.id);
-      else if (cadFeatureProducesBody(feature)) queue.push(...cadFeatureDependencies(feature));
+      if (feature.kind === 'datum-plane') visibleDatums.add(feature.id);
+      queue.push(...cadFeatureDependencies(feature));
     }
   }
-  return Object.freeze(prepared.filter(reference => reference.featureKind === 'curve' || visibleSketches.has(reference.featureId)));
+  if (!prepared.some(reference => reference.featureKind !== 'datum-plane') && !features.some(feature => !feature.suppressed && cadFeatureProducesBody(feature))) prepared.forEach(reference => visibleDatums.add(reference.featureId));
+  return Object.freeze(prepared.filter(reference => reference.featureKind === 'curve' || reference.featureKind === 'sketch' && visibleSketches.has(reference.featureId) || reference.featureKind === 'datum-plane' && visibleDatums.has(reference.featureId)));
 }
 
 export function cadReferenceFeatureIds(references: readonly CadViewportReference[]): readonly string[] {
   const ids = [...new Set(references.map(reference => reference.featureId))].sort();
   if (ids.length > MAX_REFERENCE_FEATURE_IDS) throw new Error('CAD references exceed the document feature limit.');
   return Object.freeze(ids);
+}
+
+/** Bounded view-only plane patch and local axes; authored geometry stays infinite. */
+function cadDatumReference(feature: Extract<CadFeature, { kind: 'datum-plane' }>, frame: CadResolvedFrame): CadViewportReference {
+  const at = (x: number, y: number, n = 0) => cadFramePointToWorld(frame, n, [x, y]);
+  const corners = [at(-12.5, -12.5), at(12.5, -12.5), at(12.5, 12.5), at(-12.5, 12.5)];
+  const positions: number[] = [];
+  for (let index = 0; index < 4; index++) positions.push(...corners[index], ...corners[(index + 1) % 4]);
+  for (const end of [at(10, 0), at(0, 10), at(0, 0, 10)]) positions.push(...frame.origin, ...end);
+  positions.push(...at(0, 0, 10), ...at(2, 0, 7), ...at(0, 0, 10), ...at(-2, 0, 7));
+  const all = [...corners, frame.origin, at(0, 0, 10)];
+  const component = (axis: number, reducer: typeof Math.min) => reducer(...all.map(point => point[axis]));
+  return Object.freeze({ referenceId: feature.id, featureId: feature.id, featureKind: 'datum-plane', name: feature.name, construction: false,
+    positions: Object.freeze(positions), planePatch: Object.freeze([...corners[0], ...corners[1], ...corners[2], ...corners[0], ...corners[2], ...corners[3]]),
+    bounds: Object.freeze({ min: Object.freeze([component(0, Math.min), component(1, Math.min), component(2, Math.min)] as const), max: Object.freeze([component(0, Math.max), component(1, Math.max), component(2, Math.max)] as const) }) });
 }

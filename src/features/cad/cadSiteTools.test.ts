@@ -6,6 +6,33 @@ import { cadSiteTools } from './cadSiteTools';
 import type { CadController } from './useCadController';
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('discovers world datums and rejects inactive placement fields before shared operations', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid datum reached the controller'); });
+    const tools = cadSiteTools(controller); const edit = tools.find(entry => entry.name === 'cad_edit_document');
+    const inspect = tools.find(entry => entry.name === 'cad_inspect_plane');
+    if (!edit || !inspect) throw new Error('Missing datum tools');
+    const definition = { kind: 'world', basePlane: 'XZ', origin: [0, 0, 12], rotation: [0, 45, 0] };
+    const datum = { kind: 'datum-plane', id: 'plane', name: 'Plane', suppressed: false, definition };
+    for (const feature of [{ ...datum, definition: { ...definition, normal: [0, 0, 1] } },
+      { ...datum, definition: { ...definition, attachment: { bodyId: 'stock' } } },
+      { ...datum, definition: { ...definition, rotation: [0, 45] } },
+      { ...datum, definition: { ...definition, basePlane: 'ZX' } },
+      { ...datum, offset: 4 },
+      { kind: 'sketch', id: 'profile', name: 'Profile', suppressed: false, offset: 0, profiles: [],
+        plane: { kind: 'datum-plane', featureId: 'plane', normal: [0, 0, 1] } }]) {
+      const input = { expectedVersion: 'current', edits: [{ kind: 'add-feature', feature }] };
+      expect(Value.Check(edit.inputSchema, input)).toBe(true);
+      expect(await edit.execute(input)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(await inspect.execute({ expectedVersion: 'current', featureId: 'plane', includeSource: true }))
+      .toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(controller).not.toHaveBeenCalled();
+    const discovery = cadSiteTools(() => ({} as CadController)).find(entry => entry.name === 'cad_describe_features');
+    expect(await discovery?.execute({ kind: 'datum-plane' })).toMatchObject({ ok: true, data: {
+      kind: 'datum-plane', description: expect.stringContaining('cad_inspect_plane'),
+      schema: { additionalProperties: false, properties: { definition: { additionalProperties: false,
+        required: expect.arrayContaining(['kind', 'basePlane', 'origin', 'rotation']) } } } } });
+  });
   it('discovers strict Through-all Pocket and rejects inactive distance fields before shared operations', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid Pocket reached the controller'); });
     const edit = cadSiteTools(controller).find(entry => entry.name === 'cad_edit_document');

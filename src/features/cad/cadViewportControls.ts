@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import type { CadPlane } from '@/domain/cad/cadDocument';
+import type { CadSketchPlane } from '@/domain/cad/cadDocument';
 import { CadTopologyPickSetSchema, type CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import type { EditorPreviewCapture } from '@/features/webmcp/previewCapture';
 import type { CadPickMode, CadTopologyHit } from './cadTopologyPicking';
@@ -27,7 +27,7 @@ export type CadViewportCommand = Static<typeof CadViewportCommandSchema>;
 
 export type CadRenderedViewState =
   | { readonly mode: 'solid'; readonly available: boolean; readonly view: CadNamedView | 'Custom'; readonly gridVisible: boolean; readonly zoom: number; readonly revision: number; readonly hoveredTopology?: CadTopologyHit | null; readonly referenceVersion?: string | null; readonly referenceFeatureIds?: readonly string[] }
-  | { readonly mode: 'sketch' | 'curve'; readonly available: boolean; readonly plane: CadPlane; readonly gridVisible: boolean; readonly snapEnabled: boolean; readonly gridStepMm: number; readonly centerMm: readonly [number, number]; readonly heightSpanMm: number; readonly revision: number };
+  | { readonly mode: 'sketch' | 'curve'; readonly available: boolean; readonly plane: CadSketchPlane; readonly gridVisible: boolean; readonly snapEnabled: boolean; readonly gridStepMm: number; readonly centerMm: readonly [number, number]; readonly heightSpanMm: number; readonly revision: number };
 
 export interface CadRenderedViewControls {
   getState(): CadRenderedViewState;

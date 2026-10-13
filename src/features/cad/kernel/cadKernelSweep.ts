@@ -2,6 +2,7 @@ import { cast, Face, getOC, isShape3D, makeAx1, measureVolume, Plane, Vector, ty
 import { CadError } from '../../../domain/cad/cadError';
 import { CAD_SWEEP_TOPOLOGY_TOLERANCE, type CadResolvedSweepInputs } from '../../../domain/cad/cadSweep';
 import { cadPlanePointToWorld } from '../../../domain/cad/cadPlanes';
+import { requireCadPrincipalPlane } from '../../../domain/cad/cadDatumPlanes';
 import { cadKernelPlaneBasis } from './cadKernelPlane';
 import { cadKernelProfileDrawing } from './cadKernelSketch';
 
@@ -49,6 +50,7 @@ function validateSweepSolid(shape: Shape3D) {
 
 /** Exact line extrusions and signed circular revolutions, never a fitted pipe frame. */
 export function buildCadSweepSolid(resolved: CadResolvedSweepInputs): Shape3D {
+  const curvePlane = requireCadPrincipalPlane(resolved.curve.plane, 'Sweep');
   const oc = getOC(); const basis = cadKernelPlaneBasis(resolved.section.plane);
   const offset = resolved.section.offset;
   const origin: SimplePoint = [basis.normal[0] * offset, basis.normal[1] * offset, basis.normal[2] * offset];
@@ -73,11 +75,11 @@ export function buildCadSweepSolid(resolved: CadResolvedSweepInputs): Shape3D {
       // reconstructed normalized length. Subsequent sections are native caps.
       let displacement: Vector | undefined;
       if (segment.kind === 'line') {
-        const start = cadPlanePointToWorld(resolved.curve.plane, resolved.curve.offset, segment.start);
-        const end = cadPlanePointToWorld(resolved.curve.plane, resolved.curve.offset, segment.end);
+        const start = cadPlanePointToWorld(curvePlane, resolved.curve.offset, segment.start);
+        const end = cadPlanePointToWorld(curvePlane, resolved.curve.offset, segment.end);
         displacement = own(new Vector([end[0] - start[0], end[1] - start[1], end[2] - start[2]]));
       }
-      const center = segment.kind === 'arc' ? cadPlanePointToWorld(resolved.curve.plane, resolved.curve.offset, segment.center) : null;
+      const center = segment.kind === 'arc' ? cadPlanePointToWorld(curvePlane, resolved.curve.offset, segment.center) : null;
       const axis = center ? own(makeAx1([center[0], center[1], center[2]], [resolved.frame.binormal[0], resolved.frame.binormal[1], resolved.frame.binormal[2]])) : null;
       const builder = segment.kind === 'line' && displacement ? own(new oc.BRepPrimAPI_MakePrism(face.wrapped, displacement.wrapped, false, true))
         : segment.kind === 'arc' && axis ? own(new oc.BRepPrimAPI_MakeRevol(face.wrapped, axis, segment.sweep * Math.PI / 180, false)) : null;

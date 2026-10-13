@@ -2,6 +2,7 @@ import type { CadFeature, CadPlane, CadSketchFeature } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { resolveCadSketchRegions, type ResolvedCadProfile } from './cadSketchGeometry';
+import { requireCadPrincipalPlane } from './cadDatumPlanes';
 
 export const MIN_CAD_LOFT_SECTIONS = 2;
 export const MAX_CAD_LOFT_SECTIONS = 16;
@@ -32,11 +33,12 @@ export function cadLoftOffsetTolerance(offsets: readonly number[]): number {
 export function inspectCadLoftSketch(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): CadLoftSketchInspection {
   if (sketch.suppressed) return { eligible: false, code: 'suppressed-sketch', message: `Loft section "${sketch.name}" is suppressed.` };
   try {
+    const plane = requireCadPrincipalPlane(sketch.plane, 'Loft');
     const offset = evaluateCadScalar(sketch.offset, parameters);
     const regions = resolveCadSketchRegions(sketch, parameters);
     if (regions.length === 0) return { eligible: false, code: 'empty-sketch', message: `Loft section "${sketch.name}" needs a closed non-construction contour.` };
     if (regions.length !== 1 || regions[0].voids.length !== 0) return { eligible: false, code: 'unsupported-loft-section', message: `Loft section "${sketch.name}" must contain exactly one material boundary without holes or islands.` };
-    return { eligible: true, section: Object.freeze({ sketchId: sketch.id, sketch, plane: sketch.plane, offset, geometry: regions[0].boundary.geometry }) };
+    return { eligible: true, section: Object.freeze({ sketchId: sketch.id, sketch, plane, offset, geometry: regions[0].boundary.geometry }) };
   } catch (error) {
     if (error instanceof CadError) return { eligible: false, code: error.code, message: error.message };
     throw error;

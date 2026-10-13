@@ -8,7 +8,7 @@ import { buildChains } from '@/domain/path-intel/chains';
 import type { PathSegment } from '@/domain/path-intel/types';
 import type { CadCurveFeature, CadDocument, CadPathSegment } from './cadDocument';
 import { CadError } from './cadError';
-import { resolveCadCurve } from './cadCurve';
+import { resolveCadCurve, resolveCadCurveGeometry } from './cadCurve';
 import { assertCompleteCadDxf } from './cadDxfImport';
 import { CadDxfImportSourceSchema, CadDxfUnitsSchema, parseCadDxfImportSource, type CadDxfUnits } from './cadDxfSource';
 import { CadFeatureSchema, createCadDocument, parseCadDocument } from './cadSchema';
@@ -164,7 +164,7 @@ export function importCadDxfCurve(input: CadDxfCurveImportInput): CadDxfCurveImp
 
 /** Standard ordered OPEN LWPOLYLINE; local millimetres, no extra closure or proprietary metadata. */
 export function exportCadCurveDxf(curve: CadCurveFeature, parameters: Readonly<Record<string,number>>): string {
-  const resolved = resolveCadCurve(curve, parameters);
+  const resolved = resolveCadCurveGeometry(curve, parameters);
   if (curve.suppressed) throw new CadError('suppressed-curve', 'Unsuppress the Curve before exporting its geometry.');
   const vertices: { x: number; y: number; bulge: number }[] = resolved.entities.map((entity, index) => {
     if (entity.type !== 'line' && entity.type !== 'arc') throw new CadError('dxf-inexact', 'Curve exports require ordered analytic line/arc edges.');

@@ -26,6 +26,51 @@ function setup(mode: 'solid' | 'sketch' | 'curve' = 'solid') {
 }
 
 describe('shared CAD viewport controls', () => {
+  const datum = { id: 'mounting_plane', name: 'Mounting plane', kind: 'datum-plane' as const, suppressed: false,
+    definition: { kind: 'world' as const, basePlane: 'XY' as const, origin: [12, -8, 4] as const, rotation: [30, 0, 15] as const } };
+  it('captures datum-only references without a kernel build only after their exact installation', async () => {
+    const context = setup();
+    context.update({ document: { ...createCadDocument('Mounting plane', 'part'), features: [datum] },
+      visibleReferenceIds: [datum.id], buildState: 'idle', buildVersion: null, buildId: null });
+    const view = { mode: 'solid' as const, available: true, view: 'Isometric' as const, gridVisible: true, zoom: 1, revision: 2 };
+    for (const provenance of [{}, { referenceVersion: 'old', referenceFeatureIds: [datum.id] },
+      { referenceVersion: 'version-1', referenceFeatureIds: [] }, { referenceVersion: 'version-1', referenceFeatureIds: ['another_plane'] }]) {
+      context.updateView({ ...view, ...provenance });
+      await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_STATE' });
+    }
+    expect(context.capture).not.toHaveBeenCalled();
+    context.updateView({ ...view, referenceVersion: 'version-1', referenceFeatureIds: Object.freeze([datum.id]) });
+    await expect(context.controls.capture(new AbortController().signal)).resolves.toMatchObject({ buildVersion: null,
+      viewState: { buildState: 'idle', view: { referenceVersion: 'version-1', referenceFeatureIds: [datum.id] } } });
+    context.update({ workflowOpen: true });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'WORKFLOW_OPEN' });
+    context.update({ workflowOpen: false });
+    context.capture.mockImplementationOnce(async () => { context.update({ visibleReferenceIds: [] }); return png; });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
+  });
+  it('does not use a suppressed datum or an installed glyph to bypass a pending solid build', async () => {
+    const context = setup();
+    const base = createCadDocument('Mounting plane', 'part');
+    context.updateView({ mode: 'solid', available: true, referenceVersion: 'version-1', referenceFeatureIds: [], view: 'Isometric', gridVisible: true, zoom: 1, revision: 1 });
+    context.update({ document: { ...base, features: [{ ...datum, suppressed: true }] }, buildState: 'idle', buildVersion: null, buildId: null });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_STATE' });
+    context.update({ document: { ...base, features: [datum,
+      { id: 'section', name: 'Section', kind: 'sketch', plane: { kind: 'datum-plane', featureId: datum.id }, offset: 0, suppressed: false, profiles: [] },
+      { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false, sketchId: 'section', distance: 10, symmetric: false, operation: 'new', targetId: null }] },
+      visibleReferenceIds: [datum.id], buildState: 'building' });
+    context.updateView({ mode: 'solid', available: true, referenceVersion: 'version-1', referenceFeatureIds: [datum.id], view: 'Isometric', gridVisible: true, zoom: 1, revision: 2 });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_STATE' });
+    expect(context.capture).not.toHaveBeenCalled();
+  });
+  it('retains typed datum identity in a local capture and rejects placement changes during capture', async () => {
+    const context = setup('sketch');
+    const view = { mode: 'sketch' as const, available: true, plane: Object.freeze({ kind: 'datum-plane' as const, featureId: datum.id }),
+      gridVisible: true, snapEnabled: true, gridStepMm: 5, centerMm: [0, 0] as const, heightSpanMm: 160, revision: 1 };
+    context.updateView(view);
+    await expect(context.controls.capture(new AbortController().signal)).resolves.toMatchObject({ viewState: { view: { plane: { kind: 'datum-plane', featureId: datum.id } } } });
+    context.capture.mockImplementationOnce(async () => { context.updateView({ ...view, plane: 'XY', revision: 2 }); return { ...png, source: '2d' }; });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
+  });
   const referenceDocument = { ...createCadDocument('Reference', 'part'), features: [{
     id: 'curve-1', name: 'Rail', kind: 'curve' as const, plane: 'XY' as const, offset: 0, suppressed: false,
     segments: [{ kind: 'line' as const, start: [0, 0] as const, end: [20, 0] as const }]
