@@ -30,6 +30,10 @@ export async function rawCadToolCall(page: Page, name: string, input: unknown = 
 
 export async function callCadTool(page: Page, name: string, input: unknown = {}): Promise<Record<string, unknown>> {
   const result = await rawCadToolCall(page, name, input);
+  return cadToolData(name, result);
+}
+
+function cadToolData(name: string, result: unknown): Record<string, unknown> {
   expect(result, `${name}: ${JSON.stringify(result)}`).toMatchObject({ ok: true });
   if (!result || typeof result !== 'object' || !('data' in result) || !result.data || typeof result.data !== 'object') throw new Error('Invalid tool result');
   return result.data as Record<string, unknown>;
@@ -39,4 +43,17 @@ export async function cadContext(page: Page): Promise<Record<string, unknown> & 
   const value = await callCadTool(page, 'cad_get_context');
   if (!('version' in value) || typeof value.version !== 'string' || !('documentId' in value) || typeof value.documentId !== 'string') throw new Error('Invalid CAD context');
   return { ...value, version: value.version, documentId: value.documentId };
+}
+
+export async function captureCadPreview(page: Page, expectedVersion: string): Promise<Record<string, unknown>> {
+  const result = await rawCadToolCall(page, 'cad_capture_preview', { expectedVersion });
+  if (result && typeof result === 'object' && 'ok' in result && result.ok === false
+      && 'error' in result && result.error && typeof result.error === 'object'
+      && 'code' in result.error && result.error.code === 'STALE_VIEW') {
+    // A changing rendered layer invalidates the PNG, not the caller's accepted
+    // document version. Follow the public recovery instruction exactly once.
+    await callCadTool(page, 'cad_get_viewport', { expectedVersion });
+    return callCadTool(page, 'cad_capture_preview', { expectedVersion });
+  }
+  return cadToolData('cad_capture_preview', result);
 }

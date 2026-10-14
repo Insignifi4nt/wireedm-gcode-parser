@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import type { CadTopologyDescriptor } from '../src/domain/cad/cadTopology';
 import type { CadFeature, CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools as prepare, rawCadToolCall as rawCall, callCadTool as call, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools as prepare, rawCadToolCall as rawCall, callCadTool as call, cadContext as context, captureCadPreview } from './cad-tool-helpers';
 
 async function openViewControls(page: Page) {
   const toggle = page.getByRole('button', { name: 'View controls', exact: true });
@@ -778,12 +778,12 @@ test('an imported path is selected by its interior and edited atomically through
   await page.getByRole('complementary', { name: 'Feature properties' }).getByText('Exact geometry', { exact: true }).click();
   await expect(page.getByLabel('Path segment', { exact: true })).toBeVisible();
   await page.getByLabel('Path segment', { exact: true }).fill(String(segmentIndex + 1));
-  await page.getByLabel('End X', { exact: false }).fill('tipX');
+  await page.getByRole('textbox', { name: 'End X mm', exact: true }).fill('tipX');
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(page.locator('.cad-property-form [role="alert"]')).toContainText('continuous and closed');
   expect(await context(page)).toMatchObject({ version: current.version, workflowOpen: true });
   await page.getByLabel('Path segment', { exact: true }).fill(String((segmentIndex + 1) % segments.length + 1));
-  await page.getByLabel('Start X', { exact: false }).fill('tipX');
+  await page.getByRole('textbox', { name: 'Start X mm', exact: true }).fill('tipX');
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(page.locator('.cad-property-form [role="alert"]')).not.toBeVisible();
   const changed = await context(page);
@@ -1204,7 +1204,10 @@ test('the first solid fits after reference-only viewing while later rebuilds pre
     const result = await rawCall(page, 'cad_get_viewport', { expectedVersion: padded.version }) as { ok: boolean; data?: { view?: { zoom?: number } } };
     return result.ok && typeof result.data?.view?.zoom === 'number' ? result.data.view.zoom : outlineZoom;
   }).toBeLessThan(outlineZoom / 10);
-  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: padded.version }));
+  const capture = await captureCadPreview(page, padded.version);
+  expect(capture).toMatchObject({ documentId: padded.documentId, draftVersion: padded.version, contentSource: 'cad-draft', source: '3d',
+    viewState: { documentVersion: padded.version, buildVersion: padded.version } });
+  await expectRenderedSolidCapture(page, capture);
   await page.screenshot({ path: 'tmp/cad-first-solid-fit.png' });
   const framed = await call(page, 'cad_get_viewport', { expectedVersion: padded.version });
   await call(page, 'cad_edit_document', { expectedVersion: padded.version, edits: [{ kind: 'set-parameter', name: 'height', value: 600 }] });
@@ -1527,7 +1530,10 @@ test('human mixed path drawing retains invalid points and commits one exact undo
   expect(await call(page, 'cad_build', { expectedVersion: current.version }))
     .toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(500 * Math.PI, 7) }] });
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'fit' } });
-  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: current.version }));
+  const capture = await captureCadPreview(page, current.version);
+  expect(capture).toMatchObject({ documentId: current.documentId, draftVersion: current.version, contentSource: 'cad-draft', source: '3d',
+    viewState: { documentVersion: current.version, buildVersion: current.version } });
+  await expectRenderedSolidCapture(page, capture);
   await page.screenshot({ path: 'tmp/cad-drawn-path.png' });
 });
 

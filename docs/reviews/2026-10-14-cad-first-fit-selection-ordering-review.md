@@ -56,3 +56,5 @@ The parent's fresh production bundle `main-BwYHhAH4.js` now passes the actual fi
 | `src/features/cad/CadDatumEditing.test.tsx` | `2848ddcebddf1e451ef38aa509ab66a28f3dfe70a45081409d2e883b25a577b8` |
 
 The owner made no browser, server, commit or push actions. The parent owns the fresh actual-browser after-repair probe and full CI gate; the research agent owns independent frozen source review. Those results must be recorded separately, and this bounded repair does not complete the overall CAD goal.
+
+Primary-checkout after-repair evidence hashes: `tmp/cad-initial-fit-long-label-fixed.json` is `fbc1a59a5e2e88faefcc87dfe33001e17805582f4e50eeab5cf75ca731be3aec`; `.png` is `98655c7acbf760989ad2c7c0224b8ed9b7203e4d34d8fc7106763f9beda2c056`. The pushed checkpoint `25b3994af33d3a7f011651a42603f8dd898af597` full CI is a separate gate. No additional production edit was made for this evidence append.
