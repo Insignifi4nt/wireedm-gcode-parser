@@ -37,7 +37,13 @@ export function exportCadKernelStep(shapes: readonly { readonly shape: Shape3D; 
     const progress = own(new oc.Message_ProgressRange());
     attemptedWrite = true;
     if (!writer.Perform(document, filename, progress)) throw new CadError('step-export', 'OpenCascade could not write the named STEP assembly.');
-    return new Blob([Uint8Array.from(oc.FS.readFile(path)).buffer], { type: 'application/STEP' });
+    const file = oc.FS.readFile(path);
+    // FS.readFile owns its allocated bytes; Blob snapshots the exact view. Copy
+    // shared/native memory if an alternative FS supplies borrowed storage.
+    const bytes = file.buffer instanceof ArrayBuffer && file.buffer !== oc.wasmMemory.buffer
+      ? new Uint8Array(file.buffer, file.byteOffset, file.byteLength)
+      : Uint8Array.from(file);
+    return new Blob([bytes], { type: 'application/STEP' });
   } catch (error) {
     failed = true;
     throw error;

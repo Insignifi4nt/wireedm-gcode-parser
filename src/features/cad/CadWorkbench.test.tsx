@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadBuildResult, CadDocument, CadSketchPlane } from '@/domain/cad/cadDocument';
 import type { CadTopologyDescriptor, CadTopologyResolvePicksResult } from '@/domain/cad/cadTopology';
 import { applyCadEdits } from '@/domain/cad/cadOperations';
-import { createCadDocument } from '@/domain/cad/cadSchema';
+import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { CadWorkbench, type CadWorkbenchProps } from './CadWorkbench';
 import { closeSketchPolygon, snapSketchPoint, twoPointSketchProfile } from './cadSketchInteraction';
@@ -183,6 +183,18 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('opens and selects the last of 257 accepted datum references without changing the document or history', async () => {
+    const document = parseCadDocument({ ...createCadDocument('Station references', 'station_references'),
+      features: Array.from({ length: 257 }, (_, index) => ({ id: `station_${index}`, name: `Station ${index}`, kind: 'datum-plane', suppressed: false,
+        definition: { kind: 'world', basePlane: 'XY', origin: [0, 0, index], rotation: [0, 0, 0] } })) });
+    await mount(document);
+    const before = currentSession.getSnapshot();
+    expect([...container.querySelectorAll<HTMLElement>('.cad-feature-node')].map(node => node.dataset.cadFeatureId)).toEqual(document.features.map(feature => feature.id));
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'station_256' }));
+    expect(viewport().getState()).toMatchObject({ selectedFeatureId: 'station_256', selectedReferencePlane: { kind: 'datum-plane', featureId: 'station_256' } });
+    expect(currentSession.getSnapshot()).toBe(before);
+    expect(currentDocument).toBe(document);
+  });
   it('shows the selected native body component count beside volume without inferring a count from older builds or changing history', async () => {
     const counted = { ...topologyBuild, meshes: topologyBuild.meshes.map(mesh => ({ ...mesh, solidCount: 2 })) };
     await mount(solidDocument(), { build: counted, buildState: 'ready' });

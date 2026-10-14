@@ -10,9 +10,12 @@ export function cadPocketSectionScale(profile: ResolvedCadProfile): number {
     case 'rectangle':
       return Math.min(profile.width, profile.height, profile.cornerRadius > 0 ? profile.cornerRadius : Infinity);
     case 'polygon': {
-      const xs = profile.points.map((point) => point[0]);
-      const ys = profile.points.map((point) => point[1]);
-      return Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const [x, y] of profile.points) {
+        minX = Math.min(minX, x); minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+      }
+      return Math.min(maxX - minX, maxY - minY);
     }
     case 'path': {
       const bounds = cadAnalyticPathMetrics(profile).bounds;

@@ -49,5 +49,7 @@ export function cadOrderedCurveEntities(segments: readonly ResolvedCadPathSegmen
 
 /** Endpoint equality allows arithmetic roundoff, never a physical gap repair. */
 export function cadPathClosureTolerance(points: readonly DxfPoint[]): number {
-  return Math.max(1e-12, 8 * Number.EPSILON * Math.max(1, ...points.flatMap(point => [Math.abs(point.x), Math.abs(point.y)])));
+  let scale = 1;
+  for (const point of points) scale = Math.max(scale, Math.abs(point.x), Math.abs(point.y));
+  return Math.max(1e-12, 8 * Number.EPSILON * scale);
 }

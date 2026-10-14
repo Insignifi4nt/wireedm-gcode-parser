@@ -1,4 +1,5 @@
 import type { BoundedExactTextResult } from './workbenchStorageAdapter';
+import { createStrictGzipByteStream } from './exactTextStream';
 
 /** Counts like TextEncoder, but avoids allocating a second copy of an oversized cache string. */
 export function exceedsUtf8Limit(text: string, limit: number): boolean {
@@ -30,25 +31,14 @@ export function assertReadLimit(limit: number) {
   if (!Number.isSafeInteger(limit) || limit < 0 || limit > 128 * 1024 * 1024) throw new Error('Invalid exact-read byte limit.');
 }
 
-/** Browser streaming decompression bounds expansion, validates gzip, and releases the stream on cancellation. */
+/** Shared strict gzip stream with bounded expansion and released cancellation ownership. */
 export async function readBoundedGzip(base64: string, maxBytes: number, signal?: AbortSignal): Promise<BoundedExactTextResult> {
   assertReadLimit(maxBytes);
   signal?.throwIfAborted();
   // Limit the physical envelope too. Gzip framing overhead is allowed; oversized envelopes are omitted explicitly.
   if (base64.length > Math.ceil((maxBytes + 64 * 1024) / 3) * 4) return { status: 'too-large' };
-  if (typeof DecompressionStream === 'undefined') throw new Error('Bounded gzip reading is unavailable in this browser.');
-  const encoded = atob(base64);
-  const bytes = Uint8Array.from(encoded, character => character.charCodeAt(0));
-  let offset = 0;
-  const input = new ReadableStream<BufferSource>({
-    pull(controller) {
-      if (offset === bytes.length) { controller.close(); return; }
-      const end = Math.min(offset + 1024, bytes.length);
-      controller.enqueue(bytes.subarray(offset, end)); offset = end;
-    }
-  });
-  const reader = input.pipeThrough(new DecompressionStream('gzip')).getReader();
-  const abort = () => { void reader.cancel().catch(() => undefined); };
+  const reader = createStrictGzipByteStream(base64, signal).getReader();
+  const abort = () => { void reader.cancel(signal?.reason).catch(() => undefined); };
   signal?.addEventListener('abort', abort, { once: true });
   const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
   const parts: string[] = [];

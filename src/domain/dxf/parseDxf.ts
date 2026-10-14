@@ -60,6 +60,17 @@ interface ResolvedBlockDefinition extends EntityParseResult {
   basePoint: DxfPoint;
 }
 
+/** Pause an entity stream only when a valid INSERT needs its block. */
+type EntityParseIterator = Generator<string, EntityParseResult, ResolvedBlockDefinition | null>;
+interface PendingBlock {
+  kind: 'pending';
+  name: string;
+  basePoint: DxfPoint;
+  parser: EntityParseIterator;
+  step: IteratorResult<string, EntityParseResult>;
+}
+type BlockResolution = PendingBlock | { kind: 'resolved'; block: ResolvedBlockDefinition | null };
+
 interface BlockDefinitionsResult {
   resolveBlock: (blockName: string) => ResolvedBlockDefinition | null;
 }
@@ -291,35 +302,35 @@ function parseBlockDefinitions(
   const resolvedBlocks = new Map<string, ResolvedBlockDefinition>();
   const resolving = new Set<string>();
 
-  const resolveBlock = (blockName: string): ResolvedBlockDefinition | null => {
+  const startBlock = (blockName: string): BlockResolution => {
     const normalizedName = normalizeBlockName(blockName);
     const cached = resolvedBlocks.get(normalizedName);
-    if (cached) return cached;
+    if (cached) return { kind: 'resolved', block: cached };
 
     const rawBlock = rawBlocks.get(normalizedName);
-    if (!rawBlock) return null;
+    if (!rawBlock) return { kind: 'resolved', block: null };
 
     if (!rawBlock.basePointValid) {
-      return {
+      return { kind: 'resolved', block: {
         basePoint: rawBlock.basePoint,
         entities: [],
         unsupportedEntities: new Set(),
         warnings: [`Rejected BLOCK "${rawBlock.name}" because its base point is malformed.`]
-      };
+      } };
     }
 
     if (resolving.has(normalizedName)) {
-      return {
+      return { kind: 'resolved', block: {
         basePoint: rawBlock.basePoint,
         entities: [],
         unsupportedEntities: new Set(['INSERT']),
         warnings: [`Skipped circular INSERT reference for BLOCK "${rawBlock.name}".`]
-      };
+      } };
     }
 
     budget.check('insertDepth', resolving.size + 1);
     resolving.add(normalizedName);
-    const result = parseEntitiesFromPairs(rawBlock.pairs, {
+    const parser = iterateEntitiesFromPairs(rawBlock.pairs, {
       budget,
       blockName: rawBlock.name,
       contextLabel: `BLOCK "${rawBlock.name}"`,
@@ -327,10 +338,28 @@ function parseBlockDefinitions(
       curveChordError,
       resolveBlock
     });
-    resolving.delete(normalizedName);
-    const resolved = { ...result, basePoint: rawBlock.basePoint };
-    resolvedBlocks.set(normalizedName, resolved);
-    return resolved;
+    return { kind: 'pending', name: normalizedName, basePoint: rawBlock.basePoint, parser, step: parser.next() };
+  };
+
+  // Each suspended stream holds its authored entity position. Resolve children
+  // lazily in the same depth-first order, without consuming the JS call stack.
+  const resolveBlock = (blockName: string): ResolvedBlockDefinition | null => {
+    const first = startBlock(blockName);
+    if (first.kind === 'resolved') return first.block;
+    const stack = [first];
+    while (true) {
+      const frame = stack[stack.length - 1];
+      if (frame.step.done) {
+        const block = { ...frame.step.value, basePoint: frame.basePoint };
+        resolving.delete(frame.name); resolvedBlocks.set(frame.name, block); stack.pop();
+        if (!stack.length) return block;
+        const parent = stack[stack.length - 1]; parent.step = parent.parser.next(block);
+      } else {
+        const child = startBlock(frame.step.value);
+        if (child.kind === 'pending') stack.push(child);
+        else frame.step = frame.parser.next(child.block);
+      }
+    }
   };
 
   return { resolveBlock };
@@ -393,6 +422,13 @@ function findBlockEnd(pairs: DxfPair[], startIndex: number, budget: DxfResourceB
 }
 
 function parseEntitiesFromPairs(entityPairs: DxfPair[], context: EntityParseContext): EntityParseResult {
+  const parser = iterateEntitiesFromPairs(entityPairs, context);
+  let step = parser.next();
+  while (!step.done) step = parser.next(context.resolveBlock?.(step.value) ?? null);
+  return step.value;
+}
+
+function* iterateEntitiesFromPairs(entityPairs: DxfPair[], context: EntityParseContext): EntityParseIterator {
   const entities: DxfEntity[] = [];
   const unsupportedEntities = new Set<string>();
   const warnings: string[] = [];
@@ -445,7 +481,7 @@ function parseEntitiesFromPairs(entityPairs: DxfPair[], context: EntityParseCont
         continue;
       }
 
-      const expanded = expandInsert(insert, context);
+      const expanded = yield* expandInsert(insert, context);
       for (const entity of expanded.entities) entities.push(entity);
       expanded.unsupportedEntities.forEach((entity) => addUnsupported(unsupportedEntities, context.budget, entity));
       pushWarnings(warnings, context.budget, ...expanded.warnings);
@@ -842,10 +878,10 @@ function parseInsert(pairs: DxfPair[], budget: DxfResourceBudget): DxfInsertEnti
   };
 }
 
-function expandInsert(insert: DxfInsertEntity, context: EntityParseContext): EntityParseResult {
+function* expandInsert(insert: DxfInsertEntity, context: EntityParseContext): EntityParseIterator {
   const instances = insert.rowCount * insert.columnCount;
   context.budget.reserve('insertInstances', instances);
-  const resolvedBlock = context.resolveBlock?.(insert.blockName);
+  const resolvedBlock = yield insert.blockName;
   if (!resolvedBlock) {
     return {
       entities: [],

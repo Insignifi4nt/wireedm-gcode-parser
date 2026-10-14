@@ -6,6 +6,7 @@ import { CadError } from '@/domain/cad/cadError';
 import { CadStorageError } from '@/domain/cad/cadStorage';
 import { CadSectionRequestSchema } from '@/domain/cad/cadSection';
 import { CadViewportCommandSchema } from './cadViewportControls';
+import { cadViewportMetadataToken, cadViewportToolState } from './cadViewportToolReplies';
 import { CadFeatureSchema } from '@/domain/cad/cadSchema';
 import { CadTopologyPickSchema, CadTopologyResolvePicksRequestSchema } from '@/domain/cad/cadTopology';
 import { CadSolidImportSourceSchema } from '@/domain/cad/cadImports';
@@ -257,9 +258,24 @@ export function cadSiteTools(getController: () => CadController) {
       if (input.direction === 'undo') cad.undo(input.expectedVersion); else cad.redo(input.expectedVersion);
       return context(cad);
     }, false),
-    tool('cad_get_viewport', 'Read CAD selection, selectedReferencePlane, awaitingSketchPlane, sketch/curve editor identity, named view, grid state, displayed build version, installed referenceVersion, referencePlanes and referenceFeatureIds. Reference IDs identify visible world-space sketch outlines, curves and datum-plane glyphs; referencePlanes lists principal XY/XZ/YZ glyphs without inventing feature IDs. Use this to verify a view change before capture.', object(version), (cad, input) => cad.readViewport(input.expectedVersion)),
+    tool('cad_get_viewport', 'Read CAD selection, view and exact installed build/reference metadata. Small ID collections are complete; large replies retain whole IDs with exact totals and omission counts. viewportToken identifies the complete observed viewport metadata. To read every displayed ID, provide collection visible-bodies or reference-features, expectedViewportToken from the summary, and offset/limit at the same expectedVersion. Changed metadata rejects paging with STALE_VIEW; refresh the summary. Reference IDs identify installed sketches, curves and datum glyphs; referencePlanes lists principal XY/XZ/YZ glyphs without feature IDs. Use this to verify a view change before capture.', Type.Union([
+      object(version), object({ ...version, collection: Type.Union([Type.Literal('visible-bodies'), Type.Literal('reference-features')]),
+        expectedViewportToken: Type.String({ minLength: 1, maxLength: 128 }), ...pageFields })
+    ]), (cad, input) => {
+      const state = cad.readViewport(input.expectedVersion);
+      if (!('collection' in input)) return cadViewportToolState(cad.session, state);
+      const viewportToken = cadViewportMetadataToken(cad.session, state);
+      if (viewportToken !== input.expectedViewportToken) throw new ToolError('STALE_VIEW', 'The displayed viewport metadata changed. Read cad_get_viewport again before paging IDs.');
+      const rows = input.collection === 'visible-bodies' ? state.visibleBodyIds : state.view?.mode === 'solid' ? state.view.referenceFeatureIds : undefined;
+      if (rows === undefined) throw new ToolError('VIEW_UNAVAILABLE', 'Installed reference IDs are available in the solid viewport. Finish sketch or curve editing and wait for the reference layer.');
+      return { documentId: state.documentId, documentVersion: state.documentVersion, viewportToken, collection: input.collection, ...page(rows, input) };
+    }),
     tool('cad_set_viewport', 'Use visible CAD viewport operations: named view, fit/grid, feature/profile/reference-plane selection, enter/finish sketch or curve editing, body/face/edge pick mode and exact-build topology selection. Plane selection never inserts a sketch: use cad_edit_document with an explicit plane to create one. Does not edit geometry or save. Active workflows block changes. Read cad_get_viewport after applying.', object({ ...version, command: CadViewportCommandSchema }), (cad, input) => cad.changeViewport(input.command, input.expectedVersion), false),
-    tool('cad_capture_preview', 'Capture actual CAD sketch, curve or solid preview pixels as a bounded PNG with document version, view state and SHA-256. The browser-local blob URL is not a public URL or desktop screenshot. Both 2D and 3D show current draft content, including unsaved edits. Views containing active solid features require the current build; reference-only views, including standalone datum planes, require current installed referenceVersion and referenceFeatureIds without loading the solid engine. Stale geometry or selection layers are rejected. Optional download requests a browser save; a visible CAD preview PNG link supports retry.', object({ ...version, download: Type.Optional(Type.Boolean()) }), (cad, input, signal) => cad.captureViewport(input.expectedVersion, input.download ?? false, signal), false),
+    tool('cad_capture_preview', 'Capture actual CAD sketch, curve or solid preview pixels as a bounded PNG with document version, view metadata and SHA-256. Large captured ID collections have exact totals/omissions and viewportToken; read every ID through cad_get_viewport collection pages while that complete metadata remains current. Internal captured metadata stays complete. The browser-local blob URL is not public or a desktop screenshot. Both 2D and 3D show current draft content, including unsaved edits. Active solids require the current build; reference-only views require current installed referenceVersion and reference membership without loading the solid engine. Stale geometry or selection layers are rejected. Optional download requests a browser save; a visible CAD preview PNG link supports retry.', object({ ...version, download: Type.Optional(Type.Boolean()) }), async (cad, input, signal) => {
+      const captured = await cad.captureViewport(input.expectedVersion, input.download ?? false, signal);
+      const receipt = (viewState: unknown) => ({ ...captured, viewState });
+      return receipt(cadViewportToolState(cad.session, captured.viewState, receipt));
+    }, false),
     tool('cad_build', 'Evaluate current CAD history in the exact solid kernel and inspect paginated body volume (mm³), bounds (mm), native solidCount (null if unavailable) and feature diagnostics. One body can contain multiple solids. Follow nextBodyOffset with offset/limit on the same version. Lazy kernel initialization may take several seconds. Does not save or create CAM output.', object({ ...version, ...pageFields }), async (cad, input, signal) => {
       const result = await cad.inspectBuild(input.expectedVersion, signal);
       const bodies = page(result.meshes, input, mesh => ({ featureId: mesh.featureId, name: mesh.name, volumeMm3: mesh.volume, solidCount: mesh.solidCount ?? null, boundsMm: mesh.bounds, triangles: mesh.indices.length / 3,

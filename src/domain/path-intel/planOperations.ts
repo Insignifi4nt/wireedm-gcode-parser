@@ -296,8 +296,9 @@ function classificationPriority(classification: ContourClassification) {
 }
 
 function sourceOrderForContour(contour: PathContour) {
-  const sourceIndices = contour.provenance.sourceEntityIndices;
-  return sourceIndices.length > 0 ? Math.min(...sourceIndices) : Number.POSITIVE_INFINITY;
+  let minimum = Number.POSITIVE_INFINITY;
+  for (const index of contour.provenance.sourceEntityIndices) minimum = Math.min(minimum, index);
+  return minimum;
 }
 
 function comparePlanSourceOrder(a: PlanItem, b: PlanItem) {

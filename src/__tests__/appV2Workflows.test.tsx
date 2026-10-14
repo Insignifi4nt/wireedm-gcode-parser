@@ -6,6 +6,9 @@ import { initializeWorkbenchConnection } from '@/domain/storage/initializeWorkbe
 import { WORKBENCH_FILE_TRANSACTION_PATH } from '@/domain/storage/workbenchFileTransaction';
 import { FakeDirectoryHandle } from '@/domain/storage/__tests__/fakeDirectoryHandle';
 import { saveEditorProgram } from '@/domain/editor/saveEditorProgram';
+import { loadEditorProgram } from '@/domain/editor/loadEditorProgram';
+import { createDxfImportServices } from '@/app/dxfImportServices';
+import { directDxfProcessor } from '@/features/dxf-import/dxfProcessorTestSupport';
 
 import {
   cleanupAppTestContext,
@@ -38,7 +41,9 @@ describe('V2 app workflows', () => {
     // Observe the actual durable operation rather than assuming microtask flushes
     // finish streaming storage I/O. Both adapters execute their real transaction.
     const save = vi.fn(saveEditorProgram);
-    await renderApp(context, { saveEditorProgram: save,
+    const commitImport = vi.fn(createDxfImportServices(directDxfProcessor).commitDxfProjectImport);
+    const load = vi.fn(loadEditorProgram);
+    await renderApp(context, { saveEditorProgram: save, commitDxfProjectImport: commitImport, loadEditorProgram: load,
       ...(kind === 'directory' ? { connectRememberedWorkbenchDirectory: () => initializeWorkbenchConnection(adapter) } : {}) });
     const container = context.container;
     async function click(selector: string) {
@@ -48,6 +53,17 @@ describe('V2 app workflows', () => {
     }
     await prepareDxfImport(container, new File([simpleLineDxf()], 'simulation-save.dxf'));
     await confirmPendingDxfImport(container, 'millimeters');
+    expect(commitImport).toHaveBeenCalledOnce();
+    await act(async () => {
+      const imported = await commitImport.mock.results[0].value;
+      if (!imported.ok) throw new Error(imported.error.message);
+    });
+    expect(load).toHaveBeenCalledOnce();
+    await act(async () => {
+      const loaded = await load.mock.results[0].value;
+      if (!loaded.ok) throw new Error(loaded.error.message);
+    });
+    expect(container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
     await click('button[aria-label="Geometry menu"]');
     await click('[data-editor-workflow-command="geometry.transform"]');
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Translate X"]')!;

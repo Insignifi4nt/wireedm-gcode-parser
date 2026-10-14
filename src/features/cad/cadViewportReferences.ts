@@ -29,8 +29,6 @@ export interface CadViewportPrincipalPlaneReference extends CadViewportReference
   readonly plane: CadPlane;
 }
 export type CadViewportReference = CadViewportFeatureReference | CadViewportPrincipalPlaneReference;
-export const MAX_CAD_REFERENCE_DISPLAY_SEGMENTS = 32768;
-const MAX_REFERENCE_FEATURE_IDS = 256;
 interface ReferenceSource extends Omit<CadViewportFeatureReference, 'positions'> {
   readonly frame: CadResolvedFrame;
   readonly offset: number;
@@ -56,7 +54,7 @@ function worldBounds(plane: CadPlane, offset: number, bounds: Bounds2): CadBound
     max: Object.freeze([Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.max(a[2], b[2])] satisfies [number, number, number]) });
 }
 
-/** Prepare once per immutable accepted revision; all sources share one display budget. */
+/** Prepare once per immutable accepted revision; scene size never changes curve resolution. */
 export function prepareCadViewportReferences(features: readonly CadFeature[], parameters: Readonly<Record<string, number>>): readonly CadViewportReference[] {
   const frames = prepareCadDatumFrames(features, parameters);
   const glyphs = features.flatMap(feature => feature.kind === 'datum-plane' && !feature.suppressed ? [cadDatumReference(feature, resolveCadWorldDatum(feature, parameters))] : []);
@@ -77,10 +75,6 @@ export function prepareCadViewportReferences(features: readonly CadFeature[], pa
       } catch { return []; } // Invalid sources retain their feature/editor diagnostics.
     });
   });
-  const edgeCount = sources.reduce((sum, source) => sum + source.entities.length, 0);
-  const contourBudget = MAX_CAD_REFERENCE_DISPLAY_SEGMENTS - glyphs.reduce((sum, glyph) => sum + glyph.positions.length / 6, 0);
-  if (edgeCount > contourBudget) throw new Error('CAD source geometry exceeds the reference display budget.');
-  const perEdge = Math.max(1, Math.floor(contourBudget / Math.max(1, edgeCount)));
   return Object.freeze([...glyphs, ...sources.map(source => {
     const positions: number[] = [];
     const point = (value: { x: number; y: number }) => cadFramePointToWorld(source.frame, source.offset, [value.x, value.y]);
@@ -88,7 +82,7 @@ export function prepareCadViewportReferences(features: readonly CadFeature[], pa
       if (entity.type === 'line') { positions.push(...point(entity.start), ...point(entity.end)); continue; }
       const startAngle = entity.type === 'circle' ? 0 : entity.startAngle;
       const sweep = entity.type === 'circle' ? 2 * Math.PI : entity.sweepRadians ?? entity.endAngle - entity.startAngle;
-      const steps = Math.min(perEdge, Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 60))));
+      const steps = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 60)));
       const at = (index: number) => entity.type === 'arc' && index === 0 ? point(entity.start) : entity.type === 'arc' && index === steps ? point(entity.end)
         : point({ x: entity.center.x + entity.radius * Math.cos(startAngle + sweep * index / steps), y: entity.center.y + entity.radius * Math.sin(startAngle + sweep * index / steps) });
       let previous = at(0);
@@ -122,7 +116,6 @@ export function selectCadViewportReferences(prepared: readonly CadViewportRefere
 
 export function cadReferenceFeatureIds(references: readonly CadViewportReference[]): readonly string[] {
   const ids = [...new Set(references.flatMap(reference => reference.featureId === null ? [] : [reference.featureId]))].sort();
-  if (ids.length > MAX_REFERENCE_FEATURE_IDS) throw new Error('CAD references exceed the document feature limit.');
   return Object.freeze(ids);
 }
 

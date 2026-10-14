@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { CadCurveFeature, CadDatumPlaneFeature, CadFeature, CadPlane, CadProfile, CadSketchFeature } from '@/domain/cad/cadDocument';
 import { resolveCadWorldDatum, cadFramePointToWorld } from '@/domain/cad/cadDatumPlanes';
-import { CAD_PRINCIPAL_PLANE_REFERENCES, cadReferenceFeatureIds, cadReferencePlanes, cadProfileReferenceGeometry, MAX_CAD_REFERENCE_DISPLAY_SEGMENTS, prepareCadViewportReferences, selectCadViewportReferences } from './cadViewportReferences';
+import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import { CAD_PRINCIPAL_PLANE_REFERENCES, cadReferenceFeatureIds, cadReferencePlanes, cadProfileReferenceGeometry, prepareCadViewportReferences, selectCadViewportReferences } from './cadViewportReferences';
 
 const sketch = (id = 'sketch', plane: CadPlane = 'XY', geometry: CadProfile = { kind: 'circle', x: 2, y: 3, radius: 1 }): CadSketchFeature => ({ id, name: id, kind: 'sketch', plane, offset: 'lift', suppressed: false,
   profiles: [{ id: 'profile', name: 'Profile', construction: false, geometry }] });
@@ -9,6 +10,17 @@ const curve: CadCurveFeature = { id: 'rail', name: 'Rail', kind: 'curve', plane:
 const pad: CadFeature = { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false, sketchId: 'section', distance: 5, symmetric: false, operation: 'new', targetId: null };
 
 describe('datum reference geometry and visibility', () => {
+  it('keeps all installed identities for 257 accepted standalone datum references', () => {
+    const features: CadDatumPlaneFeature[] = Array.from({ length: 257 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`, name: `Station ${index}`, kind: 'datum-plane', suppressed: false,
+      definition: { kind: 'world', basePlane: 'XY', origin: [0, 0, index], rotation: [0, 0, 0] }
+    }));
+    const document = parseCadDocument({ ...createCadDocument('Station references', 'station_references'), features });
+    const references = prepareCadViewportReferences(document.features, document.parameters);
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(references, document.features, null))).toEqual(features.map(feature => feature.id));
+    expect(references).toHaveLength(257);
+    expect(document.features).toEqual(features);
+  });
   it('keeps principal planes at the exact world origin and separate from real features with the same names', () => {
     const features = [{ ...sketch('XY'), offset: 0 }], references = [...CAD_PRINCIPAL_PLANE_REFERENCES, ...prepareCadViewportReferences(features, {})];
     expect(cadReferenceFeatureIds(references)).toEqual(['XY']); expect(cadReferencePlanes(references)).toEqual(['XY', 'XZ', 'YZ']);
@@ -46,6 +58,32 @@ describe('datum reference geometry and visibility', () => {
 });
 
 describe('world-space Sketch reference preparation', () => {
+  it('preserves every authored segment of an accepted Curve beyond the former display edge ceiling', () => {
+    const features: CadCurveFeature[] = Array.from({ length: 257 }, (_, station) => ({ ...curve, id: `rail_${station}`, offset: station,
+      segments: Array.from({ length: station === 256 ? 1 : 128 }, (_, index) => ({ kind: 'line', start: [index, 0], end: [index + 1, 0] })) }));
+    const document = parseCadDocument({ ...createCadDocument('Measured rails', 'measured_rails'), features });
+    const before = JSON.stringify(document), references = prepareCadViewportReferences(document.features, document.parameters);
+    expect(references).toHaveLength(257);
+    expect(references.reduce((sum, reference) => sum + reference.positions.length / 6, 0)).toBe(32769);
+    for (const [station, reference] of references.entries()) {
+      const count = features[station].segments.length;
+      expect(reference.positions).toHaveLength(count * 6);
+      for (let index = 0; index < count; index++) expect(reference.positions.slice(index * 6, index * 6 + 6)).toEqual([index, 0, station, index + 1, 0, station]);
+      expect(reference.bounds).toEqual({ min: [0, 0, station], max: [count, 0, station] });
+    }
+    expect(JSON.stringify(document)).toBe(before);
+  }, 30000);
+
+  it('retains each circular outline sampling resolution when accepted reference counts grow', () => {
+    const features = Array.from({ length: 300 }, (_, index) => ({ ...sketch(`section_${index}`), offset: index }));
+    const document = parseCadDocument({ ...createCadDocument('Sections', 'sections'), features });
+    const single = prepareCadViewportReferences([document.features[0]], {})[0];
+    const references = prepareCadViewportReferences(document.features, {});
+    expect(references).toHaveLength(300);
+    expect(single.positions.length / 6).toBe(120);
+    for (const reference of references) expect(reference.positions).toHaveLength(single.positions.length);
+    expect(references.reduce((sum, reference) => sum + reference.positions.length / 6, 0)).toBe(36000);
+  });
   it.each(['XY', 'XZ', 'YZ'] satisfies CadPlane[])('uses exact bounds and shared signed placement on %s', plane => {
     const feature = sketch('sketch', plane); const source = JSON.stringify(feature); const [prepared] = prepareCadViewportReferences([feature], { lift: 4 });
     expect(prepared).toMatchObject({ referenceId: 'sketch/profile', featureId: 'sketch', featureKind: 'sketch', construction: false });
@@ -77,14 +115,14 @@ describe('world-space Sketch reference preparation', () => {
     expect(reference.bounds).toEqual({ min: [0, -4, 0], max: [20, -4, 20] }); expect(JSON.stringify(feature)).toBe(source);
   });
 
-  it('shares one bounded sampler across thousands of Sketch edges and Curve arcs', () => {
+  it('preserves every Sketch edge and Curve arc sample across thousands of authored edges', () => {
     const segments = Array.from({ length: 256 }, (_, index) => ({ kind: 'arc', center: [index * 2 + 1, 0], radius: 1, startAngle: 180, sweep: index % 2 ? 180 : -180 } satisfies CadCurveFeature['segments'][number]));
     const curves: CadCurveFeature[] = Array.from({ length: 16 }, (_, index) => ({ ...curve, id: `rail_${index}`, offset: index, segments }));
     const points: readonly [number, number][] = Array.from({ length: 2048 }, (_, index) => [Math.cos(index * Math.PI / 1024) * 20, Math.sin(index * Math.PI / 1024) * 20]);
     const features = [...curves, { ...sketch('first', 'XY', { kind: 'polygon', points }), offset: 20 }, { ...sketch('second', 'XY', { kind: 'polygon', points }), offset: 30 }];
     const references = prepareCadViewportReferences(features, {}); expect(references).toHaveLength(18);
     const displayedEdges = references.reduce((sum, reference) => sum + reference.positions.length / 6, 0);
-    expect(displayedEdges).toBeGreaterThan(8192); expect(displayedEdges).toBeLessThanOrEqual(MAX_CAD_REFERENCE_DISPLAY_SEGMENTS);
+    expect(displayedEdges).toBe(16 * 256 * 60 + 2 * 2048);
     expect(cadReferenceFeatureIds(references)).toHaveLength(18);
   });
 });

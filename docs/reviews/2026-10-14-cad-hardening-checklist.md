@@ -2,6 +2,22 @@
 
 Status: active, continued after user review. Worktree: `feature/parametric-cad-workbench`. App: `0.0.697`.
 
+## Current continuation: capacity and CI
+
+The uncapped exchange checkpoint `c36aa3b` passed 3,795 local cases and the large STEP/CAD round trip. Its GitHub run exposed an earlier asynchronous import race in one Save test; it was not a green CI checkpoint. The test now awaits the real import and editor-load operations before clicking Geometry, preserving all cache/folder durable assertions. Node 24.22.0 focused checks and independent review pass. Node 24 LTS, current Node 24 action runtimes and explicit Ubuntu 24.04 runner selection replace the outdated CI runtime configuration.
+
+- [x] Reproduce and repair remaining accepted-input failures: 257 reference IDs, 32,769 displayed/analytic edges, 131,072-edge Pocket/CAM handoff, 131,073-vertex DXF polyline and 2,048 nested acyclic DXF blocks. Preserve exact geometry, original source, provenance and CAM policies.
+- [x] Keep large viewport/capture receipts usable through complete internal state, whole-entry summaries, exact counts and version/token-pinned ID pages. Document the public tool contract.
+- [x] Preserve exact Section endpoint matching while replacing the quadratic representative scan with ordered nearby candidates; avoid the redundant ordinary STEP byte-buffer copy. Native algorithm and precision remain unchanged.
+- [x] Verify Node 24 clean install; update the single audited transitive `source-map-js` package from 1.2.1 to its patched 1.2.2. No dependency ranges or native package changed; the subsequent audit reports zero vulnerabilities.
+- [x] Finish independent reviews of the frozen capacity/API slices and the small dependency delta.
+- [x] Repair the Node 24 gzip portability failure and shared bounded recovery with strict original member/header/footer/completion validation, preserved UTF-8/BOM and cancellation. Existing recovery limits stay separate. Independent storage review finds no actionable defect.
+- [x] Pass the combined Node 24 suite: 362 files / 3,847 cases, with all 30 changed source/test hashes unchanged. Production and 92 documentation/discovery/schema/link checks pass; native corresponding sources remain pinned.
+- [x] Verify actual current-bundle viewport/capture: 1,001 circle sketches, all IDs through 21 pages, successful bounded capture receipt and actual PNG hash, every exported feature unchanged, stale camera/document rejection, no-op retry and single Undo. The disposable tab closed without Save; main empty draft and saved fingerprint remain unchanged. Both local servers now run Node 24.22.0.
+- [ ] Push the reviewed checkpoint to the existing PR and verify actual GitHub CI, including its browser journeys. Do not claim CI success from local tests or E2E discovery.
+
+The overall CAD goal remains active. The native Section builder still dominates the measured large-section operation; the endpoint optimization is not a claim that every large native operation is instant. Preserve the open user's blank draft and all earlier exact backups during refreshes.
+
 ## Objective and working rules
 
 Make the existing standalone CAD reliable, responsive and clear for the morning review. Prioritize correctness, direct interaction, clean geometry/lighting and compact UI. No new feature kinds before an independent final review finds no actionable issue in existing scope.
