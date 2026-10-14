@@ -10,14 +10,15 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .node-version
+          check-latest: true
           cache: npm
       - run: npm ci
       - run: git fetch origin main
@@ -31,7 +32,7 @@ jobs:
       - run: npm run test:e2e -- --workers=2
       - name: Preserve browser failure reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: browser-test-report
           path: |

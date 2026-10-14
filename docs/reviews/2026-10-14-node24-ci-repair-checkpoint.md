@@ -1,0 +1,33 @@
+# Node 24 and CI repair checkpoint
+
+Active continuation, 14 October 2026. Baseline `c36aa3b50a30f82ded3508652d9e7917c69b6b59`; the overall CAD goal is not complete.
+
+## Reported failure
+
+The user's screenshot identifies the PR verification job's missing Geometry-menu button and action-runtime/runner migration warnings. The actual c36 run is [38595021137](https://github.com/Insignifi4nt/wireedm-gcode-parser/actions/runs/38595021137): 3,794 tests passed and the browser-cache Simulation-to-Editor Save case failed before Geometry. Later conformance, build and browser journey steps did not execute. Previous local 3,795-test evidence does not establish CI success.
+
+The real app controller awaits DXF commit, then editor load, then publishes the editor. The test previously treated two microtask flushes as sufficient. Both cache and folder Save cases now observe and await those real import/load promises before interacting, as they already did for durable Save. Source originals, saved geometry, returned receipts and absent transaction-journal assertions remain intact. No production handler, fake success, assertion, timeout or guard was weakened. The focused Node 24 gate passes 16 cases in three files; the independent reviewer also passes both actual Save cases.
+
+## Runtime and dependencies
+
+CI and local maintenance target current Node 24 LTS through `.node-version`, with matching package/lock engine declarations. The verified official portable runtime is Node 24.22.0 / npm 11.19.1. Its ZIP SHA-256 is `f9683a19877e12a9b167305c8db71040d812876359de21f0d2e97c3f321f80c3`, matching the official checksum manifest. This does not replace the user's system Node installation. Workflows use Node 24 action releases and `ubuntu-24.04`, retaining triggers, permissions, release-tag identity checks and deployment ordering. See the [independent review](2026-10-14-node24-ci-save-ordering-review.md) and [maintenance runtime policy](../maintainers/node-runtime.md).
+
+A clean isolated `npm ci` succeeded under Node 24. It reported one transitive source-map advisory. Only `source-map-js` changed from 1.2.1 to patched 1.2.2, with registry integrity checked independently; the resulting audit reports zero vulnerabilities. No dependency ranges, native package, installed post or app version changed. The earlier workflow review's lock hash predates this three-field patch; the [lock-delta review](2026-10-14-source-map-js-lock-delta-review.md) distinguishes both snapshots.
+
+The new npm version also reports the existing esbuild postinstall as not explicitly covered by `allowScripts`. Installation succeeds. No global install-script approval policy was changed to suppress this message.
+
+## Combined gate and continuing repair
+
+The first integrated Node 24 execution passed 360 files / 3,830 cases and failed one case of 361 files / 3,831 cases. Log: `tmp/cad-node24-integrated-tests.log`, 247.28 seconds. The remaining failure is the native concatenated-gzip exact-read case: `TypeError: Trailing junk found after the end of the compressed stream`. It is being repaired as a real shared storage portability boundary, with checksum/UTF-8/cancellation regressions retained. A fresh complete gate and actual GitHub run are required before this checkpoint is claimed green.
+
+The failed gate remains recorded above. The strict shared gzip repair resolves the portability failure and a proven fallback trailing-byte validation gap, with exact original header/FHCRC/CRC/ISIZE and final-boundary checks. Bounded recovery reuses the same stream while retaining its explicit limits. The [independent storage review](2026-10-14-cad-gzip-portability-independent-review.md) passes 81 focused cases and 178 additional valid/adversarial probes; neither originals nor saved formats are rewritten.
+
+The final combined Node 24 gate passes **362 files / 3,847 cases**, 340.30 seconds, exit 0. All 30 frozen changed source/test paths remain unchanged afterward. Log: `tmp/cad-node24-integrated-final-tests.log`. The final production build passes TypeScript/Vite, all 92 documentation/discovery/schema/link files and exact native corresponding-source distribution. Post documentation, all three post conformance fixtures, machine-package validation and release checks also pass.
+
+Actual current-bundle browser verification imports 1,001 circle sketches and renders the complete reference scene. View metadata correctly returns 815 whole IDs plus 186 omissions within 32,756 bytes; all 1,001 exact IDs are retrieved through 21 pinned pages. Capture returns 800 IDs plus 201 omissions within 32,730 bytes, while downloading a real 1,200 × 638 PNG containing the complete scene. Its 900,710 bytes and SHA-256 match the receipt. The complete CAD download retains all 1,001 feature definitions, types, numeric values, identities and array order; canonical JSON key sorting changes property order only. Native-free analytic measurement of the selected last circle returns area `19.634954084936208 mm²` and perimeter `15.707963267948966 mm`.
+
+Live camera navigation returns `STALE_VIEW` for the old metadata token. A parameter edit returns `STALE_STATE` for the old document version; its no-op retry retains the current version, and one Undo restores all source inputs and references. The isolated tab closes without saving. The main user's refreshed empty draft remains version `ff1fd477-85e8-47ee-95d2-cefdc8324d7c`, with no features, workflow or history. The real saved record at this origin keeps fingerprint `5f4cb341d150ac7d3320d145945cc1fb0aaa985335ecec8574964d0e14579731`; the original gear lives at the separate 3777 origin and its previous exact backups were not modified.
+
+Both local servers now run the verified Node 24.22.0 binary on their configured ports 3777/3778. Only their previously identified WireEDM processes were stopped. Before the build, immutable old assets were retained and missing hashes restored afterward so the untouched older tab's lazy resources remained available. The initial capacity build overlapped temporary owner edits and failed TypeScript; it did not clean or publish a new bundle. The successful final build follows the full source freeze.
+
+Browser evidence is under the primary workspace `tmp/cad-node24-viewport-browser-report.json`, `cad-node24-viewport-capacity-browser.png`, `cad-node24-last-reference-selection.png` and `cad-node24-main-draft-after-qa.json`. Source-hashed implementation and independent reviews cover every capacity/API/native/storage slice. The current icon inventory is refreshed. GitHub CI remains pending the reviewed checkpoint push; no merge or deployment occurred.

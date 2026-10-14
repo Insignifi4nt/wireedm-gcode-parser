@@ -40,3 +40,28 @@ it('skips unsupported spline approximation work in exact CAD and refuses a parti
   expect(exact.entities).toHaveLength(1); expect(exact.unsupportedEntities).toEqual(['SPLINE']);
   expect(() => importCadDxfSketch({ fileName: 'spline.dxf', units: 'mm', text })).toThrow('unsupported');
 });
+
+it('resolves a deep acyclic block chain without recursion while preserving every placement and exact CAD source', () => {
+  const depth = 2048, translatedInsert = (name: string) => insert(name) + '10\n1\n20\n-1\n';
+  const circle = '0\nCIRCLE\n10\n2\n20\n3\n40\n2\n';
+  const blocks = block('B0', circle) + Array.from({ length: depth }, (_, index) => block(`B${index + 1}`, translatedInsert(`B${index}`))).join('');
+  const text = drawing(translatedInsert(`B${depth}`), blocks), parsed = parseDxf(text, { mode: 'exact-cad' });
+  expect(parsed.entities).toHaveLength(1); expect(parsed.warnings).toEqual([]); expect(parsed.unsupportedEntities).toEqual([]);
+  expect(parsed.entities[0]).toMatchObject({ type: 'circle', center: { x: 2 + depth + 1, y: 3 - depth - 1 }, radius: 2 });
+  const chain = parsed.entities[0].source?.insertChain;
+  expect(chain).toHaveLength(depth + 1); expect(chain?.every((entry, index) => entry.blockName === `B${depth - index}`)).toBe(true);
+  const imported = importCadDxfSketch({ fileName: 'deep-circle.dxf', units: 'mm', text });
+  expect(imported.sketch.source?.text).toBe(text); expect(imported.sketch.profiles).toHaveLength(1);
+  expect(imported.sketch.profiles[0].geometry).toEqual({ kind: 'circle', x: 2 + depth + 1, y: 3 - depth - 1, radius: 2 });
+  expect(() => parseDxf(text)).toThrow(expect.objectContaining({ resource: 'insertDepth' }));
+}, 15_000);
+
+it('keeps deep cyclic and malformed block sources explicit failures without importing partial material', () => {
+  const depth = 2048, blocks = Array.from({ length: depth }, (_, index) => block(`B${index + 1}`, insert(`B${index}`))).join('');
+  const circle = '0\nCIRCLE\n10\n0\n20\n0\n40\n2\n';
+  const cycle = drawing(insert(`B${depth}`), block('B0', circle + insert(`B${depth}`)) + blocks);
+  const malformed = drawing(insert(`B${depth}`), block('B0', circle).replace('10\n0\n', '10\nbad\n') + blocks);
+  const parsed = parseDxf(cycle, { mode: 'exact-cad' });
+  expect(parsed.unsupportedEntities).toContain('INSERT'); expect(parsed.warnings).toContain(`Skipped circular INSERT reference for BLOCK "B${depth}".`);
+  for (const text of [cycle, malformed]) expect(() => importCadDxfSketch({ fileName: 'invalid-deep.dxf', units: 'mm', text })).toThrow(expect.objectContaining({ code: 'dxf-inexact' }));
+}, 15_000);

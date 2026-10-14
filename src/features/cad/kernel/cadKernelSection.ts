@@ -5,6 +5,7 @@ import { CadError } from '../../../domain/cad/cadError';
 import { cadEntitiesToCam } from '../../../domain/cad/cadCam';
 import { cadKernelPlaneBasis } from './cadKernelPlane';
 import { cadKernelDisposeOwned, cadKernelEdges, cadKernelSolids } from './cadKernelShapes';
+import { assertCadSectionClosedEndpoints } from './cadKernelSectionEndpoints';
 
 const tolerance = 1e-7;
 const tau = 2 * Math.PI;
@@ -90,14 +91,7 @@ export function sectionCadKernelShape(shape: Shape3D, section: Pick<CadSectionRe
             } finally { curve.delete(); }
           }
           // Only closed unbranched outlines are suitable for planar wire EDM.
-          const vertices: { point: DxfPoint; degree: number }[] = [];
-          for (const entity of entities) if (entity.type === 'line' || entity.type === 'arc') {
-            for (const point of [entity.start, entity.end]) {
-              const vertex = vertices.find(item => Math.hypot(point.x - item.point.x, point.y - item.point.y) <= tolerance);
-              if (vertex) vertex.degree++; else vertices.push({ point, degree: 1 });
-            }
-          }
-          if (vertices.some(vertex => vertex.degree !== 2)) throw new CadError('open-section', 'The section has open, touching or branching outlines. Choose an interior offset that produces closed contours.');
+          assertCadSectionClosedEndpoints(entities, tolerance);
           const cam = cadEntitiesToCam(entities);
           return { ...section, entities, contourCount: cam.contours.length };
         } finally { for (const edge of edges) cadKernelDisposeOwned(edge); }

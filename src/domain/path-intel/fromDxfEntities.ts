@@ -270,8 +270,8 @@ export function pathSegmentsFromDxfEntities(
         diagnosticBase: diagnostics.length
       });
 
-      diagnostics.push(...polylineSegments.diagnostics);
-      segments.push(...polylineSegments.segments);
+      for (const diagnostic of polylineSegments.diagnostics) diagnostics.push(diagnostic);
+      for (const segment of polylineSegments.segments) segments.push(segment);
     }
 
     if (entity.type === 'polyline') {
@@ -287,8 +287,8 @@ export function pathSegmentsFromDxfEntities(
         diagnosticBase: diagnostics.length
       });
 
-      diagnostics.push(...polylineSegments.diagnostics);
-      segments.push(...polylineSegments.segments);
+      for (const diagnostic of polylineSegments.diagnostics) diagnostics.push(diagnostic);
+      for (const segment of polylineSegments.segments) segments.push(segment);
     }
   });
 

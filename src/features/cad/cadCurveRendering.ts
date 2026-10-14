@@ -1,10 +1,9 @@
 import * as THREE from 'three';
 import type { CadFeature } from '@/domain/cad/cadDocument';
 import { prepareCadViewportReferences, type CadViewportReference } from './cadViewportReferences';
-export { MAX_CAD_REFERENCE_DISPLAY_SEGMENTS } from './cadViewportReferences';
 export type CadCurveViewportReference = CadViewportReference;
 
-/** Compatibility wrapper; world sketches use the same bounded analytic sampler. */
+/** Compatibility wrapper; world sketches use the same analytic display sampler. */
 export function prepareCadCurveReferences(features: readonly CadFeature[], parameters: Readonly<Record<string, number>>): readonly CadViewportReference[] {
   return Object.freeze(prepareCadViewportReferences(features.filter(feature => feature.kind === 'curve' || feature.kind === 'datum-plane'), parameters).filter(reference => reference.featureKind === 'curve'));
 }

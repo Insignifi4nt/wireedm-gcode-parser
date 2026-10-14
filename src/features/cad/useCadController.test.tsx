@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
 import { initializeWorkbenchCatalog, type ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import { cadVisibleBodyIds } from '@/domain/cad/cadFeatureInputs';
 import type { CadBuildResult, CadFeature } from '@/domain/cad/cadDocument';
 import type { CadSectionResult } from '@/domain/cad/cadSection';
 import type { CadTopologyDescriptor, CadTopologyInspectRequest } from '@/domain/cad/cadTopology';
@@ -13,8 +14,9 @@ import { CadSession } from './cadSession';
 import { useCadController, type CadController } from './useCadController';
 import { cadSiteTools } from './cadSiteTools';
 import { CAD_STAR_PLUGIN, CAD_GEAR_V2_PLUGIN, createCadPluginProfile, fingerprintCadPluginPackage } from '@/domain/cad/plugins/cadPlugins';
-import type { CadViewportCapture, CadViewportState } from './cadViewportControls';
-import { cadReferencePlanes, prepareCadViewportReferences } from './cadViewportReferences';
+import type { CadRenderedViewState, CadViewportCapture, CadViewportState } from './cadViewportControls';
+import { cadReferenceFeatureIds, cadReferencePlanes, prepareCadViewportReferences, selectCadViewportReferences } from './cadViewportReferences';
+import { createCadWorkbenchViewportControls, type CadViewportBindings } from './cadWorkbenchViewport';
 import { loadEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { importCadDxfSketch, type CadDxfImportInput, type CadDxfImportResult } from '@/domain/cad/cadDxfImport';
 import { importCadDxfCurve, type CadDxfCurveImportInput, type CadDxfCurveImportResult } from '@/domain/cad/cadCurveDxf';
@@ -83,6 +85,28 @@ async function harness(withGeometry = false, allowHandoff = false) {
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
   await act(async () => root?.render(<Harness />));
   return { cad, session, workbench: () => { if (!workbench) throw new Error('Workbench disconnected'); return workbench; }, switchWorkbench: async (next: ConnectedWorkbenchCatalog | null) => { workbench = next; await act(async () => root?.render(<Harness />)); } };
+}
+
+function completeViewport(h: Awaited<ReturnType<typeof harness>>) {
+  const snapshot = h.session.getSnapshot(), visibleBodyIds = cadVisibleBodyIds(snapshot.document.features);
+  const references = selectCadViewportReferences(prepareCadViewportReferences(snapshot.document.features, snapshot.document.parameters), snapshot.document.features, null);
+  const visibleReferenceIds = cadReferenceFeatureIds(references), visibleReferencePlanes = cadReferencePlanes(references);
+  let rendered: CadRenderedViewState = { mode: 'solid', available: true, view: 'Isometric', gridVisible: true, zoom: 1, revision: 1,
+    referenceVersion: snapshot.version, referenceFeatureIds: visibleReferenceIds, referencePlanes: visibleReferencePlanes };
+  const capture = vi.fn(async () => ({ source: '3d' as const, width: 1, height: 1,
+    dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDSkAAAAASUVORK5CYII=' }));
+  let bindings: CadViewportBindings = { document: snapshot.document, documentVersion: snapshot.version, dirty: snapshot.dirty,
+    selectedFeatureId: null, selectedProfileId: null, selectedReferencePlane: null, awaitingSketchPlane: false, sketchId: null, curveId: null,
+    workflowOpen: false, busy: false, buildVersion: visibleBodyIds.length ? snapshot.version : null,
+    buildId: visibleBodyIds.length ? 'accepted-build' : null, buildState: visibleBodyIds.length ? 'ready' : 'idle', pickMode: 'body', topologySelection: null,
+    meshes: [], visibleBodyIds, visibleReferenceIds, visibleReferencePlanes,
+    rendered: { getState: () => rendered, fit: vi.fn(), setGrid: vi.fn(), setView: view => { if (rendered.mode === 'solid') rendered = { ...rendered, view, revision: rendered.revision + 1 }; }, capture },
+    selectFeature: featureId => { bindings = { ...bindings, selectedFeatureId: featureId }; }, selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(),
+    selectProfile: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: action => action() };
+  const controls = createCadWorkbenchViewportControls(() => bindings);
+  h.cad().setViewportControls(controls);
+  return { controls, capture, updateBindings: (change: Partial<CadViewportBindings>) => { bindings = { ...bindings, ...change }; },
+    updateRendered: (change: Partial<CadRenderedViewState>) => { rendered = { ...rendered, ...change } as CadRenderedViewState; } };
 }
 
 describe('CAD controller asynchronous guards', () => {
@@ -1064,6 +1088,135 @@ describe('CAD controller asynchronous guards', () => {
     }
     expect(kernel.build).not.toHaveBeenCalled();
     expect(h.session.getSnapshot()).toBe(snapshot);
+  });
+  it.each(['references', 'bodies', 'mixed'] as const)('returns truthful viewport and capture receipts for 1001 accepted %s', async kind => {
+    const h = await harness();
+    const features: CadFeature[] = Array.from({ length: 1001 }, (_, index) => {
+      const id = `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+      return kind === 'references' ? [{ id, name: `Station ${index}`, kind: 'datum-plane' as const, suppressed: false,
+        definition: { kind: 'world' as const, basePlane: 'XY' as const, origin: [0, 0, index] as const, rotation: [0, 0, 0] as const } }]
+        : [{ id: `section_${index}`, name: `Section ${index}`, kind: 'sketch' as const, suppressed: false, plane: 'XY' as const, offset: 0,
+          profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle' as const, x: index * 10, y: 0, radius: 1 } }] },
+        { id, name: `Pad ${index}`, kind: 'extrude' as const, suppressed: false, sketchId: `section_${index}`, distance: 1, symmetric: false, operation: 'new' as const, targetId: null }];
+    }).flat();
+    if (kind === 'mixed') features.push(...Array.from({ length: 1001 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(index + 2000).padStart(12, '0')}`, name: `Reference ${index}`, kind: 'curve' as const, suppressed: false,
+      plane: 'XY' as const, offset: 0, segments: [{ kind: 'line' as const, start: [0, index] as const, end: [10, index] as const }]
+    })));
+    await act(async () => h.session.replace(parseCadDocument({ ...createCadDocument('Accepted assembly', 'accepted_assembly'), features })));
+    const before = h.session.getSnapshot(), installed = completeViewport(h), tools = cadSiteTools(h.cad);
+    const viewport = tools.find(tool => tool.name === 'cad_get_viewport'), set = tools.find(tool => tool.name === 'cad_set_viewport');
+    const capture = tools.find(tool => tool.name === 'cad_capture_preview');
+    if (!viewport || !set || !capture) throw new Error('Viewport tools missing.');
+    expect(utf8Bytes(JSON.stringify(installed.controls.getState()))).toBeGreaterThan(32 * 1024);
+    await act(async () => { expect(await set.execute({ expectedVersion: before.version, command: { kind: 'set-view', view: 'Top' } })).toMatchObject({ ok: true, data: { applied: true, version: before.version } }); });
+    expect(installed.controls.getState().view).toMatchObject({ view: 'Top' });
+    const viewResult = await viewport.execute({ expectedVersion: before.version });
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    let captureResult: unknown;
+    await act(async () => { captureResult = await capture.execute({ expectedVersion: before.version, download: true }); });
+    expect(installed.capture).toHaveBeenCalledOnce();
+    expect(h.cad().previewArtifact).toMatchObject({ documentId: before.document.id, draftVersion: before.version, previewUrl: expect.stringMatching(/^blob:/) });
+    expect(h.cad().previewArtifact?.viewState).toEqual(installed.controls.getState());
+    expect(h.session.getSnapshot()).toBe(before);
+    expect(viewResult).toMatchObject({ ok: true });
+    expect(captureResult).toMatchObject({ ok: true, data: { downloadRequested: true } });
+    expect(download).toHaveBeenCalledOnce();
+    expect(utf8Bytes(JSON.stringify(viewResult))).toBeLessThan(32 * 1024);
+    expect(utf8Bytes(JSON.stringify(captureResult))).toBeLessThan(32 * 1024);
+    const data = (viewResult as { data: { viewportToken: string; visibleBodyIds: string[]; visibleBodyCount: number; omittedVisibleBodies: boolean; omittedVisibleBodyCount: number;
+      view: { referenceFeatureIds: string[]; referenceFeatureCount: number; omittedReferenceFeatures: boolean; omittedReferenceFeatureCount: number } } }).data;
+    const state = installed.controls.getState(), collection = kind === 'references' ? 'reference-features' : 'visible-bodies';
+    expect(data.visibleBodyIds.length + data.omittedVisibleBodyCount).toBe(data.visibleBodyCount);
+    expect(data.view.referenceFeatureIds.length + data.view.omittedReferenceFeatureCount).toBe(data.view.referenceFeatureCount);
+    expect(kind === 'references' ? data.view.omittedReferenceFeatures : data.omittedVisibleBodies).toBe(true);
+    if (kind === 'mixed') expect(data.view.omittedReferenceFeatures).toBe(true);
+    expect(captureResult).toMatchObject({ data: { viewState: { viewportToken: data.viewportToken } } });
+    expect(await cadSiteTools(h.cad).find(tool => tool.name === 'cad_get_viewport')?.execute({ expectedVersion: before.version })).toMatchObject({ ok: true, data: { viewportToken: data.viewportToken } });
+    for (const currentCollection of kind === 'mixed' ? ['visible-bodies', 'reference-features'] : [collection]) {
+      const expected = currentCollection === 'reference-features' && state.view?.mode === 'solid' ? state.view.referenceFeatureIds : state.visibleBodyIds;
+      expect(expected).toHaveLength(1001);
+      let offset: number | null = 0; const ids: string[] = [];
+      while (offset !== null) {
+        const result = await viewport.execute({ expectedVersion: before.version, collection: currentCollection, expectedViewportToken: data.viewportToken, offset, limit: 50 });
+        expect(result).toMatchObject({ ok: true, data: { documentId: before.document.id, documentVersion: before.version, viewportToken: data.viewportToken, total: 1001 } });
+        expect(utf8Bytes(JSON.stringify(result))).toBeLessThan(32 * 1024);
+        const page = (result as { data: { items: string[]; nextOffset: number | null } }).data;
+        expect(page.items.length).toBeGreaterThan(0);
+        if (page.nextOffset !== null) expect(page.nextOffset).toBeGreaterThan(offset);
+        ids.push(...page.items); offset = page.nextOffset;
+      }
+      expect(ids).toEqual(expected);
+    }
+    await act(async () => { await set.execute({ expectedVersion: before.version, command: { kind: 'set-view', view: 'Front' } }); });
+    expect(await viewport.execute({ expectedVersion: before.version, collection, expectedViewportToken: data.viewportToken })).toMatchObject({ ok: false, error: { code: 'STALE_VIEW' } });
+    await act(async () => { await set.execute({ expectedVersion: before.version, command: { kind: 'set-view', view: 'Top' } }); });
+    expect(await viewport.execute({ expectedVersion: before.version, collection, expectedViewportToken: data.viewportToken })).toMatchObject({ ok: false, error: { code: 'STALE_VIEW' } });
+    expect(h.session.getSnapshot()).toBe(before);
+  });
+  it('pins ID pages to complete observed selection, installed references, build and navigation metadata', async () => {
+    const h = await harness(true), before = h.session.getSnapshot(), installed = completeViewport(h);
+    const tools = cadSiteTools(h.cad), viewport = tools.find(tool => tool.name === 'cad_get_viewport'), set = tools.find(tool => tool.name === 'cad_set_viewport');
+    if (!viewport || !set) throw new Error('Viewport tools missing.');
+    const readToken = async () => {
+      const result = await viewport.execute({ expectedVersion: before.version });
+      expect(result).toMatchObject({ ok: true, data: { ...installed.controls.getState(), visibleBodyCount: 0, omittedVisibleBodies: false,
+        omittedVisibleBodyCount: 0, view: { referenceFeatureCount: 1, omittedReferenceFeatures: false, omittedReferenceFeatureCount: 0 } } });
+      return (result as { data: { viewportToken: string } }).data.viewportToken;
+    };
+    let token = await readToken();
+    expect(await readToken()).toBe(token);
+    for (const change of [
+      async () => { await set.execute({ expectedVersion: before.version, command: { kind: 'select-feature', featureId: 'sketch' } }); },
+      async () => { installed.updateRendered({ referenceFeatureIds: [] }); },
+      async () => { installed.updateBindings({ buildId: 'new-build', buildVersion: before.version, buildState: 'ready' }); },
+      async () => { installed.updateRendered({ navigationMode: 'trackpad' }); }
+    ]) {
+      await act(change);
+      expect(await viewport.execute({ expectedVersion: before.version, collection: 'visible-bodies', expectedViewportToken: token })).toMatchObject({ ok: false, error: { code: 'STALE_VIEW' } });
+      const result = await viewport.execute({ expectedVersion: before.version });
+      expect(result).toMatchObject({ ok: true });
+      const next = (result as { data: { viewportToken: string } }).data.viewportToken;
+      expect(next).not.toBe(token); token = next;
+      expect(await viewport.execute({ expectedVersion: before.version, collection: 'visible-bodies', expectedViewportToken: token })).toMatchObject({ ok: true, data: { items: [], total: 0, nextOffset: null } });
+    }
+    for (const request of [{ expectedVersion: before.version, collection: 'visible-bodies' },
+      { expectedVersion: before.version, expectedViewportToken: token }, { expectedVersion: before.version, offset: 1 },
+      { expectedVersion: before.version, collection: 'invented', expectedViewportToken: token }]) {
+      expect(await viewport.execute(request)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    await act(async () => h.session.edit([{ kind: 'rename-document', name: 'Changed' }]));
+    expect(await viewport.execute({ expectedVersion: before.version, collection: 'visible-bodies', expectedViewportToken: token })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+  });
+  it('paginates all 1001 exact parameter usages with maximum-length expressions and escaped group metadata', async () => {
+    const h = await harness(), name = `shared_${'x'.repeat(57)}`, expression = `shared_${'x'.repeat(57)}${' + 0'.repeat(112)}`;
+    const featureId = `section_${'x'.repeat(88)}`, group = { id: `group_${'x'.repeat(90)}`, name: `${'\u0000'.repeat(159)}孔` };
+    const profiles = Array.from({ length: 1001 }, (_, index) => ({ id: `p${String(index).padStart(6, '0')}${'x'.repeat(89)}`, name: `Circle ${index}`, construction: false,
+      geometry: { kind: 'circle' as const, x: index * 10, y: 0, radius: expression } }));
+    expect(expression).toHaveLength(512);
+    await act(async () => h.session.replace(parseCadDocument({ ...createCadDocument('Linked sections', 'linked_sections'), parameters: { [name]: 2 }, parameterGroups: [group],
+      parameterMetadata: { [name]: { groupId: group.id, source: { kind: 'plugin', featureId, profileId: profiles[0].id, inputName: name,
+        packageId: `p${'x'.repeat(79)}`, packageVersion: `${'1'.repeat(10)}.${'2'.repeat(10)}.${'3'.repeat(10)}` } } },
+      features: [{ id: featureId, name: `${'孔\u0000\n'.repeat(53)}X`, kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles }] })));
+    const before = h.session.getSnapshot(), inspect = cadSiteTools(h.cad).find(tool => tool.name === 'cad_inspect_parameters');
+    if (!inspect) throw new Error('Parameter inspection tool missing.');
+    const complete = await h.cad().inspectParameters(before.version);
+    const collected: typeof complete.parameters[number]['usages'] = [];
+    let offset: number | null = 0, pages = 0;
+    while (offset !== null) {
+      const result = await inspect.execute({ expectedVersion: before.version, name, offset, limit: 50 });
+      expect(result).toMatchObject({ ok: true, data: { version: before.version, parameter: { name, value: 2, groupName: group.name, usageCount: 1001, activeUsageCount: 1001 }, usages: { total: 1001 } } });
+      expect(utf8Bytes(JSON.stringify(result))).toBeLessThan(32 * 1024);
+      const data = (result as { data: { usages: { items: typeof collected; nextOffset: number | null } } }).data;
+      expect(data.usages.items.length).toBeGreaterThan(0);
+      if (data.usages.nextOffset !== null) expect(data.usages.nextOffset).toBeGreaterThan(offset);
+      collected.push(...data.usages.items); offset = data.usages.nextOffset; pages++;
+    }
+    expect(pages).toBeGreaterThan(20);
+    expect(collected).toEqual(complete.parameters[0].usages);
+    expect(collected.map(usage => usage.profileId)).toEqual(profiles.map(profile => profile.id));
+    expect(collected.every(usage => usage.expression === expression && usage.active)).toBe(true);
+    expect(h.session.getSnapshot()).toBe(before);
   });
   it('lets agents reconstruct large CAD definitions through versioned bounded text chunks', async () => {
     const h = await harness(true); const state = h.session.getSnapshot();

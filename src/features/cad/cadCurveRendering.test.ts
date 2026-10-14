@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import type { CadCurveFeature, CadPathSegment } from '@/domain/cad/cadDocument';
-import { MAX_CAD_REFERENCE_DISPLAY_SEGMENTS, pickCadCurveReference, prepareCadCurveReferences } from './cadCurveRendering';
+import { pickCadCurveReference, prepareCadCurveReferences } from './cadCurveRendering';
 import { cadLocalRenderPositions, cadRenderOrigin } from './cadRenderCoordinates';
 
 const line = (plane: CadCurveFeature['plane'] = 'XY', offset = 0): CadCurveFeature => ({ id: 'rail', name: 'Rail', kind: 'curve', suppressed: false, plane, offset,
@@ -28,11 +28,15 @@ describe('curve display geometry', () => {
     expect(curve.segments[0]).toMatchObject({ sweep: -270 });
   });
 
-  it('bounds aggregate display sampling at the document edge budget', () => {
+  it('retains arc sampling accuracy independently of the number of curves', () => {
     const segments: readonly CadPathSegment[] = Array.from({ length: 256 }, (_, index) => ({ kind: 'arc', center: [index * 2 + 1, 0], radius: 1, startAngle: 180, sweep: index % 2 ? 180 : -180 }));
     const curves: CadCurveFeature[] = Array.from({ length: 32 }, (_, index) => ({ ...line(), id: `rail_${index}`, offset: index * 5, segments }));
     const result = prepareCadCurveReferences(curves, {});
-    expect(result).toHaveLength(32); expect(result.reduce((sum, curve) => sum + curve.positions.length / 6, 0)).toBe(MAX_CAD_REFERENCE_DISPLAY_SEGMENTS);
+    expect(result).toHaveLength(32);
+    const single = prepareCadCurveReferences([curves[0]], {})[0];
+    expect(single.positions.length / 6).toBe(256 * 60);
+    for (const curve of result) expect(curve.positions).toHaveLength(single.positions.length);
+    expect(result.reduce((sum, curve) => sum + curve.positions.length / 6, 0)).toBe(32 * 256 * 60);
   });
 });
 
