@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { CloseIcon, ConfirmIcon } from '@/components/icons';
 import type { CadDocument, CadFeature, CadPlane, CadProfile, CadScalar, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
 import { resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
@@ -178,7 +178,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
     <div className="cad-property-title">{isNew ? 'Create' : 'Edit'} {featureLabels[draft.kind]}<CadContextHelp label={featureLabels[draft.kind]}>{cadFeatureHelp[draft.kind]}</CadContextHelp></div>
     <fieldset className="cad-feature-fields" disabled={Boolean(pickCurrent) || staleDraft}>
     <CadFeatureReferencePickingContext.Provider value={pickingContext}>{fields}</CadFeatureReferencePickingContext.Provider></fieldset>
-    {pickCurrent && <div className="cad-reference-pick-status" role="status">Pick {pickCurrent.label.toLowerCase()} in the model or history<button type="button" aria-label="Cancel source selection" onClick={endPick}><X size={13} /></button></div>}
+    {pickCurrent && <div className="cad-reference-pick-status" role="status">Pick {pickCurrent.label.toLowerCase()} in the model or history<button type="button" aria-label="Cancel source selection" onClick={endPick}><CloseIcon size={13} /></button></div>}
     {preview && <div className={`cad-feature-preview-status${preview.kind === 'error' ? ' is-error' : ''}`} role={preview.kind === 'error' ? 'alert' : 'status'}>
       {preview.kind === 'error' ? preview.message : preview.kind === 'ready' && currentPreviewReady
         ? `Preview${previewSolidCount !== undefined && previewSolidCount > 1 ? ` · ${previewSolidCount} solids` : ''} · Apply to keep`
@@ -186,7 +186,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
     </div>}
     {error && <p className="cad-error" role="alert">{error}</p>}
     {staleDraft && <p className="cad-error" role="alert">The part changed. Cancel this edit and reopen the current feature.</p>}
-    {(isNew || changed || scalarPending || staleDraft) && <div className="cad-form-actions"><button type="button" onClick={onCancel}><X size={13} /> Cancel</button><button type="submit" className="cad-primary" disabled={!isNew && !changed || scalarPending || waitingForPreview || Boolean(pickCurrent) || staleDraft}><Check size={13} /> Apply</button></div>}
+    {(isNew || changed || scalarPending || staleDraft) && <div className="cad-form-actions"><button type="button" onClick={onCancel}><CloseIcon size={13} /> Cancel</button><button type="submit" className="cad-primary" disabled={!isNew && !changed || scalarPending || waitingForPreview || Boolean(pickCurrent) || staleDraft}><ConfirmIcon size={13} /> Apply</button></div>}
   </form>;
 }
 
@@ -248,6 +248,6 @@ export function CadProfileEditor({ profile, document, onApply, onCancel, onPendi
     {geometry.kind === 'plugin' && <details className="cad-plugin-disclosure cad-plugin-profile-options"><summary>Profile options</summary>{profileOptions}</details>}
     {pluginIssues.length > 0 && <div role="alert" className="cad-error">{pluginIssues.map((issue, index) => <p key={index}>{issue}</p>)}</div>}
     {error && <p role="alert" className="cad-error">{error}</p>}
-    {changed && <div className="cad-form-actions"><button type="button" onClick={onCancel}><X size={13} /> Cancel</button><button type="submit" className="cad-primary" disabled={!changed || bindingPending || pluginIssues.length > 0}><Check size={13} /> Apply</button></div>}
+    {changed && <div className="cad-form-actions"><button type="button" onClick={onCancel}><CloseIcon size={13} /> Cancel</button><button type="submit" className="cad-primary" disabled={!changed || bindingPending || pluginIssues.length > 0}><ConfirmIcon size={13} /> Apply</button></div>}
   </form>;
 }

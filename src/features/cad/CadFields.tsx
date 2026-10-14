@@ -1,6 +1,6 @@
 import type { CadDocument, CadScalar } from '@/domain/cad/cadDocument';
 import { createContext, useContext, useLayoutEffect } from 'react';
-import { MousePointer2 } from 'lucide-react';
+import { SelectIcon } from '@/components/icons';
 import { CadFeatureReferencePickingContext } from './cadFeatureReferencePicking';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { CadContextHelp } from './CadContextHelp';
@@ -77,7 +77,7 @@ function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onC
 export function CadReferencePickButton({ label, options, onSelect, disabled = false }: { label: string; options: readonly { value: string; disabled?: boolean }[]; onSelect(value: string): void; disabled?: boolean }) {
   const picking = useContext(CadFeatureReferencePickingContext);
   const eligible = picking ? options.filter(option => !option.disabled && picking.precedingIds.has(option.value)) : [];
-  return picking && eligible.length > 0 ? <button type="button" disabled={disabled} className="cad-pick-reference" title={`Pick ${label.toLowerCase()} from model or history`} aria-label={`Pick ${label.toLowerCase()} from model`} onClick={() => picking.begin(label, eligible.map(option => option.value), id => { if (eligible.some(option => option.value === id)) onSelect(id); })}><MousePointer2 size={13} /></button> : null;
+  return picking && eligible.length > 0 ? <button type="button" disabled={disabled} className="cad-pick-reference" title={`Pick ${label.toLowerCase()} from model or history`} aria-label={`Pick ${label.toLowerCase()} from model`} onClick={() => picking.begin(label, eligible.map(option => option.value), id => { if (eligible.some(option => option.value === id)) onSelect(id); })}><SelectIcon size={13} /></button> : null;
 }
 
 export function SelectField<T extends string>({ label, value, options, onChange, description, reference = false }: { label: string; description?: string; value: T; options: readonly { value: T; label: string; disabled?: boolean }[]; onChange(value: T): void; reference?: boolean }) {

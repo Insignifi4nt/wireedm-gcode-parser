@@ -118,7 +118,10 @@ function contextualSemantic(r) {
   if (file.endsWith('SimulationPanel.tsx') && r.alias === 'FileBox' && /Machine model settings/.test(ctx)) return 'machine-setup';
   if (file.endsWith('EditorPage.tsx') && r.alias === 'Box' && /label: 'Simulation', icon: <Box/.test(ctx)) return 'simulation';
   if (file.endsWith('EditorPathNavigatorPanel.tsx') && r.alias === 'Info' && /Contour Tree help/.test(ctx)) return 'help';
-  if (['EditorInspectorPanel.tsx','EditorPreview.tsx'].some((name)=>file.endsWith(name)) && r.alias === 'Magnet' && /Place measurement points on canvas/.test(ctx)) return 'circle-center';
+  if (['EditorInspectorPanel.tsx','EditorPreview.tsx'].some((name)=>file.endsWith(name)) && r.alias === 'Magnet') {
+    if (r.controlAttributes?.['aria-label'] === '"Place measurement points on canvas"') return 'circle-center';
+    if (r.controlAttributes?.['aria-label'] === '"Toggle preview grid snap"') return 'snap';
+  }
   if (file.endsWith('CadContextHelp.tsx') && r.alias === 'Info') return 'help';
   if (file.endsWith('CadFeatureTree.tsx') && r.alias === 'Square' && (r.visibleText === 'Reference' || r.visibleText === 'plane')) return 'datum-plane';
   if (file.endsWith('CadViewport.tsx') && r.alias === 'Maximize2' && /Fit model/.test(r.containerText || '')) return 'fit-view';
@@ -338,6 +341,7 @@ const exactSemanticExpectations = [
   ['use.aa22e4024d24','insert-points'], ['use.4dca56b9193d','start-point'], ['use.acb4ec7916e2','locate'], ['use.351faffd1991','wire-edm-mark'],
   ['use.040fa55fc9cc','help'],
   ['use.620dbb21888c','circle-center'], ['use.224e71e5aace','circle-center'],
+  ['use.cbc57f4ad9fc','snap'],
 ];
 const exactSemanticMismatches = exactSemanticExpectations.flatMap(([sourceId,expected])=>{
   const actual = occurrenceById.get(sourceId)?.catalogId;

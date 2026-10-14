@@ -1,6 +1,6 @@
 # Wire EDM icon standard
 
-Status: the 134-icon source set and critical cross-family review are ready for integration review against published CAD checkpoint `c36aa3b`. No PR has been opened. The [final handoff](icon-final-handoff.md) records the concrete assets, source-purpose mapping and remaining application integration work. Release integration follows the reviewed CAD 0.0.697 base.
+Status: the 134-icon set is integrated against CAD checkpoint `c36aa3b` and reviewed in the actual app by Luna subagents. The PR targets `feature/parametric-cad-workbench`. The [final handoff](icon-final-handoff.md) records the concrete assets, source-purpose mapping and validation. App release 0.0.698 follows CAD 0.0.697.
 
 ## Target
 

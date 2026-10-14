@@ -71,6 +71,7 @@
 .cad-tree-row.is-suppressed { opacity: .55; }
 .cad-tree-row.has-error { color: #e7b599; }
 .cad-tree-error { color: #e69364; margin-left: auto; font-weight: 700; }
+.cad-tree-row .cad-tree-error svg { color: inherit; }
 .cad-tree-muted { margin-left: auto; font-size: 10px; color: #788f9d; }
 .cad-workbench .cad-tree-profile { padding-left: 42px; min-height: 26px; color: #9aafbc; font-size: 12px; }
 .cad-tree-empty { color: #718896; padding: 17px 12px; line-height: 1.7; font-size: 10px; }

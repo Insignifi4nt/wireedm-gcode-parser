@@ -1,5 +1,13 @@
 # Icon verification
 
+## Integrated CAD branch and actual browser review
+
+The branch is now rebased onto published CAD head `c36aa3b` and the PR targets `feature/parametric-cad-workbench`. Latest CAD implementations were retained during conflict resolution. The current audit resolves all 282 published original usages, eight dynamic slots and 17 feature kinds; 297 current references include 15 additional semantic/text-symbol replacements. No Lucide imports, unresolved exports or semantic mismatches remain.
+
+Three Luna subagents reviewed the actual integrated browser app on the configured isolated Playwright origin. Their real sketch/Pad, feature-tree, menu, settings, controller-import, selected-state and dark/light catalog screenshots and decisions are linked in [actual-app-integration-review.md](actual-app-integration-review.md). Root verified the final catalog's live DOM metrics and filtering explanation. A diagnostic accessibility test covers the new feature-tree warning badge and its retained message.
+
+Node 24.22.0 verification passed all 100 React UI files and 1,028 tests with two workers, all six icon tests, exact geometry checks, integration-map parity, release compatibility against the CAD base, and TypeScript/Vite/documentation/pinned-source-distribution build checks. Two unchanged large-document controller cases failed in the high-concurrency Node 24 batch, then passed in the isolated 109-test controller suite and the full two-worker run. Controller and test code match the CAD base; no timeout or production behavior was changed. [Verification summary](icon-review/actual-app/node24-verification-summary.json) records the final counts.
+
 ## Published CAD checkpoint reconciliation
 
 The current handoff targets `c36aa3b50a30f82ded3508652d9e7917c69b6b59`, with exact published inventory bytes preserved under `inventory/checkpoints/c36aa3b/`. The crosswalk now has 1,962 rows because two excluded text candidates were removed; all 282 direct icon occurrences, 206 variants and 155 renderer relations remain covered. Source hashes cover 452 production files. Thirty-four exact semantic expectations, both lead variants, 17 feature mappings and all 20 tool calls pass. The concrete [integration map](icon-integration-map.md) also supplies every referenced renderer parent.

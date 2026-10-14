@@ -65,7 +65,7 @@ const output = { schemaVersion:1, publishedCadCheckpoint:provenance.publishedChe
     'Preserve original geometry renderers, controller checks, labels, handlers, disabled states, refs and accessibility.',
     'Dynamic-slot rows describe render sites and their allowed semantic replacements, not extra direct occurrences. For dispatchers such as the CAD history map or toolButton, update the matching concrete direct usages and keep the renderer dynamic.',
     'Lead tree rows select LeadInIcon or LeadOutIcon from travelRole. The source Flag binding is a dynamic pair, not a global flag replacement.',
-    'Keep WireEdmMarkIcon in the app heading and the generated favicon. FolderStorageIcon belongs to persistence controls.',
+    'Keep WireEdmMarkIcon in the app heading and the generated favicon. FolderStorageIcon identifies folder-specific persistence controls; BrowserCacheIcon identifies cache storage and the cache-first Storage category.',
     'Apply only icon implementation/integration changes onto the latest reviewed CAD base. CAD functionality and version 0.0.697 remain owned by its existing PR.',
   ] };
 const json = JSON.stringify(output,null,2)+'\n';

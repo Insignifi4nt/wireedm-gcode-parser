@@ -11,7 +11,7 @@ The [JSON](icon-integration-map.json) includes semantic component exports, origi
 - Preserve original geometry renderers, controller checks, labels, handlers, disabled states, refs and accessibility.
 - Dynamic-slot rows describe render sites and their allowed semantic replacements, not extra direct occurrences. For dispatchers such as the CAD history map or toolButton, update the matching concrete direct usages and keep the renderer dynamic.
 - Lead tree rows select LeadInIcon or LeadOutIcon from travelRole. The source Flag binding is a dynamic pair, not a global flag replacement.
-- Keep WireEdmMarkIcon in the app heading and the generated favicon. FolderStorageIcon belongs to persistence controls.
+- Keep WireEdmMarkIcon in the app heading and the generated favicon. FolderStorageIcon identifies folder-specific persistence controls; BrowserCacheIcon identifies cache storage and the cache-first Storage category.
 - Apply only icon implementation/integration changes onto the latest reviewed CAD base. CAD functionality and version 0.0.697 remain owned by its existing PR.
 
 Carry `src/assets/icons/`, `src/components/icons/`, `scripts/icon-source.mjs`, the generation/check scripts, `icon-catalog/index.html`, the Vite catalog entry, and the favicon reference. Use the usage table for newer CAD files rather than restoring older feature implementations. Release compatibility remains in `docs/releases/0.0.698.json`.
@@ -378,7 +378,7 @@ These are renderer slots, not additional occurrences. Match each parent ID to ex
 
 | Stable usage ID | Snapshot line | Original symbol | Semantic replacement |
 | --- | --- | --- | --- |
-| `use.cbc57f4ad9fc` | 1104 | `Magnet` | `CircleCenterIcon` |
+| `use.cbc57f4ad9fc` | 1104 | `Magnet` | `SnapIcon` |
 | `use.0e673e8e8a96` | 1122 | `MousePointer2` | `SelectIcon` |
 | `use.620dbb21888c` | 1137 | `Magnet` | `CircleCenterIcon` |
 | `use.6c239ce305c6` | 1163 | `Magnet` | `SnapIcon` |

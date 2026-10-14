@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { CloseIcon, ConfirmIcon } from '@/components/icons';
 import { Value } from '@sinclair/typebox/value';
 import { CadLabelSchema } from '@/domain/cad/cadPrimitives';
 
@@ -22,8 +22,8 @@ export function CadTreeRename({ kind, initialName, onAccept, onCancel }: {
   }}>
     <input ref={input} aria-label={kind === 'feature' ? 'Feature name' : 'Profile name'} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}
       maxLength={160} value={draft} spellCheck={false} autoComplete="off" onChange={event => { setDraft(event.target.value); setError(''); }} />
-    <button type="submit" aria-label="Apply name" title="Apply name"><Check size={13} /></button>
-    <button type="button" aria-label="Cancel rename" title="Cancel rename" onClick={onCancel}><X size={13} /></button>
+    <button type="submit" aria-label="Apply name" title="Apply name"><ConfirmIcon size={13} /></button>
+    <button type="button" aria-label="Cancel rename" title="Cancel rename" onClick={onCancel}><CloseIcon size={13} /></button>
     {error && <span id={errorId} className="cad-tree-rename-error" role="alert">{error}</span>}
   </form>;
 }

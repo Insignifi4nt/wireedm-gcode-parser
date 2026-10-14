@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
-import { Box, ChevronRight, Circle, CircleDot, Copy, FileBox, Layers, Move3D, PencilRuler, RotateCw, Scissors, SlidersHorizontal, Spline, Square, type LucideIcon } from 'lucide-react';
+import { AdjustIcon, BooleanIcon, ChamferIcon, CircleIcon, CircularPatternIcon, CurveIcon, DatumPlaneIcon, ExpandRightIcon, FileBodyIcon, FilletIcon, ImportedBodyIcon, LayersIcon, LinearPatternIcon, LoftIcon, MirrorIcon, Move3dIcon, PadIcon, PocketIcon, RectangleIcon, RevolveIcon, ShellIcon, SketchIcon, SweepIcon, WarningIcon, type WorkbenchIconComponent } from '@/components/icons';
 import type { CadBuildResult, CadCurveFeature, CadDocument, CadFeature, CadPlane, CadSketchFeature, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { cadFeatureDependencies } from '@/domain/cad/cadFeatureInputs';
 import { featureLabels } from './CadFeatureEditor';
@@ -7,10 +7,10 @@ import { CadContextMenu, type CadContextMenuAnchor, type CadContextMenuItem } fr
 import { CadTreeRename } from './CadTreeRename';
 import './cad-feature-tree.css';
 
-const icons: Record<CadFeature['kind'], LucideIcon> = {
-  'datum-plane': Square, sketch: PencilRuler, curve: Spline, imported: Box, extrude: Box, pocket: Box, revolve: RotateCw,
-  loft: Layers, sweep: Spline, fillet: CircleDot, chamfer: Scissors, shell: Box, boolean: Layers, transform: Move3D,
-  'linear-pattern': Copy, 'circular-pattern': RotateCw, mirror: Copy,
+const icons: Record<CadFeature['kind'], WorkbenchIconComponent> = {
+  'datum-plane': DatumPlaneIcon, sketch: SketchIcon, curve: CurveIcon, imported: ImportedBodyIcon, extrude: PadIcon, pocket: PocketIcon, revolve: RevolveIcon,
+  loft: LoftIcon, sweep: SweepIcon, fillet: FilletIcon, chamfer: ChamferIcon, shell: ShellIcon, boolean: BooleanIcon, transform: Move3dIcon,
+  'linear-pattern': LinearPatternIcon, 'circular-pattern': CircularPatternIcon, mirror: MirrorIcon,
 };
 type TreeTarget = { kind: 'feature'; featureId: string } | { kind: 'profile'; featureId: string; profileId: string };
 type TreeBranch = 'part' | 'model' | 'reference' | 'parameters';
@@ -151,28 +151,28 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
   return <><div className="cad-specification-tree" aria-label="Part specification tree">
     <button type="button" className="cad-tree-document" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('part') ? 'Collapse' : 'Expand'} part ${document.name}`}
       aria-expanded={branches.has('part')} aria-controls={branches.has('part') ? `${treeId}-part` : undefined} onClick={() => toggleBranch('part')}>
-      <ChevronRight size={12} className="cad-tree-hierarchy-toggle" /><FileBox size={15} /><span>{document.name}</span>
+      <ExpandRightIcon size={12} className="cad-tree-hierarchy-toggle" /><FileBodyIcon size={15} /><span>{document.name}</span>
     </button>
     {branches.has('part') && <div id={`${treeId}-part`} className="cad-tree-document-children">
       <button type="button" className="cad-tree-branch" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('reference') ? 'Collapse' : 'Expand'} Reference`}
         aria-expanded={branches.has('reference')} aria-controls={branches.has('reference') ? `${treeId}-reference` : undefined} onClick={() => toggleBranch('reference')}>
-        <ChevronRight size={12} className="cad-tree-hierarchy-toggle" /><Square size={13} /><span>Reference</span>
+        <ExpandRightIcon size={12} className="cad-tree-hierarchy-toggle" /><DatumPlaneIcon size={13} /><span>Reference</span>
       </button>
       {branches.has('reference') && <ul id={`${treeId}-reference`} className="cad-reference-plane-list" aria-label="Reference planes">
         {(['XY', 'XZ', 'YZ'] satisfies CadPlane[]).map(plane => <li key={plane}><button type="button" className={`cad-tree-row${selectedReferencePlane === plane ? ' is-selected' : ''}`} aria-label={`Select ${plane} plane`} aria-pressed={selectedReferencePlane === plane}
-          disabled={locked || selectionOnly && !allowPrincipalPlaneSelection || Boolean(renameCurrent) || !onSelectReferencePlane} onClick={() => onSelectReferencePlane?.(plane)}><Square size={12} /><span>{plane} plane</span></button>{onCreateSketch && <button type="button" disabled={locked || selectionOnly || Boolean(renameCurrent)}
-          aria-label={`Create sketch on ${plane} plane`} title={`Create sketch on ${plane} plane`} onClick={() => onCreateSketch(plane)}><PencilRuler size={12} /></button>}</li>)}
+          disabled={locked || selectionOnly && !allowPrincipalPlaneSelection || Boolean(renameCurrent) || !onSelectReferencePlane} onClick={() => onSelectReferencePlane?.(plane)}><DatumPlaneIcon size={12} /><span>{plane} plane</span></button>{onCreateSketch && <button type="button" disabled={locked || selectionOnly || Boolean(renameCurrent)}
+          aria-label={`Create sketch on ${plane} plane`} title={`Create sketch on ${plane} plane`} onClick={() => onCreateSketch(plane)}><SketchIcon size={12} /></button>}</li>)}
       </ul>}
       {parameterContent !== undefined && parameterContent !== null && parameterContent !== false && <>
         <button type="button" className="cad-tree-branch" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('parameters') ? 'Collapse' : 'Expand'} Parameters`}
           aria-expanded={branches.has('parameters')} aria-controls={branches.has('parameters') ? `${treeId}-parameters` : undefined} onClick={() => toggleBranch('parameters')}>
-          <ChevronRight size={12} className="cad-tree-hierarchy-toggle" /><SlidersHorizontal size={13} /><span>Parameters</span>
+          <ExpandRightIcon size={12} className="cad-tree-hierarchy-toggle" /><AdjustIcon size={13} /><span>Parameters</span>
         </button>
         {branches.has('parameters') && <div id={`${treeId}-parameters`} className="cad-tree-parameters">{parameterContent}</div>}
       </>}
       <button type="button" className="cad-tree-branch" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('model') ? 'Collapse' : 'Expand'} Model`}
         aria-expanded={branches.has('model')} aria-controls={branches.has('model') ? `${treeId}-model` : undefined} onClick={() => toggleBranch('model')}>
-        <ChevronRight size={12} className="cad-tree-hierarchy-toggle" /><Layers size={13} /><span>Model</span><small aria-label={`${document.features.length} features`}>{document.features.length}</small>
+        <ExpandRightIcon size={12} className="cad-tree-hierarchy-toggle" /><LayersIcon size={13} /><span>Model</span><small aria-label={`${document.features.length} features`}>{document.features.length}</small>
       </button>
       {branches.has('model') && <ol ref={tree} id={`${treeId}-model`} className="cad-feature-list cad-feature-history" aria-label="Feature history and dependencies">
     {document.features.map((feature, index) => {
@@ -185,21 +185,21 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
       const diagnostic = diagnostics.find(diagnostic => diagnostic.featureId === feature.id);
       return <li key={feature.id} className={`cad-feature-node${highlightedFeatureIds.includes(feature.id) ? ' is-parameter-related' : ''}`} data-cad-feature-id={feature.id} data-cad-history-position={index + 1}>
         <div className="cad-feature-history-row">
-          {expandable ? <button type="button" className="cad-feature-disclosure" disabled={locked || Boolean(renameCurrent)} aria-label={`${open ? 'Collapse' : 'Expand'} ${feature.name}`} aria-expanded={open} aria-controls={open ? detailsId : undefined} onClick={() => toggle(feature.id)}><ChevronRight size={12} /></button>
+          {expandable ? <button type="button" className="cad-feature-disclosure" disabled={locked || Boolean(renameCurrent)} aria-label={`${open ? 'Collapse' : 'Expand'} ${feature.name}`} aria-expanded={open} aria-controls={open ? detailsId : undefined} onClick={() => toggle(feature.id)}><ExpandRightIcon size={12} /></button>
             : <span className="cad-feature-disclosure-placeholder" aria-hidden="true" />}
           {renameCurrent?.target.kind === 'feature' && renameCurrent.target.featureId === feature.id ? renameEditor(feature) : <button type="button" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)}
             aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${diagnostic.message}` : ''}`}
             onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)}
             onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); }}>
             <Icon size={14} /><span className="cad-feature-name">{feature.name}</span>
-            {diagnostic && <span className="cad-tree-error" aria-label={diagnostic.message}>!</span>}{feature.suppressed && <span className="cad-tree-muted">off</span>}
+            {diagnostic && <span className="cad-tree-error" aria-label={diagnostic.message}><WarningIcon size={12} /></span>}{feature.suppressed && <span className="cad-tree-muted">off</span>}
           </button>}
         </div>
         {expandable && open && <div id={detailsId} className="cad-feature-details">
           {feature.kind === 'sketch' && feature.profiles.map(profile => renameCurrent?.target.kind === 'profile' && renameCurrent.target.featureId === feature.id && renameCurrent.target.profileId === profile.id ? <div key={profile.id}>{renameEditor(feature, profile)}</div> : <button type="button" key={profile.id} data-cad-profile-id={profile.id} className={`cad-tree-row cad-tree-profile${selected && selectedProfileId === profile.id ? ' is-selected' : ''}`} disabled={locked || selectionOnly || Boolean(renameCurrent)}
             aria-label={`${profile.name} profile`} aria-pressed={selected && selectedProfileId === profile.id} title={`${profile.construction ? 'Construction profile' : 'Closed profile'} · ${profile.name}`} onClick={() => onSelectProfile(feature, profile.id)}
             onContextMenu={event => openMenu(event, feature.id, profile.id)} onKeyDown={event => openMenu(event, feature.id, profile.id)}>
-            {profile.geometry.kind === 'circle' ? <Circle size={11} /> : <Square size={11} />}<span>{profile.name}</span>{profile.construction && <small>ref</small>}
+            {profile.geometry.kind === 'circle' ? <CircleIcon size={11} /> : <RectangleIcon size={11} />}<span>{profile.name}</span>{profile.construction && <small>ref</small>}
           </button>)}
           {inputs.length > 0 && <div className="cad-feature-relations"><span className="cad-feature-relation-label">Inputs</span><div>{inputs.map(id => {
             const source = relationships.byId.get(id);

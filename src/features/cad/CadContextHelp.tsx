@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Info, X } from 'lucide-react';
+import { CloseIcon, HelpIcon } from '@/components/icons';
 import './cad-context-help.css';
 
 /** Nonmodal contextual disclosure. Hover/focus previews; clicking pins it. */
@@ -61,10 +61,10 @@ export function CadContextHelp({ label, children, onOpenChange, className = '', 
     <button ref={trigger} type="button" className="cad-context-help-trigger" aria-label={buttonLabel ?? `${label} help`} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       onMouseEnter={() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }} onMouseLeave={() => { suppressed.current = false; leave(); }}
       onFocus={() => { if (activation === 'preview' && !suppressed.current) show(true); }} onBlur={event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }}
-      onClick={event => { if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}>{triggerContent ?? <Info size={12} aria-hidden="true" />}</button>
+      onClick={event => { if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}>{triggerContent ?? <HelpIcon size={12} aria-hidden="true" />}</button>
     {open && createPortal(<div ref={panel} id={id} className="cad-context-help-popover" role="dialog" aria-label={`${label} help`} style={position}
       onMouseEnter={clearTimer} onMouseLeave={leave} onBlur={event => { if (!panel.current?.contains(event.relatedTarget) && event.relatedTarget !== trigger.current) leave(); }}>
-      <header><strong>{label}</strong><button type="button" aria-label={`Close ${label} help`} onClick={() => dismiss(true)}><X size={12} aria-hidden="true" /></button></header>
+      <header><strong>{label}</strong><button type="button" aria-label={`Close ${label} help`} onClick={() => dismiss(true)}><CloseIcon size={12} aria-hidden="true" /></button></header>
       <div className="cad-context-help-content">{children}</div>
     </div>, trigger.current?.closest('dialog') ?? document.body)}
   </span>;

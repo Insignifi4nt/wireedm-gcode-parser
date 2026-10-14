@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { Laptop, Mouse } from 'lucide-react';
+import { NavigationMouseIcon, NavigationTrackpadIcon } from '@/components/icons';
 import { setCadPreferences, useCadPreferences, type CadPreferences } from '@/features/cad/cadPreferences';
 
 const sections = ['Navigation', 'Display'] as const;
@@ -24,7 +24,7 @@ export function CadSettingsPanel() {
         <fieldset className="grid gap-2"><legend className="mb-2 font-medium">Input device</legend><div className="grid grid-cols-2 gap-2">
           {(['mouse', 'trackpad'] as const).map(mode => <label key={mode} className={`flex cursor-pointer items-center gap-2 rounded-sm border p-3 ${preferences.navigationMode === mode ? 'border-primary/50 bg-accent' : 'border-border'}`}>
             <input type="radio" name={`${id}-navigation`} checked={preferences.navigationMode === mode} onChange={() => update({ ...preferences, navigationMode: mode })} />
-            {mode === 'mouse' ? <Mouse size={16} /> : <Laptop size={16} />}<span>{mode === 'mouse' ? 'Mouse' : 'Trackpad'}</span>
+            {mode === 'mouse' ? <NavigationMouseIcon size={16} /> : <NavigationTrackpadIcon size={16} />}<span>{mode === 'mouse' ? 'Mouse' : 'Trackpad'}</span>
           </label>)}
         </div></fieldset>
         <table className="w-full text-left text-[11px]"><caption className="mb-2 text-left text-muted-foreground">Gestures over the modeling area</caption><tbody>

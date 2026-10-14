@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Box, Grid2X2, Maximize2 } from 'lucide-react';
+import { ViewIcon, Grid2X2, Maximize2 } from '@/components/icons';
 import { CadContextHelp } from './CadContextHelp';
 import { CadViewTools } from './CadCommandDock';
 import * as THREE from 'three';
@@ -615,7 +615,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         disabled={interactionLocked || unavailable || pickMode !== 'body' || !onSelectPlane} onClick={() => { if (reference.plane) onSelectPlane?.(reference.plane); }}>{reference.name}</button>)}
     </div>
     <CadViewTools label="Viewport controls">
-      <Box size={14} />
+      <ViewIcon size={14} />
       <select aria-label="Named view" value={viewName} disabled={navigationLocked || unavailable} onChange={(event) => {
         const name = (['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).find((entry) => entry === event.target.value);
         if (name) controller.current?.setView?.(name);

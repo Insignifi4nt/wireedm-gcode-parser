@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown } from 'lucide-react';
+import { ExpandDownIcon } from '@/components/icons';
 import './cad-command-dock.css';
 
 const ViewToolsHost = createContext<{ host: HTMLDivElement | null; close(): void } | undefined>(undefined);
@@ -23,7 +23,7 @@ export function CadCommandDock({ toolbar, children }: { toolbar: ReactNode; chil
           if (!open || event.key !== 'Escape' || event.nativeEvent.isComposing || event.defaultPrevented) return;
           event.preventDefault(); event.stopPropagation(); close();
         }}
-        onClick={() => setOpen(value => !value)}>View <ChevronDown size={10} /></button>
+        onClick={() => setOpen(value => !value)}>View <ExpandDownIcon size={10} /></button>
     </div>
   </ViewToolsHost.Provider>;
 }
