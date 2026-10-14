@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, History, Pencil, Save, Trash2 } from 'lucide-react';
+import { ChevronDown, History, Pencil, Save, Trash2 } from '@/components/icons';
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';

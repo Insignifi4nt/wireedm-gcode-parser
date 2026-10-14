@@ -1,0 +1,1108 @@
+[
+  {
+    "id": "navigate-back",
+    "label": "Back",
+    "category": "navigation",
+    "aliases": [
+      "ArrowLeft"
+    ],
+    "file": "navigate-back.svg"
+  },
+  {
+    "id": "navigate-forward",
+    "label": "Forward",
+    "category": "navigation",
+    "aliases": [
+      "ArrowRight"
+    ],
+    "file": "navigate-forward.svg"
+  },
+  {
+    "id": "move-up",
+    "label": "Move up",
+    "category": "navigation",
+    "aliases": [
+      "ArrowUp"
+    ],
+    "file": "move-up.svg"
+  },
+  {
+    "id": "move-down",
+    "label": "Move down",
+    "category": "navigation",
+    "aliases": [
+      "ArrowDown"
+    ],
+    "file": "move-down.svg"
+  },
+  {
+    "id": "expand-right",
+    "label": "Expand",
+    "category": "navigation",
+    "aliases": [
+      "ChevronRight"
+    ],
+    "file": "expand-right.svg"
+  },
+  {
+    "id": "expand-down",
+    "label": "Expand menu",
+    "category": "navigation",
+    "aliases": [
+      "ChevronDown"
+    ],
+    "file": "expand-down.svg"
+  },
+  {
+    "id": "more",
+    "label": "More actions",
+    "category": "navigation",
+    "aliases": [
+      "Ellipsis"
+    ],
+    "file": "more.svg"
+  },
+  {
+    "id": "close",
+    "label": "Close or cancel",
+    "category": "actions",
+    "aliases": [
+      "X"
+    ],
+    "file": "close.svg"
+  },
+  {
+    "id": "confirm",
+    "label": "Apply or confirm",
+    "category": "actions",
+    "aliases": [
+      "Check"
+    ],
+    "file": "confirm.svg"
+  },
+  {
+    "id": "add",
+    "label": "Add",
+    "category": "actions",
+    "aliases": [
+      "Plus"
+    ],
+    "file": "add.svg"
+  },
+  {
+    "id": "remove",
+    "label": "Remove",
+    "category": "actions",
+    "aliases": [
+      "Minus"
+    ],
+    "file": "remove.svg"
+  },
+  {
+    "id": "delete",
+    "label": "Delete",
+    "category": "actions",
+    "aliases": [
+      "Trash2"
+    ],
+    "file": "delete.svg"
+  },
+  {
+    "id": "save",
+    "label": "Save",
+    "category": "files",
+    "aliases": [
+      "Save"
+    ],
+    "file": "save.svg"
+  },
+  {
+    "id": "rename",
+    "label": "Rename or edit",
+    "category": "actions",
+    "aliases": [
+      "Pencil"
+    ],
+    "file": "rename.svg"
+  },
+  {
+    "id": "copy",
+    "label": "Copy",
+    "category": "actions",
+    "aliases": [
+      "Copy"
+    ],
+    "file": "copy.svg"
+  },
+  {
+    "id": "undo",
+    "label": "Undo",
+    "category": "actions",
+    "aliases": [
+      "Undo2"
+    ],
+    "file": "undo.svg"
+  },
+  {
+    "id": "redo",
+    "label": "Redo",
+    "category": "actions",
+    "aliases": [
+      "Redo2"
+    ],
+    "file": "redo.svg"
+  },
+  {
+    "id": "refresh",
+    "label": "Refresh or rebuild",
+    "category": "actions",
+    "aliases": [
+      "RefreshCw"
+    ],
+    "file": "refresh.svg"
+  },
+  {
+    "id": "rotate-clockwise",
+    "label": "Rotate clockwise",
+    "category": "geometry",
+    "aliases": [
+      "RotateCw"
+    ],
+    "file": "rotate-clockwise.svg"
+  },
+  {
+    "id": "rotate-counterclockwise",
+    "label": "Rotate counterclockwise",
+    "category": "geometry",
+    "aliases": [
+      "RotateCcw"
+    ],
+    "file": "rotate-counterclockwise.svg"
+  },
+  {
+    "id": "download",
+    "label": "Download or export",
+    "category": "files",
+    "aliases": [
+      "Download"
+    ],
+    "file": "download.svg"
+  },
+  {
+    "id": "upload",
+    "label": "Upload or install",
+    "category": "files",
+    "aliases": [
+      "Upload"
+    ],
+    "file": "upload.svg"
+  },
+  {
+    "id": "file-new",
+    "label": "New document",
+    "category": "files",
+    "aliases": [
+      "FilePlus2"
+    ],
+    "file": "file-new.svg"
+  },
+  {
+    "id": "folder-open",
+    "label": "Open folder",
+    "category": "files",
+    "aliases": [
+      "FolderOpen"
+    ],
+    "file": "folder-open.svg"
+  },
+  {
+    "id": "file-import",
+    "label": "Import file",
+    "category": "files",
+    "aliases": [
+      "FileUp"
+    ],
+    "file": "file-import.svg"
+  },
+  {
+    "id": "file-export",
+    "label": "Generate controller file",
+    "category": "files",
+    "aliases": [
+      "FileOutput"
+    ],
+    "file": "file-export.svg"
+  },
+  {
+    "id": "file-inspect",
+    "label": "Inspect file",
+    "category": "files",
+    "aliases": [
+      "FileSearch"
+    ],
+    "file": "file-inspect.svg"
+  },
+  {
+    "id": "file-code",
+    "label": "Controller program",
+    "category": "files",
+    "aliases": [
+      "FileCode",
+      "FileCode2"
+    ],
+    "file": "file-code.svg"
+  },
+  {
+    "id": "file-json",
+    "label": "Structured interchange",
+    "category": "files",
+    "aliases": [
+      "FileJson2"
+    ],
+    "file": "file-json.svg"
+  },
+  {
+    "id": "file-body",
+    "label": "Solid model file",
+    "category": "files",
+    "aliases": [
+      "FileBox"
+    ],
+    "file": "file-body.svg"
+  },
+  {
+    "id": "history",
+    "label": "Revision history",
+    "category": "files",
+    "aliases": [
+      "History"
+    ],
+    "file": "history.svg"
+  },
+  {
+    "id": "browser-cache",
+    "label": "Browser cache",
+    "category": "storage",
+    "aliases": [
+      "Database"
+    ],
+    "file": "browser-cache.svg"
+  },
+  {
+    "id": "folder-storage",
+    "label": "Folder storage",
+    "category": "storage",
+    "aliases": [
+      "HardDrive"
+    ],
+    "file": "folder-storage.svg"
+  },
+  {
+    "id": "settings",
+    "label": "Workbench settings",
+    "category": "actions",
+    "aliases": [
+      "Settings"
+    ],
+    "file": "settings.svg"
+  },
+  {
+    "id": "adjust",
+    "label": "Adjust parameters",
+    "category": "actions",
+    "aliases": [
+      "Settings2",
+      "SlidersHorizontal"
+    ],
+    "file": "adjust.svg"
+  },
+  {
+    "id": "help",
+    "label": "Help",
+    "category": "status",
+    "aliases": [
+      "CircleHelp"
+    ],
+    "file": "help.svg"
+  },
+  {
+    "id": "info",
+    "label": "Information",
+    "category": "status",
+    "aliases": [
+      "Info"
+    ],
+    "file": "info.svg"
+  },
+  {
+    "id": "warning",
+    "label": "Warning",
+    "category": "status",
+    "aliases": [
+      "AlertTriangle"
+    ],
+    "file": "warning.svg"
+  },
+  {
+    "id": "success",
+    "label": "Completed successfully",
+    "category": "status",
+    "aliases": [
+      "CheckCircle2"
+    ],
+    "file": "success.svg"
+  },
+  {
+    "id": "error",
+    "label": "Error",
+    "category": "status",
+    "aliases": [
+      "XCircle"
+    ],
+    "file": "error.svg"
+  },
+  {
+    "id": "notifications",
+    "label": "Notifications",
+    "category": "status",
+    "aliases": [
+      "Bell"
+    ],
+    "file": "notifications.svg"
+  },
+  {
+    "id": "busy",
+    "label": "Operation in progress",
+    "category": "status",
+    "aliases": [
+      "Loader2",
+      "LoaderCircle"
+    ],
+    "file": "busy.svg"
+  },
+  {
+    "id": "play",
+    "label": "Play simulation",
+    "category": "simulation",
+    "aliases": [
+      "Play"
+    ],
+    "file": "play.svg"
+  },
+  {
+    "id": "pause",
+    "label": "Pause simulation",
+    "category": "simulation",
+    "aliases": [
+      "Pause"
+    ],
+    "file": "pause.svg"
+  },
+  {
+    "id": "step-back",
+    "label": "Previous simulation step",
+    "category": "simulation",
+    "aliases": [
+      "SkipBack"
+    ],
+    "file": "step-back.svg"
+  },
+  {
+    "id": "step-forward",
+    "label": "Next simulation step",
+    "category": "simulation",
+    "aliases": [
+      "SkipForward"
+    ],
+    "file": "step-forward.svg"
+  },
+  {
+    "id": "visible",
+    "label": "Show geometry",
+    "category": "view",
+    "aliases": [
+      "Eye"
+    ],
+    "file": "visible.svg"
+  },
+  {
+    "id": "hidden",
+    "label": "Hide geometry",
+    "category": "view",
+    "aliases": [
+      "EyeOff"
+    ],
+    "file": "hidden.svg"
+  },
+  {
+    "id": "fit-view",
+    "label": "Fit geometry to view",
+    "category": "view",
+    "aliases": [
+      "Maximize",
+      "Maximize2"
+    ],
+    "file": "fit-view.svg"
+  },
+  {
+    "id": "zoom-in",
+    "label": "Zoom in",
+    "category": "view",
+    "aliases": [
+      "ZoomIn"
+    ],
+    "file": "zoom-in.svg"
+  },
+  {
+    "id": "zoom-out",
+    "label": "Zoom out",
+    "category": "view",
+    "aliases": [
+      "ZoomOut"
+    ],
+    "file": "zoom-out.svg"
+  },
+  {
+    "id": "select",
+    "label": "Select geometry",
+    "category": "geometry",
+    "aliases": [
+      "MousePointer2"
+    ],
+    "file": "select.svg"
+  },
+  {
+    "id": "snap",
+    "label": "Snap to geometry",
+    "category": "geometry",
+    "aliases": [
+      "Magnet"
+    ],
+    "file": "snap.svg"
+  },
+  {
+    "id": "grid",
+    "label": "Construction grid",
+    "category": "view",
+    "aliases": [
+      "Grid2X2"
+    ],
+    "file": "grid.svg"
+  },
+  {
+    "id": "origin",
+    "label": "Origin or crosshair",
+    "category": "geometry",
+    "aliases": [
+      "Crosshair"
+    ],
+    "file": "origin.svg"
+  },
+  {
+    "id": "circle",
+    "label": "Circle profile",
+    "category": "geometry",
+    "aliases": [
+      "Circle"
+    ],
+    "file": "circle.svg"
+  },
+  {
+    "id": "circle-center",
+    "label": "Circle center",
+    "category": "geometry",
+    "aliases": [
+      "CircleDot"
+    ],
+    "file": "circle-center.svg"
+  },
+  {
+    "id": "rectangle",
+    "label": "Rectangle profile",
+    "category": "geometry",
+    "aliases": [
+      "Square"
+    ],
+    "file": "rectangle.svg"
+  },
+  {
+    "id": "curve",
+    "label": "Reference curve",
+    "category": "cad",
+    "aliases": [
+      "Spline"
+    ],
+    "file": "curve.svg"
+  },
+  {
+    "id": "sketch",
+    "label": "Sketch",
+    "category": "cad",
+    "aliases": [
+      "PencilRuler"
+    ],
+    "file": "sketch.svg"
+  },
+  {
+    "id": "cam-editor",
+    "label": "CAM editor",
+    "category": "cam",
+    "aliases": [
+      "PenTool"
+    ],
+    "file": "cam-editor.svg"
+  },
+  {
+    "id": "body",
+    "label": "Solid body",
+    "category": "cad",
+    "aliases": [
+      "Box"
+    ],
+    "file": "body.svg"
+  },
+  {
+    "id": "layers",
+    "label": "Layer stack",
+    "category": "view",
+    "aliases": [
+      "Layers"
+    ],
+    "file": "layers.svg"
+  },
+  {
+    "id": "move",
+    "label": "Move geometry",
+    "category": "geometry",
+    "aliases": [
+      "Move"
+    ],
+    "file": "move.svg"
+  },
+  {
+    "id": "move-3d",
+    "label": "Transform body",
+    "category": "cad",
+    "aliases": [
+      "Move3D"
+    ],
+    "file": "move-3d.svg"
+  },
+  {
+    "id": "flip-horizontal",
+    "label": "Mirror horizontally",
+    "category": "geometry",
+    "aliases": [
+      "FlipHorizontal"
+    ],
+    "file": "flip-horizontal.svg"
+  },
+  {
+    "id": "flip-vertical",
+    "label": "Mirror vertically",
+    "category": "geometry",
+    "aliases": [
+      "FlipVertical"
+    ],
+    "file": "flip-vertical.svg"
+  },
+  {
+    "id": "start-point",
+    "label": "Contour start",
+    "category": "cam",
+    "aliases": [
+      "Flag"
+    ],
+    "file": "start-point.svg"
+  },
+  {
+    "id": "pin",
+    "label": "Pin line",
+    "category": "cam",
+    "aliases": [
+      "Pin"
+    ],
+    "file": "pin.svg"
+  },
+  {
+    "id": "departure",
+    "label": "Depart from contour",
+    "category": "cam",
+    "aliases": [
+      "ArrowRightFromLine"
+    ],
+    "file": "departure.svg"
+  },
+  {
+    "id": "turn",
+    "label": "Turn direction",
+    "category": "geometry",
+    "aliases": [
+      "CornerDownRight"
+    ],
+    "file": "turn.svg"
+  },
+  {
+    "id": "trim",
+    "label": "Trim geometry",
+    "category": "geometry",
+    "aliases": [
+      "Scissors"
+    ],
+    "file": "trim.svg"
+  },
+  {
+    "id": "scan",
+    "label": "Inspect bounds",
+    "category": "view",
+    "aliases": [
+      "Scan"
+    ],
+    "file": "scan.svg"
+  },
+  {
+    "id": "section-view",
+    "label": "Section view",
+    "category": "view",
+    "aliases": [
+      "ScanLine"
+    ],
+    "file": "section-view.svg"
+  },
+  {
+    "id": "view",
+    "label": "View orientation",
+    "category": "view",
+    "aliases": [
+      "View"
+    ],
+    "file": "view.svg"
+  },
+  {
+    "id": "view-top",
+    "label": "Top view",
+    "category": "view",
+    "aliases": [],
+    "file": "view-top.svg"
+  },
+  {
+    "id": "geometry",
+    "label": "Planning geometry",
+    "category": "cam",
+    "aliases": [],
+    "file": "geometry.svg"
+  },
+  {
+    "id": "panel-left-close",
+    "label": "Hide left panel",
+    "category": "navigation",
+    "aliases": [
+      "PanelLeftClose"
+    ],
+    "file": "panel-left-close.svg"
+  },
+  {
+    "id": "panel-left-open",
+    "label": "Show left panel",
+    "category": "navigation",
+    "aliases": [
+      "PanelLeftOpen"
+    ],
+    "file": "panel-left-open.svg"
+  },
+  {
+    "id": "panel-right-close",
+    "label": "Hide right panel",
+    "category": "navigation",
+    "aliases": [
+      "PanelRightClose"
+    ],
+    "file": "panel-right-close.svg"
+  },
+  {
+    "id": "panel-right-open",
+    "label": "Show right panel",
+    "category": "navigation",
+    "aliases": [
+      "PanelRightOpen"
+    ],
+    "file": "panel-right-open.svg"
+  },
+  {
+    "id": "datum-plane",
+    "label": "Datum plane",
+    "category": "cad",
+    "aliases": [],
+    "file": "datum-plane.svg"
+  },
+  {
+    "id": "pad",
+    "label": "Pad",
+    "category": "cad",
+    "aliases": [],
+    "file": "pad.svg"
+  },
+  {
+    "id": "pocket",
+    "label": "Pocket",
+    "category": "cad",
+    "aliases": [],
+    "file": "pocket.svg"
+  },
+  {
+    "id": "pad-pocket",
+    "label": "Pad and Pocket command",
+    "category": "cad",
+    "aliases": [],
+    "file": "pad-pocket.svg"
+  },
+  {
+    "id": "fillet",
+    "label": "Fillet",
+    "category": "cad",
+    "aliases": [],
+    "file": "fillet.svg"
+  },
+  {
+    "id": "chamfer",
+    "label": "Chamfer",
+    "category": "cad",
+    "aliases": [],
+    "file": "chamfer.svg"
+  },
+  {
+    "id": "shell",
+    "label": "Shell",
+    "category": "cad",
+    "aliases": [],
+    "file": "shell.svg"
+  },
+  {
+    "id": "revolve",
+    "label": "Revolve",
+    "category": "cad",
+    "aliases": [],
+    "file": "revolve.svg"
+  },
+  {
+    "id": "loft",
+    "label": "Loft",
+    "category": "cad",
+    "aliases": [],
+    "file": "loft.svg"
+  },
+  {
+    "id": "sweep",
+    "label": "Sweep",
+    "category": "cad",
+    "aliases": [],
+    "file": "sweep.svg"
+  },
+  {
+    "id": "boolean",
+    "label": "Boolean operation",
+    "category": "cad",
+    "aliases": [],
+    "file": "boolean.svg"
+  },
+  {
+    "id": "boolean-union",
+    "label": "Boolean union",
+    "category": "cad",
+    "aliases": [],
+    "file": "boolean-union.svg"
+  },
+  {
+    "id": "boolean-subtract",
+    "label": "Boolean subtract",
+    "category": "cad",
+    "aliases": [],
+    "file": "boolean-subtract.svg"
+  },
+  {
+    "id": "boolean-intersect",
+    "label": "Boolean intersect",
+    "category": "cad",
+    "aliases": [],
+    "file": "boolean-intersect.svg"
+  },
+  {
+    "id": "linear-pattern",
+    "label": "Linear pattern",
+    "category": "cad",
+    "aliases": [],
+    "file": "linear-pattern.svg"
+  },
+  {
+    "id": "circular-pattern",
+    "label": "Circular pattern",
+    "category": "cad",
+    "aliases": [],
+    "file": "circular-pattern.svg"
+  },
+  {
+    "id": "mirror",
+    "label": "Mirror body",
+    "category": "cad",
+    "aliases": [],
+    "file": "mirror.svg"
+  },
+  {
+    "id": "imported-body",
+    "label": "Imported body",
+    "category": "cad",
+    "aliases": [],
+    "file": "imported-body.svg"
+  },
+  {
+    "id": "slot",
+    "label": "Slot profile",
+    "category": "geometry",
+    "aliases": [
+      "Pill"
+    ],
+    "file": "slot.svg"
+  },
+  {
+    "id": "polyline",
+    "label": "Polyline",
+    "category": "geometry",
+    "aliases": [
+      "Waypoints"
+    ],
+    "file": "polyline.svg"
+  },
+  {
+    "id": "closed-path",
+    "label": "Closed path",
+    "category": "geometry",
+    "aliases": [],
+    "file": "closed-path.svg"
+  },
+  {
+    "id": "arc",
+    "label": "Three-point arc",
+    "category": "geometry",
+    "aliases": [],
+    "file": "arc.svg"
+  },
+  {
+    "id": "line",
+    "label": "Line",
+    "category": "geometry",
+    "aliases": [],
+    "file": "line.svg"
+  },
+  {
+    "id": "construction",
+    "label": "Construction geometry",
+    "category": "geometry",
+    "aliases": [],
+    "file": "construction.svg"
+  },
+  {
+    "id": "measure",
+    "label": "Measure",
+    "category": "geometry",
+    "aliases": [
+      "Ruler"
+    ],
+    "file": "measure.svg"
+  },
+  {
+    "id": "select-face",
+    "label": "Select face",
+    "category": "cad",
+    "aliases": [],
+    "file": "select-face.svg"
+  },
+  {
+    "id": "select-edge",
+    "label": "Select edge",
+    "category": "cad",
+    "aliases": [],
+    "file": "select-edge.svg"
+  },
+  {
+    "id": "select-body",
+    "label": "Select body",
+    "category": "cad",
+    "aliases": [],
+    "file": "select-body.svg"
+  },
+  {
+    "id": "camera-orbit",
+    "label": "Orbit view",
+    "category": "view",
+    "aliases": [],
+    "file": "camera-orbit.svg"
+  },
+  {
+    "id": "camera-pan",
+    "label": "Pan view",
+    "category": "view",
+    "aliases": [],
+    "file": "camera-pan.svg"
+  },
+  {
+    "id": "camera-capture",
+    "label": "Capture view",
+    "category": "files",
+    "aliases": [],
+    "file": "camera-capture.svg"
+  },
+  {
+    "id": "send-cam",
+    "label": "Send to CAM",
+    "category": "cam",
+    "aliases": [],
+    "file": "send-cam.svg"
+  },
+  {
+    "id": "section-cam",
+    "label": "Section for CAM",
+    "category": "cam",
+    "aliases": [],
+    "file": "section-cam.svg"
+  },
+  {
+    "id": "suppressed",
+    "label": "Suppressed feature",
+    "category": "status",
+    "aliases": [],
+    "file": "suppressed.svg"
+  },
+  {
+    "id": "dirty",
+    "label": "Unsaved changes",
+    "category": "status",
+    "aliases": [],
+    "file": "dirty.svg"
+  },
+  {
+    "id": "locked",
+    "label": "Locked",
+    "category": "status",
+    "aliases": [
+      "LockKeyhole"
+    ],
+    "file": "locked.svg"
+  },
+  {
+    "id": "offset",
+    "label": "Contour offset",
+    "category": "cam",
+    "aliases": [],
+    "file": "offset.svg"
+  },
+  {
+    "id": "lead-in",
+    "label": "Lead in",
+    "category": "cam",
+    "aliases": [],
+    "file": "lead-in.svg"
+  },
+  {
+    "id": "lead-out",
+    "label": "Lead out",
+    "category": "cam",
+    "aliases": [],
+    "file": "lead-out.svg"
+  },
+  {
+    "id": "wire",
+    "label": "Wire electrode",
+    "category": "simulation",
+    "aliases": [],
+    "file": "wire.svg"
+  },
+  {
+    "id": "simulation",
+    "label": "Machine simulation",
+    "category": "simulation",
+    "aliases": [],
+    "file": "simulation.svg"
+  },
+  {
+    "id": "machine-setup",
+    "label": "Machine setup",
+    "category": "simulation",
+    "aliases": [],
+    "file": "machine-setup.svg"
+  },
+  {
+    "id": "toolpath",
+    "label": "Cutting path",
+    "category": "cam",
+    "aliases": [],
+    "file": "toolpath.svg"
+  },
+  {
+    "id": "folder-plus",
+    "label": "New parameter group",
+    "category": "files",
+    "aliases": [
+      "FolderPlus"
+    ],
+    "file": "folder-plus.svg"
+  },
+  {
+    "id": "link",
+    "label": "Linked expression",
+    "category": "cad",
+    "aliases": [
+      "Link2"
+    ],
+    "file": "link.svg"
+  },
+  {
+    "id": "search",
+    "label": "Search",
+    "category": "navigation",
+    "aliases": [
+      "Search"
+    ],
+    "file": "search.svg"
+  },
+  {
+    "id": "plugin",
+    "label": "Parametric plugin",
+    "category": "cad",
+    "aliases": [
+      "Puzzle"
+    ],
+    "file": "plugin.svg"
+  },
+  {
+    "id": "pattern",
+    "label": "Pattern command",
+    "category": "cad",
+    "aliases": [],
+    "file": "pattern.svg"
+  },
+  {
+    "id": "wire-edm-mark",
+    "label": "Wire EDM Workbench",
+    "category": "brand",
+    "aliases": [],
+    "file": "wire-edm-mark.svg"
+  },
+  {
+    "id": "navigation-mouse",
+    "label": "Mouse navigation",
+    "category": "view",
+    "aliases": [
+      "Mouse"
+    ],
+    "file": "navigation-mouse.svg"
+  },
+  {
+    "id": "navigation-trackpad",
+    "label": "Trackpad navigation",
+    "category": "view",
+    "aliases": [
+      "Laptop"
+    ],
+    "file": "navigation-trackpad.svg"
+  }
+]

@@ -1,5 +1,5 @@
 import { useRef, type ChangeEvent, type ReactNode } from 'react';
-import { ArrowLeft, CircleHelp, FileOutput, FileSearch, FileUp, Redo2, Save, Undo2 } from 'lucide-react';
+import { ArrowLeft, CircleHelp, FileOutput, FileSearch, FileUp, Redo2, Save, Undo2 } from '@/components/icons';
 
 import { Button } from '@/components/ui/button';
 import type { GCodeInterpreterState } from '@/domain/editor/gcodeBlockInterpreter';

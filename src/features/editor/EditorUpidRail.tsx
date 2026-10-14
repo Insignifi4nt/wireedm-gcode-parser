@@ -1,4 +1,5 @@
 import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { FileCode, GeometryIcon, PanelLeftClose, PanelLeftOpen } from '@/components/icons';
 
 import type { UpidEditorTree } from '@/domain/upid/upidEditorTree';
 
@@ -76,7 +77,7 @@ export function EditorUpidRail({
           title="Expand UPID rail"
           type="button"
         >
-          <span aria-hidden="true">›</span>
+          <PanelLeftOpen size={14} />
         </button>
         <button
           aria-label={`Switch to ${nextMode === 'geometry' ? 'Geometry' : 'Program'} lens`}
@@ -85,7 +86,7 @@ export function EditorUpidRail({
           title={`${formatMode(mode)} lens`}
           type="button"
         >
-          {mode === 'program' ? 'P' : 'G'}
+          {mode === 'program' ? <FileCode size={14} /> : <GeometryIcon size={14} />}
         </button>
         <span
           aria-label={`Program status: ${formatStatus(status)}`}
@@ -152,7 +153,7 @@ export function EditorUpidRail({
           title="Collapse UPID rail"
           type="button"
         >
-          <span aria-hidden="true">‹</span>
+          <PanelLeftClose size={14} />
         </button>
       </div>
       <div

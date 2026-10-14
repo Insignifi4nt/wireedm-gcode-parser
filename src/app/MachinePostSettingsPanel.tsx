@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Check, ChevronRight, Trash2, Upload } from 'lucide-react';
+import { Check, ChevronRight, Trash2, Upload } from '@/components/icons';
 
 import { Button } from '@/components/ui/button';
 import type {

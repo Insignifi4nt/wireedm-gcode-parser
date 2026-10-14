@@ -60,6 +60,8 @@ describe('bounded polygon vertex properties', () => {
       const start = corners[side], end = corners[side + 1]; points.push([start[0] + (end[0] - start[0]) * step / 512, start[1] + (end[1] - start[1]) * step / 512]);
     }
     await mount(points); const before = session.getSnapshot(); expect(currentPolygon().points).toHaveLength(2048);
+    expect(button('Previous polygon vertex').querySelector('[data-workbench-icon="navigate-back"]')?.getAttribute('aria-hidden')).toBe('true');
+    expect(button('Next polygon vertex').querySelector('[data-workbench-icon="navigate-forward"]')?.getAttribute('aria-hidden')).toBe('true');
     expect(container.querySelectorAll('input')).toHaveLength(5); expect(button('Previous polygon vertex').disabled).toBe(true);
     await input(picker(), '2048'); expect(field('X').value).toBe('0'); expect(field('Y').value).toBe(String(10 / 512));
     expect(button('Next polygon vertex').disabled).toBe(true); expect(container.querySelectorAll('input')).toHaveLength(5);

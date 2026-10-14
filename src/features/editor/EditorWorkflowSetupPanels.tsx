@@ -1,4 +1,4 @@
-import { MousePointer2, RefreshCw } from 'lucide-react';
+import { MousePointer2, RefreshCw } from '@/components/icons';
 
 import { suggestCompensationIntent, type ManualCompensationSelection } from '@/domain/compensation/intent';
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';

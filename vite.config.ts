@@ -17,6 +17,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: './index.html',
+        iconCatalog: './icon-catalog/index.html',
         packageTools: './package-tools/index.html'
       }
     }

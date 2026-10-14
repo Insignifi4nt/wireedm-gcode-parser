@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Bell, CheckCircle2, Info, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Bell, CheckCircle2, Info, X, XCircle } from '@/components/icons';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
 
 export type StatusToastType = 'success' | 'error' | 'warning' | 'info';

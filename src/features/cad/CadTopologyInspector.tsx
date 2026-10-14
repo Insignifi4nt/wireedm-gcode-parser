@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight } from '@/components/icons';
 import type { CadTopologyDescriptor, CadTopologyInspectRequest, CadTopologyInspectResult, CadTopologyPick, CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import type { CadPickMode } from './cadTopologyPicking';
 import { CadContextHelp } from './CadContextHelp';
@@ -66,7 +67,7 @@ export function CadTopologyInspector({ bodyId, buildId, documentVersion, pickMod
   const selectedDescriptor = !browse && current?.kind === 'ready' ? current.result.descriptors[0] : null;
   return <section className="cad-topology-inspector" aria-label="Exact topology inspector">
     <div className="cad-topology-heading"><button type="button" className="cad-topology-disclosure" aria-label="Inspect topology" aria-expanded={expanded} aria-controls={contentId}
-      onClick={() => setDisclosure({ identity: disclosureIdentity, expanded: !expanded })}><span aria-hidden="true">{expanded ? '▾' : '▸'}</span> Inspect topology</button>{selection?.picks.length ? <button disabled={locked} onClick={onClear}>Clear selection</button> : null}</div>
+      onClick={() => setDisclosure({ identity: disclosureIdentity, expanded: !expanded })}>{expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Inspect topology</button>{selection?.picks.length ? <button disabled={locked} onClick={onClear}>Clear selection</button> : null}</div>
     <div id={contentId} className="cad-topology-content" hidden={!expanded}>{expanded && <>
     <div className="cad-topology-actions"><span>{selection?.picks.length ? `${selection.picks.length} ${selection.picks[0].kind}${selection.picks.length === 1 ? '' : 's'}` : 'Selection'}<CadContextHelp label="Topology selection"><dl><dt>On the model</dt><dd>Pick a face or edge. Ctrl or Command adds to the selection.</dd><dt>Exact list</dt><dd>Browse geometry when a face or edge is difficult to reach.</dd><dt>Changes</dt><dd>Selections belong to the current build. Rebuilding requires a new selection.</dd></dl></CadContextHelp></span><button disabled={locked} aria-pressed={browse} onClick={() => { setBrowse(!browse); setOffset(0); }}>{browse ? 'Show selected' : `Browse ${topology === 'edge' ? 'edge' : 'face'}s`}</button></div>
     {current?.kind === 'loading' && <p role="status" className="cad-inspector-note">Inspecting exact geometry…</p>}

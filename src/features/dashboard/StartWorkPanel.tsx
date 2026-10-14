@@ -1,5 +1,5 @@
 import { useRef, type ChangeEvent } from 'react';
-import { ChevronDown, FileCode, FileJson2, FilePlus2, FileSearch, FileUp } from 'lucide-react';
+import { ChevronDown, FileCode, FileJson2, FilePlus2, FileSearch, FileUp } from '@/components/icons';
 
 import { Button } from '@/components/ui/button';
 import { useDashboardMenu } from './useDashboardMenu';

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { ChevronDown, ChevronRight } from '@/components/icons';
 
 import type {
   UpidEditorDiagnosticNode,
@@ -121,7 +122,7 @@ export function EditorProgramTree(props: EditorProgramTreeProps) {
           {item.children.length > 0 ? (
             <button aria-label={`${expanded ? 'Collapse' : 'Expand'} ${item.label}`} className="size-4 shrink-0"
               onClick={(event) => { event.stopPropagation(); setExpanded(item, !expanded); }} tabIndex={-1} type="button">
-              {expanded ? '−' : '+'}
+              {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </button>
           ) : <span className="w-4 shrink-0" />}
           <StatusDot status={item.status} />

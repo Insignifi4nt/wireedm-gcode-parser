@@ -1,5 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
-import { X } from 'lucide-react';
+import { X } from '@/components/icons';
 
 import { Button } from '@/components/ui/button';
 

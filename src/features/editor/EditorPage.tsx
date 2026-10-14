@@ -15,7 +15,7 @@ import {
   type ReactNode
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Box, PenTool, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { SimulationIcon, PenTool, PanelRightClose, PanelRightOpen } from '@/components/icons';
 import { captureSvgPreview } from './captureEditorPreview';
 import { EditorWorkflowActions } from './EditorWorkflowActions';
 import type { SimulationCapture } from '@/features/simulation/SimulationViewport';
@@ -933,7 +933,7 @@ export function EditorPage({
           onValueChange={view => { setWorkspaceView(view); if (view === 'simulation') setSimulationOpened(true); }}
           tabs={[
             { value: 'editor', label: 'Editor', icon: <PenTool />, id: 'workspace-tab-editor', controls: 'workspace-editor' },
-            { value: 'simulation', label: 'Simulation', icon: <Box />, id: 'workspace-tab-simulation', controls: 'workspace-simulation',
+            { value: 'simulation', label: 'Simulation', icon: <SimulationIcon />, id: 'workspace-tab-simulation', controls: 'workspace-simulation',
               disabled: !savedSimulationDocument || Boolean(activeWorkflowSession) || isEditorMutationLocked,
               title: activeWorkflowSession ? 'Finish the active editor workflow before simulating.'
                 : !savedSimulationDocument ? 'Save a UPID path project before simulating.' : 'Simulate the saved UPID process' }

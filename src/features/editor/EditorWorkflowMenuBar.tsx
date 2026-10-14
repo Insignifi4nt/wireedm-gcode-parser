@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { ArrowLeft } from '@/components/icons';
 
 export interface EditorWorkflowMenuCommand {
   ariaLabel?: string;
@@ -190,7 +191,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
           <div className="flex h-7 items-center gap-1 border-b border-border px-1">
             <button
               aria-label="Back to workflow categories"
-              className="h-6 px-1.5 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+              className="inline-flex h-6 items-center gap-1 px-1.5 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
               data-editor-workflow-compact-back
               onClick={() => {
                 focusCategoryAfterRender.current = group.title;
@@ -201,7 +202,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
               role="menuitem"
               type="button"
             >
-              ‹ Categories
+              <ArrowLeft size={12} /> Categories
             </button>
             <span className="truncate text-[11px] font-semibold">{group.title}</span>
           </div>

@@ -33,10 +33,17 @@ describe('compact exact topology disclosure', () => {
   it('does not inspect or show teaching/list controls while closed and keeps exact list selection accessible', async () => {
     const inspect = vi.fn<CadInspectTopology>(async () => ({ bodyId: 'body', buildId: 'build', total: 1, nextOffset: null, descriptors: [edge()] }));
     const select = vi.fn(); await render({ onInspect: inspect, onSelect: select });
-    expect(button('Inspect topology').getAttribute('aria-expanded')).toBe('false');
+    const disclosure = button('Inspect topology');
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(disclosure.getAttribute('aria-label')).toBe('Inspect topology');
+    const closedIcon = disclosure.querySelector('[data-workbench-icon="expand-right"]');
+    expect(closedIcon?.getAttribute('aria-hidden')).toBe('true');
+    expect(closedIcon?.getAttribute('width')).toBe('12');
     expect(container.textContent).not.toContain('Pick faces'); expect(container.textContent).not.toContain('Browse edges'); expect(inspect).not.toHaveBeenCalled();
     const panel = document.getElementById(button('Inspect topology').getAttribute('aria-controls') ?? ''); expect(panel?.hidden).toBe(true);
-    await click('Inspect topology'); expect(inspect).not.toHaveBeenCalled(); await click('Browse edges');
+    await click('Inspect topology');
+    expect(button('Inspect topology').querySelector('[data-workbench-icon="expand-down"]')?.getAttribute('aria-hidden')).toBe('true');
+    expect(inspect).not.toHaveBeenCalled(); await click('Browse edges');
     expect(inspect).toHaveBeenCalledWith({ bodyId: 'body', expectedBuildId: 'build', selection: { kind: 'page', topology: 'edge', offset: 0, limit: 8 } }, 'version', expect.any(AbortSignal));
     const entry = [...container.querySelectorAll('button')].find(element => element.textContent?.includes('1. Straight edge'));
     if (!entry) throw new Error('Expected exact list button'); entry.focus(); expect(document.activeElement).toBe(entry);

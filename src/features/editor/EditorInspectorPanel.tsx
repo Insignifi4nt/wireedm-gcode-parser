@@ -4,7 +4,7 @@ import {
   Magnet,
   MousePointer2,
   Trash2
-} from 'lucide-react';
+} from '@/components/icons';
 import { Fragment, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';

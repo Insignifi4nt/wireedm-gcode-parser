@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Check, LoaderCircle, Upload, X } from 'lucide-react';
+import { Check, LoaderCircle, Upload, X } from '@/components/icons';
 import { MACHINE_IMPORT_LIMITS, validMachinePlacement, type MachineImportProgress, type MachineModel } from '@/domain/simulation/machine-import';
 import { importMachineModel } from './machine-import/importMachineModel';
 import { MACHINE_IMPORT_THIRD_PARTY } from './machine-import/thirdPartyNotices';

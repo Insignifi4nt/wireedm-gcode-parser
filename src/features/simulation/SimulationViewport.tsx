@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Box, Eye, EyeOff, Maximize, Scan, ScanLine, View } from 'lucide-react';
+import { AlertTriangle, SimulationIcon, Eye, EyeOff, Maximize, ViewTopIcon, FitViewIcon, View } from '@/components/icons';
 import type { SimulationPlan, SimulationSnapshot } from '@/domain/simulation';
 import type { MachineModel } from '@/domain/simulation/machine-import';
 import type { EditorPreviewCapture } from '@/features/webmcp/previewCapture';
@@ -68,14 +68,14 @@ export function SimulationViewport(props: Props) {
     <div ref={host} className="sim-render-host" />
     <div className="sim-view-controls" aria-label="Simulation camera">
       <button type="button" title={props.presentation.finalPartOnly ? 'Fit final part' : 'Isometric view · fit stock'} aria-label={props.presentation.finalPartOnly ? 'Fit final part' : 'Fit simulation stock'} onClick={() => withScene(scene => props.presentation.finalPartOnly ? scene.fitPart() : scene.setView('isometric'))}><Maximize size={14} /></button>
-      <button type="button" title="Top view" aria-label="Simulation top view" onClick={() => withScene(scene => scene.setView('top'))}><Scan size={14} /></button>
+      <button type="button" title="Top view" aria-label="Simulation top view" onClick={() => withScene(scene => scene.setView('top'))}><ViewTopIcon size={14} /></button>
       <button type="button" title="Front view" aria-label="Simulation front view" onClick={() => withScene(scene => scene.setView('front'))}><View size={14} /></button>
       {props.machine && !props.presentation.finalPartOnly && <>
-        <button type="button" title="Fit machine and stock" aria-label="Fit machine model" onClick={() => withScene(scene => scene.fitMachine())}><ScanLine size={14} /></button>
+        <button type="button" title="Fit machine and stock" aria-label="Fit machine model" onClick={() => withScene(scene => scene.fitMachine())}><FitViewIcon size={14} /></button>
         <button type="button" title={machineVisible ? 'Hide machine model · collision checks stay active' : 'Show machine model'} aria-label={machineVisible ? 'Hide machine model' : 'Show machine model'} onClick={() => setMachineVisible(value => !value)}>{machineVisible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
       </>}
     </div>
-    {status === 'loading' && <div className="sim-render-message" role="status"><Box size={25} /><strong>Preparing the 3D workspace</strong><span>Loading the renderer locally…</span></div>}
+    {status === 'loading' && <div className="sim-render-message" role="status"><SimulationIcon size={25} /><strong>Preparing the 3D workspace</strong><span>Loading the renderer locally…</span></div>}
     {status === 'error' && <div className="sim-render-message" role="alert"><AlertTriangle size={25} /><strong>3D preview unavailable</strong><span>{error}</span><button type="button" onClick={() => setRetry(value => value + 1)}>Retry renderer</button></div>}
   </div>;
 }

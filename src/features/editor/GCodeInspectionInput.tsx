@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { FileUp } from 'lucide-react';
+import { FileUp } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { readGCodeInspectionFile, validateGCodeInspectionSource } from '@/domain/editor/gcodeInspectionSource';
 

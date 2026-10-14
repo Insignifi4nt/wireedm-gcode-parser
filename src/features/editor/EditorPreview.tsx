@@ -7,7 +7,7 @@ import {
   type MouseEvent,
   type TouchEvent
 } from 'react';
-import { Magnet, Maximize2, MousePointer2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Magnet, Maximize2, MousePointer2, ZoomIn, ZoomOut } from '@/components/icons';
 
 import { Button } from '@/components/ui/button';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';

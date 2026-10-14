@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Plus, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Plus, X } from '@/components/icons';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { inspectCadLoftSectionPair, resolveCadLoftSectionPlacements, MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS } from '@/domain/cad/cadLoft';
 import { CadError } from '@/domain/cad/cadError';

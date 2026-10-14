@@ -193,7 +193,10 @@ describe('EditorWorkflowMenuBar', () => {
     expect(
       container.querySelector('[data-editor-workflow-command="machining.command"]')
     ).not.toBeNull();
-    expect(container.querySelector('[data-editor-workflow-compact-back]')).not.toBeNull();
+    const back = container.querySelector<HTMLButtonElement>('[data-editor-workflow-compact-back]');
+    expect(back?.textContent?.trim()).toBe('Categories');
+    expect(back?.getAttribute('aria-label')).toBe('Back to workflow categories');
+    expect(back?.querySelector('[data-workbench-icon="navigate-back"]')?.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('moves focus into the compact categories and roves with arrow, Home, and End keys', async () => {

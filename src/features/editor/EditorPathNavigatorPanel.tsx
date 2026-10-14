@@ -11,7 +11,7 @@ import {
   Move,
   RotateCcw,
   RotateCw
-} from 'lucide-react';
+} from '@/components/icons';
 import {
   Fragment,
   useEffect,
