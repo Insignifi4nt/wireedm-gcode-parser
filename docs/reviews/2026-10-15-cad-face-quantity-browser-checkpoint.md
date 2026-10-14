@@ -1,0 +1,41 @@
+# Face scope and quantity browser checkpoint
+
+The CAD goal remains active. This records the independently reviewed 20-path repair against `70f45e978c77c67cc3f6f73e2822c5684daba11d`; the subsequent localized measurement repair is a separate stage. Historical capture/cache freezes and the user's saved data remain preserved.
+
+## First repair gate
+
+Node 24.22.0/npm 11.19.1: all **386 files / 4,094 tests** pass with `--maxWorkers=2`, the original assertions and timeouts, in 265.59 seconds (`tmp/cad-face-quantity-complete-unit-bounded.log`). `tmp/cad-face-quantity-combined-source-freeze.json` matches before and after the gate, including all protected paths and original red evidence.
+
+The initial unrestricted-worker attempt, concurrent with the production build, reports 4,093 passes and one five-second timeout in the unchanged large browser-cache cancellation/interruption/retry case. Its log is retained (`tmp/cad-face-quantity-complete-unit-gate.log`). All 24 unchanged storage cases then pass separately (`tmp/cad-face-quantity-storage-recheck.log`, 16.13 seconds), before the complete bounded run. No test, timeout, retry or configuration change was made to accommodate that result.
+
+TypeScript/Vite, all 92 documentation checks and pinned native corresponding-source distribution pass (`tmp/cad-face-quantity-complete-production-build.log`). Older immutable assets were retained and restored for the open user draft. The 18-path UI and two-path exact diagnostic stages have separate owner records and the independent review `2026-10-15-cad-face-scope-quantity-independent-review.md`. Their original failing fixtures, final hashes and protected boundaries are preserved separately.
+
+## Real browser and native operations
+
+The fresh isolated IPv6-origin tab loads **`main-B8-e_suz.js`**. Its synthetic unsaved part contains a 50 × 40 mm plate padded 10 mm and a separate, unused rectangle with named `size = 4e-7`, exact width expression ` size `, height 20 and explicit driving width. No test preference is changed and no Save is used. The native kernel builds one valid solid, volume **19999.999999999996 mm³**, six faces and twelve edges, without diagnostics. The tiny sketch is not extruded or claimed as a native thin-solid test.
+
+Public tools pin document version `3179fc1b-332a-42ba-a901-ea006aa43feb`, build `00e538c5-019a-4be4-946b-69171e942fb8`, and the actual native top-face key returned by topology inspection. Choosing bottom-dock Fillet and then Chamfer against that explicit face opens no workflow, retains the exact face selection, accepted version, complete 960-character source and disabled Undo. Both commands show the existing guidance toast. Dismissing it retains the same message in notification history.
+
+Deliberate body selection clears the face and still opens the existing Fillet draft with **All edges of the body**. Cancel restores the complete source and history exactly; the isolated saved library stays empty. This verifies intentional scope and cancellation, rather than claiming new face-to-edge conversion or a completed fillet operation.
+
+Entering the tiny sketch and selecting its profile through the public viewport operation displays **4e-7 mm** on its annotation and driving-dimension list. The actual panel checkmark finishes the sketch without editing it. Exact source remains unchanged. The actual measurement card, however, still shows Area `0 mm²` and width `0 × 20 mm` because its existing localized formatter rounds to three decimals. The mathematical area is `8e-6 mm²`; this newly observed presentation issue is explicitly assigned to the next localized-readout stage, rather than concealed by the first green gate.
+
+Evidence: `tmp/cad-face-quantity-current-ui-public-report.json`, `tmp/cad-face-quantity-linked-readouts.json`, `tmp/cad-face-quantity-linked-annotation.png` and `tmp/cad-face-quantity-notification-history.png`. The synthetic fixture is `tmp/cad-face-quantity-browser.cad.json`.
+
+## User data and next stage
+
+Before the build, the user's localhost tab remains the same empty, unsaved `Untitled part`, version `aed3448c-27ec-44ec-9329-e3102e125bf7`, with no workflow or Undo. Its complete 156-character source and real saved library receipt are retained in `tmp/cad-face-quantity-before-refresh.json`. The saved `Isolated cut verification` identity, timestamp, five features and saved hash are unchanged. The user's draft is not replaced with a fixture.
+
+The next localized-readout stage must preserve each existing locale, grouping and fractional precision policy for ordinary values, preserve true zero, and show erased nonzero quantities using a scientific fallback. It must keep raw editable quantities, expressions, geometry, native values and API data exact. Its source freeze, tests, independent review and current-bundle proof remain separate from this completed first stage. Complete CI on the eventual combined commit is still required; the green `70f45` CI does not certify later edits. The isolated native Copy candidate is also separate and remains uninstalled.
+
+## Final localized stage and current app
+
+The follow-on repair is complete and independently reviewed: 137/137 cases in eight full affected suites and all five byte-unchanged original localized regressions pass; app TypeScript passes. The fresh combined27-path freeze is 'tmp/cad-final-spec-localized-source-freeze.json', SHA-256 'FC8ED6CEED59FFFED5BE9FA17AD50A6D41E9ECBC1306ADEA97667AD60E1FCD6F'. All twelve protected boundaries and three earlier manifests remain intact. The separate owner/independent records are '2026-10-15-cad-localized-quantity-readout-repair.md' and '2026-10-15-cad-localized-quantity-independent-review.md'. Normal native Intl fraction/group/sign policies are retained, including mixed vector coordinates and English, German and Arabic tests. These overlapping gates are not added to the earlier full4,094-case count.
+
+Final production build, all92 documentation checks and pinned corresponding-source distribution pass ('tmp/cad-localized-quantity-production-build.log'). Actual fresh **main-CweyXtyn.js** builds the same plate and an independent0.01 ×0.01 ×1 mm Pad. The native small Pad has one solid and volume **0.00009999999999990905 mm³**; its actual configuration reads **1E-4 mm³**, rather than zero. The linked sketch now shows **4e-7 mm** in annotation/list, **8E-6 mm²** area and **4E-7 ×20 mm** bounds dimensions; its ordinary40 mm perimeter and localized zero coordinates retain their established display.
+
+The on-part editor seeds exact '4e-7', retains the ' size ' alias, and an unchanged Apply leaves the version, full1,400-character accepted source and history unchanged. The panel checkmark finishes the sketch; no workflow or Undo remains and the isolated library stays empty. No Save or preference change occurs, and both disposable QA tabs close. Report 'tmp/cad-localized-quantity-current-browser-report.json' and actual images 'tmp/cad-localized-quantity-measurements.png'/'tmp/cad-localized-quantity-solid-volume.png' retain proof.
+
+Immediately before opening the updated user preview, the earlier localhost empty draft/source/library still match exactly. The fresh user-facing workspace loads main-CweyXtyn.js, with zero features and no workflow. Its saved library identity, version, timestamp and feature count are identical. Only the verified unchanged older empty agent-created tab closes; the user's other tab remains untouched. Current public PNG1600 ×850 has SHA-256 **376cf09f3281f7eba0e96916c9a90641214d7f487dfe110d66a51016b9f3ecd4**, identical to the earlier empty-scene captures. Records 'tmp/cad-localized-quantity-main-before-refresh.json' and 'tmp/cad-localized-quantity-main-public-report.json', screenshot 'tmp/cad-localized-quantity-current-workspace.png'. No modeled or saved document is replaced by a fixture.
+
+The complete icon catalogue is refreshed against these frozen sources. Combined reviewed publication and complete CI on that exact commit remain required. The separately built native Copy candidate is uninstalled and outside this product checkpoint; its proof does not certify a retained-source cache or a generic resource bound. The broad CAD goal remains active.

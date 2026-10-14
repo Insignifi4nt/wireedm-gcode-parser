@@ -5,6 +5,7 @@ import type { CadDocument } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { inspectCadParameters, type CadParameterUsage } from '@/domain/cad/cadParameters';
 import { CadContextHelp } from './CadContextHelp';
+import { formatCadLocalizedQuantity } from './cadDisplayQuantity';
 import './cad-parameters.css';
 
 type Editor = { kind: 'parameter'; originalName: string | null; name: string; value: string; groupId: string; error: string }
@@ -18,7 +19,7 @@ export interface CadParametersPanelProps {
   interactionLocked: boolean;
   cancelSignal: number;
 }
-const numericValue = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 8, useGrouping: false });
+const numericValue = (value: number) => formatCadLocalizedQuantity(value, 8, false);
 export function CadParametersPanel({ document: cadDocument, onEditMany, onInspectParameter, onInspectUsage, onPendingChange, interactionLocked, cancelSignal }: CadParametersPanelProps) {
   const inspection = useMemo(() => inspectCadParameters(cadDocument), [cadDocument]);
   const [editor, setEditor] = useState<Editor | null>(null);

@@ -12,6 +12,34 @@ const linked: CadPluginPackage = { ...CAD_STAR_PLUGIN, id: 'user.linked-star', a
   }
 };
 describe('Correlated plugin inputs', () => {
+  it('reports an exact tiny derived allowance interval while retaining valid linked geometry and rejected-edit originals', () => {
+    const plugin = parseCadPluginPackage({ ...CAD_STAR_PLUGIN, id: 'user.precision-allowance', apiVersion: 2, name: 'Precision allowance profile',
+      inputs: [...CAD_STAR_PLUGIN.inputs, { name: 'allowance', label: 'Machining allowance', unit: 'mm', default: 3e-7, minimum: 0, maximum: 1, integer: false }],
+      generator: { kind: 'polygon-recipe', repeat: 'lobes', points: [
+        ['(outerRadius - allowance) * cos(index * 2 * pi / count)', '(outerRadius - allowance) * sin(index * 2 * pi / count)'],
+        ['innerRadius * cos((index + 0.5) * 2 * pi / count)', 'innerRadius * sin((index + 0.5) * 2 * pi / count)']
+      ] }, rules: { derived: [{ name: 'minimumAllowance', label: 'Minimum allowance', unit: 'mm', expression: 'outerRadius / 150000000' },
+        { name: 'maximumAllowance', label: 'Maximum allowance', unit: 'mm', expression: 'minimumAllowance * 2' }],
+        fields: [...CAD_STAR_PLUGIN.inputs.map(input => ({ name: input.name, group: 'main', minimum: input.minimum, maximum: input.maximum })),
+          { name: 'allowance', group: 'advanced', minimum: 'minimumAllowance', maximum: 'maximumAllowance' }], constraints: [] } });
+    const profile = createCadPluginProfile(plugin), linkedProfile = { ...profile, inputs: { ...profile.inputs, allowance: ' allowance ' } };
+    const document = parseCadDocument({ ...createCadDocument(), parameters: { allowance: 3e-7 }, features: [{ id: 'precision', name: 'Precision', kind: 'sketch', suppressed: false,
+      plane: 'XY', offset: 0, profiles: [{ id: 'profile', name: 'Allowance', construction: false, geometry: linkedProfile }] }] });
+    const session = new CadSession(document), before = session.getSnapshot(), originalPackage = JSON.stringify(plugin);
+    const valid = inspectCadPluginProfile(linkedProfile, document.parameters);
+    expect(valid.issues).toEqual([]); expect(valid.fields.find(field => field.name === 'allowance')).toMatchObject({ minimum: 2e-7, maximum: 4e-7, enabled: true });
+    const geometry = resolveCadPluginProfile(linkedProfile, document.parameters);
+    expect(geometry.kind === 'polygon' && geometry.points[0][0]).toBe(30 - 3e-7);
+    expect(inspectCadPluginProfile(linkedProfile, { allowance: 1e-7 }).issues).toEqual(['Machining allowance must be between 2e-7 and 4e-7.']);
+    expect(() => session.edit([{ kind: 'set-parameter', name: 'allowance', value: 1e-7 }])).toThrow('between 2e-7 and 4e-7');
+    expect(session.getSnapshot()).toBe(before);
+    session.edit([{ kind: 'set-parameter', name: 'allowance', value: 4e-7 }]);
+    const sketch = session.getSnapshot().document.features[0];
+    expect(sketch.kind === 'sketch' && sketch.profiles[0].geometry).toEqual(linkedProfile);
+    expect(session.getSnapshot().document.parameters.allowance).toBe(4e-7); session.undo(); expect(session.getSnapshot().document).toEqual(before.document);
+    expect(JSON.stringify(plugin)).toBe(originalPackage);
+  });
+
   it('correlates custom cutter radius, clearance limits and automatic/manual undercut shift in a new pinned gear package', () => {
     const profile = createCadPluginProfile(CAD_GEAR_V3_PLUGIN);
     const dormant = inspectCadPluginProfile({ ...profile, inputs: { ...profile.inputs, cutterTipRadius: 50 } }, {});

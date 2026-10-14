@@ -7,6 +7,7 @@ import { cadScalarValueIntent, inspectCadScalarValue, parseCadNumericQuantity as
 import { CadContextHelp } from './CadContextHelp';
 import { cadScalarHelp } from './cadFieldHelp';
 import { CadExpressionBinding } from './CadExpressionBinding';
+import { formatCadQuantity } from './cadDisplayQuantity';
 
 export interface CadScalarValueDraft { readonly source: CadScalar; readonly text: string }
 export interface CadScalarEditContextValue {
@@ -80,7 +81,7 @@ export function ScalarField(props: ScalarFieldProps) {
 function ScalarExpressionField({ label, inputLabel = label, value, parameters, onChange, unit = 'mm' }: ScalarFieldProps) {
   let resolved: string;
   let invalid = false;
-  try { resolved = `${Number(evaluateCadScalar(value, parameters).toFixed(6))} ${unit}`; }
+  try { resolved = `${formatCadQuantity(evaluateCadScalar(value, parameters))} ${unit}`; }
   catch (error) { invalid = true; resolved = error instanceof Error ? error.message : 'Invalid expression'; }
   const showResult = invalid || typeof value === 'string' && !Number.isFinite(Number(value));
   return <label className={`cad-field ${invalid ? 'is-invalid' : ''}`}><span>{label}<small>{unit}</small><CadContextHelp label={label}><div>{cadScalarHelp(label)}</div><dl><dt>Current value</dt><dd>{resolved}</dd>{showResult && !invalid && <><dt>Linked expression</dt><dd><code>{value}</code></dd></>}</dl><div>Enter a number or a named parameter expression. Editing an expression changes this dimension's link.</div></CadContextHelp></span><input value={value} spellCheck={false} title={resolved} aria-label={`${inputLabel}${unit ? ` ${unit}` : ''}`} aria-invalid={invalid || undefined} onChange={(event) => onChange(event.target.value)} />{showResult && <small className="cad-field-hint">{resolved}</small>}</label>;

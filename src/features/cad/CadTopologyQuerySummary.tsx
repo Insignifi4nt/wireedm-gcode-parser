@@ -1,8 +1,9 @@
 import type { CadEdgeSelection, CadFaceQuery } from '@/domain/cad/cadTopology';
+import { formatCadQuantity } from './cadDisplayQuantity';
 
 function readable(value: unknown): string {
   if (Array.isArray(value)) return value.map(readable).join(', ');
-  return typeof value === 'number' ? String(Number(value.toFixed(6))) : String(value);
+  return typeof value === 'number' ? formatCadQuantity(value) : String(value);
 }
 
 export function CadTopologyQuerySummary({ selection }: { selection: CadEdgeSelection | CadFaceQuery }) {

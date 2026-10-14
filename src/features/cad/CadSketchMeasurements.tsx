@@ -2,8 +2,9 @@ import { useMemo } from 'react';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { CadContextHelp } from './CadContextHelp';
+import { formatCadLocalizedQuantity } from './cadDisplayQuantity';
 
-const format = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 3 });
+const format = (value: number) => formatCadLocalizedQuantity(value, 3);
 
 export function CadSketchMeasurements({ document, sketchId, profileId }: { document: CadDocument; sketchId: string; profileId: string | null }) {
   const measurement = useMemo(() => {

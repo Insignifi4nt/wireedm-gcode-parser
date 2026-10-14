@@ -6,6 +6,7 @@ import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { inspectCadPluginProfile } from '@/domain/cad/plugins/cadPlugins';
 import { inspectCadSketchDimensions, type CadSketchDimensionQuantity } from '@/domain/cad/cadSketchConstraints';
 import { cadSketchDimensionAnnotation, type CadAnnotationPoint } from './cadSketchDimensionAnnotations';
+import { formatCadQuantity } from './cadDisplayQuantity';
 import './cad-sketch-dimensions.css';
 
 type Dimension = { name: 'radius' | 'width' | 'height' | 'length' | 'angle' | 'module' | 'teeth'; label: string; symbol: string; unit: string; scalar: CadScalar; scale: number; integer: boolean; enabled: boolean; quantity?: CadSketchDimensionQuantity; constraintId?: string | null };
@@ -52,7 +53,7 @@ function changeDimension(geometry: CadProfile, name: Dimension['name'], value: n
   }
   throw new Error('This dimension is no longer available on the selected profile.');
 }
-const valueText = (value: number) => String(Number(value.toFixed(6)));
+const valueText = formatCadQuantity;
 export function CadSketchDimensionControls({ document: cadDocument, sketch, profile, parameters, anchor, project, onEditMany, onPendingChange, interactionLocked, cancelSignal, onInspectInput, onConfigure }: CadSketchDimensionControlsProps) {
   const arrowId = useId();
   const dimensions = useMemo(() => profileDimensions(profile, parameters), [profile, parameters]);

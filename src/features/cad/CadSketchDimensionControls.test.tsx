@@ -36,6 +36,19 @@ async function renderControls(document: CadDocument) {
 }
 function currentGeometry(session: CadSession) { const sketch = session.getSnapshot().document.features[0]; if (sketch.kind !== 'sketch') throw new Error('Missing sketch'); return sketch.profiles[0].geometry; }
 describe('on-part sketch dimension editing', () => {
+  it.each(['width', 'diameter', 'angle'] as const)('displays a supported tiny %s without zeroing its signed value or changing an unchanged edit', async quantity => {
+    const magnitude = 4e-7, parameters: Readonly<Record<string, number>> = quantity === 'width' ? { size: magnitude } : {};
+    const geometry: CadProfile = quantity === 'width' ? { kind: 'rectangle', x: 0, y: 0, width: ' size ', height: 20, cornerRadius: 0 }
+      : quantity === 'diameter' ? { kind: 'circle', x: 0, y: 0, radius: magnitude / 2 }
+        : { kind: 'slot', x: 0, y: 0, width: 8, length: 20, angle: -magnitude };
+    const { session, edit } = await renderControls(makeDocument(geometry, parameters, [{ id: 'tiny', kind: 'dimension', quantity }]));
+    const before = session.getSnapshot(), label = quantity[0].toUpperCase() + quantity.slice(1), value = quantity === 'angle' ? -magnitude : magnitude;
+    expect(container.querySelector(`[aria-label="Edit ${label}"] strong`)?.textContent).toBe(String(value));
+    await click(`Edit ${label}`); expect(container.querySelector<HTMLInputElement>(`input[aria-label="${label} value"]`)?.value).toBe(String(value));
+    await click('Apply'); expect(session.getSnapshot()).toBe(before); expect(edit).not.toHaveBeenCalled();
+    await click(`Edit ${label}`); await click('Cancel'); expect(session.getSnapshot()).toBe(before);
+  });
+
   it('keeps numeric mouse geometry free until a driving dimension is explicitly added', async () => {
     const { session } = await renderControls(makeDocument({ kind: 'rectangle', x: 10, y: 20, width: 30, height: 15, cornerRadius: 0 }));
     const before = session.getSnapshot();

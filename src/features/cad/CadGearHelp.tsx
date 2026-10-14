@@ -3,6 +3,7 @@ import { resolveCadGear } from '@/domain/cad/cadGear';
 import { resolveConfiguredCadGear, resolveGeneratedCadGear } from '@/domain/cad/cadGearGenerated';
 import type { ResolvedCadPathSegment } from '@/domain/cad/cadAnalyticSegments';
 import type { CadPluginProfile } from '@/domain/cad/plugins/cadPlugins';
+import { formatCadQuantity } from './cadDisplayQuantity';
 
 const help: Readonly<Record<string, readonly [string, string?]>> = {
   module: ['Module sets tooth size in millimetres. With tooth count fixed, increasing module enlarges the pitch circle and the tooth profile. Mating gears need the same module and pressure angle.', 'Pitch diameter = module × teeth'],
@@ -28,7 +29,7 @@ const help: Readonly<Record<string, readonly [string, string?]>> = {
   y: ['Y moves the profile centre along the sketch plane’s vertical axis. It changes placement without changing tooth dimensions.'],
   angle: ['Rotation turns the complete profile about its centre in the sketch plane. It changes tooth orientation without changing tooth dimensions.'],
 };
-const display = (value: number | undefined) => Number.isFinite(value) && value !== undefined ? String(Number(value.toFixed(6))) : 'Unavailable';
+const display = (value: number | undefined) => Number.isFinite(value) && value !== undefined ? formatCadQuantity(value) : 'Unavailable';
 /** Translate resolved geometry before SVG serializes its coordinates. */
 function pathOf(segments: readonly ResolvedCadPathSegment[], origin: readonly [number, number]): string {
   const first = segments[0];

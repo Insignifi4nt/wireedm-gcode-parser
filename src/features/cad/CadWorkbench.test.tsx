@@ -191,6 +191,35 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('keeps an accepted thin Pad volume visibly positive without changing its exact source or history', async () => {
+    const document = parseCadDocument({ ...createCadDocument(), parameters: { width: 4e-7 }, features: [
+      { id: 'sketch', name: 'Thin outline', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [{ id: 'rectangle', name: 'Thin plate', construction: false,
+        geometry: { kind: 'rectangle', x: 0, y: 0, width: ' width ', height: 20, cornerRadius: 0 } }] },
+      { id: 'pad', name: 'Thin Pad', kind: 'extrude', suppressed: false, sketchId: 'sketch', distance: 10, symmetric: false, operation: 'new', targetId: null }
+    ] }), volume = measureCadSketch(document, 'sketch').materialAreaMm2 * 10;
+    const build: CadBuildResult = { ...topologyBuild, meshes: [{ ...topologyBuild.meshes[0], name: 'Thin Pad', positions: [0, 0, 10, 4e-7, 0, 10, 4e-7, 20, 10],
+      edges: [], faceGroups: [], edgeGroups: [], volume, bounds: { min: [0, 0, 0], max: [4e-7, 20, 10] } }] };
+    await mount(document, { build, buildState: 'ready' }); const before = currentSession.getSnapshot();
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    expect(container.querySelector('.cad-solid-info strong')?.textContent).toBe(`${volume.toLocaleString(undefined, { notation: 'scientific', maximumSignificantDigits: 6, useGrouping: false })} mm³`);
+    expect(currentSession.getSnapshot()).toBe(before); expect(viewport().getState().selectedFeatureId).toBe('pad'); expect(build.meshes[0].volume).toBe(volume);
+  });
+
+  it.each(['Fillet', 'Chamfer'] as const)('refuses an explicit face for %s without broadening its scope, while deliberate body selection still permits all edges', async command => {
+    const resolve = vi.fn(resolveTopology), preview = vi.fn();
+    await mount(solidDocument(), { build: topologyBuild, buildState: 'ready', onInspectTopology: inspectTopology, onResolveSelection: resolve, onFeaturePreview: preview });
+    await selectTopology('face');
+    const before = currentSession.getSnapshot(), selection = viewport().getState().topologySelection;
+    preview.mockClear(); await click(command);
+    expect(currentSession.getSnapshot()).toBe(before); expect(viewport().getState().topologySelection).toEqual(selection);
+    expect(resolve).not.toHaveBeenCalled(); expect(preview.mock.calls.some(([request]) => request.kind === 'candidate')).toBe(false);
+    expect(container.querySelector('select[aria-label="Scope"]')).toBeNull();
+    expect(statusMessage).toHaveBeenCalledWith(expect.stringContaining('Pick edges'), 'error');
+    await click('Select Pad 1 in history'); await click(command);
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Scope"]')?.value).toBe('all');
+    expect(resolve).not.toHaveBeenCalled(); await click('Cancel'); expect(currentSession.getSnapshot()).toEqual(before);
+  });
+
   it('opens and selects the last of 257 accepted datum references without changing the document or history', async () => {
     const document = parseCadDocument({ ...createCadDocument('Station references', 'station_references'),
       features: Array.from({ length: 257 }, (_, index) => ({ id: `station_${index}`, name: `Station ${index}`, kind: 'datum-plane', suppressed: false,

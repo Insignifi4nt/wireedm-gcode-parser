@@ -1,6 +1,6 @@
 # Closed areas and direct depth checkpoint
 
-Status: active CAD hardening goal. Reviewed product checkpoint awaits the complete new-head CI gate. The prior complete clean CI result belongs to fba236e and does not certify this candidate.
+Status: active CAD hardening goal. Reviewed checkpoint 70f45 completed its full CI gate. The subsequent face-scope and quantity-readout repairs are independently reviewed and verified in the current app; their combined publication and complete new-head CI remain required. Current evidence: `2026-10-15-cad-face-quantity-browser-checkpoint.md`. The earlier green checkpoint retains its historical scope.
 
 ## Verification
 
@@ -56,3 +56,9 @@ Actual production `main-C1gEeMx5.js` returns three real 1600 × 850 captures at 
 An isolated IPv6-origin five-feature part has an enabled idle depth arrow. Four real public captures pass without retry at revision8 and share SHA-256 `77331aab14c6d9330faae1caf1fd428cbf28a16f80494f478229dacd96a75042`; complete accepted source and public view are unchanged. Physical drag [678,366] → [678,300] previews **17.84547274176886 mm** and displayed native stock volume **7,138.189 mm³**, while accepted depth remains10 and its version/history/source remain unchanged. Cancel restores the complete **1,305-character** source exactly, with no new Undo. The isolated library remains empty, depth-handle preference is restored off and the tab closes without Save. Evidence: `tmp/cad-final-capture-cache-enabled-public-report.json`, `tmp/cad-final-capture-cache-linked-depth-idle.png`, `tmp/cad-final-capture-cache-linked-depth-preview.png`, `tmp/cad-final-capture-cache-isolated-settings-restored.txt`. These real fast captures complement the mounted delayed-hash regressions; they do not claim to reproduce the artificial scheduling gate in CUA.
 
 Complete fresh-head CI is still required. The failed 6e run and prior clean fba run above retain their actual historical scope. The overall CAD goal stays active.
+
+## Complete published checkpoint CI
+
+Actual GitHub [run38649638460](https://github.com/Insignifi4nt/wireedm-gcode-parser/actions/runs/38649638460) succeeds at `70f45e978c77c67cc3f6f73e2822c5684daba11d`. Its Node24.21.0/npm11.19.0 gate passes all **384 files / 4,071 cases** in325.37s, conformance, machine-package validation, release/post authoring checks, production build, documentation and native corresponding-source distribution. All125 Chromium journeys execute: **124 pass**, no failure/flaky retry, and the unchanged optional local-folder fixture is skipped (8.8min). The new region-agent journey passes4.3s. Original capture guards/E2Es/retries remain unchanged. Logs: `tmp/cad-capture-cache-complete-ci.log`, `tmp/cad-capture-cache-complete-ci-watch.log`.
+
+The local app/tests use24.22.0/npm11.19.1; neither runtime is Node20. The green checkpoint is published in existing PR12, not merged or deployed. The goal remains active: the broader final specification review has three red cases proving false-zero dimension labels and explicit-face/all-body Fillet scope fallback. Their next repair requires its own review and verification. The separate native copy audit/preparation is conditional, with no installed/native or runtime cache change.

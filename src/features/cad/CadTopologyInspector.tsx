@@ -2,9 +2,10 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { CadTopologyDescriptor, CadTopologyInspectRequest, CadTopologyInspectResult, CadTopologyPick, CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import type { CadPickMode } from './cadTopologyPicking';
 import { CadContextHelp } from './CadContextHelp';
+import { formatCadLocalizedQuantity } from './cadDisplayQuantity';
 
 export type CadInspectTopology = (request: CadTopologyInspectRequest, expectedVersion: string, signal: AbortSignal) => Promise<CadTopologyInspectResult>;
-const number = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 5 });
+const number = (value: number) => formatCadLocalizedQuantity(value, 5);
 const vector = (point: readonly number[]) => point.map(number).join(', ');
 
 function descriptorName(descriptor: CadTopologyDescriptor): string {

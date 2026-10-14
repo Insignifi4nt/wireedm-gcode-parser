@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { cadFramePointToWorld } from '@/domain/cad/cadDatumPlanes';
 import type { CadNumericPoint2, CadNumericPoint3 } from '@/domain/cad/cadPlanes';
 import type { CadExtrudeDepthCapability, CadExtrudeDepthControl, CadExtrudeDepthState } from './cadExtrudeDepthInteraction';
+import { formatCadQuantity } from './cadDisplayQuantity';
 
 export interface CadDepthScreenPoint { readonly x: number; readonly y: number }
 export interface CadExtrudeDepthHandleState {
@@ -90,10 +91,8 @@ export function createCadExtrudeDepthHandle({ requestRender, onInteractionChange
       : endOn ? { kind: 'locked', reason: 'Rotate the view to drag Length. Its axis points toward the camera.' } : { kind: 'editable' };
     const visible = Number.isFinite(worldPerPixel) && worldPerPixel > 0 && [projected.x, projected.y, projected.z].every(Number.isFinite)
       && Math.abs(projected.x) <= 1 && Math.abs(projected.y) <= 1 && projected.z >= -1 && projected.z <= 1;
-    const displayed = Number(distance.toFixed(6));
-    const quantityText = displayed === 0 && distance !== 0 ? String(Number(distance.toPrecision(6))) : String(displayed);
     state = { visible, endpointMm: tuple(endpoint), screenPoint: { x: (projected.x + 1) * width / 2, y: (1 - projected.y) * height / 2 },
-      quantityMm: distance, label: `Length ${quantityText} mm`, active: gesture !== null, hovered, capability };
+      quantityMm: distance, label: `Length ${formatCadQuantity(distance)} mm`, active: gesture !== null, hovered, capability };
     group.visible = visible; group.position.copy(endpoint);
     const arrowDirection = normal.clone().multiplyScalar(distance < 0 ? -1 : 1);
     for (const object of [head, stem]) { object.scale.setScalar(worldPerPixel); object.quaternion.setFromUnitVectors(unitY, arrowDirection); }

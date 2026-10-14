@@ -30,6 +30,18 @@ function render(props: Partial<Parameters<typeof CadTopologyInspector>[0]> = {})
 }
 
 describe('compact exact topology disclosure', () => {
+  it('keeps a tiny inspected edge nondegenerate in summary, measurements and browse rows without changing its descriptor or selection', async () => {
+    const descriptor: CadTopologyDescriptor = { kind: 'edge', key: 'tiny', curveType: 'line', length: 4e-7,
+      start: [0, 0, 0], end: [4e-7, 0, 0], centroid: [2e-7, 0, 0], bounds: { min: [0, 0, 0], max: [4e-7, 0, 0] } }, original = JSON.stringify(descriptor), select = vi.fn();
+    const inspect = vi.fn<CadInspectTopology>(async () => ({ bodyId: 'body', buildId: 'build', descriptors: [descriptor], total: 1, nextOffset: null }));
+    await render({ pickMode: 'edge', selection: selected('tiny'), onInspect: inspect, onSelect: select });
+    const label = (number: number) => number.toLocaleString(undefined, { notation: 'scientific', maximumSignificantDigits: 6, useGrouping: false });
+    expect(container.querySelector('.cad-topology-summary strong')?.textContent).toBe(`Length ${label(4e-7)} mm`);
+    const end = [...container.querySelectorAll('dt')].find(node => node.textContent === 'End'); expect(end?.nextElementSibling?.textContent).toBe(`${label(4e-7)}, 0, 0 mm`);
+    await click('Browse edges'); expect(container.querySelector('.cad-topology-list small')?.textContent).toBe(`${label(4e-7)} mm`);
+    expect(JSON.stringify(descriptor)).toBe(original); expect(select).not.toHaveBeenCalled();
+  });
+
   it('does not inspect or show teaching/list controls while closed and keeps exact list selection accessible', async () => {
     const inspect = vi.fn<CadInspectTopology>(async () => ({ bodyId: 'body', buildId: 'build', total: 1, nextOffset: null, descriptors: [edge()] }));
     const select = vi.fn(); await render({ onInspect: inspect, onSelect: select });

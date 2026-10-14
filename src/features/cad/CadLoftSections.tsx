@@ -6,6 +6,7 @@ import { CadError } from '@/domain/cad/cadError';
 import { inspectCadLoftCandidates } from './cadLoftUi';
 import { cadPlacementLabel } from './cadPlacementUi';
 import { CadReferencePickButton } from './CadFields';
+import { formatCadQuantity } from './cadDisplayQuantity';
 
 export function CadLoftSections({ document, featureId, sketchIds, onChange, applyError = null }: {
   document: CadDocument;
@@ -69,7 +70,7 @@ export function CadLoftSections({ document, featureId, sketchIds, onChange, appl
           : pair?.compatible === false ? pair.message : null;
         const placed = placement.resolved?.sections[index];
         const name = inspection?.eligible ? cadPlacementLabel(inspection.section.plane, document.features) : '';
-        const number = (value: number) => Number(value.toFixed(6));
+        const number = formatCadQuantity;
         const metadata = placed ? placement.resolved?.legacyPrincipalPlane !== null ? `${name} · ${number(placed.offset)} mm`
           : `${name} · station ${number(placed.stationMm)} mm` : problem ? 'Unavailable section' : name;
         const metadataTitle = placed && placement.resolved?.legacyPrincipalPlane === null

@@ -1,6 +1,7 @@
 import type { CadDatumPlaneFeature, CadDocument, CadPoint3, CadScalar } from '@/domain/cad/cadDocument';
 import { resolveCadWorldDatum } from '@/domain/cad/cadDatumPlanes';
 import { ScalarField, SelectField } from './CadFields';
+import { formatCadQuantity } from './cadDisplayQuantity';
 
 export function CadDatumPlaneFields({ feature, parameters, onChange }: {
   feature: CadDatumPlaneFeature; parameters: CadDocument['parameters']; onChange(feature: CadDatumPlaneFeature): void;
@@ -11,7 +12,7 @@ export function CadDatumPlaneFields({ feature, parameters, onChange }: {
     onChange({ ...feature, definition: { ...definition, [field]: values } });
   };
   let normal: string | null = null;
-  try { normal = resolveCadWorldDatum(feature, parameters).normal.map(value => Number(value.toFixed(6))).join(', '); } catch { /* Apply reports invalid frame data. */ }
+  try { normal = resolveCadWorldDatum(feature, parameters).normal.map(formatCadQuantity).join(', '); } catch { /* Apply reports invalid frame data. */ }
   return <>
     <SelectField label="Base plane" value={definition.basePlane} options={(['XY', 'XZ', 'YZ'] as const).map(value => ({ value, label: `${value} plane` }))} onChange={basePlane => onChange({ ...feature, definition: { ...definition, basePlane } })} />
     <div className="cad-field-section">Origin</div>

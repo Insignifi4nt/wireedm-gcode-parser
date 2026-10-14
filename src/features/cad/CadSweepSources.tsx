@@ -4,6 +4,7 @@ import { inspectCadSweepInputs } from '@/domain/cad/cadSweep';
 import { SelectField } from './CadFields';
 import { inspectCadSweepCandidates } from './cadSweepUi';
 import { cadPlacementLabel } from './cadPlacementUi';
+import { formatCadQuantity } from './cadDisplayQuantity';
 
 export function CadSweepSources({ document, featureId, sketchId, curveId, onChange, applyError = null }: {
   document: CadDocument;
@@ -25,7 +26,7 @@ export function CadSweepSources({ document, featureId, sketchId, curveId, onChan
   };
   const selectedSketch = candidates.sketches.find(candidate => candidate.sketch.id === sketchId)?.inspection;
   const selectedCurve = candidates.curves.find(candidate => candidate.curve.id === curveId)?.inspection;
-  const point = (coordinates: readonly number[]) => coordinates.map(value => Number(value.toFixed(6))).join(', ');
+  const point = (coordinates: readonly number[]) => coordinates.map(formatCadQuantity).join(', ');
   const sketchDescription = selectedSketch?.eligible
     ? `${cadPlacementLabel(selectedSketch.section.plane, document.features)}; offset ${selectedSketch.section.offset} mm; normal (${point(selectedSketch.section.placement.frame.normal)})`
     : selectedSketch?.message;
