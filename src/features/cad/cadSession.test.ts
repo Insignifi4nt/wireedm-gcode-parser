@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
-import { CadSession } from './cadSession';
+import { CadSession, hasCadDraftContent } from './cadSession';
 
 describe('shared CAD editing session', () => {
+  it('preserves a dirty parameter-group-only draft through storage switching and its saved baseline', () => {
+    const session = new CadSession(), initial = session.getSnapshot();
+    session.markSaved({ document: initial.document, savedVersion: 'baseline', updatedAt: '2026-10-13T12:00:00.000Z' }, initial.version);
+    session.edit([{ kind: 'set-parameter-group', group: { id: 'settings', name: 'Settings' } }]);
+    const before = session.getSnapshot();
+    expect(hasCadDraftContent(before.document)).toBe(true);
+    expect(() => session.assertStorageSwitchAllowed()).toThrow('Save the CAD draft');
+    expect(session.getSnapshot()).toBe(before);
+    session.undo();
+    expect(hasCadDraftContent(session.getSnapshot().document)).toBe(false);
+    expect(() => session.assertStorageSwitchAllowed()).not.toThrow();
+  });
   it('preserves redo and the saved baseline after a no-op or rejected accessor payload', () => {
     const session = new CadSession(); const initial = session.getSnapshot();
     session.markSaved({ document: initial.document, savedVersion: 'saved', updatedAt: '2026-10-13T12:00:00.000Z' }, initial.version);

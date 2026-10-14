@@ -6,7 +6,7 @@ import { createCadDocument } from '@/domain/cad/cadSchema';
 import { CadWorkbench } from './CadWorkbench';
 import { CadSession } from './cadSession';
 import type { CadRenderedViewControls, CadWorkbenchViewportControls } from './cadViewportControls';
-import type { CadViewportReference } from './cadViewportReferences';
+import { cadReferenceFeatureIds, cadReferencePlanes, type CadViewportReference } from './cadViewportReferences';
 
 // Exercise the real Workbench selection/edit/capture bridge without a GPU in jsdom.
 vi.mock('./CadViewport', () => ({ CadViewport: function ReferenceViewport(props: {
@@ -17,14 +17,14 @@ vi.mock('./CadViewport', () => ({ CadViewport: function ReferenceViewport(props:
   const live = useRef(props); live.current = props;
   const controls = useMemo<CadRenderedViewControls>(() => ({
     getState: () => ({ mode: 'solid', available: true, view: 'Isometric', gridVisible: true, zoom: 1, revision: 0,
-      referenceVersion: live.current.referenceVersion, referenceFeatureIds: Object.freeze([...new Set(live.current.references.map(reference => reference.featureId))].sort()) }),
+      referenceVersion: live.current.referenceVersion, referenceFeatureIds: cadReferenceFeatureIds(live.current.references), referencePlanes: cadReferencePlanes(live.current.references) }),
     fit: vi.fn(), setGrid: vi.fn(), setView: vi.fn(),
     capture: async () => ({ dataUrl: 'data:image/png;base64,AA==', width: 800, height: 600, source: '3d' }),
   }), []);
   useLayoutEffect(() => { props.onControlsReady?.(controls); return () => props.onControlsReady?.(null, controls); }, [props.onControlsReady, controls]);
   return <div aria-label="3D model viewport" data-solid-count={props.meshes.length}>
-    {props.references.map(reference => <button key={reference.referenceId} disabled={props.interactionLocked} onClick={() => props.onSelect(reference.featureId)}
-      data-world-reference={reference.referenceId} data-construction={reference.construction}>World {reference.referenceId}</button>)}
+    {props.references.flatMap(reference => reference.featureId === null ? [] : [<button key={reference.referenceId} disabled={props.interactionLocked} onClick={() => { if (reference.featureId !== null) props.onSelect(reference.featureId); }}
+      data-world-reference={reference.referenceId} data-construction={reference.construction}>World {reference.referenceId}</button>])}
     {props.meshes.map(mesh => <button key={mesh.featureId} disabled={props.interactionLocked} onClick={() => props.onSelect(mesh.featureId)}>Body {mesh.featureId}</button>)}
   </div>;
 } }));
@@ -48,9 +48,9 @@ async function mount(document: CadDocument, build: CadBuildResult | null = null,
   function Harness() {
     const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
     return <CadWorkbench document={state.document} documentVersion={state.version} buildVersion={build ? stale ? 'old-document' : state.version : null} build={build} buildState={build ? 'ready' : 'idle'}
-      dirty={state.dirty} canUndo={state.canUndo} canRedo={state.canRedo} onEdit={edit => { session.edit([edit]); }} onUndo={() => session.undo()} onRedo={() => session.redo()}
+      dirty={state.dirty} canUndo={state.canUndo} canRedo={state.canRedo} onEditMany={edits => { session.edit(edits); }} onEdit={edit => { session.edit([edit]); }} onUndo={() => session.undo()} onRedo={() => session.redo()}
       onWorkflowChange={session.setWorkflowOpen} onSave={async () => undefined} onBack={vi.fn()} onNewDocument={vi.fn()} onOpenDocument={vi.fn()} onImportDocument={async () => undefined}
-      onExportDocument={vi.fn()} onExportSolid={async () => undefined} onExportDxf={async () => undefined} onSendToCam={async () => undefined} onCaptureViewport={capture}
+      onExportDocument={vi.fn()} onExportSolid={async () => undefined} onOpenDxfExport={async () => undefined} onSendToCam={async () => undefined} onCaptureViewport={capture}
       onViewportControlsReady={value => { controls = value; }} />;
   }
   await act(async () => root.render(<Harness />));
@@ -63,7 +63,7 @@ async function click(label: string) { await act(async () => button(label).click(
 function currentControls() { if (!controls) throw new Error('Viewport controls unavailable'); return controls; }
 function referenceIds() { return [...container.querySelectorAll('[data-world-reference]')].map(element => element.getAttribute('data-world-reference')); }
 function widthInput() {
-  const result = [...container.querySelectorAll('label')].find(label => label.querySelector('span')?.childNodes[0]?.textContent === 'Width')?.querySelector('input');
+  const result = container.querySelector<HTMLInputElement>('input[aria-label="Dimension value"]');
   if (!result) throw new Error('Width input missing'); return result;
 }
 async function inputWidth(value: string) {
@@ -100,10 +100,10 @@ describe('world Sketch reference Workbench integration', () => {
     await mount({ ...createCadDocument(), features: [section, other] }); await click('World section/rectangle'); await click('Edit sketch');
     const profile = [...container.querySelectorAll<HTMLButtonElement>('.cad-tree-profile')].find(entry => entry.textContent === 'Rectangle');
     if (!profile) throw new Error('Rectangle tree profile missing'); await act(async () => profile.click());
-    const before = session.getSnapshot(); await inputWidth('25'); expect(session.getSnapshot().workflowOpen).toBe(true);
+    const before = session.getSnapshot(); await click('Add dimension'); await inputWidth('25'); expect(session.getSnapshot().workflowOpen).toBe(true);
     expect(button('Other').disabled).toBe(true); expect(() => currentControls().apply({ kind: 'select-feature', featureId: other.id })).toThrow(/Apply or cancel/);
     expect(widthInput().value).toBe('25'); expect(session.getSnapshot().document).toBe(before.document);
-    await click('Cancel'); expect(session.getSnapshot().version).toBe(before.version); expect(widthInput().value).toBe('20');
+    await click('Cancel'); expect(session.getSnapshot().version).toBe(before.version); await click('Add dimension'); expect(widthInput().value).toBe('20');
     await inputWidth('25'); await click('Apply'); await click('Finish sketch');
     const accepted = session.getSnapshot(); expect(accepted.version).not.toBe(before.version); expect(accepted.canUndo).toBe(true);
     expect(currentControls().getState()).toMatchObject({ view: { referenceVersion: accepted.version, referenceFeatureIds: ['other', 'section'] } });

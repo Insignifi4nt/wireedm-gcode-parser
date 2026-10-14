@@ -4,16 +4,19 @@ import type { CadSectionRequest, CadSectionResult } from '@/domain/cad/cadSectio
 import type { DxfEntity } from '@/domain/dxf/types';
 
 /** Display exact analytic curves. This preview never becomes the machining source. */
-function SectionPreview({ entities }: { entities: readonly DxfEntity[] }) {
-  const points = entities.flatMap(entity => entity.type === 'line' || entity.type === 'arc'
-    ? entity.type === 'line' ? [entity.start, entity.end] : [entity.start, entity.end,
-      { x: entity.center.x - entity.radius, y: entity.center.y - entity.radius }, { x: entity.center.x + entity.radius, y: entity.center.y + entity.radius }]
-    : entity.type === 'circle' ? [{ x: entity.center.x - entity.radius, y: entity.center.y - entity.radius }, { x: entity.center.x + entity.radius, y: entity.center.y + entity.radius }] : []);
-  if (!points.length) return null;
-  const minX = Math.min(...points.map(p => p.x)); const maxX = Math.max(...points.map(p => p.x));
-  const minY = Math.min(...points.map(p => p.y)); const maxY = Math.max(...points.map(p => p.y));
+export function CadSectionPreview({ entities, label = 'Exact section preview' }: { entities: readonly DxfEntity[]; label?: string }) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const include = (x: number, y: number) => { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); };
+  for (const entity of entities) {
+    if (entity.type === 'line') { include(entity.start.x, entity.start.y); include(entity.end.x, entity.end.y); }
+    else if (entity.type === 'circle' || entity.type === 'arc') {
+      include(entity.center.x - entity.radius, entity.center.y - entity.radius);
+      include(entity.center.x + entity.radius, entity.center.y + entity.radius);
+    }
+  }
+  if (minX === Infinity) return null;
   const margin = Math.max(maxX - minX, maxY - minY, 1) * 0.08;
-  return <svg aria-label="Exact section preview" role="img" className="h-72 w-full bg-[#152029]" viewBox={`${minX - margin} ${-maxY - margin} ${maxX - minX + 2 * margin} ${maxY - minY + 2 * margin}`}>
+  return <svg aria-label={label} role="img" className="h-72 w-full bg-[#152029]" viewBox={`${minX - margin} ${-maxY - margin} ${maxX - minX + 2 * margin} ${maxY - minY + 2 * margin}`}>
     <g transform="scale(1,-1)" fill="none" stroke="#79c8e6" strokeWidth={1.5}>
       {entities.map((entity, index) => {
         if (entity.type === 'line') return <line key={index} vectorEffect="non-scaling-stroke" x1={entity.start.x} y1={entity.start.y} x2={entity.end.x} y2={entity.end.y} />;
@@ -81,7 +84,7 @@ export function CadSectionDialog({ bodies, initialBodyId, version, onClose, onIn
       <p className="text-muted-foreground">Offset follows {plane === 'XY' ? '+Z' : plane === 'XZ' ? '−Y' : '+X'}. Use a plane inside the material. Ellipse and spline sections are reported as unsupported.</p>
       <div className="flex items-center gap-3"><button className={button} disabled={busy !== null || !bodies.length} onClick={() => { void execute('inspect'); }}>Preview section</button>{busy === 'inspect' && <button className={button} onClick={() => pending.current?.abort()}>Cancel section</button>}<span role="status">{busy === 'inspect' ? 'Computing exact section…' : busy === 'send' ? 'Saving CAD and creating CAM project…' : reviewed === requestKey && result ? `${result.contourCount} closed contours · ${result.entities.length} analytic curves` : 'Preview the current plane before sending.'}</span></div>
       {error && <p role="alert" className="text-destructive">{error}</p>}
-      {reviewed === requestKey && result && <SectionPreview entities={result.entities} />}
+      {reviewed === requestKey && result && <CadSectionPreview entities={result.entities} />}
       <div className="flex items-center justify-between gap-6 border-t border-border pt-3"><p className="text-muted-foreground">Saves CAD, then opens a new detached CAM project in local plane coordinates. Review stock, wire and machining settings in CAM.</p><button className={`${button} shrink-0 bg-primary text-primary-foreground`} disabled={busy !== null || reviewed !== requestKey} onClick={() => { void execute('send'); }}>Send section to CAM</button></div>
     </div>
   </dialog>;

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
+import { CadContextHelp } from './CadContextHelp';
 
 const format = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 3 });
 
@@ -14,8 +15,9 @@ export function CadSketchMeasurements({ document, sketchId, profileId }: { docum
   const profile = sketch.profiles.find((entry) => entry.profileId === profileId);
   const bounds = profile?.boundsMm ?? sketch.boundsMm;
   return <section className="cad-measurements" aria-label="Sketch measurements">
-    <div className="cad-measurements-heading">{profile ? 'PROFILE MEASUREMENTS' : 'SKETCH MEASUREMENTS'}</div>
-    <dl><dt>{profile ? 'Area' : 'Material area'}</dt><dd>{format(profile?.areaMm2 ?? sketch.materialAreaMm2)} mm²</dd><dt>{profile ? 'Perimeter' : 'Boundary length'}</dt><dd>{format(profile?.perimeterMm ?? sketch.boundaryLengthMm)} mm</dd>{bounds && <><dt>Width × height</dt><dd>{format(bounds.maxX - bounds.minX)} × {format(bounds.maxY - bounds.minY)} mm</dd><dt>Min X, Y</dt><dd>{format(bounds.minX)}, {format(bounds.minY)} mm</dd><dt>Max X, Y</dt><dd>{format(bounds.maxX)}, {format(bounds.maxY)} mm</dd></>}<dt>Closed contours</dt><dd>{sketch.cutContourCount}</dd></dl>
-    {profile?.construction && <p>Construction geometry is excluded from material totals.</p>}
+    <div className="cad-measurements-heading">{profile ? 'PROFILE MEASUREMENTS' : 'SKETCH MEASUREMENTS'}<CadContextHelp label="Sketch measurements">Area and perimeter use the current sketch geometry. Nested outlines subtract holes from material area. Construction profiles are measured individually but excluded from material and cutting totals.</CadContextHelp></div>
+    <dl><dt>{profile ? 'Area' : 'Material area'}</dt><dd>{format(profile?.areaMm2 ?? sketch.materialAreaMm2)} mm²</dd><dt>{profile ? 'Perimeter' : 'Boundary length'}</dt><dd>{format(profile?.perimeterMm ?? sketch.boundaryLengthMm)} mm</dd></dl>
+    <details className="cad-measurement-details cad-topology-measurements"><summary>Measurements</summary><dl>{bounds && <><dt>Width × height</dt><dd>{format(bounds.maxX - bounds.minX)} × {format(bounds.maxY - bounds.minY)} mm</dd><dt>Min X, Y</dt><dd>{format(bounds.minX)}, {format(bounds.minY)} mm</dd><dt>Max X, Y</dt><dd>{format(bounds.maxX)}, {format(bounds.maxY)} mm</dd></>}<dt>{profile ? 'Sketch closed contours' : 'Closed contours'}</dt><dd>{sketch.cutContourCount}</dd></dl></details>
+    {profile?.construction && <span className="cad-measurement-tag">Construction reference</span>}
   </section>;
 }

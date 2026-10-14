@@ -2,30 +2,28 @@ import { cast, getOC, isShape3D, measureVolume, Plane, type Drawing, type Shape3
 import { CadError } from '../../../domain/cad/cadError';
 import { CAD_LOFT_NATIVE_PRECISION, type resolveCadLoftSections } from '../../../domain/cad/cadLoft';
 import { cadKernelPlaneBasis } from './cadKernelPlane';
-import { cadKernelProfileDrawing } from './cadKernelSketch';
+import { cadKernelProfileDrawing, cadKernelSketchOnPlane } from './cadKernelSketch';
+import { cadKernelDisposeOwned, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
 import type { CadResolvedFrame } from '../../../domain/cad/cadDatumPlanes';
 
 function validateLoftSolid(shape: Shape3D) {
   const oc = getOC();
-  const solids = shape.solids;
+  const solids = cadKernelSolids(shape);
   try {
     if (solids.length !== 1) throw new CadError('loft-invalid', 'A loft must produce exactly one closed solid. Revise the section shapes or spacing.');
-    const analyzer = new oc.BRepCheck_Analyzer(shape.wrapped, true, false, false);
-    try {
-      if (!analyzer.IsValid()) throw new CadError('loft-invalid', 'OpenCascade rejected the loft topology. Revise the section shapes or try ruled mode.');
-    } finally { analyzer.delete(); }
+    if (!cadKernelIsValid(shape)) throw new CadError('loft-invalid', 'OpenCascade rejected the loft topology. Revise the section shapes or try ruled mode.');
     const explorer = new oc.TopExp_Explorer(shape.wrapped, oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
     try {
       while (explorer.More()) {
         const shell = explorer.Current();
         try { if (!oc.BRep_Tool.IsClosed(shell)) throw new CadError('loft-open', 'The loft produced an open shell. Revise its section shapes.'); }
-        finally { shell.delete(); }
+        finally { cadKernelDisposeOwned(shell); }
         explorer.Next();
       }
     } finally { explorer.delete(); }
     const volume = measureVolume(shape);
     if (!Number.isFinite(volume) || volume <= 1e-9) throw new CadError('loft-volume', 'The loft must contain positive volume with outward orientation. Revise the section spacing.');
-  } finally { for (const solid of solids) solid.delete(); }
+  } finally { for (const solid of solids) cadKernelDisposeOwned(solid); }
 }
 
 /** The fitted solid is constructed in canonical XY, then placed rigidly once. */
@@ -49,13 +47,13 @@ function placeLoftSolid(shape: Shape3D, frame: CadResolvedFrame): Shape3D {
     const raw = builder.Shape();
     try {
       const placed = cast(raw);
-      if (!isShape3D(placed)) { placed.delete(); throw new CadError('loft-placement', 'Datum placement did not preserve the native loft solid.'); }
+      if (!isShape3D(placed)) { cadKernelDisposeOwned(placed); throw new CadError('loft-placement', 'Datum placement did not preserve the native loft solid.'); }
       result = placed;
-    } finally { raw.delete(); }
+    } finally { cadKernelDisposeOwned(raw); }
     validateLoftSolid(result);
     return result;
-  } catch (error) { result?.delete(); throw error; }
-  finally { builder?.delete(); for (const value of owned.reverse()) value.delete(); }
+  } catch (error) { if (result) cadKernelDisposeOwned(result); throw error; }
+  finally { builder?.delete(); for (const value of owned.reverse()) cadKernelDisposeOwned(value); }
 }
 
 /** The caller owns the returned solid, including native fitted surfaces in smooth mode. */
@@ -77,7 +75,7 @@ export function buildCadLoftSolid(resolved: ReturnType<typeof resolveCadLoftSect
         : [basis.normal[0] * section.offset, basis.normal[1] * section.offset, basis.normal[2] * section.offset];
       const plane = new Plane(origin, basis.u, basis.normal); planes.push(plane);
       const drawing = cadKernelProfileDrawing(section.geometry, drawings);
-      const sketch = drawing.blueprint.sketchOnPlane(plane); sketches.push(sketch);
+      const sketch = cadKernelSketchOnPlane(drawing, plane); sketches.push(sketch);
       builder.AddWire(sketch.wire.wrapped);
     }
     builder.Build();
@@ -85,9 +83,9 @@ export function buildCadLoftSolid(resolved: ReturnType<typeof resolveCadLoftSect
     const raw = builder.Shape();
     try {
       const built = cast(raw);
-      if (!isShape3D(built)) { built.delete(); throw new CadError('loft-invalid', 'The loft did not produce a native solid.'); }
+      if (!isShape3D(built)) { cadKernelDisposeOwned(built); throw new CadError('loft-invalid', 'The loft did not produce a native solid.'); }
       shape = built;
-    } finally { raw.delete(); }
+    } finally { cadKernelDisposeOwned(raw); }
     validateLoftSolid(shape);
     // Native validity alone can accept a fitted surface outside its end planes.
     // Optimal native bounds include native precision padding even for an exact cylinder.
@@ -107,13 +105,13 @@ export function buildCadLoftSolid(resolved: ReturnType<typeof resolveCadLoftSect
     if (resolved.legacyPrincipalPlane === null) {
       const local = shape;
       shape = placeLoftSolid(local, resolved.commonFrame);
-      local.delete();
+      cadKernelDisposeOwned(local);
     }
     return shape;
-  } catch (error) { shape?.delete(); throw error; }
+  } catch (error) { if (shape) cadKernelDisposeOwned(shape); throw error; }
   finally {
     builder.delete();
-    for (const sketch of sketches) sketch.delete();
+    for (const sketch of sketches) cadKernelDisposeOwned(sketch);
     for (const plane of planes) plane.delete();
     for (const drawing of drawings) drawing.blueprint.delete();
   }

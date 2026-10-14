@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSta
 import { CadSession, hasCadDraftContent } from '@/features/cad/cadSession';
 import { useCadController } from '@/features/cad/useCadController';
 import { cadSiteTools } from '@/features/cad/cadSiteTools';
+import { cadVisibleBodyIds } from '@/domain/cad/cadSchema';
 import { CadLibraryDialog } from '@/features/cad/CadLibraryDialog';
 import { CadWorkspaceBoundary } from '@/features/cad/CadWorkspaceBoundary';
 import { useSiteTools } from '@/features/webmcp/siteTools';
@@ -29,6 +30,7 @@ interface AppProps {
 const EditorPage = lazy(() => import('@/features/editor/EditorPage').then(({ EditorPage }) => ({ default: EditorPage })));
 const CadWorkbench = lazy(() => import('@/features/cad/CadWorkbench').then(({ CadWorkbench }) => ({ default: CadWorkbench })));
 const CadSectionDialog = lazy(() => import('@/features/cad/CadSectionDialog').then(({ CadSectionDialog }) => ({ default: CadSectionDialog })));
+const CadDxfExportDialog = lazy(() => import('@/features/cad/CadDxfExportDialog').then(({ CadDxfExportDialog }) => ({ default: CadDxfExportDialog })));
 const CadImportDialog = lazy(() => import('@/features/cad/CadImportDialog').then(({ CadImportDialog }) => ({ default: CadImportDialog })));
 
 export default function App({ services }: AppProps = {}) {
@@ -37,6 +39,7 @@ export default function App({ services }: AppProps = {}) {
   const [cadSession] = useState(() => new CadSession());
   const [cadOpen, setCadOpen] = useState(false);
   const [cadSection, setCadSection] = useState<{ bodyId: string; version: string } | null>(null);
+  const [cadDxfExport, setCadDxfExport] = useState<{ version: string } | null>(null);
   const cadOpenRef = useRef(cadOpen); cadOpenRef.current = cadOpen;
   const app = useWorkbenchAppController(services, () => cadOpenRef.current ? {
     dirty: cadSession.getSnapshot().dirty, workflowOpen: cadSession.getSnapshot().workflowOpen,
@@ -60,6 +63,7 @@ export default function App({ services }: AppProps = {}) {
     setOnboardingOpen(false);
     rememberOnboardingDismissal();
   }
+  function closeCadDxfExport() { setCadDxfExport(null); cadSession.setWorkflowOpen(false, 'dxf-export'); }
   function closeCadSection() { setCadSection(null); cadSession.setWorkflowOpen(false, 'section'); }
   function switchStorage(action: () => Promise<void>) {
     try {
@@ -110,23 +114,27 @@ export default function App({ services }: AppProps = {}) {
       ) : cadOpen && app.connectedWorkbench ? (
         <CadWorkspaceBoundary documentName={cad.snapshot.document.name} busy={cad.storageBusy || app.workbenchInteractionLocked}
           onSave={cad.save} onDownloadDocument={cad.exportDocument}
-          onFailure={() => { cad.cancelImport(); closeCadSection(); }}>
+          onFailure={() => { cad.cancelImport(); closeCadSection(); closeCadDxfExport(); }}>
         <Suspense fallback={<p className="p-4 text-xs" role="status">Opening CAD workspace…</p>}>
           <CadWorkbench
             document={cad.snapshot.document} documentVersion={cad.snapshot.version} build={cad.build} buildVersion={cad.buildVersion} buildState={cad.buildState}
+            featurePreview={cad.featurePreview} onFeaturePreview={cad.previewFeature}
             dirty={cad.snapshot.dirty} canUndo={cad.snapshot.canUndo} canRedo={cad.snapshot.canRedo}
-            errorMessage={cad.errorMessage} storageBusy={cad.storageBusy || app.workbenchInteractionLocked}
+            errorMessage={cad.errorMessage} onStatusMessage={app.showStatusToast} storageBusy={cad.storageBusy || app.workbenchInteractionLocked}
             onEdit={edit => { cad.edit([edit]); }} onUndo={() => cad.undo()} onRedo={() => cad.redo()}
+            onEditMany={edits => { cad.edit(edits); }}
             onWorkflowChange={cadSession.setWorkflowOpen}
             onBack={cad.back} onSave={async () => { await cad.save(); }}
             onOpenDocument={() => { void cad.showLibrary().catch(error => cad.setErrorMessage(String(error))); }}
             onNewDocument={() => { cad.newDocument(); }} onImportDocument={async file => { await cad.importDocument(file); }}
+            onListPlugins={cad.plugins} onInstallPlugin={text => cad.installPlugin(text, cad.snapshot.version, undefined, 'editor')}
             onExportDocument={() => { cad.exportDocument(); }}
             onExportSolid={async format => { await cad.exportSolid(format); }}
-            onExportDxf={async featureId => {
-              const feature = cad.session.getSnapshot().document.features.find(item => item.id === featureId);
-              if (feature?.kind === 'curve') await cad.exportCurveDxf(featureId);
-              else await cad.exportDxf(featureId);
+            externalWorkflowOpen={Boolean(cadDxfExport || cadSection || cad.library)}
+            onOpenDxfExport={() => {
+              cadSession.assertWorkflowClosed();
+              cadSession.setWorkflowOpen(true, 'dxf-export');
+              setCadDxfExport({ version: cadSession.getSnapshot().version });
             }}
             onRebuild={async () => { await cad.inspectBuild(); }}
             onSendToCam={async sketchId => { await cad.sendToCam(sketchId); }}
@@ -140,6 +148,13 @@ export default function App({ services }: AppProps = {}) {
               setCadSection({ bodyId, version: cadSession.getSnapshot().version });
             }}
           />
+          {cadDxfExport && <Suspense fallback={<div className="cad-export-loading" role="status">Opening DXF export...</div>}><CadDxfExportDialog document={cad.snapshot.document} version={cadDxfExport.version} currentVersion={cad.snapshot.version}
+            bodies={cad.buildState === 'ready' && cad.buildVersion === cad.snapshot.version ? cad.build?.meshes.filter(mesh => cadVisibleBodyIds(cad.snapshot.document.features).includes(mesh.featureId)) ?? [] : []}
+            onClose={closeCadDxfExport}
+            onExportSketch={(id, version, signal) => cad.exportDxf(id, version, signal, 'dxf-export')}
+            onExportCurve={(id, version, signal) => cad.exportCurveDxf(id, version, signal, 'dxf-export')}
+            onInspectSection={(request, version, signal) => cad.inspectSection(request, version, signal, 'dxf-export')}
+            onExportSection={(request, version, signal) => cad.exportSectionDxf(request, version, signal, 'dxf-export')} /></Suspense>}
           {cadSection && <CadSectionDialog bodies={cad.build?.meshes ?? []} initialBodyId={cadSection.bodyId} version={cadSection.version}
             onClose={closeCadSection}
             onInspect={(request, version, signal) => cad.inspectSection(request, version, signal, 'section')}
@@ -205,8 +220,8 @@ export default function App({ services }: AppProps = {}) {
           workbenchStatus={app.workbenchStatus}
         />
       )}
-      {cad.library && <CadLibraryDialog entries={cad.library} diagnostic={cad.libraryDiagnostic} busy={cad.storageBusy}
-        onClose={cad.closeLibrary} onOpen={async id => { await cad.openDocument(id); }} />}
+      {cad.library && <CadLibraryDialog entries={cad.library} diagnostic={cad.libraryDiagnostic} busy={cad.storageBusy} loading={cad.libraryLoading}
+        onClose={cad.closeLibrary} onOpen={async id => { await cad.openDocument(id, cad.snapshot.version, undefined, 'library'); }} />}
       {app.pendingDxfReimport && (
         <DxfImportConfirmationDialog
           cancellationBlocked={app.dxfWriting}

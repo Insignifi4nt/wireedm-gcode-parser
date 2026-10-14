@@ -2,7 +2,7 @@
   "format": "wire-edm-cad-kernel-sources",
   "schemaVersion": 1,
   "packageName": "replicad-opencascadejs",
-  "packageVersion": "1.1.0",
+  "packageVersion": "1.1.0-wireedm.2",
   "gitHead": "e4b05f67dc4e2393a876ce8c5064a9c93db05bf1",
   "bindingGeneratorCommit": "ebd263f15337b440b391492af073662707e86482",
   "occtCommit": "b8f597c677811d1f9f4d8a97f5ae2825c0353a42",
@@ -41,13 +41,50 @@
   "installedArtifacts": [
     {
       "fileName": "replicad_single.js",
-      "byteLength": 60124,
-      "sha256": "018e57538fcb773f0124eae60aee4de693d3aae01c55b2b883a874911ab121c3"
+      "byteLength": 60170,
+      "sha256": "5ba5161518781c04af771ae4e841956613dde4e679766ddaaeb581b778e1a8be"
     },
     {
       "fileName": "replicad_single.wasm",
-      "byteLength": 22980267,
-      "sha256": "4c9f22e9f3828dca6f3c95405934cdbe624e593c35266f47f392ab337478dbde"
+      "byteLength": 22987129,
+      "sha256": "f3315403717f650c207eccd2f372afc380005b4f219bad31991d6f115fdc1744"
+    },
+    {
+      "fileName": "replicad_single.d.ts",
+      "byteLength": 1619008,
+      "sha256": "28ae81bd478d13e1abb3a1f2c908666250c670d7c2aac2cc2a70f4ab5e951fcd"
     }
-  ]
+  ],
+  "modification": {
+    "kind": "native-ownership-and-topology",
+    "upstreamCommit": "193f3339893c909abdd5e62a6f1dc6742369fa30",
+    "toolchainImage": "ghcr.io/taucad/opencascade.js@sha256:215198af0e2ca4c5f308e5540869f2419784dc290062d3eb03d34e4f22e0188c",
+    "files": [
+      {
+        "fileName": "replicad-opencascadejs-1.1.0-wireedm.2.tgz",
+        "byteLength": 7531960,
+        "sha256": "b1319454ea17e68475c907e1c9b0b7c78ae54c3bf6bf21d3fd3c555f02418958"
+      },
+      {
+        "fileName": "replicad-ownership-backport.patch",
+        "byteLength": 16497,
+        "sha256": "001ff0a239158e0972b796d900f6034fcb8161ce67bf5d28b1d4afdbd2f97960"
+      },
+      {
+        "fileName": "replicad-indexed-topology.patch",
+        "byteLength": 4426,
+        "sha256": "891b2547a46d66fdab2f3ec099b981f979be2e0b573be4f0eb45be975ff65135"
+      },
+      {
+        "fileName": "replicad-ownership-rebuild.tar.gz",
+        "byteLength": 18346,
+        "sha256": "05d1609850e0ff2e6297b616657f535548d020c0118913b9ef0d8124b1510c9d"
+      },
+      {
+        "fileName": "replicad-ownership-build.json",
+        "byteLength": 4136,
+        "sha256": "21fa1c8b690be71e0d70fc25eabc905a5ea1b435e204e2a362c2d1f91f8c66a9"
+      }
+    ]
+  }
 }

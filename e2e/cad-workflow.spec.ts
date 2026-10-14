@@ -41,6 +41,25 @@ async function context(page: Page) {
   return { ...value, version: value.version, documentId: value.documentId };
 }
 
+async function openViewControls(page: Page) {
+  const toggle = page.getByRole('button', { name: 'View controls', exact: true });
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+}
+
+async function editScalarRelation(page: Page, label: string, expression: string) {
+  await page.getByRole('button', { name: `Edit ${label} relation`, exact: true }).click();
+  const popup = page.getByRole('dialog', { name: `${label} relation help`, exact: true });
+  await popup.getByRole('textbox', { name: `${label} expression`, exact: true }).fill(expression);
+  await popup.getByRole('button', { name: 'Keep relation', exact: true }).click();
+  await popup.getByRole('button', { name: `Close ${label} relation help`, exact: true }).click();
+}
+
+async function createSketchOnCanvasPlane(page: Page, plane: 'XY' | 'XZ' | 'YZ' = 'XY') {
+  await page.getByRole('button', { name: 'Sketch', exact: true }).click();
+  await page.locator('.cad-viewport').getByRole('button', { name: `Select ${plane} plane`, exact: true }).click();
+  await expect(page.getByLabel('Sketch drawing canvas')).toBeVisible();
+}
+
 async function expectRenderedSolidCapture(page: Page, capture: object) {
   if (!('previewUrl' in capture) || typeof capture.previewUrl !== 'string') throw new Error('Missing captured preview URL');
   const pixels = await page.evaluate(async (url) => {
@@ -104,7 +123,6 @@ test('human Through-all Pocket follows target changes and exports an exact agent
   await call(page, 'cad_set_viewport', { expectedVersion: before.version, command: { kind: 'select-feature', featureId: 'bore' } });
   await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
   const properties = page.getByRole('complementary', { name: 'Feature properties' });
-  await properties.getByLabel('Name', { exact: true }).fill('Through bore');
   await properties.getByRole('combobox', { name: 'Operation', exact: true }).selectOption('cut');
   await properties.getByRole('combobox', { name: 'Extent', exact: true }).selectOption('through-all');
   await properties.getByRole('combobox', { name: 'Direction', exact: true }).selectOption('both');
@@ -122,7 +140,7 @@ test('human Through-all Pocket follows target changes and exports an exact agent
   expect(pocket).not.toHaveProperty('distance'); expect(pocket).not.toHaveProperty('operation');
   expect(await call(page, 'cad_build', { expectedVersion: accepted.version })).toMatchObject({ diagnostics: [], bodies: [{ featureId: pocket.id, volumeMm3: expect.closeTo((200 - 4 * Math.PI) * 5, 6) }] });
   await properties.getByRole('combobox', { name: 'Extent', exact: true }).selectOption('distance');
-  await properties.getByRole('textbox', { name: 'Length mm', exact: true }).fill('height / 3');
+  await editScalarRelation(page, 'Length', 'height / 3');
   await properties.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect(await context(page)).toMatchObject({ version: accepted.version, workflowOpen: false });
   expect(await call(page, 'cad_get_feature', { expectedVersion: accepted.version, featureId: pocket.id })).toMatchObject({ feature: pocket });
@@ -280,6 +298,7 @@ test('ordered loft sections rebuild parametrically and carry an exact bored sect
     entities: { items: expect.arrayContaining([{ type: 'circle', layer: 'CAD_SECTION', center: { x: 0, y: 0 }, radius: expect.closeTo(10, 6) },
       { type: 'circle', layer: 'CAD_SECTION', center: { x: 0, y: 0 }, radius: expect.closeTo(3, 6) }]) } });
   await call(page, 'cad_set_viewport', { expectedVersion: bored.version, command: { kind: 'select-feature', featureId: 'bored' } });
+  await openViewControls(page);
   await page.getByRole('button', { name: 'Fit model', exact: true }).click();
   await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: bored.version }));
   await page.screenshot({ path: 'tmp/cad-loft-bushing.png' });
@@ -426,6 +445,81 @@ test('Sweep preflight repairs placement before human creation and exact agent CA
   await expect(page.locator('[data-preview-model="upid"]')).toBeVisible();
 });
 
+test('datum Sweep retains authored placement through human creation, parameter rebuild and exact CAM alignment', async ({ page }) => {
+  const wasmRequests: string[] = [];
+  page.context().on('request', request => { if (/\.wasm(?:\?|$)/.test(request.url())) wasmRequests.push(request.url()); });
+  await prepare(page);
+  await call(page, 'cad_create_document', { expectedVersion: (await context(page)).version, name: 'Placed sweep' });
+  const datum = (id: string, basePlane: 'XY' | 'YZ') => ({ kind: 'datum-plane' as const, id, name: id === 'section_plane' ? 'Section plane' : 'Rail plane', suppressed: false,
+    definition: { kind: 'world' as const, basePlane, origin: [30, -20, 12], rotation: [0, 0, 'tilt'] } });
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'tilt', value: 30 }, { kind: 'set-parameter', name: 'radius', value: 1 },
+    { kind: 'add-feature', feature: datum('section_plane', 'YZ') },
+    { kind: 'add-feature', feature: datum('rail_plane', 'XY') },
+    { kind: 'add-feature', feature: { kind: 'sketch', id: 'section', name: 'Section', suppressed: false,
+      plane: { kind: 'datum-plane', featureId: 'section_plane' }, offset: 0,
+      profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 'radius' } }] } },
+    { kind: 'add-feature', feature: { kind: 'curve', id: 'rail', name: 'Bend rail', suppressed: false,
+      plane: { kind: 'datum-plane', featureId: 'rail_plane' }, offset: 0,
+      segments: [{ kind: 'line', start: [0, 0], end: [20, 0] },
+        { kind: 'arc', center: [20, 10], radius: 10, startAngle: -90, sweep: 90 },
+        { kind: 'line', start: [30, 10], end: [30, 30] }] } },
+  ] });
+  const sources = await context(page);
+  expect(await call(page, 'cad_inspect_sweep', { expectedVersion: sources.version, sketchId: 'section', curveId: 'rail' }))
+    .toMatchObject({ eligible: true, persisted: false, nativeBuildRequired: true, units: 'mm',
+      section: { plane: { kind: 'datum-plane', featureId: 'section_plane' }, originWorldMm: [30, -20, 12],
+        normalWorld: [expect.closeTo(Math.sqrt(3) / 2, 12), expect.closeTo(0.5, 12), 0] },
+      curve: { startWorldMm: [30, -20, 12], lengthMm: expect.closeTo(40 + 5 * Math.PI, 10) } });
+  expect(wasmRequests).toEqual([]);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: sources.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: sources.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: sources.version, command: { kind: 'select-feature', featureId: 'rail' } });
+  await page.getByRole('button', { name: 'Sweep', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Profile sketch', exact: true })).toHaveValue('section');
+  await expect(page.getByRole('combobox', { name: 'Curve', exact: true })).toHaveValue('rail');
+  expect(await rawCall(page, 'cad_inspect_sweep', { expectedVersion: sources.version, sketchId: 'section', curveId: 'rail' }))
+    .toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  const created = await context(page);
+  const features = await call(page, 'cad_read_features', { expectedVersion: created.version });
+  const sweep = (features as { items: CadFeature[] }).items.find(feature => feature.kind === 'sweep');
+  if (!sweep) throw new Error('Missing placed Sweep');
+  const unitVolume = 40 * Math.PI + 5 * Math.PI ** 2;
+  expect(await call(page, 'cad_build', { expectedVersion: created.version }))
+    .toMatchObject({ diagnostics: [], bodies: [{ featureId: sweep.id, volumeMm3: expect.closeTo(unitVolume, 6) }] });
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: created.version, edits: [{ kind: 'set-parameter', name: 'radius', value: 12 }] }))
+    .toMatchObject({ ok: false, error: { code: 'unsupported-sweep-clearance' } });
+  expect(await context(page)).toMatchObject({ version: created.version, parameters: { radius: 1, tilt: 30 } });
+  await call(page, 'cad_edit_document', { expectedVersion: created.version, edits: [
+    { kind: 'set-parameter', name: 'tilt', value: 60 }, { kind: 'set-parameter', name: 'radius', value: 1.5 },
+  ] });
+  const tilted = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: tilted.version }))
+    .toMatchObject({ diagnostics: [], bodies: [{ featureId: sweep.id, volumeMm3: expect.closeTo(unitVolume * 2.25, 6) }] });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: tilted.version }))
+    .toMatchObject({ ok: true, data: { buildVersion: tilted.version, view: { available: true, referenceVersion: tilted.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: tilted.version, command: { kind: 'fit' } });
+  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: tilted.version }));
+  await page.screenshot({ path: 'tmp/cad-datum-sweep.png' });
+  const downloaded = page.waitForEvent('download');
+  await call(page, 'cad_export_solid', { expectedVersion: tilted.version, format: 'step' });
+  const download = await downloaded; const path = await download.path();
+  if (!path) throw new Error('Missing datum Sweep STEP');
+  expect(await readFile(path, 'utf8')).toContain('MANIFOLD_SOLID_BREP');
+  // Explicit authored alignment for an analytic principal-plane CAM section.
+  await call(page, 'cad_edit_document', { expectedVersion: tilted.version, edits: [{ kind: 'set-parameter', name: 'tilt', value: 0 }] });
+  const aligned = await context(page);
+  expect(await call(page, 'cad_build', { expectedVersion: aligned.version }))
+    .toMatchObject({ diagnostics: [], bodies: [{ featureId: sweep.id, volumeMm3: expect.closeTo(unitVolume * 2.25, 6) }] });
+  const cut = { bodyId: sweep.id, plane: 'YZ', offset: 40 };
+  expect(await call(page, 'cad_inspect_section', { expectedVersion: aligned.version, section: cut }))
+    .toMatchObject({ contourCount: 1, entities: { items: [{ type: 'circle', center: { x: -20, y: 12 }, radius: expect.closeTo(1.5, 8) }] } });
+  expect(await call(page, 'cad_send_section_to_cam', { expectedVersion: aligned.version, section: cut }))
+    .toMatchObject({ opened: true, section: { contourCount: 1, offset: 40 } });
+  await expect(page.locator('[data-preview-model="upid"]')).toBeVisible();
+});
+
 test('human and agent share a parametric circular bolt-hole pattern through exact CAM handoff', async ({ page }) => {
   await prepare(page);
   const initial = await context(page);
@@ -453,7 +547,7 @@ test('human and agent share a parametric circular bolt-hole pattern through exac
   await page.getByRole('button', { name: 'Pattern', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Circular pattern', exact: true }).click();
   await expect(page.getByLabel('Instances, including original')).toHaveValue('4');
-  await page.getByLabel('Angular extent', { exact: false }).fill('sweep');
+  await editScalarRelation(page, 'Angular extent', 'sweep');
   expect(await rawCall(page, 'cad_edit_document', { expectedVersion: seeded.version,
     edits: [{ kind: 'rename-document', name: 'Must remain blocked' }] })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
@@ -473,6 +567,7 @@ test('human and agent share a parametric circular bolt-hole pattern through exac
   const section = { bodyId: 'drilled_flange', plane: 'XY', offset: 'thickness / 2' };
   expect(await call(page, 'cad_inspect_section', { expectedVersion: drilled.version, section })).toMatchObject({ contourCount: 5 });
   await call(page, 'cad_set_viewport', { expectedVersion: drilled.version, command: { kind: 'select-feature', featureId: 'drilled_flange' } });
+  await openViewControls(page);
   await page.getByRole('button', { name: 'Fit model', exact: true }).click();
   const circularCapture = await call(page, 'cad_capture_preview', { expectedVersion: drilled.version });
   expect(circularCapture).toMatchObject({ source: '3d', draftVersion: drilled.version });
@@ -521,8 +616,11 @@ test('one compact header and real face picking create an inward shell', async ({
   const { draft } = await createBox(page);
   await expect(page.locator('[data-app-header] .cad-header')).toHaveCount(1);
   await expect(page.locator('.cad-workbench .cad-header')).toHaveCount(0);
+  await openViewControls(page);
   await page.getByLabel('Named view').selectOption('Top');
+  await openViewControls(page);
   await page.getByRole('button', { name: 'Fit model', exact: true }).click();
+  await openViewControls(page);
   await page.getByRole('button', { name: 'Face', exact: true }).click();
   const canvas = page.locator('.cad-viewport canvas');
   const bounds = await canvas.boundingBox();
@@ -537,33 +635,42 @@ test('one compact header and real face picking create an inward shell', async ({
   expect(await call(page, 'cad_build', { expectedVersion: changed.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(424, 7) }] });
 });
 
-test('CAD panel resizing preserves pending dimensions and restores preferred widths', async ({ page }) => {
+test('View drawer and floating configuration preserve pending dimensions and canvas framing', async ({ page }) => {
   const { draft } = await createBox(page);
-  await page.locator('.cad-tree-row').filter({ hasText: 'Pad' }).click();
-  const length = page.getByLabel('Length', { exact: false });
-  await length.fill('height + 2');
-  const treeHandle = page.getByRole('separator', { name: 'Resize CAD model tree' });
-  const propertiesHandle = page.getByRole('separator', { name: 'Resize CAD properties' });
-  await treeHandle.press('End');
-  await propertiesHandle.press('End');
-  const treeWidth = await treeHandle.getAttribute('aria-valuenow');
-  const propertiesWidth = await propertiesHandle.getAttribute('aria-valuenow');
-  if (!treeWidth || !propertiesWidth) throw new Error('Missing accessible panel widths');
+  await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'select-feature', featureId: 'pad' } });
+  const length = page.getByRole('textbox', { name: 'Length mm', exact: true });
+  const inspector = page.getByRole('complementary', { name: 'Feature properties' });
+  const canvas = page.locator('.cad-viewport canvas');
+  const originalBounds = await canvas.boundingBox();
+  await editScalarRelation(page, 'Length', 'height + 2');
+  await expect(length).toHaveValue('7');
+  await expect(length).toHaveAttribute('readonly', '');
+  const viewTab = page.getByRole('button', { name: 'View controls', exact: true });
+  await viewTab.click(); await expect(viewTab).toHaveAttribute('aria-expanded', 'true');
+  expect(await canvas.boundingBox()).toEqual(originalBounds);
+  await viewTab.press('Escape'); await expect(viewTab).toHaveAttribute('aria-expanded', 'false');
+  await expect(length).toHaveValue('7');
   expect(await context(page)).toMatchObject({ version: draft.version, workflowOpen: true });
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: draft.version, edits: [{ kind: 'set-parameter', name: 'height', value: 9 }] }))
+    .toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
   await page.setViewportSize({ width: 1024, height: 900 });
-  await expect(length).toHaveValue('height + 2');
-  await expect.poll(async () => (await page.locator('.cad-viewport canvas').boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(240);
+  await expect(length).toHaveValue('7');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(treeHandle).toHaveAttribute('aria-valuenow', treeWidth);
-  await expect(propertiesHandle).toHaveAttribute('aria-valuenow', propertiesWidth);
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   const changed = await context(page);
   expect(await call(page, 'cad_build', { expectedVersion: changed.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(1400, 6) }] });
-  await call(page, 'cad_set_viewport', { expectedVersion: changed.version, command: { kind: 'select-feature', featureId: null } });
-  await expect(propertiesHandle).not.toBeVisible();
-  await call(page, 'cad_set_viewport', { expectedVersion: changed.version, command: { kind: 'select-feature', featureId: 'pad' } });
-  await expect(propertiesHandle).toHaveAttribute('aria-valuenow', propertiesWidth);
+  expect(await call(page, 'cad_get_feature', { expectedVersion: changed.version, featureId: 'pad' })).toMatchObject({ feature: { distance: 'height + 2' } });
+  await expect.poll(() => call(page, 'cad_get_viewport', { expectedVersion: changed.version })).toMatchObject({ buildVersion: changed.version });
+  const canvasBounds = await canvas.boundingBox();
+  const expanded = await call(page, 'cad_get_viewport', { expectedVersion: changed.version });
+  const framing = expanded.view as { mode: string; view: string; zoom: number; gridVisible: boolean };
+  await page.getByRole('button', { name: 'Minimize configuration', exact: true }).click();
+  expect(await canvas.boundingBox()).toEqual(canvasBounds);
+  expect(await call(page, 'cad_get_viewport', { expectedVersion: changed.version })).toMatchObject({ view: { mode: framing.mode, view: framing.view, zoom: framing.zoom, gridVisible: framing.gridVisible } });
+  await page.getByRole('button', { name: 'Expand configuration', exact: true }).click();
+  await expect(length).toHaveValue('7'); expect(await canvas.boundingBox()).toEqual(canvasBounds);
+  expect(await context(page)).toMatchObject({ version: changed.version, workflowOpen: false });
 });
 
 test('STEP and STL exports import as standalone solids with preserved originals', async ({ page }) => {
@@ -745,7 +852,7 @@ test('agent builds, checks exact volume, exports, reopens and hands analytic geo
   const result = await call(page, 'cad_build', { expectedVersion: current.version });
   const expectedVolume = (60 * 40 - (4 - Math.PI) * 9 - Math.PI * 25) * 10;
   expect(result).toMatchObject({ diagnostics: [], bodies: [{ featureId: 'pad', volumeMm3: expect.closeTo(expectedVolume, 5), boundsMm: { max: [expect.closeTo(60, 8), expect.closeTo(40, 8), expect.closeTo(10, 8)] } }] });
-  await expect(page.locator('.cad-statusbar')).toContainText('Ready');
+  await expect.poll(() => context(page)).toMatchObject({ version: current.version, buildState: 'ready', buildVersion: current.version, diagnostics: [] });
   await expect(page.locator('.cad-viewport canvas')).toBeVisible();
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'set-view', view: 'Top' } });
   await expect.poll(() => call(page, 'cad_get_viewport', { expectedVersion: current.version })).toMatchObject({ view: { mode: 'solid', view: 'Top' }, buildVersion: current.version });
@@ -971,22 +1078,21 @@ test('human datum creation, placement reuse and history share atomic pending-edi
   const before = await context(page);
   await page.getByRole('button', { name: 'Plane', exact: true }).click();
   const properties = page.getByRole('complementary', { name: 'Feature properties' });
-  await properties.getByRole('textbox', { name: 'Name', exact: true }).fill('Cancelled plane');
+  await properties.getByRole('textbox', { name: 'Origin X mm', exact: true }).fill('99');
   await properties.getByRole('textbox', { name: 'Origin X mm', exact: true }).fill('12');
   expect(await context(page)).toMatchObject({ version: before.version, featureCount: 0, workflowOpen: true });
   expect(await rawCall(page, 'cad_capture_preview', { expectedVersion: before.version })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
   await properties.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect(await context(page)).toMatchObject({ version: before.version, featureCount: 0, workflowOpen: false });
   await page.getByRole('button', { name: 'Plane', exact: true }).click();
-  await properties.getByRole('textbox', { name: 'Name', exact: true }).fill('Mounting plane');
   await properties.getByRole('textbox', { name: 'Origin X mm', exact: true }).fill('12');
-  await properties.getByRole('textbox', { name: 'Around X deg', exact: true }).fill('tilt');
+  await editScalarRelation(page, 'Around X', 'tilt');
   await properties.getByRole('button', { name: 'Apply', exact: true }).click();
   const accepted = await context(page);
   const rows = await call(page, 'cad_read_features', { expectedVersion: accepted.version });
   if (!Array.isArray(rows.items) || rows.items.length !== 1) throw new Error('Missing human datum');
   const datum = rows.items[0] as CadFeature;
-  expect(datum).toMatchObject({ kind: 'datum-plane', name: 'Mounting plane', definition: { kind: 'world', basePlane: 'XY', origin: ['12', 0, 0], rotation: ['tilt', 0, 0] } });
+  expect(datum).toMatchObject({ kind: 'datum-plane', name: 'Plane 1', definition: { kind: 'world', basePlane: 'XY', origin: [12, 0, 0], rotation: ['tilt', 0, 0] } });
   await properties.getByRole('textbox', { name: 'Origin X mm', exact: true }).fill('24');
   expect(await rawCall(page, 'cad_inspect_plane', { expectedVersion: accepted.version, featureId: datum.id })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
   await properties.getByRole('textbox', { name: 'Origin X mm', exact: true }).press('Escape');
@@ -1000,9 +1106,8 @@ test('human datum creation, placement reuse and history share atomic pending-edi
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: redone.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: redone.version } } });
   await call(page, 'cad_set_viewport', { expectedVersion: redone.version, command: { kind: 'select-feature', featureId: datum.id } });
   await page.getByRole('button', { name: 'Sketch', exact: true }).click();
-  await expect(properties.getByRole('combobox', { name: 'Reference plane', exact: true })).toHaveValue(`datum:${datum.id}`);
-  expect(await context(page)).toMatchObject({ version: redone.version, featureCount: 1, workflowOpen: true });
-  await properties.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.getByLabel('Sketch drawing canvas')).toBeVisible();
+  expect(await context(page)).toMatchObject({ featureCount: 2, workflowOpen: false });
   const sketched = await context(page); const history = await call(page, 'cad_read_features', { expectedVersion: sketched.version });
   if (!Array.isArray(history.items)) throw new Error('Missing sketch history');
   const sketch = history.items.at(-1) as CadSketchFeature;
@@ -1199,6 +1304,7 @@ test('small far-origin solids retain rendered faces, edges and physical topology
   // Keep the same selected-body colour in both images so the pixel difference
   // measures the translucent face highlight, not a change in body selection.
   await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'select-feature', featureId: 'far' } });
+  await openViewControls(page);
   await page.getByRole('button', { name: 'Face', exact: true }).click();
   const beforeFace = await call(page, 'cad_capture_preview', { expectedVersion: accepted.version });
   const canvas = page.locator('.cad-viewport canvas');
@@ -1221,6 +1327,7 @@ test('small far-origin solids retain rendered faces, edges and physical topology
   }, [beforeFace.previewUrl, highlighted.previewUrl]);
   expect(faceHighlightPixels, 'The selected native face highlight must not collapse at 1e8 mm').toBeGreaterThan(100);
   await page.screenshot({ path: 'tmp/cad-far-origin-face.png' });
+  await openViewControls(page);
   await page.getByRole('button', { name: 'Edge', exact: true }).click();
   const current = await call(page, 'cad_get_viewport', { expectedVersion: accepted.version });
   const view = current.view as { zoom: number };
@@ -1294,7 +1401,7 @@ test('human Curve creation keeps name, plane and geometry atomic and uses the ex
   const accepted = await context(page); expect(accepted).toMatchObject({ featureCount: 1, workflowOpen: false });
   const features = await call(page, 'cad_read_features', { expectedVersion: accepted.version });
   if (!Array.isArray(features.items)) throw new Error('Missing Curve'); const curve = features.items[0] as CadFeature;
-  expect(curve).toMatchObject({ name: 'Mounting rail', kind: 'curve', plane: 'YZ', offset: '5', segments: [{ kind: 'line', start: [0, 0], end: [20, 0] }, { kind: 'arc', radius: 10, sweep: 180 }] });
+  expect(curve).toMatchObject({ name: 'Mounting rail', kind: 'curve', plane: 'YZ', offset: 5, segments: [{ kind: 'line', start: [0, 0], end: [20, 0] }, { kind: 'arc', radius: 10, sweep: 180 }] });
   await page.getByRole('button', { name: 'Undo', exact: true }).click(); expect(await context(page)).toMatchObject({ featureCount: 0 });
   await page.getByRole('button', { name: 'Redo', exact: true }).click(); const redone = await context(page);
   await call(page, 'cad_save_document', { expectedVersion: redone.version });
@@ -1312,8 +1419,7 @@ test('human Curve creation keeps name, plane and geometry atomic and uses the ex
 test('human mixed path drawing retains invalid points and commits one exact undo step', async ({ page }) => {
   await prepare(page);
   await page.getByRole('button', { name: 'Design in CAD' }).click();
-  await page.getByRole('button', { name: 'Sketch', exact: true }).click();
-  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await createSketchOnCanvasPlane(page);
   const blank = await context(page);
   await page.getByRole('button', { name: 'Path', exact: true }).click();
   await page.getByRole('button', { name: '3-point Arc', exact: true }).click();
@@ -1361,8 +1467,7 @@ test('human mixed path drawing retains invalid points and commits one exact undo
 test('human sketch drawing and dimensions share undo and active-workflow protection with agents', async ({ page }) => {
   await prepare(page);
   await page.getByRole('button', { name: 'Design in CAD' }).click();
-  await page.getByRole('button', { name: 'Sketch', exact: true }).click();
-  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await createSketchOnCanvasPlane(page);
   await page.getByRole('button', { name: 'Rectangle', exact: true }).click();
   const canvas = page.getByLabel('Sketch drawing canvas');
   const box = await canvas.boundingBox();
@@ -1372,21 +1477,23 @@ test('human sketch drawing and dimensions share undo and active-workflow protect
   expect(current).toMatchObject({ workflowOpen: true });
   expect(await rawCall(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'rename-document', name: 'Interrupt drawing' }] })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
   await canvas.click({ position: { x: box.width * 0.6, y: box.height * 0.35 } });
-  await page.getByLabel('Width', { exact: false }).fill('53');
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByLabel('Dimension value', { exact: true }).fill('53');
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   current = await context(page);
   expect(current).toMatchObject({ workflowOpen: false });
   const features = await call(page, 'cad_read_features', { expectedVersion: current.version });
-  expect(features).toMatchObject({ items: [{ kind: 'sketch', profiles: [{ geometry: { kind: 'rectangle', width: '53' } }] }] });
+  expect(features).toMatchObject({ items: [{ kind: 'sketch', profiles: [{ geometry: { kind: 'rectangle', width: 53 }, constraints: [{ kind: 'dimension', quantity: 'width' }] }] }] });
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   current = await context(page);
   const undone = await call(page, 'cad_read_features', { expectedVersion: current.version });
-  expect(undone).not.toMatchObject({ items: [{ profiles: [{ geometry: { width: '53' } }] }] });
+  expect(undone).not.toMatchObject({ items: [{ profiles: [{ geometry: { width: 53 } }] }] });
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
-  await expect(page.locator('.cad-statusbar')).toContainText('Ready', { timeout: 60_000 });
+  const padded = await context(page);
+  await expect.poll(() => context(page), { timeout: 60_000 }).toMatchObject({ version: padded.version, buildState: 'ready', buildVersion: padded.version, diagnostics: [], workflowOpen: false });
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ dirty: false, savedVersion: expect.any(String) });
 });

@@ -5,6 +5,7 @@ import type { CadDocument, CadFeature } from '@/domain/cad/cadDocument';
 import { cadVisibleBodyIds, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadFeatureEditor } from './CadFeatureEditor';
 import { CadSession } from './cadSession';
+import { cadFeatureCandidateEdits } from './cadFeaturePreview';
 
 let root: Root; let container: HTMLDivElement;
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
@@ -26,15 +27,19 @@ async function mount(document: CadDocument) {
     const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot); const feature = snapshot.document.features.at(-1);
     if (!feature) throw new Error('Feature missing');
     return <CadFeatureEditor feature={feature} document={snapshot.document} isNew={false} currentBodyIds={cadVisibleBodyIds(snapshot.document.features)}
-      onApply={next => session.edit([{ kind: 'update-feature', feature: next }], snapshot.version)} onCancel={vi.fn()} onPendingChange={session.setWorkflowOpen} />;
+      onApply={(feature, parameters) => session.edit(cadFeatureCandidateEdits({ feature, parameters, isNew: false }), snapshot.version)} onCancel={vi.fn()} onPendingChange={session.setWorkflowOpen} />;
   }
   await act(async () => root.render(<Harness />)); return session;
 }
 async function editScalar(label: string, value: string) {
-  const input = [...container.querySelectorAll('label')].find(entry => entry.querySelector('span')?.childNodes[0]?.textContent === label)?.querySelector('input');
+  const trigger = container.querySelector<HTMLButtonElement>(`button[aria-label="Edit ${label} relation"]`); if (!trigger) throw new Error('Relation action missing');
+  await act(async () => trigger.click());
+  const input = document.querySelector<HTMLInputElement>(`input[aria-label="${label} expression"]`);
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
   if (!input || !setter) throw new Error('Field missing');
   await act(async () => { setter.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); });
+  const keep = [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Keep relation'), close = document.querySelector<HTMLButtonElement>(`button[aria-label="Close ${label} relation help"]`);
+  if (!keep || !close) throw new Error('Relation actions missing'); await act(async () => keep.click()); await act(async () => close.click());
 }
 async function apply() { const button = [...container.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Apply'); if (!button) throw new Error('Apply missing'); await act(async () => button.click()); }
 describe('editing consumed feature inputs', () => {
@@ -51,7 +56,10 @@ describe('editing consumed feature inputs', () => {
     if (!field) throw new Error('Body selector missing');
     expect(field.value).toBe('pad'); expect(field.selectedOptions[0].textContent).toBe('Pad (unavailable)'); expect(field.selectedOptions[0].disabled).toBe(true);
     expect(field.querySelector<HTMLOptionElement>('option[value="other"]')?.disabled).toBe(false);
-    expect(session.getSnapshot()).toBe(before); await editScalar('Name', 'Renamed feature'); await apply();
+    expect(session.getSnapshot()).toBe(before);
+    if (kind === 'transform') await editScalar('X', 'step / 2');
+    else { const transition = container.querySelector<HTMLSelectElement>('select[aria-label="Transition"]'); if (!transition) throw new Error('Transition missing'); await act(async () => { transition.value = 'ruled'; transition.dispatchEvent(new Event('change', { bubbles: true })); }); }
+    await apply();
     expect(session.getSnapshot().document.features.at(-1)).toMatchObject(kind === 'loft' ? { targetId: 'pad', suppressed: true } : { sourceId: 'pad', suppressed: true });
     await act(async () => { field.value = 'other'; field.dispatchEvent(new Event('change', { bubbles: true })); }); await apply();
     const updated = session.getSnapshot().document.features.at(-1); if (!updated) throw new Error('Updated feature missing');

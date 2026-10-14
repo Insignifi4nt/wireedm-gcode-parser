@@ -2,7 +2,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
-import { CompoundSketch, getOC, measureVolume, Plane, setOC, Sketch, type Shape3D } from 'replicad';
+import { getOC, measureVolume, Plane, setOC, Shape, Sketch, type Shape3D } from 'replicad';
 import type { CadDatumPlaneFeature, CadDocument, CadFeature, CadPlane, CadProfile, CadSketchFeature } from '../../../domain/cad/cadDocument';
 import { parseCadDocument } from '../../../domain/cad/cadSchema';
 import { buildCadKernelModel } from './cadKernelModel';
@@ -142,20 +142,24 @@ describe('exact world datum Pad and Revolve', () => {
   it('releases the native plane and sketches on a failed datum Pad while preserving the preceding solid', () => {
     const stockSketch: CadSketchFeature = { ...sketch('XY'), id: 'stock_sketch' };
     const documentInput = parseCadDocument(document([stockSketch, { ...pad(), id: 'stock', sketchId: 'stock_sketch' }, datum(), sketch(onDatum, outline, true), pad()]));
-    const original = Sketch.prototype.extrude; const deleted = vi.spyOn(Plane.prototype, 'delete'); const deletedSketches = vi.spyOn(Sketch.prototype, 'delete');
-    const compoundExtrude = CompoundSketch.prototype.extrude; let transient: Shape3D | undefined;
-    const produced = vi.spyOn(CompoundSketch.prototype, 'extrude').mockImplementation(function (this: CompoundSketch, ...args) {
-      transient = compoundExtrude.apply(this, args); return transient;
-    });
+    const oc = getOC(), original = oc.BRepPrimAPI_MakePrism.prototype.Shape;
+    const deleted = vi.spyOn(Plane.prototype, 'delete'); const deletedSketches = vi.spyOn(Sketch.prototype, 'delete');
+    const readNull = Object.getOwnPropertyDescriptor(Shape.prototype, 'isNull')?.get;
+    if (!readNull) throw new Error('Expected native shape status getter');
+    let transient: Shape3D | undefined;
     let calls = 0;
-    const extrude = vi.spyOn(Sketch.prototype, 'extrude').mockImplementation(function (this: Sketch, ...args) {
-      if (++calls === 2) throw new Error('Forced datum primitive failure'); return original.apply(this, args);
+    const produced = vi.spyOn(Shape.prototype, 'isNull', 'get').mockImplementation(function(this: Shape3D) {
+      if (calls === 2 && !transient) transient = this;
+      return readNull.call(this);
+    });
+    const extrude = vi.spyOn(oc.BRepPrimAPI_MakePrism.prototype, 'Shape').mockImplementation(function(this: InstanceType<typeof oc.BRepPrimAPI_MakePrism>) {
+      if (++calls === 3) throw new Error('Forced datum primitive failure'); return original.call(this);
     });
     const model = buildCadKernelModel(documentInput);
     try {
       expect(model.result.meshes.map(mesh => mesh.featureId)).toEqual(['stock']); expect(model.result.diagnostics[0]).toMatchObject({ featureId: 'solid', message: 'Forced datum primitive failure' });
       expect(deleted).toHaveBeenCalledTimes(2); expect(deletedSketches).toHaveBeenCalled(); expect(() => model.export('step')).toThrow('Fix the feature diagnostics');
-      expect(produced).toHaveBeenCalledTimes(1); const staged = transient; if (!staged) throw new Error('Missing staged region'); expect(() => staged.wrapped).toThrow();
+      expect(calls).toBe(3); const staged = transient; if (!staged) throw new Error('Missing staged region'); expect(() => staged.wrapped).toThrow();
     } finally { model.dispose(); extrude.mockRestore(); produced.mockRestore(); deleted.mockRestore(); deletedSketches.mockRestore(); }
   });
   it('releases an allocated native plane when reading its world origin fails', () => {

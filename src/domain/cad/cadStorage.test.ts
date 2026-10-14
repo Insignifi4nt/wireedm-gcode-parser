@@ -8,6 +8,8 @@ import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbench
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import type { CadDatumPlaneFeature, CadFeature, CadPocketFeature } from './cadDocument';
 import { createCadDocument, parseCadDocument } from './cadSchema';
+import { applyCadEdits } from './cadOperations';
+import { CAD_GEAR_V2_PLUGIN } from './plugins/cadPlugins';
 import { importCadDxfSketch } from './cadDxfImport';
 import { importCadDxfCurve } from './cadCurveDxf';
 import { cadDocumentPath, listCadDocuments, loadCadDocument, saveCadDocument, MAX_CAD_FILE_BYTES } from './cadStorage';
@@ -29,6 +31,46 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     await expect(saveCadDocument(adapter, { ...document, name: 'Stale' }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('changed in storage');
     expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(next.savedVersion);
     expect((await listCadDocuments(adapter)).entries).toMatchObject([{ id: 'cad_bracket', name: 'Edited' }]);
+  });
+  it('preserves explicit sketch dimensions and rejects invalid constraint revisions before storage writes', async () => {
+    const original = parseCadDocument({ ...createCadDocument('Dimensioned section', 'cad_dimensioned'), parameters: { width: 20 }, features: [
+      { id: 'sketch', kind: 'sketch', name: 'Section', suppressed: false, plane: 'XY', offset: 0, profiles: [
+        { id: 'profile', name: 'Plate', construction: false, geometry: { kind: 'rectangle', x: 0, y: 0, width: 'width', height: 10, cornerRadius: 0 } }
+      ] }
+    ] });
+    const document = applyCadEdits(original, [{ kind: 'add-sketch-dimension', sketchId: 'sketch', profileId: 'profile', constraint: { id: 'height', kind: 'dimension', quantity: 'height' } }]);
+    const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const exact = await adapter.readExactText?.(cadDocumentPath(document.id));
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(document);
+    const sketch = document.features[0]; if (sketch.kind !== 'sketch') throw new Error('Missing sketch');
+    const dimension = sketch.profiles[0].constraints?.[0]; if (!dimension) throw new Error('Missing dimension');
+    const invalid = { ...document, features: [{ ...sketch, profiles: [{ ...sketch.profiles[0], constraints: [
+      dimension, { ...dimension, id: 'other-height' }
+    ] }] }] };
+    await expect(saveCadDocument(adapter, invalid, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow();
+    expect(await adapter.readExactText?.(cadDocumentPath(document.id))).toBe(exact);
+    expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(saved.savedVersion);
+    expect(original.features[0]).not.toHaveProperty('profiles.0.constraints');
+  });
+  it('round trips named plugin dimensions, group moves and historical provenance without rewriting the pinned package', async () => {
+    const document = applyCadEdits(createCadDocument('Grouped gear', 'cad_grouped_gear'), [
+      { kind: 'add-feature', feature: { id: 'section', kind: 'sketch', name: 'Section', suppressed: false, plane: 'XY', offset: 0, profiles: [] } },
+      { kind: 'add-plugin-profile', sketchId: 'section', profileId: 'gear', name: 'Gear', package: CAD_GEAR_V2_PLUGIN, groupId: 'gear_group' },
+      { kind: 'set-parameter-group', group: { id: 'shared', name: 'Shared dimensions' } },
+      { kind: 'rename-parameter', name: 'p_gear_module', newName: 'gear_module' },
+      { kind: 'move-parameter', name: 'gear_module', groupId: 'shared' }
+    ]);
+    const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const loaded = (await loadCadDocument(adapter, document.id)).document;
+    expect(loaded).toEqual(document);
+    expect(loaded.parameterMetadata?.gear_module).toMatchObject({ groupId: 'shared', source: { kind: 'plugin', profileId: 'gear', inputName: 'module', packageVersion: '2.0.0' } });
+    const original = await adapter.readText(cadDocumentPath(document.id));
+    await expect(saveCadDocument(adapter, { ...loaded, parameterMetadata: { ...loaded.parameterMetadata,
+      gear_module: { source: { kind: 'manual' }, groupId: 'missing' } } }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('missing group');
+    expect(await adapter.readText(cadDocumentPath(document.id))).toBe(original);
+    const withoutFeature = applyCadEdits(loaded, [{ kind: 'delete-feature', featureId: 'section', cascade: true }]);
+    await saveCadDocument(adapter, withoutFeature, { expectedSavedVersion: saved.savedVersion });
+    expect((await loadCadDocument(adapter, document.id)).document.parameterMetadata).toEqual(document.parameterMetadata);
   });
   it('persists Sweep references, parameter expressions and exact Curve originals without writing an invalid revision', async () => {
     const text = '\uFEFF0\r\nSECTION\r\n2\r\nENTITIES\r\n0\r\nLINE\r\n10\r\n0\r\n20\r\n0\r\n11\r\n20\r\n21\r\n0\r\n0\r\nENDSEC\r\n0\r\nEOF\r\n';
@@ -149,6 +191,40 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     expect(reopened.features[1]).toMatchObject({ source: { text }, plane, profiles: imported.profiles });
     expect(reopened.features[2]).toMatchObject({ source: { text }, offset: 'height' });
     expect(reopened.features[3]).toEqual(loft);
+  });
+  it('retains datum Sweep sources and editable frame/length expressions, refusing invalid placement before writes', async () => {
+    const railText = '\uFEFF0\r\nSECTION\r\n2\r\nENTITIES\r\n0\r\nLINE\r\n10\r\n0\r\n20\r\n0\r\n11\r\n20\r\n21\r\n0\r\n0\r\nENDSEC\r\n0\r\nEOF\r\n';
+    const sectionText = railText.replace('LINE\r\n10', 'CIRCLE\r\n10').replace('11\r\n20\r\n21\r\n0', '40\r\n1');
+    const importedSection = importCadDxfSketch({ fileName: 'Section.dxf', text: sectionText, units: 'mm', sketchId: 'section' }).sketch;
+    const importedRail = importCadDxfCurve({ fileName: 'Rail.dxf', text: railText, units: 'mm', curveId: 'rail' }).curve;
+    const railPlane: CadDatumPlaneFeature = { kind: 'datum-plane', id: 'rail_plane', name: 'Rail plane', suppressed: false,
+      definition: { kind: 'world', basePlane: 'XY', origin: [37, -24, 11], rotation: ['railTilt', 'railPitch', 61] } };
+    const sectionPlane: CadDatumPlaneFeature = { ...railPlane, id: 'section_plane', name: 'Section plane',
+      definition: { ...railPlane.definition, basePlane: 'YZ', rotation: ['sectionTilt', 'sectionPitch', 61] } };
+    const section = { ...importedSection, plane: { kind: 'datum-plane' as const, featureId: 'section_plane' },
+      profiles: importedSection.profiles.map(profile => ({ ...profile, geometry: { kind: 'circle' as const, x: 0, y: 0, radius: 'radius' } })) };
+    const rail = { ...importedRail, plane: { kind: 'datum-plane' as const, featureId: 'rail_plane' },
+      segments: [{ kind: 'line' as const, start: [0, 0] as const, end: ['length', 0] as const }] };
+    const sweep: Extract<CadFeature, { kind: 'sweep' }> = { kind: 'sweep', id: 'sweep', name: 'Sweep', suppressed: false,
+      sketchId: 'section', curveId: 'rail', operation: 'new', targetId: null };
+    const document = parseCadDocument({ ...createCadDocument('Placed Sweep', 'cad_sweep_frames'),
+      parameters: { railTilt: 23, sectionTilt: 23, railPitch: -37, sectionPitch: -37, radius: 1, length: 20 }, features: [railPlane, sectionPlane, section, rail, sweep] });
+    const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const path = cadDocumentPath(document.id); const exact = await adapter.readExactText?.(path);
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(document);
+    const writes = vi.spyOn(adapter, 'writeText');
+    await expect(saveCadDocument(adapter, { ...document, parameters: { ...document.parameters, sectionPitch: -36.9 } },
+      { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('actual curve start');
+    expect(writes).not.toHaveBeenCalled();
+    expect(await adapter.readExactText?.(path)).toBe(exact);
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+    await saveCadDocument(adapter, { ...document, parameters: { railTilt: 90, sectionTilt: 90, railPitch: -20, sectionPitch: -20, radius: 2, length: 30 } },
+      { expectedSavedVersion: saved.savedVersion });
+    const reopened = (await loadCadDocument(adapter, document.id)).document;
+    expect(reopened.features[0]).toEqual(railPlane); expect(reopened.features[1]).toEqual(sectionPlane);
+    expect(reopened.features[2]).toMatchObject({ source: { text: sectionText }, profiles: [{ geometry: { radius: 'radius' } }] });
+    expect(reopened.features[3]).toMatchObject({ source: { text: railText }, segments: [{ end: ['length', 0] }] });
+    expect(reopened.features[4]).toEqual(sweep);
   });
   it('preserves an external edit made after the optimistic read and before the transaction captures its original', async () => {
     const document = parseCadDocument({ ...createCadDocument('Original', 'cad_external_race'), features: [{
@@ -319,6 +395,7 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     const document = createCadDocument('Backed up', 'cad_backup');
     await saveCadDocument(adapter, document, { expectedSavedVersion: null });
     const retained = [
+      { path: 'cad/plugins/user.gear/1.0.0.cad-plugin.json', text: '{ preserved plugin original }\r\n' },
       { path: 'cad/documents/cad_broken.cad.json', text: '\ufeff{broken original\r\n' },
       { path: 'CAD/recovery/part.cad.json', text: 'unindexed original\r\n' }
     ];

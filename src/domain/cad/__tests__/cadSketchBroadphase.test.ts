@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { CadError } from '../cadError';
 import { cadBoundaryCandidatePairs, cadBoundariesIntersect, cadProfileToEntities, validateCadSketchGeometry, type CadAnalyticBoundary, type ResolvedCadProfile } from '../cadSketchGeometry';
 import type { CadSketchFeature } from '../cadDocument';
+import { DEFAULT_CAD_GEAR } from '../cadGear';
+import { resolveConfiguredCadGear, resolveGeneratedCadGear } from '../cadGearGenerated';
+import { cadOrderedCurveEntities } from '../cadAnalyticSegments';
 
 const intersectingPairs = (edges: readonly CadAnalyticBoundary[], pairs: Iterable<readonly [number, number]>) => [...pairs]
   .filter(([i, j]) => cadBoundariesIntersect(edges[i], edges[j])).map(([i, j]) => `${i}:${j}`).sort();
@@ -15,6 +18,41 @@ function randomGenerator() {
   return () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 2 ** 32; };
 }
 describe('CAD analytic validation broadphase', () => {
+  it.each([false, true])('recognizes a full-turn arc without optional sweep metadata, clockwise=%s', clockwise => {
+    for (const endAngle of [0, (clockwise ? -1 : 1) * 2 * Math.PI]) {
+      const circleArc: CadAnalyticBoundary = { type: 'arc', layer: null, center: { x: 0, y: 0 }, radius: 5,
+        startAngle: 0, endAngle, clockwise, start: { x: 5, y: 0 }, end: { x: 5, y: 0 } };
+      const tangent: CadAnalyticBoundary = { type: 'line', layer: null, start: { x: -5, y: -2 }, end: { x: -5, y: 2 } };
+      expect(cadBoundariesIntersect(circleArc, tangent)).toBe(true);
+      expect([...cadBoundaryCandidatePairs([circleArc, tangent])]).toEqual([[0, 1]]);
+    }
+  });
+  it('keeps a practical 50-tooth gear sparse instead of treating every tooth arc as its entire support circle', () => {
+    const radius = resolveGeneratedCadGear(DEFAULT_CAD_GEAR, {}).cutterTipRadius;
+    const segments = resolveConfiguredCadGear({ ...DEFAULT_CAD_GEAR, teeth: 50, cutterTipRadius: radius }, {}).segments;
+    const edges = analytic([{ kind: 'path', segments }]);
+    expect(edges).toHaveLength(1900);
+    expect([...cadBoundaryCandidatePairs(edges)].length).toBeLessThan(edges.length * 8);
+    const sketch: CadSketchFeature = { id: 'gear', kind: 'sketch', name: 'Gear', suppressed: false, plane: 'XY', offset: 0,
+      profiles: [{ id: 'boundary', name: 'Gear', construction: false, geometry: { kind: 'path', segments } }] };
+    expect(() => validateCadSketchGeometry(sketch, {})).not.toThrow();
+  });
+  it.each([0, 999999900])('retains all exact contacts for wrapped, clockwise and major arcs at origin %s', offset => {
+    const arcs = cadOrderedCurveEntities([
+      { kind: 'arc', center: [offset, offset], radius: 10, startAngle: 350, sweep: 30 },
+      { kind: 'arc', center: [offset, offset], radius: 10, startAngle: 20, sweep: -30 },
+      { kind: 'arc', center: [offset, offset], radius: 10, startAngle: 120, sweep: 270 },
+      { kind: 'arc', center: [offset, offset], radius: 10, startAngle: 20, sweep: -270 },
+      { kind: 'arc', center: [offset + 5, offset], radius: 5, startAngle: 300, sweep: 120 }
+    ]);
+    const lines: CadAnalyticBoundary[] = [
+      { type: 'line', layer: null, start: { x: offset + 10 + 5e-8, y: offset - 2 }, end: { x: offset + 10 + 5e-8, y: offset + 2 } },
+      { type: 'line', layer: null, start: { x: offset - 15, y: offset + 10 }, end: { x: offset + 15, y: offset + 10 } },
+      { type: 'line', layer: null, start: { x: offset - 15, y: offset }, end: { x: offset + 15, y: offset } }
+    ];
+    const edges = [...arcs, ...lines];
+    expect(intersectingPairs(edges, cadBoundaryCandidatePairs(edges))).toEqual(intersectingPairs(edges, everyPair(edges.length)));
+  });
   it.each([0, 1e6, 999999900])('matches exhaustive exact predicates for mixed geometry around offset %s', offset => {
     const random = randomGenerator();
     const profiles: ResolvedCadProfile[] = [];

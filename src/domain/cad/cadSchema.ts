@@ -3,6 +3,8 @@ import { Value } from '@sinclair/typebox/value';
 import type { CadDiagnostic, CadDocument, CadFeature, CadProfile, CadSketchProfile } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
+import { CadPluginProfileSchema, resolveCadPluginProfile } from './plugins/cadPlugins';
+import { CadParameterGroupSchema, CadParameterMetadataSchema, CadParameterNameSchema, validateCadParameterMetadata } from './cadParameters';
 import { validateCadSketchGeometry } from './cadSketchGeometry';
 import { CadEdgeSelectionSchema, CadFaceQuerySchema, resolveCadEdgeSelection, validateCadShellOpening } from './cadTopology';
 import { CadSolidImportSourceSchema, MAX_CAD_DOCUMENT_BYTES, parseCadSolidImportSource } from './cadImports';
@@ -16,6 +18,7 @@ import { CadPocketFeatureSchema, resolveCadPocketInputs } from './cadPocket';
 import { CadFeatureBaseSchemaFields, CadIdentifierSchema, CadLabelSchema, CadNumberSchema, CadPathSegmentSchema, CadPlaneSchema, CadPoint2Schema, CadScalarSchema, CadSketchPlaneSchema } from './cadPrimitives';
 import { CadDatumPlaneFeatureSchema, resolveCadWorldDatum, resolveCadSketchPlacement, resolveCadExtrudeRevolvePlacement, type CadResolvedFrame } from './cadDatumPlanes';
 import { cadConsumedBodyIds, cadFeatureInputs, cadFeatureProducesBody } from './cadFeatureInputs';
+import { CadSketchDimensionConstraintSchema, validateCadSketchConstraints } from './cadSketchConstraints';
 export { cadConsumedBodyIds, cadFeatureDependencies, cadFeatureInputs, cadFeatureProducesBody, cadVisibleBodyIds, type CadBodyFeature } from './cadFeatureInputs';
 export { CadPathSegmentSchema } from './cadPrimitives';
 
@@ -30,6 +33,7 @@ const point3 = Type.Tuple([scalar, scalar, scalar]);
 const solidOperation = Type.Union([Type.Literal('new'), Type.Literal('join'), Type.Literal('cut')]);
 const base = CadFeatureBaseSchemaFields;
 export const CadProfileSchema = Type.Union([
+  CadPluginProfileSchema,
   Type.Object({ kind: Type.Literal('rectangle'), x: scalar, y: scalar, width: scalar, height: scalar, cornerRadius: scalar }, strict),
   Type.Object({ kind: Type.Literal('circle'), x: scalar, y: scalar, radius: scalar }, strict),
   Type.Object({ kind: Type.Literal('polygon'), points: Type.Array(point2, { minItems: 3, maxItems: 2048 }) }, strict),
@@ -37,7 +41,8 @@ export const CadProfileSchema = Type.Union([
   Type.Object({ kind: Type.Literal('slot'), x: scalar, y: scalar, length: scalar, width: scalar, angle: scalar }, strict)
 ]);
 export const CadSketchProfileSchema = Type.Object({ id: identifier, name: label, construction: Type.Boolean(),
-  role: Type.Optional(Type.Union([Type.Literal('outer'), Type.Literal('hole')])), geometry: CadProfileSchema }, strict);
+  role: Type.Optional(Type.Union([Type.Literal('outer'), Type.Literal('hole')])), geometry: CadProfileSchema,
+  constraints: Type.Optional(Type.Array(CadSketchDimensionConstraintSchema, { maxItems: 6 })) }, strict);
 export const CadFeatureSchema = Type.Union([
   CadDatumPlaneFeatureSchema,
   CadCurveFeatureSchema,
@@ -60,6 +65,8 @@ export const CadDocumentSchema = Type.Object({
   format: Type.Literal('wireedm-cad'), schemaVersion: Type.Literal(1),
   id: Type.String({ pattern: '^[a-z0-9][a-z0-9_-]{0,95}$' }), name: label, units: Type.Literal('mm'),
   parameters: Type.Record(Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]{0,63}$' }), number, { maxProperties: 128, additionalProperties: false }),
+  parameterGroups: Type.Optional(Type.Array(CadParameterGroupSchema, { maxItems: 64 })),
+  parameterMetadata: Type.Optional(Type.Record(CadParameterNameSchema, CadParameterMetadataSchema, { maxProperties: 128, additionalProperties: false })),
   features: Type.Array(CadFeatureSchema, { maxItems: 256 })
 }, strict);
 
@@ -90,6 +97,7 @@ export function parseCadDocument(value: unknown): CadDocument {
   if (!Value.Check(CadDocumentSchema, snapshot)) throw new CadError('invalid-document', 'CAD document must contain its own complete JSON fields.');
   if (new TextEncoder().encode(JSON.stringify(snapshot)).length > MAX_CAD_DOCUMENT_BYTES) throw new CadError('document-size', 'CAD documents must be at most 4 MiB including original imported files.');
   const document: CadDocument = snapshot;
+  validateCadParameterMetadata(document);
   if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/.test(document.id)) throw new CadError('invalid-document-id', 'Document ID is a reserved filesystem name.');
   for (const name of Object.keys(document.parameters)) {
     if (['__proto__', 'prototype', 'constructor'].includes(name)) throw new CadError('invalid-parameter', `Parameter name "${name}" is reserved.`);
@@ -149,10 +157,17 @@ export function parseCadDocument(value: unknown): CadDocument {
         e(feature.offset);
         if (feature.source) parseCadDxfImportSource(feature.source);
         const ids = new Set<string>();
+        const dimensionIds = new Set<string>();
         for (const profile of feature.profiles) {
           if (ids.has(profile.id)) throw new CadError('duplicate-id', `Duplicate profile ID "${profile.id}" in sketch "${feature.name}".`);
           ids.add(profile.id);
-          geometryBudget += profile.geometry.kind === 'polygon' ? profile.geometry.points.length : profile.geometry.kind === 'path' ? profile.geometry.segments.length : 8;
+          validateCadSketchConstraints(profile);
+          for (const constraint of profile.constraints ?? []) {
+            if (dimensionIds.has(constraint.id)) throw new CadError('duplicate-sketch-constraint', 'Sketch dimension IDs must be unique within their sketch.');
+            dimensionIds.add(constraint.id);
+          }
+          const geometry = profile.geometry.kind === 'plugin' ? resolveCadPluginProfile(profile.geometry, document.parameters) : profile.geometry;
+          geometryBudget += geometry.kind === 'polygon' ? geometry.points.length : geometry.kind === 'path' ? geometry.segments.length : 8;
         }
         if (geometryBudget > 8192) throw new CadError('geometry-limit', 'Document contains too many sketch edges.');
         validateCadSketchGeometry(feature, document.parameters);
@@ -181,7 +196,7 @@ export function parseCadDocument(value: unknown): CadDocument {
       }
       case 'sweep': {
         if (feature.operation === 'new' && feature.targetId !== null || feature.operation !== 'new' && feature.targetId === null) throw new CadError('invalid-operation', 'New bodies have no target; join and cut require a target body.');
-        if (!feature.suppressed) resolveCadSweepInputs(feature, previous, document.parameters);
+        if (!feature.suppressed) resolveCadSweepInputs(feature, previous, document.parameters, datumLookup);
         break;
       }
       case 'pocket': break; // Active region checks already supplied the operand budget.
@@ -232,13 +247,15 @@ export function createCadDocument(name = 'Untitled part', id = `cad_${crypto.ran
 }
 
 /** Shared contour default for drawing and declarative authoring: nesting is automatic. */
-export function createCadSketchProfile(input: { readonly geometry: CadProfile; readonly id?: string; readonly name?: string; readonly construction?: boolean }): CadSketchProfile {
-  const value = { id: input.id ?? `contour_${crypto.randomUUID()}`, name: input.name ?? 'Contour', construction: input.construction ?? false, geometry: input.geometry };
+export function createCadSketchProfile(input: { readonly geometry: CadProfile; readonly id?: string; readonly name?: string; readonly construction?: boolean; readonly constraints?: CadSketchProfile['constraints'] }): CadSketchProfile {
+  const value = { id: input.id ?? `contour_${crypto.randomUUID()}`, name: input.name ?? 'Contour', construction: input.construction ?? false, geometry: input.geometry,
+    ...(input.constraints ? { constraints: input.constraints } : {}) };
   if (!Value.Check(CadSketchProfileSchema, value)) throw new CadError('invalid-profile', 'Malformed sketch contour.');
   let profile: CadSketchProfile;
   try { profile = structuredClone(value); }
   catch { throw new CadError('invalid-profile', 'Sketch contours must contain portable declarative data.'); }
   if (!Value.Check(CadSketchProfileSchema, profile)) throw new CadError('invalid-profile', 'Sketch contours must contain their own complete fields.');
+  validateCadSketchConstraints(profile);
   function freeze(item: unknown): void {
     if (!item || typeof item !== 'object') return;
     Object.values(item).forEach(freeze); Object.freeze(item);

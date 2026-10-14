@@ -33,9 +33,9 @@ async function mount(initial = sectionDocument()) {
       positions: [], normals: [], indices: [], edges: [], faceGroups: [], edgeGroups: [], volume: 100, bounds: { min: [-10, -10, 0], max: [10, 10, 20] } }));
     return <CadWorkbench document={snapshot.document} documentVersion={snapshot.version} buildVersion={snapshot.version} buildState="ready"
       build={{ buildId: snapshot.version, meshes, durationMs: 0, diagnostics: [] }} dirty={snapshot.dirty} canUndo={snapshot.canUndo} canRedo={snapshot.canRedo}
-      onEdit={edit => session.edit([edit], snapshot.version)} onUndo={() => session.undo()} onRedo={() => session.redo()} onWorkflowChange={session.setWorkflowOpen}
+      onEditMany={edits => { session.edit(edits); }} onEdit={edit => session.edit([edit], snapshot.version)} onUndo={() => session.undo()} onRedo={() => session.redo()} onWorkflowChange={session.setWorkflowOpen}
       onBack={vi.fn()} onSave={async () => undefined} onOpenDocument={vi.fn()} onNewDocument={vi.fn()} onImportDocument={async () => undefined}
-      onExportDocument={vi.fn()} onExportSolid={async () => undefined} onExportDxf={async () => undefined} onSendToCam={async () => undefined} />;
+      onExportDocument={vi.fn()} onExportSolid={async () => undefined} onOpenDxfExport={async () => undefined} onSendToCam={async () => undefined} />;
   }
   await act(async () => root.render(<Harness />)); return session;
 }
@@ -146,13 +146,10 @@ describe('ordered loft section authoring', () => {
     await mount(sectionDocument([sketch('Base', 0), sketch('Top', 20), holeSketch, { ...guide, profiles: guide.profiles.map(profile => ({ ...profile, construction: true })) }, suppressed]));
     await click('Loft'); const field = select('Section 2');
     for (const id of ['Hole', 'Guide', 'Suppressed']) expect(field.querySelector<HTMLOptionElement>(`option[value="${id}"]`)?.disabled).toBe(true);
-    expect(field.querySelector('option[value="Hole"]')?.textContent).toContain('without holes'); expect(button('Add section').disabled).toBe(true);
+    expect(field.querySelector('option[value="Hole"]')?.textContent).toContain('without holes'); expect(ids()).toEqual(['Base', 'Top']);
   });
-  it('keeps candidates cached through draft name, transition and ordering changes', async () => {
+  it('keeps candidates cached through transition and ordering changes', async () => {
     const inspect = vi.spyOn(loftDomain, 'inspectCadLoftSketch'); await mount(); await click('Loft'); const calls = inspect.mock.calls.length;
-    const name = container.querySelector<HTMLInputElement>('.cad-property-form input'); if (!name) throw new Error('Name missing');
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set; if (!setter) throw new Error('Native setter missing');
-    await act(async () => { setter.call(name, 'Transition body'); name.dispatchEvent(new Event('input', { bubbles: true })); });
     await choose('Transition', 'ruled'); await click('Add section'); await click('Move section 3 up');
     expect(inspect.mock.calls).toHaveLength(calls);
   });
@@ -198,6 +195,6 @@ describe('ordered loft section authoring', () => {
     await click('Cancel');
     const initial = parseCadDocument({ ...sectionDocument(), features: [sketch('Base', 0), sketch('Top', 20),
       { id: 'loft', name: 'Loft 1', kind: 'loft', suppressed: false, sketchIds: ['Base', 'Top'], ruled: false, operation: 'new', targetId: null }, sketch('Later', 30)] });
-    await mount(initial); await click('Loft 1'); expect(select('Section 1').querySelector('option[value="Later"]')).toBeNull(); expect(button('Add section').disabled).toBe(true);
+    await mount(initial); await click('Loft 1'); expect(select('Section 1').querySelector('option[value="Later"]')).toBeNull(); expect(ids()).toEqual(['Base', 'Top']);
   });
 });

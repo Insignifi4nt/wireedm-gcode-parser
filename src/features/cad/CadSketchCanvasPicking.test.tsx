@@ -51,6 +51,18 @@ async function fixture(profiles: readonly CadSketchProfile[], overrides: Partial
 }
 
 describe('sketch canvas profile picking', () => {
+  it('keeps pointer focus on the canvas while allowing profile keyboard activation', async () => {
+    const h = await fixture([circle('circle', 0, 0, 10)]);
+    const group = container.querySelector('[aria-label="Select circle profile"]');
+    if (!group) throw new Error('Missing circle profile');
+    const event = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 });
+    await act(async () => group.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(h.svg);
+    await h.click(0, 0, group); expect(h.selected).toHaveBeenLastCalledWith('circle');
+    await act(async () => group.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    expect(h.selected).toHaveBeenCalledTimes(2);
+  });
   it('selects a tiny interior using raw coordinates even with grid snapping enabled', async () => {
     const profiles = [circle('tiny', 2, 2, 0.5)];
     const h = await fixture(profiles); await h.click(2, 2);
@@ -151,5 +163,41 @@ describe('sketch pan lifecycle', () => {
     h.capture.mockImplementationOnce(() => { throw new DOMException('Pointer no longer active', 'NotFoundError'); });
     await h.pointer('pointerdown'); await h.pointer('pointermove', { clientX: 510 });
     expect(h.svg.getAttribute('viewBox')).toBe(initial); expect(h.error).not.toHaveBeenCalled();
+  });
+});
+
+describe('sketch target context menus', () => {
+  it('targets the innermost analytic profile without selecting it or adding geometry', async () => {
+    const menu = vi.fn(); const h = await fixture([circle('outer', 0, 0, 30), circle('bore', 0, 0, 10)], { ...{ onContextMenu: menu } });
+    const coordinates = h.position(2, 3);
+    await h.pointer('pointerdown', coordinates); await h.pointer('pointerup', coordinates);
+    expect(menu).toHaveBeenCalledExactlyOnceWith({ ...coordinates, trigger: 'pointer', profileId: 'bore', pointMm: [2, 3] });
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.added).not.toHaveBeenCalled();
+  });
+  it('keeps right drag as pan and requires the initiating pointer for a stationary menu', async () => {
+    const menu = vi.fn(); const h = await fixture([circle('circle', 0, 0, 10)], { ...{ onContextMenu: menu } });
+    const original = h.svg.getAttribute('viewBox'); await h.pointer('pointerdown'); await h.pointer('pointerup', {}, 22);
+    expect(menu).not.toHaveBeenCalled(); await h.pointer('pointerup'); expect(menu).toHaveBeenCalledTimes(1); menu.mockClear();
+    await h.pointer('pointerdown'); await h.pointer('pointermove', { clientX: 510 }); expect(h.svg.getAttribute('viewBox')).not.toBe(original);
+    await h.pointer('pointermove', { clientX: 410 }); await h.pointer('pointerup'); expect(menu).not.toHaveBeenCalled();
+  });
+  it.each(['pointercancel', 'lostpointercapture', 'blur', 'document', 'cancelSignal', 'locked'] as const)('cancels stationary context ownership on %s', async cancellation => {
+    const menu = vi.fn(); const h = await fixture([circle('circle', 0, 0, 10)], { ...{ onContextMenu: menu } });
+    await h.pointer('pointerdown');
+    if (cancellation === 'blur') await act(async () => window.dispatchEvent(new Event('blur')));
+    else if (cancellation === 'document') await h.render({ sketch: { id: 'new_sketch', name: 'New', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [] } });
+    else if (cancellation === 'cancelSignal') await h.render({ cancelSignal: 1 });
+    else if (cancellation === 'locked') { await h.render({ interactionLocked: true }); await h.render({ interactionLocked: false }); }
+    else await h.pointer(cancellation);
+    await h.pointer('pointerup'); expect(menu).not.toHaveBeenCalled(); expect(h.added).not.toHaveBeenCalled();
+  });
+  it('supports profile keyboard menus, discards missing/invalid selection and respects workflow locks', async () => {
+    const menu = vi.fn(); const h = await fixture([circle('circle', 0, 0, 10), { ...circle('invalid', 0, 0, 1), geometry: { kind: 'circle', x: 0, y: 0, radius: 'missing_radius' } }], { selectedProfileId: 'circle', ...{ onContextMenu: menu } });
+    const key = async (key: string, shiftKey = false) => act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true })));
+    await key('ContextMenu'); expect(menu).toHaveBeenLastCalledWith({ clientX: 410, clientY: 320, trigger: 'keyboard', profileId: 'circle', pointMm: [0, 0] });
+    await key('F10', true); expect(menu).toHaveBeenCalledTimes(2);
+    await h.render({ selectedProfileId: 'missing' }); await key('ContextMenu'); expect(menu.mock.calls.at(-1)?.[0].profileId).toBeNull();
+    await h.render({ selectedProfileId: 'invalid' }); await key('ContextMenu'); expect(menu.mock.calls.at(-1)?.[0].profileId).toBeNull();
+    await h.render({ interactionLocked: true }); const count = menu.mock.calls.length; await key('ContextMenu'); await h.pointer('pointerdown'); await h.pointer('pointerup'); expect(menu).toHaveBeenCalledTimes(count);
   });
 });

@@ -2,10 +2,11 @@ import type { DxfEntity } from '@/domain/dxf/types';
 import { dxfUnitsFromInsunitsCode } from '@/domain/dxf/parseDxf';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
-import type { CadDocument } from './cadDocument';
+import type { CadDocument, CadSketchFeature } from './cadDocument';
 import { CadError } from './cadError';
 import { parseCadDocument } from './cadSchema';
 import { cadSketchToEntities } from './cadSketchGeometry';
+import { cadEntitiesToDxf } from './cadDxfExport';
 
 function entitiesForSketch(document: CadDocument, sketchId: string): DxfEntity[] {
   parseCadDocument(document);
@@ -19,11 +20,27 @@ function entitiesForSketch(document: CadDocument, sketchId: string): DxfEntity[]
 
 /** Sketch-local millimetres, independent of its XY/XZ/YZ display plane and offset. */
 export function cadSketchToCam(document: CadDocument, sketchId: string): PathPlanningDocument {
-  return cadEntitiesToCam(entitiesForSketch(document, sketchId));
+  const result = cadEntitiesToCam(entitiesForSketch(document, sketchId));
+  const sketch = document.features.find(feature => feature.id === sketchId);
+  if (sketch?.kind !== 'sketch') return result;
+  return appendPluginNotes(result, [sketch]);
+}
+
+function appendPluginNotes(result: PathPlanningDocument, sketches: readonly CadSketchFeature[]) {
+  const seen = new Set<string>();
+  for (const sketch of sketches) for (const profile of sketch.profiles) {
+    if (profile.construction || profile.geometry.kind !== 'plugin' || !profile.geometry.package.notes) continue;
+    const plugin = profile.geometry.package, key = `${plugin.id}@${plugin.version}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.diagnostics.push({ id: `cad_plugin_import_${seen.size}`, severity: 'warning', code: 'dxf-import-warning',
+      message: `${plugin.name} v${plugin.version}: ${plugin.notes}` });
+  }
+  return result;
 }
 
 /** Shared analytic handoff for sketches and validated exact-kernel planar sections. */
-export function cadEntitiesToCam(entities: readonly DxfEntity[]): PathPlanningDocument {
+export function cadEntitiesToCam(entities: readonly DxfEntity[], sourceDocument?: CadDocument): PathPlanningDocument {
   if (entities.length === 0 || entities.length > 8192 || entities.some(entity => entity.type === 'polyline' || entity.type === 'lwpolyline')) throw new CadError('cam-geometry', 'CAD handoff requires one to 8192 analytic line, arc or circle entities.');
   const units = dxfUnitsFromInsunitsCode(4);
   const result = createPathPlanningDocumentFromDxfEntities([...entities], { endpointTolerance: 1e-7, coincidenceEpsilon: 1e-9 }, {
@@ -31,24 +48,19 @@ export function cadEntitiesToCam(entities: readonly DxfEntity[]): PathPlanningDo
     appliedUnits: { label: units.label, scaleToMillimeters: 1, basis: 'dxf-declared', confirmed: true }
   });
   if (result.segments.length !== entities.length || result.diagnostics.some(diagnostic => diagnostic.severity === 'error') || result.contours.some(contour => !contour.closed)) throw new CadError('cam-geometry', 'Sketch could not form clean closed CAM contours without changing its analytic geometry.');
-  return result;
+  // A final-solid section may include modified plugin geometry. Preserve the active
+  // document's approximation notes rather than implying those curves became exact.
+  return sourceDocument ? appendPluginNotes(result, sourceDocument.features.flatMap(feature => feature.kind === 'sketch' && !feature.suppressed ? [feature] : [])) : result;
 }
 
 /** Portable ASCII DXF with an explicit millimetre unit declaration and exact analytic arcs. */
 export function cadSketchToDxf(document: CadDocument, sketchId: string): string {
   const entities = entitiesForSketch(document, sketchId);
-  const lines = ['0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', '4', '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES'];
-  const pair = (code: number, value: string | number) => lines.push(String(code), String(value));
-  for (const entity of entities) {
-    pair(0, entity.type.toUpperCase()); pair(8, entity.layer ?? 'CAD');
-    switch (entity.type) {
-      case 'line': pair(10, entity.start.x); pair(20, entity.start.y); pair(30, 0); pair(11, entity.end.x); pair(21, entity.end.y); pair(31, 0); break;
-      case 'circle': pair(10, entity.center.x); pair(20, entity.center.y); pair(30, 0); pair(40, entity.radius); break;
-      case 'arc': pair(10, entity.center.x); pair(20, entity.center.y); pair(30, 0); pair(40, entity.radius); pair(50, (entity.clockwise ? entity.endAngle : entity.startAngle) * 180 / Math.PI); pair(51, (entity.clockwise ? entity.startAngle : entity.endAngle) * 180 / Math.PI); break;
-      case 'polyline': case 'lwpolyline': throw new CadError('unsupported-entity', 'CAD exports analytic line, arc and circle entities.');
-      default: { const exhaustive: never = entity; throw exhaustive; }
-    }
-  }
-  lines.push('0', 'ENDSEC', '0', 'EOF');
-  return `${lines.join('\n')}\n`;
+  const sketch = document.features.find(feature => feature.id === sketchId);
+  const notes = sketch?.kind === 'sketch' ? sketch.profiles.flatMap(profile => {
+    if (profile.construction || profile.geometry.kind !== 'plugin') return [];
+    const plugin = profile.geometry.package;
+    return [`${plugin.id}@${plugin.version}: ${plugin.notes}`];
+  }) : [];
+  return cadEntitiesToDxf(entities, notes);
 }

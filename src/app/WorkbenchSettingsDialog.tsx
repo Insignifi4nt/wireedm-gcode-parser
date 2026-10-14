@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Database, RefreshCw, SlidersHorizontal, X } from 'lucide-react';
+import { Box, Database, RefreshCw, SlidersHorizontal, X } from 'lucide-react';
+import { CadSettingsPanel } from './CadSettingsPanel';
 
 import { useModalFocus } from '@/components/ui/useModalFocus';
 import { Button } from '@/components/ui/button';
@@ -15,7 +16,7 @@ import {
 } from './MachinePostSettingsPanel';
 
 type WorkbenchStatus = 'initializing' | 'ready' | 'connecting-storage' | 'error';
-export type WorkbenchSettingsSection = 'storage' | 'machine-output';
+export type WorkbenchSettingsSection = 'storage' | 'machine-output' | 'cad';
 
 interface WorkbenchSettingsDialogProps extends MachinePostSettingsActions {
   readonly recovery?: RecoveryExportControls | null;
@@ -75,6 +76,7 @@ export function WorkbenchSettingsDialog({
           <nav aria-label="Settings sections" className="grid gap-1 max-[720px]:flex max-[720px]:flex-wrap">
             <SectionButton active={activeSection === 'storage'} icon={<Database className="size-4" />} label="Storage" onClick={() => setActiveSection('storage')} />
             <SectionButton active={activeSection === 'machine-output'} icon={<SlidersHorizontal className="size-4" />} label="Machines & setups" onClick={() => setActiveSection('machine-output')} />
+            <SectionButton active={activeSection === 'cad'} icon={<Box className="size-4" />} label="CAD" onClick={() => setActiveSection('cad')} />
           </nav>
           <div className="mt-4 grid gap-2 text-[11px] max-[720px]:col-span-2 max-[720px]:mt-0 max-[720px]:flex max-[720px]:flex-wrap max-[720px]:gap-x-4">
             <p className="text-muted-foreground">Wire EDM Workbench {APP_VERSION}</p>
@@ -83,9 +85,9 @@ export function WorkbenchSettingsDialog({
           </div>
         </aside>
         <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-          <header className="border-b border-border p-4"><h2 className="text-base font-semibold">{activeSection === 'storage' ? 'Storage' : 'Machines & setups'}</h2></header>
+          <header className="border-b border-border p-4"><h2 className="text-base font-semibold">{activeSection === 'storage' ? 'Storage' : activeSection === 'cad' ? 'CAD' : 'Machines & setups'}</h2></header>
           <div className="work-region-scrollbar min-h-0 overflow-auto p-4">
-            {activeSection === 'storage' ? (
+            {activeSection === 'cad' ? <CadSettingsPanel /> : activeSection === 'storage' ? (
               <div className="grid gap-5 text-[11px]">
                 <section>
                   <h3 className="text-xs font-semibold">Connection</h3>

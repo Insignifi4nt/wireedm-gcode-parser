@@ -1,0 +1,53 @@
+# Join and Union material semantics — read-only audit
+
+The five existing additive families implement the same native set union. Containment is mathematically harmless and currently succeeds. Face contact can add material into one solid even though its Common has no solid volume. Edge/point contact and disjoint tools currently produce a valid compound containing separate solid components under one feature/body ID. The confirmed gap is that people and agents cannot distinguish these successful outcomes before encountering a downstream section limitation.
+
+No production code, tests, public documentation, server or browser state was changed for this audit. Native probes and their raw results are in `tmp/cad-join-investigation-20261014.ts`, `tmp/cad-join-investigation-20261014.json` and the separate `-identity.json` result. They use the project's pinned real OpenCascade/Replicad runtime, current domain validation and current native model, with exact section extraction and STEP export/reimport. These are worked investigations, not a new regression suite or certification of every possible Join.
+
+## Worked native behavior
+
+Every probe starts with a 20 × 20 × 20 mm stock cube spanning −10 to +10 on XYZ: 8,000 mm³. An unrelated 4 mm cube, 64 mm³, is retained in all scenarios. Target and tool are inspected before Fuse, Common and tool-minus-target are measured separately, and the fused shape's actual native solid count is inspected. Owned observation temporaries are disposed; operands remain usable before model commit. Caller document JSON is unchanged in every probe.
+
+| Family | Exact tool | Tool volume | Contained result | Face-contact result |
+| --- | --- | --- | --- | --- |
+| Pad Join | 4 × 4 × 4 mm prism | 64 mm³ | 8,000 mm³, one solid | 8,064 mm³, one solid |
+| Revolve Join | Radii 1–3 mm annulus, axial length 4 mm, full turn | 32π mm³ | 8,000 mm³, one solid | 8,000 + 32π mm³, one solid |
+| Ruled Loft Join | Equal 4 × 4 mm rectangular sections 4 mm apart | 64 mm³ | 8,000 mm³, one solid | 8,064 mm³, one solid |
+| Sweep Join | Radius 2 mm circle over a straight 4 mm rail | 16π mm³ | 8,000 mm³, one solid | 8,000 + 16π mm³, one solid |
+| Boolean Union | Independent 4 mm cube | 64 mm³ | 8,000 mm³, one solid | 8,064 mm³, one solid |
+
+The 28 cases cover containment, face contact, edge/tangent-line contact, point contact and disjoint placement in all five families, plus coincident target/tool boxes for Pad, Loft and Boolean. Every case succeeds without a feature diagnostic. Contained and coincident tools have no tool-minus-target solid. Every face-contact case has zero Common solid volume, a positive outside tool volume and one joined solid. Every edge/point/disjoint case contains two joined solid components; its volume includes the full tool material. The unrelated cube remains a separate body throughout.
+
+Successful sketch-based joins consume only the selected target; source sketches and the Sweep rail remain references. Boolean Union consumes target and tool. The resulting mesh/body is named and identified by the Join/Union feature. STEP reimport has two solids for single-solid joins and three for the compound joins, including the unrelated cube, with the independently expected total material. No source or installed package is rewritten.
+
+An XY section at Z=0 has one contour for contained results and the intersected face additions. Disjoint tools have separate closed contours. Every edge/tangent-line example rejects that section with the existing `open-section` message about touching/branching outlines. The Sweep point-contact example also touches the section at that height and rejects it; the other point examples are above the section, so it contains only the stock contour. This is a section validity boundary, not evidence that the successful native compound lost material.
+
+## Source, preview, UI and agent behavior
+
+`cadKernelModel.ts:183`, `:195`, `:207` and `:246` call `target.fuse(tool)` for Pad/Revolve, Loft, Sweep and Boolean respectively. `validateSolid` at `:41` accepts one or more individually positive-volume solids and a valid overall shape. `cadKernelSolids` deduplicates actual native solid identities; it does not infer a count from mesh groups or volume. The model consumes operands only after topology creation, meshing and budgets pass. Existing Model/Loft/Sweep suites already cover ordinary overlapping joins, exact volume, source reuse and interrupted Fuse ownership; they do not explain containment or compound results to a caller.
+
+`cadFeaturePreview.ts:78` treats every diagnostic-free native build as ready. `CadFeatureEditor.tsx` therefore shows its normal “Preview · Apply to keep” state and permits Apply. The editor labels the operation “Join to body”; `cadFieldHelp.ts` says Join adds material but does not explain why an entirely contained tool can produce an unchanged outline. The selected-feature summary shows volume without native component count. `CadBuildResult` has only failure diagnostics and no nonblocking result facts; `publishBuild` treats any diagnostic as an error. Adding an informational message to the existing diagnostic array would reject the live candidate and block export and sections.
+
+`cad_build` returns one body row per visible feature, with total volume, bounds and preview face/edge counts. It exposes neither native solid-component count nor containment. Thus an agent sees one joined body with no diagnostics for an edge-touching compound. `cad_inspect_section` subsequently gives the actionable touching/branching error. A body-row count is not a physical-solid count. Internal `instances` is also unsuitable: it is an expanded-operation work budget, and a contained Join increments it although the final shape still has one solid.
+
+The active-parameter native cache must continue including all geometric Join/tool inputs. A currently contained parametric tool can grow outside the stock later. Current active-usage collection and conservative feature definitions retain those dependencies; an unchanged visible result does not authorize dropping them from the native model key.
+
+## Official CAD references
+
+Onshape's Extrude documentation chooses additive merge scope from touching/intersecting parts and errors when an additive merge scope is absent. Its Boolean documentation also requires intersecting parts. These support making intended merge scope explicit; they do not specify enough to claim a particular Onshape behavior for a wholly nested tool. Our currently accepted disjoint compounds are a behavioral difference to disclose rather than silently rewrite. [Onshape Extrude](https://cad.onshape.com/help/Content/PartStudio/extrude.htm), [Onshape Boolean](https://cad.onshape.com/help/Content/PartStudio/boolean.htm).
+
+OpenCascade's primary algorithm guide distinguishes face contact, which Fuse resolves into one solid with an empty solid Common, from edge/vertex contact, which retains two solids sharing the contact entity. It also treats complete containment as an interference. This matches the pinned native probes. The vendor-owned Wiki is marked deprecated and its replacement overview URL was unavailable during research, so this is algorithm context, not a claim about the newest kernel release. [OpenCascade Boolean algorithm, cases 20–22](https://github.com/Open-Cascade-SAS/OCCT/wiki/boolean_operations#case-20-two-solids-that-have-overlapping-faces).
+
+SOLIDWORKS documents zero-thickness edge/vertex connections as unsuitable for a single solid and offers a multibody result as one remedy. That is useful UX guidance. It does not make our separately closed, native-valid compound solids invalid merely because they share a point or edge. [SOLIDWORKS zero-thickness geometry](https://help.solidworks.com/2025/english/SolidWorks/sldworks/hide_non_manifold.htm?verRedirect=1).
+
+## Smallest safe shared improvement
+
+First expose an accurate `solidCount` on the existing build/mesh result, obtained from the solid enumeration already performed by the common validation/commit seam. Keep it a derived, bounded result fact, never a saved geometry input, instance count or blocking diagnostic. The existing compact selected-body summary and preview status can say “2 solid components”; `cad_build` can expose the same integer. That covers all five families, patterns and imported compound bodies without additional Boolean work, new feature kinds or new interaction handles. Pair it with one shared Join/Union help explanation: a contained tool preserves material and its parametric history; face-sharing or overlapping additions may become one solid; edge/point/disjoint additions may remain multiple components. Use New body when separate body identities are intended. Preserve current acceptance and saved definitions.
+
+A dynamic containment statement requires stronger evidence. Whole-target volume differences can cancel or lose a small addition at large scale; equal bounds or mesh arrays also cannot prove containment. A second probe run without any observation Common/Cut operation showed that even wholly contained/coincident unions return fresh native solid identities in every family, so `TopoDS_Shape.IsEqual` cannot establish unchanged material cheaply in this path. Do not label a result “no material added” from those shortcuts.
+
+If exact live containment feedback remains necessary, use one shared optional union-effect assessment based on owned `tool.cut(target)` material, measuring each component at its actual native tolerance through a lower-level shared evidence primitive. Empty resolved outside material can explain containment; unresolved precision must remain unknown. It must borrow both inputs, release its temporary, preserve successful Fuse ownership, and publish a nonblocking result fact rather than an error. Measure its cost on a realistic complex tool before running it for every preview. The existing Cut acceptance wrapper must not be reused: it requires positive Common material and would incorrectly reject every legitimate face-contact Join above. No new fixed epsilon or tolerance adjustment is justified.
+
+If a future product decision requires one physically connected solid for ordinary Join, that is a separate saved-history compatibility change. It needs per-tool-component reasoning for multi-region tools and pre-existing compound targets; a whole-result count compared with target count can miss one new detached component when another tool component simultaneously merges old components. It must not be introduced implicitly as part of an informational UI repair.
+
+The report is ready for root's decision. Production implementation remains deferred as requested; overall CAD hardening is still active.

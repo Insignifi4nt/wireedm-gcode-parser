@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CadCurveFeature, CadDatumPlaneFeature, CadFeature, CadPlane, CadProfile, CadSketchFeature } from '@/domain/cad/cadDocument';
 import { resolveCadWorldDatum, cadFramePointToWorld } from '@/domain/cad/cadDatumPlanes';
-import { cadReferenceFeatureIds, cadProfileReferenceGeometry, MAX_CAD_REFERENCE_DISPLAY_SEGMENTS, prepareCadViewportReferences, selectCadViewportReferences } from './cadViewportReferences';
+import { CAD_PRINCIPAL_PLANE_REFERENCES, cadReferenceFeatureIds, cadReferencePlanes, cadProfileReferenceGeometry, MAX_CAD_REFERENCE_DISPLAY_SEGMENTS, prepareCadViewportReferences, selectCadViewportReferences } from './cadViewportReferences';
 
 const sketch = (id = 'sketch', plane: CadPlane = 'XY', geometry: CadProfile = { kind: 'circle', x: 2, y: 3, radius: 1 }): CadSketchFeature => ({ id, name: id, kind: 'sketch', plane, offset: 'lift', suppressed: false,
   profiles: [{ id: 'profile', name: 'Profile', construction: false, geometry }] });
@@ -9,6 +9,17 @@ const curve: CadCurveFeature = { id: 'rail', name: 'Rail', kind: 'curve', plane:
 const pad: CadFeature = { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false, sketchId: 'section', distance: 5, symmetric: false, operation: 'new', targetId: null };
 
 describe('datum reference geometry and visibility', () => {
+  it('keeps principal planes at the exact world origin and separate from real features with the same names', () => {
+    const features = [{ ...sketch('XY'), offset: 0 }], references = [...CAD_PRINCIPAL_PLANE_REFERENCES, ...prepareCadViewportReferences(features, {})];
+    expect(cadReferenceFeatureIds(references)).toEqual(['XY']); expect(cadReferencePlanes(references)).toEqual(['XY', 'XZ', 'YZ']);
+    for (const [index, normalAxis] of [2, 1, 0].entries()) {
+      const plane = CAD_PRINCIPAL_PLANE_REFERENCES[index]; expect(plane.featureId).toBeNull();
+      expect(plane.planePatch).toHaveLength(18); expect(Object.isFrozen(plane.planePatch)).toBe(true);
+      expect(plane.planePatch?.filter((_, coordinate) => coordinate % 3 === normalAxis).every(value => value === 0)).toBe(true);
+      const axes = [0, 1, 2].filter(axis => axis !== normalAxis);
+      for (const axis of axes) expect(new Set(plane.planePatch?.filter((_, coordinate) => coordinate % 3 === axis))).toEqual(new Set([-12.5, 12.5]));
+    }
+  });
   const datum: CadDatumPlaneFeature = { id: 'mount', name: 'Mount', kind: 'datum-plane', suppressed: false, definition: { kind: 'world', basePlane: 'XZ', origin: [10, 20, 30], rotation: [30, 45, 10] } };
   const section = { ...sketch('section'), plane: { kind: 'datum-plane', featureId: 'mount' } as const, offset: 4 };
   it('places tilted contours analytically, retains exact source data and bounded glyphs', () => {

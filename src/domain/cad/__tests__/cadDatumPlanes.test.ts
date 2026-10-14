@@ -463,16 +463,6 @@ describe('datum document history, measurement and native support guards', () => 
     const principal = { ...sketch, id: 'principal', plane: 'YZ' as const };
     const consumers: readonly CadFeature[] = [
       {
-        kind: 'sweep',
-        id: 'operation',
-        name: 'Sweep',
-        suppressed: false,
-        sketchId: 'principal',
-        curveId: 'rail',
-        operation: 'new',
-        targetId: null,
-      },
-      {
         kind: 'pocket',
         id: 'operation',
         name: 'Pocket',

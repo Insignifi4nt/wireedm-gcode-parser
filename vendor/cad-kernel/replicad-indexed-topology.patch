@@ -1,0 +1,130 @@
+--- a/packages/replicad-opencascadejs/build-config/wrappers/mesh-extractor.cpp
++++ b/packages/replicad-opencascadejs/build-config/wrappers/mesh-extractor.cpp
+@@ -1,3 +1,4 @@
++#include <TopTools_IndexedMapOfShape.hxx>
+ // Face-triangulation extractor used by Replicad's render path.
+ //
+ // `ReplicadMeshExtractor::extract` meshes the shape, walks every triangulated
+@@ -19,7 +20,8 @@
+ class ReplicadMeshData;
+ inline ReplicadMeshData ReplicadExtractFaceMesh(
+   const TopoDS_Shape& shape,
+-  bool skipNormals);
++  bool skipNormals,
++  bool indexedTopology);
+ 
+ inline int ReplicadConfigureThreadPool() {
+ #if defined(__EMSCRIPTEN_PTHREADS__)
+@@ -80,13 +82,17 @@
+ 
+   friend ReplicadMeshData ReplicadExtractFaceMesh(
+     const TopoDS_Shape&,
++    bool,
+     bool);
+ };
+ 
+ inline ReplicadMeshData ReplicadExtractFaceMesh(
+   const TopoDS_Shape& shape,
+-  bool skipNormals
++  bool skipNormals,
++  bool indexedTopology = false
+ ) {
++  TopTools_IndexedMapOfShape topology;
++  if (indexedTopology) for (TopExp_Explorer it(shape, TopAbs_FACE); it.More(); it.Next()) topology.Add(it.Current());
+   int totalNodes = 0;
+   int totalTriangles = 0;
+   int totalFaces = 0;
+@@ -201,7 +207,7 @@
+     result.faceGroupsPtr_[faceGroupOffset] = faceTriangleStart;
+     result.faceGroupsPtr_[faceGroupOffset + 1] = triangleOffset - faceTriangleStart;
+     result.faceGroupsPtr_[faceGroupOffset + 2] =
+-      ReplicadShapeHashCode(face, ReplicadShapeHashUpperBound);
++      indexedTopology ? topology.FindIndex(face) : ReplicadShapeHashCode(face, ReplicadShapeHashUpperBound);
+     faceGroupOffset += 3;
+     vertexOffset += nodeCount;
+   }
+@@ -236,4 +242,13 @@
+     mesh(shape, tolerance, angularTolerance);
+     return ReplicadExtractFaceMesh(shape, skipNormals);
+   }
++  static ReplicadMeshData extractWithTopologyIndices(
++    const TopoDS_Shape& shape,
++    double tolerance,
++    double angularTolerance,
++    bool skipNormals
++  ) {
++    mesh(shape, tolerance, angularTolerance);
++    return ReplicadExtractFaceMesh(shape, skipNormals, true);
++  }
+ };
+--- a/packages/replicad-opencascadejs/build-config/wrappers/edge-mesh-extractor.cpp
++++ b/packages/replicad-opencascadejs/build-config/wrappers/edge-mesh-extractor.cpp
+@@ -1,3 +1,4 @@
++#include <TopTools_IndexedMapOfShape.hxx>
+ // Edge-polyline extractor used by Replicad's wireframe rendering path.
+ //
+ // It emits packed line soup for bulk upload/read:
+@@ -19,7 +20,8 @@
+ inline ReplicadEdgeMeshData ReplicadExtractEdgeMesh(
+   const TopoDS_Shape& shape,
+   double tolerance,
+-  double angularTolerance);
++  double angularTolerance,
++  bool indexedTopology);
+ 
+ class ReplicadEdgeMeshData {
+ public:
+@@ -54,7 +56,8 @@
+   friend ReplicadEdgeMeshData ReplicadExtractEdgeMesh(
+     const TopoDS_Shape&,
+     double,
+-    double);
++    double,
++    bool);
+ };
+ 
+ inline void ReplicadEnsureEdgeMesh(
+@@ -131,8 +134,11 @@
+ inline ReplicadEdgeMeshData ReplicadExtractEdgeMesh(
+   const TopoDS_Shape& shape,
+   double tolerance,
+-  double angularTolerance
++  double angularTolerance,
++  bool indexedTopology = false
+ ) {
++  TopTools_IndexedMapOfShape topology;
++  if (indexedTopology) for (TopExp_Explorer it(shape, TopAbs_EDGE); it.More(); it.Next()) topology.Add(it.Current());
+   ReplicadEnsureEdgeMesh(shape, tolerance, angularTolerance);
+   int totalSegments = 0;
+   int totalEdges = 0;
+@@ -224,7 +230,7 @@
+       result.edgeGroupsPtr_[groupOffset++] = lineStart;
+       result.edgeGroupsPtr_[groupOffset++] = (lineOffset / 3) - lineStart;
+       result.edgeGroupsPtr_[groupOffset++] =
+-        ReplicadShapeHashCode(edge, ReplicadShapeHashUpperBound);
++        indexedTopology ? topology.FindIndex(edge) : ReplicadShapeHashCode(edge, ReplicadShapeHashUpperBound);
+     });
+ 
+   return result;
+@@ -242,4 +248,11 @@
+       tolerance,
+       angularTolerance);
+   }
++  static ReplicadEdgeMeshData extractWithTopologyIndices(
++    const TopoDS_Shape& shape,
++    double tolerance,
++    double angularTolerance
++  ) {
++    return ReplicadExtractEdgeMesh(shape, tolerance, angularTolerance, true);
++  }
+ };
+--- a/packages/replicad-opencascadejs/build-config/custom_build_single.yml
++++ b/packages/replicad-opencascadejs/build-config/custom_build_single.yml
+@@ -12,6 +12,7 @@
+   - symbol: TColStd_Array1OfReal
+   - symbol: Poly_Array1OfTriangle
+   - symbol: Standard_Transient
++  - symbol: NCollection_BaseMap
+   - symbol: Standard_Failure
+   - symbol: Precision
+   - symbol: Interface_Static

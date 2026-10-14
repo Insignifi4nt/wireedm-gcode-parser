@@ -5,10 +5,7 @@ import type { CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
 import { createCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from './cadSession';
 import { CadWorkbench, type CadWorkbenchProps } from './CadWorkbench';
-import type { CadViewportEmptyAction } from './CadViewport';
-
-vi.mock('./CadViewport', () => ({ CadViewport: ({ emptyAction, interactionLocked }: { emptyAction: CadViewportEmptyAction | null; interactionLocked: boolean }) =>
-  <div className="cad-empty-scene">{emptyAction && <button disabled={interactionLocked} title={emptyAction.description} onClick={emptyAction.onAction}>{emptyAction.label}</button>}</div> }));
+vi.mock('./CadViewport', () => ({ CadViewport: () => <div aria-label="3D model viewport" /> }));
 let root: Root; let container: HTMLDivElement; let session: CadSession;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
@@ -23,28 +20,27 @@ async function mount(document = createCadDocument(), buildState: CadWorkbenchPro
   function Harness() {
     const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
     return <CadWorkbench document={snapshot.document} documentVersion={snapshot.version} buildVersion={null} build={null} buildState={buildState} storageBusy={storageBusy}
-      dirty={snapshot.dirty} canUndo={snapshot.canUndo} canRedo={snapshot.canRedo} onEdit={edit => { session.edit([edit]); }}
+      dirty={snapshot.dirty} canUndo={snapshot.canUndo} canRedo={snapshot.canRedo} onEditMany={edits => { session.edit(edits); }} onEdit={edit => { session.edit([edit]); }}
       onWorkflowChange={session.setWorkflowOpen} onUndo={session.undo} onRedo={session.redo} onBack={vi.fn()} onSave={async () => undefined}
       onOpenDocument={vi.fn()} onNewDocument={vi.fn()} onImportDocument={async () => undefined} onExportDocument={vi.fn()}
-      onExportSolid={async () => undefined} onExportDxf={async () => undefined} onSendToCam={async () => undefined} />;
+      onExportSolid={async () => undefined} onOpenDxfExport={async () => undefined} onSendToCam={async () => undefined} />;
   }
   await act(async () => root.render(<Harness />));
 }
-function action() { const button = container.querySelector<HTMLButtonElement>('.cad-empty-scene button'); if (!button) throw new Error('Empty scene action unavailable'); return button; }
 async function click(button: HTMLButtonElement) { await act(async () => button.click()); }
-function namedButton(label: string) { const button = [...container.querySelectorAll('button')].find(entry => entry.textContent?.trim() === label); if (!button) throw new Error(`Missing ${label}`); return button; }
+function namedButton(label: string) { const button = [...container.querySelectorAll('button')].find(entry => entry.textContent?.trim() === label || entry.getAttribute('aria-label') === label); if (!button) throw new Error(`Missing ${label}`); return button; }
 
-describe('truthful empty CAD scene actions', () => {
-  it('starts a provisional sketch only for a genuinely blank document', async () => {
-    await mount(); const before = session.getSnapshot(); expect(action().textContent).toBe('Create sketch'); await click(action());
-    expect(container.querySelector('.cad-property-title')?.textContent).toBe('Create Sketch');
+describe('CAD tools without an evaluated solid', () => {
+  it('requests an explicit sketch plane without inserting provisional geometry or history', async () => {
+    await mount(); const before = session.getSnapshot(); await click(namedButton('Sketch'));
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('Select a plane in the design area');
     expect(session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: false, workflowOpen: true });
-    await click(namedButton('Cancel')); expect(session.getSnapshot()).toEqual(before);
+    await click(namedButton('Cancel plane selection')); expect(session.getSnapshot()).toEqual(before);
   });
 
-  it('uses the actual closed profile sketch even while an unrelated empty sketch is selected', async () => {
+  it('starts Pad from the explicitly selected closed source while preserving an unrelated empty sketch', async () => {
     await mount({ ...createCadDocument(), features: [outline, emptySketch] }); const before = session.getSnapshot();
-    await click(namedButton('Empty sketch')); expect(action().textContent).toBe('Pad sketch'); expect(action().title).toContain('Outline'); await click(action());
+    await click(namedButton('Empty sketch')); await click(namedButton('Select Outline in history')); await click(namedButton('Pad / Pocket'));
     const source = [...container.querySelectorAll('select')].find(element => element.closest('label')?.textContent?.startsWith('Profile sketch'));
     expect(source?.value).toBe('outline'); expect(container.querySelector('.cad-property-title')?.textContent).toBe('Create Pad / Pocket');
     expect(session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: false, workflowOpen: true });
@@ -54,22 +50,25 @@ describe('truthful empty CAD scene actions', () => {
   it.each(['empty', 'construction-only'])('opens an existing %s sketch without creating another feature', async kind => {
     const drawingSketch = kind === 'empty' ? emptySketch : { ...emptySketch, profiles: outline.profiles.map(profile => ({ ...profile, construction: true })) };
     await mount({ ...createCadDocument(), features: [{ ...outline, suppressed: true }, drawingSketch] }); const before = session.getSnapshot();
-    expect(action().textContent).toBe('Open sketch'); expect(action().title).toContain('Empty sketch'); await click(action());
+    await act(async () => namedButton('Select Empty sketch in history').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
     expect(container.querySelector('[aria-label="Sketch drawing canvas"]')).not.toBeNull(); expect(namedButton('Finish sketch')).toBeDefined(); expect(session.getSnapshot()).toBe(before);
-    await click(namedButton('Finish sketch')); expect(action().textContent).toBe('Open sketch');
+    await click(namedButton('Finish sketch')); expect(session.getSnapshot()).toBe(before);
   });
 
-  it.each(['building', 'error'] satisfies CadWorkbenchProps['buildState'][])('leaves active solid %s guidance to the build status and diagnostics', async buildState => {
+  it.each(['building', 'error'] satisfies CadWorkbenchProps['buildState'][])('starts and cancels a plane request while solid geometry is %s without editing its valid history', async buildState => {
     const document: CadDocument = { ...createCadDocument(), features: [outline, { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false, sketchId: outline.id, distance: 5, symmetric: false, operation: 'new', targetId: null }] };
-    await mount(document, buildState); expect(container.querySelector('.cad-empty-scene button')).toBeNull(); expect(session.getSnapshot().document.features).toHaveLength(2);
+    await mount(document, buildState); const before = session.getSnapshot(); await click(namedButton('Sketch'));
+    expect(session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: true });
+    await click(namedButton('Cancel plane selection')); expect(session.getSnapshot()).toEqual(before);
   });
 
-  it('does not bypass pending fields or storage work through the empty scene action', async () => {
+  it('keeps toolbar creation blocked by pending fields and storage work', async () => {
     await mount({ ...createCadDocument(), features: [outline] }); const before = session.getSnapshot();
     const name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]'); if (!name) throw new Error('Part name missing');
     await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'Pending name'); name.dispatchEvent(new Event('input', { bubbles: true })); });
-    expect(action().disabled).toBe(true); await click(action()); expect(session.getSnapshot().document).toBe(before.document); expect(session.getSnapshot().workflowOpen).toBe(true);
-    await act(async () => name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))); expect(action().disabled).toBe(false);
-    await act(async () => root.render(null)); await mount({ ...createCadDocument(), features: [outline] }, 'idle', true); expect(action().disabled).toBe(true);
+    expect(namedButton('Sketch').disabled).toBe(true); expect(namedButton('Pad / Pocket').disabled).toBe(true); await click(namedButton('Sketch'));
+    expect(session.getSnapshot().document).toBe(before.document); expect(session.getSnapshot().workflowOpen).toBe(true);
+    await act(async () => name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))); expect(namedButton('Sketch').disabled).toBe(false);
+    await act(async () => root.render(null)); await mount({ ...createCadDocument(), features: [outline] }, 'idle', true); expect(namedButton('Sketch').disabled).toBe(true); expect(namedButton('Pad / Pocket').disabled).toBe(true);
   });
 });

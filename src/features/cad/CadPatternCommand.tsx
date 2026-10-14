@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Copy, RotateCw } from 'lucide-react';
 import type { CadFeature } from '@/domain/cad/cadDocument';
+import { cadToolbarPopupPosition } from './cadToolbarPopupPosition';
 
 type PatternKind = Extract<CadFeature['kind'], 'linear-pattern' | 'circular-pattern'>;
 
@@ -18,8 +19,9 @@ export function CadPatternCommand({ disabled, onChoose }: { disabled: boolean; o
   useLayoutEffect(() => {
     if (!open || disabled) return;
     const rectangle = trigger.current?.getBoundingClientRect();
-    if (!rectangle) return;
-    setPosition({ left: Math.max(4, Math.min(rectangle.left, window.innerWidth - 180)), top: rectangle.bottom + 5 });
+    const menuRectangle = popup.current?.getBoundingClientRect();
+    if (!rectangle || !menuRectangle) return;
+    setPosition(cadToolbarPopupPosition({ trigger: rectangle, popup: menuRectangle, viewport: { width: window.innerWidth, height: window.innerHeight } }));
     const commands = popup.current?.querySelectorAll<HTMLButtonElement>('button');
     (initialFocus.current === 'last' ? commands?.[commands.length - 1] : commands?.[0])?.focus();
     const outside = (event: PointerEvent) => {

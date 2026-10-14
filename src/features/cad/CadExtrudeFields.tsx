@@ -4,6 +4,8 @@ import type { CadPocketDirection, CadPocketFeature } from '@/domain/cad/cadPocke
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { CadPlacementNormal } from './CadPlacementNormal';
 import { ScalarField, SelectField } from './CadFields';
+import { cadSketchSupportsThroughAll } from '@/domain/cad/cadSketchSources';
+import { CadSketchSourceField } from './CadSketchSourceField';
 
 type DistanceFeature = Extract<CadFeature, { kind: 'extrude' }>;
 type ExtrudeFeature = DistanceFeature | CadPocketFeature;
@@ -32,6 +34,8 @@ export function CadExtrudeFields({ feature, initialFeature, document, sketches, 
   const operation = feature.kind === 'pocket' ? 'cut' : feature.operation;
   const base = { id: feature.id, name: feature.name, suppressed: feature.suppressed, sketchId: feature.sketchId };
   const targetId = feature.targetId ?? '';
+  const sketch = document.features.find(entry => entry.id === feature.sketchId && entry.kind === 'sketch');
+  const throughAllUnsupported = sketch?.kind === 'sketch' && !cadSketchSupportsThroughAll(sketch);
   const availableOptions = (options: readonly Option[], value: string, noun: string): readonly Option[] => options.some(option => option.value === value) ? options
     : [{ value, label: value ? `${document.features.find(entry => entry.id === value)?.name ?? noun} (unavailable)` : `Choose ${noun.toLowerCase()}`, disabled: true }, ...options];
   const toDistance = (nextOperation: DistanceFeature['operation']) => {
@@ -52,7 +56,6 @@ export function CadExtrudeFields({ feature, initialFeature, document, sketches, 
     }
     onChange({ ...base, kind: 'pocket', targetId: feature.targetId || bodies.at(-1)?.value || '', extent: { kind: 'through-all', direction } });
   };
-  const sketch = document.features.find(entry => entry.id === feature.sketchId && entry.kind === 'sketch');
   const normal = sketch?.kind === 'sketch' && typeof sketch.plane !== 'string' ? ['Along plane normal (+n)', 'Opposite plane normal (−n)'] : sketch?.kind === 'sketch' && sketch.plane === 'XZ' ? ['−Y', '+Y'] : sketch?.kind === 'sketch' && sketch.plane === 'YZ' ? ['+X', '−X'] : ['+Z', '−Z'];
   const updateDistance = (values: Partial<DistanceDraft>) => {
     if (feature.kind !== 'extrude') return;
@@ -60,21 +63,22 @@ export function CadExtrudeFields({ feature, initialFeature, document, sketches, 
     onChange({ ...feature, ...values });
   };
   return <>
-    <SelectField label="Profile sketch" value={feature.sketchId} options={availableOptions(sketches, feature.sketchId, 'Sketch')} onChange={sketchId => onChange({ ...feature, sketchId })} />
+    <CadSketchSourceField document={document} sketches={sketches} purpose={feature.kind} sketchId={feature.sketchId} onChange={sketchId => onChange({ ...feature, sketchId })} />
     <SelectField label="Operation" value={operation} options={operationOptions} onChange={nextOperation => {
       if (feature.kind === 'pocket') { if (nextOperation !== 'cut') toDistance(nextOperation); }
       else onChange({ ...feature, operation: nextOperation, targetId: nextOperation === 'new' ? null : feature.targetId || bodies.at(-1)?.value || null });
     }} />
     {operation === 'cut' && <SelectField label="Extent" value={feature.kind === 'pocket' ? 'through-all' : 'distance'}
-      options={[{ value: 'distance', label: 'Distance' }, { value: 'through-all', label: 'Through all' }]}
+      description={throughAllUnsupported ? 'Through-all requires an XY, XZ or YZ sketch.' : undefined}
+      options={[{ value: 'distance', label: 'Distance' }, { value: 'through-all', label: 'Through all', disabled: throughAllUnsupported }]}
       onChange={extent => { if (extent === 'through-all') toThroughAll(); else if (feature.kind === 'pocket') toDistance('cut'); }} />}
     {feature.kind === 'pocket'
       ? <SelectField label="Direction" value={feature.extent.direction} options={[
         { value: 'positive', label: `${normal[0]} from sketch` }, { value: 'negative', label: `${normal[1]} from sketch` }, { value: 'both', label: 'Both directions' },
       ]} onChange={direction => onChange({ ...feature, extent: { kind: 'through-all', direction } })} />
-      : <><ScalarField label="Length" value={feature.distance} parameters={document.parameters} onChange={(distance: CadScalar) => updateDistance({ distance })} />
+      : <><ScalarField fieldKey="distance" label="Length" value={feature.distance} parameters={document.parameters} onChange={(distance: CadScalar) => updateDistance({ distance })} />
         <label className="cad-check"><input type="checkbox" checked={feature.symmetric} onChange={event => updateDistance({ symmetric: event.target.checked })} /> Symmetric about sketch plane</label></>}
     {sketch?.kind === 'sketch' && <CadPlacementNormal plane={sketch.plane} document={document} />}
-    {operation !== 'new' && <SelectField label="Target body" value={targetId} options={availableOptions(bodies, targetId, 'Body')} onChange={value => onChange({ ...feature, targetId: value })} />}
+    {operation !== 'new' && <SelectField reference label="Target body" value={targetId} options={availableOptions(bodies, targetId, 'Body')} onChange={value => onChange({ ...feature, targetId: value })} />}
   </>;
 }

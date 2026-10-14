@@ -1,8 +1,10 @@
 import type { CadProfile, CadSketchFeature, CadSketchProfile } from './cadDocument';
 import { CadError } from './cadError';
+import { resolveCadPluginProfile } from './plugins/cadPlugins';
 import { evaluateCadAngle, evaluateCadScalar } from './cadExpression';
 import type { DxfEntity, DxfPoint } from '@/domain/dxf/types';
-import { pathBounds, signedAreaOfPath } from '@/domain/path-intel/segments';
+import { signedDxfArcSweepRadians } from '@/domain/dxf/arcSweep';
+import { angleIsOnSweep, pathBounds, signedAreaOfPath } from '@/domain/path-intel/segments';
 import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
 import { cadAnalyticSegments, cadPathClosureTolerance, resolveCadPathSegments, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 export { cadPathClosureTolerance, type ResolvedCadPathSegment } from './cadAnalyticSegments';
@@ -27,6 +29,7 @@ function polygonDoubleArea(points: readonly (readonly [number, number])[]): numb
 export function resolveCadProfile(profile: CadProfile, parameters: Readonly<Record<string, number>>): ResolvedCadProfile {
   const e = (value: number | string) => evaluateCadScalar(value, parameters);
   switch (profile.kind) {
+    case 'plugin': return resolveCadPluginProfile(profile, parameters);
     case 'rectangle': return { kind: profile.kind, x: e(profile.x), y: e(profile.y), width: e(profile.width), height: e(profile.height), cornerRadius: e(profile.cornerRadius) };
     case 'circle': return { kind: profile.kind, x: e(profile.x), y: e(profile.y), radius: e(profile.radius) };
     case 'slot': return { kind: profile.kind, x: e(profile.x), y: e(profile.y), length: e(profile.length), width: e(profile.width), angle: evaluateCadAngle(profile.angle, parameters) };
@@ -132,13 +135,28 @@ export interface CadSketchRegion {
 export type CadAnalyticBoundary = Extract<DxfEntity, { type: 'line' | 'arc' | 'circle' }>;
 type Boundary = CadAnalyticBoundary;
 function boundary(entities: DxfEntity[]): Boundary[] { return entities.filter((entity): entity is Boundary => entity.type === 'line' || entity.type === 'arc' || entity.type === 'circle'); }
+function boundaryArcSweep(entity: Extract<Boundary, { type: 'arc' }>): number {
+  return entity.sweepRadians ?? signedDxfArcSweepRadians(entity.startAngle * 180 / Math.PI, entity.endAngle * 180 / Math.PI, entity.clockwise) ?? 0;
+}
 interface BoundaryBounds { minX: number; minY: number; maxX: number; maxY: number }
 function boundaryBounds(entity: Boundary): BoundaryBounds {
-  // Full-circle bounds for arcs are deliberately conservative. The exact predicate
-  // still decides intersection; broadphase never clips an arc to sampled points.
   const bounds = entity.type === 'line'
     ? { minX: Math.min(entity.start.x, entity.end.x), minY: Math.min(entity.start.y, entity.end.y), maxX: Math.max(entity.start.x, entity.end.x), maxY: Math.max(entity.start.y, entity.end.y) }
-    : { minX: entity.center.x - entity.radius, minY: entity.center.y - entity.radius, maxX: entity.center.x + entity.radius, maxY: entity.center.y + entity.radius };
+    : entity.type === 'circle'
+      ? { minX: entity.center.x - entity.radius, minY: entity.center.y - entity.radius, maxX: entity.center.x + entity.radius, maxY: entity.center.y + entity.radius }
+      : { minX: Math.min(entity.start.x, entity.end.x), minY: Math.min(entity.start.y, entity.end.y), maxX: Math.max(entity.start.x, entity.end.x), maxY: Math.max(entity.start.y, entity.end.y) };
+  if (entity.type === 'arc') {
+    const sweep = boundaryArcSweep(entity);
+    const rounding = 16 * Number.EPSILON * Math.max(1, Math.abs(entity.startAngle), Math.abs(sweep));
+    // Exact endpoints and any cardinal extrema on the signed sweep bound the
+    // complete arc. Keep the same contact/arithmetic reserve as other edges.
+    for (const [angle, x, y] of [[0, entity.center.x + entity.radius, entity.center.y], [Math.PI / 2, entity.center.x, entity.center.y + entity.radius],
+      [Math.PI, entity.center.x - entity.radius, entity.center.y], [3 * Math.PI / 2, entity.center.x, entity.center.y - entity.radius]]) {
+      if (!angleIsOnSweep(angle, entity.startAngle, sweep, rounding)) continue;
+      bounds.minX = Math.min(bounds.minX, x); bounds.maxX = Math.max(bounds.maxX, x);
+      bounds.minY = Math.min(bounds.minY, y); bounds.maxY = Math.max(bounds.maxY, y);
+    }
+  }
   const padding = 2 * tolerance + 64 * Number.EPSILON * Math.max(1, ...Object.values(bounds).map(Math.abs));
   return { minX: bounds.minX - padding, minY: bounds.minY - padding, maxX: bounds.maxX + padding, maxY: bounds.maxY + padding };
 }
@@ -180,7 +198,7 @@ function onCurve(entity: Boundary, point: DxfPoint): boolean {
   if (entity.type === 'circle') return true;
   const angle = Math.atan2(point.y - entity.center.y, point.x - entity.center.x);
   const delta = ((entity.clockwise ? entity.startAngle - angle : angle - entity.startAngle) % tau + tau) % tau;
-  const sweep = Math.abs(entity.sweepRadians ?? ((entity.clockwise ? entity.startAngle - entity.endAngle : entity.endAngle - entity.startAngle) % tau + tau) % tau);
+  const sweep = Math.abs(boundaryArcSweep(entity));
   return delta <= sweep + tolerance / entity.radius || tau - delta <= tolerance / entity.radius;
 }
 export function cadBoundariesIntersect(first: Boundary, second: Boundary, allowedJoins: readonly DxfPoint[] = []): boolean {
@@ -222,7 +240,7 @@ export function cadBoundariesIntersect(first: Boundary, second: Boundary, allowe
   if (distance <= tolerance && Math.abs(first.radius - second.radius) <= tolerance) {
     if (first.type === 'circle' || second.type === 'circle') return true;
     const midpoint = (edge: Extract<Boundary, { type: 'arc' }>) => {
-      const sweep = edge.sweepRadians ?? (edge.clockwise ? -1 : 1) * ((edge.clockwise ? edge.startAngle - edge.endAngle : edge.endAngle - edge.startAngle) % tau + tau) % tau;
+      const sweep = boundaryArcSweep(edge);
       const angle = edge.startAngle + sweep / 2;
       return { x: edge.center.x + edge.radius * Math.cos(angle), y: edge.center.y + edge.radius * Math.sin(angle) };
     };

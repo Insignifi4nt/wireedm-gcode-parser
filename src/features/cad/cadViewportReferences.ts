@@ -1,6 +1,6 @@
-import type { CadFeature, CadPlane, CadProfile } from '@/domain/cad/cadDocument';
+import type { CadFeature, CadPlane, CadProfile, CadSketchPlane } from '@/domain/cad/cadDocument';
 import { inspectCadCurve, type CadBounds3 } from '@/domain/cad/cadCurve';
-import { prepareCadDatumFrames, resolveCadSketchPlacement, resolveCadWorldDatum, cadFramePointToWorld, type CadResolvedFrame } from '@/domain/cad/cadDatumPlanes';
+import { prepareCadDatumFrames, resolveCadSketchPlacement, resolveCadWorldDatum, cadFramePointToWorld, cadPrincipalFrame, type CadResolvedFrame } from '@/domain/cad/cadDatumPlanes';
 import { cadFrameEntityBounds } from '@/domain/cad/cadFrameBounds';
 import { cadPlanePointToWorld } from '@/domain/cad/cadPlanes';
 import { cadFeatureDependencies, cadFeatureProducesBody } from '@/domain/cad/cadSchema';
@@ -8,20 +8,30 @@ import { cadProfileToEntities, resolveCadProfile, type CadAnalyticBoundary } fro
 import { arcBounds, boundsFromPoints, emptyBounds, mergeBounds } from '@/domain/path-intel/segments';
 import type { Bounds2 } from '@/domain/path-intel/types';
 
-export interface CadViewportReference {
+interface CadViewportReferenceGeometry {
   readonly referenceId: string;
-  readonly featureId: string;
-  readonly featureKind: 'sketch' | 'curve' | 'datum-plane';
   /** Display-only triangles for a datum glyph; never native geometry. */
   readonly planePatch?: readonly number[];
   readonly name: string;
   readonly construction: boolean;
   readonly positions: readonly number[];
   readonly bounds: CadBounds3;
+  readonly labelPosition?: readonly [number, number, number];
 }
+export interface CadViewportFeatureReference extends CadViewportReferenceGeometry {
+  readonly featureId: string;
+  readonly featureKind: 'sketch' | 'curve' | 'datum-plane';
+  readonly plane?: CadSketchPlane;
+}
+export interface CadViewportPrincipalPlaneReference extends CadViewportReferenceGeometry {
+  readonly featureId: null;
+  readonly featureKind: 'principal-plane';
+  readonly plane: CadPlane;
+}
+export type CadViewportReference = CadViewportFeatureReference | CadViewportPrincipalPlaneReference;
 export const MAX_CAD_REFERENCE_DISPLAY_SEGMENTS = 32768;
 const MAX_REFERENCE_FEATURE_IDS = 256;
-interface ReferenceSource extends Omit<CadViewportReference, 'positions'> {
+interface ReferenceSource extends Omit<CadViewportFeatureReference, 'positions'> {
   readonly frame: CadResolvedFrame;
   readonly offset: number;
   readonly entities: readonly CadAnalyticBoundary[];
@@ -106,18 +116,18 @@ export function selectCadViewportReferences(prepared: readonly CadViewportRefere
       queue.push(...cadFeatureDependencies(feature));
     }
   }
-  if (!prepared.some(reference => reference.featureKind !== 'datum-plane') && !features.some(feature => !feature.suppressed && cadFeatureProducesBody(feature))) prepared.forEach(reference => visibleDatums.add(reference.featureId));
+  if (!prepared.some(reference => reference.featureKind !== 'datum-plane') && !features.some(feature => !feature.suppressed && cadFeatureProducesBody(feature))) prepared.forEach(reference => { if (reference.featureId !== null) visibleDatums.add(reference.featureId); });
   return Object.freeze(prepared.filter(reference => reference.featureKind === 'curve' || reference.featureKind === 'sketch' && visibleSketches.has(reference.featureId) || reference.featureKind === 'datum-plane' && visibleDatums.has(reference.featureId)));
 }
 
 export function cadReferenceFeatureIds(references: readonly CadViewportReference[]): readonly string[] {
-  const ids = [...new Set(references.map(reference => reference.featureId))].sort();
+  const ids = [...new Set(references.flatMap(reference => reference.featureId === null ? [] : [reference.featureId]))].sort();
   if (ids.length > MAX_REFERENCE_FEATURE_IDS) throw new Error('CAD references exceed the document feature limit.');
   return Object.freeze(ids);
 }
 
 /** Bounded view-only plane patch and local axes; authored geometry stays infinite. */
-function cadDatumReference(feature: Extract<CadFeature, { kind: 'datum-plane' }>, frame: CadResolvedFrame): CadViewportReference {
+function cadPlaneGlyph(frame: CadResolvedFrame) {
   const at = (x: number, y: number, n = 0) => cadFramePointToWorld(frame, n, [x, y]);
   const corners = [at(-12.5, -12.5), at(12.5, -12.5), at(12.5, 12.5), at(-12.5, 12.5)];
   const positions: number[] = [];
@@ -126,7 +136,26 @@ function cadDatumReference(feature: Extract<CadFeature, { kind: 'datum-plane' }>
   positions.push(...at(0, 0, 10), ...at(2, 0, 7), ...at(0, 0, 10), ...at(-2, 0, 7));
   const all = [...corners, frame.origin, at(0, 0, 10)];
   const component = (axis: number, reducer: typeof Math.min) => reducer(...all.map(point => point[axis]));
-  return Object.freeze({ referenceId: feature.id, featureId: feature.id, featureKind: 'datum-plane', name: feature.name, construction: false,
+  return Object.freeze({ labelPosition: Object.freeze(at(10, 10)),
     positions: Object.freeze(positions), planePatch: Object.freeze([...corners[0], ...corners[1], ...corners[2], ...corners[0], ...corners[2], ...corners[3]]),
     bounds: Object.freeze({ min: Object.freeze([component(0, Math.min), component(1, Math.min), component(2, Math.min)] as const), max: Object.freeze([component(0, Math.max), component(1, Math.max), component(2, Math.max)] as const) }) });
+}
+
+function cadDatumReference(feature: Extract<CadFeature, { kind: 'datum-plane' }>, frame: CadResolvedFrame): CadViewportFeatureReference {
+  return Object.freeze({ ...cadPlaneGlyph(frame), referenceId: feature.id, featureId: feature.id, featureKind: 'datum-plane', name: feature.name, construction: false,
+    plane: Object.freeze({ kind: 'datum-plane', featureId: feature.id }) });
+}
+
+/** World reference planes are display resources, never document feature IDs. */
+export const CAD_PRINCIPAL_PLANE_REFERENCES: readonly CadViewportPrincipalPlaneReference[] = Object.freeze(
+  (['XY', 'XZ', 'YZ'] as const).map(plane => Object.freeze({ ...cadPlaneGlyph(cadPrincipalFrame(plane)), referenceId: `principal:${plane}`,
+    featureId: null, featureKind: 'principal-plane', plane, name: `${plane} plane`, construction: false })));
+
+/** Principal-plane membership supplements feature IDs without duplicating datum IDs. */
+export function cadReferencePlanes(references: readonly CadViewportReference[]): readonly CadPlane[] {
+  return Object.freeze(references.flatMap(reference => reference.featureKind === 'principal-plane' ? [reference.plane] : []));
+}
+
+export function cadSameReferencePlane(a: CadSketchPlane | null, b: CadSketchPlane | null): boolean {
+  return a === b || typeof a === 'object' && a !== null && typeof b === 'object' && b !== null && a.featureId === b.featureId;
 }

@@ -11,7 +11,7 @@ import type { CadCurveViewportReference } from './cadCurveRendering';
 import type { CadWorkbenchViewportControls } from './cadViewportControls';
 
 vi.mock('./CadViewport', () => ({ CadViewport: ({ references, meshes, onSelect }: { references: readonly CadCurveViewportReference[]; meshes: readonly { featureId: string }[]; onSelect(id: string): void }) =>
-  <div aria-label="3D model viewport" data-solid-count={meshes.length}>{references.map(reference => <button key={reference.featureId} onClick={() => onSelect(reference.featureId)}>Select world {reference.name}</button>)}</div> }));
+  <div aria-label="3D model viewport" data-solid-count={meshes.length}>{references.flatMap(reference => reference.featureId === null ? [] : [<button key={reference.referenceId} onClick={() => { if (reference.featureId !== null) onSelect(reference.featureId); }}>Select world {reference.name}</button>])}</div> }));
 let root: Root; let container: HTMLDivElement; let session: CadSession; let controls: CadWorkbenchViewportControls | null;
 beforeEach(() => {
   controls = null; vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -27,9 +27,9 @@ async function mount(document: CadDocument = createCadDocument(), staleBuild: Ca
   function Harness() {
     const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
     return <CadWorkbench document={state.document} documentVersion={state.version} buildVersion={staleBuild ? 'previous-document' : null} build={staleBuild} buildState={staleBuild ? 'ready' : 'idle'} dirty={state.dirty} canUndo={state.canUndo} canRedo={state.canRedo}
-      onEdit={edit => { session.edit([edit]); }} onUndo={() => session.undo()} onRedo={() => session.redo()} onWorkflowChange={session.setWorkflowOpen}
+      onEditMany={edits => { session.edit(edits); }} onEdit={edit => { session.edit([edit]); }} onUndo={() => session.undo()} onRedo={() => session.redo()} onWorkflowChange={session.setWorkflowOpen}
       onSave={async () => undefined} onBack={vi.fn()} onNewDocument={vi.fn()} onOpenDocument={vi.fn()} onImportDocument={async () => undefined}
-      onExportDocument={vi.fn()} onExportSolid={async () => undefined} onExportDxf={async () => undefined} onSendToCam={async () => undefined}
+      onExportDocument={vi.fn()} onExportSolid={async () => undefined} onOpenDxfExport={async () => undefined} onSendToCam={async () => undefined}
       onViewportControlsReady={value => { controls = value; }} />;
   }
   await act(async () => root.render(<Harness />));
@@ -60,7 +60,7 @@ describe('Curve foundation workbench', () => {
     expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-solid-count')).toBe('0');
     await click('Select world Rail'); expect(container.querySelector('.cad-solid-info')).toBeNull();
     await click('File'); expect(button('Export STEP').disabled).toBe(true); expect(button('Export STL').disabled).toBe(true);
-    expect(button('Export curve DXF').disabled).toBe(false); expect(button('Send sketch to CAM').disabled).toBe(true);
+    expect(button('Export DXF').disabled).toBe(false); expect(button('Send sketch to CAM').disabled).toBe(true);
   });
   it('creates one complete open line/arc feature without an empty save or hidden closing edge', async () => {
     await mount({ ...createCadDocument(), parameters: { lift: 8 } }); const before = session.getSnapshot(); await click('Curve');

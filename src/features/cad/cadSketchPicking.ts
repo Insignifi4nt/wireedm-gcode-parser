@@ -41,6 +41,7 @@ export function createCadSketchProfilePicker(profiles: readonly CadSketchProfile
     } catch { return []; } // Invalid geometry keeps its existing property/build diagnostic.
   });
   return {
+    hasProfile(id: string): boolean { return prepared.some(profile => profile.id === id); },
     pick(point: SketchPoint, millimetersPerPixel: number): string | null {
       if (!Number.isFinite(point[0]) || !Number.isFinite(point[1]) || !Number.isFinite(millimetersPerPixel) || millimetersPerPixel <= 0) return null;
       const location = { x: point[0], y: point[1] };

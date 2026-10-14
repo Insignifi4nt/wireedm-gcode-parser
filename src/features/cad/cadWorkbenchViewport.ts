@@ -1,5 +1,5 @@
 import { Value } from '@sinclair/typebox/value';
-import type { CadDocument, CadMesh } from '@/domain/cad/cadDocument';
+import type { CadDocument, CadMesh, CadPlane, CadSketchPlane } from '@/domain/cad/cadDocument';
 import { cadFeatureProducesBody } from '@/domain/cad/cadSchema';
 import { parseCadTopologyPickSet, type CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import { ToolError } from '@/features/webmcp/siteTools';
@@ -12,7 +12,9 @@ export interface CadViewportBindings extends Omit<CadViewportState, 'documentId'
   readonly meshes: readonly CadMesh[];
   /** Sorted unique feature IDs expected in the current world-space reference layer. */
   readonly visibleReferenceIds: readonly string[];
+  readonly visibleReferencePlanes: readonly CadPlane[];
   selectFeature(id: string | null): void;
+  selectReferencePlane(plane: CadSketchPlane | null): void;
   editSketch(id: string): void;
   editCurve(id: string): void;
   selectProfile(id: string | null): void;
@@ -35,6 +37,8 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
     const bindings = getBindings();
     return Object.freeze({ documentId: bindings.document.id, documentVersion: bindings.documentVersion, dirty: bindings.dirty,
       selectedFeatureId: bindings.selectedFeatureId, selectedProfileId: bindings.selectedProfileId, sketchId: bindings.sketchId, curveId: bindings.curveId,
+      selectedReferencePlane: typeof bindings.selectedReferencePlane === 'object' && bindings.selectedReferencePlane !== null ? Object.freeze({ ...bindings.selectedReferencePlane }) : bindings.selectedReferencePlane,
+      awaitingSketchPlane: bindings.awaitingSketchPlane,
       workflowOpen: bindings.workflowOpen, busy: bindings.busy, buildVersion: bindings.buildVersion,
       buildId: bindings.buildId, pickMode: bindings.pickMode, topologySelection: bindings.topologySelection ? parseCadTopologyPickSet(bindings.topologySelection) : null,
       buildState: bindings.buildState, visibleBodyIds: Object.freeze([...bindings.visibleBodyIds]), view: bindings.rendered?.getState() ?? null });
@@ -42,14 +46,15 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
   // Busy may change because the caller acquires the capture lock. Only visual content matters.
   function visualIdentity(state: CadViewportState) {
     return JSON.stringify([state.documentId, state.documentVersion, state.selectedFeatureId, state.selectedProfileId,
-      state.sketchId, state.curveId, state.view?.mode === 'solid' ? [state.buildVersion, state.buildId, state.buildState, state.pickMode, state.topologySelection] : null, state.view]);
+      state.sketchId, state.curveId, state.selectedReferencePlane, state.awaitingSketchPlane, state.view?.mode === 'solid' ? [state.buildVersion, state.buildId, state.buildState, state.pickMode, state.topologySelection] : null, state.view]);
   }
   function referencesInstalled(bindings: CadViewportBindings, state: CadViewportState): boolean {
     if (state.view?.mode !== 'solid') return true;
     const installed = state.view.referenceFeatureIds;
     return installed !== undefined && state.view.referenceVersion === bindings.documentVersion
       && installed.length === bindings.visibleReferenceIds.length
-      && installed.every((id, index) => id === bindings.visibleReferenceIds[index]);
+      && installed.every((id, index) => id === bindings.visibleReferenceIds[index])
+      && JSON.stringify(state.view.referencePlanes ?? []) === JSON.stringify(bindings.visibleReferencePlanes);
   }
   return {
     getState,
@@ -62,6 +67,12 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
           case 'select-feature':
             if (command.featureId !== null && !bindings.document.features.some((feature) => feature.id === command.featureId)) throw new ToolError('NOT_FOUND', 'Feature does not exist in the current CAD draft.');
             bindings.selectFeature(command.featureId); return;
+          case 'select-reference-plane': {
+            if (bindings.sketchId || bindings.curveId) throw new ToolError('WRONG_VIEW', 'Finish sketch or curve editing before selecting a reference plane.');
+            const plane = command.plane;
+            if (typeof plane === 'object' && plane !== null && !bindings.document.features.some(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && !feature.suppressed)) throw new ToolError('NOT_FOUND', 'Choose an active datum plane in the current CAD draft.');
+            bindings.selectReferencePlane(plane); return;
+          }
           case 'edit-sketch':
             if (!bindings.document.features.some((feature) => feature.kind === 'sketch' && feature.id === command.sketchId && !feature.suppressed)) throw new ToolError('NOT_FOUND', 'Choose an active sketch in the current CAD draft.');
             bindings.editSketch(command.sketchId); return;
@@ -112,7 +123,7 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
       const rendered = bindings.rendered;
       const before = getState();
       if (!rendered || !before.view?.available) throw new ToolError('CAPTURE_UNAVAILABLE', 'Wait for a visible CAD viewport to load.');
-      const hasReferences = bindings.document.features.some(feature => !feature.suppressed && (feature.kind === 'datum-plane' || feature.kind === 'curve' || feature.kind === 'sketch' && feature.profiles.length > 0));
+      const hasReferences = bindings.visibleReferencePlanes.length > 0 || before.view.mode === 'solid' && Boolean(before.view.referencePlanes?.length) || bindings.document.features.some(feature => !feature.suppressed && (feature.kind === 'datum-plane' || feature.kind === 'curve' || feature.kind === 'sketch' && feature.profiles.length > 0));
       const requiresBuild = !hasReferences || bindings.document.features.some(feature => cadFeatureProducesBody(feature) && !feature.suppressed);
       if (before.view.mode === 'solid') {
         if (requiresBuild && (bindings.buildState !== 'ready' || bindings.buildVersion !== bindings.documentVersion)) throw new ToolError('STALE_STATE', 'Wait for this exact CAD draft to finish building before capturing its solid view.');

@@ -1,0 +1,37 @@
+.cad-context-help { display: inline-flex; flex-shrink: 0; vertical-align: middle; }
+.cad-context-help .cad-context-help-trigger { display: inline-grid; place-items: center; width: 20px; height: 20px; min-width: 20px; padding: 0; border: 0; border-radius: 3px; color: #8ca7b7; background: transparent; cursor: help; }
+.cad-context-help .cad-context-help-trigger:hover, .cad-context-help .cad-context-help-trigger[aria-expanded="true"] { color: #addef0; background: #2b4352; }
+.cad-context-help .cad-context-help-trigger:focus-visible, .cad-context-help-popover button:focus-visible { outline: 1px solid #8dcfe5; outline-offset: 2px; }
+.cad-context-help-popover { position: fixed; z-index: 180; width: min(288px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; border: 1px solid #506573; border-radius: 4px; background: #192730; color: #c8d9e2; box-shadow: 0 7px 24px #0007; font: 11px/1.5 ui-sans-serif, system-ui, sans-serif; }
+.cad-context-help-popover header { position: sticky; top: 0; background: #192730; display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 5px; border-bottom: 1px solid #314650; }
+.cad-context-help-popover header strong { font-size: 11px; font-weight: 550; }
+.cad-context-help-popover header button { display: grid; place-items: center; min-width: 22px; min-height: 22px; padding: 3px; border: 0; border-radius: 3px; color: #9bb4c2; background: transparent; cursor: pointer; }
+.cad-context-help-popover header button:hover { background: #304954; }
+.cad-context-help-content { padding: 8px 10px 10px; }
+.cad-context-help-content p { margin: 0 0 7px; font-size: 11px; line-height: 1.55; color: #adc3d0; }
+.cad-context-help-content p:last-child { margin-bottom: 0; }
+.cad-context-help-content code { color: #b8dfec; font: 10px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+.cad-context-help-value { display: flex; justify-content: space-between; gap: 8px; margin: 8px 0; padding-top: 6px; border-top: 1px solid #334952; color: #8eabba; font-size: 10px; }
+.cad-context-help-value output { color: #c4e2ef; font-variant-numeric: tabular-nums; }
+.cad-gear-help-diagram { margin: 8px 0; border: 1px solid #334d59; border-radius: 3px; background: #12212a; }
+.cad-gear-help-diagram svg { display: block; width: 100%; height: 135px; }
+.cad-gear-help-diagram figcaption { display: flex; gap: 6px; justify-content: center; padding: 4px 7px; border-top: 1px solid #2b424e; color: #9fc7d9; font-size: 10px; }
+.cad-gear-help-legend { display: inline-block; width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: #7bcce4; flex-shrink: 0; }
+.cad-plugin-help-row { display: flex; align-items: center; gap: 5px; margin-top: 6px; color: #8ca7b7; font-size: 10px; }
+.cad-plugin-field > .cad-plugin-field-caption { display: flex; align-items: center; gap: 1px; min-width: 0; }
+.cad-plugin-field-caption > .cad-plugin-field-label { flex: 1; min-width: 0; display: flex; align-items: center; gap: 3px; }
+.cad-plugin-field.is-placement .cad-context-help { display: none; }
+.cad-plugin-key-dimensions .cad-context-help-trigger, .cad-plugin-derived .cad-context-help-trigger { width: 17px; min-width: 17px; height: 17px; }
+.cad-plugin-input-wrap > .cad-plugin-binding { position: absolute; right: 4px; top: 4px; }
+.cad-plugin-input-wrap > .cad-plugin-binding.has-unit { right: 25px; }
+.cad-plugin-input-wrap > .cad-plugin-binding.has-choices { right: 22px; }
+.cad-plugin-input-wrap:has(.cad-plugin-binding.has-choices) > select { padding-right: 44px; }
+.cad-plugin-binding .cad-context-help-trigger, .cad-scalar-relation .cad-context-help-trigger { font: italic 10px ui-monospace, monospace; color: #80c5d9; width: 19px; min-width: 19px; height: 19px; cursor: pointer; }
+.cad-plugin-input-wrap:has(.cad-plugin-binding) > input { padding-right: 27px; }
+.cad-plugin-input-wrap:has(.cad-plugin-binding.has-unit) > input { padding-right: 46px; }
+.cad-expression-binding label { display: flex; flex-direction: column; gap: 5px; color: #9ebaca; }
+.cad-expression-binding input { width: 100%; min-height: 28px; padding: 4px 6px; border: 1px solid #415d6b; border-radius: 3px; background: #11202a; color: #c5ddea; font: 11px ui-monospace, monospace; }
+.cad-expression-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.cad-expression-actions button { padding: 5px 8px; border: 1px solid #496773; border-radius: 3px; background: #223c48; color: #c4dfea; font: 10px system-ui, sans-serif; cursor: pointer; }
+.cad-expression-actions button:disabled { opacity: .45; cursor: default; }
+.cad-expression-binding .cad-expression-available { overflow-wrap: anywhere; max-height: 70px; overflow: auto; margin-top: 6px; }

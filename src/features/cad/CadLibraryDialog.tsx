@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CadLibraryEntry } from '@/domain/cad/cadStorage';
 
-export function CadLibraryDialog({ entries, diagnostic, busy, onClose, onOpen }: {
+export function CadLibraryDialog({ entries, diagnostic, busy, loading = false, onClose, onOpen }: {
   entries: readonly CadLibraryEntry[]; diagnostic: string | null; busy: boolean;
+  loading?: boolean;
   onClose(): void; onOpen(id: string): Promise<void>;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +18,8 @@ export function CadLibraryDialog({ entries, diagnostic, busy, onClose, onOpen }:
     <div className="max-h-[65vh] overflow-auto p-3 text-xs">
       {error && <p className="mb-3 text-destructive" role="alert">{error}</p>}
       {diagnostic && <p className="mb-3 text-amber-300" role="status">{diagnostic}</p>}
-      {!entries.length && <p className="py-8 text-center text-muted-foreground">No saved CAD documents in this workbench. Create a part and save it to build your library.</p>}
+      {loading && <p className="py-8 text-center text-muted-foreground" role="status">Reading CAD documents...</p>}
+      {!loading && !entries.length && <p className="py-8 text-center text-muted-foreground">No saved CAD documents in this workbench. Create a part and save it to build your library.</p>}
       {entries.map(entry => <button key={entry.id} type="button" disabled={busy}
         onClick={() => { void onOpen(entry.id).catch(error => setError(error instanceof Error ? error.message : 'Could not open document.')); }}
         className="flex w-full items-center justify-between border-b border-border px-2 py-3 text-left hover:bg-accent disabled:opacity-50">

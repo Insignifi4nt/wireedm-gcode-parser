@@ -36,6 +36,11 @@ async function input(element: HTMLInputElement, value: string) {
   if (!setter) throw new Error('Native input setter missing');
   await act(async () => { setter.call(element, value); element.dispatchEvent(new Event('input', { bubbles: true })); });
 }
+async function relation(label: string, value: string) {
+  await click(`Edit ${label} relation`);
+  const control = document.querySelector<HTMLInputElement>(`input[aria-label="${label} expression"]`); if (!control) throw new Error('Expression field missing'); await input(control, value);
+  await click('Keep relation'); await click(`Close ${label} relation help`);
+}
 function solidDocument(): CadDocument {
   return parseCadDocument({ ...createCadDocument('Pattern part'), parameters: { offset: 5, sweep: 180 }, features: [
     { id: 'sketch', kind: 'sketch', name: 'Sketch 1', suppressed: false, plane: 'XY', offset: 0, profiles: [
@@ -52,9 +57,9 @@ async function mountWorkbench(initial = solidDocument()) {
     const meshes: CadMesh[] = body ? [{ featureId: body.id, name: body.name, positions: [], normals: [], indices: [], edges: [], faceGroups: [], edgeGroups: [], volume: 125, bounds: { min: [20, 0, 0], max: [25, 5, 5] } }] : [];
     return <CadWorkbench document={snapshot.document} documentVersion={snapshot.version} buildVersion={snapshot.version}
       build={{ buildId: `build-${snapshot.version}`, meshes, diagnostics: [], durationMs: 0 }} buildState="ready" dirty={snapshot.dirty} canUndo={snapshot.canUndo} canRedo={snapshot.canRedo}
-      onEdit={edit => session.edit([edit], snapshot.version)} onUndo={() => session.undo()} onRedo={() => session.redo()} onWorkflowChange={session.setWorkflowOpen}
+      onEditMany={edits => { session.edit(edits); }} onEdit={edit => session.edit([edit], snapshot.version)} onUndo={() => session.undo()} onRedo={() => session.redo()} onWorkflowChange={session.setWorkflowOpen}
       onBack={vi.fn()} onSave={async () => undefined} onOpenDocument={vi.fn()} onNewDocument={vi.fn()} onImportDocument={async () => undefined}
-      onExportDocument={vi.fn()} onExportSolid={async () => undefined} onExportDxf={async () => undefined} onSendToCam={async () => undefined} />;
+      onExportDocument={vi.fn()} onExportSolid={async () => undefined} onOpenDxfExport={async () => undefined} onSendToCam={async () => undefined} />;
   }
   await act(async () => root.render(<Harness />)); return session;
 }
@@ -63,6 +68,21 @@ function circular(feature: CadFeature | undefined) {
 }
 
 describe('compact pattern command', () => {
+  it('opens above a bottom dock trigger and preserves Escape and forward/backward Tab focus', async () => {
+    vi.stubGlobal('innerHeight', 800); vi.stubGlobal('innerWidth', 1000);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute('role') === 'menu' ? new DOMRect(0, 0, 182, 76) : new DOMRect(940, 740, 32, 36);
+    });
+    await act(async () => root.render(<div className="cad-toolbar"><button>Previous</button><CadPatternCommand disabled={false} onChoose={vi.fn()} /><button>Next</button></div>));
+    const trigger = button('Pattern'); await key(trigger, 'ArrowUp');
+    const popup = document.querySelector('[aria-label="Pattern commands"]'); if (!(popup instanceof HTMLElement)) throw new Error('Pattern menu missing');
+    expect(Number.parseFloat(popup.style.top) + 76).toBeLessThanOrEqual(735);
+    expect(Number.parseFloat(popup.style.left) + 182).toBeLessThanOrEqual(996);
+    expect(document.activeElement).toBe(button('Circular pattern'));
+    await key(button('Circular pattern'), 'Escape'); expect(document.querySelector('[aria-label="Pattern commands"]')).toBeNull(); expect(document.activeElement).toBe(trigger);
+    await key(trigger, 'ArrowDown'); await key(button('Linear pattern'), 'Tab'); expect(document.activeElement).toBe(button('Next'));
+    await key(trigger, 'ArrowDown'); await key(button('Linear pattern'), 'Tab', true); expect(document.activeElement).toBe(button('Previous'));
+  });
   it('supports keyboard opening, command navigation and Escape with focus restoration', async () => {
     const choose = vi.fn(); await act(async () => root.render(<CadPatternCommand disabled={false} onChoose={choose} />));
     const trigger = button('Pattern'); trigger.focus();
@@ -123,14 +143,14 @@ describe('circular pattern editing', () => {
   });
   it('applies signed extent and center expressions atomically, then edits the persisted pattern', async () => {
     const session = await mountWorkbench(); await click('Pattern'); await click('Circular pattern');
-    await input(inputField('Instances, including original'), '5'); await input(inputField('Angular extent'), '-sweep');
-    await input(inputField('Center X'), 'offset * 2'); await input(inputField('Center Y'), 'offset'); await input(inputField('Center Z'), 'offset / 2');
+    await input(inputField('Instances, including original'), '5'); await relation('Angular extent', '-sweep');
+    await relation('Center X', 'offset * 2'); await relation('Center Y', 'offset'); await relation('Center Z', 'offset / 2');
     const axis = [...container.querySelectorAll('select')].at(-1); if (!axis) throw new Error('Axis missing');
     await act(async () => { axis.value = 'x'; axis.dispatchEvent(new Event('change', { bubbles: true })); });
     await click('Apply'); const feature = circular(session.getSnapshot().document.features.at(-1));
     expect(feature).toMatchObject({ count: 5, axis: 'x', center: ['offset * 2', 'offset', 'offset / 2'], angle: '-sweep' });
     expect(resolveCadCircularPattern(feature, session.getSnapshot().document.parameters)).toMatchObject({ center: [10, 5, 2.5], angles: [0, -45, -90, -135, -180] });
-    const before = session.getSnapshot(); await input(inputField('Angular extent'), '90');
+    const before = session.getSnapshot(); await relation('Angular extent', '90');
     expect(session.getSnapshot().version).toBe(before.version); await click('Apply');
     expect(circular(session.getSnapshot().document.features.at(-1)).angle).toBe('90');
     expect(session.getSnapshot().document.features).toHaveLength(3);
@@ -138,7 +158,7 @@ describe('circular pattern editing', () => {
   });
   it('rejects invalid extent without altering the document and Escape cancels all pending fields', async () => {
     const session = await mountWorkbench(); const before = session.getSnapshot(); await click('Pattern'); await click('Circular pattern');
-    await input(inputField('Angular extent'), '0'); await input(inputField('Center X'), 'offset'); await click('Apply');
+    await input(inputField('Angular extent'), '0'); await relation('Center X', 'offset'); await click('Apply');
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('extent must be nonzero');
     expect(session.getSnapshot().document).toBe(before.document); expect(session.getSnapshot().version).toBe(before.version); expect(session.getSnapshot().canUndo).toBe(false);
     expect(session.getSnapshot().workflowOpen).toBe(true); await key(inputField('Center X'), 'Escape');

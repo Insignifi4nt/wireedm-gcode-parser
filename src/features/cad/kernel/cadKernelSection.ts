@@ -4,6 +4,7 @@ import type { CadSectionResult } from '../../../domain/cad/cadSection';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadEntitiesToCam } from '../../../domain/cad/cadCam';
 import { cadKernelPlaneBasis } from './cadKernelPlane';
+import { cadKernelDisposeOwned, cadKernelEdges, cadKernelSolids } from './cadKernelShapes';
 
 const tolerance = 1e-7;
 const tau = 2 * Math.PI;
@@ -24,7 +25,7 @@ export function sectionCadKernelShape(shape: Shape3D, section: Pick<CadSectionRe
       throw new CadError('empty-section', 'The section plane must pass through the interior of the body; tangent and outside sections cannot be transferred to CAM.');
     }
   } finally { box.delete(); }
-  const components = shape.solids;
+  const components = cadKernelSolids(shape);
   try {
     for (const component of components) {
       const componentBox = component.boundingBox;
@@ -35,63 +36,73 @@ export function sectionCadKernelShape(shape: Shape3D, section: Pick<CadSectionRe
         }
       } finally { componentBox.delete(); }
     }
-  } finally { for (const component of components) component.delete(); }
+  } finally { for (const component of components) cadKernelDisposeOwned(component); }
   const plane = makePln(origin, basis.normal);
-  const builder = new (getOC()).BRepAlgoAPI_Section(shape.wrapped, plane, false);
   try {
-    builder.Approximation(false); builder.Build();
-    if (builder.HasErrors()) throw new CadError('section-failed', 'OpenCascade could not compute an exact planar section.');
-    const output = cast(builder.Shape());
-    const edges = output.edges;
-    const entities: DxfEntity[] = [];
+    const builder = new (getOC()).BRepAlgoAPI_Section(shape.wrapped, plane, false);
     try {
-      if (!edges.length) throw new CadError('empty-section', 'The plane does not cut a closed outline through this body.');
-      if (edges.length > 8192) throw new CadError('section-limit', 'The section contains too many analytic edges. Simplify the model.');
-      for (const edge of edges) {
-        const curve = edge.curve;
-        const adaptor = new (getOC()).BRepAdaptor_Curve(edge.wrapped);
+      builder.Approximation(false); builder.Build();
+      if (builder.HasErrors()) throw new CadError('section-failed', 'OpenCascade could not compute an exact planar section.');
+      const raw = builder.Shape();
+      let output: ReturnType<typeof cast>;
+      try { output = cast(raw); } finally { cadKernelDisposeOwned(raw); }
+      try {
+        const edges = cadKernelEdges(output);
+        const entities: DxfEntity[] = [];
         try {
-          const start = projectVector(curve.startPoint); const end = projectVector(curve.endPoint);
-          switch (curve.curveType) {
-            case 'LINE':
-              if (Math.hypot(end.x - start.x, end.y - start.y) <= tolerance) throw new CadError('degenerate-section', 'The section has a degenerate edge. Choose a different offset.');
-              entities.push({ type: 'line', layer: 'CAD_SECTION', start, end }); break;
-            case 'CIRCLE': {
-              const circle = adaptor.Circle();
-              const point = circle.Location();
+          if (!edges.length) throw new CadError('empty-section', 'The plane does not cut a closed outline through this body.');
+          if (edges.length > 8192) throw new CadError('section-limit', 'The section contains too many analytic edges. Simplify the model.');
+          for (const edge of edges) {
+            const curve = edge.curve;
+            try {
+              const adaptor = new (getOC()).BRepAdaptor_Curve(edge.wrapped);
               try {
-                const center = project([point.X(), point.Y(), point.Z()]);
-                const radius = circle.Radius();
-                const sweep = adaptor.LastParameter() - adaptor.FirstParameter();
-                if (!(sweep > 0 && sweep <= tau + angularRoundoff)) throw new CadError('invalid-section', 'The section contains an invalid circular sweep.');
-                // Millimetre endpoint tolerances cannot classify angles. A tiny
-                // missing angle can be a material opening on a large circle.
-                if (curve.isClosed && Math.abs(sweep - tau) <= angularRoundoff) entities.push({ type: 'circle', layer: 'CAD_SECTION', center, radius });
-                else {
-                  const tangent = projectVector(curve.tangentAt(0));
-                  const clockwise = (start.x - center.x) * tangent.y - (start.y - center.y) * tangent.x < 0;
-                  const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
-                  const sweepRadians = clockwise ? -sweep : sweep;
-                  entities.push({ type: 'arc', layer: 'CAD_SECTION', center, radius, start, end, startAngle, endAngle: startAngle + sweepRadians, sweepRadians, clockwise });
+                const start = projectVector(curve.startPoint); const end = projectVector(curve.endPoint);
+                switch (curve.curveType) {
+                  case 'LINE':
+                    if (Math.hypot(end.x - start.x, end.y - start.y) <= tolerance) throw new CadError('degenerate-section', 'The section has a degenerate edge. Choose a different offset.');
+                    entities.push({ type: 'line', layer: 'CAD_SECTION', start, end }); break;
+                  case 'CIRCLE': {
+                    const circle = adaptor.Circle();
+                    try {
+                      const point = circle.Location();
+                      try {
+                        const center = project([point.X(), point.Y(), point.Z()]);
+                        const radius = circle.Radius();
+                        const sweep = adaptor.LastParameter() - adaptor.FirstParameter();
+                        if (!(sweep > 0 && sweep <= tau + angularRoundoff)) throw new CadError('invalid-section', 'The section contains an invalid circular sweep.');
+                        // Millimetre endpoint tolerances cannot classify angles. A tiny
+                        // missing angle can be a material opening on a large circle.
+                        if (curve.isClosed && Math.abs(sweep - tau) <= angularRoundoff) entities.push({ type: 'circle', layer: 'CAD_SECTION', center, radius });
+                        else {
+                          const tangent = projectVector(curve.tangentAt(0));
+                          const clockwise = (start.x - center.x) * tangent.y - (start.y - center.y) * tangent.x < 0;
+                          const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+                          const sweepRadians = clockwise ? -sweep : sweep;
+                          entities.push({ type: 'arc', layer: 'CAD_SECTION', center, radius, start, end, startAngle, endAngle: startAngle + sweepRadians, sweepRadians, clockwise });
+                        }
+                      } finally { point.delete(); }
+                    } finally { circle.delete(); }
+                    break;
+                  }
+                  default: throw new CadError('unsupported-section-curve', `This section contains ${curve.curveType.toLowerCase().replaceAll('_', ' ')} edges. CAM transfer supports exact lines and circular arcs only. Choose another plane or offset.`);
                 }
-              } finally { point.delete(); circle.delete(); }
-              break;
-            }
-            default: throw new CadError('unsupported-section-curve', `This section contains ${curve.curveType.toLowerCase().replaceAll('_', ' ')} edges. CAM transfer supports exact lines and circular arcs only. Choose another plane or offset.`);
+              } finally { adaptor.delete(); }
+            } finally { curve.delete(); }
           }
-        } finally { adaptor.delete(); curve.delete(); }
-      }
-      // Only closed unbranched outlines are suitable for planar wire EDM.
-      const vertices: { point: DxfPoint; degree: number }[] = [];
-      for (const entity of entities) if (entity.type === 'line' || entity.type === 'arc') {
-        for (const point of [entity.start, entity.end]) {
-          const vertex = vertices.find(item => Math.hypot(point.x - item.point.x, point.y - item.point.y) <= tolerance);
-          if (vertex) vertex.degree++; else vertices.push({ point, degree: 1 });
-        }
-      }
-      if (vertices.some(vertex => vertex.degree !== 2)) throw new CadError('open-section', 'The section has open, touching or branching outlines. Choose an interior offset that produces closed contours.');
-      const cam = cadEntitiesToCam(entities);
-      return { ...section, entities, contourCount: cam.contours.length };
-    } finally { for (const edge of edges) edge.delete(); output.delete(); }
-  } finally { builder.delete(); plane.delete(); }
+          // Only closed unbranched outlines are suitable for planar wire EDM.
+          const vertices: { point: DxfPoint; degree: number }[] = [];
+          for (const entity of entities) if (entity.type === 'line' || entity.type === 'arc') {
+            for (const point of [entity.start, entity.end]) {
+              const vertex = vertices.find(item => Math.hypot(point.x - item.point.x, point.y - item.point.y) <= tolerance);
+              if (vertex) vertex.degree++; else vertices.push({ point, degree: 1 });
+            }
+          }
+          if (vertices.some(vertex => vertex.degree !== 2)) throw new CadError('open-section', 'The section has open, touching or branching outlines. Choose an interior offset that produces closed contours.');
+          const cam = cadEntitiesToCam(entities);
+          return { ...section, entities, contourCount: cam.contours.length };
+        } finally { for (const edge of edges) cadKernelDisposeOwned(edge); }
+      } finally { cadKernelDisposeOwned(output); }
+    } finally { builder.delete(); }
+  } finally { plane.delete(); }
 }

@@ -16,9 +16,10 @@ export class CadSessionError extends Error {
   constructor(readonly code: string, message: string) { super(message); }
 }
 export function hasCadDraftContent(document: CadDocument): boolean {
-  return document.features.length > 0 || Object.keys(document.parameters).length > 0 || document.name !== 'Untitled part';
+  return document.features.length > 0 || Object.keys(document.parameters).length > 0 || Boolean(document.parameterGroups?.length) || document.name !== 'Untitled part';
 }
 interface HistoryEntry { readonly document: CadDocument; readonly textLength: number }
+type CadWorkflowScope = 'editor' | 'section' | 'import' | 'dxf-export' | 'library';
 const MAX_HISTORY_STEPS = 50;
 const MAX_HISTORY_CHARACTERS = 8 * 1024 * 1024;
 
@@ -30,7 +31,7 @@ export class CadSession {
   private pastTextLength = 0;
   private currentText: string;
   private savedText: string | null = null;
-  private workflows = new Set<'editor' | 'section' | 'import'>();
+  private workflows = new Set<CadWorkflowScope>();
   private snapshot: CadSessionSnapshot;
   constructor(document = createCadDocument()) {
     this.snapshot = Object.freeze({ document: parseCadDocument(document), version: crypto.randomUUID(), savedVersion: null,
@@ -42,14 +43,14 @@ export class CadSession {
   assertVersion(expected: string) {
     if (this.snapshot.version !== expected) throw new CadSessionError('STALE_STATE', 'The CAD draft changed. Read cad_get_context again.');
   }
-  assertWorkflowClosed(except?: 'editor' | 'section' | 'import') {
-    if ([...this.workflows].some(scope => scope !== except)) throw new CadSessionError('WORKFLOW_OPEN', 'Finish or cancel the active CAD editor, import or section dialog first.');
+  assertWorkflowClosed(except?: CadWorkflowScope) {
+    if ([...this.workflows].some(scope => scope !== except)) throw new CadSessionError('WORKFLOW_OPEN', 'Finish or cancel the active CAD editor, import, section, library or DXF export dialog first.');
   }
   assertStorageSwitchAllowed() {
     this.assertWorkflowClosed();
     if (this.snapshot.dirty && hasCadDraftContent(this.snapshot.document)) throw new CadSessionError('UNSAVED_DRAFT', 'Save the CAD draft before switching workbench storage.');
   }
-  setWorkflowOpen = (open: boolean, scope: 'editor' | 'section' | 'import' = 'editor') => {
+  setWorkflowOpen = (open: boolean, scope: CadWorkflowScope = 'editor') => {
     if (open) this.workflows.add(scope); else this.workflows.delete(scope);
     const workflowOpen = this.workflows.size > 0;
     if (this.snapshot.workflowOpen === workflowOpen) return;

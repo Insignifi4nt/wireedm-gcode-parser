@@ -26,10 +26,10 @@ async function mount(initial: CadDocument = { ...createCadDocument(), parameters
   function Harness() {
     const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
     return <CadWorkbench document={state.document} documentVersion={state.version} buildVersion={null} build={null} buildState="idle"
-      dirty={state.dirty} canUndo={state.canUndo} canRedo={state.canRedo} onEdit={edit => session.edit([edit], state.version)}
+      dirty={state.dirty} canUndo={state.canUndo} canRedo={state.canRedo} onEditMany={edits => { session.edit(edits); }} onEdit={edit => session.edit([edit], state.version)}
       onUndo={() => session.undo()} onRedo={() => session.redo()} onWorkflowChange={session.setWorkflowOpen} onSave={async () => undefined}
       onBack={vi.fn()} onNewDocument={vi.fn()} onOpenDocument={vi.fn()} onImportDocument={async () => undefined} onExportDocument={vi.fn()}
-      onExportSolid={async () => undefined} onExportDxf={async () => undefined} onSendToCam={async () => undefined} />;
+      onExportSolid={async () => undefined} onOpenDxfExport={async () => undefined} onSendToCam={async () => undefined} />;
   }
   await act(async () => root.render(<Harness />));
 }
@@ -47,6 +47,15 @@ async function input(label: string, value: string) {
   const control = field(label).querySelector('input')!; const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
   await act(async () => { setter.call(control, value); control.dispatchEvent(new Event('input', { bubbles: true })); });
 }
+async function relation(label: string, value: string, keep = true) {
+  await click(`Edit ${label} relation`);
+  const control = document.querySelector<HTMLInputElement>(`input[aria-label="${label} expression"]`), setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+  if (!control) throw new Error('Missing expression field'); await act(async () => { setter.call(control, value); control.dispatchEvent(new Event('input', { bubbles: true })); });
+  if (keep) {
+    const action = [...document.querySelectorAll('button')].find(entry => entry.textContent?.trim() === 'Keep relation'), close = document.querySelector<HTMLButtonElement>(`button[aria-label="Close ${label} relation help"]`);
+    if (!action || !close) throw new Error('Missing relation actions'); await act(async () => action.click()); await act(async () => close.click());
+  }
+}
 async function choose(value: string) {
   await act(async () => { const control = field('Reference plane').querySelector('select')!; control.value = value; control.dispatchEvent(new Event('change', { bubbles: true })); });
 }
@@ -57,9 +66,10 @@ describe('datum placement editing with shared Session history', () => {
     await click('Plane'); await input('Origin Z', '25'); await click('Cancel');
     expect(session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: false, workflowOpen: false });
     await click('Plane'); await input('Origin Z', '25'); await click('Apply');
-    const accepted = session.getSnapshot().document.features[0]; expect(accepted).toMatchObject({ kind: 'datum-plane', definition: { origin: [0, 0, '25'] } });
+    const accepted = session.getSnapshot().document.features[0]; expect(accepted).toMatchObject({ kind: 'datum-plane', definition: { origin: [0, 0, 25] } });
     await click('Sketch'); expect(field('Reference plane').querySelector('select')?.value).toBe(`datum:${accepted.id}`);
-    await click('Apply'); const created = session.getSnapshot().document.features[1]; expect(created).toMatchObject({ kind: 'sketch', plane: { kind: 'datum-plane', featureId: accepted.id } });
+    const created = session.getSnapshot().document.features[1]; expect(created).toMatchObject({ kind: 'sketch', plane: { kind: 'datum-plane', featureId: accepted.id } });
+    expect(button('Finish sketch').disabled).toBe(false); expect(session.getSnapshot().workflowOpen).toBe(false);
     await click('Finish sketch'); await click(accepted.name); await click('Curve');
     expect(field('Reference plane').querySelector('select')?.value).toBe(`datum:${accepted.id}`); await click('Cancel');
     expect(session.getSnapshot().document.features).toHaveLength(2); expect(session.getSnapshot().workflowOpen).toBe(false);
@@ -67,14 +77,16 @@ describe('datum placement editing with shared Session history', () => {
   });
   it('preserves expression drafts through fields, commits one frame edit and reverses it atomically', async () => {
     await mount(); await click('Mount'); const before = session.getSnapshot();
-    await input('Origin X', 'lift * 3'); await input('Around X', 'tilt');
+    await relation('Origin X', 'lift * 3'); await relation('Around X', 'tilt');
     expect(session.getSnapshot().document).toBe(before.document); expect(session.getSnapshot().workflowOpen).toBe(true);
     expect(button('Sketch').disabled).toBe(true); await click('Apply');
     const accepted = session.getSnapshot().document.features[0]; expect(accepted).toMatchObject({ definition: { origin: ['lift * 3', 20, 30], rotation: ['tilt', 0, 0] } });
     expect(session.getSnapshot().document.features[1]).toEqual(before.document.features[1]); expect(session.getSnapshot().workflowOpen).toBe(false);
     await click('Undo'); expect(session.getSnapshot().document).toEqual(before.document); await click('Redo'); expect(session.getSnapshot().document.features[0]).toEqual(accepted);
-    await input('Around Y', '1 / 0'); await click('Apply'); expect(container.querySelector('[role="alert"]')).not.toBeNull();
-    expect(session.getSnapshot().document.features[0]).toBe(accepted); await click('Cancel'); expect(session.getSnapshot().workflowOpen).toBe(false);
+    await relation('Around Y', '1 / 0', false); expect(document.querySelector('[role="alert"]')?.textContent).toContain('zero'); expect(button('Apply').disabled).toBe(true);
+    expect(session.getSnapshot().document.features[0]).toBe(accepted);
+    const close = document.querySelector<HTMLButtonElement>('button[aria-label="Close Around Y relation help"]'); if (!close) throw new Error('Missing relation close'); await act(async () => close.click());
+    expect(session.getSnapshot().workflowOpen).toBe(false); expect(session.getSnapshot().document.features[0]).toBe(accepted);
   });
   it('changes placement explicitly without rewriting imported local geometry/source and preserves Cancel', async () => {
     await mount(); await click('Outline'); const before = session.getSnapshot();

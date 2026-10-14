@@ -2,10 +2,66 @@ import { describe, expect, it, vi } from 'vitest';
 import { Value } from '@sinclair/typebox/value';
 import { CadDocumentSchema, CadFeatureSchema } from '@/domain/cad/cadSchema';
 import { CadEditSchema } from '@/domain/cad/cadOperations';
+import { CadToolEditEnvelope } from './cadToolSchemas';
 import { cadSiteTools } from './cadSiteTools';
 import type { CadController } from './useCadController';
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('advertises plane selection with the shared strict view-only contract and rejects creation or face-derived arguments before operations', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid plane selection reached operations'); });
+    const tool = cadSiteTools(controller).find(tool => tool.name === 'cad_set_viewport');
+    if (!tool) throw new Error('Missing viewport tool');
+    for (const plane of ['XY', 'XZ', 'YZ', { kind: 'datum-plane', featureId: 'mount' }, null]) {
+      expect(Value.Check(tool.inputSchema, { expectedVersion: 'current', command: { kind: 'select-reference-plane', plane } })).toBe(true);
+    }
+    for (const command of [{ kind: 'select-reference-plane', plane: 'ZX' }, { kind: 'select-reference-plane', plane: { kind: 'face', bodyId: 'stock', key: 'face' } },
+      { kind: 'select-reference-plane', plane: { kind: 'datum-plane', featureId: 'mount', offset: 4 } },
+      { kind: 'select-reference-plane', plane: 'XY', createSketch: true }, { kind: 'select-reference-plane', plane: 'XY', featureId: 'new_sketch' }]) {
+      expect(await tool.execute({ expectedVersion: 'current', command })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(controller).not.toHaveBeenCalled();
+  });
+  it('advertises dimension intent and translation with the exact shared narrow edit contracts', () => {
+    const edit = cadSiteTools(() => { throw new Error('Discovery must not run operations'); }).find(entry => entry.name === 'cad_edit_document');
+    if (!edit) throw new Error('Missing CAD edit tool');
+    const descriptions = {
+      'add-sketch-dimension': 'Driving dimension intent',
+      'set-sketch-dimension': 'displayed quantity',
+      'remove-sketch-dimension': 'retains the geometry scalar',
+      'translate-sketch-profiles': 'expression-driven position',
+    };
+    expect(edit.inputSchema.properties.edits.items).toBe(CadToolEditEnvelope);
+    for (const [kind, meaning] of Object.entries(descriptions)) {
+      const declared = CadToolEditEnvelope.anyOf.find(schema => schema.properties.kind.const === kind);
+      const shared = CadEditSchema.anyOf.find(schema => schema.properties.kind.const === kind);
+      expect(declared?.description).toContain(meaning);
+      expect(declared?.properties).toEqual(shared?.properties);
+      expect(declared?.required).toEqual(shared?.required);
+      expect(declared?.additionalProperties).toBe(false);
+    }
+    const dimension = CadToolEditEnvelope.anyOf.find(schema => schema.properties.kind.const === 'set-sketch-dimension');
+    expect(dimension?.description).toContain('Named bindings update parameters');
+    expect(dimension?.description).toContain('compound drivers reject');
+  });
+  it('rejects widened dimension and move arguments before accessing the shared draft', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid sketch edit reached operations'); });
+    const edit = cadSiteTools(controller).find(entry => entry.name === 'cad_edit_document');
+    if (!edit) throw new Error('Missing edit tool');
+    const add = { kind: 'add-sketch-dimension', sketchId: 'outline', profileId: 'plate', constraint: { id: 'width', kind: 'dimension', quantity: 'width' } };
+    const set = { kind: 'set-sketch-dimension', sketchId: 'outline', profileId: 'plate', dimensionId: 'width', value: 'span' };
+    const remove = { kind: 'remove-sketch-dimension', sketchId: 'outline', profileId: 'plate', dimensionId: 'width' };
+    const move = { kind: 'translate-sketch-profiles', sketchId: 'outline', profileIds: ['plate'], translation: [1, -2] };
+    for (const valid of [add, set, remove, move]) expect(Value.Check(edit.inputSchema, { expectedVersion: 'current', edits: [valid] })).toBe(true);
+    for (const invalid of [{ ...add, constraint: { ...add.constraint, quantity: 'x' } },
+      { ...add, constraint: { ...add.constraint, value: 20 } }, { ...add, constraint: { ...add.constraint, kind: 'fixed' } },
+      { ...set, value: { parameter: 'span' } }, { ...set, value: Infinity }, { ...remove, freeze: true },
+      { ...move, profileIds: [] }, { ...move, profileIds: ['plate', 'plate'] },
+      { ...move, profileIds: Array.from({ length: 257 }, (_, index) => `contour_${index}`) },
+      { ...move, translation: [1, 2, 3] }, { ...move, translation: [1, NaN] }, { ...move, force: true }]) {
+      expect(await edit.execute({ expectedVersion: 'current', edits: [invalid] })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(controller).not.toHaveBeenCalled();
+  });
   it('bounds ordered Loft preflight and rejects repair or source payloads before reaching operations', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid Loft inspection reached the controller'); });
     const inspect = cadSiteTools(controller).find(entry => entry.name === 'cad_inspect_loft');
@@ -93,7 +149,7 @@ describe('CAD tool argument boundary and discovery', () => {
       sourceId: 'body', count: 4, axis: 'z', center: [0, 0, 0], angle: 360 };
     const envelope = { kind: 'circular-pattern', id: 'array', name: 'Array', suppressed: false };
     for (const feature of [envelope, { ...complete, count: 101 }, { ...complete, center: [0, 0] },
-      { ...complete, angle: { value: 360 } }, { ...complete, unexpected: true }]) {
+      { ...complete, angle: { value: 360 } }, { ...complete, unexpected: true }, { ...complete, kind: 'unsupported-solid' }]) {
       const input = { expectedVersion: 'current', edits: [{ kind: 'add-feature', feature }] };
       expect(Value.Check(edit.inputSchema, input)).toBe(true);
       expect(await edit.execute(input)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
@@ -145,7 +201,8 @@ describe('CAD tool argument boundary and discovery', () => {
     if (!tool) throw new Error('Missing discovery tool');
     const result = await tool.execute({ kind: 'sketch' });
     expect(result).toMatchObject({ ok: true, data: { kind: 'sketch', schema: { properties: { profiles: { items: { properties: {
-      id: expect.anything(), construction: expect.anything(), geometry: expect.anything()
+      id: expect.anything(), construction: expect.anything(), geometry: expect.anything(),
+      constraints: { type: 'array', maxItems: 6, items: { additionalProperties: false, required: ['id', 'kind', 'quantity'], properties: { kind: { const: 'dimension' } } } },
     } } } } } } });
     const text = JSON.stringify(result);
     expect(text).not.toContain('"role"');

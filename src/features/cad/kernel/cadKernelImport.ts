@@ -1,6 +1,7 @@
 import { cast, getOC, isShape3D, type Shape3D } from 'replicad';
 import type { TopoDS_Shape } from 'replicad-opencascadejs';
 import { CadError } from '../../../domain/cad/cadError';
+import { cadKernelConsumeShape, cadKernelDisposeOwned, cadKernelFaces, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
 import { cadSolidImportBytes, parseCadSolidImportSource, type CadSolidImportResult, type CadSolidImportSource } from '../../../domain/cad/cadImports';
 import { CadKernelTopology } from './cadKernelTopology';
 import { assertCadStepLengthUnits } from './cadKernelStepUnits';
@@ -9,7 +10,7 @@ export const MAX_CAD_STL_FACETS = 4000;
 function castSolid(raw: TopoDS_Shape): Shape3D {
   const shape = cast(raw);
   if (isShape3D(shape)) return shape;
-  shape.delete(); throw new CadError('import-not-solid', 'The file contains surfaces or curves instead of closed solids.');
+  cadKernelDisposeOwned(shape); throw new CadError('import-not-solid', 'The file contains surfaces or curves instead of closed solids.');
 }
 
 function readStep(path: string, data: string): Shape3D {
@@ -24,7 +25,7 @@ function readStep(path: string, data: string): Shape3D {
     if (reader.TransferRoots() !== roots) throw new CadError('step-transfer', 'Not every STEP root could be transferred. Import was rejected to preserve all source geometry.');
     const raw = reader.OneShape();
     try { if (raw.IsNull()) throw new CadError('import-empty', 'The STEP file contains no geometry.'); return castSolid(raw); }
-    finally { raw.delete(); }
+    finally { cadKernelDisposeOwned(raw); }
   } finally { reader.delete(); }
 }
 
@@ -70,10 +71,10 @@ function readStl(path: string, bytes: Uint8Array, units: 'mm' | 'inch'): Shape3D
   try {
     if (!reader.Read(raw, path) || raw.IsNull()) throw new CadError('stl-read', 'OpenCascade could not read this STL file.');
     input = castSolid(raw);
-    const faces = input.faces;
+    const faces = cadKernelFaces(input);
     try { if (faces.length !== facets) throw new CadError('stl-incomplete', 'The STL reader omitted facets. Repair the source mesh before importing.'); }
-    finally { for (const face of faces) face.delete(); }
-    if (units === 'inch') input = input.scale(25.4).asShape3D();
+    finally { for (const face of faces) cadKernelDisposeOwned(face); }
+    if (units === 'inch') input = cadKernelConsumeShape(input, shape => shape.scale(25.4).asShape3D());
     sewing.Add(input.wrapped); sewing.Perform();
     if (sewing.NbFreeEdges() || sewing.NbMultipleEdges()) throw new CadError('stl-open', 'STL import requires a watertight manifold mesh without open or multiply shared edges.');
     const sewn = sewing.SewedShape();
@@ -91,12 +92,12 @@ function readStl(path: string, bytes: Uint8Array, units: 'mm' | 'inch'): Shape3D
             try {
               if (!oc.BRepLib.OrientClosedSolid(solid)) throw new CadError('stl-orientation', 'The STL shell cannot be consistently oriented as a closed solid.');
               return castSolid(solid);
-            } finally { solid.delete(); }
-          } finally { maker.delete(); shell.delete(); }
-        } finally { unified.delete(); }
+            } finally { cadKernelDisposeOwned(solid); }
+          } finally { maker.delete(); cadKernelDisposeOwned(shell); }
+        } finally { cadKernelDisposeOwned(unified); }
       } finally { unify.delete(); }
-    } finally { sewn.delete(); }
-  } finally { sewing.delete(); input?.delete(); raw.delete(); reader.delete(); }
+    } finally { cadKernelDisposeOwned(sewn); }
+  } finally { sewing.delete(); if (input) cadKernelDisposeOwned(input); cadKernelDisposeOwned(raw); reader.delete(); }
 }
 
 function analyze(shape: Shape3D, source: CadSolidImportSource, sourceBytes: number): CadSolidImportResult {
@@ -109,18 +110,17 @@ function analyze(shape: Shape3D, source: CadSolidImportSource, sourceBytes: numb
     try { if (explorer.More()) throw new CadError('import-not-solid', 'The file contains loose surfaces or curves alongside solids. No geometry was silently discarded.'); }
     finally { explorer.delete(); }
   }
-  const solids = shape.solids;
-  const analyzer = new oc.BRepCheck_Analyzer(shape.wrapped, true, false, false);
+  const solids = cadKernelSolids(shape);
   let volume = 0;
   try {
-    if (!solids.length || solids.length > 256 || !analyzer.IsValid()) throw new CadError('import-invalid', 'The file must contain 1–256 valid closed manifold solids.');
+    if (!solids.length || solids.length > 256 || !cadKernelIsValid(shape)) throw new CadError('import-invalid', 'The file must contain 1–256 valid closed manifold solids.');
     for (const solid of solids) {
       const shells = solid.wrapped; const shellExplorer = new oc.TopExp_Explorer(shells, oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
       try {
         while (shellExplorer.More()) {
           const shell = shellExplorer.Current();
           try { if (!oc.BRep_Tool.IsClosed(shell)) throw new CadError('import-open', 'The imported solid has an open shell. Repair the source before importing.'); }
-          finally { shell.delete(); }
+          finally { cadKernelDisposeOwned(shell); }
           shellExplorer.Next();
         }
       } finally { shellExplorer.delete(); }
@@ -139,7 +139,7 @@ function analyze(shape: Shape3D, source: CadSolidImportSource, sourceBytes: numb
       return { format: source.format, fileName: source.fileName, representation: source.format === 'step' ? 'exact-brep' : 'faceted-brep', volume,
         bounds: { min, max }, solidCount: solids.length, sourceBytes };
     } finally { box.delete(); }
-  } finally { analyzer.delete(); for (const solid of solids) solid.delete(); }
+  } finally { for (const solid of solids) cadKernelDisposeOwned(solid); }
 }
 
 /** Read the immutable original every construction; no persisted BRep is trusted. */
@@ -153,10 +153,10 @@ export function loadCadSolidImport(value: CadSolidImportSource): { shape: Shape3
     shape = source.format === 'step' ? readStep(path, source.data) : readStl(path, bytes, source.units);
     const analysis = analyze(shape, source, bytes.length);
     return { shape, analysis };
-  } catch (error) { shape?.delete(); throw error; }
+  } catch (error) { if (shape) cadKernelDisposeOwned(shape); throw error; }
   finally { if (written) oc.FS.unlink(path); }
 }
 export function prepareCadSolidImport(source: CadSolidImportSource): CadSolidImportResult {
   const loaded = loadCadSolidImport(source);
-  try { return loaded.analysis; } finally { loaded.shape.delete(); }
+  try { return loaded.analysis; } finally { cadKernelDisposeOwned(loaded.shape); }
 }

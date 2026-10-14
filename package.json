@@ -57,7 +57,7 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "replicad": "1.1.0",
-    "replicad-opencascadejs": "1.1.0",
+    "replicad-opencascadejs": "file:vendor/cad-kernel/replicad-opencascadejs-1.1.0-wireedm.2.tgz",
     "tailwind-merge": "^2.6.0",
     "tailwindcss": "^4.1.17",
     "three": "0.186.0",

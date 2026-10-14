@@ -13,11 +13,12 @@ function setup(mode: 'solid' | 'sketch' | 'curve' = 'solid') {
   const bindings: CadViewportBindings = {
     document: createCadDocument('Measured part', 'part'), documentVersion: 'version-1', dirty: true,
     selectedFeatureId: null, selectedProfileId: null, sketchId: mode === 'sketch' ? 'sketch-1' : null, curveId: mode === 'curve' ? 'curve-1' : null,
+    selectedReferencePlane: null, awaitingSketchPlane: false,
     workflowOpen: false, busy: false, buildVersion: mode === 'solid' ? 'version-1' : null,
-    buildState: mode === 'solid' ? 'ready' : 'idle', visibleBodyIds: [], visibleReferenceIds: [],
+    buildState: mode === 'solid' ? 'ready' : 'idle', visibleBodyIds: [], visibleReferenceIds: [], visibleReferencePlanes: [],
     buildId: mode === 'solid' ? 'build-1' : null, pickMode: 'body', topologySelection: null, meshes: [],
     rendered: { getState: () => Object.freeze(state), fit: vi.fn(), setGrid: vi.fn(), setView: vi.fn(), capture },
-    selectFeature: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: (action) => action(),
+    selectFeature: vi.fn(), selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: (action) => action(),
   };
   let current = bindings;
   return { controls: createCadWorkbenchViewportControls(() => current), capture,
@@ -26,6 +27,44 @@ function setup(mode: 'solid' | 'sketch' | 'curve' = 'solid') {
 }
 
 describe('shared CAD viewport controls', () => {
+  it('selects only principal or active datum planes as view state and refuses geometry-editor or workflow requests', () => {
+    const context = setup(); const datum = { id: 'mount', name: 'Mount', kind: 'datum-plane' as const, suppressed: false,
+      definition: { kind: 'world' as const, basePlane: 'XZ' as const, origin: [0, 0, 0] as const, rotation: [0, 0, 0] as const } };
+    context.update({ document: { ...context.bindings.document, features: [datum] } });
+    for (const plane of ['XY', 'XZ', 'YZ', { kind: 'datum-plane', featureId: 'mount' }, null] as const) {
+      context.controls.apply({ kind: 'select-reference-plane', plane }); expect(context.bindings.selectReferencePlane).toHaveBeenLastCalledWith(plane);
+    }
+    const calls = vi.mocked(context.bindings.selectReferencePlane).mock.calls.length;
+    context.update({ document: { ...context.bindings.document, features: [{ ...datum, suppressed: true }] } });
+    expect(() => context.controls.apply({ kind: 'select-reference-plane', plane: { kind: 'datum-plane', featureId: 'mount' } })).toThrow('active datum');
+    context.update({ sketchId: 'sketch' }); expect(() => context.controls.apply({ kind: 'select-reference-plane', plane: 'XY' })).toThrow('Finish sketch');
+    context.update({ sketchId: null, workflowOpen: true, awaitingSketchPlane: true });
+    expect(context.controls.getState()).toMatchObject({ awaitingSketchPlane: true });
+    expect(() => context.controls.apply({ kind: 'select-reference-plane', plane: 'XY' })).toThrow('Apply or cancel');
+    expect(vi.mocked(context.bindings.selectReferencePlane).mock.calls).toHaveLength(calls);
+  });
+  it('captures actual principal-plane resources without a solid build and rejects stale plane installation or changed selection', async () => {
+    const context = setup(); context.update({ buildState: 'idle', buildVersion: null, buildId: null, selectedReferencePlane: 'XY', visibleReferencePlanes: ['XY', 'XZ', 'YZ'] });
+    const view = { mode: 'solid' as const, available: true, view: 'Isometric' as const, gridVisible: true, zoom: 1, revision: 2,
+      referenceVersion: 'version-1', referenceFeatureIds: [] };
+    context.updateView({ ...view, referencePlanes: ['XY'] });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_STATE' });
+    context.updateView({ ...view, referencePlanes: ['XY', 'XZ', 'YZ'] });
+    await expect(context.controls.capture(new AbortController().signal)).resolves.toMatchObject({ buildVersion: null, viewState: { selectedReferencePlane: 'XY' } });
+    context.capture.mockImplementationOnce(async () => { context.update({ selectedReferencePlane: 'XZ' }); return png; });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
+    context.update({ visibleReferencePlanes: [], buildState: 'ready', buildVersion: 'version-1' });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_STATE' });
+  });
+  it('preserves sub-0.01 Fit zoom in read/capture identity and still rejects a camera change during capture', async () => {
+    const context = setup();
+    const view = { mode: 'solid' as const, available: true, view: 'Isometric' as const, gridVisible: true, zoom: 0.000013, revision: 2 };
+    context.updateView(view);
+    expect(context.controls.getState().view).toMatchObject({ zoom: view.zoom });
+    await expect(context.controls.capture(new AbortController().signal)).resolves.toMatchObject({ viewState: { view: { zoom: view.zoom } } });
+    context.capture.mockImplementationOnce(async () => { context.updateView({ ...view, zoom: 0.0000131 }); return png; });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
+  });
   const datum = { id: 'mounting_plane', name: 'Mounting plane', kind: 'datum-plane' as const, suppressed: false,
     definition: { kind: 'world' as const, basePlane: 'XY' as const, origin: [12, -8, 4] as const, rotation: [30, 0, 15] as const } };
   it('captures datum-only references without a kernel build only after their exact installation', async () => {

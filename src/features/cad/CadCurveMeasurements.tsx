@@ -9,12 +9,14 @@ export function CadCurveMeasurements({ curve, document }: { curve: CadCurveFeatu
   if (!measurement) return null;
   const n = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 4 });
   const point = (value: readonly number[]) => value.map(n).join(', ');
-  return <dl className="cad-topology-details cad-curve-measurements" aria-label="Curve measurements">
-    <dt>Length</dt><dd>{n(measurement.lengthMm)} mm</dd>
+  return <section className="cad-curve-measurements" aria-label="Curve measurements">
+    <dl className="cad-topology-details"><dt>Length</dt><dd>{n(measurement.lengthMm)} mm</dd></dl>
+    <details className="cad-measurement-details cad-topology-measurements"><summary>Coordinates</summary><dl className="cad-topology-details">
     {measurement.startWorldMm && measurement.endWorldMm && measurement.worldBoundsMm ? <>
       <dt>Start (world)</dt><dd>{point(measurement.startWorldMm)} mm</dd>
       <dt>End (world)</dt><dd>{point(measurement.endWorldMm)} mm</dd>
       <dt>Bounds (world)</dt><dd>{point(measurement.worldBoundsMm.min)} → {point(measurement.worldBoundsMm.max)} mm</dd>
     </> : <><dt>Start (local)</dt><dd>{point(measurement.startMm)} mm</dd><dt>End (local)</dt><dd>{point(measurement.endMm)} mm</dd><dt>Placement</dt><dd>Unavailable plane</dd></>}
-  </dl>;
+    </dl></details>
+  </section>;
 }

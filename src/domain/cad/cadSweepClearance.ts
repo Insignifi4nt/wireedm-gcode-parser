@@ -135,14 +135,14 @@ function envelope(curve: CadResolvedCurve, radius: number): readonly Edge[] {
 }
 
 /** Conservative precision scope for exact prism/revolve transport, not a formal interval proof. */
-export function resolveCadSweepClearance(curve: CadResolvedCurve, profileRadiusMm: number, sectionScale: number, initialUncertaintyMm = 0): CadSweepClearance {
-  if (!Number.isFinite(profileRadiusMm) || profileRadiusMm <= 0 || !Number.isFinite(sectionScale) || !Number.isFinite(initialUncertaintyMm) || initialUncertaintyMm < 0) {
+export function resolveCadSweepClearance(curve: CadResolvedCurve, profileRadiusMm: number, sectionScale: number, initialUncertaintyMm = 0, worldScaleMm = 0): CadSweepClearance {
+  if (!Number.isFinite(profileRadiusMm) || profileRadiusMm <= 0 || !Number.isFinite(sectionScale) || !Number.isFinite(initialUncertaintyMm) || initialUncertaintyMm < 0 || !Number.isFinite(worldScaleMm) || worldScaleMm < 0) {
     throw new CadError('unsupported-sweep-precision', 'Sweep dimensions and uncertainty must be finite positive measurements.');
   }
-  let scale = Math.max(1, profileRadiusMm, sectionScale, Math.abs(curve.offset)); let accumulated = initialUncertaintyMm;
+  let scale = Math.max(1, profileRadiusMm, sectionScale, Math.abs(curve.offset), worldScaleMm); let accumulated = initialUncertaintyMm;
   for (let index = 0; index < curve.entities.length; index++) {
     const edge = curve.entities[index];
-    const edgeScale = Math.max(1, sectionScale, Math.abs(curve.offset), Math.abs(edge.start.x), Math.abs(edge.start.y), Math.abs(edge.end.x), Math.abs(edge.end.y), profileRadiusMm,
+    const edgeScale = Math.max(1, sectionScale, Math.abs(curve.offset), worldScaleMm, Math.abs(edge.start.x), Math.abs(edge.start.y), Math.abs(edge.end.x), Math.abs(edge.end.y), profileRadiusMm,
       ...(edge.type === 'arc' ? [Math.abs(edge.center.x), Math.abs(edge.center.y), edge.radius] : []));
     scale = Math.max(scale, edgeScale);
     accumulated += roundingFactor * Number.EPSILON * edgeScale;

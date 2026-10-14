@@ -2,17 +2,16 @@ import { cast, Face, getOC, isShape3D, makeAx1, measureVolume, Plane, Vector, ty
 import { CadError } from '../../../domain/cad/cadError';
 import { CAD_SWEEP_TOPOLOGY_TOLERANCE, type CadResolvedSweepInputs } from '../../../domain/cad/cadSweep';
 import { cadPlanePointToWorld } from '../../../domain/cad/cadPlanes';
-import { requireCadPrincipalPlane } from '../../../domain/cad/cadDatumPlanes';
-import { cadKernelPlaneBasis } from './cadKernelPlane';
-import { cadKernelProfileDrawing } from './cadKernelSketch';
+import { cadFrameDirectionToWorld, cadFramePointToWorld, requireCadPrincipalPlane } from '../../../domain/cad/cadDatumPlanes';
+import { cadKernelPlaneBasis, createCadKernelPlane } from './cadKernelPlane';
+import { cadKernelProfileDrawing, cadKernelSketchOnPlane } from './cadKernelSketch';
+import { cadKernelDisposeOwned, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
 
 function validateSweepSolid(shape: Shape3D) {
-  const oc = getOC(); const solids = shape.solids;
+  const oc = getOC(); const solids = cadKernelSolids(shape);
   try {
     if (solids.length !== 1) throw new CadError('sweep-invalid', 'Sweep must produce one closed solid. Revise the section or curve.');
-    const analyzer = new oc.BRepCheck_Analyzer(shape.wrapped, true, false, false);
-    try { if (!analyzer.IsValid()) throw new CadError('sweep-invalid', 'OpenCascade rejected the exact Sweep topology. Revise the section or curve.'); }
-    finally { analyzer.delete(); }
+    if (!cadKernelIsValid(shape)) throw new CadError('sweep-invalid', 'OpenCascade rejected the exact Sweep topology. Revise the section or curve.');
     const volume = measureVolume(shape);
     if (!Number.isFinite(volume) || volume <= 1e-9) throw new CadError('sweep-volume', 'Sweep must produce positive volume with outward orientation.');
     const shells = new oc.TopExp_Explorer(shape.wrapped, oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
@@ -20,7 +19,7 @@ function validateSweepSolid(shape: Shape3D) {
       while (shells.More()) {
         const shell = shells.Current();
         try { if (!oc.BRep_Tool.IsClosed(shell)) throw new CadError('sweep-open', 'Sweep produced an open shell. Revise the section or curve.'); }
-        finally { shell.delete(); }
+        finally { cadKernelDisposeOwned(shell); }
         shells.Next();
       }
     } finally { shells.delete(); }
@@ -39,35 +38,36 @@ function validateSweepSolid(shape: Shape3D) {
               if (!Number.isFinite(tolerance) || tolerance > CAD_SWEEP_TOPOLOGY_TOLERANCE) {
                 throw new CadError('unsupported-sweep-precision', 'Native Sweep topology exceeds the reserved precision. Simplify the curve or move the geometry closer to the origin.');
               }
-            } finally { item.delete(); }
-          } finally { raw.delete(); }
+            } finally { cadKernelDisposeOwned(item); }
+          } finally { cadKernelDisposeOwned(raw); }
           explorer.Next();
         }
       } finally { explorer.delete(); }
     }
-  } finally { solids.forEach(solid => solid.delete()); }
+  } finally { solids.forEach(cadKernelDisposeOwned); }
 }
 
 /** Exact line extrusions and signed circular revolutions, never a fitted pipe frame. */
 export function buildCadSweepSolid(resolved: CadResolvedSweepInputs): Shape3D {
-  const curvePlane = requireCadPrincipalPlane(resolved.curve.plane, 'Sweep');
-  const sectionPlane = requireCadPrincipalPlane(resolved.section.plane, 'Sweep');
-  const oc = getOC(); const basis = cadKernelPlaneBasis(sectionPlane);
+  const datumPlacement = !resolved.placement.legacyPrincipal;
+  const curvePlane = datumPlacement ? null : requireCadPrincipalPlane(resolved.curve.plane, 'Sweep');
+  const sectionPlane = datumPlacement ? null : requireCadPrincipalPlane(resolved.section.plane, 'Sweep');
+  const oc = getOC(); const basis = sectionPlane === null ? null : cadKernelPlaneBasis(sectionPlane);
   const offset = resolved.section.offset;
-  const origin: SimplePoint = [basis.normal[0] * offset, basis.normal[1] * offset, basis.normal[2] * offset];
+  const origin: SimplePoint = basis ? [basis.normal[0] * offset, basis.normal[1] * offset, basis.normal[2] * offset] : [0, 0, 0];
   const planes: Plane[] = []; const drawings: Drawing[] = []; const sketches: Sketch[] = [];
   const owned = new Set<{ delete(): void }>();
   const own = <T extends { delete(): void }>(value: T): T => { owned.add(value); return value; };
-  const release = (value: { delete(): void }) => { value.delete(); owned.delete(value); };
+  const release = (value: { delete(): void }) => { cadKernelDisposeOwned(value); owned.delete(value); };
   let result: Shape3D | undefined;
   try {
-    const plane = new Plane(origin, basis.u, basis.normal); planes.push(plane);
+    const plane = basis ? new Plane(origin, basis.u, basis.normal) : createCadKernelPlane(resolved.section.placement.frame, offset); planes.push(plane);
     const drawing = cadKernelProfileDrawing(resolved.section.geometry, drawings);
-    const sketch = drawing.blueprint.sketchOnPlane(plane); sketches.push(sketch);
+    const sketch = cadKernelSketchOnPlane(drawing, plane); sketches.push(sketch);
     const faceBuilder = own(new oc.BRepBuilderAPI_MakeFace(sketch.wire.wrapped, true));
     if (!faceBuilder.IsDone()) throw new CadError('sweep-section', 'Sweep section did not form a planar closed face.');
     const rawFace = faceBuilder.Face(); let face: Face;
-    try { face = own(new Face(oc.TopoDS.Face(rawFace))); } finally { rawFace.delete(); }
+    try { face = own(new Face(oc.TopoDS.Face(rawFace))); } finally { cadKernelDisposeOwned(rawFace); }
     release(faceBuilder);
     for (let index = 0; index < resolved.curve.segments.length; ++index) {
       const segment = resolved.curve.segments[index]; const entity = resolved.curve.entities[index];
@@ -76,11 +76,20 @@ export function buildCadSweepSolid(resolved: CadResolvedSweepInputs): Shape3D {
       // reconstructed normalized length. Subsequent sections are native caps.
       let displacement: Vector | undefined;
       if (segment.kind === 'line') {
-        const start = cadPlanePointToWorld(curvePlane, resolved.curve.offset, segment.start);
-        const end = cadPlanePointToWorld(curvePlane, resolved.curve.offset, segment.end);
-        displacement = own(new Vector([end[0] - start[0], end[1] - start[1], end[2] - start[2]]));
+        if (curvePlane === null) {
+          // Preserve authored local displacement; subtracting independently
+          // mapped world endpoints would amplify origin cancellation.
+          displacement = own(new Vector([...cadFrameDirectionToWorld(resolved.curve.frame,
+            [segment.end[0] - segment.start[0], segment.end[1] - segment.start[1]])]));
+        } else {
+          const start = cadPlanePointToWorld(curvePlane, resolved.curve.offset, segment.start);
+          const end = cadPlanePointToWorld(curvePlane, resolved.curve.offset, segment.end);
+          displacement = own(new Vector([end[0] - start[0], end[1] - start[1], end[2] - start[2]]));
+        }
       }
-      const center = segment.kind === 'arc' ? cadPlanePointToWorld(curvePlane, resolved.curve.offset, segment.center) : null;
+      const center = segment.kind === 'arc' ? curvePlane === null
+        ? cadFramePointToWorld(resolved.curve.frame, resolved.curve.offset, segment.center)
+        : cadPlanePointToWorld(curvePlane, resolved.curve.offset, segment.center) : null;
       const axis = center ? own(makeAx1([center[0], center[1], center[2]], [resolved.frame.binormal[0], resolved.frame.binormal[1], resolved.frame.binormal[2]])) : null;
       const builder = segment.kind === 'line' && displacement ? own(new oc.BRepPrimAPI_MakePrism(face.wrapped, displacement.wrapped, false, true))
         : segment.kind === 'arc' && axis ? own(new oc.BRepPrimAPI_MakeRevol(face.wrapped, axis, segment.sweep * Math.PI / 180, false)) : null;
@@ -88,16 +97,16 @@ export function buildCadSweepSolid(resolved: CadResolvedSweepInputs): Shape3D {
       const raw = builder.Shape(); let piece: Shape3D;
       try {
         const shape = cast(raw);
-        if (!isShape3D(shape)) { shape.delete(); throw new CadError('sweep-invalid', 'Sweep segment did not produce a native solid.'); }
+        if (!isShape3D(shape)) { cadKernelDisposeOwned(shape); throw new CadError('sweep-invalid', 'Sweep segment did not produce a native solid.'); }
         piece = own(shape);
-      } finally { raw.delete(); }
+      } finally { cadKernelDisposeOwned(raw); }
       validateSweepSolid(piece);
       const rawCap = builder.LastShape(); let terminal: Face;
       try {
         const cap = cast(rawCap);
-        if (!(cap instanceof Face)) { cap.delete(); throw new CadError('sweep-section', 'Sweep segment did not retain its terminal section face.'); }
+        if (!(cap instanceof Face)) { cadKernelDisposeOwned(cap); throw new CadError('sweep-section', 'Sweep segment did not retain its terminal section face.'); }
         terminal = own(cap);
-      } finally { rawCap.delete(); }
+      } finally { cadKernelDisposeOwned(rawCap); }
       // Reusing the actual terminal cap makes the next primitive share the
       // same native section, rather than independently rounding another pose.
       release(face); face = terminal; release(builder);
@@ -110,7 +119,7 @@ export function buildCadSweepSolid(resolved: CadResolvedSweepInputs): Shape3D {
     if (!result) throw new CadError('sweep-empty', 'Sweep requires an open analytic curve.');
     owned.delete(result); return result;
   } finally {
-    for (const value of owned) value.delete();
-    sketches.forEach(sketch => sketch.delete()); planes.forEach(plane => plane.delete()); drawings.forEach(drawing => drawing.blueprint.delete());
+    for (const value of owned) cadKernelDisposeOwned(value);
+    sketches.forEach(cadKernelDisposeOwned); planes.forEach(plane => plane.delete()); drawings.forEach(drawing => drawing.blueprint.delete());
   }
 }

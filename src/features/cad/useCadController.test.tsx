@@ -11,17 +11,21 @@ import { loadCadDocument } from '@/domain/cad/cadStorage';
 import { CadSession } from './cadSession';
 import { useCadController, type CadController } from './useCadController';
 import { cadSiteTools } from './cadSiteTools';
+import { CAD_STAR_PLUGIN, CAD_GEAR_V2_PLUGIN, createCadPluginProfile, fingerprintCadPluginPackage } from '@/domain/cad/plugins/cadPlugins';
 import type { CadViewportCapture, CadViewportState } from './cadViewportControls';
+import { cadReferencePlanes, prepareCadViewportReferences } from './cadViewportReferences';
 import { loadEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { importCadDxfSketch, type CadDxfImportInput, type CadDxfImportResult } from '@/domain/cad/cadDxfImport';
 import { importCadDxfCurve, type CadDxfCurveImportInput, type CadDxfCurveImportResult } from '@/domain/cad/cadCurveDxf';
+import { parseDxf } from '@/domain/dxf/parseDxf';
 
 const kernel = vi.hoisted(() => ({ build: vi.fn(), section: vi.fn(), export: vi.fn(), importSolid: vi.fn(), importDxf: vi.fn(), importDxfCurve: vi.fn(), inspectTopology: vi.fn(), resolveTopologyPicks: vi.fn(), dispose: vi.fn() }));
-vi.mock('./kernel/cadKernelClient', () => ({ createCadKernelClient: () => kernel }));
+const createClient = vi.hoisted(() => vi.fn());
+vi.mock('./kernel/cadKernelClient', () => ({ createCadKernelClient: createClient }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
-beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); });
+beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); createClient.mockReset().mockReturnValue(kernel); });
 afterEach(() => { act(() => root?.unmount()); container?.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function deferred<T>() {
@@ -59,6 +63,199 @@ async function harness(withGeometry = false, allowHandoff = false) {
 }
 
 describe('CAD controller asynchronous guards', () => {
+  it('uses a separately owned native preview and restores the accepted build identity on Cancel without changing history', async () => {
+    const h = await harness(true), acceptedBuild: CadBuildResult = { buildId: 'accepted-build', meshes: [], diagnostics: [], durationMs: 1 };
+    kernel.build.mockResolvedValue(acceptedBuild);
+    await act(async () => { await h.cad().inspectBuild(); });
+    const before = h.session.getSnapshot(), pending = deferred<CadBuildResult>(), previewClient = { build: vi.fn(() => pending.promise), dispose: vi.fn() };
+    createClient.mockReturnValueOnce(previewClient);
+    await act(async () => {
+      h.session.setWorkflowOpen(true, 'editor');
+      h.cad().previewFeature({ kind: 'candidate', owner: 'pad-editor', expectedVersion: before.version,
+        edits: [{ kind: 'add-feature', feature: { id: 'pad', name: 'Provisional Pad', kind: 'extrude', suppressed: false, sketchId: 'sketch', distance: 20, operation: 'new', symmetric: false, targetId: null } }] });
+    });
+    await act(async () => { await vi.waitFor(() => expect(previewClient.build).toHaveBeenCalledOnce()); });
+    expect(h.session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: false });
+    await act(async () => { pending.resolve({ buildId: 'candidate-build', meshes: [], diagnostics: [], durationMs: 1 }); });
+    expect(h.cad().featurePreview).toMatchObject({ kind: 'ready', result: { buildId: 'candidate-build' } });
+    expect(h.cad().build).toBe(acceptedBuild); expect(h.cad().buildVersion).toBe(before.version);
+    await act(async () => { h.cad().previewFeature({ kind: 'clear', owner: 'pad-editor' }); h.session.setWorkflowOpen(false, 'editor'); });
+    expect(previewClient.dispose).toHaveBeenCalledOnce(); expect(kernel.dispose).not.toHaveBeenCalled();
+    expect(h.cad().featurePreview).toEqual({ kind: 'idle' }); expect(h.cad().build).toBe(acceptedBuild); expect(h.session.getSnapshot()).toEqual(before); expect(h.session.getSnapshot().document).toBe(before.document);
+  });
+  it('keeps agent edits and history blocked while the document library owns the UI, then opens its chosen saved part', async () => {
+    const h = await harness(true);
+    await act(async () => { await h.cad().save(); await h.cad().showLibrary(); });
+    const before = h.session.getSnapshot();
+    expect(before.workflowOpen).toBe(true);
+    const edit = cadSiteTools(h.cad).find(tool => tool.name === 'cad_edit_document'); if (!edit) throw new Error('Missing edit tool');
+    await expect(edit.execute({ expectedVersion: before.version, edits: [{ kind: 'rename-document', name: 'Unexpected background edit' }] })).resolves.toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    expect(() => h.cad().undo(before.version)).toThrow('Finish or cancel');
+    await expect(h.cad().openDocument(before.document.id, before.version)).rejects.toMatchObject({ code: 'WORKFLOW_OPEN' });
+    await act(async () => h.cad().closeLibrary());
+    expect(h.session.getSnapshot().workflowOpen).toBe(false);
+    await act(async () => { await h.cad().showLibrary(); await h.cad().openDocument(before.document.id, before.version, undefined, 'library'); });
+    expect(h.session.getSnapshot()).toMatchObject({ dirty: false, workflowOpen: false, document: before.document });
+  });
+  it('does not reopen a closed library after its delayed inventory finishes', async () => {
+    const h = await harness(true);
+    await act(async () => { await h.cad().save(); });
+    const adapter = h.workbench().adapter, originalList = adapter.listFiles;
+    if (!originalList) throw new Error('Missing storage inventory');
+    const started = deferred<void>(), finish = deferred<void>();
+    vi.spyOn(adapter, 'listFiles').mockImplementation(async signal => { started.resolve(); await finish.promise; return originalList(signal); });
+    let listing: ReturnType<CadController['showLibrary']> | undefined;
+    await act(async () => { listing = h.cad().showLibrary(); await started.promise; });
+    await act(async () => { h.cad().closeLibrary(); finish.resolve(); await listing; });
+    expect(h.cad().library).toBeNull(); expect(h.session.getSnapshot().workflowOpen).toBe(false);
+  });
+  it('refuses new/open/import replacements while a dirty draft contains only an empty parameter group', async () => {
+    const h = await harness();
+    await act(async () => h.session.edit([{ kind: 'set-parameter-group', group: { id: 'settings', name: 'Gear settings' } }]));
+    const before = h.session.getSnapshot();
+    expect(() => h.cad().newDocument('Replacement', before.version)).toThrow('Save the current CAD draft');
+    await expect(h.cad().openDocument('other', before.version)).rejects.toMatchObject({ code: 'UNSAVED_DRAFT' });
+    await expect(h.cad().importDocumentValue(createCadDocument('Imported'), before.version)).rejects.toMatchObject({ code: 'UNSAVED_DRAFT' });
+    await expect(h.cad().importDocument(new File(['{}'], 'new.cad.json'))).rejects.toMatchObject({ code: 'UNSAVED_DRAFT' });
+    expect(h.session.getSnapshot()).toBe(before);
+  });
+  it('exports an exact final-solid section from the unsaved draft without a CAD save or CAM handoff', async () => {
+    const h = await harness(true);
+    const before = h.session.getSnapshot();
+    const section: CadSectionResult = { bodyId: 'pad', plane: 'XY', offset: 5, contourCount: 2, entities: [
+      { type: 'circle', layer: 'CAD', center: { x: 4, y: -7 }, radius: 10 },
+      { type: 'circle', layer: 'CAD', center: { x: 4, y: -7 }, radius: 2 }
+    ] };
+    kernel.section.mockResolvedValue(section);
+    const blobs: Blob[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => { if (blob instanceof Blob) blobs.push(blob); return 'blob:dxf'; });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const tool = cadSiteTools(h.cad).find(entry => entry.name === 'cad_export_section_dxf');
+    if (!tool) throw new Error('Section export tool missing');
+    expect(await tool.execute({ expectedVersion: before.version, section: { bodyId: 'pad', plane: 'XY', offset: '5' } }))
+      .toMatchObject({ ok: true, data: { downloadRequested: true, version: before.version, section: { offset: 5, entityCount: 2 } } });
+    expect(kernel.section).toHaveBeenCalledWith(before.document, { bodyId: 'pad', plane: 'XY', offset: '5' }, expect.any(AbortSignal));
+    const text = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsText(blobs[0]); });
+    expect(parseDxf(text).entities).toMatchObject(section.entities);
+    expect(click).toHaveBeenCalledOnce();
+    expect(h.session.getSnapshot()).toBe(before);
+    await expect(loadCadDocument(h.workbench().adapter, before.document.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+  it.each(['cancel', 'version', 'workflow', 'close', 'substitution'] as const)('rejects section DXF after %s while exact geometry is being computed', async change => {
+    const h = await harness(true), before = h.session.getSnapshot(), abort = new AbortController();
+    const result = deferred<CadSectionResult>(); kernel.section.mockReturnValue(result.promise);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const operation = h.cad().exportSectionDxf({ bodyId: 'pad', plane: 'XZ', offset: 5 }, before.version, abort.signal);
+    await vi.waitFor(() => expect(kernel.section).toHaveBeenCalled());
+    await act(async () => {
+      if (change === 'cancel') abort.abort();
+      if (change === 'version') h.session.edit([{ kind: 'rename-document', name: 'Changed' }]);
+      if (change === 'workflow') h.session.setWorkflowOpen(true, 'editor');
+      if (change === 'close') h.cad().back();
+      result.resolve({ bodyId: 'pad', plane: 'XZ', offset: change === 'substitution' ? 6 : 5, contourCount: 1,
+        entities: [{ type: 'circle', layer: 'CAD', center: { x: 0, y: 0 }, radius: 10 }] });
+      await expect(operation).rejects.toMatchObject(change === 'cancel' ? { name: 'AbortError' } : {
+        code: change === 'version' ? 'STALE_STATE' : change === 'workflow' ? 'WORKFLOW_OPEN' : change === 'close' ? 'CAD_NOT_OPEN' : 'INVALID_SECTION_RESULT'
+      });
+    });
+    expect(click).not.toHaveBeenCalled();
+  });
+  it('permits the owning DXF dialog scope while rejecting external exports and concurrent editor scopes', async () => {
+    const h = await harness(true), version = h.session.getSnapshot().version;
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:dxf');
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    await act(async () => h.session.setWorkflowOpen(true, 'dxf-export'));
+    await expect(h.cad().exportDxf('sketch', version)).rejects.toMatchObject({ code: 'WORKFLOW_OPEN' });
+    await expect(h.cad().exportDxf('sketch', version, undefined, 'dxf-export')).resolves.toMatchObject({ downloadRequested: true });
+    await act(async () => h.session.setWorkflowOpen(true, 'editor'));
+    await expect(h.cad().exportDxf('sketch', version, undefined, 'dxf-export')).rejects.toMatchObject({ code: 'WORKFLOW_OPEN' });
+  });
+  it('inspects correlated profiles with draft/version/workflow/cancellation guards and rejects unsafe agent edits atomically', async () => {
+    const h = await harness(), tools = cadSiteTools(h.cad);
+    const inspect = tools.find(tool => tool.name === 'cad_inspect_plugin'), edit = tools.find(tool => tool.name === 'cad_edit_document');
+    if (!inspect || !edit) throw new Error('Missing plugin operations');
+    await act(async () => h.session.edit([{ kind: 'add-feature', feature: { id: 'gear', kind: 'sketch', name: 'Gear', plane: 'XY', offset: 0, suppressed: false,
+      profiles: [{ id: 'tooth_profile', name: 'Teeth', construction: false, geometry: { ...createCadPluginProfile(CAD_GEAR_V2_PLUGIN), inputs: { ...createCadPluginProfile(CAD_GEAR_V2_PLUGIN).inputs, teeth: 12 } } }] } }]));
+    const snapshot = h.session.getSnapshot(), request = { expectedVersion: snapshot.version, sketchId: 'gear', profileId: 'tooth_profile' };
+    expect(await inspect.execute(request)).toMatchObject({ ok: true, data: { apiVersion: 2, persisted: false,
+      inputs: expect.arrayContaining([expect.objectContaining({ name: 'profileShift', enabled: false })]),
+      derived: expect.arrayContaining([expect.objectContaining({ name: 'pitchDiameter', value: 36 })]), issues: [] } });
+    expect(await inspect.execute({ ...request, expectedVersion: 'stale' })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    expect(await inspect.execute({ ...request, profileId: 'missing' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    await act(async () => h.session.setWorkflowOpen(true));
+    expect(await inspect.execute(request)).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    await act(async () => h.session.setWorkflowOpen(false));
+    const abort = new AbortController(); abort.abort();
+    expect(await inspect.execute(request, { signal: abort.signal })).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    const before = h.session.getSnapshot();
+    const sketch = before.document.features[0];
+    if (sketch.kind !== 'sketch' || sketch.profiles[0].geometry.kind !== 'plugin') throw new Error('Expected plugin sketch');
+    const unsafe = { ...sketch, profiles: [{ ...sketch.profiles[0], geometry: { ...sketch.profiles[0].geometry, inputs: { ...sketch.profiles[0].geometry.inputs, shiftMode: 1, profileShift: 0 } } }] };
+    await act(async () => expect(await edit.execute({ expectedVersion: before.version, edits: [{ kind: 'update-feature', feature: unsafe }] })).toMatchObject({ ok: false }));
+    expect(h.session.getSnapshot().document).toBe(before.document);
+  });
+  it('shares atomic grouped plugin insertion and bounded current parameter usage inspection with guarded agent tools', async () => {
+    const h = await harness(), tools = cadSiteTools(h.cad);
+    const edit = tools.find(tool => tool.name === 'cad_edit_document'), inspect = tools.find(tool => tool.name === 'cad_inspect_parameters');
+    if (!edit || !inspect) throw new Error('Missing parameter tools');
+    const before = h.session.getSnapshot();
+    await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits: [
+      { kind: 'add-feature', feature: { id: 'section', name: 'Section', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [] } },
+      { kind: 'add-plugin-profile', sketchId: 'section', profileId: 'gear', name: 'Gear', package: CAD_GEAR_V2_PLUGIN, groupId: 'dimensions' }
+    ] })).toMatchObject({ ok: true }); });
+    const snapshot = h.session.getSnapshot(), request = { expectedVersion: snapshot.version, name: 'p_gear_module', limit: 1 };
+    expect(snapshot.document.parameters).toHaveProperty('p_gear_module', 3);
+    expect(await inspect.execute(request)).toMatchObject({ ok: true, data: { persisted: false,
+      parameter: { name: 'p_gear_module', groupName: 'Gear', source: { kind: 'plugin', profileId: 'gear' }, activeUsageCount: 1 },
+      usages: { total: 1, items: [{ featureId: 'section', inputName: 'module', active: true }], nextOffset: null } } });
+    expect(await inspect.execute({ expectedVersion: snapshot.version, limit: 2 })).toMatchObject({ ok: true, data: { total: 4, items: expect.any(Array), nextOffset: 2 } });
+    expect(await inspect.execute({ ...request, name: 'missing' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    expect(await inspect.execute({ ...request, expectedVersion: before.version })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    await act(async () => h.session.setWorkflowOpen(true));
+    expect(await inspect.execute(request)).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    await act(async () => h.session.setWorkflowOpen(false));
+    const cancelled = new AbortController(); cancelled.abort();
+    expect(await inspect.execute(request, { signal: cancelled.signal })).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    expect(h.session.getSnapshot().document).toBe(snapshot.document);
+    await act(async () => h.cad().undo(snapshot.version));
+    expect(h.session.getSnapshot().document).toEqual(before.document);
+  });
+  it('keeps grouped parameter context and summaries bounded at the complete document limits', async () => {
+    const h = await harness();
+    const names = Array.from({ length: 128 }, (_, index) => `dimension_${index}_${'x'.repeat(45)}`);
+    await act(async () => h.session.edit([
+      ...names.map((name, index) => ({ kind: 'set-parameter' as const, name, value: index })),
+      ...Array.from({ length: 64 }, (_, index) => ({ kind: 'set-parameter-group' as const, group: { id: `group_${index}_${'x'.repeat(75)}`, name: `${index} ${'Group '.repeat(24)}` } }))
+    ]));
+    const tools = cadSiteTools(h.cad), context = tools.find(tool => tool.name === 'cad_get_context'), inspect = tools.find(tool => tool.name === 'cad_inspect_parameters');
+    if (!context || !inspect) throw new Error('Parameter tools missing');
+    const result = await context.execute({});
+    expect(result).toMatchObject({ ok: true, data: { parameterGroupCount: 64, omittedParameterGroups: true, parameterGroups: expect.any(Array) } });
+    expect(new TextEncoder().encode(JSON.stringify(result)).length).toBeLessThan(32768);
+    expect(await inspect.execute({ expectedVersion: h.session.getSnapshot().version, limit: 50 })).toMatchObject({ ok: true, data: { total: 128, nextOffset: 50 } });
+  });
+  it('installs plugins through the guarded tool and exposes bounded hash-pinned reads', async () => {
+    const h = await harness(), tools = cadSiteTools(h.cad);
+    const install = tools.find(tool => tool.name === 'cad_install_plugin'), read = tools.find(tool => tool.name === 'cad_read_plugin');
+    if (!install || !read) throw new Error('Missing plugin tools');
+    const plugin = { ...CAD_STAR_PLUGIN, id: 'user.plugin-controller' }, expectedVersion = h.session.getSnapshot().version;
+    await act(async () => { expect(await install.execute({ package: plugin, expectedVersion })).toMatchObject({ ok: true, data: { installed: true, id: plugin.id } }); });
+    expect(await h.workbench().adapter.readText('cad/plugins/user.plugin-controller/1.0.0.cad-plugin.json')).toBe(JSON.stringify(plugin));
+    const packageHash = await fingerprintCadPluginPackage(plugin);
+    const result = await read.execute({ id: plugin.id, version: plugin.version, packageHash, length: 128 });
+    expect(result).toMatchObject({ ok: true, data: { text: JSON.stringify(plugin).slice(0, 128), nextOffset: 128 } });
+    expect(await read.execute({ id: plugin.id, version: plugin.version, packageHash: '0'.repeat(64) })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    expect(h.session.getSnapshot().document.features).toHaveLength(0);
+  });
+  it('refuses stale or active-workflow plugin installs before writing', async () => {
+    const h = await harness(), install = cadSiteTools(h.cad).find(tool => tool.name === 'cad_install_plugin');
+    if (!install) throw new Error('Missing plugin installation');
+    const plugin = { ...CAD_STAR_PLUGIN, id: 'user.plugin-guard' };
+    expect(await install.execute({ package: plugin, expectedVersion: 'stale' })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    await act(async () => h.session.setWorkflowOpen(true));
+    expect(await install.execute({ package: plugin, expectedVersion: h.session.getSnapshot().version })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    expect(await h.workbench().adapter.readText('cad/plugins/user.plugin-guard/1.0.0.cad-plugin.json')).toBeNull();
+  });
   async function loftHarness() {
     const h = await harness(true);
     await act(async () => h.cad().edit([{ kind: 'add-feature', feature: {
@@ -213,17 +410,52 @@ describe('CAD controller asynchronous guards', () => {
     expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().version).toBe(before.version);
     expect(kernel.build).not.toHaveBeenCalled();
   });
-  it('rechecks draft changes and late cancellation after loading the Sweep inspector', async () => {
+  it('shares datum Sweep placement with agents without fitting, relocating or saving sources', async () => {
+    const h = await harness();
+    const plane = (id: string, basePlane: 'XY' | 'YZ') => ({ kind: 'datum-plane' as const, id, name: id, suppressed: false,
+      definition: { kind: 'world' as const, basePlane, origin: [30, -20, 12] as const, rotation: [30, 0, 15] as const } });
+    await act(async () => h.cad().edit([
+      { kind: 'add-feature', feature: plane('section_plane', 'YZ') },
+      { kind: 'add-feature', feature: plane('rail_plane', 'XY') },
+      { kind: 'add-feature', feature: { kind: 'sketch', id: 'section', name: 'Section', suppressed: false,
+        plane: { kind: 'datum-plane', featureId: 'section_plane' }, offset: 0,
+        profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 1 } }] } },
+      { kind: 'add-feature', feature: { kind: 'curve', id: 'rail', name: 'Rail', suppressed: false,
+        plane: { kind: 'datum-plane', featureId: 'rail_plane' }, offset: 0,
+        segments: [{ kind: 'line', start: [0, 0], end: [20, 0] }] } },
+    ]));
+    const before = h.session.getSnapshot(); const tool = cadSiteTools(h.cad).find(entry => entry.name === 'cad_inspect_sweep');
+    if (!tool) throw new Error('Missing Sweep tool');
+    expect(await tool.execute({ expectedVersion: before.version, sketchId: 'section', curveId: 'rail' }))
+      .toMatchObject({ ok: true, data: { eligible: true, version: before.version, persisted: false, nativeBuildRequired: true,
+        section: { plane: { kind: 'datum-plane', featureId: 'section_plane' }, originWorldMm: [30, -20, 12] },
+        curve: { plane: { kind: 'datum-plane', featureId: 'rail_plane' }, startWorldMm: [30, -20, 12], lengthMm: 20 } } });
+    expect(h.session.getSnapshot()).toBe(before); expect(before.savedVersion).toBeNull();
+    expect(kernel.build).not.toHaveBeenCalled();
+  });
+  it.each(['close', 'workflow', 'version', 'cancel', 'busy'] as const)('rechecks %s changes while loading Sweep inspection', async change => {
     const h = await sweepHarness(); const before = h.session.getSnapshot();
+    const abort = new AbortController(); const competingAbort = new AbortController();
+    const exported = deferred<Blob>(); kernel.export.mockReturnValue(exported.promise);
     await act(async () => {
-      const reading = h.cad().inspectSweep('sketch', 'rail', before.version);
-      h.session.edit([{ kind: 'rename-document', name: 'Newer draft' }]);
-      await expect(reading).rejects.toMatchObject({ code: 'STALE_STATE' });
+      const pending = h.cad().inspectSweep('sketch', 'rail', before.version, abort.signal);
+      let competing: Promise<unknown> | undefined;
+      if (change === 'close') h.cad().back();
+      if (change === 'workflow') h.session.setWorkflowOpen(true);
+      if (change === 'version') h.session.edit([{ kind: 'rename-document', name: 'Newer Sweep' }]);
+      if (change === 'cancel') abort.abort();
+      if (change === 'busy') competing = h.cad().exportSolid('step', before.version, competingAbort.signal);
+      try {
+        await expect(pending).rejects.toMatchObject(change === 'cancel' ? { name: 'AbortError' }
+          : { code: { close: 'CAD_NOT_OPEN', workflow: 'WORKFLOW_OPEN', version: 'STALE_STATE', busy: 'BUSY' }[change] });
+      } finally {
+        if (competing) {
+          competingAbort.abort(); exported.resolve(new Blob(['STEP']));
+          await expect(competing).rejects.toMatchObject({ name: 'AbortError' });
+        }
+      }
     });
-    const latest = h.session.getSnapshot(); const abort = new AbortController();
-    const reading = h.cad().inspectSweep('sketch', 'rail', latest.version, abort.signal); abort.abort();
-    await expect(reading).rejects.toMatchObject({ name: 'AbortError' });
-    expect(h.session.getSnapshot()).toBe(latest); expect(kernel.build).not.toHaveBeenCalled();
+    expect(kernel.build).not.toHaveBeenCalled();
   });
   const curveDxf = '0\nSECTION\n2\nENTITIES\n0\nLINE\n10\n0\n20\n0\n11\n20\n21\n0\n0\nENDSEC\n0\nEOF\n';
   const curveSource = { format: 'dxf' as const, fileName: 'Rail.dxf', text: curveDxf, units: 'mm' as const };
@@ -536,8 +768,8 @@ describe('CAD controller asynchronous guards', () => {
   });
   it('captures bounded real-image data with CAD draft provenance and exposes only its local artifact receipt', async () => {
     const h = await harness(true); const snapshot = h.session.getSnapshot();
-    const state: CadViewportState = { documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
-      selectedFeatureId: null, selectedProfileId: null, sketchId: null, curveId: null, workflowOpen: false, busy: false, buildVersion: snapshot.version,
+    let state: CadViewportState = { documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
+      selectedFeatureId: null, selectedProfileId: null, sketchId: null, curveId: null, selectedReferencePlane: null, awaitingSketchPlane: false, workflowOpen: false, busy: false, buildVersion: snapshot.version,
       buildState: 'ready', buildId: 'build-preview', pickMode: 'body', topologySelection: null,
       visibleBodyIds: [], view: { mode: 'solid', available: true, view: 'Top', gridVisible: true, zoom: 1, revision: 0 } };
     const capture: CadViewportCapture = { contentSource: 'cad-draft', documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
@@ -549,19 +781,24 @@ describe('CAD controller asynchronous guards', () => {
     expect(receipt).toMatchObject({ documentId: snapshot.document.id, draftVersion: snapshot.version, dirty: true, contentSource: 'cad-draft', source: '3d', downloadRequested: false, sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
     expect(JSON.stringify(receipt)).not.toContain('base64');
     expect(h.cad().previewArtifact?.previewUrl).toMatch(/^blob:/);
+    const acceptedUrl = h.cad().previewArtifact?.previewUrl;
+    h.cad().setViewportControls({ getState: () => state, apply: vi.fn(), capture: async () => { state = { ...state, selectedReferencePlane: 'XZ' }; return capture; } });
+    await act(async () => { await expect(h.cad().captureViewport(snapshot.version)).rejects.toMatchObject({ code: 'STALE_VIEW' }); });
+    expect(h.cad().previewArtifact?.previewUrl).toBe(acceptedUrl);
   });
-  it('keeps maximum-length reference visibility and capture receipts within the public tool budget', async () => {
+  it.each(['sketch', 'datum-plane'] as const)('keeps maximum-length %s reference visibility and capture receipts within the public tool budget', async kind => {
     const h = await harness();
-    const features: CadFeature[] = Array.from({ length: 256 }, (_, index) => ({ id: `s${String(index).padStart(3, '0')}${'x'.repeat(92)}`,
+    const features: CadFeature[] = Array.from({ length: 256 }, (_, index) => kind === 'datum-plane' ? { id: `s${String(index).padStart(3, '0')}${'x'.repeat(92)}`,
+      name: `Datum ${index}`, kind, suppressed: false, definition: { kind: 'world', basePlane: 'XY', origin: [0, 0, index], rotation: [0, 0, 0] } } : ({ id: `s${String(index).padStart(3, '0')}${'x'.repeat(92)}`,
       name: `Section ${index}`, kind: 'sketch', plane: 'XY', offset: index, suppressed: false,
       profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 2 } }] }));
     await act(async () => h.session.replace(parseCadDocument({ ...createCadDocument('Many sections', 'many_sections'), features })));
     const snapshot = h.session.getSnapshot();
     const state: CadViewportState = { documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
-      selectedFeatureId: features[0].id, selectedProfileId: null, sketchId: null, curveId: null, workflowOpen: false, busy: false,
+      selectedFeatureId: features[0].id, selectedProfileId: null, sketchId: null, curveId: null, selectedReferencePlane: null, awaitingSketchPlane: false, workflowOpen: false, busy: false,
       buildVersion: null, buildState: 'idle', buildId: null, pickMode: 'body', topologySelection: null, visibleBodyIds: [],
       view: { mode: 'solid', available: true, view: 'Isometric', gridVisible: false, zoom: 1, revision: 1,
-        referenceVersion: snapshot.version, referenceFeatureIds: Object.freeze(features.map(feature => feature.id).sort()) } };
+        referenceVersion: snapshot.version, referenceFeatureIds: Object.freeze(features.map(feature => feature.id).sort()), referencePlanes: cadReferencePlanes(prepareCadViewportReferences(features, {})) } };
     h.cad().setViewportControls({ getState: () => state, apply: vi.fn(), capture: async () => ({ contentSource: 'cad-draft', documentId: snapshot.document.id,
       documentVersion: snapshot.version, dirty: true, sketchId: null, curveId: null, buildVersion: null, viewState: state,
       image: { source: '3d', width: 1, height: 1, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDSkAAAAASUVORK5CYII=' } }) });
@@ -598,6 +835,25 @@ describe('CAD controller asynchronous guards', () => {
   });
   const section: CadSectionResult = { bodyId: 'pad', plane: 'XY', offset: 5, contourCount: 1,
     entities: [{ type: 'circle', layer: 'CAD_SECTION', center: { x: 0, y: 0 }, radius: 4 }] };
+  it.each([
+    { cause: 'body', replacement: { ...section, bodyId: 'other' } },
+    { cause: 'plane', replacement: { ...section, plane: 'XZ' } },
+    { cause: 'offset', replacement: { ...section, offset: 6 } },
+    { cause: 'invalid geometry', replacement: { ...section, entities: [{ ...section.entities[0], radius: -4 }] } },
+  ])('rejects a substituted $cause section before either CAD or CAM persistence', async ({ replacement }) => {
+    const h = await harness(true, true);
+    await act(async () => h.session.edit([{ kind: 'set-parameter', name: 'height', value: 10 }]));
+    const before = h.session.getSnapshot(); kernel.section.mockResolvedValue(replacement);
+    await act(async () => h.session.setWorkflowOpen(true, 'section'));
+    await act(async () => {
+      await expect(h.cad().sendSectionToCam({ bodyId: 'pad', plane: 'XY', offset: 'height / 2' }, before.version, undefined, 'section'))
+        .rejects.toMatchObject({ code: 'INVALID_SECTION_RESULT' });
+    });
+    expect(h.session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, dirty: true, savedVersion: null, workflowOpen: true });
+    expect(h.workbench().manifest.projects).toHaveLength(0);
+    await expect(loadCadDocument(h.workbench().adapter, before.document.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(h.cad().isBusy()).toBe(false); expect(h.cad().isOpen()).toBe(true);
+  });
   it('hands a reviewed final-solid section through the ordinary saved CAD and portable CAM operations', async () => {
     const h = await harness(true, true); kernel.section.mockResolvedValue(section);
     const version = h.session.getSnapshot().version;
@@ -665,6 +921,27 @@ describe('CAD controller asynchronous guards', () => {
     expect((await loadCadDocument(original.adapter, 'cad_part')).document.name).toBe('Part');
     await act(async () => { h.cad().enter(); await h.cad().save(); });
     expect(h.session.getSnapshot().dirty).toBe(false);
+  });
+  it.each(['disconnect', 'another workbench'] as const)('keeps the draft unsaved in its current store when %s occurs after the previous store commits', async change => {
+    const h = await harness(true), original = h.workbench(), before = h.session.getSnapshot();
+    const next = change === 'disconnect' ? null : await openWorkbench('cad-controller-during-commit');
+    const committed = deferred<void>(), finish = deferred<void>(), originalDelete = original.adapter.deleteText.bind(original.adapter);
+    vi.spyOn(original.adapter, 'deleteText').mockImplementation(async path => {
+      await originalDelete(path);
+      if (path === 'transactions/workbench-files.json') { committed.resolve(); await finish.promise; }
+    });
+    let pending: ReturnType<CadController['save']> | undefined;
+    await act(async () => { pending = h.cad().save(before.version); await committed.promise; });
+    await h.switchWorkbench(next);
+    await act(async () => { finish.resolve(); await expect(pending).resolves.toMatchObject({ saved: true, draftMarkedSaved: false, storageName: original.adapter.name }); });
+    expect(h.session.getSnapshot()).toMatchObject({ version: before.version, document: before.document, dirty: true, savedVersion: null });
+    expect((await loadCadDocument(original.adapter, before.document.id)).document).toEqual(before.document);
+    if (next) {
+      await expect(loadCadDocument(next.adapter, before.document.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      await act(async () => { await expect(h.cad().save(before.version)).resolves.toMatchObject({ saved: true, draftMarkedSaved: true, storageName: next.adapter.name }); });
+      expect(h.session.getSnapshot().dirty).toBe(false);
+      expect((await loadCadDocument(next.adapter, before.document.id)).document).toEqual(before.document);
+    }
   });
   it('imports an agent document as a fresh unsaved draft through the visible import operation', async () => {
     const h = await harness();
@@ -776,6 +1053,18 @@ describe('CAD controller asynchronous guards', () => {
     await act(async () => h.session.setWorkflowOpen(true));
     await act(async () => { result.resolve({ buildId: 'build-delayed', meshes: [], diagnostics: [], durationMs: 1 }); await expect(operation).rejects.toMatchObject({ code: 'WORKFLOW_OPEN' }); });
     expect(h.cad().build).toBeNull();
+  });
+  it('does not publish a delayed inspected build after returning to CAM', async () => {
+    const h = await harness(true), before = h.session.getSnapshot(), result = deferred<CadBuildResult>();
+    kernel.build.mockReturnValue(result.promise);
+    const operation = h.cad().inspectBuild(before.version);
+    await vi.waitFor(() => expect(kernel.build).toHaveBeenCalled());
+    await act(async () => h.cad().back());
+    await act(async () => {
+      result.resolve({ buildId: 'closed-build', meshes: [], diagnostics: [], durationMs: 1 });
+      await expect(operation).rejects.toMatchObject({ code: 'CAD_NOT_OPEN' });
+    });
+    expect(h.cad().build).toBeNull(); expect(h.session.getSnapshot()).toBe(before);
   });
   it('honors DXF tool cancellation before issuing a browser download', async () => {
     const h = await harness(true); const abort = new AbortController();

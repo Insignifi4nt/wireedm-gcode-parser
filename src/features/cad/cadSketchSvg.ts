@@ -1,4 +1,5 @@
 import type { DxfArcEntity } from '@/domain/dxf/types';
+import type { CadAnalyticBoundary } from '@/domain/cad/cadSketchGeometry';
 import { signedDxfArcSweepRadians } from '@/domain/dxf/arcSweep';
 
 /** The sketch's enclosing Y flip maps SVG's clockwise flag to CAD's CCW frame. */
@@ -12,4 +13,16 @@ export function cadArcSvgPath(arc: DxfArcEntity): string {
     return `${start} A ${arc.radius} ${arc.radius} 0 0 ${direction} ${opposite.x} ${opposite.y} A ${arc.radius} ${arc.radius} 0 0 ${direction} ${arc.end.x} ${arc.end.y}`;
   }
   return `${start} A ${arc.radius} ${arc.radius} 0 ${Math.abs(sweep) > Math.PI ? 1 : 0} ${direction} ${arc.end.x} ${arc.end.y}`;
+}
+
+/** One continuous display boundary. No fitting, simplification or tolerance change. */
+export function cadClosedBoundarySvgPath(entities: readonly CadAnalyticBoundary[]): string {
+  const commands: string[] = [];
+  for (const entity of entities) {
+    if (entity.type === 'circle') throw new Error('A circle is rendered as its own analytic SVG element.');
+    if (!commands.length) commands.push(`M ${entity.start.x} ${entity.start.y}`);
+    if (entity.type === 'line') commands.push(`L ${entity.end.x} ${entity.end.y}`);
+    else commands.push(cadArcSvgPath(entity).replace(/^M [^ ]+ [^ ]+ /, ''));
+  }
+  return commands.length ? `${commands.join(' ')} Z` : '';
 }

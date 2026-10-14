@@ -1,13 +1,13 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AxesHelper, GridHelper, LineDashedMaterial, LineSegments, Mesh, OrthographicCamera, Vector3, type Camera, type Scene } from 'three';
+import { AxesHelper, GridHelper, LineDashedMaterial, LineSegments, Mesh, MeshStandardMaterial, OrthographicCamera, Vector3, type Camera, type Scene } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { CadMesh } from '@/domain/cad/cadDocument';
 import { CadViewport } from './CadViewport';
 import type { CadRenderedViewControls } from './cadViewportControls';
 import { prepareCadCurveReferences } from './cadCurveRendering';
-import { prepareCadViewportReferences, type CadViewportReference } from './cadViewportReferences';
+import { CAD_PRINCIPAL_PLANE_REFERENCES, prepareCadViewportReferences, type CadViewportReference } from './cadViewportReferences';
 
 interface MockRenderer {
   readonly domElement: HTMLCanvasElement;
@@ -62,7 +62,215 @@ async function flushFrame() {
 }
 async function loseContext() { await act(async () => { renderer().lost = true; renderer().domElement.dispatchEvent(new Event('webglcontextlost')); }); }
 
+it('fits 3D geometry within current unobscured pixels without reframing when an inspector changes', async () => {
+  let area = { left: 0, top: 0, width: 350, height: 600 };
+  const getFitArea = () => area;
+  const farMesh: CadMesh = { ...mesh, positions: mesh.positions.map((value, index) => value + [100000000, -200000000, 300000000][index % 3]),
+    edges: mesh.edges.map((value, index) => value + [100000000, -200000000, 300000000][index % 3]),
+    bounds: { min: [100000000, -200000000, 300000000], max: [100000010, -199999990, 300000000] } };
+  const show = async () => act(async () => root.render(<CadViewport meshes={[farMesh]} selectedId="body" onSelect={vi.fn()} getFitArea={getFitArea} onControlsReady={value => { controls = value; }} />));
+  await show(); await flushFrame();
+  const camera = renderer().render.mock.calls.at(-1)![1];
+  const check = () => {
+    camera.updateMatrixWorld();
+    for (let index = 0; index < farMesh.positions.length; index += 3) {
+      const point = new Vector3(...farMesh.positions.slice(index, index + 3)).project(camera);
+      const x = (point.x + 1) * 400, y = (1 - point.y) * 300;
+      expect(x).toBeGreaterThanOrEqual(area.left); expect(x).toBeLessThanOrEqual(area.left + area.width);
+      expect(y).toBeGreaterThanOrEqual(area.top); expect(y).toBeLessThanOrEqual(area.top + area.height);
+    }
+  };
+  check(); const position = camera.position.clone(), zoom = solidViewState().zoom;
+  area = { left: 0, top: 35, width: 800, height: 565 }; await show(); await flushFrame();
+  expect(camera.position.toArray()).toEqual(position.toArray()); expect(solidViewState().zoom).toBe(zoom);
+  const direction = camera.getWorldDirection(new Vector3());
+  await act(async () => currentControls().fit()); await flushFrame(); check();
+  expect(camera.getWorldDirection(new Vector3()).dot(direction)).toBeCloseTo(1, 8);
+  area = { left: 0, top: 0, width: 800, height: 600 }; const minimizedPosition = camera.position.clone(); await show(); await flushFrame();
+  expect(camera.position.toArray()).toEqual(minimizedPosition.toArray());
+  await act(async () => currentControls().fit()); await flushFrame(); check();
+});
+
+it('does not let Orbit zoom limits clip an explicit Fit into a narrow available area', async () => {
+  const large: CadMesh = { ...mesh, positions: mesh.positions.map(value => value * 1000), edges: mesh.edges.map(value => value * 1000), bounds: { min: [0, 0, 0], max: [10000, 10000, 0] } };
+  await act(async () => root.render(<CadViewport meshes={[large]} selectedId="body" onSelect={vi.fn()} getFitArea={() => ({ left: 0, top: 0, width: 60, height: 600 })} onControlsReady={value => { controls = value; }} />));
+  await flushFrame();
+  const camera = renderer().render.mock.calls.at(-1)![1]; camera.updateMatrixWorld();
+  for (let index = 0; index < large.positions.length; index += 3) {
+    const point = new Vector3(...large.positions.slice(index, index + 3)).project(camera);
+    expect((point.x + 1) * 400).toBeGreaterThanOrEqual(0);
+    expect((point.x + 1) * 400).toBeLessThanOrEqual(60);
+    expect((1 - point.y) * 300).toBeGreaterThanOrEqual(0);
+    expect((1 - point.y) * 300).toBeLessThanOrEqual(600);
+  }
+});
+
+it('preserves a large-part Fit zoom through named-view OrbitControls recreation and capture', async () => {
+  const large: CadMesh = { ...mesh, positions: mesh.positions.map(value => value * 1000), edges: mesh.edges.map(value => value * 1000), bounds: { min: [0, 0, 0], max: [10000, 10000, 0] } };
+  await act(async () => root.render(<CadViewport meshes={[large]} selectedId="body" onSelect={vi.fn()} getFitArea={() => ({ left: 0, top: 0, width: 60, height: 600 })} onControlsReady={value => { controls = value; }} />));
+  await flushFrame();
+  const zoom = solidViewState().zoom; expect(zoom).toBeLessThan(0.01);
+  for (const view of ['Top', 'Front', 'Top', 'Isometric'] as const) {
+    await act(async () => currentControls().setView?.(view));
+    expect(solidViewState()).toMatchObject({ view, zoom });
+    await currentControls().capture(new AbortController().signal);
+    expect(solidViewState()).toMatchObject({ view, zoom });
+  }
+});
+
+describe('viewport pointer ownership and hover', () => {
+  const meshes: readonly CadMesh[] = [{ ...mesh, faceGroups: [{ key: 'face', start: 0, count: 3 }], edgeGroups: [{ key: 'edge', start: 0, count: 2 }] }];
+  async function harness(mode: 'body' | 'face' = 'body') {
+    const select = vi.fn(), topology = vi.fn(), contextMenu = vi.fn();
+    const show = async (locked = false, navigationLocked = locked, selectedId: string | null = null, navigationMode: 'mouse' | 'trackpad' = 'mouse') => { await act(async () => root.render(<CadViewport meshes={meshes} selectedId={selectedId} onSelect={select}
+      {...{ navigationLocked, navigationMode, onContextMenu: contextMenu }} pickMode={mode} onTopologyPick={topology} interactionLocked={locked} onControlsReady={value => { controls = value; }} />)); };
+    await show(); await act(async () => currentControls().setView?.('Top')); await flushFrame();
+    const [scene, camera] = renderer().render.mock.calls.at(-1)!; scene.updateMatrixWorld(true); camera.updateMatrixWorld();
+    const point = new Vector3(2, 2, 0).project(camera), x = (point.x + 1) * 400, y = (1 - point.y) * 300;
+    const canvas = renderer().domElement; canvas.setPointerCapture = vi.fn(); canvas.releasePointerCapture = vi.fn();
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) });
+    const pointer = async (type: string, id = 1, dx = 0, dy = 0, pointerType: 'touch' | 'mouse' | 'pen' = 'touch', button = 0) => { await act(async () => {
+      const event = new MouseEvent(type, { bubbles: true, button, buttons: type === 'pointerdown' || type === 'pointermove' && dx ? button === 2 ? 2 : 1 : 0, clientX: x + dx, clientY: y + dy });
+      Object.defineProperties(event, { pointerId: { value: id }, pointerType: { value: pointerType }, isPrimary: { value: id === 1 } });
+      canvas.dispatchEvent(event);
+    }); };
+    return { select, topology, contextMenu, show, pointer, canvas, x, y };
+  }
+  it('requires the initiating pointer to complete a pick without unrelated pointer-up cancelling its owner', async () => {
+    const h = await harness();
+    await h.pointer('pointerdown', 1, 0, 0, 'mouse'); await h.pointer('pointerup', 2, 0, 0, 'pen');
+    expect(h.select).not.toHaveBeenCalled();
+    await h.pointer('pointerup', 1, 0, 0, 'mouse');
+    expect(h.select).toHaveBeenCalledExactlyOnceWith('body');
+  });
+  it.each(['pointerleave', 'lostpointercapture', 'blur'] as const)('cancels the pending pick after %s, allowing a new hover and click', async cancellation => {
+    const h = await harness('face'); await h.pointer('pointerdown');
+    if (cancellation === 'blur') await act(async () => window.dispatchEvent(new Event('blur')));
+    else await h.pointer(cancellation);
+    await h.pointer('pointerup'); expect(h.topology).not.toHaveBeenCalled();
+    await h.pointer('pointermove'); await flushFrame();
+    expect(solidViewState().hoveredTopology).toEqual({ bodyId: 'body', pick: { kind: 'face', key: 'face' } });
+    await h.pointer('pointerdown'); await h.pointer('pointerup');
+    expect(h.topology).toHaveBeenCalledExactlyOnceWith({ bodyId: 'body', pick: { kind: 'face', key: 'face' } }, false);
+  });
+  it('does not turn an orbit drag returning to its start into a selection click', async () => {
+    const h = await harness(); await h.pointer('pointerdown'); await h.pointer('pointermove', 1, 20); await h.pointer('pointermove'); await h.pointer('pointerup');
+    expect(h.select).not.toHaveBeenCalled();
+  });
+  it('clears existing hover immediately when a workflow locks and cancels picks started before that lock', async () => {
+    const h = await harness('face'); await h.pointer('pointermove'); await flushFrame();
+    expect(solidViewState().hoveredTopology?.pick.key).toBe('face');
+    await h.show(true); expect(solidViewState().hoveredTopology).toBeNull();
+    await h.show(false); await h.pointer('pointerdown'); await h.show(true); await h.show(false); await h.pointer('pointerup');
+    expect(h.topology).not.toHaveBeenCalled();
+  });
+  it('cancels a pick interrupted by graphics loss rather than replaying it after recovery', async () => {
+    const h = await harness('face'); await h.pointer('pointerdown');
+    await loseContext(); await act(async () => { renderer().lost = false; renderer().domElement.dispatchEvent(new Event('webglcontextrestored')); });
+    await h.pointer('pointerup'); expect(h.topology).not.toHaveBeenCalled();
+  });
+  it('preselects the hovered body without changing the selected feature and restores its style on leave', async () => {
+    const h = await harness(); const scene = renderer().render.mock.calls.at(-1)![0];
+    let body: Mesh | undefined; scene.traverse(object => { if (object instanceof Mesh && object.userData.featureId === 'body') body = object; });
+    if (!body || !(body.material instanceof MeshStandardMaterial)) throw new Error('Missing body material');
+    const material = body.material, original = material.color.getHex(), revision = solidViewState().revision;
+    await h.pointer('pointermove'); await flushFrame();
+    expect(material.color.getHex()).not.toBe(original); expect(solidViewState().revision).toBeGreaterThan(revision);
+    expect(h.select).not.toHaveBeenCalled();
+    await h.pointer('pointerleave'); await flushFrame(); expect(material.color.getHex()).toBe(original);
+  });
+  it('opens target-specific menus for a stationary right click without changing selection', async () => {
+    const h = await harness('face');
+    await h.pointer('pointerdown', 1, 0, 0, 'mouse', 2); await h.pointer('pointerup', 1, 0, 0, 'mouse', 2);
+    expect(h.contextMenu).toHaveBeenCalledExactlyOnceWith({ clientX: h.x, clientY: h.y, trigger: 'pointer', target: { kind: 'topology', hit: { bodyId: 'body', pick: { kind: 'face', key: 'face' } } } });
+    expect(h.select).not.toHaveBeenCalled(); expect(h.topology).not.toHaveBeenCalled();
+  });
+  it('keeps right-drag panning without opening a menu even after returning to the start', async () => {
+    const h = await harness(); const camera = renderer().render.mock.calls.at(-1)![1], before = camera.position.clone();
+    await h.pointer('pointerdown', 1, 0, 0, 'mouse', 2); await h.pointer('pointermove', 1, 20, 0, 'mouse', 2);
+    expect(camera.position.distanceTo(before)).toBeGreaterThan(0);
+    await h.pointer('pointermove', 1, 0, 0, 'mouse', 2); await h.pointer('pointerup', 1, 0, 0, 'mouse', 2);
+    expect(h.contextMenu).not.toHaveBeenCalled(); expect(h.select).not.toHaveBeenCalled();
+  });
+  it('supports keyboard context menus for visible selection, blocks locks and cancels interrupted right gestures', async () => {
+    const h = await harness(); await h.show(false, false, 'body'); h.canvas.focus();
+    const key = async (key: string, shiftKey = false) => act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true })));
+    await key('ContextMenu'); expect(h.contextMenu).toHaveBeenLastCalledWith({ clientX: 400, clientY: 300, trigger: 'keyboard', target: { kind: 'feature', featureId: 'body' } });
+    await key('F10', true); expect(h.contextMenu).toHaveBeenCalledTimes(2);
+    await h.show(true, false, 'body'); await key('ContextMenu'); expect(h.contextMenu).toHaveBeenCalledTimes(2);
+    await h.show(false); await h.pointer('pointerdown', 1, 0, 0, 'mouse', 2); await h.pointer('pointerleave'); await h.pointer('pointerup', 1, 0, 0, 'mouse', 2);
+    expect(h.contextMenu).toHaveBeenCalledTimes(2);
+  });
+  it('allows readonly navigation while editing picks and context actions remain locked', async () => {
+    const h = await harness('face'); await h.show(true, false);
+    const before = solidViewState(), camera = renderer().render.mock.calls.at(-1)![1], position = camera.position.clone();
+    await h.pointer('pointerdown', 1, 0, 0, 'mouse'); await h.pointer('pointermove', 1, 30, 20, 'mouse'); await h.pointer('pointerup', 1, 30, 20, 'mouse');
+    await flushFrame(); expect(camera.position.distanceTo(position)).toBeGreaterThan(0); expect(solidViewState().revision).toBeGreaterThan(before.revision);
+    await act(async () => h.canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true })));
+    expect(solidViewState().zoom).toBeGreaterThan(before.zoom);
+    await h.pointer('pointerdown'); await h.pointer('pointerup'); await h.pointer('pointerdown', 1, 0, 0, 'mouse', 2); await h.pointer('pointerup', 1, 0, 0, 'mouse', 2);
+    expect(h.select).not.toHaveBeenCalled(); expect(h.topology).not.toHaveBeenCalled(); expect(h.contextMenu).not.toHaveBeenCalled();
+    await h.show(true); const frozen = solidViewState().revision;
+    await h.pointer('pointerdown', 1, 0, 0, 'mouse'); await h.pointer('pointermove', 1, 30, 20, 'mouse'); await h.pointer('pointerup', 1, 30, 20, 'mouse');
+    expect(solidViewState().revision).toBe(frozen);
+  });
+  it.each(['Top', 'Front', 'Isometric'] as const)('pans trackpad wheel in the %s camera plane without changing zoom or direction', async view => {
+    const h = await harness(); await h.show(false, false, null, 'trackpad'); await act(async () => currentControls().setView?.(view)); await flushFrame();
+    const camera = renderer().render.mock.calls.at(-1)![1]; if (!(camera instanceof OrthographicCamera)) throw new Error('Missing orthographic camera');
+    const position = camera.position.clone(), direction = camera.getWorldDirection(new Vector3()), zoom = camera.zoom;
+    const right = new Vector3().setFromMatrixColumn(camera.matrix, 0), up = new Vector3().setFromMatrixColumn(camera.matrix, 1);
+    const wheel = new WheelEvent('wheel', { deltaX: 24, deltaY: 12, bubbles: true, cancelable: true });
+    await act(async () => h.canvas.dispatchEvent(wheel));
+    const expected = right.multiplyScalar(24 * (camera.right - camera.left) / zoom / 800).add(up.multiplyScalar(-12 * (camera.top - camera.bottom) / zoom / 600));
+    expect(camera.position.clone().sub(position).distanceTo(expected)).toBeLessThan(1e-9);
+    expect(camera.getWorldDirection(new Vector3()).distanceTo(direction)).toBeLessThan(1e-10); expect(camera.zoom).toBe(zoom); expect(wheel.defaultPrevented).toBe(true);
+    const pannedPosition = camera.position.clone(); await currentControls().capture(new AbortController().signal);
+    expect(camera.position.distanceTo(pannedPosition)).toBeLessThan(1e-9);
+  });
+  it('normalizes trackpad line/page deltas, routes Alt-wheel to orbit and Ctrl-wheel to zoom only inside canvas', async () => {
+    const h = await harness(); await h.show(false, false, null, 'trackpad');
+    const camera = renderer().render.mock.calls.at(-1)![1], start = camera.position.clone(), direction = camera.getWorldDirection(new Vector3());
+    const wheel = async (init: WheelEventInit, target: HTMLElement = h.canvas) => { const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init }); await act(async () => target.dispatchEvent(event)); return event; };
+    await wheel({ deltaX: 1, deltaMode: 1 }); const lineMovement = camera.position.clone().sub(start);
+    await wheel({ deltaX: -16 }); expect(camera.position.distanceTo(start)).toBeLessThan(1e-9);
+    await wheel({ deltaX: .02, deltaMode: 2 }); expect(camera.position.clone().sub(start).distanceTo(lineMovement)).toBeLessThan(1e-9);
+    const beforeOrbit = camera.position.clone(), target = new Vector3(5, 5, 0).add(lineMovement), radius = beforeOrbit.distanceTo(target);
+    await wheel({ deltaX: 15, deltaY: -12, altKey: true });
+    expect(camera.getWorldDirection(new Vector3()).distanceTo(direction)).toBeGreaterThan(.01); expect(camera.position.distanceTo(target)).toBeCloseTo(radius, 8);
+    const zoom = solidViewState().zoom; await wheel({ deltaY: -10, ctrlKey: true }); expect(solidViewState().zoom).toBeGreaterThan(zoom);
+    const revision = solidViewState().revision; const outside = await wheel({ deltaY: 50 }, container); expect(outside.defaultPrevented).toBe(false); expect(solidViewState().revision).toBe(revision);
+    await h.show(true, true, null, 'trackpad'); const locked = solidViewState(); await wheel({ deltaX: 20, deltaY: 20 }); await wheel({ deltaY: -10, ctrlKey: true });
+    expect(solidViewState()).toEqual(locked);
+    await h.show(false, false); const mouseZoom = solidViewState().zoom; await wheel({ deltaY: -50 }); expect(solidViewState().zoom).toBeGreaterThan(mouseZoom);
+  });
+});
+
 describe('datum glyph rendering', () => {
+  it('clears selection on empty design space even when no native build is available', async () => {
+    const selected = vi.fn(), selectedPlane = vi.fn();
+    await act(async () => root.render(<CadViewport meshes={[]} references={CAD_PRINCIPAL_PLANE_REFERENCES} referenceVersion="blank" selectedId={null} selectedReferencePlane="XZ"
+      onSelect={selected} onSelectPlane={selectedPlane} pickingEnabled={false} onControlsReady={value => { controls = value; }} />));
+    await flushFrame(); const canvas = renderer().domElement; canvas.setPointerCapture = vi.fn(); canvas.releasePointerCapture = vi.fn();
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) });
+    await act(async () => { for (const type of ['pointerdown', 'pointerup']) canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, clientX: 4, clientY: 4 })); });
+    expect(selected).toHaveBeenCalledExactlyOnceWith(null); expect(selectedPlane).not.toHaveBeenCalled();
+  });
+  it.each(['XY', 'XZ', 'YZ'] as const)('picks the %s principal patch with the actual camera ray without a native build or invented feature ID', async plane => {
+    const references = CAD_PRINCIPAL_PLANE_REFERENCES.filter(reference => reference.plane === plane), selected = vi.fn(), selectedPlane = vi.fn();
+    await act(async () => root.render(<CadViewport meshes={[]} references={references} referenceVersion="blank" selectedId={null} onSelect={selected}
+      onSelectPlane={selectedPlane} planePickingOnly pickingEnabled={false} onControlsReady={value => { controls = value; }} />));
+    await flushFrame(); expect(solidViewState()).toMatchObject({ referenceFeatureIds: [], referencePlanes: [plane], available: true });
+    const scene = renderer().render.mock.calls.at(-1)![0], camera = renderer().render.mock.calls.at(-1)![1]; camera.updateMatrixWorld();
+    const patch: Mesh[] = []; scene.traverse(object => { if (object instanceof Mesh && object.userData.referenceId === `principal:${plane}`) patch.push(object); });
+    expect(patch).toHaveLength(1); expect(patch[0].userData.featureId).toBeNull();
+    const worldPoint = plane === 'XY' ? [6, 7, 0] : plane === 'XZ' ? [6, 0, 7] : [0, 6, 7];
+    const point = new Vector3(...worldPoint).project(camera), canvas = renderer().domElement;
+    canvas.setPointerCapture = vi.fn(); canvas.releasePointerCapture = vi.fn();
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) });
+    await act(async () => { for (const type of ['pointerdown', 'pointerup']) canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0,
+      clientX: (point.x + 1) * 400, clientY: (1 - point.y) * 300 })); });
+    expect(selectedPlane).toHaveBeenCalledExactlyOnceWith(plane); expect(selected).not.toHaveBeenCalled();
+  });
   const datum = { id: 'mount', name: 'Mount', kind: 'datum-plane', suppressed: false, definition: { kind: 'world', basePlane: 'XY', origin: [1e8, 1e8, 1e8], rotation: [30, 0, 0] } } as const;
   it('installs bounded plane resources and capture IDs, excludes glyphs from contour Fit and disposes them once', async () => {
     const references = prepareCadViewportReferences([datum, { id: 'outline', name: 'Outline', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
@@ -194,15 +402,17 @@ describe('named CAD camera views with real OrbitControls', () => {
 });
 
 describe('CAD WebGL context lifecycle', () => {
-  it('shows only the supplied empty-scene action, respects locks, and gives graphics recovery precedence', async () => {
-    const onAction = vi.fn(); const emptyAction = { label: 'Edit sketch', description: 'Open Outline to draw a profile', onAction };
+  it('keeps plane labels selectable without solids, respects workflow locks, and disables them during graphics recovery', async () => {
+    const onSelectPlane = vi.fn();
     const render = async (interactionLocked: boolean) => { await act(async () => root.render(<CadViewport meshes={[]} selectedId={null} onSelect={vi.fn()}
-      emptyAction={emptyAction} interactionLocked={interactionLocked} onControlsReady={value => { controls = value; }} />)); };
-    await render(false); const button = container.querySelector<HTMLButtonElement>('.cad-view-message button');
-    if (!button) throw new Error('Empty scene action missing'); expect(button.textContent).toBe('Edit sketch'); expect(button.title).toContain('Outline');
-    await act(async () => button.click()); expect(onAction).toHaveBeenCalledTimes(1);
-    await render(true); expect(button.disabled).toBe(true); await act(async () => button.click()); expect(onAction).toHaveBeenCalledTimes(1);
+      references={CAD_PRINCIPAL_PLANE_REFERENCES} referenceVersion="v1" onSelectPlane={onSelectPlane} interactionLocked={interactionLocked} onControlsReady={value => { controls = value; }} />)); };
+    await render(false); await flushFrame(); const button = container.querySelector<HTMLButtonElement>('[aria-label="Select XZ plane in design area"]');
+    if (!button) throw new Error('Plane label missing'); expect(button.hidden).toBe(false); expect(button.style.left).toMatch(/px$/);
+    await act(async () => button.click()); expect(onSelectPlane).toHaveBeenCalledExactlyOnceWith('XZ');
+    await render(true); expect(button.disabled).toBe(true); await act(async () => button.click()); expect(onSelectPlane).toHaveBeenCalledTimes(1);
+    await render(false);
     await loseContext(); expect(container.querySelector('.cad-view-message button')?.textContent).toBe('Retry 3D view');
+    expect(button.disabled).toBe(true); await act(async () => button.click()); expect(onSelectPlane).toHaveBeenCalledTimes(1);
   });
   it('marks lost graphics unavailable, cancels pending rendering and refuses an empty PNG capture', async () => {
     await mount(); const previous = currentControls().getState().revision;

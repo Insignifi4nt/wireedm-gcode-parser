@@ -3,6 +3,15 @@ import { CadError } from './cadError';
 
 /** No JavaScript execution, functions, property access or implicit multiplication. */
 export function evaluateCadScalar(value: CadScalar, parameters: Readonly<Record<string, number>>): number {
+  return evaluateScalar(value, parameters, false);
+}
+
+/** Restricted recipe math. Radians, no JavaScript, globals or property access. */
+export function evaluateCadRecipeScalar(value: CadScalar, parameters: Readonly<Record<string, number>>): number {
+  return evaluateScalar(value, parameters, true);
+}
+
+function evaluateScalar(value: CadScalar, parameters: Readonly<Record<string, number>>, recipeMath: boolean): number {
   const finite = (number: number): number => {
     if (!Number.isFinite(number) || Math.abs(number) > 1e9) throw new CadError('invalid-scalar', 'Dimensions must be finite and within one billion.');
     return number;
@@ -23,8 +32,30 @@ export function evaluateCadScalar(value: CadScalar, parameters: Readonly<Record<
       if (tokens[position++] !== ')') throw new CadError('invalid-expression', 'Expected a closing parenthesis.');
     } else if (token !== undefined && /^(?:\d|\.\d)/.test(token)) result = Number(token);
     else if (token !== undefined && /^[A-Za-z_][A-Za-z_0-9]*$/.test(token)) {
-      if (!Object.hasOwn(parameters, token)) throw new CadError('unknown-parameter', `Unknown parameter "${token}".`);
-      result = parameters[token];
+      if (recipeMath && tokens[position] === '(') {
+        position++;
+        const argument = sum();
+        if (token === 'min' || token === 'max') {
+          if (tokens[position++] !== ',') throw new CadError('invalid-expression', 'min and max take two arguments.');
+          const right = sum();
+          if (tokens[position++] !== ')') throw new CadError('invalid-expression', 'Expected a closing parenthesis.');
+          depth--;
+          return finite(token === 'min' ? Math.min(argument, right) : Math.max(argument, right));
+        }
+        if (tokens[position++] !== ')') throw new CadError('invalid-expression', 'Recipe functions take one argument.');
+        switch (token) {
+          case 'sin': result = Math.sin(argument); break;
+          case 'cos': result = Math.cos(argument); break;
+          case 'tan': result = Math.tan(argument); break;
+          case 'sqrt': result = Math.sqrt(argument); break;
+          case 'atan': result = Math.atan(argument); break;
+          case 'abs': result = Math.abs(argument); break;
+          default: throw new CadError('invalid-expression', `Unknown recipe function "${token}".`);
+        }
+      } else {
+        if (!Object.hasOwn(parameters, token)) throw new CadError('unknown-parameter', `Unknown parameter "${token}".`);
+        result = parameters[token];
+      }
     } else throw new CadError('invalid-expression', 'Expected a number, parameter or parenthesized expression.');
     depth--;
     return finite(result);

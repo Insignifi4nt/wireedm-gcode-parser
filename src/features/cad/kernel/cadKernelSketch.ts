@@ -1,6 +1,35 @@
-import { draw, drawCircle, drawRoundedRectangle, type Drawing } from 'replicad';
+import { draw, drawCircle, drawRoundedRectangle, Edge, getOC, makeAx2, Sketch, Wire, type Drawing, type Plane } from 'replicad';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadProfileToEntities, type ResolvedCadProfile } from '../../../domain/cad/cadSketchGeometry';
+import { cadKernelDisposeShape } from './cadKernelShapes';
+
+/** Exact Blueprint plane conversion with deterministic native ownership.
+ * Replicad 1.1's sketchOnPlane leaves its raw edge builders/3D handles alive. */
+export function cadKernelSketchOnPlane(drawing: Drawing, plane: Plane): Sketch {
+  const oc = getOC(), axis = makeAx2(plane.origin, plane.zDir, plane.xDir);
+  const edges: Edge[] = [];
+  try {
+    for (const curve of drawing.blueprint.curves) {
+      const curve3d = oc.GeomLib.To3d(axis, curve.wrapped);
+      try {
+        const builder = new oc.BRepBuilderAPI_MakeEdge(curve3d);
+        try { edges.push(new Edge(builder.Edge())); } finally { builder.delete(); }
+      } finally { curve3d.delete(); }
+    }
+    const builder = new oc.BRepBuilderAPI_MakeWire();
+    try {
+      for (const edge of edges) builder.Add(edge.wrapped);
+      builder.Build();
+      if (builder.Error() !== oc.BRepBuilderAPI_WireError.BRepBuilderAPI_WireDone) throw new CadError('invalid-profile', 'The exact profile edges could not form a connected wire.');
+      const wire = new Wire(builder.Wire());
+      try { return new Sketch(wire, { defaultOrigin: plane.origin, defaultDirection: plane.zDir }); }
+      catch (error) { cadKernelDisposeShape(wire); throw error; }
+    } finally { builder.delete(); }
+  } finally {
+    for (const edge of edges) cadKernelDisposeShape(edge);
+    axis.delete();
+  }
+}
 
 export function cadKernelProfileDrawing(profile: ResolvedCadProfile, drawings: Drawing[]): Drawing {
   const own = (drawing: Drawing) => { drawings.push(drawing); return drawing; };

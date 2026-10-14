@@ -1,0 +1,7 @@
+.cad-plane-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.cad-workbench .cad-plane-labels button { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; min-height: 24px; padding: 3px 7px; background: #192a34ed; border: 1px solid #54798d; border-radius: 3px; color: #b4d8e9; font-size: 11px; white-space: nowrap; }
+.cad-workbench .cad-plane-labels button:hover { border-color: #91edff; background: #294650; }
+.cad-workbench .cad-plane-labels button[aria-pressed="true"] { border-color: #f0c779; color: #f0c779; background: #34362ded; }
+.cad-plane-request { position: absolute; z-index: 8; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; max-width: calc(100% - 24px); padding: 6px 9px; border: 1px solid #436071; border-radius: 4px; background: #182b35f2; color: #c4dbe8; font-size: 12px; }
+.cad-plane-request span { min-width: 0; }
+.cad-workbench .cad-reference-plane-list .cad-tree-row { flex: 1; min-width: 0; padding: 4px 5px; }

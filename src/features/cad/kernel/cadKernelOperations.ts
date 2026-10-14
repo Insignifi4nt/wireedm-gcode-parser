@@ -1,5 +1,6 @@
 import { cast, getOC, isShape3D, type Edge, type Face, type Shape3D } from 'replicad';
 import { CadError } from '../../../domain/cad/cadError';
+import { cadKernelDisposeOwned, cadKernelSolids } from './cadKernelShapes';
 
 /** Explicit native builder lifetimes also cover rejected kernel operations. */
 export function applyCadEdgeOperation(shape: Shape3D, edges: readonly Edge[], kind: 'fillet' | 'chamfer', radius: number): Shape3D {
@@ -18,7 +19,7 @@ export function applyCadEdgeOperation(shape: Shape3D, edges: readonly Edge[], ki
         try {
           if (!edges.some(edge => edge.wrapped.IsSame(propagated))) throw new CadError('selection-tangent-chain',
             `OpenCascade would ${kind} additional tangent edges. Select the complete tangent chain explicitly before applying this operation.`);
-        } finally { propagated.delete(); }
+        } finally { cadKernelDisposeOwned(propagated); }
       }
     }
     builder.Build();
@@ -27,18 +28,18 @@ export function applyCadEdgeOperation(shape: Shape3D, edges: readonly Edge[], ki
     try {
       const result = cast(raw);
       if (isShape3D(result)) return result;
-      result.delete();
+      cadKernelDisposeOwned(result);
       throw new CadError('invalid-solid', 'The selected edge operation did not produce a solid.');
-    } finally { raw.delete(); }
+    } finally { cadKernelDisposeOwned(raw); }
   } finally { builder.delete(); }
 }
 
 export function applyCadShell(shape: Shape3D, opening: Face, thickness: number): Shape3D {
   if (thickness <= 1e-7) throw new CadError('shell-thickness', 'Shell thickness must exceed the kernel tolerance of 0.0000001 mm.');
-  const solids = shape.solids;
+  const solids = cadKernelSolids(shape);
   try {
     if (solids.length !== 1) throw new CadError('shell-components', 'Shell currently requires one connected solid. Choose a body without disconnected pattern instances.');
-  } finally { for (const solid of solids) solid.delete(); }
+  } finally { for (const solid of solids) cadKernelDisposeOwned(solid); }
   const oc = getOC();
   const faces = new oc.NCollection_List_TopoDS_Shape();
   const builder = new oc.BRepOffsetAPI_MakeThickSolid();
@@ -52,8 +53,8 @@ export function applyCadShell(shape: Shape3D, opening: Face, thickness: number):
     try {
       const result = cast(raw);
       if (isShape3D(result)) return result;
-      result.delete();
+      cadKernelDisposeOwned(result);
       throw new CadError('invalid-solid', 'The shell did not produce a closed solid.');
-    } finally { raw.delete(); }
+    } finally { cadKernelDisposeOwned(raw); }
   } finally { builder.delete(); faces.delete(); }
 }

@@ -1,6 +1,7 @@
-import { Edge, Face, HASH_CODE_MAX, getOC, type Shape3D, type ShapeEdgeMesh, type ShapeMesh, type Vector } from 'replicad';
+import { Edge, Face, getOC, type Shape3D, type ShapeEdgeMesh, type ShapeMesh, type Vector } from 'replicad';
 import type { gp_Dir, gp_Pnt } from 'replicad-opencascadejs';
 import { CadError } from '../../../domain/cad/cadError';
+import { cadKernelDisposeShape } from './cadKernelShapes';
 import type { CadMeshTopologyGroup } from '../../../domain/cad/cadDocument';
 import {
   parseCadEdgeSelection, parseCadFaceQuery, resolveCadEdgeSelection, resolveCadFaceQuery,
@@ -129,30 +130,32 @@ function exactCount(actual: number, expected: number) {
 /** One bounded topology inventory owns native handles; descriptors are computed on demand. */
 export class CadKernelTopology {
   private readonly entries = new Map<string, Entry>();
-  private readonly hashes = new Map<string, Entry>();
+  private readonly indices = new Map<string, Entry>();
   private disposed = false;
   constructor(shape: Shape3D) {
     const oc = getOC();
     try {
       for (const kind of ['edge', 'face'] as const) {
-        const explorer = new oc.TopExp_Explorer(shape.wrapped, kind === 'edge' ? oc.TopAbs_ShapeEnum.TopAbs_EDGE : oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+        const indexed = new oc.NCollection_IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher();
         try {
-          while (explorer.More()) {
-            const raw = explorer.Current();
-            try {
-              const hash = `${kind}:${oc.ReplicadShapeHasher.HashCode(raw, HASH_CODE_MAX)}`;
-              const existing = this.hashes.get(hash);
-              if (existing && !existing.shape.wrapped.IsSame(raw)) throw new CadError('topology-id-collision', 'Two different topology elements have the same kernel hash. Picking is unavailable for this model.');
-              if (!existing) {
-                if (this.entries.size >= MAX_CAD_TOPOLOGY_PER_BODY) throw new CadError('topology-limit', `Each body may contain at most ${MAX_CAD_TOPOLOGY_PER_BODY} distinct faces and edges. Simplify the model.`);
-                const key = `${kind}-${crypto.randomUUID()}`;
-                const entry: Entry = kind === 'edge' ? { kind, key, shape: new Edge(oc.TopoDS.Edge(raw)) } : { kind, key, shape: new Face(oc.TopoDS.Face(raw)) };
-                this.entries.set(key, entry); this.hashes.set(hash, entry);
-              }
-            } finally { raw.delete(); }
-            explorer.Next();
-          }
-        } finally { explorer.delete(); }
+          const explorer = new oc.TopExp_Explorer(shape.wrapped, kind === 'edge' ? oc.TopAbs_ShapeEnum.TopAbs_EDGE : oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+          try {
+            while (explorer.More()) {
+              const raw = explorer.Current();
+              try {
+                const identity = `${kind}:${indexed.Add(raw)}`;
+                const existing = this.indices.get(identity);
+                if (!existing) {
+                  if (this.entries.size >= MAX_CAD_TOPOLOGY_PER_BODY) throw new CadError('topology-limit', `Each body may contain at most ${MAX_CAD_TOPOLOGY_PER_BODY} distinct faces and edges. Simplify the model.`);
+                  const key = `${kind}-${crypto.randomUUID()}`;
+                  const entry: Entry = kind === 'edge' ? { kind, key, shape: new Edge(oc.TopoDS.Edge(raw)) } : { kind, key, shape: new Face(oc.TopoDS.Face(raw)) };
+                  this.entries.set(key, entry); this.indices.set(identity, entry);
+                }
+              } finally { raw.Nullify(); raw.delete(); }
+              explorer.Next();
+            }
+          } finally { explorer.delete(); }
+        } finally { indexed.delete(); }
       }
     } catch (error) { this.dispose(); throw error; }
   }
@@ -170,8 +173,8 @@ export class CadKernelTopology {
     });
   }
   meshGroups(mesh: ShapeMesh, edgeMesh: ShapeEdgeMesh): { faceGroups: CadMeshTopologyGroup[]; edgeGroups: CadMeshTopologyGroup[] } {
-    const keyFor = (kind: Entry['kind'], hash: number) => {
-      const entry = this.hashes.get(`${kind}:${hash}`);
+    const keyFor = (kind: Entry['kind'], index: number) => {
+      const entry = this.indices.get(`${kind}:${index}`);
       if (!entry) throw new CadError('topology-mapping', 'The kernel preview contains topology absent from the exact body.');
       return entry.key;
     };
@@ -238,5 +241,5 @@ export class CadKernelTopology {
     this.selectedEdges(selection, parameters);
     return { bodyId: request.bodyId, buildId, purpose: request.purpose, selection };
   }
-  dispose() { if (this.disposed) return; this.disposed = true; for (const entry of this.entries.values()) entry.shape.delete(); this.entries.clear(); this.hashes.clear(); }
+  dispose() { if (this.disposed) return; this.disposed = true; for (const entry of this.entries.values()) cadKernelDisposeShape(entry.shape); this.entries.clear(); this.indices.clear(); }
 }

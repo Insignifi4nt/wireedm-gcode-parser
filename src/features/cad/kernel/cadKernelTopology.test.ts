@@ -1,8 +1,8 @@
 // @vitest-environment node
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
-import { makeBox, makeCompound, setOC } from 'replicad';
+import { getOC, makeBox, makeCompound, setOC } from 'replicad';
 import type { CadDocument, CadFeature, CadPlane } from '../../../domain/cad/cadDocument';
 import { parseCadDocument } from '../../../domain/cad/cadSchema';
 import type { CadEdgeSelection, CadTopologyDescriptor, CadTopologyPick } from '../../../domain/cad/cadTopology';
@@ -37,6 +37,41 @@ const selected: CadEdgeSelection = { expectedCount: 1, queries: [{ kind: 'edges'
   predicates: [{ kind: 'line-endpoints', start: [0, 0, 'depth'], end: ['width', 0, 'depth'] }] }] };
 
 describe('exact topology and selected mechanical features', () => {
+  it('preserves valid material and exact face/edge picks when every bounded public hash collides', () => {
+    const hasher = vi.spyOn(getOC().ReplicadShapeHasher, 'HashCode').mockReturnValue(1);
+    try {
+      built(boxDocument(), model => {
+        expect(model.result.diagnostics).toEqual([]);
+        const mesh = model.result.meshes[0], edges = page(model, 'edge'), faces = page(model, 'face');
+        expect(mesh.volume).toBeCloseTo(1000, 8);
+        expect(edges).toHaveLength(12); expect(faces).toHaveLength(6);
+        expect(new Set(mesh.edgeGroups.map(group => group.key)).size).toBe(12);
+        expect(new Set(mesh.faceGroups.map(group => group.key)).size).toBe(6);
+        expect(mesh.faceGroups.reduce((sum, group) => sum + group.count, 0)).toBe(mesh.indices.length);
+        expect(mesh.edgeGroups.reduce((sum, group) => sum + group.count, 0)).toBe(mesh.edges.length / 3);
+        for (const group of mesh.edgeGroups) {
+          const edge = edges.find(entry => entry.key === group.key);
+          if (edge?.kind !== 'edge' || edge.curveType !== 'line') throw new Error('Missing exact edge descriptor.');
+          const start = mesh.edges.slice(group.start * 3, group.start * 3 + 3);
+          const end = mesh.edges.slice((group.start + group.count - 1) * 3, (group.start + group.count) * 3);
+          const endpoints = [edge.start, edge.end];
+          expect(endpoints.some(point => point.every((value, axis) => Math.abs(value - start[axis]) < 1e-7))).toBe(true);
+          expect(endpoints.some(point => point.every((value, axis) => Math.abs(value - end[axis]) < 1e-7))).toBe(true);
+          expect(model.resolveTopologyPicks({ bodyId: 'box', expectedBuildId: model.result.buildId, purpose: 'fillet', picks: [{ kind: 'edge', key: edge.key }] })).toMatchObject({ purpose: 'fillet', selection: { expectedCount: 1 } });
+        }
+        for (const group of mesh.faceGroups) {
+          const face = faces.find(entry => entry.key === group.key);
+          if (face?.kind !== 'face' || face.surfaceType !== 'plane') throw new Error('Missing exact face descriptor.');
+          for (const index of mesh.indices.slice(group.start, group.start + group.count)) {
+            const distance = face.normal.reduce((sum, value, axis) => sum + value * mesh.positions[index * 3 + axis], 0);
+            expect(distance).toBeCloseTo(face.offset, 7);
+          }
+          expect(model.resolveTopologyPicks({ bodyId: 'box', expectedBuildId: model.result.buildId, purpose: 'shell', picks: [{ kind: 'face', key: face.key }] })).toMatchObject({ purpose: 'shell', opening: { expectedCount: 1 } });
+        }
+        expect(model.section({ bodyId: 'box', plane: 'XY', offset: 2 }).contourCount).toBe(1);
+      });
+    } finally { hasher.mockRestore(); }
+  });
   it('maps face indices and edge vertices to exact opaque topology and paginates without duplicates', () => {
     built(boxDocument(), model => {
       expect(model.result.diagnostics).toEqual([]);
@@ -91,6 +126,31 @@ describe('exact topology and selected mechanical features', () => {
       expect(model.result.diagnostics[0].code).toMatch(/selection-(count-mismatch|empty)/);
       expect(model.result.meshes[0].featureId).toBe('box'); expect(model.result.meshes[0].volume).toBeCloseTo(1000, 6);
       expect(() => model.export('step')).toThrow('Fix the feature diagnostics');
+    });
+  });
+  it.each(['fillet', 'chamfer'] as const)('preserves an exact concave %s through a planar CAM section', kind => {
+    const original = boxDocument(); const sketch = original.features[0];
+    if (sketch.kind !== 'sketch') throw new Error('Expected sketch');
+    const document = parseCadDocument({ ...original, features: [{ ...sketch, profiles: [{ ...sketch.profiles[0],
+      geometry: { kind: 'polygon', points: [[0, 0], [20, 0], [20, 10], [10, 10], [10, 20], [0, 20]] } }] }, original.features[1]] });
+    const selection: CadEdgeSelection = { expectedCount: 1, queries: [{ kind: 'edges', expectedCount: 1,
+      predicates: [{ kind: 'line-endpoints', start: [10, 10, 0], end: [10, 10, 'depth'] }] }] };
+    built(withFeatures(document, { ...base('finished'), kind, targetId: 'box', radius: 1, selection }), model => {
+      expect(model.result.diagnostics).toEqual([]);
+      const addedArea = kind === 'fillet' ? 1 - Math.PI / 4 : .5;
+      expect(model.result.meshes[0].volume).toBeCloseTo((300 + addedArea) * 5, 6);
+      const section = model.section({ bodyId: 'finished', plane: 'XY', offset: 2 });
+      expect(section.contourCount).toBe(1);
+      if (kind === 'fillet') {
+        const arcs = section.entities.filter(entity => entity.type === 'arc');
+        expect(arcs).toHaveLength(1);
+        expect(arcs[0].radius).toBeCloseTo(1, 8);
+        expect(arcs[0].center).toMatchObject({ x: 11, y: 11 });
+        expect(Math.abs(arcs[0].sweepRadians ?? 0)).toBeCloseTo(Math.PI / 2, 8);
+      } else {
+        expect(section.entities.every(entity => entity.type === 'line')).toBe(true);
+        expect(section.entities).toHaveLength(7);
+      }
     });
   });
   it('deduplicates overlapping query unions but requires both individual and union counts', () => {
@@ -201,7 +261,9 @@ describe('exact topology and selected mechanical features', () => {
       expect(model.result.meshes.every(mesh => mesh.volume > 3.14 && mesh.volume < 3.142)).toBe(true);
       expect(() => model.export('step')).toThrow('Fix the feature diagnostics');
     });
-  }, 20_000);
+  // Four 2,000-edge native solids approach the real model budget. This checks
+  // retained geometry after rejection, not a 20-second performance promise.
+  }, 60_000);
 });
 
 describe('native worker cache and snapshot lifetime', () => {

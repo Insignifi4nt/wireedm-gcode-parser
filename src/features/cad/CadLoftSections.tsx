@@ -5,6 +5,7 @@ import { inspectCadLoftSectionPair, resolveCadLoftSectionPlacements, MAX_CAD_LOF
 import { CadError } from '@/domain/cad/cadError';
 import { inspectCadLoftCandidates } from './cadLoftUi';
 import { cadPlacementLabel } from './cadPlacementUi';
+import { CadReferencePickButton } from './CadFields';
 
 export function CadLoftSections({ document, featureId, sketchIds, onChange, applyError = null }: {
   document: CadDocument;
@@ -88,6 +89,9 @@ export function CadLoftSections({ document, featureId, sketchIds, onChange, appl
               </option>;
             })}
           </select>
+          <CadReferencePickButton label={`Section ${index + 1}`} options={candidates.map(candidate => ({ value: candidate.sketch.id, disabled: candidateDisabled(candidate.sketch.id, id) }))} onSelect={nextId => {
+            if (!candidateDisabled(nextId, id)) { focusAfterChange.current = nextId; onChange(sketchIds.map((entry, position) => position === index ? nextId : entry)); }
+          }} />
           <button type="button" aria-label={`Move section ${index + 1} up`} title="Move section up" disabled={index === 0} onClick={() => move(index, -1)}><ArrowUp size={12} /></button>
           <button type="button" aria-label={`Move section ${index + 1} down`} title="Move section down" disabled={index === sketchIds.length - 1} onClick={() => move(index, 1)}><ArrowDown size={12} /></button>
           <button type="button" aria-label={`Remove section ${index + 1}`} title="Remove section" disabled={sketchIds.length <= MIN_CAD_LOFT_SECTIONS} onClick={() => {
@@ -97,15 +101,18 @@ export function CadLoftSections({ document, featureId, sketchIds, onChange, appl
         </li>;
       })}
     </ol>
-    <div className="cad-loft-section-add">
+    {available.length > 0 && <div className="cad-loft-section-add">
       <select aria-label="Sketch to add" value={selectedAddId} disabled={!selectedAddId || sketchIds.length >= MAX_CAD_LOFT_SECTIONS} onChange={event => setAddId(event.target.value)}>
         {!selectedAddId && <option value="">No compatible sketch</option>}
         {available.map(candidate => <option key={candidate.sketch.id} value={candidate.sketch.id}>{candidate.sketch.name}</option>)}
       </select>
+      <CadReferencePickButton label="New section" disabled={sketchIds.length >= MAX_CAD_LOFT_SECTIONS} options={available.map(candidate => ({ value: candidate.sketch.id }))} onSelect={nextId => {
+        if (sketchIds.length < MAX_CAD_LOFT_SECTIONS && !candidateDisabled(nextId)) { focusAfterChange.current = nextId; onChange([...sketchIds, nextId]); }
+      }} />
       <button type="button" aria-label="Add section" title="Add section" disabled={!selectedAddId || sketchIds.length >= MAX_CAD_LOFT_SECTIONS} onClick={() => {
         if (selectedAddId && sketchIds.length < MAX_CAD_LOFT_SECTIONS && !candidateDisabled(selectedAddId)) { focusAfterChange.current = selectedAddId; onChange([...sketchIds, selectedAddId]); }
       }}><Plus size={13} /></button>
-    </div>
+    </div>}
     {placement.error && placement.error !== applyError && <p className="cad-error">{placement.error}</p>}
   </div>;
 }

@@ -1,7 +1,7 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CadCurveFeature, CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
+import type { CadCurveFeature, CadDatumPlaneFeature, CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import * as sweepDomain from '@/domain/cad/cadSweep';
 import * as sweepUi from './cadSweepUi';
@@ -68,5 +68,57 @@ describe('staged Sweep source selectors', () => {
     await render({ ...doc, name: 'Unrelated draft name' }); expect(inspectCandidates).toHaveBeenCalledTimes(1); expect(inspectPair).toHaveBeenCalledTimes(1);
     await render({ ...doc, parameters: { ...doc.parameters, position: 4 } }); expect(inspectCandidates).toHaveBeenCalledTimes(2); expect(inspectPair).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[role="status"]')?.textContent).toContain('YZ sketch at offset 0');
+  });
+});
+
+
+describe('authored datum Sweep sources', () => {
+  const railPlane: CadDatumPlaneFeature = { id: 'rail_mount', name: 'Rail mount', kind: 'datum-plane', suppressed: false,
+    definition: { kind: 'world', basePlane: 'XY', origin: [10, 20, 30], rotation: ['tilt', 0, 0] } };
+  const sectionPlane: CadDatumPlaneFeature = { ...railPlane, id: 'section_mount', name: 'Section mount',
+    definition: { ...railPlane.definition, basePlane: 'YZ', rotation: ['tilt + roll', 0, 0] } };
+  const datumSection: CadSketchFeature = { ...section, plane: { kind: 'datum-plane', featureId: sectionPlane.id }, offset: 0 };
+  const datumRail: CadCurveFeature = { ...rail, plane: { kind: 'datum-plane', featureId: railPlane.id } };
+  const parameters = { tilt: 30, roll: 37, radius: 1, length: 20 };
+
+  it('uses prefix frames for defaults and exposes actual authored placement without requiring matching bases', async () => {
+    const doc = sweepDocument([railPlane, sectionPlane, datumSection, datumRail], parameters);
+    const candidates = sweepUi.inspectCadSweepCandidates(doc);
+    expect(sweepUi.initialCadSweepSourceIds(candidates)).toEqual({ sketchId: 'section', curveId: 'rail' });
+    const inspection = sweepDomain.inspectCadSweepInputs(savedSweep, candidates.precedingFeatures, doc.parameters, candidates.frames);
+    expect(inspection.eligible).toBe(true);
+    const before = JSON.stringify(doc); const onChange = vi.fn();
+    await act(async () => root.render(<CadSweepSources document={doc} featureId="draft" sketchId="section" curveId="rail" onChange={onChange} />));
+    expect(field('Profile sketch').selectedOptions[0].disabled).toBe(false);
+    expect(field('Profile sketch').getAttribute('aria-description')).toBe('Section mount; offset 0 mm; normal (1, 0, 0)');
+    expect(field('Curve').getAttribute('title')).toBe('Rail mount; offset 0 mm; start (10, 20, 30) mm; tangent (1, 0, 0)');
+    expect(container.querySelector('[role="status"]')).toBeNull(); expect(onChange).not.toHaveBeenCalled();
+    expect(JSON.stringify(doc)).toBe(before);
+  });
+
+  it('keeps an individually valid misplaced section selectable and reports the actual world start instead of a principal-plane fallback', async () => {
+    const wrong = { ...datumSection, id: 'wrong', name: 'Misplaced section', offset: 3 };
+    const doc = sweepDocument([railPlane, sectionPlane, datumSection, datumRail, wrong], parameters);
+    function Draft() { const [sources, setSources] = useState({ sketchId: 'wrong', curveId: 'rail' }); return <CadSweepSources document={doc} featureId="draft" {...sources} onChange={setSources} />; }
+    await act(async () => root.render(<Draft />));
+    expect(field('Profile sketch').selectedOptions[0].disabled).toBe(false);
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('Curve starts at (10, 20, 30) mm');
+    expect(field('Profile sketch').getAttribute('title')).toContain('offset 3 mm');
+    await choose('Profile sketch', 'section'); expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(doc.features.at(-1)).toMatchObject({ id: 'wrong', offset: 3 });
+  });
+
+  it('keeps a stored suppressed-datum input unavailable without falling back to a principal source or later frame', async () => {
+    const inactive = { ...sectionPlane, suppressed: true };
+    const inactiveSection = { ...datumSection, suppressed: true };
+    const saved = { ...savedSweep, suppressed: true };
+    const latePlane = { ...sectionPlane, id: 'late', name: 'Later plane' };
+    const later = { ...datumSection, id: 'later_section', name: 'Later section', plane: { kind: 'datum-plane' as const, featureId: latePlane.id } };
+    const doc = sweepDocument([railPlane, inactive, inactiveSection, datumRail, saved, latePlane, later], parameters);
+    await act(async () => root.render(<CadSweepSources document={doc} featureId="sweep" sketchId="section" curveId="rail" onChange={vi.fn()} />));
+    expect(field('Profile sketch').value).toBe('section'); expect(field('Profile sketch').selectedOptions[0].disabled).toBe(true);
+    expect([...field('Profile sketch').options].some(option => option.value === 'later_section')).toBe(false);
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('suppressed');
+    expect(sweepUi.inspectCadSweepCandidates(doc, 'sweep').frames.get('late')).toBeUndefined();
   });
 });

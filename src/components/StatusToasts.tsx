@@ -60,7 +60,7 @@ function StatusToastItem({
       type="button"
     >
       {toastIcon(toast.type)}
-      <span className="min-w-0 truncate">{toast.message}</span>
+      <span className="min-w-0 break-words">{toast.message}</span>
       <X className="size-3 opacity-70" />
     </button>
   );

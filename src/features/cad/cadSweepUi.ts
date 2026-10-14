@@ -1,8 +1,10 @@
 import type { CadCurveFeature, CadDocument, CadFeature, CadSketchFeature } from '@/domain/cad/cadDocument';
 import { inspectCadCurve } from '@/domain/cad/cadCurve';
 import { inspectCadSweepSketch } from '@/domain/cad/cadSweep';
+import { prepareCadDatumFrames, type CadDatumFrameLookup } from '@/domain/cad/cadDatumPlanes';
 
 export interface CadSweepCandidates {
+  readonly frames: CadDatumFrameLookup;
   readonly precedingFeatures: ReadonlyMap<string, CadFeature>;
   readonly sketches: readonly { readonly sketch: CadSketchFeature; readonly inspection: ReturnType<typeof inspectCadSweepSketch> }[];
   readonly curves: readonly { readonly curve: CadCurveFeature; readonly inspection: ReturnType<typeof inspectCadCurve> }[];
@@ -12,10 +14,12 @@ export interface CadSweepCandidates {
 export function inspectCadSweepCandidates(document: CadDocument, featureId?: string): CadSweepCandidates {
   const index = featureId ? document.features.findIndex(feature => feature.id === featureId) : -1;
   const preceding = index < 0 ? document.features : document.features.slice(0, index);
+  const frames = prepareCadDatumFrames(preceding, document.parameters);
   return {
+    frames,
     precedingFeatures: new Map(preceding.map(feature => [feature.id, feature])),
-    sketches: preceding.flatMap(sketch => sketch.kind === 'sketch' ? [{ sketch, inspection: inspectCadSweepSketch(sketch, document.parameters) }] : []),
-    curves: preceding.flatMap(curve => curve.kind === 'curve' ? [{ curve, inspection: inspectCadCurve(curve, document.parameters) }] : []),
+    sketches: preceding.flatMap(sketch => sketch.kind === 'sketch' ? [{ sketch, inspection: inspectCadSweepSketch(sketch, document.parameters, frames) }] : []),
+    curves: preceding.flatMap(curve => curve.kind === 'curve' ? [{ curve, inspection: inspectCadCurve(curve, document.parameters, frames) }] : []),
   };
 }
 

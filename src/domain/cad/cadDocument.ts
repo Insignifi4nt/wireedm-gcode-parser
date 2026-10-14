@@ -1,6 +1,9 @@
 import type { CadEdgeSelection, CadFaceQuery } from './cadTopology';
 import type { CadSolidImportSource } from './cadImports';
 import type { CadDxfImportSource } from './cadDxfSource';
+import type { CadPluginProfile } from './plugins/cadPlugins';
+import type { CadParameterGroup, CadParameterMetadata } from './cadParameters';
+import type { CadSketchDimensionConstraint } from './cadSketchConstraints';
 
 /** Millimetres and degrees. Strings are arithmetic expressions over named parameters. */
 export type CadScalar = number | string;
@@ -13,6 +16,7 @@ export type CadPathSegment =
   | { readonly kind: 'arc'; readonly center: CadPoint2; readonly radius: CadScalar; readonly startAngle: CadScalar; readonly sweep: CadScalar };
 
 export type CadProfile =
+  | CadPluginProfile
   | { readonly kind: 'rectangle'; readonly x: CadScalar; readonly y: CadScalar; readonly width: CadScalar; readonly height: CadScalar; readonly cornerRadius: CadScalar }
   | { readonly kind: 'circle'; readonly x: CadScalar; readonly y: CadScalar; readonly radius: CadScalar }
   | { readonly kind: 'polygon'; readonly points: readonly CadPoint2[] }
@@ -26,6 +30,8 @@ export interface CadSketchProfile {
   /** Legacy save constraint only. New contours omit this; material regions derive from nesting. */
   readonly role?: 'outer' | 'hole';
   readonly geometry: CadProfile;
+  /** Explicit dimensions are opt-in. Existing construction scalars and saved expressions remain authoritative. */
+  readonly constraints?: readonly CadSketchDimensionConstraint[];
 }
 export interface CadFeatureBase { readonly id: string; readonly name: string; readonly suppressed: boolean }
 export interface CadDatumPlaneFeature extends CadFeatureBase {
@@ -71,6 +77,8 @@ export interface CadDocument {
   readonly name: string;
   readonly units: 'mm';
   readonly parameters: Readonly<Record<string, number>>;
+  readonly parameterGroups?: readonly CadParameterGroup[];
+  readonly parameterMetadata?: Readonly<Record<string, CadParameterMetadata>>;
   readonly features: readonly CadFeature[];
 }
 
