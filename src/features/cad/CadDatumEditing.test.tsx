@@ -92,12 +92,25 @@ describe('datum placement editing with shared Session history', () => {
     await mount(); await click('Outline'); const before = session.getSnapshot();
     expect(field('Reference plane').querySelector('select')?.value).toBe('datum:mount');
     await choose('XZ'); expect(session.getSnapshot().document).toBe(before.document); await click('Cancel');
+    expect(session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: before.canUndo, workflowOpen: false });
     expect(field('Reference plane').querySelector('select')?.value).toBe('datum:mount');
     await choose('YZ'); await click('Apply'); expect(session.getSnapshot().document.features[1]).toEqual({ ...sketch, plane: 'YZ' });
+    const accepted = session.getSnapshot().document;
+    await click('Undo'); expect(session.getSnapshot().document).toEqual(before.document);
+    await click('Redo'); expect(session.getSnapshot().document).toEqual(accepted);
     await click('Undo'); await click('Outline'); await click('Edit sketch');
     expect(container.querySelector('.cad-plane-label')?.textContent).toBe('Mount');
-    const world = cadFramePointToWorld(resolveCadWorldDatum(datum, {}), 4, [2, 3]); expect(world[2]).not.toBe(4);
-    expect(container.querySelector('.cad-profile circle')?.getAttribute('cx')).toBe('2');
+    const world = cadFramePointToWorld(resolveCadWorldDatum(datum, {}), 4, [2, 3]);
+    expect(world).toEqual([12, expect.closeTo(20.598076211353316, 10), expect.closeTo(34.96410161513775, 10)]);
+    const circle = container.querySelector('.cad-profile circle'), canvas = container.querySelector('.cad-sketch-canvas');
+    if (!circle || !canvas) throw new Error('Missing visible datum Sketch circle');
+    expect(circle.getAttribute('cx')).toBe('0'); expect(circle.getAttribute('cy')).toBe('0'); expect(circle.getAttribute('r')).toBe('1');
+    expect(circle.parentElement?.getAttribute('transform')).toBe('translate(0,0)');
+    const [left, top, width, height] = canvas.getAttribute('viewBox')!.split(' ').map(Number);
+    expect(left).toBeLessThanOrEqual(-1); expect(left + width).toBeGreaterThanOrEqual(1);
+    expect(top).toBeLessThanOrEqual(-1); expect(top + height).toBeGreaterThanOrEqual(1);
+    expect(session.getSnapshot()).toMatchObject({ document: before.document, workflowOpen: false, canUndo: before.canUndo, canRedo: true });
+    expect(session.getSnapshot().document.features[1]).toEqual(sketch);
   });
   it('keeps unavailable datum selected truthfully while allowing an explicit principal replacement', async () => {
     await mount({ ...createCadDocument(), parameters: { lift: 8 }, features: [{ ...datum, suppressed: true }, { ...sketch, suppressed: true }] }); await click('Outline');

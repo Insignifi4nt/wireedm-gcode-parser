@@ -51,8 +51,17 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
   const treeId = useId();
   const tree = useRef<HTMLOListElement>(null), returnFocus = useRef<{ documentId: string; target: TreeTarget } | null>(null);
   const pendingCallback = useRef(onRenamePendingChange); pendingCallback.current = onRenamePendingChange;
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(selectedId ? [selectedId] : []));
-  const [branches, setBranches] = useState<ReadonlySet<TreeBranch>>(() => new Set(['part', 'model']));
+  const [treeView, setTreeView] = useState<{ selectedId: string | null; expanded: ReadonlySet<string>; branches: ReadonlySet<TreeBranch> }>(() => ({
+    selectedId, expanded: new Set(selectedId ? [selectedId] : []), branches: new Set(['part', 'model']),
+  }));
+  // Reveal selection before sibling views read the tree for their initial Fit.
+  // Remember the selection so ordinary rerenders preserve manual collapse.
+  if (treeView.selectedId !== selectedId) setTreeView({
+    selectedId,
+    expanded: selectedId && !treeView.expanded.has(selectedId) ? new Set([...treeView.expanded, selectedId]) : treeView.expanded,
+    branches: selectedId && (!treeView.branches.has('part') || !treeView.branches.has('model')) ? new Set([...treeView.branches, 'part', 'model']) : treeView.branches,
+  });
+  const { expanded, branches } = treeView;
   const [rename, setRename] = useState<{ document: CadDocument; cancelSignal: number; target: TreeTarget } | null>(null);
   const renameCurrent = !locked && !selectionOnly && rename?.document === document && rename.cancelSignal === cancelSignal ? rename : null;
   const [menu, setMenu] = useState<{ document: CadDocument; featureId: string; profileId?: string; anchor: CadContextMenuAnchor } | null>(null);
@@ -82,17 +91,11 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
     }
     return { byId, downstream };
   }, [document.features]);
-  useEffect(() => {
-    if (selectedId) {
-      setExpanded(previous => previous.has(selectedId) ? previous : new Set([...previous, selectedId]));
-      setBranches(previous => previous.has('part') && previous.has('model') ? previous : new Set([...previous, 'part', 'model']));
-    }
-  }, [selectedId]);
-  const toggle = (id: string) => setExpanded(previous => {
-    const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next;
+  const toggle = (id: string) => setTreeView(previous => {
+    const expanded = new Set(previous.expanded); if (expanded.has(id)) expanded.delete(id); else expanded.add(id); return { ...previous, expanded };
   });
-  const toggleBranch = (branch: TreeBranch) => setBranches(previous => {
-    const next = new Set(previous); if (next.has(branch)) next.delete(branch); else next.add(branch); return next;
+  const toggleBranch = (branch: TreeBranch) => setTreeView(previous => {
+    const branches = new Set(previous.branches); if (branches.has(branch)) branches.delete(branch); else branches.add(branch); return { ...previous, branches };
   });
   const beginRename = (target: TreeTarget) => {
     if (locked || selectionOnly || renameCurrent || !onRename) return;
