@@ -1,69 +1,47 @@
 {
-  "generatedAt": "2026-10-14T17:17:33.459Z",
-  "revision": "c36aa3b50a30f82ded3508652d9e7917c69b6b59",
+  "generatedAt": "2026-10-14T18:21:53.733Z",
+  "revision": "8375c294d09e0a43b48b7c37d977cc59fd9a4065",
   "dirtyState": [
-    "M .github/workflows/pages.yml",
-    " M .github/workflows/pull-request.yml",
-    " M docs/design/icon-inventory.audit.json",
+    "M docs/design/icon-inventory.audit.json",
     " M docs/design/icon-inventory.md",
     " M docs/releases/0.0.697.json",
     " M docs/reviews/2026-10-14-cad-hardening-checklist.md",
-    " M docs/site/agents.md",
-    " M package-lock.json",
-    " M package.json",
-    " M src/__tests__/appV2Workflows.test.tsx",
-    " M src/domain/cad/cadAnalyticSegments.ts",
-    " M src/domain/cad/cadPocketSectionScale.ts",
-    " M src/domain/dxf/__tests__/parseDxfExactCad.test.ts",
-    " M src/domain/dxf/parseDxf.ts",
-    " M src/domain/path-intel/fromDxfEntities.ts",
-    " M src/domain/path-intel/planOperations.ts",
-    " M src/domain/storage/__tests__/exactTextReads.test.ts",
-    " M src/domain/storage/__tests__/workbenchRecovery.test.ts",
-    " M src/domain/storage/boundedExactText.ts",
-    " M src/domain/storage/exactTextStream.ts",
+    " M docs/reviews/2026-10-14-node24-ci-repair-checkpoint.md",
+    " M e2e/cad-kernel.spec.ts",
+    " M e2e/cad-workflow.spec.ts",
+    " M src/features/cad/CadCommandDock.test.tsx",
+    " M src/features/cad/CadCommandDock.tsx",
+    " M src/features/cad/CadContextHelp.tsx",
+    " M src/features/cad/CadGearInspectionOverlay.tsx",
+    " M src/features/cad/CadPathDraftGeometry.tsx",
+    " M src/features/cad/CadSketchCanvas.test.tsx",
+    " M src/features/cad/CadSketchCanvas.tsx",
+    " M src/features/cad/CadSketchCanvasPicking.test.tsx",
+    " M src/features/cad/CadSketchDirectManipulation.test.tsx",
+    " M src/features/cad/CadSketchPathDrawing.test.tsx",
     " M src/features/cad/CadWorkbench.test.tsx",
-    " M src/features/cad/cadCurveRendering.test.ts",
-    " M src/features/cad/cadCurveRendering.ts",
-    " M src/features/cad/cadSiteTools.ts",
-    " M src/features/cad/cadViewportReferences.test.ts",
-    " M src/features/cad/cadViewportReferences.ts",
-    " M src/features/cad/kernel/cadKernelExport.ts",
-    " M src/features/cad/kernel/cadKernelSection.ts",
-    " M src/features/cad/useCadController.test.tsx",
-    "?? .node-version",
-    "?? docs/maintainers/node-runtime.md",
-    "?? docs/reviews/2026-10-14-cad-gzip-portability-independent-review.md",
-    "?? docs/reviews/2026-10-14-cad-planar-capacity-independent-review.md",
-    "?? docs/reviews/2026-10-14-cad-section-export-efficiency-audit.md",
-    "?? docs/reviews/2026-10-14-cad-section-export-independent-review.md",
-    "?? docs/reviews/2026-10-14-cad-uncapped-planar-capacity-audit.md",
-    "?? docs/reviews/2026-10-14-cad-viewport-capacity-reply-audit.md",
-    "?? docs/reviews/2026-10-14-cad-viewport-reply-independent-review.md",
-    "?? docs/reviews/2026-10-14-exact-gzip-node24-portability-review.md",
-    "?? docs/reviews/2026-10-14-node24-ci-repair-checkpoint.md",
-    "?? docs/reviews/2026-10-14-node24-ci-save-ordering-review.md",
-    "?? docs/reviews/2026-10-14-source-map-js-lock-delta-review.md",
-    "?? docs/reviews/2026-10-14-storage-bounded-gzip-portability-review.md",
-    "?? src/domain/cad/__tests__/cadDxfPolylineCapacity.test.ts",
-    "?? src/domain/cad/__tests__/cadHandoffCapacity.test.ts",
-    "?? src/domain/cad/__tests__/cadPocketCapacity.test.ts",
-    "?? src/domain/cad/cadAnalyticSegments.capacity.test.ts",
-    "?? src/domain/storage/__tests__/boundedGzipReads.test.ts",
-    "?? src/features/cad/cadViewportToolReplies.ts",
-    "?? src/features/cad/kernel/cadKernelExportBuffer.test.ts",
-    "?? src/features/cad/kernel/cadKernelSection.test.ts",
-    "?? src/features/cad/kernel/cadKernelSectionEndpoints.test.ts",
-    "?? src/features/cad/kernel/cadKernelSectionEndpoints.ts"
+    " M src/features/cad/cadSketchSvg.test.ts",
+    " M src/features/cad/cadSketchSvg.ts",
+    "?? docs/reviews/2026-10-14-cad-far-origin-svg-and-picking-review.md",
+    "?? docs/reviews/2026-10-14-cad-kernel-e2e-current-ui-review.md",
+    "?? docs/reviews/2026-10-14-cad-kernel-shell-e2e-independent-review.md",
+    "?? docs/reviews/2026-10-14-cad-local-svg-coordinate-independent-review.md",
+    "?? docs/reviews/2026-10-14-cad-sketch-e2e-current-ui-review.md",
+    "?? docs/reviews/2026-10-14-cad-sketch-e2e-independent-review.md",
+    "?? docs/reviews/2026-10-14-cad-view-help-independent-review.md",
+    "?? docs/reviews/2026-10-14-cad-view-help-owner-lifecycle-review.md",
+    "?? e2e/cad-tool-helpers.ts",
+    "?? src/features/cad/CadSketchLocalCoordinates.test.tsx",
+    "?? src/features/cad/CadSketchProfileGeometry.tsx"
   ],
   "scannedRoots": [
     "src/",
     "package-tools/",
     "index.html"
   ],
-  "productionFileCount": 454,
-  "parsedCodeFileCount": 421,
-  "fixtureFileCount": 375,
+  "productionFileCount": 455,
+  "parsedCodeFileCount": 422,
+  "fixtureFileCount": 376,
   "sourceHashes": {
     "index.html": "963070620b28b264a02f5565519a2a57b66c72fcfcc03a2ffb2f66b8863db8f6",
     "package-tools/index.html": "6b692af90461f9356ad428ee3a61c3f985d45cd22f2eb197acced75b48342aee",
@@ -294,8 +272,8 @@
     "src/domain/workbench-catalog/workbenchProjectStorage.ts": "1c04d28923bb0c8d0f5a8d243569fb0e746ffaa74f7cc3f891416a00cb1361e3",
     "src/domain/workbench-catalog/workbenchProjectVersion.ts": "4d0bbea69221767973a8d8aa6b4a373a6bae2e435f8fe311253349dcfcbc0a26",
     "src/domain/workbench/projectNaming.ts": "2a460372d6e15d51a44fc675b7121d550e9241b9bbad2dd9c7a977eacccad463",
-    "src/features/cad/CadCommandDock.tsx": "6b18576199ab8779af7059316fe70a08ac478b335fad73904dc4d2f42161062f",
-    "src/features/cad/CadContextHelp.tsx": "0a93559cae05eb384838f7abde866f5f71e6e1ce7eee0f8fabbee9971e7c2068",
+    "src/features/cad/CadCommandDock.tsx": "e16b3da10032756eb795866c404a95ce65965f0e33f77b166bae26757ea81c53",
+    "src/features/cad/CadContextHelp.tsx": "5fdb914f46230a88a5617b2321ad60f3cffdbfb3c0a17cb5773c920bdb38ef6d",
     "src/features/cad/CadContextMenu.tsx": "af84cc7598bd6b4c57ce96f0cbc0c383acf89e471fe17a5074639de6b47ad12f",
     "src/features/cad/CadCurveCreationFields.tsx": "b809bfae00e757d5002b06dd8fcd4b4395d941b6dc7374c883e023bb529aa11a",
     "src/features/cad/CadCurveMeasurements.tsx": "a25fec1cdd9ff2d2933c15f851ace101bfcb1b65c920f0a0a7bced6f668f54c9",
@@ -308,12 +286,12 @@
     "src/features/cad/CadFeatureTree.tsx": "38b180f570687c8d21b6758e0ab396f3df97f416f131e391fc1ef98e6f1e1d76",
     "src/features/cad/CadFields.tsx": "042bab0e6a9ba25b01d60ddc107bb1e4c11253b73484cf85f0c729933a42c664",
     "src/features/cad/CadGearHelp.tsx": "e9d5d5ec11d635aa963387f7e09f1262aef0370c40ca11f06b49ee6f7ff63a50",
-    "src/features/cad/CadGearInspectionOverlay.tsx": "787733fb681dce1eebbfcc76cbfd8ebc4549db1c32d04261b205af0124aa7064",
+    "src/features/cad/CadGearInspectionOverlay.tsx": "79442d4164896048c115eb60cbf081192927d38c445ad317a806536615ef668a",
     "src/features/cad/CadImportDialog.tsx": "f17b57630be37976c08d6207b822929a3a71e99f935c754915988cd7e0cbd0ea",
     "src/features/cad/CadLibraryDialog.tsx": "e2092465a24faa8dc0ccc407ed25156b17dbc734501e05fbede18749afd8807b",
     "src/features/cad/CadLoftSections.tsx": "9289c3279751879a7e6264af226cf178e089eacc36d2330a90a6fcaa868f4315",
     "src/features/cad/CadParametersPanel.tsx": "7919db04f9e541d927fba62dc0b050bd04b56642568061b96d2e53bf3bd4b723",
-    "src/features/cad/CadPathDraftGeometry.tsx": "8f17f7fee7a29ead7582ebef0d406fb53635dfc6e79f0a39808e056e8811575c",
+    "src/features/cad/CadPathDraftGeometry.tsx": "c35e8c0a90808aa95b47a2218bcd2934cfae88952f957e67a0a154b452909ca8",
     "src/features/cad/CadPathSegmentFields.tsx": "455f12bb3a9d09dd236b74081abcb253cb7e41705b24cf5754ccdfbdfa5b5447",
     "src/features/cad/CadPatternCommand.tsx": "b23dd2f8bae5ce840ce615c9fdcfad567e91703efe09662bfa0976cc927b0bb0",
     "src/features/cad/CadPlacementField.tsx": "dc1a44c43fb5903c9020e9e3acf7ba67e69d932f0dd75f7d060fb9756202e20a",
@@ -322,9 +300,10 @@
     "src/features/cad/CadPluginsPanel.tsx": "05a7e023deaea251f9d54e54977ac6bfa6fac7d803592dab373c42fc6c6c1b6f",
     "src/features/cad/CadPolygonVertexFields.tsx": "8afd9d2ac23e7a597b5af1d2a82932e4c467e32674be1d6cace734cd76d2c674",
     "src/features/cad/CadSectionDialog.tsx": "b3ea21180ebeb6d669ab304854ed2b8a4831809dfa19c9084106c016095fb500",
-    "src/features/cad/CadSketchCanvas.tsx": "476bdcdca5743fc974e145c402e093754ef421434363fc56b6a712a082aed900",
+    "src/features/cad/CadSketchCanvas.tsx": "b8e891b2095ded0c8997fffaac9b1d470d9563407f67664b0d8047d5f2d2cd48",
     "src/features/cad/CadSketchDimensionControls.tsx": "b47f59fd18aaae1b70a0cc6e8cee61e20091d5e5a5fe9d0abb25fa1948c1b25b",
     "src/features/cad/CadSketchMeasurements.tsx": "8b491d4dccbc29172d76ee26233ac93eb53e6987daf52652a7d43ec41abd2b7d",
+    "src/features/cad/CadSketchProfileGeometry.tsx": "49a3a0c4f61754e37b544a5140d6b6f94bf36ee25431fa9c9329efa0d4befe2c",
     "src/features/cad/CadSketchProfilePanel.tsx": "f990470131d1da6b09164832098e6224c36d36d7165a9dfedb39d7caffb8b6fb",
     "src/features/cad/CadSketchSourceField.tsx": "5c6ba867932b243502c2015f8e6a01b2a781e41033844d1ac0b611d783995bf5",
     "src/features/cad/CadSweepSources.tsx": "550399904c9d711200c99646bd5c8af0501529f9cfee951340b21c0c7843d943",
@@ -361,7 +340,7 @@
     "src/features/cad/cadSketchDimensionAnnotations.ts": "199abf6a0618035064e7361280b90de1c8d47cc813f13577f0abece438334266",
     "src/features/cad/cadSketchInteraction.ts": "9c08f2699f0e49b2da0f4cfeed75769a17883d8ce3925d2cfa0396a4aaa2e354",
     "src/features/cad/cadSketchPicking.ts": "2f6fb3409d464427ec201689bfb395a3a88177f3c2d8915c85dab60733feb26f",
-    "src/features/cad/cadSketchSvg.ts": "d89595a890559ad477737fdfa4ddb17ab6377dfe3fd1938e0f4f1a60cb774e44",
+    "src/features/cad/cadSketchSvg.ts": "47bd556f9d6370bf925a4eb844dd5e50e415ab0da1d0641de73e8ad00a726d6d",
     "src/features/cad/cadSweepUi.ts": "c7739537b0154598bb6d63b379e3b2bfac16ae668753afbef88cdd30b1cfdb35",
     "src/features/cad/cadToolSchemas.ts": "3cb22d41d266ecc9889dafab50211349d54fc6199eef529a620689765f8ee487",
     "src/features/cad/cadToolbarPopupPosition.ts": "729ce59544d39bb8f8b274cdd90b6dbecb191b744651fd62c93794a31b7ebc6a",
@@ -2806,7 +2785,7 @@
       "file": "src/features/cad/CadSketchCanvas.tsx",
       "line": 2,
       "column": 10,
-      "start": 114,
+      "start": 108,
       "expression": "Check",
       "component": "CadSketchCanvas",
       "container": null,
@@ -2830,7 +2809,7 @@
       "file": "src/features/cad/CadSketchCanvas.tsx",
       "line": 2,
       "column": 17,
-      "start": 121,
+      "start": 115,
       "expression": "Grid2X2",
       "component": "CadSketchCanvas",
       "container": null,
@@ -2854,7 +2833,7 @@
       "file": "src/features/cad/CadSketchCanvas.tsx",
       "line": 2,
       "column": 26,
-      "start": 130,
+      "start": 124,
       "expression": "Magnet",
       "component": "CadSketchCanvas",
       "container": null,
@@ -2878,7 +2857,7 @@
       "file": "src/features/cad/CadSketchCanvas.tsx",
       "line": 2,
       "column": 34,
-      "start": 138,
+      "start": 132,
       "expression": "Maximize2",
       "component": "CadSketchCanvas",
       "container": null,
@@ -2902,7 +2881,7 @@
       "file": "src/features/cad/CadSketchCanvas.tsx",
       "line": 2,
       "column": 45,
-      "start": 149,
+      "start": 143,
       "expression": "Undo2",
       "component": "CadSketchCanvas",
       "container": null,
@@ -2926,7 +2905,7 @@
       "file": "src/features/cad/CadSketchCanvas.tsx",
       "line": 2,
       "column": 52,
-      "start": 156,
+      "start": 150,
       "expression": "X",
       "component": "CadSketchCanvas",
       "container": null,
@@ -7215,9 +7194,9 @@
     },
     {
       "file": "src/features/cad/CadCommandDock.tsx",
-      "line": 26,
+      "line": 30,
       "column": 56,
-      "start": 1624,
+      "start": 1866,
       "expression": "ChevronDown",
       "component": "CadCommandDock",
       "container": "button",
@@ -7264,9 +7243,9 @@
     },
     {
       "file": "src/features/cad/CadContextHelp.tsx",
-      "line": 64,
-      "column": 188,
-      "start": 4486,
+      "line": 71,
+      "column": 215,
+      "start": 4892,
       "expression": "Info",
       "component": "CadContextHelp",
       "container": "button",
@@ -7280,13 +7259,13 @@
         "className": "\"cad-context-help-trigger\"",
         "aria-label": "{buttonLabel ?? `${label} help`}",
         "aria-haspopup": "\"dialog\"",
-        "aria-expanded": "{open}",
-        "aria-controls": "{open ? id : undefined}",
+        "aria-expanded": "{shown}",
+        "aria-controls": "{shown ? id : undefined}",
         "onMouseEnter": "{() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }}",
         "onMouseLeave": "{() => { suppressed.current = false; leave(); }}",
         "onFocus": "{() => { if (activation === 'preview' && !suppressed.current) show(true); }}",
         "onBlur": "{event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }}",
-        "onClick": "{event => { if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}"
+        "onClick": "{event => { if (!ownerVisible) return; if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}"
       },
       "jsxParents": [
         {
@@ -7300,7 +7279,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<button ref={trigger} type=\"button\" className=\"cad-context-help-trigger\" aria-label={buttonLabel ?? `${label} help`} aria-haspopup=\"dialog\" aria-expanded={open} aria-controls={open ? id : undefined} onMouseEnter={() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }} onMouseLeave={() => { suppressed.current = false; leave(); }} onFocus={() => { if (activation === 'preview' && !suppressed.current) show(true); }} onBlur={event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }} onClick={event => { if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}>{triggerContent ?? <Info size={12} aria-hidden=\"true\" />}</button>",
+      "containerText": "<button ref={trigger} type=\"button\" className=\"cad-context-help-trigger\" aria-label={buttonLabel ?? `${label} help`} aria-haspopup=\"dialog\" aria-expanded={shown} aria-controls={shown ? id : undefined} onMouseEnter={() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }} onMouseLeave={() => { suppressed.current = false; leave(); }} onFocus={() => { if (activation === 'preview' && !suppressed.current) show(true); }} onBlur={event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }} onClick={event => { if (!ownerVisible) return; if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}>{triggerContent ?? <Info size={12} aria-hidden=\"true\" />}</button>",
       "conditions": [],
       "call": null,
       "variable": null,
@@ -7313,9 +7292,9 @@
     },
     {
       "file": "src/features/cad/CadContextHelp.tsx",
-      "line": 67,
+      "line": 74,
       "column": 127,
-      "start": 4986,
+      "start": 5393,
       "expression": "X",
       "component": "CadContextHelp",
       "container": "button",
@@ -7345,7 +7324,7 @@
       ],
       "containerText": "<button type=\"button\" aria-label={`Close ${label} help`} onClick={() => dismiss(true)}><X size={12} aria-hidden=\"true\" /></button>",
       "conditions": [
-        "open"
+        "shown"
       ],
       "call": "createPortal(<div ref={panel} id={id} className=\"cad-context-help-popover\" role=\"dialog\" aria-label={`${label} help`} style={position} onMouseEnter={clearTimer} onMouseLeave={leave} onBlur={event => { if (!panel.current?.contains(event.relatedTarget) && event.relatedTarget !== trigger.current) leave(); }}> <header><strong>{label}</strong><button type=\"button\" aria-label={`Close ${label} help`} onClick={() => dismiss(true)}><X size={12} aria-hidden=\"true\" /></button></header> <div className=\"cad-context-help-content\">{children}</div> </div>, trigger.current?.closest('dialog') ?? document.body)",
       "variable": null,
@@ -10028,9 +10007,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 473,
+      "line": 442,
       "column": 280,
-      "start": 37166,
+      "start": 35546,
       "expression": "Maximize2",
       "component": "CadSketchCanvas",
       "container": "button",
@@ -10072,9 +10051,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 473,
+      "line": 442,
       "column": 425,
-      "start": 37311,
+      "start": 35691,
       "expression": "Grid2X2",
       "component": "CadSketchCanvas",
       "container": "button",
@@ -10117,9 +10096,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 473,
+      "line": 442,
       "column": 570,
-      "start": 37456,
+      "start": 35836,
       "expression": "Magnet",
       "component": "CadSketchCanvas",
       "container": "button",
@@ -10162,9 +10141,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 480,
+      "line": 449,
       "column": 434,
-      "start": 39534,
+      "start": 37914,
       "expression": "Check",
       "component": "CadSketchCanvas",
       "container": "button",
@@ -10205,9 +10184,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 480,
+      "line": 449,
       "column": 658,
-      "start": 39758,
+      "start": 38138,
       "expression": "Undo2",
       "component": "CadSketchCanvas",
       "container": "button",
@@ -10246,9 +10225,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 480,
+      "line": 449,
       "column": 786,
-      "start": 39886,
+      "start": 38266,
       "expression": "X",
       "component": "CadSketchCanvas",
       "container": "button",
@@ -10287,9 +10266,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 482,
+      "line": 451,
       "column": 106,
-      "start": 40045,
+      "start": 38425,
       "expression": "Check",
       "component": "CadSketchCanvas",
       "container": "button",
@@ -10327,9 +10306,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 482,
+      "line": 451,
       "column": 209,
-      "start": 40148,
+      "start": 38528,
       "expression": "X",
       "component": "CadSketchCanvas",
       "container": "button",
@@ -18201,9 +18180,9 @@
     },
     {
       "file": "src/features/cad/CadContextHelp.tsx",
-      "line": 64,
-      "column": 168,
-      "start": 4466,
+      "line": 71,
+      "column": 195,
+      "start": 4872,
       "expression": "{triggerContent ?? <Info size={12} aria-hidden=\"true\" />}",
       "component": "CadContextHelp",
       "container": "button",
@@ -18213,13 +18192,13 @@
         "className": "\"cad-context-help-trigger\"",
         "aria-label": "{buttonLabel ?? `${label} help`}",
         "aria-haspopup": "\"dialog\"",
-        "aria-expanded": "{open}",
-        "aria-controls": "{open ? id : undefined}",
+        "aria-expanded": "{shown}",
+        "aria-controls": "{shown ? id : undefined}",
         "onMouseEnter": "{() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }}",
         "onMouseLeave": "{() => { suppressed.current = false; leave(); }}",
         "onFocus": "{() => { if (activation === 'preview' && !suppressed.current) show(true); }}",
         "onBlur": "{event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }}",
-        "onClick": "{event => { if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}"
+        "onClick": "{event => { if (!ownerVisible) return; if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}"
       },
       "controlAttributes": {
         "ref": "{trigger}",
@@ -18227,19 +18206,19 @@
         "className": "\"cad-context-help-trigger\"",
         "aria-label": "{buttonLabel ?? `${label} help`}",
         "aria-haspopup": "\"dialog\"",
-        "aria-expanded": "{open}",
-        "aria-controls": "{open ? id : undefined}",
+        "aria-expanded": "{shown}",
+        "aria-controls": "{shown ? id : undefined}",
         "onMouseEnter": "{() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }}",
         "onMouseLeave": "{() => { suppressed.current = false; leave(); }}",
         "onFocus": "{() => { if (activation === 'preview' && !suppressed.current) show(true); }}",
         "onBlur": "{event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }}",
-        "onClick": "{event => { if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}"
+        "onClick": "{event => { if (!ownerVisible) return; if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}"
       },
       "jsxParents": [],
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<button ref={trigger} type=\"button\" className=\"cad-context-help-trigger\" aria-label={buttonLabel ?? `${label} help`} aria-haspopup=\"dialog\" aria-expanded={open} aria-controls={open ? id : undefined} onMouseEnter={() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }} onMouseLeave={() => { suppressed.current = false; leave(); }} onFocus={() => { if (activation === 'preview' && !suppressed.current) show(true); }} onBlur={event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }} onClick={event => { if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}>{triggerContent ?? <Info size={12} aria-hidden=\"true\" />}</button>",
+      "containerText": "<button ref={trigger} type=\"button\" className=\"cad-context-help-trigger\" aria-label={buttonLabel ?? `${label} help`} aria-haspopup=\"dialog\" aria-expanded={shown} aria-controls={shown ? id : undefined} onMouseEnter={() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }} onMouseLeave={() => { suppressed.current = false; leave(); }} onFocus={() => { if (activation === 'preview' && !suppressed.current) show(true); }} onBlur={event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }} onClick={event => { if (!ownerVisible) return; if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}>{triggerContent ?? <Info size={12} aria-hidden=\"true\" />}</button>",
       "conditions": [],
       "call": null,
       "variable": null,
@@ -22687,9 +22666,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 469,
+      "line": 438,
       "column": 134,
-      "start": 35688,
+      "start": 34068,
       "expression": "<CadSketchDimensionControls {...dimensionControls} interactionLocked={dimensionControls.interactionLocked || dragPreview !== null} sketch={sketch} profile={dimensionProfile} parameters={parameters} anchor={dimensionAnchor} project={point => ({ x: (point[0] - center[0]) / width * viewportSize.width + viewportSize.width / 2, y: (center[1] - point[1]) / span * viewportSize.height + viewportSize.height / 2 })} cancelSignal={cancelSignal} />",
       "component": "CadSketchCanvas",
       "container": "div",
@@ -22710,7 +22689,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [
         "dimensionControls && sketch.kind === 'sketch' && dimensionProfile && dimensionAnchor && tool === 'select' && !previewProfile"
       ],
@@ -22723,9 +22702,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 473,
+      "line": 442,
       "column": 875,
-      "start": 37761,
+      "start": 36141,
       "expression": "<CadContextHelp label=\"Sketch navigation\">",
       "component": "CadSketchCanvas",
       "container": "div",
@@ -22753,7 +22732,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [],
       "call": null,
       "variable": null,
@@ -23650,17 +23629,17 @@
     },
     {
       "file": "src/features/cad/CadGearInspectionOverlay.tsx",
-      "line": 35,
+      "line": 36,
       "column": 73,
-      "start": 2769,
-      "expression": "<circle key={label} aria-label={String(label)} cx={v.x} cy={v.y} r={diameter / 2} strokeDasharray={`${span / 70} ${span / 140}`} />",
+      "start": 2939,
+      "expression": "<circle key={label} aria-label={String(label)} cx={0} cy={0} r={diameter / 2} strokeDasharray={`${span / 70} ${span / 140}`} />",
       "component": "CadGearInspectionOverlay",
       "container": null,
       "attributes": {
         "key": "{label}",
         "aria-label": "{String(label)}",
-        "cx": "{v.x}",
-        "cy": "{v.y}",
+        "cx": "{0}",
+        "cy": "{0}",
         "r": "{diameter / 2}",
         "strokeDasharray": "{`${span / 70} ${span / 140}`}"
       },
@@ -23669,31 +23648,31 @@
       "visibleText": "",
       "callName": "circles.map",
       "callArguments": [
-        "([label, diameter]) => typeof diameter === 'number' && <circle key={label} aria-label={String(label)} cx={v.x} cy={v.y} r={diameter / 2} strokeDasharray={`${span / 70} ${span / 140}`} />"
+        "([label, diameter]) => typeof diameter === 'number' && <circle key={label} aria-label={String(label)} cx={0} cy={0} r={diameter / 2} strokeDasharray={`${span / 70} ${span / 140}`} />"
       ],
       "containerText": null,
       "conditions": [
         "typeof diameter === 'number'"
       ],
-      "call": "circles.map(([label, diameter]) => typeof diameter === 'number' && <circle key={label} aria-label={String(label)} cx={v.x} cy={v.y} r={diameter / 2} strokeDasharray={`${span / 70} ${span / 140}`} />)",
+      "call": "circles.map(([label, diameter]) => typeof diameter === 'number' && <circle key={label} aria-label={String(label)} cx={0} cy={0} r={diameter / 2} strokeDasharray={`${span / 70} ${span / 140}`} />)",
       "variable": null,
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "circle",
-      "id": "use.33bfcf8085c4"
+      "id": "use.9a2e69a8f339"
     },
     {
       "file": "src/features/cad/CadGearInspectionOverlay.tsx",
-      "line": 37,
+      "line": 38,
       "column": 183,
-      "start": 3182,
-      "expression": "<circle key={`sample-${index}`} cx={segment.start[0]} cy={segment.start[1]} r={span / 230} className=\"cad-gear-inspection-sample\" />",
+      "start": 3364,
+      "expression": "<circle key={`sample-${index}`} cx={segment.start[0] - v.x} cy={segment.start[1] - v.y} r={span / 230} className=\"cad-gear-inspection-sample\" />",
       "component": "CadGearInspectionOverlay",
       "container": null,
       "attributes": {
         "key": "{`sample-${index}`}",
-        "cx": "{segment.start[0]}",
-        "cy": "{segment.start[1]}",
+        "cx": "{segment.start[0] - v.x}",
+        "cy": "{segment.start[1] - v.y}",
         "r": "{span / 230}",
         "className": "\"cad-gear-inspection-sample\""
       },
@@ -23702,25 +23681,25 @@
       "visibleText": "",
       "callName": "segments.filter(segment => segment.kind === 'line').map",
       "callArguments": [
-        "(segment, index) => segment.kind === 'line' && <circle key={`sample-${index}`} cx={segment.start[0]} cy={segment.start[1]} r={span / 230} className=\"cad-gear-inspection-sample\" />"
+        "(segment, index) => segment.kind === 'line' && <circle key={`sample-${index}`} cx={segment.start[0] - v.x} cy={segment.start[1] - v.y} r={span / 230} className=\"cad-gear-inspection-sample\" />"
       ],
       "containerText": null,
       "conditions": [
         "segment.kind === 'line'",
         "['tolerance', 'qualityMode', 'effectiveTolerance'].includes(inputName)"
       ],
-      "call": "segments.filter(segment => segment.kind === 'line').map((segment, index) => segment.kind === 'line' && <circle key={`sample-${index}`} cx={segment.start[0]} cy={segment.start[1]} r={span / 230} className=\"cad-gear-inspection-sample\" />)",
+      "call": "segments.filter(segment => segment.kind === 'line').map((segment, index) => segment.kind === 'line' && <circle key={`sample-${index}`} cx={segment.start[0] - v.x} cy={segment.start[1] - v.y} r={span / 230} className=\"cad-gear-inspection-sample\" />)",
       "variable": null,
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "circle",
-      "id": "use.0b6260d94e3e"
+      "id": "use.a1bee86bd3d7"
     },
     {
       "file": "src/features/cad/CadGearInspectionOverlay.tsx",
-      "line": 38,
-      "column": 80,
-      "start": 3396,
+      "line": 39,
+      "column": 55,
+      "start": 3565,
       "expression": "<path d={`M ${-span / 50} 0 H ${v.tipDiameter / 2} M 0 ${-span / 50} V ${span / 50}`} />",
       "component": "CadGearInspectionOverlay",
       "container": null,
@@ -23745,9 +23724,9 @@
     },
     {
       "file": "src/features/cad/CadGearInspectionOverlay.tsx",
-      "line": 38,
-      "column": 168,
-      "start": 3484,
+      "line": 39,
+      "column": 143,
+      "start": 3653,
       "expression": "<circle r={span / 100} />",
       "component": "CadGearInspectionOverlay",
       "container": null,
@@ -23774,15 +23753,15 @@
       "file": "src/features/cad/CadPathDraftGeometry.tsx",
       "line": 7,
       "column": 39,
-      "start": 386,
-      "expression": "<line x1={segment.start[0]} y1={segment.start[1]} x2={segment.end[0]} y2={segment.end[1]} />",
+      "start": 448,
+      "expression": "<line x1={segment.start[0] - origin[0]} y1={segment.start[1] - origin[1]} x2={segment.end[0] - origin[0]} y2={segment.end[1] - origin[1]} />",
       "component": "CadPathSegmentGeometry",
       "container": null,
       "attributes": {
-        "x1": "{segment.start[0]}",
-        "y1": "{segment.start[1]}",
-        "x2": "{segment.end[0]}",
-        "y2": "{segment.end[1]}"
+        "x1": "{segment.start[0] - origin[0]}",
+        "y1": "{segment.start[1] - origin[1]}",
+        "x2": "{segment.end[0] - origin[0]}",
+        "y2": "{segment.end[1] - origin[1]}"
       },
       "controlAttributes": {},
       "jsxParents": [],
@@ -23798,18 +23777,18 @@
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "line",
-      "id": "use.649db4982744"
+      "id": "use.a57aa23e0e03"
     },
     {
       "file": "src/features/cad/CadPathDraftGeometry.tsx",
       "line": 12,
       "column": 10,
-      "start": 784,
-      "expression": "<path d={cadArcSvgPath({ type: 'arc', layer: null, center: { x: segment.center[0], y: segment.center[1] }, radius: segment.radius, startAngle, endAngle, sweepRadians: sweep, clockwise: sweep < 0, start: at(startAngle), end: at(endAngle) })} />",
+      "start": 894,
+      "expression": "<path d={cadArcSvgPath({ type: 'arc', layer: null, center: { x: segment.center[0], y: segment.center[1] }, radius: segment.radius, startAngle, endAngle, sweepRadians: sweep, clockwise: sweep < 0, start: at(startAngle), end: at(endAngle) }, origin)} />",
       "component": "CadPathSegmentGeometry",
       "container": null,
       "attributes": {
-        "d": "{cadArcSvgPath({ type: 'arc', layer: null, center: { x: segment.center[0], y: segment.center[1] }, radius: segment.radius, startAngle, endAngle, sweepRadians: sweep, clockwise: sweep < 0, start: at(startAngle), end: at(endAngle) })}"
+        "d": "{cadArcSvgPath({ type: 'arc', layer: null, center: { x: segment.center[0], y: segment.center[1] }, radius: segment.radius, startAngle, endAngle, sweepRadians: sweep, clockwise: sweep < 0, start: at(startAngle), end: at(endAngle) }, origin)}"
       },
       "controlAttributes": {},
       "jsxParents": [],
@@ -23823,7 +23802,7 @@
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "path",
-      "id": "use.93b031f0dfc1"
+      "id": "use.a58b700411fc"
     },
     {
       "file": "src/features/cad/CadSectionDialog.tsx",
@@ -23923,175 +23902,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 26,
-      "column": 30,
-      "start": 2079,
-      "expression": "<rect x={value(geometry.x)} y={value(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />",
-      "component": "ProfileGeometry",
-      "container": null,
-      "attributes": {
-        "x": "{value(geometry.x)}",
-        "y": "{value(geometry.y)}",
-        "width": "{value(geometry.width)}",
-        "height": "{value(geometry.height)}",
-        "rx": "{value(geometry.cornerRadius)}"
-      },
-      "controlAttributes": {},
-      "jsxParents": [],
-      "visibleText": "",
-      "callName": null,
-      "callArguments": [],
-      "containerText": null,
-      "conditions": [],
-      "call": null,
-      "variable": null,
-      "mapProperty": null,
-      "kind": "svg-primitive",
-      "tag": "rect",
-      "id": "use.19f569b0963e"
-    },
-    {
-      "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 27,
-      "column": 27,
-      "start": 2255,
-      "expression": "<circle cx={value(geometry.x)} cy={value(geometry.y)} r={value(geometry.radius)} />",
-      "component": "ProfileGeometry",
-      "container": null,
-      "attributes": {
-        "cx": "{value(geometry.x)}",
-        "cy": "{value(geometry.y)}",
-        "r": "{value(geometry.radius)}"
-      },
-      "controlAttributes": {},
-      "jsxParents": [],
-      "visibleText": "",
-      "callName": null,
-      "callArguments": [],
-      "containerText": null,
-      "conditions": [],
-      "call": null,
-      "variable": null,
-      "mapProperty": null,
-      "kind": "svg-primitive",
-      "tag": "circle",
-      "id": "use.20eac9a22d1b"
-    },
-    {
-      "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 28,
-      "column": 28,
-      "start": 2367,
-      "expression": "<polygon points={geometry.points.map(([x, y]) => `${value(x)},${value(y)}`).join(' ')} />",
-      "component": "ProfileGeometry",
-      "container": null,
-      "attributes": {
-        "points": "{geometry.points.map(([x, y]) => `${value(x)},${value(y)}`).join(' ')}"
-      },
-      "controlAttributes": {},
-      "jsxParents": [],
-      "visibleText": "",
-      "callName": null,
-      "callArguments": [],
-      "containerText": null,
-      "conditions": [],
-      "call": null,
-      "variable": null,
-      "mapProperty": null,
-      "kind": "svg-primitive",
-      "tag": "polygon",
-      "id": "use.1e23685d40c8"
-    },
-    {
-      "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 33,
-      "column": 26,
-      "start": 2705,
-      "expression": "<circle cx={circle.center.x} cy={circle.center.y} r={circle.radius} />",
-      "component": "ProfileGeometry",
-      "container": null,
-      "attributes": {
-        "cx": "{circle.center.x}",
-        "cy": "{circle.center.y}",
-        "r": "{circle.radius}"
-      },
-      "controlAttributes": {},
-      "jsxParents": [],
-      "visibleText": "",
-      "callName": null,
-      "callArguments": [],
-      "containerText": null,
-      "conditions": [
-        "circle"
-      ],
-      "call": null,
-      "variable": null,
-      "mapProperty": null,
-      "kind": "svg-primitive",
-      "tag": "circle",
-      "id": "use.030b3b906e39"
-    },
-    {
-      "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 38,
-      "column": 14,
-      "start": 3005,
-      "expression": "<path d={cadClosedBoundarySvgPath(boundary)} strokeLinejoin=\"round\" />",
-      "component": "ProfileGeometry",
-      "container": null,
-      "attributes": {
-        "d": "{cadClosedBoundarySvgPath(boundary)}",
-        "strokeLinejoin": "\"round\""
-      },
-      "controlAttributes": {},
-      "jsxParents": [],
-      "visibleText": "",
-      "callName": null,
-      "callArguments": [],
-      "containerText": null,
-      "conditions": [],
-      "call": null,
-      "variable": null,
-      "mapProperty": null,
-      "kind": "svg-primitive",
-      "tag": "path",
-      "id": "use.bb1a0887d720"
-    },
-    {
-      "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 42,
-      "column": 14,
-      "start": 3237,
-      "expression": "<rect x={x - length / 2} y={y - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${x} ${y})`} />",
-      "component": "ProfileGeometry",
-      "container": null,
-      "attributes": {
-        "x": "{x - length / 2}",
-        "y": "{y - width / 2}",
-        "width": "{length}",
-        "height": "{width}",
-        "rx": "{width / 2}",
-        "transform": "{`rotate(${value(geometry.angle)} ${x} ${y})`}"
-      },
-      "controlAttributes": {},
-      "jsxParents": [],
-      "visibleText": "",
-      "callName": null,
-      "callArguments": [],
-      "containerText": null,
-      "conditions": [],
-      "call": null,
-      "variable": null,
-      "mapProperty": null,
-      "kind": "svg-primitive",
-      "tag": "rect",
-      "id": "use.9b76106bd4bf"
-    },
-    {
-      "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 448,
-      "column": 108,
-      "start": 31961,
+      "line": 417,
+      "column": 159,
+      "start": 29998,
       "expression": "<path d={`M ${gridStep} 0 H 0 V ${gridStep}`} fill=\"none\" stroke=\"#29373f\" strokeWidth={span / 1000} />",
       "component": "CadSketchCanvas",
       "container": "div",
@@ -24109,7 +23922,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [],
       "call": null,
       "variable": null,
@@ -24120,15 +23933,15 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 449,
+      "line": 418,
       "column": 42,
-      "start": 32123,
-      "expression": "<rect x={center[0] - width / 2} y={-center[1] - span / 2} width={width} height={span} fill=\"url(#cad-sketch-grid)\" />",
+      "start": 30160,
+      "expression": "<rect x={-width / 2} y={-span / 2} width={width} height={span} fill=\"url(#cad-sketch-grid)\" />",
       "component": "CadSketchCanvas",
       "container": "div",
       "attributes": {
-        "x": "{center[0] - width / 2}",
-        "y": "{-center[1] - span / 2}",
+        "x": "{-width / 2}",
+        "y": "{-span / 2}",
         "width": "{width}",
         "height": "{span}",
         "fill": "\"url(#cad-sketch-grid)\""
@@ -24141,7 +23954,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [
         "grid && span / gridStep < 2000"
       ],
@@ -24150,18 +23963,18 @@
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "rect",
-      "id": "use.c92e894e5e7d"
+      "id": "use.301c76842c76"
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 450,
-      "column": 7,
-      "start": 32248,
-      "expression": "<path d={`M ${center[0] - width / 2} 0 H ${center[0] + width / 2}`} className=\"cad-axis-x\" strokeWidth={span / 700} />",
+      "line": 419,
+      "column": 43,
+      "start": 30298,
+      "expression": "<path d={`M ${-width / 2} ${center[1]} H ${width / 2}`} className=\"cad-axis-x\" strokeWidth={span / 700} />",
       "component": "CadSketchCanvas",
       "container": "div",
       "attributes": {
-        "d": "{`M ${center[0] - width / 2} 0 H ${center[0] + width / 2}`}",
+        "d": "{`M ${-width / 2} ${center[1]} H ${width / 2}`}",
         "className": "\"cad-axis-x\"",
         "strokeWidth": "{span / 700}"
       },
@@ -24173,25 +23986,27 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
-      "conditions": [],
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
+      "conditions": [
+        "Math.abs(center[1]) <= span / 2"
+      ],
       "call": null,
       "variable": null,
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "path",
-      "id": "use.f08f587894ca"
+      "id": "use.ceb2d085df7e"
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 451,
-      "column": 7,
-      "start": 32373,
-      "expression": "<path d={`M 0 ${-center[1] - span / 2} V ${-center[1] + span / 2}`} className=\"cad-axis-y\" strokeWidth={span / 700} />",
+      "line": 420,
+      "column": 44,
+      "start": 30449,
+      "expression": "<path d={`M ${-center[0]} ${-span / 2} V ${span / 2}`} className=\"cad-axis-y\" strokeWidth={span / 700} />",
       "component": "CadSketchCanvas",
       "container": "div",
       "attributes": {
-        "d": "{`M 0 ${-center[1] - span / 2} V ${-center[1] + span / 2}`}",
+        "d": "{`M ${-center[0]} ${-span / 2} V ${span / 2}`}",
         "className": "\"cad-axis-y\"",
         "strokeWidth": "{span / 700}"
       },
@@ -24203,26 +24018,28 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
-      "conditions": [],
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
+      "conditions": [
+        "Math.abs(center[0]) <= width / 2"
+      ],
       "call": null,
       "variable": null,
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "path",
-      "id": "use.ac7a89c40c7c"
+      "id": "use.822a2bb02665"
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 457,
+      "line": 426,
       "column": 53,
-      "start": 34282,
-      "expression": "<polyline className=\"cad-profile cad-profile-preview\" points={[...points, cursor].map(([x, y]) => `${x},${y}`).join(' ')} />",
+      "start": 32458,
+      "expression": "<polyline className=\"cad-profile cad-profile-preview\" points={[...points, cursor].map(([x, y]) => `${x - center[0]},${y - center[1]}`).join(' ')} />",
       "component": "CadSketchCanvas",
       "container": "div",
       "attributes": {
         "className": "\"cad-profile cad-profile-preview\"",
-        "points": "{[...points, cursor].map(([x, y]) => `${x},${y}`).join(' ')}"
+        "points": "{[...points, cursor].map(([x, y]) => `${x - center[0]},${y - center[1]}`).join(' ')}"
       },
       "controlAttributes": {
         "className": "{`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`}",
@@ -24232,7 +24049,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [
         "tool === 'polygon' && points.length > 0"
       ],
@@ -24241,19 +24058,19 @@
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "polyline",
-      "id": "use.80ed653e2ea7"
+      "id": "use.c8ba19fbb78e"
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 461,
+      "line": 430,
       "column": 82,
-      "start": 34797,
-      "expression": "<polyline className=\"cad-path-invalid\" points={[pathPreview.start, pathPreview.through, pathPreview.end].map(([x, y]) => `${x},${y}`).join(' ')} />",
+      "start": 33033,
+      "expression": "<polyline className=\"cad-path-invalid\" points={[pathPreview.start, pathPreview.through, pathPreview.end].map(([x, y]) => `${x - center[0]},${y - center[1]}`).join(' ')} />",
       "component": "CadSketchCanvas",
       "container": "div",
       "attributes": {
         "className": "\"cad-path-invalid\"",
-        "points": "{[pathPreview.start, pathPreview.through, pathPreview.end].map(([x, y]) => `${x},${y}`).join(' ')}"
+        "points": "{[pathPreview.start, pathPreview.through, pathPreview.end].map(([x, y]) => `${x - center[0]},${y - center[1]}`).join(' ')}"
       },
       "controlAttributes": {
         "className": "{`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`}",
@@ -24263,7 +24080,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [
         "pathDraft.kind === 'arc-through' && pathPreview.kind === 'invalid'",
         "tool === 'path' && pathDraft.kind !== 'idle'"
@@ -24273,19 +24090,19 @@
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "polyline",
-      "id": "use.09d22db56579"
+      "id": "use.fb96590add0c"
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 462,
+      "line": 431,
       "column": 11,
-      "start": 34956,
-      "expression": "<circle cx={pathDraft.start[0]} cy={pathDraft.start[1]} r={span / 170} className=\"cad-sketch-vertex\" />",
+      "start": 33216,
+      "expression": "<circle cx={pathDraft.start[0] - center[0]} cy={pathDraft.start[1] - center[1]} r={span / 170} className=\"cad-sketch-vertex\" />",
       "component": "CadSketchCanvas",
       "container": "div",
       "attributes": {
-        "cx": "{pathDraft.start[0]}",
-        "cy": "{pathDraft.start[1]}",
+        "cx": "{pathDraft.start[0] - center[0]}",
+        "cy": "{pathDraft.start[1] - center[1]}",
         "r": "{span / 170}",
         "className": "\"cad-sketch-vertex\""
       },
@@ -24297,7 +24114,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [
         "tool === 'path' && pathDraft.kind !== 'idle'"
       ],
@@ -24306,19 +24123,19 @@
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "circle",
-      "id": "use.ce0b7b4a7c77"
+      "id": "use.4f71546c18dc"
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 463,
+      "line": 432,
       "column": 48,
-      "start": 35107,
-      "expression": "<circle cx={pathDraft.end[0]} cy={pathDraft.end[1]} r={span / 170} className=\"cad-sketch-vertex\" />",
+      "start": 33391,
+      "expression": "<circle cx={pathDraft.end[0] - center[0]} cy={pathDraft.end[1] - center[1]} r={span / 170} className=\"cad-sketch-vertex\" />",
       "component": "CadSketchCanvas",
       "container": "div",
       "attributes": {
-        "cx": "{pathDraft.end[0]}",
-        "cy": "{pathDraft.end[1]}",
+        "cx": "{pathDraft.end[0] - center[0]}",
+        "cy": "{pathDraft.end[1] - center[1]}",
         "r": "{span / 170}",
         "className": "\"cad-sketch-vertex\""
       },
@@ -24330,7 +24147,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [
         "pathDraft.kind === 'arc-through'",
         "tool === 'path' && pathDraft.kind !== 'idle'"
@@ -24340,20 +24157,20 @@
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "circle",
-      "id": "use.3fcde7e1ed4d"
+      "id": "use.ff59d90bc4a0"
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 465,
+      "line": 434,
       "column": 40,
-      "start": 35260,
-      "expression": "<circle key={index} cx={x} cy={y} r={span / 170} className=\"cad-sketch-vertex\" />",
+      "start": 33568,
+      "expression": "<circle key={index} cx={x - center[0]} cy={y - center[1]} r={span / 170} className=\"cad-sketch-vertex\" />",
       "component": "CadSketchCanvas",
       "container": "div",
       "attributes": {
         "key": "{index}",
-        "cx": "{x}",
-        "cy": "{y}",
+        "cx": "{x - center[0]}",
+        "cy": "{y - center[1]}",
         "r": "{span / 170}",
         "className": "\"cad-sketch-vertex\""
       },
@@ -24365,27 +24182,27 @@
       "visibleText": "",
       "callName": "points.map",
       "callArguments": [
-        "([x, y], index) => <circle key={index} cx={x} cy={y} r={span / 170} className=\"cad-sketch-vertex\" />"
+        "([x, y], index) => <circle key={index} cx={x - center[0]} cy={y - center[1]} r={span / 170} className=\"cad-sketch-vertex\" />"
       ],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [],
-      "call": "points.map(([x, y], index) => <circle key={index} cx={x} cy={y} r={span / 170} className=\"cad-sketch-vertex\" />)",
+      "call": "points.map(([x, y], index) => <circle key={index} cx={x - center[0]} cy={y - center[1]} r={span / 170} className=\"cad-sketch-vertex\" />)",
       "variable": null,
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "circle",
-      "id": "use.20fc8478bc3b"
+      "id": "use.fda60d65e088"
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 466,
+      "line": 435,
       "column": 60,
-      "start": 35403,
-      "expression": "<path d={`M ${cursor[0] - span / 70} ${cursor[1]} h ${span / 35} M ${cursor[0]} ${cursor[1] - span / 70} v ${span / 35}`} />",
+      "start": 33735,
+      "expression": "<path d={`M ${cursor[0] - center[0] - span / 70} ${cursor[1] - center[1]} h ${span / 35} M ${cursor[0] - center[0]} ${cursor[1] - center[1] - span / 70} v ${span / 35}`} />",
       "component": "CadSketchCanvas",
       "container": "div",
       "attributes": {
-        "d": "{`M ${cursor[0] - span / 70} ${cursor[1]} h ${span / 35} M ${cursor[0]} ${cursor[1] - span / 70} v ${span / 35}`}"
+        "d": "{`M ${cursor[0] - center[0] - span / 70} ${cursor[1] - center[1]} h ${span / 35} M ${cursor[0] - center[0]} ${cursor[1] - center[1] - span / 70} v ${span / 35}`}"
       },
       "controlAttributes": {
         "className": "{`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`}",
@@ -24395,7 +24212,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [
         "tool !== 'select'"
       ],
@@ -24404,7 +24221,7 @@
       "mapProperty": null,
       "kind": "svg-primitive",
       "tag": "path",
-      "id": "use.a351f5dcdc92"
+      "id": "use.5a86bc38f203"
     },
     {
       "file": "src/features/cad/CadSketchDimensionControls.tsx",
@@ -24564,6 +24381,174 @@
       "kind": "svg-primitive",
       "tag": "line",
       "id": "use.7edbaa0ca444"
+    },
+    {
+      "file": "src/features/cad/CadSketchProfileGeometry.tsx",
+      "line": 20,
+      "column": 36,
+      "start": 1176,
+      "expression": "<rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />",
+      "component": "CadSketchProfileGeometry",
+      "container": null,
+      "attributes": {
+        "x": "{x(geometry.x)}",
+        "y": "{y(geometry.y)}",
+        "width": "{value(geometry.width)}",
+        "height": "{value(geometry.height)}",
+        "rx": "{value(geometry.cornerRadius)}"
+      },
+      "controlAttributes": {},
+      "jsxParents": [],
+      "visibleText": "",
+      "callName": "(() => {\n        switch (geometry.kind) {\n          case 'rectangle': return <rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />;\n          case 'circle': return <circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />;\n          case 'polygon': return <polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />;\n          case 'slot': {\n            const cx = x(geometry.x), cy = y(geometry.y), length = value(geometry.length), width = value(geometry.width);\n            return <rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />;\n          }\n          case 'plugin':\n          case 'path': {\n            const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null;\n            return circle ? <circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} />\n              : <path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />;\n          }\n        }\n      })",
+      "callArguments": [],
+      "containerText": null,
+      "conditions": [],
+      "call": "(() => { switch (geometry.kind) { case 'rectangle': return <rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />; case 'circle': return <circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />; case 'polygon': return <polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />; case 'slot': { const cx = x(geometry.x), cy = y(geometry.y), length = value(geometry.length), width = value(geometry.width); return <rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />; } case 'plugin': case 'path': { const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null; return circle ? <circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} /> : <path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />; } } })()",
+      "variable": "content",
+      "mapProperty": null,
+      "kind": "svg-primitive",
+      "tag": "rect",
+      "id": "use.44be5bba0d2f"
+    },
+    {
+      "file": "src/features/cad/CadSketchProfileGeometry.tsx",
+      "line": 21,
+      "column": 33,
+      "start": 1350,
+      "expression": "<circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />",
+      "component": "CadSketchProfileGeometry",
+      "container": null,
+      "attributes": {
+        "cx": "{x(geometry.x)}",
+        "cy": "{y(geometry.y)}",
+        "r": "{value(geometry.radius)}"
+      },
+      "controlAttributes": {},
+      "jsxParents": [],
+      "visibleText": "",
+      "callName": "(() => {\n        switch (geometry.kind) {\n          case 'rectangle': return <rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />;\n          case 'circle': return <circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />;\n          case 'polygon': return <polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />;\n          case 'slot': {\n            const cx = x(geometry.x), cy = y(geometry.y), length = value(geometry.length), width = value(geometry.width);\n            return <rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />;\n          }\n          case 'plugin':\n          case 'path': {\n            const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null;\n            return circle ? <circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} />\n              : <path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />;\n          }\n        }\n      })",
+      "callArguments": [],
+      "containerText": null,
+      "conditions": [],
+      "call": "(() => { switch (geometry.kind) { case 'rectangle': return <rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />; case 'circle': return <circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />; case 'polygon': return <polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />; case 'slot': { const cx = x(geometry.x), cy = y(geometry.y), length = value(geometry.length), width = value(geometry.width); return <rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />; } case 'plugin': case 'path': { const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null; return circle ? <circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} /> : <path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />; } } })()",
+      "variable": "content",
+      "mapProperty": null,
+      "kind": "svg-primitive",
+      "tag": "circle",
+      "id": "use.f4f7e88971d9"
+    },
+    {
+      "file": "src/features/cad/CadSketchProfileGeometry.tsx",
+      "line": 22,
+      "column": 34,
+      "start": 1460,
+      "expression": "<polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />",
+      "component": "CadSketchProfileGeometry",
+      "container": null,
+      "attributes": {
+        "points": "{geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')}"
+      },
+      "controlAttributes": {},
+      "jsxParents": [],
+      "visibleText": "",
+      "callName": "(() => {\n        switch (geometry.kind) {\n          case 'rectangle': return <rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />;\n          case 'circle': return <circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />;\n          case 'polygon': return <polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />;\n          case 'slot': {\n            const cx = x(geometry.x), cy = y(geometry.y), length = value(geometry.length), width = value(geometry.width);\n            return <rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />;\n          }\n          case 'plugin':\n          case 'path': {\n            const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null;\n            return circle ? <circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} />\n              : <path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />;\n          }\n        }\n      })",
+      "callArguments": [],
+      "containerText": null,
+      "conditions": [],
+      "call": "(() => { switch (geometry.kind) { case 'rectangle': return <rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />; case 'circle': return <circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />; case 'polygon': return <polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />; case 'slot': { const cx = x(geometry.x), cy = y(geometry.y), length = value(geometry.length), width = value(geometry.width); return <rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />; } case 'plugin': case 'path': { const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null; return circle ? <circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} /> : <path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />; } } })()",
+      "variable": "content",
+      "mapProperty": null,
+      "kind": "svg-primitive",
+      "tag": "polygon",
+      "id": "use.0ce68e028825"
+    },
+    {
+      "file": "src/features/cad/CadSketchProfileGeometry.tsx",
+      "line": 25,
+      "column": 20,
+      "start": 1709,
+      "expression": "<rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />",
+      "component": "CadSketchProfileGeometry",
+      "container": null,
+      "attributes": {
+        "x": "{cx - length / 2}",
+        "y": "{cy - width / 2}",
+        "width": "{length}",
+        "height": "{width}",
+        "rx": "{width / 2}",
+        "transform": "{`rotate(${value(geometry.angle)} ${cx} ${cy})`}"
+      },
+      "controlAttributes": {},
+      "jsxParents": [],
+      "visibleText": "",
+      "callName": "(() => {\n        switch (geometry.kind) {\n          case 'rectangle': return <rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />;\n          case 'circle': return <circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />;\n          case 'polygon': return <polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />;\n          case 'slot': {\n            const cx = x(geometry.x), cy = y(geometry.y), length = value(geometry.length), width = value(geometry.width);\n            return <rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />;\n          }\n          case 'plugin':\n          case 'path': {\n            const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null;\n            return circle ? <circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} />\n              : <path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />;\n          }\n        }\n      })",
+      "callArguments": [],
+      "containerText": null,
+      "conditions": [],
+      "call": "(() => { switch (geometry.kind) { case 'rectangle': return <rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />; case 'circle': return <circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />; case 'polygon': return <polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />; case 'slot': { const cx = x(geometry.x), cy = y(geometry.y), length = value(geometry.length), width = value(geometry.width); return <rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />; } case 'plugin': case 'path': { const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null; return circle ? <circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} /> : <path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />; } } })()",
+      "variable": "content",
+      "mapProperty": null,
+      "kind": "svg-primitive",
+      "tag": "rect",
+      "id": "use.1edc65531ca8"
+    },
+    {
+      "file": "src/features/cad/CadSketchProfileGeometry.tsx",
+      "line": 30,
+      "column": 29,
+      "start": 2056,
+      "expression": "<circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} />",
+      "component": "CadSketchProfileGeometry",
+      "container": null,
+      "attributes": {
+        "cx": "{circle.center.x - origin[0]}",
+        "cy": "{circle.center.y - origin[1]}",
+        "r": "{circle.radius}"
+      },
+      "controlAttributes": {},
+      "jsxParents": [],
+      "visibleText": "",
+      "callName": "(() => {\n        switch (geometry.kind) {\n          case 'rectangle': return <rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />;\n          case 'circle': return <circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />;\n          case 'polygon': return <polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />;\n          case 'slot': {\n            const cx = x(geometry.x), cy = y(geometry.y), length = value(geometry.length), width = value(geometry.width);\n            return <rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />;\n          }\n          case 'plugin':\n          case 'path': {\n            const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null;\n            return circle ? <circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} />\n              : <path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />;\n          }\n        }\n      })",
+      "callArguments": [],
+      "containerText": null,
+      "conditions": [
+        "circle [true branch]"
+      ],
+      "call": "(() => { switch (geometry.kind) { case 'rectangle': return <rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />; case 'circle': return <circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />; case 'polygon': return <polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />; case 'slot': { const cx = x(geometry.x), cy = y(geometry.y), length = value(geometry.length), width = value(geometry.width); return <rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />; } case 'plugin': case 'path': { const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null; return circle ? <circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} /> : <path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />; } } })()",
+      "variable": "content",
+      "mapProperty": null,
+      "kind": "svg-primitive",
+      "tag": "circle",
+      "id": "use.ee1224eed677"
+    },
+    {
+      "file": "src/features/cad/CadSketchProfileGeometry.tsx",
+      "line": 31,
+      "column": 17,
+      "start": 2167,
+      "expression": "<path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />",
+      "component": "CadSketchProfileGeometry",
+      "container": null,
+      "attributes": {
+        "d": "{cadClosedBoundarySvgPath(entities, origin)}",
+        "strokeLinejoin": "\"round\""
+      },
+      "controlAttributes": {},
+      "jsxParents": [],
+      "visibleText": "",
+      "callName": "(() => {\n        switch (geometry.kind) {\n          case 'rectangle': return <rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />;\n          case 'circle': return <circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />;\n          case 'polygon': return <polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />;\n          case 'slot': {\n            const cx = x(geometry.x), cy = y(geometry.y), length = value(geometry.length), width = value(geometry.width);\n            return <rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />;\n          }\n          case 'plugin':\n          case 'path': {\n            const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null;\n            return circle ? <circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} />\n              : <path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />;\n          }\n        }\n      })",
+      "callArguments": [],
+      "containerText": null,
+      "conditions": [
+        "circle [false branch]"
+      ],
+      "call": "(() => { switch (geometry.kind) { case 'rectangle': return <rect x={x(geometry.x)} y={y(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />; case 'circle': return <circle cx={x(geometry.x)} cy={y(geometry.y)} r={value(geometry.radius)} />; case 'polygon': return <polygon points={geometry.points.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')} />; case 'slot': { const cx = x(geometry.x), cy = y(geometry.y), length = value(geometry.length), width = value(geometry.width); return <rect x={cx - length / 2} y={cy - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${cx} ${cy})`} />; } case 'plugin': case 'path': { const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null; return circle ? <circle cx={circle.center.x - origin[0]} cy={circle.center.y - origin[1]} r={circle.radius} /> : <path d={cadClosedBoundarySvgPath(entities, origin)} strokeLinejoin=\"round\" />; } } })()",
+      "variable": "content",
+      "mapProperty": null,
+      "kind": "svg-primitive",
+      "tag": "path",
+      "id": "use.a8dd8bc09f62"
     },
     {
       "file": "src/features/editor/EditorPreview.tsx",
@@ -28560,10 +28545,10 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 346,
+      "line": 315,
       "column": 5,
-      "start": 23912,
-      "expression": "<svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' && sketch.kind === 'sketch' && !viewLocked && !previewProfile && onTranslateProfile && selectedProfileId) { const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect(); const picked = point && rect.height ? profilePicker.pick(point, span / rect.height) : null; const profile = picked === selectedProfileId ? sketch.profiles.find(profile => profile.id === selectedProfileId && profile.geometry.kind !== 'plugin') : null; if (profile && rect.width && rect.height) { profileDrag.current = { profile, sketch, parameters, pointerId: event.pointerId, element: event.currentTarget, clientX: event.clientX, clientY: event.clientY, mmPerPixelX: width / rect.width, mmPerPixelY: span / rect.height, snap, gridStep, moved: false, translation: [0, 0] }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishProfileDrag(); } } } } }} onPointerUp={(event) => { if (profileDrag.current) { if (event.pointerId !== profileDrag.current.pointerId) return; if (event.button === 0) moveProfile(event); const active = finishProfileDrag(event.pointerId); if (event.button === 0 && active?.moved && (active.translation[0] !== 0 || active.translation[1] !== 0)) { try { onTranslateProfile?.(active.profile.id, active.translation); } catch (error) { onError(error instanceof Error ? error.message : 'Unable to move this contour.'); } } return; } const active = pan.current; if (!active || active.pointerId !== event.pointerId) return; finishPan(event.pointerId); if (active.button !== 2 || event.button !== 2 || active.moved || Math.hypot(event.clientX - active.x, event.clientY - active.y) > 4 || interactionLocked || viewLocked || !onContextMenu) return; const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect(); if (point && rect.height) onContextMenu({ clientX: event.clientX, clientY: event.clientY, trigger: 'pointer', profileId: profilePicker.pick(point, span / rect.height), pointMm: point }); }} onPointerCancel={(event) => { finishProfileDrag(event.pointerId); finishPan(event.pointerId); }} onLostPointerCapture={(event) => { finishProfileDrag(event.pointerId); finishPan(event.pointerId); }} onPointerMove={(event) => { if (profileDrag.current) { if (event.pointerId !== profileDrag.current.pointerId) return; if (!(event.buttons & 1)) { finishProfileDrag(event.pointerId); return; } moveProfile(event); return; } const active = pan.current; if (active) { if (event.pointerId !== active.pointerId) return; if (Math.hypot(event.clientX - active.x, event.clientY - active.y) > 4) active.moved = true; if (!(event.buttons & active.buttonMask)) { finishPan(event.pointerId); return; } const rect = event.currentTarget.getBoundingClientRect(); if (!rect.width || !rect.height) { finishPan(event.pointerId); return; } setCenter([active.center[0] - (event.clientX - active.x) / rect.width * width, active.center[1] + (event.clientY - active.y) / rect.height * span]); } else setCursor(getPoint(event)); }} onKeyDown={(event) => { if (event.key === 'Escape' && profileDrag.current) { event.preventDefault(); event.stopPropagation(); finishProfileDrag(); return; } if (event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) { event.preventDefault(); event.stopPropagation(); if (interactionLocked || viewLocked || !onContextMenu) return; finishPan(); const profileId = selectedProfileId && profilePicker.hasProfile(selectedProfileId) ? selectedProfileId : null; const rect = event.currentTarget.getBoundingClientRect(); onContextMenu({ clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, trigger: 'keyboard', profileId, pointMm: center }); return; } if (interactionLocked || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.target !== event.currentTarget) return; const step = gridStep * (event.shiftKey ? 10 : 1); if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setCursor(([x, y]) => snapSketchPoint([x + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0), y + (event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0)], gridStep, snap)); } else if ((event.key === 'Enter' || event.key === ' ') && tool !== 'select') { event.preventDefault(); if (event.key === 'Enter' && tool === 'path' && pathDraft.kind === 'ready') closePath(); else if (event.key === 'Enter' && tool === 'polygon' && points.length >= 3) close(); else placePoint(cursor); } else if (tool === 'path' && pathPending && (event.key === 'Backspace' || event.key === 'Escape')) { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }); } else if (event.key === 'Backspace' && points.length) { event.preventDefault(); setPoints((current) => current.slice(0, -1)); } else if (event.key === 'Escape' && points.length) { event.preventDefault(); setPoints([]); } else if (event.key.toLowerCase() === 'f' && !viewLocked) { event.preventDefault(); fit(); } }} onClick={(event) => { // Chromium's click PointerEvent reports isPrimary=false even for the // primary mouse; primary-pointer filtering belongs to pointerdown. if (event.button !== 0 || interactionLocked) return; if (event.detail > 0 && suppressProfileClick.current) { suppressProfileClick.current = false; event.preventDefault(); return; } if (tool === 'select') { const point = getRawPoint(event); const rect = svg.current?.getBoundingClientRect(); if (point && rect?.height) onSelectProfile(profilePicker.pick(point, span / rect.height)); } else placePoint(getPoint(event)); }}>",
+      "start": 21921,
+      "expression": "<svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' && sketch.kind === 'sketch' && !viewLocked && !previewProfile && onTranslateProfile && selectedProfileId) { const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect(); const picked = point && rect.height ? profilePicker.pick(point, span / rect.height) : null; const profile = picked === selectedProfileId ? sketch.profiles.find(profile => profile.id === selectedProfileId && profile.geometry.kind !== 'plugin') : null; if (profile && rect.width && rect.height) { profileDrag.current = { profile, sketch, parameters, pointerId: event.pointerId, element: event.currentTarget, clientX: event.clientX, clientY: event.clientY, mmPerPixelX: width / rect.width, mmPerPixelY: span / rect.height, snap, gridStep, moved: false, translation: [0, 0] }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishProfileDrag(); } } } } }} onPointerUp={(event) => { if (profileDrag.current) { if (event.pointerId !== profileDrag.current.pointerId) return; if (event.button === 0) moveProfile(event); const active = finishProfileDrag(event.pointerId); if (event.button === 0 && active?.moved && (active.translation[0] !== 0 || active.translation[1] !== 0)) { try { onTranslateProfile?.(active.profile.id, active.translation); } catch (error) { onError(error instanceof Error ? error.message : 'Unable to move this contour.'); } } return; } const active = pan.current; if (!active || active.pointerId !== event.pointerId) return; finishPan(event.pointerId); if (active.button !== 2 || event.button !== 2 || active.moved || Math.hypot(event.clientX - active.x, event.clientY - active.y) > 4 || interactionLocked || viewLocked || !onContextMenu) return; const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect(); if (point && rect.height) onContextMenu({ clientX: event.clientX, clientY: event.clientY, trigger: 'pointer', profileId: profilePicker.pick(point, span / rect.height), pointMm: point }); }} onPointerCancel={(event) => { finishProfileDrag(event.pointerId); finishPan(event.pointerId); }} onLostPointerCapture={(event) => { finishProfileDrag(event.pointerId); finishPan(event.pointerId); }} onPointerMove={(event) => { if (profileDrag.current) { if (event.pointerId !== profileDrag.current.pointerId) return; if (!(event.buttons & 1)) { finishProfileDrag(event.pointerId); return; } moveProfile(event); return; } const active = pan.current; if (active) { if (event.pointerId !== active.pointerId) return; if (Math.hypot(event.clientX - active.x, event.clientY - active.y) > 4) active.moved = true; if (!(event.buttons & active.buttonMask)) { finishPan(event.pointerId); return; } const rect = event.currentTarget.getBoundingClientRect(); if (!rect.width || !rect.height) { finishPan(event.pointerId); return; } setCenter([active.center[0] - (event.clientX - active.x) / rect.width * width, active.center[1] + (event.clientY - active.y) / rect.height * span]); } else setCursor(getPoint(event)); }} onKeyDown={(event) => { if (event.key === 'Escape' && profileDrag.current) { event.preventDefault(); event.stopPropagation(); finishProfileDrag(); return; } if (event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) { event.preventDefault(); event.stopPropagation(); if (interactionLocked || viewLocked || !onContextMenu) return; finishPan(); const profileId = selectedProfileId && profilePicker.hasProfile(selectedProfileId) ? selectedProfileId : null; const rect = event.currentTarget.getBoundingClientRect(); onContextMenu({ clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, trigger: 'keyboard', profileId, pointMm: center }); return; } if (interactionLocked || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.target !== event.currentTarget) return; const step = gridStep * (event.shiftKey ? 10 : 1); if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setCursor(([x, y]) => snapSketchPoint([x + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0), y + (event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0)], gridStep, snap)); } else if ((event.key === 'Enter' || event.key === ' ') && tool !== 'select') { event.preventDefault(); if (event.key === 'Enter' && tool === 'path' && pathDraft.kind === 'ready') closePath(); else if (event.key === 'Enter' && tool === 'polygon' && points.length >= 3) close(); else placePoint(cursor); } else if (tool === 'path' && pathPending && (event.key === 'Backspace' || event.key === 'Escape')) { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }); } else if (event.key === 'Backspace' && points.length) { event.preventDefault(); setPoints((current) => current.slice(0, -1)); } else if (event.key === 'Escape' && points.length) { event.preventDefault(); setPoints([]); } else if (event.key.toLowerCase() === 'f' && !viewLocked) { event.preventDefault(); fit(); } }} onClick={(event) => { // Chromium's click PointerEvent reports isPrimary=false even for the // primary mouse; primary-pointer filtering belongs to pointerdown. if (event.button !== 0 || interactionLocked) return; if (event.detail > 0 && suppressProfileClick.current) { suppressProfileClick.current = false; event.preventDefault(); return; } if (tool === 'select') { const point = getRawPoint(event); const rect = svg.current?.getBoundingClientRect(); if (point && rect?.height) onSelectProfile(profilePicker.pick(point, span / rect.height)); } else placePoint(getPoint(event)); }}>",
       "component": "CadSketchCanvas",
       "container": "div",
       "attributes": {
@@ -28573,7 +28558,7 @@
         "tabIndex": "{interactionLocked ? -1 : 0}",
         "aria-label": "{sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'}",
         "aria-describedby": "{instructionsId}",
-        "viewBox": "{`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`}",
+        "viewBox": "{`${-width / 2} ${-span / 2} ${width} ${span}`}",
         "preserveAspectRatio": "\"none\"",
         "onContextMenu": "{(event) => event.preventDefault()}",
         "onPointerDown": "{(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' && sketch.kind === 'sketch' && !viewLocked && !previewProfile && onTranslateProfile && selectedProfileId) { const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect(); const picked = point && rect.height ? profilePicker.pick(point, span / rect.height) : null; const profile = picked === selectedProfileId ? sketch.profiles.find(profile => profile.id === selectedProfileId && profile.geometry.kind !== 'plugin') : null; if (profile && rect.width && rect.height) { profileDrag.current = { profile, sketch, parameters, pointerId: event.pointerId, element: event.currentTarget, clientX: event.clientX, clientY: event.clientY, mmPerPixelX: width / rect.width, mmPerPixelY: span / rect.height, snap, gridStep, moved: false, translation: [0, 0] }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishProfileDrag(); } } } } }}",
@@ -28592,25 +28577,27 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [],
       "call": null,
       "variable": null,
       "mapProperty": null,
       "kind": "jsx-graphic",
       "tag": "svg",
-      "id": "use.52f56a158b77"
+      "id": "use.6e5a83404341"
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 448,
+      "line": 417,
       "column": 13,
-      "start": 31866,
-      "expression": "<pattern id=\"cad-sketch-grid\" width={gridStep} height={gridStep} patternUnits=\"userSpaceOnUse\">",
+      "start": 29852,
+      "expression": "<pattern id=\"cad-sketch-grid\" x={-center[0] % gridStep} y={center[1] % gridStep} width={gridStep} height={gridStep} patternUnits=\"userSpaceOnUse\">",
       "component": "CadSketchCanvas",
       "container": "div",
       "attributes": {
         "id": "\"cad-sketch-grid\"",
+        "x": "{-center[0] % gridStep}",
+        "y": "{center[1] % gridStep}",
         "width": "{gridStep}",
         "height": "{gridStep}",
         "patternUnits": "\"userSpaceOnUse\""
@@ -28623,14 +28610,14 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [],
       "call": null,
       "variable": null,
       "mapProperty": null,
       "kind": "jsx-graphic",
       "tag": "pattern",
-      "id": "use.368cf0a35349"
+      "id": "use.5a07c4e03696"
     },
     {
       "file": "src/features/cad/CadSketchDimensionControls.tsx",
@@ -41343,9 +41330,9 @@
     },
     {
       "file": "src/features/cad/CadGearInspectionOverlay.tsx",
-      "line": 38,
-      "column": 89,
-      "start": 3405,
+      "line": 39,
+      "column": 64,
+      "start": 3574,
       "expression": "`M ${",
       "component": "CadGearInspectionOverlay",
       "container": null,
@@ -41368,9 +41355,9 @@
     },
     {
       "file": "src/features/cad/CadGearInspectionOverlay.tsx",
-      "line": 38,
-      "column": 147,
-      "start": 3463,
+      "line": 39,
+      "column": 122,
+      "start": 3632,
       "expression": "} V ${",
       "component": "CadGearInspectionOverlay",
       "container": null,
@@ -42761,9 +42748,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 448,
-      "column": 117,
-      "start": 31970,
+      "line": 417,
+      "column": 168,
+      "start": 30007,
       "expression": "`M ${",
       "component": "CadSketchCanvas",
       "container": "div",
@@ -42779,7 +42766,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [],
       "call": null,
       "variable": null,
@@ -42790,9 +42777,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 450,
-      "column": 16,
-      "start": 32257,
+      "line": 419,
+      "column": 52,
+      "start": 30307,
       "expression": "`M ${",
       "component": "CadSketchCanvas",
       "container": "div",
@@ -42808,8 +42795,10 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
-      "conditions": [],
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
+      "conditions": [
+        "Math.abs(center[1]) <= span / 2"
+      ],
       "call": null,
       "variable": null,
       "mapProperty": null,
@@ -42819,9 +42808,71 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 451,
-      "column": 44,
-      "start": 32410,
+      "line": 419,
+      "column": 80,
+      "start": 30335,
+      "expression": "} H ${",
+      "component": "CadSketchCanvas",
+      "container": "div",
+      "attributes": {
+        "className": "{`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`}",
+        "ref": "{host}"
+      },
+      "controlAttributes": {
+        "className": "{`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`}",
+        "ref": "{host}"
+      },
+      "jsxParents": [],
+      "visibleText": "",
+      "callName": null,
+      "callArguments": [],
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
+      "conditions": [
+        "Math.abs(center[1]) <= span / 2"
+      ],
+      "call": null,
+      "variable": null,
+      "mapProperty": null,
+      "kind": "glyph-candidate",
+      "value": "H",
+      "id": "use.96409f95c83b"
+    },
+    {
+      "file": "src/features/cad/CadSketchCanvas.tsx",
+      "line": 420,
+      "column": 53,
+      "start": 30458,
+      "expression": "`M ${",
+      "component": "CadSketchCanvas",
+      "container": "div",
+      "attributes": {
+        "className": "{`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`}",
+        "ref": "{host}"
+      },
+      "controlAttributes": {
+        "className": "{`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`}",
+        "ref": "{host}"
+      },
+      "jsxParents": [],
+      "visibleText": "",
+      "callName": null,
+      "callArguments": [],
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
+      "conditions": [
+        "Math.abs(center[0]) <= width / 2"
+      ],
+      "call": null,
+      "variable": null,
+      "mapProperty": null,
+      "kind": "glyph-candidate",
+      "value": "M",
+      "id": "use.c6a6b5998f87"
+    },
+    {
+      "file": "src/features/cad/CadSketchCanvas.tsx",
+      "line": 420,
+      "column": 81,
+      "start": 30486,
       "expression": "} V ${",
       "component": "CadSketchCanvas",
       "container": "div",
@@ -42837,8 +42888,10 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
-      "conditions": [],
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
+      "conditions": [
+        "Math.abs(center[0]) <= width / 2"
+      ],
       "call": null,
       "variable": null,
       "mapProperty": null,
@@ -42848,9 +42901,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 466,
+      "line": 435,
       "column": 69,
-      "start": 35412,
+      "start": 33744,
       "expression": "`M ${",
       "component": "CadSketchCanvas",
       "container": "div",
@@ -42866,7 +42919,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [
         "tool !== 'select'"
       ],
@@ -42875,13 +42928,13 @@
       "mapProperty": null,
       "kind": "glyph-candidate",
       "value": "M",
-      "id": "use.c6a6b5998f87"
+      "id": "use.ce782a73297a"
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 466,
-      "column": 123,
-      "start": 35466,
+      "line": 435,
+      "column": 147,
+      "start": 33822,
       "expression": "} M ${",
       "component": "CadSketchCanvas",
       "container": "div",
@@ -42897,7 +42950,7 @@
       "visibleText": "",
       "callName": null,
       "callArguments": [],
-      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "containerText": "<div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "conditions": [
         "tool !== 'select'"
       ],
@@ -42910,9 +42963,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 470,
+      "line": 439,
       "column": 74,
-      "start": 36203,
+      "start": 34583,
       "expression": "Preview · Apply to keep changes",
       "component": "CadSketchCanvas",
       "container": "div",
@@ -42941,9 +42994,9 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 471,
+      "line": 440,
       "column": 125,
-      "start": 36366,
+      "start": 34746,
       "expression": "Highlighted geometry ·",
       "component": "CadSketchCanvas",
       "container": "div",
@@ -44874,7 +44927,7 @@
       "file": "src/features/cad/cadSketchSvg.ts",
       "line": 9,
       "column": 17,
-      "start": 607,
+      "start": 651,
       "expression": "`M ${",
       "component": "cadArcSvgPath",
       "container": null,
@@ -44897,7 +44950,7 @@
       "file": "src/features/cad/cadSketchSvg.ts",
       "line": 13,
       "column": 20,
-      "start": 847,
+      "start": 971,
       "expression": "} A ${",
       "component": "cadArcSvgPath",
       "container": null,
@@ -44922,7 +44975,7 @@
       "file": "src/features/cad/cadSketchSvg.ts",
       "line": 13,
       "column": 95,
-      "start": 922,
+      "start": 1046,
       "expression": "} A ${",
       "component": "cadArcSvgPath",
       "container": null,
@@ -44947,7 +45000,7 @@
       "file": "src/features/cad/cadSketchSvg.ts",
       "line": 15,
       "column": 18,
-      "start": 1020,
+      "start": 1168,
       "expression": "} A ${",
       "component": "cadArcSvgPath",
       "container": null,
@@ -44970,7 +45023,7 @@
       "file": "src/features/cad/cadSketchSvg.ts",
       "line": 23,
       "column": 41,
-      "start": 1532,
+      "start": 1748,
       "expression": "`M ${",
       "component": "cadClosedBoundarySvgPath",
       "container": null,
@@ -44980,13 +45033,13 @@
       "visibleText": "",
       "callName": "commands.push",
       "callArguments": [
-        "`M ${entity.start.x} ${entity.start.y}`"
+        "`M ${entity.start.x - origin[0]} ${entity.start.y - origin[1]}`"
       ],
       "containerText": null,
       "conditions": [
         "!commands.length"
       ],
-      "call": "commands.push(`M ${entity.start.x} ${entity.start.y}`)",
+      "call": "commands.push(`M ${entity.start.x - origin[0]} ${entity.start.y - origin[1]}`)",
       "variable": null,
       "mapProperty": null,
       "kind": "glyph-candidate",
@@ -44997,7 +45050,7 @@
       "file": "src/features/cad/cadSketchSvg.ts",
       "line": 24,
       "column": 47,
-      "start": 1620,
+      "start": 1860,
       "expression": "`L ${",
       "component": "cadClosedBoundarySvgPath",
       "container": null,
@@ -45007,13 +45060,13 @@
       "visibleText": "",
       "callName": "commands.push",
       "callArguments": [
-        "`L ${entity.end.x} ${entity.end.y}`"
+        "`L ${entity.end.x - origin[0]} ${entity.end.y - origin[1]}`"
       ],
       "containerText": null,
       "conditions": [
         "entity.type === 'line'"
       ],
-      "call": "commands.push(`L ${entity.end.x} ${entity.end.y}`)",
+      "call": "commands.push(`L ${entity.end.x - origin[0]} ${entity.end.y - origin[1]}`)",
       "variable": null,
       "mapProperty": null,
       "kind": "glyph-candidate",
@@ -45024,7 +45077,7 @@
       "file": "src/features/cad/cadSketchSvg.ts",
       "line": 27,
       "column": 49,
-      "start": 1788,
+      "start": 2060,
       "expression": "} Z`",
       "component": "cadClosedBoundarySvgPath",
       "container": null,
@@ -55851,7 +55904,7 @@
       },
       {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 346
+        "line": 315
       },
       {
         "file": "src/features/cad/CadSketchDimensionControls.tsx",
@@ -55898,7 +55951,7 @@
   "excludedCategories": [
     {
       "root": "docs",
-      "fileCount": 196,
+      "fileCount": 204,
       "mediaFileCount": 2,
       "mediaPaths": [
         "docs/images/spur-gear-editor.png",
@@ -55913,7 +55966,7 @@
     },
     {
       "root": "e2e",
-      "fileCount": 36,
+      "fileCount": 37,
       "mediaFileCount": 0,
       "mediaPaths": []
     },
@@ -55937,7 +55990,7 @@
     },
     {
       "root": "dist",
-      "fileCount": 325,
+      "fileCount": 383,
       "mediaFileCount": 1,
       "mediaPaths": [
         "dist/assets/wire-edm-onboarding-poster-6gX79SPy.png"

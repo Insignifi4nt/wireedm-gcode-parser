@@ -1114,7 +1114,10 @@ describe('CAD sketch interaction', () => {
     const profile = container.querySelector('[aria-label="Select Contour profile"]');
     expect(profile?.querySelectorAll('path')).toHaveLength(1);
     const boundary = profile?.querySelector('path')?.getAttribute('d');
-    expect(boundary).toContain('M 0 0 L 20 0 A 10 10 0 0 1 ');
+    const line = boundary?.match(/^M ([^ ]+) ([^ ]+) L ([^ ]+) ([^ ]+) A 10 10 0 0 1 /);
+    if (!line) throw new Error('Expected a line joined to an exact minor CCW radius-10 arc');
+    expect(Number(line[3]) - Number(line[1])).toBe(20);
+    expect(Number(line[4]) - Number(line[2])).toBe(0);
     expect(boundary?.endsWith(' Z')).toBe(true);
     await click('Fit sketch');
     const view = viewport().getState().view;

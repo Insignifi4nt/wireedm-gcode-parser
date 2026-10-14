@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadSketchProfile } from '@/domain/cad/cadDocument';
 import { CadSketchCanvas } from './CadSketchCanvas';
+import type { CadRenderedViewControls } from './cadViewportControls';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root; let container: HTMLDivElement;
@@ -17,10 +18,11 @@ const circle = (id: string, x: number, y: number, radius: number): CadSketchProf
 
 async function fixture(profiles: readonly CadSketchProfile[], overrides: Partial<ComponentProps<typeof CadSketchCanvas>> = {}) {
   const selected = vi.fn(); const added = vi.fn(); const pending = vi.fn(); const error = vi.fn();
+  let controls: CadRenderedViewControls | null = null;
   let props: ComponentProps<typeof CadSketchCanvas> = {
     sketch: { id: 'sketch', name: 'Sketch', suppressed: false, kind: 'sketch', plane: 'XY', offset: 0, profiles },
     parameters: {}, tool: 'select', selectedProfileId: null, onSelectProfile: selected, onAddProfile: added,
-    onPendingChange: pending, onError: error, cancelSignal: 0, ...overrides
+    onPendingChange: pending, onError: error, cancelSignal: 0, onControlsReady: value => { controls = value; }, ...overrides
   };
   async function render(next: Partial<typeof props> = {}) { props = { ...props, ...next }; await act(async () => root.render(<CadSketchCanvas {...props} />)); }
   await render();
@@ -34,8 +36,10 @@ async function fixture(profiles: readonly CadSketchProfile[], overrides: Partial
     hasPointerCapture: (id: number) => captured === id, releasePointerCapture: release });
   function position(x: number, y: number) {
     const box = svg.getAttribute('viewBox')!.split(' ').map(Number);
-    return { clientX: 10 + (x - box[0]) / box[2] * 800, clientY: 20 + (-y - box[1]) / box[3] * 600 };
+    const state = controls?.getState(); if (!state || state.mode === 'solid') throw new Error('Sketch frame missing');
+    return { clientX: 10 + (x - state.centerMm[0] - box[0]) / box[2] * 800, clientY: 20 + (state.centerMm[1] - y - box[1]) / box[3] * 600 };
   }
+  const frame = () => { if (!controls) throw new Error('Sketch frame missing'); return JSON.stringify(controls.getState()); };
   // Real Chromium mouse click PointerEvents have isPrimary=false, unlike down/up.
   async function click(x: number, y: number, target: Element = svg, init: MouseEventInit = {}, primary = false) {
     const event = new MouseEvent('click', { ...position(x, y), bubbles: true, button: 0, detail: 1, ...init });
@@ -47,7 +51,7 @@ async function fixture(profiles: readonly CadSketchProfile[], overrides: Partial
     Object.defineProperties(event, { pointerId: { value: pointerId }, isPrimary: { value: primary } });
     await act(async () => svg.dispatchEvent(event));
   }
-  return { svg, selected, added, pending, error, render, position, click, pointer, capture, release };
+  return { svg, selected, added, pending, error, render, position, click, pointer, capture, release, frame };
 }
 
 describe('sketch canvas profile picking', () => {
@@ -81,11 +85,11 @@ describe('sketch canvas profile picking', () => {
 
   it('uses the updated pan and zoom transform with six screen pixels of outline tolerance', async () => {
     const h = await fixture([{ ...circle('guide', 0, 0, 10), construction: true }]);
-    const initialBox = h.svg.getAttribute('viewBox'); const initialSpan = Number(initialBox!.split(' ')[3]);
+    const initialBox = h.frame(); const initialSpan = Number(h.svg.getAttribute('viewBox')!.split(' ')[3]);
     await act(async () => h.svg.dispatchEvent(new MouseEvent('pointerdown', { button: 2, clientX: 410, clientY: 320, bubbles: true })));
     await act(async () => h.svg.dispatchEvent(new MouseEvent('pointermove', { buttons: 2, clientX: 510, clientY: 380, bubbles: true })));
     await act(async () => h.svg.dispatchEvent(new MouseEvent('pointerup', { button: 2, bubbles: true })));
-    expect(h.svg.getAttribute('viewBox')).not.toBe(initialBox);
+    expect(h.frame()).not.toBe(initialBox);
     await h.click(10 + 5 * initialSpan / 600, 0); expect(h.selected).toHaveBeenLastCalledWith('guide');
     await act(async () => h.svg.dispatchEvent(new WheelEvent('wheel', { deltaY: -Math.log(2) * 1000, bubbles: true })));
     expect(Number(h.svg.getAttribute('viewBox')!.split(' ')[3])).toBeCloseTo(initialSpan / 2);
@@ -119,50 +123,50 @@ describe('sketch canvas profile picking', () => {
 
 describe('sketch pan lifecycle', () => {
   it.each([{ button: 2, buttons: 2 }, { button: 1, buttons: 4 }])('stops when the original button is released ($button)', async ({ button, buttons }) => {
-    const h = await fixture([]); const initial = h.svg.getAttribute('viewBox');
+    const h = await fixture([]); const initial = h.frame();
     await h.pointer('pointerdown', { button, buttons });
     await h.pointer('pointermove', { clientX: 510, button, buttons });
-    const moved = h.svg.getAttribute('viewBox'); expect(moved).not.toBe(initial);
+    const moved = h.frame(); expect(moved).not.toBe(initial);
     await h.pointer('pointermove', { clientX: 610, buttons: 1 });
     await h.pointer('pointermove', { clientX: 710, button, buttons });
-    expect(h.svg.getAttribute('viewBox')).toBe(moved); expect(h.release).toHaveBeenCalledWith(11);
+    expect(h.frame()).toBe(moved); expect(h.release).toHaveBeenCalledWith(11);
     expect(h.added).not.toHaveBeenCalled(); expect(h.selected).not.toHaveBeenCalled();
   });
 
   it('stops on window blur and allows a fresh drag', async () => {
     const h = await fixture([]); await h.pointer('pointerdown'); await h.pointer('pointermove', { clientX: 510 });
-    const moved = h.svg.getAttribute('viewBox');
+    const moved = h.frame();
     await act(async () => window.dispatchEvent(new Event('blur')));
     expect(h.release).toHaveBeenCalledWith(11); await h.pointer('pointermove', { clientX: 610 });
-    expect(h.svg.getAttribute('viewBox')).toBe(moved);
+    expect(h.frame()).toBe(moved);
     await h.pointer('pointerdown'); await h.pointer('pointermove', { clientX: 510 });
-    expect(h.svg.getAttribute('viewBox')).not.toBe(moved);
+    expect(h.frame()).not.toBe(moved);
   });
 
   it.each(['pointerup', 'pointercancel', 'lostpointercapture'])('only the active pointer may move or end pan on %s', async ending => {
-    const h = await fixture([]); const initial = h.svg.getAttribute('viewBox');
+    const h = await fixture([]); const initial = h.frame();
     await h.pointer('pointerdown'); await h.pointer('pointerdown', { clientX: 600 }, 22);
     expect(h.capture).toHaveBeenCalledTimes(1);
-    await h.pointer('pointermove', { clientX: 700 }, 22); expect(h.svg.getAttribute('viewBox')).toBe(initial);
+    await h.pointer('pointermove', { clientX: 700 }, 22); expect(h.frame()).toBe(initial);
     await h.pointer(ending, {}, 22); expect(h.release).not.toHaveBeenCalled();
-    await h.pointer('pointermove', { clientX: 510 }); const moved = h.svg.getAttribute('viewBox'); expect(moved).not.toBe(initial);
+    await h.pointer('pointermove', { clientX: 510 }); const moved = h.frame(); expect(moved).not.toBe(initial);
     await h.pointer(ending); await h.pointer('pointermove', { clientX: 710 });
-    expect(h.svg.getAttribute('viewBox')).toBe(moved); expect(h.release).toHaveBeenCalledTimes(1);
+    expect(h.frame()).toBe(moved); expect(h.release).toHaveBeenCalledTimes(1);
   });
 
   it('rejects secondary pointer starts and releases active capture when the canvas unmounts', async () => {
-    const h = await fixture([]); const initial = h.svg.getAttribute('viewBox');
+    const h = await fixture([]); const initial = h.frame();
     await h.pointer('pointerdown', {}, 22, false); await h.pointer('pointermove', { clientX: 510 }, 22, false);
-    expect(h.svg.getAttribute('viewBox')).toBe(initial); expect(h.capture).not.toHaveBeenCalled();
+    expect(h.frame()).toBe(initial); expect(h.capture).not.toHaveBeenCalled();
     await h.pointer('pointerdown'); await act(async () => root.render(null));
     expect(h.release).toHaveBeenCalledWith(11);
   });
 
   it('does not start an uncaptured drag if native capture fails', async () => {
-    const h = await fixture([]); const initial = h.svg.getAttribute('viewBox');
+    const h = await fixture([]); const initial = h.frame();
     h.capture.mockImplementationOnce(() => { throw new DOMException('Pointer no longer active', 'NotFoundError'); });
     await h.pointer('pointerdown'); await h.pointer('pointermove', { clientX: 510 });
-    expect(h.svg.getAttribute('viewBox')).toBe(initial); expect(h.error).not.toHaveBeenCalled();
+    expect(h.frame()).toBe(initial); expect(h.error).not.toHaveBeenCalled();
   });
 });
 
@@ -176,9 +180,9 @@ describe('sketch target context menus', () => {
   });
   it('keeps right drag as pan and requires the initiating pointer for a stationary menu', async () => {
     const menu = vi.fn(); const h = await fixture([circle('circle', 0, 0, 10)], { ...{ onContextMenu: menu } });
-    const original = h.svg.getAttribute('viewBox'); await h.pointer('pointerdown'); await h.pointer('pointerup', {}, 22);
+    const original = h.frame(); await h.pointer('pointerdown'); await h.pointer('pointerup', {}, 22);
     expect(menu).not.toHaveBeenCalled(); await h.pointer('pointerup'); expect(menu).toHaveBeenCalledTimes(1); menu.mockClear();
-    await h.pointer('pointerdown'); await h.pointer('pointermove', { clientX: 510 }); expect(h.svg.getAttribute('viewBox')).not.toBe(original);
+    await h.pointer('pointerdown'); await h.pointer('pointermove', { clientX: 510 }); expect(h.frame()).not.toBe(original);
     await h.pointer('pointermove', { clientX: 410 }); await h.pointer('pointerup'); expect(menu).not.toHaveBeenCalled();
   });
   it.each(['pointercancel', 'lostpointercapture', 'blur', 'document', 'cancelSignal', 'locked'] as const)('cancels stationary context ownership on %s', async cancellation => {

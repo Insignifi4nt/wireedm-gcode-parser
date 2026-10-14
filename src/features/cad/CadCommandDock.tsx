@@ -3,7 +3,11 @@ import { createPortal } from 'react-dom';
 import { ExpandDownIcon } from '@/components/icons';
 import './cad-command-dock.css';
 
-const ViewToolsHost = createContext<{ host: HTMLDivElement | null; close(): void } | undefined>(undefined);
+const ViewToolsHost = createContext<{ host: HTMLDivElement | null; open: boolean; close(): void } | undefined>(undefined);
+const ViewToolsVisible = createContext(true);
+
+/** Portaled help follows its View controls, without hiding unrelated canvas help. */
+export function useCadViewToolsVisible() { return useContext(ViewToolsVisible); }
 
 /** Disclosure changes only the dock layout; the live viewport remains mounted. */
 export function CadCommandDock({ toolbar, children }: { toolbar: ReactNode; children: ReactNode }) {
@@ -12,7 +16,7 @@ export function CadCommandDock({ toolbar, children }: { toolbar: ReactNode; chil
   const drawerId = useId();
   const toggle = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => { setOpen(false); toggle.current?.focus(); }, []);
-  const context = useMemo(() => ({ host, close }), [host, close]);
+  const context = useMemo(() => ({ host, open, close }), [host, open, close]);
   return <ViewToolsHost.Provider value={context}>
     {children}
     <div data-cad-command-dock className={`cad-command-dock${open ? ' is-view-open' : ''}`}>
@@ -30,9 +34,9 @@ export function CadCommandDock({ toolbar, children }: { toolbar: ReactNode; chil
 
 export function CadViewTools({ children, label }: { children: ReactNode; label: string }) {
   const context = useContext(ViewToolsHost);
-  const controls = <div className="cad-view-tools" role="group" aria-label={label} onKeyDown={event => {
+  const controls = <ViewToolsVisible.Provider value={context?.open ?? true}><div className="cad-view-tools" role="group" aria-label={label} onKeyDown={event => {
     if (!context || event.key !== 'Escape' || event.nativeEvent.isComposing || event.defaultPrevented) return;
     event.preventDefault(); event.stopPropagation(); context.close();
-  }}>{children}</div>;
+  }}>{children}</div></ViewToolsVisible.Provider>;
   return context === undefined ? controls : context.host ? createPortal(controls, context.host) : null;
 }

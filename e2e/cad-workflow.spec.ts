@@ -2,44 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import type { CadTopologyDescriptor } from '../src/domain/cad/cadTopology';
 import type { CadFeature, CadSketchFeature } from '../src/domain/cad/cadDocument';
-
-// Exercise the production tool registrations without a browser-specific WebMCP transport.
-// Native WebMCP interoperability is also checked separately in the Codex in-app browser.
-async function prepare(page: Page) {
-  await page.addInitScript(() => {
-    localStorage.setItem('wireedm.onboarding.dismissed', 'true');
-    const tools = new Map<string, { execute(input: unknown): Promise<unknown> }>();
-    Object.defineProperty(document, 'modelContext', { configurable: true, value: {
-      registerTool(tool: { name: string; execute(input: unknown): Promise<unknown> }, options: { signal: AbortSignal }) {
-        tools.set(tool.name, tool);
-        options.signal.addEventListener('abort', () => { if (tools.get(tool.name) === tool) tools.delete(tool.name); });
-      }
-    } });
-    Object.defineProperty(document, '__cadTestTools', { value: tools });
-  });
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
-}
-async function rawCall(page: Page, name: string, input: unknown = {}) {
-  return page.evaluate(async ({ name, input }) => {
-    const tools = (document as Document & { __cadTestTools: Map<string, { execute(input: unknown): Promise<unknown> }> }).__cadTestTools;
-    const tool = tools.get(name);
-    if (!tool) throw new Error(`Missing registered tool ${name}`);
-    return tool.execute(input);
-  }, { name, input });
-}
-async function call(page: Page, name: string, input: unknown = {}) {
-  const result = await rawCall(page, name, input);
-  expect(result, `${name}: ${JSON.stringify(result)}`).toMatchObject({ ok: true });
-  if (!result || typeof result !== 'object' || !('data' in result) || !result.data || typeof result.data !== 'object') throw new Error('Invalid tool result');
-  return result.data;
-}
-async function context(page: Page) {
-  const value = await call(page, 'cad_get_context');
-  if (!('version' in value) || typeof value.version !== 'string' || !('documentId' in value) || typeof value.documentId !== 'string') throw new Error('Invalid CAD context');
-  return { ...value, version: value.version, documentId: value.documentId };
-}
+import { prepareCadTools as prepare, rawCadToolCall as rawCall, callCadTool as call, cadContext as context } from './cad-tool-helpers';
 
 async function openViewControls(page: Page) {
   const toggle = page.getByRole('button', { name: 'View controls', exact: true });
@@ -56,7 +19,7 @@ async function editScalarRelation(page: Page, label: string, expression: string)
 
 async function createSketchOnCanvasPlane(page: Page, plane: 'XY' | 'XZ' | 'YZ' = 'XY') {
   await page.getByRole('button', { name: 'Sketch', exact: true }).click();
-  await page.locator('.cad-viewport').getByRole('button', { name: `Select ${plane} plane`, exact: true }).click();
+  await page.locator('.cad-viewport').getByRole('button', { name: `Select ${plane} plane in design area`, exact: true }).click();
   await expect(page.getByLabel('Sketch drawing canvas')).toBeVisible();
 }
 
@@ -178,7 +141,10 @@ test('compact polygon properties retain multiple vertex edits and commit one sha
   await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'edit-sketch', sketchId: 'outline' } });
   await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'select-profile', profileId: 'boundary' } });
   const properties = page.getByRole('complementary', { name: 'Feature properties' });
-  await expect(properties.locator('input')).toHaveCount(5);
+  await properties.getByText('Exact geometry', { exact: true }).click();
+  await expect(properties.getByLabel('Polygon vertex', { exact: true })).toHaveValue('1');
+  await expect(properties.getByRole('textbox', { name: 'X mm', exact: true })).toBeVisible();
+  await expect(properties.getByRole('textbox', { name: 'Y mm', exact: true })).toBeVisible();
   await page.getByLabel('Polygon vertex', { exact: true }).fill('2');
   await properties.getByRole('textbox', { name: 'X mm', exact: true }).fill('width + 5');
   await page.getByRole('button', { name: 'Next polygon vertex' }).click();
@@ -192,6 +158,9 @@ test('compact polygon properties retain multiple vertex edits and commit one sha
   await properties.getByRole('button', { name: 'Apply', exact: true }).click();
   const edited = await context(page);
   expect(edited.version).not.toBe(draft.version);
+  expect(edited).toMatchObject({ parameters: { width: 20 }, workflowOpen: false });
+  expect(await call(page, 'cad_get_feature', { expectedVersion: edited.version, featureId: 'outline' }))
+    .toMatchObject({ feature: { profiles: [{ geometry: { kind: 'polygon', points: [[0, 0], ['width + 5', 0], ['width + 5', 10], [0, 10]] } }] } });
   expect(await call(page, 'cad_measure_sketch', { expectedVersion: edited.version, sketchId: 'outline' }))
     .toMatchObject({ materialAreaMm2: 250 });
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
@@ -629,7 +598,7 @@ test('one compact header and real face picking create an inward shell', async ({
   await canvas.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
   await expect.poll(() => call(page, 'cad_get_viewport', { expectedVersion: draft.version })).toMatchObject({ pickMode: 'face', topologySelection: { bodyId: 'pad', picks: [{ kind: 'face' }] } });
   await page.getByRole('button', { name: 'Shell', exact: true }).click();
-  await expect(page.getByLabel('Wall thickness', { exact: false })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Wall thickness mm', exact: true })).toHaveValue('1');
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   const changed = await context(page);
   expect(await call(page, 'cad_build', { expectedVersion: changed.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(424, 7) }] });
@@ -785,15 +754,28 @@ test('an imported path is selected by its interior and edited atomically through
   const segmentIndex = segments.findIndex(segment => segment.kind === 'line' && segment.end[0] === 20 && segment.end[1] === 0);
   if (segmentIndex < 0) throw new Error('Expected the lower right vertex');
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: imported.sketchId } });
+  await openViewControls(page);
   await page.getByRole('button', { name: 'Fit sketch', exact: true }).click();
   // A genuine pointer click inside the shape must select it even though the
-  // drawing uses transparent fills. Read only the visible SVG view transform.
-  const point = await page.getByLabel('Sketch drawing canvas').evaluate(element => {
+  // drawing uses transparent fills. The public centre is in world millimetres;
+  // the visible SVG renders relative to that centre before applying its Y flip.
+  const viewport = await call(page, 'cad_get_viewport', { expectedVersion: current.version });
+  const view = viewport.view;
+  if (!view || typeof view !== 'object' || !('mode' in view) || view.mode !== 'sketch' || !('centerMm' in view)
+    || !Array.isArray(view.centerMm) || view.centerMm.length !== 2 || view.centerMm.some(value => typeof value !== 'number' || !Number.isFinite(value))) {
+    throw new Error('Missing current sketch world centre');
+  }
+  const centerMm: [number, number] = [view.centerMm[0], view.centerMm[1]];
+  const point = await page.getByLabel('Sketch drawing canvas').evaluate((element, center) => {
     const canvas = element as SVGSVGElement;
-    const rect = canvas.getBoundingClientRect(); const view = canvas.viewBox.baseVal;
-    return { x: rect.x + (10 - view.x) / view.width * rect.width, y: rect.y + (-5 - view.y) / view.height * rect.height };
-  });
+    const transform = canvas.getScreenCTM();
+    if (!transform) throw new Error('Missing visible sketch transformation');
+    const interior = canvas.createSVGPoint(); interior.x = 10 - center[0]; interior.y = center[1] - 5;
+    const pixels = interior.matrixTransform(transform);
+    return { x: pixels.x, y: pixels.y };
+  }, centerMm);
   await page.mouse.click(point.x, point.y);
+  await page.getByRole('complementary', { name: 'Feature properties' }).getByText('Exact geometry', { exact: true }).click();
   await expect(page.getByLabel('Path segment', { exact: true })).toBeVisible();
   await page.getByLabel('Path segment', { exact: true }).fill(String(segmentIndex + 1));
   await page.getByLabel('End X', { exact: false }).fill('tipX');
@@ -1231,7 +1213,7 @@ test('the first solid fits after reference-only viewing while later rebuilds pre
   expect((await call(page, 'cad_get_viewport', { expectedVersion: longer.version })).view).toMatchObject({ zoom: (framed.view as { zoom: number }).zoom });
 });
 
-test('far-origin imported Sketch fits on entry and keeps its view across dimension edits', async ({ page }) => {
+test('far-origin imported Sketch renders inside free pixels and keeps its view across geometry edits', async ({ page }) => {
   await prepare(page); const initial = await context(page);
   const text = '0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\n0\n10\n100000000\n20\n100000000\n40\n12\n0\nENDSEC\n0\nEOF\n';
   const imported = await call(page, 'cad_import_dxf', { expectedVersion: initial.version, source: { format: 'dxf', fileName: 'far-circle.dxf', text } });
@@ -1241,8 +1223,58 @@ test('far-origin imported Sketch fits on entry and keeps its view across dimensi
     .toMatchObject({ ok: true, data: { view: { referenceVersion: accepted.version, referenceFeatureIds: [imported.sketchId] } } });
   await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'edit-sketch', sketchId: imported.sketchId } });
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: accepted.version }))
-    .toMatchObject({ ok: true, data: { view: { mode: 'sketch', available: true, centerMm: [100000000, 100000000], heightSpanMm: 30 } } });
-  expect(await call(page, 'cad_capture_preview', { expectedVersion: accepted.version })).toMatchObject({ source: '2d', sketchId: imported.sketchId });
+    .toMatchObject({ ok: true, data: { view: { mode: 'sketch', available: true } } });
+  const canvas = page.getByLabel('Sketch drawing canvas');
+  const circle = canvas.locator('.cad-profile circle');
+  const assertFittedCircle = async () => {
+    const visible = await circle.boundingBox(), viewport = await canvas.boundingBox();
+    if (!visible || !viewport) throw new Error('Missing rendered far-origin circle');
+    expect(visible.width, 'R12 circle must have substantial visible pixels at 1e8 mm').toBeGreaterThan(200);
+    expect(visible.height).toBeCloseTo(visible.width, 3);
+    expect(visible.x).toBeGreaterThanOrEqual(viewport.x); expect(visible.x + visible.width).toBeLessThanOrEqual(viewport.x + viewport.width);
+    expect(visible.y).toBeGreaterThanOrEqual(viewport.y); expect(visible.y + visible.height).toBeLessThanOrEqual(viewport.y + viewport.height);
+    for (const overlay of await page.locator('[data-cad-properties], [data-cad-model-tree], [data-cad-command-dock]').all()) {
+      if (!await overlay.isVisible()) continue;
+      const occlusion = await overlay.boundingBox(); if (!occlusion || !occlusion.width || !occlusion.height) continue;
+      const overlap = Math.min(visible.x + visible.width, occlusion.x + occlusion.width) > Math.max(visible.x, occlusion.x)
+        && Math.min(visible.y + visible.height, occlusion.y + occlusion.height) > Math.max(visible.y, occlusion.y);
+      expect(overlap, 'Fit must keep the whole contour clear of floating controls').toBe(false);
+    }
+    const capture = await call(page, 'cad_capture_preview', { expectedVersion: (await context(page)).version });
+    expect(capture).toMatchObject({ source: '2d', sketchId: imported.sketchId });
+    if (typeof capture.previewUrl !== 'string') throw new Error('Missing rendered Sketch capture');
+    const pixels = await page.evaluate(async url => {
+      const image = new Image(); image.src = url; await image.decode();
+      const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+      const context = canvas.getContext('2d'); if (!context) throw new Error('Missing Sketch pixels'); context.drawImage(image, 0, 0);
+      const data = context.getImageData(0, 0, canvas.width, canvas.height).data; let count = 0;
+      for (let index = 0; index < data.length; index += 4) if (data[index] > 100 && data[index + 1] > 140 && data[index + 2] > 140 && data[index + 3] > 0) count++;
+      return count;
+    }, capture.previewUrl);
+    expect(pixels, 'Actual rasterized far-origin circle outline must be present').toBeGreaterThan(400);
+  };
+  await assertFittedCircle();
+  // Selecting the sketch expands its tree branch after initial layout. Keep
+  // the initial-fit pixel check above, then establish a settled explicit Fit
+  // and prove its real occlusions are identical for the translation comparison.
+  await expect(page.getByRole('button', { name: 'Contour 1 profile', exact: true })).toBeVisible();
+  await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'fit' } });
+  const fitLayout = () => page.evaluate(() => {
+    const viewport = document.querySelector<HTMLElement>('.cad-sketch-viewport'); if (!viewport) throw new Error('Missing visible Sketch');
+    return {
+      viewport: viewport.getBoundingClientRect().toJSON(),
+      width: viewport.clientWidth, height: viewport.clientHeight,
+      overlays: [...document.querySelectorAll<HTMLElement>('[data-cad-properties], [data-cad-model-tree], [data-cad-command-dock]')]
+        .filter(overlay => !overlay.hidden).map(overlay => overlay.getBoundingClientRect().toJSON()),
+    };
+  });
+  const initialLayout = await fitLayout();
+  const framed = await call(page, 'cad_get_viewport', { expectedVersion: accepted.version });
+  const view = framed.view;
+  if (!view || typeof view !== 'object' || !('centerMm' in view) || !Array.isArray(view.centerMm)
+    || view.centerMm.length !== 2 || !view.centerMm.every(value => typeof value === 'number' && Number.isFinite(value))
+    || !('heightSpanMm' in view) || typeof view.heightSpanMm !== 'number') throw new Error('Missing exact public Sketch frame');
+  const initialFrame = { centerMm: [...view.centerMm], heightSpanMm: view.heightSpanMm };
   const feature = await call(page, 'cad_get_feature', { expectedVersion: accepted.version, featureId: imported.sketchId });
   const sketch = feature.feature as CadSketchFeature;
   expect(sketch).toMatchObject({ kind: 'sketch', source: { text } });
@@ -1250,14 +1282,20 @@ test('far-origin imported Sketch fits on entry and keeps its view across dimensi
   // in its public analytic definition. The existing canvas keeps the user's frame.
   const profile = sketch.profiles[0];
   if (profile.geometry.kind !== 'circle') throw new Error('Expected an exact imported circle');
+  expect(profile.geometry).toEqual({ kind: 'circle', x: 100000000, y: 100000000, radius: 12 });
   await call(page, 'cad_edit_document', { expectedVersion: accepted.version, edits: [{ kind: 'update-feature', feature: { ...sketch,
     profiles: [{ ...profile, geometry: { ...profile.geometry, x: 100000100 } }] } }] });
   const changed = await context(page);
   expect(await call(page, 'cad_get_viewport', { expectedVersion: changed.version }))
-    .toMatchObject({ view: { mode: 'sketch', centerMm: [100000000, 100000000], heightSpanMm: 30 } });
+    .toMatchObject({ view: { mode: 'sketch', ...initialFrame } });
+  expect(await call(page, 'cad_get_feature', { expectedVersion: changed.version, featureId: imported.sketchId }))
+    .toMatchObject({ feature: { source: { text }, profiles: [{ geometry: { kind: 'circle', x: 100000100, y: 100000000, radius: 12 } }] } });
+  expect(await fitLayout(), 'Exact translation of Fit requires unchanged viewport and floating-control bounds').toEqual(initialLayout);
   await call(page, 'cad_set_viewport', { expectedVersion: changed.version, command: { kind: 'fit' } });
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: changed.version }))
-    .toMatchObject({ ok: true, data: { view: { centerMm: [100000100, 100000000], heightSpanMm: 30 } } });
+    .toMatchObject({ ok: true, data: { view: { centerMm: [initialFrame.centerMm[0] + 100, initialFrame.centerMm[1]], heightSpanMm: initialFrame.heightSpanMm } } });
+  await assertFittedCircle();
+  expect(await context(page)).toMatchObject({ version: changed.version });
 });
 
 test('small exact reference arcs remain visible far from the world origin', async ({ page }) => {
@@ -1309,7 +1347,33 @@ test('small far-origin solids retain rendered faces, edges and physical topology
   const beforeFace = await call(page, 'cad_capture_preview', { expectedVersion: accepted.version });
   const canvas = page.locator('.cad-viewport canvas');
   const bounds = await canvas.boundingBox(); if (!bounds) throw new Error('Missing solid canvas');
-  await canvas.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
+  if (typeof beforeFace.previewUrl !== 'string') throw new Error('Missing unhighlighted body capture');
+  // Fit reserves space for the floating tree and inspector. Locate this single
+  // fitted body in its actual pixels instead of assuming the canvas centre or
+  // reproducing the renderer's private camera extent/projection.
+  const renderedBody = await page.evaluate(async url => {
+    const image = new Image(); image.src = url; await image.decode();
+    const pixels = document.createElement('canvas'); pixels.width = image.width; pixels.height = image.height;
+    const context = pixels.getContext('2d'); if (!context) throw new Error('Missing body pixels');
+    context.drawImage(image, 0, 0);
+    const data = context.getImageData(0, 0, pixels.width, pixels.height).data;
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+    for (let y = 0; y < pixels.height; y++) for (let x = 0; x < pixels.width; x++) {
+      const offset = 4 * (y * pixels.width + x);
+      if (data[offset + 3] > 0 && data[offset] + data[offset + 1] + data[offset + 2] > 300) {
+        left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
+      }
+    }
+    if (!Number.isFinite(left) || !Number.isFinite(top)) throw new Error('Fitted far-origin body is not rendered');
+    return { left, top, right, bottom, width: image.width, height: image.height };
+  }, beforeFace.previewUrl);
+  expect(renderedBody.right - renderedBody.left, 'The 2 mm face must retain its rendered width at 1e8 mm').toBeGreaterThan(20);
+  expect(renderedBody.bottom - renderedBody.top, 'The 2 mm face must retain its rendered height at 1e8 mm').toBeGreaterThan(20);
+  const facePoint = {
+    x: (renderedBody.left + renderedBody.right + 1) / 2 / renderedBody.width * bounds.width,
+    y: (renderedBody.top + renderedBody.bottom + 1) / 2 / renderedBody.height * bounds.height,
+  };
+  await canvas.click({ position: facePoint });
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: accepted.version }))
     .toMatchObject({ ok: true, data: { topologySelection: { bodyId: 'far', picks: [{ kind: 'face' }] } } });
   const highlighted = await call(page, 'cad_capture_preview', { expectedVersion: accepted.version });
@@ -1329,10 +1393,7 @@ test('small far-origin solids retain rendered faces, edges and physical topology
   await page.screenshot({ path: 'tmp/cad-far-origin-face.png' });
   await openViewControls(page);
   await page.getByRole('button', { name: 'Edge', exact: true }).click();
-  const current = await call(page, 'cad_get_viewport', { expectedVersion: accepted.version });
-  const view = current.view as { zoom: number };
-  const pixelsPerMm = bounds.height * view.zoom / 170;
-  await canvas.click({ position: { x: bounds.width / 2 + pixelsPerMm, y: bounds.height / 2 } });
+  await canvas.click({ position: { x: (renderedBody.right + .5) / renderedBody.width * bounds.width, y: facePoint.y } });
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: accepted.version }))
     .toMatchObject({ ok: true, data: { topologySelection: { bodyId: 'far', picks: [{ kind: 'edge' }] } } });
   const edgeCapture = await call(page, 'cad_capture_preview', { expectedVersion: accepted.version });
@@ -1401,9 +1462,12 @@ test('human Curve creation keeps name, plane and geometry atomic and uses the ex
   const accepted = await context(page); expect(accepted).toMatchObject({ featureCount: 1, workflowOpen: false });
   const features = await call(page, 'cad_read_features', { expectedVersion: accepted.version });
   if (!Array.isArray(features.items)) throw new Error('Missing Curve'); const curve = features.items[0] as CadFeature;
-  expect(curve).toMatchObject({ name: 'Mounting rail', kind: 'curve', plane: 'YZ', offset: 5, segments: [{ kind: 'line', start: [0, 0], end: [20, 0] }, { kind: 'arc', radius: 10, sweep: 180 }] });
+  expect(curve).toMatchObject({ name: 'Mounting rail', kind: 'curve', plane: 'YZ', offset: '5', segments: [{ kind: 'line', start: [0, 0], end: [20, 0] }, { kind: 'arc', radius: 10, sweep: 180 }] });
+  expect(await call(page, 'cad_measure_curve', { expectedVersion: accepted.version, curveId: curve.id }))
+    .toMatchObject({ plane: 'YZ', offsetMm: 5, startWorldMm: [5, 0, 0], endWorldMm: [5, 20, 20], lengthMm: expect.closeTo(20 + 10 * Math.PI, 8) });
   await page.getByRole('button', { name: 'Undo', exact: true }).click(); expect(await context(page)).toMatchObject({ featureCount: 0 });
   await page.getByRole('button', { name: 'Redo', exact: true }).click(); const redone = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: redone.version, featureId: curve.id })).feature).toEqual(curve);
   await call(page, 'cad_save_document', { expectedVersion: redone.version });
   const downloadPromise = page.waitForEvent('download'); await call(page, 'cad_export_curve_dxf', { expectedVersion: redone.version, curveId: curve.id });
   const path = await (await downloadPromise).path(); if (!path) throw new Error('Missing Curve download');
@@ -1428,6 +1492,7 @@ test('human mixed path drawing retains invalid points and commits one exact undo
   for (let index = 0; index < 4; index++) await canvas.press('ArrowUp');
   await canvas.press('Space');
   expect(await context(page)).toMatchObject({ workflowOpen: true, version: blank.version });
+  expect(await call(page, 'cad_read_features', { expectedVersion: blank.version })).toMatchObject({ items: [{ profiles: [] }] });
   expect(await rawCall(page, 'cad_edit_document', { expectedVersion: blank.version,
     edits: [{ kind: 'rename-document', name: 'Interrupted path' }] }))
     .toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
@@ -1453,6 +1518,8 @@ test('human mixed path drawing retains invalid points and commits one exact undo
   expect(await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id }))
     .toMatchObject({ feature: { profiles: [] } });
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
@@ -1477,23 +1544,40 @@ test('human sketch drawing and dimensions share undo and active-workflow protect
   expect(current).toMatchObject({ workflowOpen: true });
   expect(await rawCall(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'rename-document', name: 'Interrupt drawing' }] })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
   await canvas.click({ position: { x: box.width * 0.6, y: box.height * 0.35 } });
+  const drawn = await context(page);
+  const drawnFeatures = await call(page, 'cad_read_features', { expectedVersion: drawn.version });
+  if (!Array.isArray(drawnFeatures.items)) throw new Error('Missing drawn sketch');
+  const freeSketch = drawnFeatures.items[0] as CadSketchFeature;
+  expect(freeSketch.profiles).toHaveLength(1);
+  expect(freeSketch.profiles[0].constraints).toBeUndefined();
+  const freeGeometry = freeSketch.profiles[0].geometry;
+  if (freeGeometry.kind !== 'rectangle' || typeof freeGeometry.height !== 'number') throw new Error('Expected a free rectangle with numeric drawing geometry');
+  await expect(page.getByRole('button', { name: 'Edit Width', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Dimension quantity', exact: true }).selectOption('width');
   await page.getByLabel('Dimension value', { exact: true }).fill('53');
+  expect(await context(page)).toMatchObject({ version: drawn.version, workflowOpen: true });
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: drawn.version, edits: [{ kind: 'rename-document', name: 'Interrupt dimension' }] }))
+    .toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   current = await context(page);
   expect(current).toMatchObject({ workflowOpen: false });
   const features = await call(page, 'cad_read_features', { expectedVersion: current.version });
   expect(features).toMatchObject({ items: [{ kind: 'sketch', profiles: [{ geometry: { kind: 'rectangle', width: 53 }, constraints: [{ kind: 'dimension', quantity: 'width' }] }] }] });
+  await expect(page.getByRole('button', { name: 'Edit Width', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   current = await context(page);
   const undone = await call(page, 'cad_read_features', { expectedVersion: current.version });
-  expect(undone).not.toMatchObject({ items: [{ profiles: [{ geometry: { width: 53 } }] }] });
+  expect(undone.items).toEqual([freeSketch]);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  current = await context(page);
+  expect((await call(page, 'cad_read_features', { expectedVersion: current.version })).items).toEqual(features.items);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   const padded = await context(page);
   await expect.poll(() => context(page), { timeout: 60_000 }).toMatchObject({ version: padded.version, buildState: 'ready', buildVersion: padded.version, diagnostics: [], workflowOpen: false });
+  expect(await call(page, 'cad_build', { expectedVersion: padded.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(53 * freeGeometry.height * 10, 7) }] });
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ dirty: false, savedVersion: expect.any(String) });
 });

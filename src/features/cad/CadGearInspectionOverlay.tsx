@@ -4,8 +4,8 @@ import { resolveConfiguredCadGear, resolveGeneratedCadGear } from '@/domain/cad/
 import { CadPathSegmentGeometry } from './CadPathDraftGeometry';
 
 /** Show the same numeric geometry as the profile, without changing its parameters. */
-export function CadGearInspectionOverlay({ profile, parameters, inputName, span }: {
-  profile: CadPluginProfile; parameters: Readonly<Record<string, number>>; inputName: string; span: number;
+export function CadGearInspectionOverlay({ profile, parameters, inputName, span, viewCenter = [0, 0] }: {
+  profile: CadPluginProfile; parameters: Readonly<Record<string, number>>; inputName: string; span: number; viewCenter?: readonly [number, number];
 }) {
   const model = useMemo(() => {
     if (profile.package.generator.kind !== 'builtin' || !['wireedm.spur-gear.v2', 'wireedm.spur-gear.v3'].includes(profile.package.generator.implementation)) return null;
@@ -31,10 +31,11 @@ export function CadGearInspectionOverlay({ profile, parameters, inputName, span 
   const segments = rootOnly ? gear.segments.slice(0, gear.rootSteps)
     : tooth ? gear.segments.slice(0, 2 * (gear.rootSteps + gear.flankSteps) + 1) : [];
   const placement = ['x', 'y', 'angle'].includes(inputName);
-  return <g className="cad-gear-inspection" data-cad-gear-inspection={inputName} role="img" aria-label={`Geometry affected by ${inputName}`} pointerEvents="none" strokeWidth={span / 320}>
-    {circles.map(([label, diameter]) => typeof diameter === 'number' && <circle key={label} aria-label={String(label)} cx={v.x} cy={v.y} r={diameter / 2} strokeDasharray={`${span / 70} ${span / 140}`} />)}
-    {segments.map((segment, index) => <CadPathSegmentGeometry key={index} segment={segment} />)}
-    {['tolerance', 'qualityMode', 'effectiveTolerance'].includes(inputName) && segments.filter(segment => segment.kind === 'line').map((segment, index) => segment.kind === 'line' && <circle key={`sample-${index}`} cx={segment.start[0]} cy={segment.start[1]} r={span / 230} className="cad-gear-inspection-sample" />)}
-    {placement && <g transform={`translate(${v.x},${v.y}) rotate(${v.angle})`}><path d={`M ${-span / 50} 0 H ${v.tipDiameter / 2} M 0 ${-span / 50} V ${span / 50}`} /><circle r={span / 100} /></g>}
+  const origin = [v.x, v.y] as const;
+  return <g className="cad-gear-inspection" transform={`translate(${v.x - viewCenter[0]},${v.y - viewCenter[1]})`} data-cad-gear-inspection={inputName} role="img" aria-label={`Geometry affected by ${inputName}`} pointerEvents="none" strokeWidth={span / 320}>
+    {circles.map(([label, diameter]) => typeof diameter === 'number' && <circle key={label} aria-label={String(label)} cx={0} cy={0} r={diameter / 2} strokeDasharray={`${span / 70} ${span / 140}`} />)}
+    {segments.map((segment, index) => <CadPathSegmentGeometry key={index} segment={segment} origin={origin} />)}
+    {['tolerance', 'qualityMode', 'effectiveTolerance'].includes(inputName) && segments.filter(segment => segment.kind === 'line').map((segment, index) => segment.kind === 'line' && <circle key={`sample-${index}`} cx={segment.start[0] - v.x} cy={segment.start[1] - v.y} r={span / 230} className="cad-gear-inspection-sample" />)}
+    {placement && <g transform={`rotate(${v.angle})`}><path d={`M ${-span / 50} 0 H ${v.tipDiameter / 2} M 0 ${-span / 50} V ${span / 50}`} /><circle r={span / 100} /></g>}
   </g>;
 }

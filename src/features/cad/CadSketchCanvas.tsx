@@ -1,16 +1,14 @@
-import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CloseIcon, ConfirmIcon, FitViewIcon, GridIcon, SnapIcon, UndoIcon } from '@/components/icons';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ConfirmIcon, GridIcon, SnapIcon, FitViewIcon, UndoIcon, CloseIcon } from '@/components/icons';
 import { CadContextHelp } from './CadContextHelp';
 import { CadViewTools } from './CadCommandDock';
 import type { CadCurveFeature, CadPathSegment, CadProfile, CadSketchFeature, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { resolveCadCurveGeometry } from '@/domain/cad/cadCurve';
-import { evaluateCadScalar } from '@/domain/cad/cadExpression';
-import { cadProfileToEntities, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
 import { captureSvgPreview } from '@/features/editor/captureEditorPreview';
 import { ToolError } from '@/features/webmcp/siteTools';
 import type { CadRenderedViewControls, CadRenderedViewState } from './cadViewportControls';
 import { closeSketchPolygon, snapSketchPathPoint, snapSketchPoint, twoPointSketchProfile, type SketchPoint, type SketchTool } from './cadSketchInteraction';
-import { cadClosedBoundarySvgPath } from './cadSketchSvg';
+import { CadSketchProfileGeometry } from './CadSketchProfileGeometry';
 import { createCadSketchProfilePicker } from './cadSketchPicking';
 import { cadPathDraftEndpoint, closeCadPathDraft, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, updateCadPathDraft, type CadPathDrawingAction } from './cadPathDrawing';
 import { CadPathDraftGeometry, CadPathSegmentGeometry } from './CadPathDraftGeometry';
@@ -19,35 +17,6 @@ import { CadGearInspectionOverlay } from './CadGearInspectionOverlay';
 import { CadSketchDimensionControls, type CadSketchDimensionControlsProps } from './CadSketchDimensionControls';
 import { readCadFitArea, type CadFitAreaReader } from './cadFitArea';
 import { translateCadSketchProfile } from '@/domain/cad/cadSketchConstraints';
-
-function ProfileGeometry({ geometry, parameters }: { geometry: CadProfile; parameters: Readonly<Record<string, number>> }) {
-  const value = (scalar: number | string) => evaluateCadScalar(scalar, parameters);
-  switch (geometry.kind) {
-    case 'rectangle': return <rect x={value(geometry.x)} y={value(geometry.y)} width={value(geometry.width)} height={value(geometry.height)} rx={value(geometry.cornerRadius)} />;
-    case 'circle': return <circle cx={value(geometry.x)} cy={value(geometry.y)} r={value(geometry.radius)} />;
-    case 'polygon': return <polygon points={geometry.points.map(([x, y]) => `${value(x)},${value(y)}`).join(' ')} />;
-    case 'plugin':
-    case 'path': {
-      const entities = cadProfileToEntities(resolveCadProfile(geometry, parameters));
-      const circle = entities.length === 1 && entities[0].type === 'circle' ? entities[0] : null;
-      if (circle) return <circle cx={circle.center.x} cy={circle.center.y} r={circle.radius} />;
-      const boundary = entities.map(entity => {
-        if (entity.type === 'polyline' || entity.type === 'lwpolyline') throw new Error('CAD boundaries require analytic entities.');
-        return entity;
-      });
-      return <path d={cadClosedBoundarySvgPath(boundary)} strokeLinejoin="round" />;
-    }
-    case 'slot': {
-      const x = value(geometry.x), y = value(geometry.y), length = value(geometry.length), width = value(geometry.width);
-      return <rect x={x - length / 2} y={y - width / 2} width={length} height={width} rx={width / 2} transform={`rotate(${value(geometry.angle)} ${x} ${y})`} />;
-    }
-  }
-}
-
-const SafeProfile = memo(function SafeProfile({ profile, parameters }: { profile: CadSketchProfile; parameters: Readonly<Record<string, number>> }) {
-  try { return ProfileGeometry({ geometry: profile.geometry, parameters }); }
-  catch { return null; }
-});
 
 const NO_PROFILES: readonly CadSketchProfile[] = Object.freeze([]);
 export interface CadSketchContextMenuRequest {
@@ -343,7 +312,7 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
     return { x: Math.max(125, Math.min(viewportSize.width - 125, x)), y: Math.max(60, Math.min(viewportSize.height - 220, y)) };
   }, [dimensionBounds, viewportSize, center, width, span]);
   return <div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}>
-    <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role="application" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio="none"
+    <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role="application" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio="none"
       onContextMenu={(event) => event.preventDefault()}
       onPointerDown={(event) => {
         if (profileDrag.current) return;
@@ -445,25 +414,25 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
           if (point && rect?.height) onSelectProfile(profilePicker.pick(point, span / rect.height));
         } else placePoint(getPoint(event));
       }}>
-      <defs><pattern id="cad-sketch-grid" width={gridStep} height={gridStep} patternUnits="userSpaceOnUse"><path d={`M ${gridStep} 0 H 0 V ${gridStep}`} fill="none" stroke="#29373f" strokeWidth={span / 1000} /></pattern></defs>
-      {grid && span / gridStep < 2000 && <rect x={center[0] - width / 2} y={-center[1] - span / 2} width={width} height={span} fill="url(#cad-sketch-grid)" />}
-      <path d={`M ${center[0] - width / 2} 0 H ${center[0] + width / 2}`} className="cad-axis-x" strokeWidth={span / 700} />
-      <path d={`M 0 ${-center[1] - span / 2} V ${-center[1] + span / 2}`} className="cad-axis-y" strokeWidth={span / 700} />
+      <defs><pattern id="cad-sketch-grid" x={-center[0] % gridStep} y={center[1] % gridStep} width={gridStep} height={gridStep} patternUnits="userSpaceOnUse"><path d={`M ${gridStep} 0 H 0 V ${gridStep}`} fill="none" stroke="#29373f" strokeWidth={span / 1000} /></pattern></defs>
+      {grid && span / gridStep < 2000 && <rect x={-width / 2} y={-span / 2} width={width} height={span} fill="url(#cad-sketch-grid)" />}
+      {Math.abs(center[1]) <= span / 2 && <path d={`M ${-width / 2} ${center[1]} H ${width / 2}`} className="cad-axis-x" strokeWidth={span / 700} />}
+      {Math.abs(center[0]) <= width / 2 && <path d={`M ${-center[0]} ${-span / 2} V ${span / 2}`} className="cad-axis-y" strokeWidth={span / 700} />}
       <g transform="scale(1,-1)" strokeWidth={span / 450}>
-        {savedCurve && <g className="cad-profile is-selected"><CadPathDraftGeometry segments={savedCurve.segments} preview={false} /></g>}
-        {profiles.map((profile) => <g key={profile.id} role="button" aria-label={`Select ${profile.name} profile`} aria-pressed={profile.id === selectedProfileId} transform={dragPreview?.profile.id === profile.id ? `translate(${dragPreview.translation[0]} ${dragPreview.translation[1]})` : undefined} tabIndex={tool === 'select' && !interactionLocked ? 0 : -1} data-cad-parameter-highlight={inspection?.profileIds.includes(profile.id) ? profile.id : undefined} className={`cad-profile ${profile.construction ? 'is-construction' : ''} ${profile.id === selectedProfileId ? 'is-selected' : ''} ${inspection?.profileIds.includes(profile.id) ? 'is-parameter-highlighted' : ''}`} strokeDasharray={profile.construction ? `${span / 80} ${span / 120}` : undefined} onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && tool === 'select' && !interactionLocked) { event.preventDefault(); event.stopPropagation(); onSelectProfile(profile.id); } }} onClick={(event) => { if (event.detail === 0 && event.button === 0 && tool === 'select' && !interactionLocked) { event.stopPropagation(); onSelectProfile(profile.id); } }}><SafeProfile profile={profile} parameters={parameters} /></g>)}
-        {inspection?.gear && inspectedGear?.geometry.kind === 'plugin' && <CadGearInspectionOverlay profile={inspectedGear.geometry} parameters={parameters} inputName={inspection.gear.inputName} span={span} />}
-        {preview && <g className="cad-profile cad-profile-preview"><ProfileGeometry geometry={preview} parameters={parameters} /></g>}
-        {tool === 'polygon' && points.length > 0 && <polyline className="cad-profile cad-profile-preview" points={[...points, cursor].map(([x, y]) => `${x},${y}`).join(' ')} />}
+        {savedCurve && <g className="cad-profile is-selected"><CadPathDraftGeometry segments={savedCurve.segments} preview={false} viewCenter={center} /></g>}
+        {profiles.map((profile) => <g key={profile.id} role="button" aria-label={`Select ${profile.name} profile`} aria-pressed={profile.id === selectedProfileId} transform={dragPreview?.profile.id === profile.id ? `translate(${dragPreview.translation[0]} ${dragPreview.translation[1]})` : undefined} tabIndex={tool === 'select' && !interactionLocked ? 0 : -1} data-cad-parameter-highlight={inspection?.profileIds.includes(profile.id) ? profile.id : undefined} className={`cad-profile ${profile.construction ? 'is-construction' : ''} ${profile.id === selectedProfileId ? 'is-selected' : ''} ${inspection?.profileIds.includes(profile.id) ? 'is-parameter-highlighted' : ''}`} strokeDasharray={profile.construction ? `${span / 80} ${span / 120}` : undefined} onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && tool === 'select' && !interactionLocked) { event.preventDefault(); event.stopPropagation(); onSelectProfile(profile.id); } }} onClick={(event) => { if (event.detail === 0 && event.button === 0 && tool === 'select' && !interactionLocked) { event.stopPropagation(); onSelectProfile(profile.id); } }}><CadSketchProfileGeometry geometry={profile.geometry} parameters={parameters} viewCenter={center} /></g>)}
+        {inspection?.gear && inspectedGear?.geometry.kind === 'plugin' && <CadGearInspectionOverlay profile={inspectedGear.geometry} parameters={parameters} inputName={inspection.gear.inputName} span={span} viewCenter={center} />}
+        {preview && <g className="cad-profile cad-profile-preview"><CadSketchProfileGeometry geometry={preview} parameters={parameters} viewCenter={center} /></g>}
+        {tool === 'polygon' && points.length > 0 && <polyline className="cad-profile cad-profile-preview" points={[...points, cursor].map(([x, y]) => `${x - center[0]},${y - center[1]}`).join(' ')} />}
         {tool === 'path' && pathDraft.kind !== 'idle' && <>
-          <CadPathDraftGeometry segments={pathDraft.segments} />
-          {(pathPreview.kind === 'line' || pathPreview.kind === 'arc') && <g className="cad-profile cad-profile-preview"><CadPathSegmentGeometry segment={pathPreview.segment} /></g>}
-          {pathDraft.kind === 'arc-through' && pathPreview.kind === 'invalid' && <polyline className="cad-path-invalid" points={[pathPreview.start, pathPreview.through, pathPreview.end].map(([x, y]) => `${x},${y}`).join(' ')} />}
-          <circle cx={pathDraft.start[0]} cy={pathDraft.start[1]} r={span / 170} className="cad-sketch-vertex" />
-          {pathDraft.kind === 'arc-through' && <circle cx={pathDraft.end[0]} cy={pathDraft.end[1]} r={span / 170} className="cad-sketch-vertex" />}
+          <CadPathDraftGeometry segments={pathDraft.segments} viewCenter={center} />
+          {(pathPreview.kind === 'line' || pathPreview.kind === 'arc') && <g className="cad-profile cad-profile-preview"><CadPathSegmentGeometry segment={pathPreview.segment} origin={center} /></g>}
+          {pathDraft.kind === 'arc-through' && pathPreview.kind === 'invalid' && <polyline className="cad-path-invalid" points={[pathPreview.start, pathPreview.through, pathPreview.end].map(([x, y]) => `${x - center[0]},${y - center[1]}`).join(' ')} />}
+          <circle cx={pathDraft.start[0] - center[0]} cy={pathDraft.start[1] - center[1]} r={span / 170} className="cad-sketch-vertex" />
+          {pathDraft.kind === 'arc-through' && <circle cx={pathDraft.end[0] - center[0]} cy={pathDraft.end[1] - center[1]} r={span / 170} className="cad-sketch-vertex" />}
         </>}
-        {points.map(([x, y], index) => <circle key={index} cx={x} cy={y} r={span / 170} className="cad-sketch-vertex" />)}
-        {tool !== 'select' && <g className="cad-crosshair"><path d={`M ${cursor[0] - span / 70} ${cursor[1]} h ${span / 35} M ${cursor[0]} ${cursor[1] - span / 70} v ${span / 35}`} /></g>}
+        {points.map(([x, y], index) => <circle key={index} cx={x - center[0]} cy={y - center[1]} r={span / 170} className="cad-sketch-vertex" />)}
+        {tool !== 'select' && <g className="cad-crosshair"><path d={`M ${cursor[0] - center[0] - span / 70} ${cursor[1] - center[1]} h ${span / 35} M ${cursor[0] - center[0]} ${cursor[1] - center[1] - span / 70} v ${span / 35}`} /></g>}
       </g>
     </svg>
     {dimensionControls && sketch.kind === 'sketch' && dimensionProfile && dimensionAnchor && tool === 'select' && !previewProfile && <CadSketchDimensionControls {...dimensionControls} interactionLocked={dimensionControls.interactionLocked || dragPreview !== null} sketch={sketch} profile={dimensionProfile} parameters={parameters} anchor={dimensionAnchor} project={point => ({ x: (point[0] - center[0]) / width * viewportSize.width + viewportSize.width / 2, y: (center[1] - point[1]) / span * viewportSize.height + viewportSize.height / 2 })} cancelSignal={cancelSignal} />}

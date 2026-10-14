@@ -6,6 +6,7 @@ import { createCadDocument } from '@/domain/cad/cadSchema';
 import * as sketchGeometry from '@/domain/cad/cadSketchGeometry';
 import { CadSession } from './cadSession';
 import { CadSketchCanvas } from './CadSketchCanvas';
+import type { CadRenderedViewControls } from './cadViewportControls';
 
 let root: Root; let container: HTMLDivElement;
 beforeEach(() => {
@@ -18,6 +19,7 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 async function fixture(overrides: Partial<ComponentProps<typeof CadSketchCanvas>> = {}) {
+  let controls: CadRenderedViewControls | null = null;
   const sketch: CadSketchFeature = overrides.sketch?.kind === 'sketch' ? overrides.sketch : { id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [] };
   const session = new CadSession({ ...createCadDocument(), features: [sketch] });
   const added = vi.fn((geometry: CadProfile) => session.edit([{ kind: 'update-feature', feature: {
@@ -25,14 +27,15 @@ async function fixture(overrides: Partial<ComponentProps<typeof CadSketchCanvas>
   } }]));
   const pending = vi.fn((open: boolean) => session.setWorkflowOpen(open)); const error = vi.fn();
   let props: ComponentProps<typeof CadSketchCanvas> = { sketch, parameters: {}, tool: 'path', selectedProfileId: null,
-    onSelectProfile: vi.fn(), onAddProfile: added, onPendingChange: pending, onError: error, cancelSignal: 0, ...overrides };
+    onSelectProfile: vi.fn(), onAddProfile: added, onPendingChange: pending, onError: error, cancelSignal: 0, onControlsReady: value => { controls = value; }, ...overrides };
   async function render(next: Partial<typeof props> = {}) { props = { ...props, ...next }; await act(async () => root.render(<CadSketchCanvas {...props} />)); }
   await render();
   const svg = container.querySelector<SVGSVGElement>('svg.cad-sketch-canvas')!;
   Object.assign(svg, { getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) });
   function position(x: number, y: number) {
     const box = svg.getAttribute('viewBox')!.split(' ').map(Number);
-    return { clientX: (x - box[0]) / box[2] * 800, clientY: (-y - box[1]) / box[3] * 600 };
+    const state = controls?.getState(); if (!state || state.mode === 'solid') throw new Error('Sketch frame missing');
+    return { clientX: (x - state.centerMm[0] - box[0]) / box[2] * 800, clientY: (state.centerMm[1] - y - box[1]) / box[3] * 600 };
   }
   async function point(x: number, y: number, type = 'click') { await act(async () => svg.dispatchEvent(new MouseEvent(type, { ...position(x, y), button: 0, bubbles: true, detail: 1 }))); }
   async function key(key: string, init: KeyboardEventInit = {}) {

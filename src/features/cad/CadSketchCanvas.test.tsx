@@ -45,7 +45,9 @@ describe('sketch preview capture layout', () => {
     await act(async () => root.render(<CadSketchCanvas sketch={feature} parameters={{}} placementLabel="Mount" tool="select" selectedProfileId={null}
       onSelectProfile={vi.fn()} onAddProfile={vi.fn()} onPendingChange={vi.fn()} onError={vi.fn()} cancelSignal={0} onControlsReady={value => { controls = value; }} />));
     expect(container.querySelector('.cad-plane-label')?.textContent).toBe('Mount');
-    expect(container.querySelector('.cad-profile line')?.getAttribute('x1')).toBe('2');
+    expect(container.querySelector('.cad-profile line')?.getAttribute('x1')).toBe('0');
+    expect(container.querySelector('.cad-profile line')?.getAttribute('x2')).toBe('10');
+    expect(container.querySelector('[data-cad-path-segments]')?.getAttribute('transform')).toBe('translate(-5,0)');
     const state = currentControls().getState(); expect(state).toMatchObject({ mode: 'curve', plane: feature.plane, centerMm: [7, 3] });
     if (state.mode === 'solid') throw new Error('Curve view unavailable'); expect(Object.isFrozen(state.plane)).toBe(true);
     rasterize.mockResolvedValue(image); await expect(currentControls().capture(new AbortController().signal)).resolves.toBe(image);
