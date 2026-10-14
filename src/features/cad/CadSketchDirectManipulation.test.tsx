@@ -6,6 +6,7 @@ import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadSketchCanvas } from './CadSketchCanvas';
 import { CadSession } from './cadSession';
 import { CAD_STAR_PLUGIN, createCadPluginProfile } from '@/domain/cad/plugins/cadPlugins';
+import type { CadRenderedViewControls } from './cadViewportControls';
 
 let root: Root, container: HTMLDivElement;
 beforeEach(() => {
@@ -19,6 +20,7 @@ afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMo
 
 const rectangle = { kind: 'rectangle', x: 0, y: 0, width: 'size', height: 10, cornerRadius: 0 } satisfies CadProfile;
 async function harness(geometry: CadProfile = rectangle, overrides: Partial<ComponentProps<typeof CadSketchCanvas>> = {}) {
+  let controls: CadRenderedViewControls | null = null;
   const session = new CadSession(parseCadDocument({ ...createCadDocument('Move', 'move'), parameters: { size: 20 }, features: [{
     id: 'sketch', name: 'Sketch', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
     profiles: [{ id: 'profile', name: 'Profile', construction: false, geometry, ...(geometry.kind === 'rectangle' ? { constraints: [{ id: 'height', kind: 'dimension', quantity: 'height' }] } : {}) }]
@@ -35,7 +37,7 @@ async function harness(geometry: CadProfile = rectangle, overrides: Partial<Comp
     if (sketch.kind !== 'sketch') throw new Error('Sketch fixture missing.');
     return <CadSketchCanvas sketch={sketch} parameters={state.document.parameters} documentVersion={state.version} tool="select" selectedProfileId="profile"
       onSelectProfile={selected} onAddProfile={added} onPendingChange={pending} onError={error} cancelSignal={0}
-      viewLocked={state.workflowOpen} onContextMenu={menu} onTranslateProfile={translated} {...props} />;
+      viewLocked={state.workflowOpen} onContextMenu={menu} onTranslateProfile={translated} onControlsReady={value => { controls = value; }} {...props} />;
   }
   const render = async (next: Partial<ComponentProps<typeof CadSketchCanvas>> = {}) => { props = { ...props, ...next }; await act(async () => root.render(<Harness />)); };
   await render();
@@ -48,8 +50,10 @@ async function harness(geometry: CadProfile = rectangle, overrides: Partial<Comp
   const position = (x: number, y: number) => {
     const box = svg.getAttribute('viewBox'); if (!box) throw new Error('Canvas view missing.');
     const [minX, minY, width, height] = box.split(' ').map(Number);
-    return { clientX: 10 + (x - minX) / width * 800, clientY: 20 + (-y - minY) / height * 600 };
+    const state = controls?.getState(); if (!state || state.mode === 'solid') throw new Error('Sketch frame missing');
+    return { clientX: 10 + (x - state.centerMm[0] - minX) / width * 800, clientY: 20 + (state.centerMm[1] - y - minY) / height * 600 };
   };
+  const frame = () => { if (!controls) throw new Error('Sketch frame missing'); return JSON.stringify(controls.getState()); };
   const pointer = async (type: string, point: readonly [number, number], init: MouseEventInit = {}, pointerId = 11) => {
     const event = new MouseEvent(type, { button: 0, buttons: type === 'pointerup' ? 0 : 1, bubbles: true, cancelable: true, ...position(...point), ...init });
     Object.defineProperties(event, { pointerId: { value: pointerId }, isPrimary: { value: true } });
@@ -60,7 +64,7 @@ async function harness(geometry: CadProfile = rectangle, overrides: Partial<Comp
     return sketch.profiles[0];
   };
   const click = async (point: readonly [number, number]) => act(async () => svg.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1, button: 0, ...position(...point) })));
-  return { svg, session, translated, pending, selected, error, added, menu, render, position, pointer, click, capture, release, profile };
+  return { svg, session, translated, pending, selected, error, added, menu, render, position, pointer, click, capture, release, profile, frame };
 }
 
 describe('direct sketch contour manipulation', () => {
@@ -224,11 +228,11 @@ describe('direct sketch contour manipulation', () => {
   });
 
   it('retains stationary right-click menus and right-drag panning on the selected contour', async () => {
-    const h = await harness(), initial = h.session.getSnapshot(), view = h.svg.getAttribute('viewBox');
+    const h = await harness(), initial = h.session.getSnapshot(), view = h.frame();
     await h.pointer('pointerdown', [4, 3], { button: 2, buttons: 2 }); await h.pointer('pointerup', [4, 3], { button: 2, buttons: 0 });
     expect(h.menu).toHaveBeenCalledOnce(); expect(h.menu.mock.calls[0][0]).toMatchObject({ profileId: 'profile', trigger: 'pointer' });
     await h.pointer('pointerdown', [4, 3], { button: 2, buttons: 2 }); await h.pointer('pointermove', [9, 3], { button: 2, buttons: 2 }); await h.pointer('pointerup', [9, 3], { button: 2, buttons: 0 });
-    expect(h.svg.getAttribute('viewBox')).not.toBe(view); expect(h.menu).toHaveBeenCalledOnce();
+    expect(h.frame()).not.toBe(view); expect(h.menu).toHaveBeenCalledOnce();
     expect(h.translated).not.toHaveBeenCalled(); expect(h.session.getSnapshot()).toEqual(initial);
   });
 
