@@ -32,7 +32,7 @@ export interface CadViewportContextMenuRequest {
 
 export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersion = null, selectedId, onSelect, onControlsReady, interactionLocked = false,
   navigationLocked = interactionLocked, navigationMode = 'mouse', onContextMenu, pickMode = 'body', topologySelection = null, onPickMode, onTopologyPick, pickingEnabled = true, getFitArea,
-  selectedReferencePlane = null, onSelectPlane, planePickingOnly = false, sourceReferencePickIds = NO_SOURCE_PICK_IDS, regionSelection = null, depthControl = null }: {
+  selectedReferencePlane = null, onSelectPlane, planePickingOnly = false, sourceReferencePickIds = NO_SOURCE_PICK_IDS, regionSelection = null, depthControl = null, busyInputLocked = false }: {
   meshes: readonly CadMesh[];
   references?: readonly CadViewportReference[];
   referenceVersion?: string | null;
@@ -45,6 +45,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
   sourceReferencePickIds?: readonly string[];
   regionSelection?: CadFeatureRegionPickCommand | null;
   depthControl?: CadExtrudeDepthControl | null;
+  /** Storage/capture locks input while unchanged idle visuals stay installed. */
+  busyInputLocked?: boolean;
   onControlsReady?(controls: CadRenderedViewControls | null, released?: CadRenderedViewControls): void;
   interactionLocked?: boolean;
   navigationLocked?: boolean;
@@ -73,12 +75,14 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
   const sourceInteraction = ownedRegions?.sketchId ?? sourceReferenceIds;
   const meshInteraction = ownedRegions?.cells ?? meshes;
   const referenceVersionInteraction = ownedRegions?.expectedVersion ?? referenceVersion;
-  const data = useRef({ meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, navigationLocked, navigationMode, onContextMenu, pickingEnabled, getFitArea, selectedReferencePlane, onSelectPlane, planePickingOnly, sourceReferenceIds, regionSelection: ownedRegions, depthControl: ownedDepth });
-  data.current = { meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, navigationLocked, navigationMode, onContextMenu, pickingEnabled, getFitArea, selectedReferencePlane, onSelectPlane, planePickingOnly, sourceReferenceIds, regionSelection: ownedRegions, depthControl: ownedDepth };
+  const data = useRef({ meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, navigationLocked, navigationMode, onContextMenu, pickingEnabled, getFitArea, selectedReferencePlane, onSelectPlane, planePickingOnly, sourceReferenceIds, regionSelection: ownedRegions, depthControl: ownedDepth, busyInputLocked });
+  data.current = { meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, navigationLocked, navigationMode, onContextMenu, pickingEnabled, getFitArea, selectedReferencePlane, onSelectPlane, planePickingOnly, sourceReferenceIds, regionSelection: ownedRegions, depthControl: ownedDepth, busyInputLocked };
   const redraw = useRef<(() => void) | null>(null);
   const recolor = useRef<(() => void) | null>(null);
   const highlight = useRef<(() => void) | null>(null);
-  const cancelInteraction = useRef<((preserveDepth?: boolean) => void) | null>(null);
+  const cancelInteraction = useRef<((preserveDepth?: boolean, preserveHover?: boolean) => void) | null>(null);
+  const preserveIdleHover = useRef(false);
+  const interactionOwner = useRef<{ scene: readonly unknown[]; busy: boolean } | null>(null);
   const cancelDepth = useRef<(() => void) | null>(null);
   const uploadedMeshes = useRef<readonly CadMesh[] | null>(null);
   const uploadedReferences = useRef<readonly CadViewportReference[] | null>(null);
@@ -117,7 +121,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       next.screenSpacePanning = true;
       next.minZoom = Math.min(0.01, camera.zoom);
       next.maxZoom = 10000;
-      next.enabled = !data.current.navigationLocked;
+      next.enabled = !data.current.navigationLocked && !data.current.busyInputLocked;
       return next;
     };
     let controls = createOrbitControls();
@@ -209,17 +213,22 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         updateReferenceStyles(); updatePlaneLabels(); renderer.render(scene, camera); frame = null;
       });
     };
+    let renderedWidth = 0, renderedHeight = 0;
     const resize = () => {
       const width = Math.max(1, container.clientWidth);
       const height = Math.max(1, container.clientHeight);
-      const halfHeight = 85;
-      camera.left = -halfHeight * width / height;
-      camera.right = halfHeight * width / height;
-      camera.top = halfHeight;
-      camera.bottom = -halfHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
-      highlights.resize(width, height);
+      if (width !== renderedWidth || height !== renderedHeight) {
+        renderedWidth = width; renderedHeight = height;
+        const halfHeight = 85;
+        camera.left = -halfHeight * width / height;
+        camera.right = halfHeight * width / height;
+        camera.top = halfHeight;
+        camera.bottom = -halfHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+        highlights.resize(width, height);
+        viewState.revision++;
+      }
       render();
     };
     // A reference-only scene and its first solid have separate initial frames.
@@ -407,7 +416,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     const setRegionHover = (ray: THREE.Ray | null) => { if (regions.hover(ray)) { viewState.revision++; render(); } };
     const updateRegionSelection = () => { if (regions.update(data.current.regionSelection)) { viewState.revision++; render(); } };
     const updateDepthSelection = () => {
-      depth.update(data.current.depthControl);
+      depth.update(data.current.depthControl, data.current.busyInputLocked);
       if (data.current.depthControl) { if (!depth.group.parent) scene.add(depth.group); }
       else scene.remove(depth.group);
       depth.setView(camera, container.clientWidth, container.clientHeight); updateDepthLabel();
@@ -450,6 +459,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       return hit ? installedReferences.get(hit.object.userData.referenceId)?.reference ?? null : null;
     };
     const pointerDown = (event: PointerEvent) => {
+      if (data.current.busyInputLocked) return;
       pendingHover = null; setHover(null); setFeatureHover(null); setRegionHover(null);
       if (data.current.interactionLocked && data.current.navigationLocked) return;
       activePointers.add(event.pointerId);
@@ -462,7 +472,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     // editor-owned gesture takes navigation and pointer capture away from them.
     const depthPointerDown = (event: PointerEvent) => {
       if (depthPointer !== null) { event.preventDefault(); event.stopImmediatePropagation(); return; }
-      if (!data.current.depthControl || data.current.navigationLocked || renderer.getContext().isContextLost() || event.button !== 0 || event.isPrimary === false) return;
+      if (!data.current.depthControl || data.current.busyInputLocked || data.current.navigationLocked || renderer.getContext().isContextLost() || event.button !== 0 || event.isPrimary === false) return;
       depth.setView(camera, container.clientWidth, container.clientHeight); setRay(event);
       depthPointer = event.pointerId;
       if (!depth.begin(event.pointerId, raycaster.ray, localPixel(event))) { depthPointer = null; return; }
@@ -483,13 +493,15 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       event.preventDefault(); event.stopImmediatePropagation();
     };
     const pointerMove = (event: PointerEvent) => {
+      if (data.current.busyInputLocked) return;
       if (down && down.pointerId === event.pointerId && Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) down.moved = true;
       if (down || event.buttons || data.current.interactionLocked && !data.current.depthControl || !data.current.pickingEnabled && data.current.pickMode !== 'body') { setHover(null); setFeatureHover(null); return; }
       pendingHover = event; render();
     };
-    const cancelPointerInteraction = (preserveDepth = false) => {
+    const cancelPointerInteraction = (preserveDepth = false, preserveHover = false) => {
       if (!preserveDepth) depth.cancel();
-      pendingHover = null; down = null; setHover(null); setFeatureHover(null); setRegionHover(null);
+      pendingHover = null; down = null;
+      if (!preserveHover) { setHover(null); setFeatureHover(null); setRegionHover(null); }
       if (!activePointers.size) return;
       const cancelled = [...activePointers]; activePointers.clear();
       // Disconnect clears OrbitControls' active pointers and document drag
@@ -500,11 +512,12 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         catch { /* Capture may already have been lost or cancelled by the browser. */ }
       }
     };
-    const cancelAllPointers = () => cancelPointerInteraction();
-    const pointerLeave = () => { if (depthPointer !== null && renderer.domElement.hasPointerCapture?.(depthPointer)) return; cancelPointerInteraction(); depth.hover(null); };
+    const cancelAllPointers = () => cancelPointerInteraction(false, data.current.busyInputLocked && preserveIdleHover.current);
+    const pointerLeave = () => { if (depthPointer !== null && renderer.domElement.hasPointerCapture?.(depthPointer)) return; cancelAllPointers(); depth.hover(null); };
     const pointerCancel = (event: PointerEvent) => { if (activePointers.has(event.pointerId) || depthPointer === event.pointerId) cancelPointerInteraction(); };
     const lostPointerCapture = (event: PointerEvent) => { if (activePointers.has(event.pointerId) || depthPointer === event.pointerId) cancelPointerInteraction(); };
     const pointerUp = (event: PointerEvent) => {
+      if (data.current.busyInputLocked) return;
       const tracked = activePointers.delete(event.pointerId);
       // OrbitControls also listens on document. A foreign pointer release must
       // not terminate or reinterpret its active mouse/pen navigation gesture.
@@ -558,7 +571,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         target: selection && pick ? { kind: 'topology', hit: { bodyId: selection.bodyId, pick } } : visibleFeature ? { kind: 'feature', featureId: selected } : null });
     };
     const wheelNavigation = (event: WheelEvent) => {
-      if (depthPointer !== null || data.current.navigationLocked || renderer.getContext().isContextLost()) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+      if (depthPointer !== null || data.current.busyInputLocked || data.current.navigationLocked || renderer.getContext().isContextLost()) { event.preventDefault(); event.stopImmediatePropagation(); return; }
       // Ctrl-wheel is the browser's synthesized pinch gesture. OrbitControls
       // already normalizes it and prevents browser zoom on this canvas only.
       if (data.current.navigationMode !== 'trackpad' || event.ctrlKey) return;
@@ -637,7 +650,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     updateDepth.current = updateDepthSelection;
     recolor.current = updateSelection;
     highlight.current = () => {
-      if (data.current.interactionLocked || !data.current.pickingEnabled || viewState.hoveredTopology?.pick.kind !== data.current.pickMode) viewState.hoveredTopology = null;
+      if (data.current.interactionLocked && !preserveIdleHover.current || !data.current.pickingEnabled || viewState.hoveredTopology?.pick.kind !== data.current.pickMode) viewState.hoveredTopology = null;
       updateHighlights();
     };
     cancelInteraction.current = cancelPointerInteraction;
@@ -743,16 +756,23 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
   useEffect(() => { if (uploadedMeshes.current !== meshes) redraw.current?.(); }, [meshes]);
   useLayoutEffect(() => { uploadReferences.current?.(); }, [references, referenceVersion]);
   useLayoutEffect(() => { updateRegions.current?.(); }, [ownedRegions]);
-  useLayoutEffect(() => { updateDepth.current?.(); }, [ownedDepth]);
+  useLayoutEffect(() => { updateDepth.current?.(); }, [ownedDepth, busyInputLocked]);
   useEffect(() => { recolor.current?.(); }, [selectedId, selectedReferencePlane, sourceReferenceIds, pickMode, planePickingOnly]);
   useEffect(() => { highlight.current?.(); }, [topologySelection, pickMode, meshes, pickingEnabled, interactionLocked]);
   useLayoutEffect(() => {
-    cancelInteraction.current?.(Boolean(ownedDepth) && !navigationLocked);
-    if (orbit.current) orbit.current.enabled = !navigationLocked && !ownedDepth?.getState()?.gestureActive;
+    const scene = [meshInteraction, referenceInteraction, referenceVersionInteraction, sourceInteraction, selectedId, selectedReferencePlane,
+      pickMode, topologySelection, pickingEnabled, planePickingOnly, ownedRegions?.owner, ownedRegions?.expectedVersion, ownedRegions?.sketchId,
+      ownedRegions?.cells, regionPlacementKey, ownedDepth];
+    const previous = interactionOwner.current;
+    preserveIdleHover.current = Boolean((busyInputLocked || previous?.busy) && previous?.scene.every((value, index) => Object.is(value, scene[index])));
+    interactionOwner.current = { scene, busy: busyInputLocked };
+    cancelInteraction.current?.(Boolean(ownedDepth) && !navigationLocked && !busyInputLocked, preserveIdleHover.current);
+    if (orbit.current) orbit.current.enabled = !navigationLocked && !busyInputLocked && !ownedDepth?.getState()?.gestureActive;
     const canvas = host.current?.querySelector('canvas');
     if (canvas) canvas.tabIndex = navigationLocked && interactionLocked ? -1 : 0;
   }, [interactionLocked, navigationLocked, navigationMode, pickMode, meshInteraction, referenceInteraction, referenceVersionInteraction, pickingEnabled, sourceInteraction,
-    ownedRegions?.owner, ownedRegions?.expectedVersion, ownedRegions?.sketchId, ownedRegions?.cells, regionPlacementKey]);
+    ownedRegions?.owner, ownedRegions?.expectedVersion, ownedRegions?.sketchId, ownedRegions?.cells, regionPlacementKey,
+    busyInputLocked, ownedDepth, selectedId, selectedReferencePlane, topologySelection, planePickingOnly]);
   useLayoutEffect(() => { cancelDepth.current?.(); }, [navigationLocked, navigationMode]);
   return <div className="cad-viewport">
     <div className="cad-webgl" ref={host} aria-label="3D model viewport" />

@@ -8,6 +8,10 @@ import { CadViewport } from './CadViewport';
 import type { CadRenderedViewControls } from './cadViewportControls';
 import { prepareCadCurveReferences } from './cadCurveRendering';
 import { CAD_PRINCIPAL_PLANE_REFERENCES, prepareCadViewportReferences, type CadViewportReference } from './cadViewportReferences';
+import { createCadDocument } from '@/domain/cad/cadSchema';
+import { CadSession } from './cadSession';
+import { createCadWorkbenchViewportControls, type CadViewportBindings } from './cadWorkbenchViewport';
+import { cadViewportMetadataToken } from './cadViewportToolReplies';
 
 interface MockRenderer {
   readonly domElement: HTMLCanvasElement;
@@ -61,6 +65,42 @@ async function flushFrame() {
   });
 }
 async function loseContext() { await act(async () => { renderer().lost = true; renderer().domElement.dispatchEvent(new Event('webglcontextlost')); }); }
+
+it('keeps a settled ordinary viewport revision stable through repeated real-Orbit capture without owned depth or areas', async () => {
+  await mount(); await flushFrame();
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const before = currentControls().getState();
+    await act(async () => { await currentControls().capture(new AbortController().signal); });
+    expect(currentControls().getState()).toEqual(before);
+  }
+});
+
+it('publishes actual viewport resizing once, keeps same-size notifications quiet, and rejects capture/token identity after a real midcapture resize', async () => {
+  let resized: ResizeObserverCallback | undefined;
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: ResizeObserverCallback) { resized = callback; } observe() {} disconnect() {} });
+  const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
+  const notify = () => resized?.([], {} as ResizeObserver);
+  await mount(); await flushFrame();
+  const session = new CadSession(createCadDocument('Rendered part', 'rendered_part')), snapshot = session.getSnapshot();
+  const bindings: CadViewportBindings = {
+    document: snapshot.document, documentVersion: snapshot.version, dirty: false, selectedFeatureId: null, selectedProfileId: null,
+    selectedReferencePlane: null, awaitingSketchPlane: false, sketchId: null, curveId: null, workflowOpen: false, busy: false,
+    buildVersion: snapshot.version, buildId: 'build', buildState: 'ready', visibleBodyIds: [], visibleReferenceIds: [], visibleReferencePlanes: [],
+    pickMode: 'body', topologySelection: null, meshes: [mesh], rendered: currentControls(),
+    selectFeature: vi.fn(), selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(),
+    selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: action => action()
+  };
+  const boundary = createCadWorkbenchViewportControls(() => bindings), before = boundary.getState(), token = cadViewportMetadataToken(session, before);
+  await act(async () => notify()); await flushFrame(); expect(boundary.getState()).toEqual(before);
+  await act(async () => { width.mockReturnValue(900); notify(); }); await flushFrame();
+  expect(boundary.getState().view?.revision).toBe((before.view?.revision ?? 0) + 1);
+  expect(cadViewportMetadataToken(session, boundary.getState())).not.toBe(token);
+  const afterResize = boundary.getState(); await act(async () => notify()); await flushFrame(); expect(boundary.getState()).toEqual(afterResize);
+  await act(async () => { await expect(boundary.capture(new AbortController().signal)).resolves.toMatchObject({ viewState: afterResize }); });
+  rasterize.mockImplementationOnce(() => { width.mockReturnValue(1000); notify(); return { dataUrl: 'data:image/png;base64,AA==', width: 900, height: 600, source: '3d' }; });
+  await act(async () => { await expect(boundary.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' }); });
+  expect(boundary.getState().view?.revision).toBe((afterResize.view?.revision ?? 0) + 1); expect(session.getSnapshot()).toEqual(snapshot);
+});
 
 it('fits 3D geometry within current unobscured pixels without reframing when an inspector changes', async () => {
   let area = { left: 0, top: 0, width: 350, height: 600 };

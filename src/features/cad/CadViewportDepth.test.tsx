@@ -14,6 +14,7 @@ import type { CadRenderedViewControls } from './cadViewportControls';
 import { prepareCadViewportReferences } from './cadViewportReferences';
 
 const rendered = vi.hoisted(() => ({ calls: vi.fn<(scene: THREE.Scene, camera: THREE.Camera) => void>(), canvases: [] as HTMLCanvasElement[], lost: false }));
+vi.mock('@/features/editor/captureEditorPreview', () => ({ captureCanvas: () => ({ dataUrl: 'data:image/png;base64,AA==', width: 800, height: 600, source: '3d' }) }));
 vi.mock('three', async original => {
   const module = await original<typeof import('three')>();
   return { ...module, WebGLRenderer: class {
@@ -168,4 +169,14 @@ it('renders a truthful endpoint label/revision and restores ordinary navigation 
   await act(async () => h.canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 }))); await flushFrame();
   expect(h.camera.zoom).toBeGreaterThan(zoom); expect(body[0].material).toBe(material);
   expect(material).toMatchObject({ opacity: 1, transparent: false, depthWrite: true });
+});
+
+it('keeps a settled visible idle depth handle stable across captures while retaining exact source ownership', async () => {
+  const h = await harness();
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const before = view!.getState();
+    await act(async () => { await view!.capture(new AbortController().signal); });
+    expect(view!.getState()).toEqual(before);
+  }
+  expect(h.control().getState()?.gestureActive).toBe(false); expect(h.session.getSnapshot()).toEqual(h.before);
 });

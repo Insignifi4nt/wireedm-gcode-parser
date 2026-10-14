@@ -21,6 +21,9 @@ const unitY = new THREE.Vector3(0, 1, 0);
 const tuple = (point: THREE.Vector3): CadNumericPoint3 => [point.x, point.y, point.z];
 const finiteRay = (ray: THREE.Ray) => [...ray.origin, ...ray.direction].every(Number.isFinite) && Math.abs(ray.direction.lengthSq() - 1) < 1e-10;
 const frameKey = (state: CadExtrudeDepthState) => `${state.model.sketchId}/${JSON.stringify(state.model.placement)}`;
+const sameState = (a: CadExtrudeDepthState | null | undefined, b: CadExtrudeDepthState | null | undefined) => a === b || Boolean(a && b
+  && a.model === b.model && a.definitionKey === b.definitionKey && a.gestureActive === b.gestureActive
+  && a.capability.kind === b.capability.kind && (a.capability.kind !== 'locked' || b.capability.kind === 'locked' && a.capability.reason === b.capability.reason));
 function axisStation(ray: THREE.Ray, point: THREE.Vector3, normal: THREE.Vector3): number | null {
   if (!finiteRay(ray)) return null;
   const dot = normal.dot(ray.direction), denominator = 1 - dot * dot;
@@ -46,6 +49,7 @@ export function createCadExtrudeDepthHandle({ requestRender, onInteractionChange
   let control: CadExtrudeDepthControl | null = null, unsubscribe: (() => void) | null = null;
   let camera: THREE.OrthographicCamera | null = null, width = 0, height = 0, viewKey = '';
   let state: CadExtrudeDepthHandleState | null = null, hovered = false, disposed = false;
+  let inputLocked = false;
   let lastCurrent: CadExtrudeDepthState | null | undefined, renderedViewKey = '';
   let gesture: { pointerId: number; token: string; control: CadExtrudeDepthControl; anchor: CadNumericPoint2;
     frameKey: string; point: THREE.Vector3; normal: THREE.Vector3; station: number; quantity: number; factor: number; latest: number } | null = null;
@@ -58,11 +62,22 @@ export function createCadExtrudeDepthHandle({ requestRender, onInteractionChange
   };
   const refresh = () => {
     if (disposed) return false;
-    const current = control?.getState() ?? null;
+    const actual = control?.getState() ?? null;
+    // An input lock must not change an unchanged idle capture visual. Real
+    // model/owner loss and gesture cancellation continue through normally.
+    const current = inputLocked && actual && lastCurrent && !actual.gestureActive && !lastCurrent.gestureActive
+      && actual.model === lastCurrent.model && actual.definitionKey === lastCurrent.definitionKey ? lastCurrent : actual;
     if (gesture && (!current || gesture.control !== control || frameKey(current) !== gesture.frameKey)) { finish(true); return true; }
-    if (current === lastCurrent && viewKey === renderedViewKey && (state?.hovered ?? false) === hovered && (state?.active ?? false) === Boolean(gesture)) return false;
+    // Camera normalization may change its exact matrix during capture. With no
+    // helper visual, that cannot publish a new rendered-content revision.
+    if (!current && state === null) { lastCurrent = null; renderedViewKey = viewKey; return false; }
+    if (sameState(current, lastCurrent) && viewKey === renderedViewKey && (state?.hovered ?? false) === hovered && (state?.active ?? false) === Boolean(gesture)) return false;
+    // The viewport owns camera publications. Synchronize its exact projection
+    // without republishing from render/capture; editor and gesture changes own
+    // their own visual revisions, including removal of an existing handle.
+    const publish = !sameState(current, lastCurrent) || (state?.hovered ?? false) !== hovered || (state?.active ?? false) !== Boolean(gesture);
     lastCurrent = current; renderedViewKey = viewKey;
-    if (!current || !camera || !width || !height) { state = null; group.visible = false; requestRender(); return true; }
+    if (!current || !camera || !width || !height) { state = null; group.visible = false; if (publish) requestRender(); return true; }
     const model = current.model, bounds = model.materialBoundsMm;
     const anchor: CadNumericPoint2 = gesture?.anchor ?? [bounds.minX / 2 + bounds.maxX / 2, bounds.minY / 2 + bounds.maxY / 2];
     const normal = new THREE.Vector3(...model.normalWorld), distance = model.quantityMm;
@@ -87,7 +102,7 @@ export function createCadExtrudeDepthHandle({ requestRender, onInteractionChange
     guide.quaternion.setFromUnitVectors(unitY, normal); guide.scale.set(worldPerPixel, Math.abs(distance), worldPerPixel);
     guide.position.copy(normal).multiplyScalar(-distance / 2);
     material.color.setHex(capability.kind === 'locked' ? 0x8ea5af : hovered || gesture ? 0xa6440e : 0xb84f18);
-    group.updateMatrixWorld(true); requestRender(); return true;
+    group.updateMatrixWorld(true); if (publish) requestRender(); return true;
   };
   const hitTest = (point: CadDepthScreenPoint) => {
     if (!state?.visible || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
@@ -97,10 +112,12 @@ export function createCadExtrudeDepthHandle({ requestRender, onInteractionChange
   return {
     group,
     getState: () => state,
-    update(next: CadExtrudeDepthControl | null) {
+    update(next: CadExtrudeDepthControl | null, nextInputLocked = false) {
       if (disposed) return false;
+      if (nextInputLocked && !inputLocked) finish(true);
+      inputLocked = nextInputLocked;
       const changed = next !== control;
-      if (changed) { finish(true); unsubscribe?.(); control = next; unsubscribe = next?.subscribe(refresh) ?? null; hovered = false; }
+      if (changed) { finish(true); unsubscribe?.(); control = next; unsubscribe = next?.subscribe(refresh) ?? null; hovered = false; lastCurrent = undefined; }
       return refresh() || changed;
     },
     setView(next: THREE.OrthographicCamera, nextWidth: number, nextHeight: number) {
@@ -113,11 +130,12 @@ export function createCadExtrudeDepthHandle({ requestRender, onInteractionChange
     },
     hitTest,
     hover(point: CadDepthScreenPoint | null) {
+      if (inputLocked) return false;
       const next = Boolean(point && hitTest(point)); if (next === hovered || disposed) return false;
       hovered = next; refresh(); return true;
     },
     begin(pointerId: number, ray: THREE.Ray, point: CadDepthScreenPoint) {
-      if (disposed || gesture || !control || !hitTest(point) || state?.capability.kind !== 'editable') return false;
+      if (disposed || inputLocked || gesture || !control || !hitTest(point) || state?.capability.kind !== 'editable') return false;
       const current = control.getState(); if (!current) return false;
       const origin = new THREE.Vector3(...state.endpointMm), normal = new THREE.Vector3(...current.model.normalWorld);
       const station = axisStation(ray, origin, normal); if (station === null) return false;
@@ -128,7 +146,7 @@ export function createCadExtrudeDepthHandle({ requestRender, onInteractionChange
       onInteractionChange(true); refresh(); return true;
     },
     move(pointerId: number, ray: THREE.Ray) {
-      const saved = gesture; if (disposed || !saved || saved.pointerId !== pointerId) return false;
+      const saved = gesture; if (disposed || inputLocked || !saved || saved.pointerId !== pointerId) return false;
       const station = axisStation(ray, saved.point, saved.normal); if (station === null) return false;
       const quantity = saved.quantity + (station - saved.station) * saved.factor;
       if (!Number.isFinite(quantity)) return false;
