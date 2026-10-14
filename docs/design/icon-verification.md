@@ -1,5 +1,13 @@
 # Icon verification
 
+## Published CAD checkpoint reconciliation
+
+The current handoff targets `c36aa3b50a30f82ded3508652d9e7917c69b6b59`, with exact published inventory bytes preserved under `inventory/checkpoints/c36aa3b/`. The crosswalk now has 1,962 rows because two excluded text candidates were removed; all 282 direct icon occurrences, 206 variants and 155 renderer relations remain covered. Source hashes cover 452 production files. Thirty-four exact semantic expectations, both lead variants, 17 feature mappings and all 20 tool calls pass. The concrete [integration map](icon-integration-map.md) also supplies every referenced renderer parent.
+
+Final cross-family review corrected file-body slopes, Section View body consistency and redundant Boolean edges, and made numeric bounding-box evidence explicit. All 134 assets remain inside the viewBox at all six target sizes. The six focused asset/accessibility/catalog tests and actual-path geometry checks pass after these changes. See [icon-final-handoff.md](icon-final-handoff.md) for the final set and scope.
+
+The production TypeScript/Vite build passed after the final corrections, followed by 30 hosted documentation pages, checks across 95 static documentation files, and exact pinned STEP/CAD source-distribution verification. No further application code changed, so the earlier 716-test consumer result remains the broad UI checkpoint; focused asset/geometry checks verify the final glyph changes. Integration-map `--check` passes for all assets, 282 direct usages, eight slots, 206 variants and 95 parent contracts.
+
 ## Critical iteration after the first checkpoint
 
 Grouped review covers all 134 current IDs. The integrated pass revises 35 drawings or adds explicit semantic entries, checks actual contour inset and arrow clearance, and reviews all 244 current references. Its decisions and limitations are in [critical-iteration-checkpoint.md](critical-iteration-checkpoint.md). The first-checkpoint browser screenshots below predate this pass; current SVG inspection uses offline actual-size rendering because the CAD task owns the app servers.

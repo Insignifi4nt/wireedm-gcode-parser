@@ -10,6 +10,7 @@ const expectedIds = ['cam-editor', 'offset', 'lead-in', 'lead-out', 'toolpath', 
 assert.deepEqual(revisions.map(({ id }) => id), expectedIds, 'Only the 11 owned CAM v3 IDs are under review');
 const sourceById = new Map(iconSource.map(({ id, paths }) => [id, paths]));
 for (const { id, paths } of revisions) assert.deepEqual(sourceById.get(id), paths, `${id} source paths match the reviewed v3 geometry`);
+assert.equal(sourceById.get('section-view')[0], sourceById.get('body').join(''), 'Section view uses the exact closed body primitive');
 
 // Read the actual paths. Separate coordinate fixtures can pass after the SVG
 // has regressed, so all contour and clearance checks use production geometry.

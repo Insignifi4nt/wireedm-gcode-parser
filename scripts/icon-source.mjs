@@ -39,7 +39,7 @@ add('file-export','Generate controller file','files','M5 21V3h9l5 5v3M14 3v5h5M5
 add('file-inspect','Inspect file','files','M5 21V3h9l5 5v3M14 3v5h5M5 21h5M12 16a4 4 0 1 0 8 0a4 4 0 1 0-8 0ZM19 19l3 3',['FileSearch']);
 add('file-code','Controller program','files',sheet+'M10 12l-2 3 2 3M14 12l2 3-2 3',['FileCode','FileCode2']);
 add('file-json','Structured interchange','files',sheet+'M10 12H9v2l-1 1 1 1v2h1M14 12h1v2l1 1-1 1v2h-1',['FileJson2']);
-add('file-body','Solid model file','files','M5 21V3h9l5 5v3M14 3v5h5M5 21h5M11 15l5-2 5 2v5l-5 2-5-2ZM11 15l5 2 5-2M16 17v5',['FileBox']);
+add('file-body','Solid model file','files','M5 21V3h9l5 5v3M14 3v5h5M5 21h5M11 14.5l5-2.5 5 2.5v5l-5 2.5-5-2.5ZM11 14.5l5 2.5 5-2.5M16 17v5',['FileBox']);
 add('history','Revision history','files','M3 4v5h5M3 9a9 9 0 1 1 0 7M12 7v5l4 3',['History']);
 add('browser-cache','Browser cache','storage','M4 6c0-4 16-4 16 0s-16 4-16 0ZM4 6v6c0 4 16 4 16 0V6M4 12v6c0 4 16 4 16 0v-6',['Database']);
 add('folder-storage','Folder storage','storage','M3 21V4h6l3 3h9v14ZM3 10h18M6 17h8M18 17h.1',['HardDrive']);
@@ -85,7 +85,7 @@ add('departure','Depart from contour','cam','M5 3v18M8 12h13M16 7l5 5-5 5',['Arr
 add('turn','Turn direction','geometry','M5 3v10h15M15 8l5 5-5 5',['CornerDownRight']);
 add('trim','Trim geometry','geometry','M8 9l12 12M8 15L20 3'+circle(5,6,3)+circle(5,18,3),['Scissors']);
 add('scan','Inspect bounds','view','M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5M6 12h12',['Scan']);
-add('section-view','Section view','view',['M4 7l8-4 8 4v10l-8 4-8-4Z','M4 7l8 4 8-4M12 11v10','M6 9l4 2M6 12l4 2'],['ScanLine']);
+add('section-view','Section view','view',[body,'M6 11l4 2M6 14l4 2'],['ScanLine']);
 add('view','View orientation','view',box(4,4,16,16)+'M12 15V8M12 15l-4-3M12 15l5-2',['View']);
 add('view-top','Top view','view',box(5,5,14,14)+'M3 12h18M12 3v18');
 add('geometry','Planning geometry','cam','M3 20L9 6l6 14Z'+circle(16,9,5));
@@ -105,7 +105,7 @@ add('shell','Shell','cad','M3 4h5v12h8V4h5v17H3Z');
 add('revolve','Revolve','cad','M7 3H17V7H15V17H17V21H7V17H9V7H7ZM12 2v20M19 6c3 3 3 9 0 12M17 16l2 2 2-2');
 add('loft','Loft','cad','M12 3l4 2-4 2-4-2ZM12 14l8 4-8 4-8-4ZM16 5l4 13M12 7v15M8 5L4 18');
 add('sweep','Sweep','cad','M3 17C7 8 12 3 19 3L21 7C15 8 11 13 8 21Z');
-add('boolean','Boolean operation','cad',box(3,4,11,11)+box(10,9,11,11)+'M10 9h4v6h-4Z');
+add('boolean','Boolean operation','cad',box(3,4,11,11)+box(10,9,11,11));
 add('boolean-union','Boolean union','cad','M3 4h11v5h7v11H10v-5H3ZM17 3v4M15 5h4');
 add('boolean-subtract','Boolean subtract','cad','M3 4h11v5h-4v6h4v5H3ZM16 5h5');
 add('boolean-intersect','Boolean intersect','cad',box(10,9,4,6)+'M3 10V4h11M17 9h4v11H10');

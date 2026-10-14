@@ -48,8 +48,8 @@ export const camV3Revisions = [
   },
   {
     id: 'section-view',
-    paths: paths('M4 7l8-4 8 4v10l-8 4-8-4Z', 'M4 7l8 4 8-4M12 11v10', 'M6 9l4 2M6 12l4 2'),
-    reason: 'Use a wireframe model with a visible section plane and short cut-face hatch marks. This is an inspected cutaway, not a CAM handoff and not a scan/bounds rectangle.'
+    paths: paths('M4 8l8-4 8 4v9l-8 4-8-4ZM4 8l8 4 8-4M12 12v9', 'M6 11l4 2M6 14l4 2'),
+    reason: 'Final cross-family review aligns this cutaway to the exact shared closed body projection, with short cut-face hatch marks. It stays distinct from the CAM handoff and scan/bounds rectangle.'
   },
   {
     id: 'send-cam',

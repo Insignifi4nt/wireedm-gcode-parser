@@ -1,6 +1,6 @@
 # Wire EDM icon standard
 
-Status: implementation checkpoint complete; critical visual iteration continues at the user's request. No PR has been opened. Release integration will follow the reviewed CAD 0.0.697 base.
+Status: the 134-icon source set and critical cross-family review are ready for integration review against published CAD checkpoint `c36aa3b`. No PR has been opened. The [final handoff](icon-final-handoff.md) records the concrete assets, source-purpose mapping and remaining application integration work. Release integration follows the reviewed CAD 0.0.697 base.
 
 ## Target
 

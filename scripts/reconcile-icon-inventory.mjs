@@ -359,7 +359,7 @@ const semanticChecks = {
   targetedSemantics:{ expected:exactSemanticExpectations.length, mismatches:exactSemanticMismatches },
   dynamicLeadPair:{ expected:dynamicLeadExpectation.symbols, checkedSourceId:dynamicLeadExpectation.sourceId, current:dynamicLeadActuals, mismatches:dynamicLeadMismatches },
 };
-semanticChecks.complete = featureBindingRows.length === 17 && featureMismatches.length === 0 && toolButtonMismatches.length === 0 && variantParentMismatches.length === 0 && exactSemanticMismatches.length === 0 && dynamicLeadMismatches.length === 0;
+semanticChecks.complete = featureBindingRows.length === 17 && featureMismatches.length === 0 && semanticChecks.toolButtons.actual === semanticChecks.toolButtons.expected && toolButtonMismatches.length === 0 && variantParentMismatches.length === 0 && exactSemanticMismatches.length === 0 && dynamicLeadMismatches.length === 0;
 const completenessChecks = {
   markdownSupplied:Boolean(markdownPath),
   expandedVariants:{ expected:expectedExpanded, actual:expanded.length, matches:expectedExpanded === expanded.length },

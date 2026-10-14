@@ -207,7 +207,7 @@ export const iconCatalog = {
     "label": "Solid model file",
     "category": "files",
     "paths": [
-      "M5 21V3h9l5 5v3M14 3v5h5M5 21h5M11 15l5-2 5 2v5l-5 2-5-2ZM11 15l5 2 5-2M16 17v5"
+      "M5 21V3h9l5 5v3M14 3v5h5M5 21h5M11 14.5l5-2.5 5 2.5v5l-5 2.5-5-2.5ZM11 14.5l5 2.5 5-2.5M16 17v5"
     ]
   },
   "history": {
@@ -533,9 +533,8 @@ export const iconCatalog = {
     "label": "Section view",
     "category": "view",
     "paths": [
-      "M4 7l8-4 8 4v10l-8 4-8-4Z",
-      "M4 7l8 4 8-4M12 11v10",
-      "M6 9l4 2M6 12l4 2"
+      "M4 8l8-4 8 4v9l-8 4-8-4ZM4 8l8 4 8-4M12 12v9",
+      "M6 11l4 2M6 14l4 2"
     ]
   },
   "view": {
@@ -661,7 +660,7 @@ export const iconCatalog = {
     "label": "Boolean operation",
     "category": "cad",
     "paths": [
-      "M3 4h11v11h-11ZM10 9h11v11h-11ZM10 9h4v6h-4Z"
+      "M3 4h11v11h-11ZM10 9h11v11h-11Z"
     ]
   },
   "boolean-union": {

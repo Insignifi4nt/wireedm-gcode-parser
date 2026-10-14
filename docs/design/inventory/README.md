@@ -12,3 +12,5 @@ The crosswalk supplies original icon IDs and exclusion reasons for each applicab
 The local audit copy plus its Markdown can be supplied to `scripts/reconcile-icon-inventory.mjs` for a repeatable mapping audit. The Markdown is required because it records the expanded renderer variants and relations separately from the JSON source bindings.
 
 The CAD task later published its recoverable implementation checkpoint at `09795ec`. This is the eventual integration baseline; the exact original snapshot above remains unchanged as evidence. That task continues hardening independently and retains ownership of all app servers.
+
+The latest handoff uses published checkpoint [c36aa3b](checkpoints/c36aa3b/README.md). Its audit and Markdown were verified against their exact published Git blobs and preserved separately. `npm run icons:audit` now targets that checkpoint. The original snapshot in this directory is historical evidence and remains byte-identical.

@@ -20,6 +20,8 @@ Branch: `design/original-workbench-icons`. Starting commit: `c16a15e`. CAD refer
 
 ## Progress
 
+2026-10-14, final integration handoff: the concrete 134-icon set targets published CAD checkpoint `c36aa3b`. Its 1,962 inventory rows, 282 references, 206 expanded variants and 155 renderer relations reconcile with zero gaps. All eight dynamic slots and 95 referenced parent contracts are supplied in the integration map. Final review corrected three small projection/overdraw issues and numeric bounds serialization. Exact geometry, six icon tests and production build/docs/source-distribution checks pass. See `icon-final-handoff.md`. CAD source integration and publication remain outside this preparation checkpoint.
+
 2026-10-14, critical iteration checkpoint: all 134 IDs have explicit grouped review coverage, and all 244 current imported references have semantic review. Thirty-five drawings were revised or added. Closed contour, exact inset, interior clearance and lead symmetry checks pass. Root rejected proposals that reduced differentiation or crowded small glyphs. The updated catalog compares CAD, selection/pattern, CAM, machine/transport, document/storage, and view/input families. Review evidence and integration limits are in `critical-iteration-checkpoint.md`; PR publication remains held.
 
 2026-10-14, user-directed second design pass: PR creation is held while every family receives a critical geometric and semantic review. Lead placement, contour closure and consistency across related operations require further inspection. Earlier verification establishes implementation behavior, not final design acceptance.

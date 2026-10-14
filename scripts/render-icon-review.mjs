@@ -29,7 +29,7 @@ for (const entry of iconSource) {
     if (!ink) throw new Error(`Empty ${size}px rendering: ${entry.id}`);
     hashes.push({size,inkPixels:ink});
   }
-  results.push({id:entry.id,bounds,sizes:hashes});
+  results.push({id:entry.id,bounds:{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height},sizes:hashes});
 }
 function glyph(entry, size, x, y, color, opacity=1) {
   return `<g transform="translate(${x} ${y}) scale(${size/24})" fill="none" stroke="${color}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}">${entry.paths.map(d=>`<path d="${d}"/>`).join('')}</g>`;
