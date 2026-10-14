@@ -176,7 +176,10 @@ test('compact polygon properties retain multiple vertex edits and commit one sha
 test('graphics loss rejects blank captures and restores the same CAD draft automatically or by retry', async ({ page }) => {
   const { draft } = await createBox(page);
   await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'fit' } });
-  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: draft.version }));
+  const initialCapture = await captureCadPreview(page, draft.version);
+  expect(initialCapture).toMatchObject({ documentId: draft.documentId, draftVersion: draft.version, contentSource: 'cad-draft', source: '3d',
+    viewState: { documentVersion: draft.version, buildVersion: draft.version } });
+  await expectRenderedSolidCapture(page, initialCapture);
   const loseGraphics = () => page.locator('.cad-webgl canvas').evaluate(canvas => {
     const surface = canvas as HTMLCanvasElement & { restoreCadTestContext?: () => void };
     const extension = surface.getContext('webgl2')?.getExtension('WEBGL_lose_context');
