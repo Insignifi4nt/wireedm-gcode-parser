@@ -342,6 +342,8 @@ const exactSemanticExpectations = [
   ['use.040fa55fc9cc','help'],
   ['use.620dbb21888c','circle-center'], ['use.224e71e5aace','circle-center'],
   ['use.cbc57f4ad9fc','snap'],
+  ['use.e3f18103db30','select'], ['use.dd2dd9712e41','close'], ['use.b4f8886ae6a6','close'],
+  ['use.0d302f8f9511','confirm'], ['use.1de7a7ef0b1e','confirm'], ['use.21c4b349b376','confirm'],
 ];
 const exactSemanticMismatches = exactSemanticExpectations.flatMap(([sourceId,expected])=>{
   const actual = occurrenceById.get(sourceId)?.catalogId;

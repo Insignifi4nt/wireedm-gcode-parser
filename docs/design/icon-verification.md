@@ -2,11 +2,11 @@
 
 ## Integrated CAD branch and actual browser review
 
-The branch now includes published CAD head `25b3994` after merging the latest datum, initial Fit and gear-help repairs and the PR targets `feature/parametric-cad-workbench`. Latest CAD implementations were retained during conflict resolution. The current audit resolves all 282 published original usages, eight dynamic slots and 17 feature kinds; 297 current references include 15 additional semantic/text-symbol replacements. No Lucide imports, unresolved exports or semantic mismatches remain.
+The branch now includes published CAD head `6e2113f` after integrating closed-area selection and physical depth controls and the PR targets `feature/parametric-cad-workbench`. Latest CAD implementations were retained during conflict resolution. The current audit resolves all 286 published original usages, eight dynamic slots and 17 feature kinds; 301 current references include 15 additional semantic/text-symbol replacements. No Lucide imports, unresolved exports or semantic mismatches remain.
 
 Three Luna subagents reviewed the actual integrated browser app on the configured isolated Playwright origin. Their real sketch/Pad, feature-tree, menu, settings, controller-import, selected-state and dark/light catalog screenshots and decisions are linked in [actual-app-integration-review.md](actual-app-integration-review.md). Root verified the final catalog's live DOM metrics and filtering explanation. A diagnostic accessibility test covers the new feature-tree warning badge and its retained message.
 
-Node 24.22.0 passes all 104 UI/geometry files and 1,061 tests with two workers on the current checkpoint, including the parent-repaired datum assertion and new initial Sketch Fit/gear-help coordinate cases. All six icon tests, exact icon geometry, integration-map parity, release compatibility and production TypeScript/Vite/documentation/pinned-source checks pass. [Current verification summary](icon-review/actual-app/node24-25b3994-verification-summary.json) records the exact result. Earlier checkpoint summaries, including the previous stale-assertion failure, remain preserved.
+Node 24.22.0 passes all 115 UI/geometry files and 1,161 tests with two workers, including the latest region-selection, depth-control and prior datum/Fit/gear cases. Six icon tests, exact icon geometry, integration-map parity, release compatibility and production TypeScript/Vite/documentation/pinned-source checks pass. The new AST control-text guard compares 23 changed CAD files against the published checkpoint and rejects icon-name substitutions in labels. [Current verification summary](icon-review/actual-app/node24-6e2113f-verification-summary.json) records exact counts. Earlier checkpoint summaries remain historical evidence.
 
 ## Published CAD checkpoint reconciliation
 
@@ -59,3 +59,7 @@ The current `b0be1bc` inventory covers 455 production files / 422 parsed files a
 ## Datum, initial Fit and gear-help follow-up
 
 PR #13 includes parent checkpoint 25b3994 through merge commit 8829044. Luna independently confirmed the tree expansion commits before initial Sketch Fit; only its existing action glyphs and warning badge differ from the target. Gear-help diagrams, the datum test, gear-help coordinate tests and initial-Fit tests are byte-identical to the target. All 104 current UI/geometry files / 1,061 tests pass. The earlier parent failure is resolved by the imported parent fix, with no separate CAD implementation in the icon task.
+
+## Closed areas and physical depth controls
+
+PR #13 includes 6e2113f through merge 6ef095d. The committed inventory covers 464 production files / 429 parsed files and 1,982 crosswalk rows, with 286 direct usages, eight dynamic slots, 208 variants, 156 renderer relations and 96 supplied parent contracts. All 41 exact semantic expectations pass. New closed-area controls reuse Select, Confirm and Close glyphs. Mathematical/help drawings and physical depth head/stem/guide geometry remain outside icon replacement. Domain, depth interaction logic, rust palette, picking overlays and their styles match the target exactly. Luna found and restored 11 accidentally renamed X-axis labels, then checked all changed production TSX for further unintended text changes. The permanent icon control-text guard catches that regression class. No app server was started or changed.

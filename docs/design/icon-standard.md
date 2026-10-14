@@ -1,6 +1,6 @@
 # Wire EDM icon standard
 
-Status: the 134-icon set is integrated against CAD checkpoint `25b3994` and reviewed in the actual app by Luna subagents. The PR targets `feature/parametric-cad-workbench`. The [final handoff](icon-final-handoff.md) records the concrete assets, source-purpose mapping and validation. App release 0.0.698 follows CAD 0.0.697.
+Status: the 134-icon set is integrated against CAD checkpoint `6e2113f` and reviewed in the actual app by Luna subagents. The PR targets `feature/parametric-cad-workbench`. The [final handoff](icon-final-handoff.md) records the concrete assets, source-purpose mapping and validation. App release 0.0.698 follows CAD 0.0.697.
 
 ## Target
 
@@ -60,6 +60,6 @@ React or inline SVG carries the owning control's currentColor. An external SVG i
 
 ## Coverage and integration boundary
 
-[Final inventory crosswalk](final-inventory-crosswalk.md) accounts for the concurrent CAD handoff snapshot, including all 282 icon occurrences, 214 import bindings and 206 expanded renderer variants. Its newer CAD rows are explicit merge-forward mappings. Their implementation belongs to the CAD branch and was not copied into this checkout. [Current integration audit](current-integration-audit.json) reconciles the starting checkout's imported icon occurrences to its actual replacements.
+[Final inventory crosswalk](final-inventory-crosswalk.md) accounts for the concurrent CAD handoff snapshot, including all 286 icon occurrences, 214 import bindings and 208 expanded renderer variants. Its newer CAD rows are explicit merge-forward mappings. Their implementation belongs to the CAD branch and was not copied into this checkout. [Current integration audit](current-integration-audit.json) reconciles the starting checkout's imported icon occurrences to its actual replacements.
 
 Native browser controls, exact model geometry, scene helpers, coordinate notation, status text and the onboarding illustration have documented exclusions. The actual current text-icon controls are replaced as well. Original assets and the complete mapping can be reviewed independently of the later CAD merge.

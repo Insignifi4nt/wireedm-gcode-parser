@@ -1,6 +1,6 @@
 # Icon integration map
 
-Published CAD checkpoint: `25b3994af33d3a7f011651a42603f8dd898af597`. Complete set: 134 original glyphs, 282 direct usages, 8 dynamic slots, 206 expanded variants and 15 text controls. This is a concrete mapping for integration; the CAD implementation has not been copied into this worktree.
+Published CAD checkpoint: `6e2113fa0151ef7d0b378ad3de7635664b2fab82`. Complete set: 134 original glyphs, 286 direct usages, 8 dynamic slots, 208 expanded variants and 15 text controls. This is a concrete mapping for integration; the CAD implementation has not been copied into this worktree.
 
 The [JSON](icon-integration-map.json) includes semantic component exports, original path data, exact SVG SHA-256 digests, stable usage IDs, source-file hashes and owning control/call metadata. The [crosswalk](final-inventory-crosswalk.md) also accounts for excluded geometry, cursor, native and text channels.
 
@@ -26,7 +26,7 @@ These are renderer slots, not additional occurrences. Match each parent ID to ex
 | `use.560ea95b7eba` | src/components/ui/SlidingTabs.tsx | 51 | `{tab.icon}` | cam-editor, simulation | 0 |
 | `use.526981a64633` | src/features/cad/CadContextHelp.tsx | 71 | `{triggerContent ?? <Info size={12} aria-hidden="true" />}` | info, link, close, help | 0 |
 | `use.575772b2f782` | src/features/cad/CadFeatureTree.tsx | 197 | `<Icon size={14} />` | datum-plane, sketch, curve, imported-body, pad, pocket, revolve, loft, sweep, fillet, chamfer, shell, boolean, move-3d, linear-pattern, circular-pattern, mirror | 17 |
-| `use.ca1d7d33f3d0` | src/features/cad/CadWorkbench.tsx | 555 | `<Icon size={15} strokeWidth={1.5} />` | sketch, datum-plane, curve, add, select, rectangle, circle, slot, polyline, closed-path, measure, move, pad-pocket, revolve, loft, sweep, fillet, chamfer, shell, boolean, move-3d, mirror, linear-pattern, circular-pattern, pattern | 0 |
+| `use.ca1d7d33f3d0` | src/features/cad/CadWorkbench.tsx | 570 | `<Icon size={15} strokeWidth={1.5} />` | sketch, datum-plane, curve, add, select, rectangle, circle, slot, polyline, closed-path, measure, move, pad-pocket, revolve, loft, sweep, fillet, chamfer, shell, boolean, move-3d, mirror, linear-pattern, circular-pattern, pattern | 0 |
 | `use.1e307a885857` | src/features/editor/EditorProgramLinesPanel.tsx | 170 | `<ToggleIcon className="size-3 shrink-0" />` | expand-right, expand-down | 2 |
 | `use.29a204b4a6e6` | src/features/editor/EditorProgramLinesPanel.tsx | 198 | `<ToggleIcon className="size-3 shrink-0" />` | expand-right, expand-down | 2 |
 | `use.73945173632f` | src/features/editor/EditorWorkspacePanels.tsx | 306 | `<ExpandIcon aria-hidden="true" className="size-3.5" />` | panel-right-open | 1 |
@@ -113,11 +113,11 @@ These are renderer slots, not additional occurrences. Match each parent ID to ex
 
 | Stable usage ID | Snapshot line | Original symbol | Semantic replacement |
 | --- | --- | --- | --- |
-| `use.b50916bf515c` | 181 | `X` | `CloseIcon` |
-| `use.6a0d90150189` | 189 | `X` | `CloseIcon` |
-| `use.93740cde18a9` | 189 | `Check` | `ConfirmIcon` |
-| `use.0d09ad9a6e7d` | 251 | `X` | `CloseIcon` |
-| `use.725c3eba6ecf` | 251 | `Check` | `ConfirmIcon` |
+| `use.b50916bf515c` | 298 | `X` | `CloseIcon` |
+| `use.6a0d90150189` | 306 | `X` | `CloseIcon` |
+| `use.93740cde18a9` | 306 | `Check` | `ConfirmIcon` |
+| `use.0d09ad9a6e7d` | 368 | `X` | `CloseIcon` |
+| `use.725c3eba6ecf` | 368 | `Check` | `ConfirmIcon` |
 
 ### src/features/cad/CadFeatureTree.tsx
 
@@ -158,7 +158,7 @@ These are renderer slots, not additional occurrences. Match each parent ID to ex
 
 | Stable usage ID | Snapshot line | Original symbol | Semantic replacement |
 | --- | --- | --- | --- |
-| `use.3013b47df60f` | 80 | `MousePointer2` | `SelectIcon` |
+| `use.3013b47df60f` | 68 | `MousePointer2` | `SelectIcon` |
 
 ### src/features/cad/CadLoftSections.tsx
 
@@ -247,6 +247,13 @@ These are renderer slots, not additional occurrences. Match each parent ID to ex
 | `use.e2b460790ee8` | 124 | `X` | `CloseIcon` |
 | `use.9c0dc37794dc` | 134 | `Check` | `ConfirmIcon` |
 
+### src/features/cad/CadSketchRegionsField.tsx
+
+| Stable usage ID | Snapshot line | Original symbol | Semantic replacement |
+| --- | --- | --- | --- |
+| `use.e3f18103db30` | 54 | `MousePointer2` | `SelectIcon` |
+| `use.dd2dd9712e41` | 56 | `X` | `CloseIcon` |
+
 ### src/features/cad/CadTreeRename.tsx
 
 | Stable usage ID | Snapshot line | Original symbol | Semantic replacement |
@@ -258,61 +265,63 @@ These are renderer slots, not additional occurrences. Match each parent ID to ex
 
 | Stable usage ID | Snapshot line | Original symbol | Semantic replacement |
 | --- | --- | --- | --- |
-| `use.62591a390eb6` | 618 | `Box` | `ViewIcon` |
-| `use.fd11477e899b` | 624 | `Maximize2` | `FitViewIcon` |
-| `use.915c2834aa5d` | 625 | `Grid2X2` | `GridIcon` |
+| `use.62591a390eb6` | 766 | `Box` | `ViewIcon` |
+| `use.fd11477e899b` | 772 | `Maximize2` | `FitViewIcon` |
+| `use.915c2834aa5d` | 773 | `Grid2X2` | `GridIcon` |
 
 ### src/features/cad/CadWorkbench.tsx
 
 | Stable usage ID | Snapshot line | Original symbol | Semantic replacement |
 | --- | --- | --- | --- |
-| `use.ffbedae0ccd1` | 572 | `ArrowLeft` | `NavigateBackIcon` |
-| `use.c494ed73f649` | 577 | `ChevronDown` | `ExpandDownIcon` |
-| `use.24e503e16fcc` | 577 | `FilePlus2` | `FileNewIcon` |
-| `use.3261c4d9f21e` | 577 | `FolderOpen` | `FolderOpenIcon` |
-| `use.d52af307f1cf` | 577 | `FolderOpen` | `FolderOpenIcon` |
-| `use.3b585d03403a` | 577 | `Download` | `CameraCaptureIcon` |
-| `use.0cd36f04fccd` | 577 | `RotateCw` | `RefreshIcon` |
-| `use.818349233a7e` | 577 | `Download` | `DownloadIcon` |
-| `use.0a7050bd4261` | 577 | `Download` | `DownloadIcon` |
-| `use.3e2d9a7c3d4e` | 577 | `Download` | `DownloadIcon` |
-| `use.432a18f28d08` | 577 | `Download` | `DownloadIcon` |
-| `use.ece394eff765` | 577 | `Scissors` | `SectionCamIcon` |
-| `use.1368999d2fba` | 577 | `ArrowRight` | `SendCamIcon` |
-| `use.29a3dfe947d1` | 578 | `Undo2` | `UndoIcon` |
-| `use.160c8492030a` | 578 | `Redo2` | `RedoIcon` |
-| `use.1dcb0c279c21` | 579 | `Save` | `SaveIcon` |
-| `use.818660cf2e65` | 586 | `PencilRuler` | `SketchIcon` |
-| `use.c1c926964b90` | 586 | `Square` | `DatumPlaneIcon` |
-| `use.1ae3003246f1` | 586 | `Spline` | `CurveIcon` |
-| `use.1fef8cf86aba` | 587 | `Plus` | `AddIcon` |
-| `use.44dfce0d43cd` | 588 | `MousePointer2` | `SelectIcon` |
-| `use.25a39a36a1f2` | 588 | `Square` | `RectangleIcon` |
-| `use.922198d4907f` | 588 | `Circle` | `CircleIcon` |
-| `use.231452e8a1ee` | 588 | `Pill` | `SlotIcon` |
-| `use.23e14bc3b52c` | 588 | `Waypoints` | `PolylineIcon` |
-| `use.04dbc087560c` | 588 | `Spline` | `ClosedPathIcon` |
-| `use.676bcd56ca48` | 588 | `Ruler` | `MeasureIcon` |
-| `use.5df247ea8252` | 588 | `Move3D` | `MoveIcon` |
-| `use.d983619fea3c` | 588 | `Box` | `PadPocketIcon` |
-| `use.1347774db40e` | 588 | `RotateCw` | `RevolveIcon` |
-| `use.6c84f5504736` | 588 | `Layers` | `LoftIcon` |
-| `use.3ffd3b024538` | 588 | `Spline` | `SweepIcon` |
-| `use.48266e7a505c` | 588 | `Box` | `ShellIcon` |
-| `use.9ce98e0beeb3` | 588 | `Layers` | `BooleanIcon` |
-| `use.38a8ebd487f4` | 588 | `Move3D` | `Move3dIcon` |
-| `use.0b858cd3e4c0` | 588 | `Copy` | `MirrorIcon` |
-| `use.2af473557279` | 594 | `PencilRuler` | `SketchIcon` |
-| `use.8ffc473be209` | 595 | `Loader2` | `BusyIcon` |
-| `use.0d302f8f9511` | 599 | `Check` | `ConfirmIcon` |
-| `use.1de7a7ef0b1e` | 599 | `Check` | `ConfirmIcon` |
-| `use.3bae9f90a86c` | 599 | `ChevronDown` | `ExpandDownIcon` |
-| `use.5e016a2c9d0e` | 599 | `ChevronRight` | `ExpandRightIcon` |
-| `use.38385a11e472` | 599 | `Trash2` | `DeleteIcon` |
-| `use.45b56f5e6d35` | 601 | `Loader2` | `BusyIcon` |
-| `use.5745191fface` | 603 | `Spline` | `CurveIcon` |
-| `use.c0d304036f6d` | 603 | `PencilRuler` | `SketchIcon` |
-| `use.4ce2b07dee65` | 607 | `Trash2` | `DeleteIcon` |
+| `use.ffbedae0ccd1` | 587 | `ArrowLeft` | `NavigateBackIcon` |
+| `use.c494ed73f649` | 592 | `ChevronDown` | `ExpandDownIcon` |
+| `use.24e503e16fcc` | 592 | `FilePlus2` | `FileNewIcon` |
+| `use.3261c4d9f21e` | 592 | `FolderOpen` | `FolderOpenIcon` |
+| `use.d52af307f1cf` | 592 | `FolderOpen` | `FolderOpenIcon` |
+| `use.3b585d03403a` | 592 | `Download` | `CameraCaptureIcon` |
+| `use.0cd36f04fccd` | 592 | `RotateCw` | `RefreshIcon` |
+| `use.818349233a7e` | 592 | `Download` | `DownloadIcon` |
+| `use.0a7050bd4261` | 592 | `Download` | `DownloadIcon` |
+| `use.3e2d9a7c3d4e` | 592 | `Download` | `DownloadIcon` |
+| `use.432a18f28d08` | 592 | `Download` | `DownloadIcon` |
+| `use.ece394eff765` | 592 | `Scissors` | `SectionCamIcon` |
+| `use.1368999d2fba` | 592 | `ArrowRight` | `SendCamIcon` |
+| `use.29a3dfe947d1` | 593 | `Undo2` | `UndoIcon` |
+| `use.160c8492030a` | 593 | `Redo2` | `RedoIcon` |
+| `use.1dcb0c279c21` | 594 | `Save` | `SaveIcon` |
+| `use.818660cf2e65` | 601 | `PencilRuler` | `SketchIcon` |
+| `use.c1c926964b90` | 601 | `Square` | `DatumPlaneIcon` |
+| `use.1ae3003246f1` | 601 | `Spline` | `CurveIcon` |
+| `use.1fef8cf86aba` | 602 | `Plus` | `AddIcon` |
+| `use.44dfce0d43cd` | 603 | `MousePointer2` | `SelectIcon` |
+| `use.25a39a36a1f2` | 603 | `Square` | `RectangleIcon` |
+| `use.922198d4907f` | 603 | `Circle` | `CircleIcon` |
+| `use.231452e8a1ee` | 603 | `Pill` | `SlotIcon` |
+| `use.23e14bc3b52c` | 603 | `Waypoints` | `PolylineIcon` |
+| `use.04dbc087560c` | 603 | `Spline` | `ClosedPathIcon` |
+| `use.676bcd56ca48` | 603 | `Ruler` | `MeasureIcon` |
+| `use.5df247ea8252` | 603 | `Move3D` | `MoveIcon` |
+| `use.d983619fea3c` | 603 | `Box` | `PadPocketIcon` |
+| `use.1347774db40e` | 603 | `RotateCw` | `RevolveIcon` |
+| `use.6c84f5504736` | 603 | `Layers` | `LoftIcon` |
+| `use.3ffd3b024538` | 603 | `Spline` | `SweepIcon` |
+| `use.48266e7a505c` | 603 | `Box` | `ShellIcon` |
+| `use.9ce98e0beeb3` | 603 | `Layers` | `BooleanIcon` |
+| `use.38a8ebd487f4` | 603 | `Move3D` | `Move3dIcon` |
+| `use.0b858cd3e4c0` | 603 | `Copy` | `MirrorIcon` |
+| `use.2af473557279` | 609 | `PencilRuler` | `SketchIcon` |
+| `use.8ffc473be209` | 610 | `Loader2` | `BusyIcon` |
+| `use.0d302f8f9511` | 614 | `Check` | `ConfirmIcon` |
+| `use.b4f8886ae6a6` | 614 | `X` | `CloseIcon` |
+| `use.1de7a7ef0b1e` | 614 | `Check` | `ConfirmIcon` |
+| `use.21c4b349b376` | 614 | `Check` | `ConfirmIcon` |
+| `use.3bae9f90a86c` | 614 | `ChevronDown` | `ExpandDownIcon` |
+| `use.5e016a2c9d0e` | 614 | `ChevronRight` | `ExpandRightIcon` |
+| `use.38385a11e472` | 614 | `Trash2` | `DeleteIcon` |
+| `use.45b56f5e6d35` | 617 | `Loader2` | `BusyIcon` |
+| `use.5745191fface` | 619 | `Spline` | `CurveIcon` |
+| `use.c0d304036f6d` | 619 | `PencilRuler` | `SketchIcon` |
+| `use.4ce2b07dee65` | 623 | `Trash2` | `DeleteIcon` |
 
 ### src/features/dashboard/DxfImportConfirmationDialog.tsx
 
@@ -537,7 +546,7 @@ These are renderer slots, not additional occurrences. Match each parent ID to ex
 
 ## Expanded-variant parent contracts
 
-All 95 referenced parents are present in the JSON. This includes shared controls that are not themselves standalone icon occurrences. Preserve those controls and their checks; use the child variant to choose the glyph.
+All 96 referenced parents are present in the JSON. This includes shared controls that are not themselves standalone icon occurrences. Preserve those controls and their checks; use the child variant to choose the glyph.
 
 | Stable parent ID | Channel | File | Child variants |
 | --- | --- | --- | ---: |
@@ -575,6 +584,7 @@ All 95 referenced parents are present in the JSON. This includes shared controls
 | `use.dc44e5d9d93d` | sharedGraphicCalls | src/features/cad/CadSketchProfilePanel.tsx | 2 |
 | `use.68e773dda172` | sharedGraphicCalls | src/features/cad/CadSketchProfilePanel.tsx | 2 |
 | `use.582faecabec1` | sharedGraphicCalls | src/features/cad/CadSketchProfilePanel.tsx | 2 |
+| `use.1445e87a3bb0` | sharedGraphicCalls | src/features/cad/CadSketchRegionsField.tsx | 2 |
 | `use.24e336dbfaa5` | sharedGraphicCalls | src/features/cad/CadTopologyInspector.tsx | 2 |
 | `use.9ab8cd2122e2` | sharedGraphicCalls | src/features/cad/CadTopologyInspector.tsx | 2 |
 | `use.6bd78965b8fe` | sharedGraphicCalls | src/features/cad/CadTopologyInspector.tsx | 2 |

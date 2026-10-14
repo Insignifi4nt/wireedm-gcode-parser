@@ -6,10 +6,10 @@
   "type": "module",
   "scripts": {
     "icons:generate": "node scripts/generate-icons.mjs",
-    "icons:check": "node scripts/generate-icons.mjs --check && node scripts/audit-icon-current-integration.mjs --check && npm run icons:geometry && vitest --run src/components/icons",
+    "icons:check": "node scripts/generate-icons.mjs --check && node scripts/audit-icon-current-integration.mjs --check && node scripts/check-icon-control-text.mjs --self-test && node scripts/check-icon-control-text.mjs && npm run icons:geometry && vitest --run src/components/icons",
     "icons:geometry": "node scripts/icon-revisions/check-cam-v3-geometry.mjs --check",
     "icons:integration": "node scripts/build-icon-integration-map.mjs",
-    "icons:audit": "node scripts/audit-icon-current-integration.mjs && node scripts/reconcile-icon-inventory.mjs --inventory docs/design/inventory/checkpoints/25b3994/icon-inventory.audit.json --markdown docs/design/inventory/checkpoints/25b3994/icon-inventory.md",
+    "icons:audit": "node scripts/audit-icon-current-integration.mjs && node scripts/reconcile-icon-inventory.mjs --inventory docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json --markdown docs/design/inventory/checkpoints/6e2113f/icon-inventory.md",
     "icons:review": "node scripts/render-icon-review.mjs && node scripts/audit-icon-review-coverage.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
