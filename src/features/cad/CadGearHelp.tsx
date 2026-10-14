@@ -29,14 +29,15 @@ const help: Readonly<Record<string, readonly [string, string?]>> = {
   angle: ['Rotation turns the complete profile about its centre in the sketch plane. It changes tooth orientation without changing tooth dimensions.'],
 };
 const display = (value: number | undefined) => Number.isFinite(value) && value !== undefined ? String(Number(value.toFixed(6))) : 'Unavailable';
-function pathOf(segments: readonly ResolvedCadPathSegment[]): string {
+/** Translate resolved geometry before SVG serializes its coordinates. */
+function pathOf(segments: readonly ResolvedCadPathSegment[], origin: readonly [number, number]): string {
   const first = segments[0];
   if (!first) return '';
   const start = first.kind === 'line' ? first.start : [first.center[0] + first.radius * Math.cos(first.startAngle * Math.PI / 180), first.center[1] + first.radius * Math.sin(first.startAngle * Math.PI / 180)];
-  return `M ${start[0]} ${start[1]} ` + segments.map(segment => {
-    if (segment.kind === 'line') return `L ${segment.end[0]} ${segment.end[1]}`;
+  return `M ${start[0] - origin[0]} ${start[1] - origin[1]} ` + segments.map(segment => {
+    if (segment.kind === 'line') return `L ${segment.end[0] - origin[0]} ${segment.end[1] - origin[1]}`;
     const end = (segment.startAngle + segment.sweep) * Math.PI / 180;
-    return `A ${segment.radius} ${segment.radius} 0 ${Math.abs(segment.sweep) > 180 ? 1 : 0} ${segment.sweep > 0 ? 1 : 0} ${segment.center[0] + segment.radius * Math.cos(end)} ${segment.center[1] + segment.radius * Math.sin(end)}`;
+    return `A ${segment.radius} ${segment.radius} 0 ${Math.abs(segment.sweep) > 180 ? 1 : 0} ${segment.sweep > 0 ? 1 : 0} ${segment.center[0] - origin[0] + segment.radius * Math.cos(end)} ${segment.center[1] - origin[1] + segment.radius * Math.sin(end)}`;
   }).join(' ');
 }
 
@@ -64,9 +65,10 @@ export function CadGearHelp({ name, values, profile, label, unit = '' }: {
   const radiusName = ['pressureAngle', 'baseDiameter'].includes(name) ? 'Base circle' : ['rootDiameter', 'profileShift', 'effectiveShift', 'shiftMode'].includes(name) ? 'Root circle' : name === 'tipDiameter' || name === 'tipThickness' ? 'Outside circle' : 'Pitch circle';
   const radius = gear && (radiusName === 'Base circle' ? gear.baseDiameter : radiusName === 'Root circle' ? gear.rootDiameter : radiusName === 'Outside circle' ? gear.tipDiameter : gear.pitchDiameter) / 2;
   const rootTerm = ['cutterTipRadius', 'effectiveCutterTipRadius', 'cutterTipMode'].includes(name);
-  const highlighted = resolved?.kind === 'generated' && rootTerm ? pathOf(resolved.geometry.segments.slice(0, resolved.geometry.rootSteps)) : '';
+  const origin = [values.x, values.y] as const;
+  const highlighted = resolved?.kind === 'generated' && rootTerm ? pathOf(resolved.geometry.segments.slice(0, resolved.geometry.rootSteps), origin) : '';
   const tooth = resolved?.kind === 'generated' && rootTerm ? resolved.geometry.segments.slice(0, 2 * (resolved.geometry.rootSteps + resolved.geometry.flankSteps) + 1) : [];
-  const toothPoints = tooth.flatMap(segment => segment.kind === 'line' ? [segment.start, segment.end] : []);
+  const toothPoints = tooth.flatMap(segment => segment.kind === 'line' ? [segment.start, segment.end] : []).map(([x, y]) => [x - origin[0], y - origin[1]] as const);
   const toothBounds = toothPoints.length ? {
     minX: Math.min(...toothPoints.map(point => point[0])) - (gear?.module ?? 1) * .2,
     minY: Math.min(...toothPoints.map(point => point[1])) - (gear?.module ?? 1) * .2,
@@ -81,9 +83,9 @@ export function CadGearHelp({ name, values, profile, label, unit = '' }: {
     {gear && !['x', 'y', 'angle', 'shiftMode', 'qualityMode'].includes(name) && <figure className="cad-gear-help-diagram">
       <svg viewBox={rootTerm && toothBounds ? `${toothBounds.minX} ${toothBounds.minY} ${toothBounds.maxX - toothBounds.minX} ${toothBounds.maxY - toothBounds.minY}` : `${-gear.tipDiameter * .55} ${-gear.tipDiameter * .55} ${gear.tipDiameter * 1.1} ${gear.tipDiameter * 1.1}`} role="img" aria-labelledby={id}>
         <title id={id}>{rootTerm ? 'Actual rack-generated root transition highlighted on the current gear' : `${radiusName} on the current ${gear.teeth}-tooth gear`}</title>
-        <g transform={rootTerm ? undefined : `translate(${-values.x} ${-values.y})`}><path d={rootTerm ? pathOf(tooth) : pathOf(gear.segments) + ' Z'} fill={rootTerm ? 'none' : '#203b48'} stroke="#728f9f" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        <g><path d={rootTerm ? pathOf(tooth, origin) : pathOf(gear.segments, origin) + ' Z'} fill={rootTerm ? 'none' : '#203b48'} stroke="#728f9f" strokeWidth="1" vectorEffect="non-scaling-stroke" />
           {highlighted && <path d={highlighted} fill="none" stroke="#f1bf72" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
-          {!rootTerm && radius && <circle cx={values.x} cy={values.y} r={radius} fill="none" stroke="#7bcce4" strokeWidth="1.3" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />}
+          {!rootTerm && radius && <circle cx={0} cy={0} r={radius} fill="none" stroke="#7bcce4" strokeWidth="1.3" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />}
         </g>
       </svg>
       <figcaption><i className="cad-gear-help-legend" style={rootTerm ? { background: '#f1bf72' } : undefined} />{rootTerm ? 'Rack-generated root transition, not a circular fillet' : `${radiusName} · Ø ${display(radius ? 2 * radius : undefined)} mm`}</figcaption>
