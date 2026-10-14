@@ -6,6 +6,7 @@ import { CadPlacementNormal } from './CadPlacementNormal';
 import { ScalarField, SelectField } from './CadFields';
 import { cadSketchSupportsThroughAll } from '@/domain/cad/cadSketchSources';
 import { CadSketchSourceField } from './CadSketchSourceField';
+import { CadSketchRegionsField } from './CadSketchRegionsField';
 
 type DistanceFeature = Extract<CadFeature, { kind: 'extrude' }>;
 type ExtrudeFeature = DistanceFeature | CadPocketFeature;
@@ -32,7 +33,8 @@ export function CadExtrudeFields({ feature, initialFeature, document, sketches, 
   const rememberedDistance = useRef<DistanceDraft | null>(initialFeature.kind === 'extrude' ? distanceDraft(initialFeature) : null);
   useEffect(() => { rememberedDistance.current = initialFeature.kind === 'extrude' ? distanceDraft(initialFeature) : null; }, [initialFeature]);
   const operation = feature.kind === 'pocket' ? 'cut' : feature.operation;
-  const base = { id: feature.id, name: feature.name, suppressed: feature.suppressed, sketchId: feature.sketchId };
+  const base = { id: feature.id, name: feature.name, suppressed: feature.suppressed, sketchId: feature.sketchId,
+    ...(feature.regionSelection ? { regionSelection: feature.regionSelection } : {}) };
   const targetId = feature.targetId ?? '';
   const sketch = document.features.find(entry => entry.id === feature.sketchId && entry.kind === 'sketch');
   const throughAllUnsupported = sketch?.kind === 'sketch' && !cadSketchSupportsThroughAll(sketch);
@@ -62,8 +64,23 @@ export function CadExtrudeFields({ feature, initialFeature, document, sketches, 
     rememberedDistance.current = { distance: feature.distance, symmetric: feature.symmetric, ...values };
     onChange({ ...feature, ...values });
   };
+  const changeSource = (sketchId: string) => {
+    if (sketchId === feature.sketchId) return;
+    const next = { ...feature, sketchId };
+    // Cell identities belong to their source sketch. Deliberate source replacement
+    // starts with its whole sketch rather than reinterpreting coincident profile IDs.
+    delete next.regionSelection;
+    onChange(next);
+  };
+  const changeAreas = (regionSelection: ExtrudeFeature['regionSelection']) => {
+    const next = { ...feature };
+    if (regionSelection === undefined) delete next.regionSelection;
+    else next.regionSelection = regionSelection;
+    onChange(next);
+  };
   return <>
-    <CadSketchSourceField document={document} sketches={sketches} purpose={feature.kind} sketchId={feature.sketchId} onChange={sketchId => onChange({ ...feature, sketchId })} />
+    <CadSketchSourceField document={document} sketches={sketches} purpose={feature.kind} sketchId={feature.sketchId} onChange={changeSource} />
+    <CadSketchRegionsField document={document} sketchId={feature.sketchId} selection={feature.regionSelection} onChange={changeAreas} />
     <SelectField label="Operation" value={operation} options={operationOptions} onChange={nextOperation => {
       if (feature.kind === 'pocket') { if (nextOperation !== 'cut') toDistance(nextOperation); }
       else onChange({ ...feature, operation: nextOperation, targetId: nextOperation === 'new' ? null : feature.targetId || bodies.at(-1)?.value || null });

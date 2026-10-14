@@ -25,7 +25,7 @@ export interface CadSketchMeasurement {
   readonly profiles: readonly CadProfileMeasurement[];
 }
 
-function profileMeasurement(profile: ResolvedCadProfile): Pick<CadProfileMeasurement, 'areaMm2' | 'perimeterMm' | 'boundsMm'> {
+export function measureCadResolvedProfile(profile: ResolvedCadProfile): Pick<CadProfileMeasurement, 'areaMm2' | 'perimeterMm' | 'boundsMm'> {
   switch (profile.kind) {
     case 'path': {
       const measured = cadAnalyticPathMetrics(profile);
@@ -80,7 +80,7 @@ export function measureCadSketch(document: CadDocument, sketchId: string): CadSk
   const profiles = sketch.profiles.map(profile => ({ profileId: profile.id, name: profile.name, kind: profile.geometry.kind,
     role: profile.construction && profile.role !== undefined ? profile.role
       : (depths.get(profile.id) ?? 0) % 2 === 0 ? 'outer' as const : 'hole' as const,
-    construction: profile.construction, ...profileMeasurement(resolveCadProfile(profile.geometry, validated.parameters)) }));
+    construction: profile.construction, ...measureCadResolvedProfile(resolveCadProfile(profile.geometry, validated.parameters)) }));
   const cuts = profiles.filter(profile => !profile.construction);
   const boundsMm = cuts.reduce<CadBounds2 | null>((bounds, profile) => bounds === null ? profile.boundsMm : {
     minX: Math.min(bounds.minX, profile.boundsMm.minX), minY: Math.min(bounds.minY, profile.boundsMm.minY),

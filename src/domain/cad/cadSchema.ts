@@ -5,7 +5,8 @@ import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { CadPluginProfileSchema } from './plugins/cadPlugins';
 import { CadParameterGroupSchema, CadParameterMetadataSchema, CadParameterNameSchema, validateCadParameterMetadata } from './cadParameters';
-import { validateCadSketchGeometry } from './cadSketchGeometry';
+import { resolveCadSketchRegions, validateCadSketchGeometry } from './cadSketchGeometry';
+import { CadSketchRegionSelectionSchema, validateCadSketchRegionSelection } from './cadSketchRegionSelection';
 import { CadEdgeSelectionSchema, CadFaceQuerySchema, resolveCadEdgeSelection, validateCadShellOpening } from './cadTopology';
 import { CadSolidImportSourceSchema, parseCadSolidImportSource } from './cadImports';
 import { CadDxfImportSourceSchema, parseCadDxfImportSource } from './cadDxfSource';
@@ -43,14 +44,16 @@ export const CadProfileSchema = Type.Union([
 export const CadSketchProfileSchema = Type.Object({ id: identifier, name: label, construction: Type.Boolean(),
   role: Type.Optional(Type.Union([Type.Literal('outer'), Type.Literal('hole')])), geometry: CadProfileSchema,
   constraints: Type.Optional(Type.Array(CadSketchDimensionConstraintSchema, { maxItems: 6 })) }, strict);
+export const CadSketchFeatureSchema = Type.Object({ ...base, kind: Type.Literal('sketch'), plane: CadSketchPlaneSchema, offset: scalar,
+  profiles: Type.Array(CadSketchProfileSchema), source: Type.Optional(CadDxfImportSourceSchema) }, strict);
 export const CadFeatureSchema = Type.Union([
   CadDatumPlaneFeatureSchema,
   CadCurveFeatureSchema,
   CadSweepFeatureSchema,
   CadPocketFeatureSchema,
   Type.Object({ ...base, kind: Type.Literal('imported'), source: CadSolidImportSourceSchema }, strict),
-  Type.Object({ ...base, kind: Type.Literal('sketch'), plane: CadSketchPlaneSchema, offset: scalar, profiles: Type.Array(CadSketchProfileSchema), source: Type.Optional(CadDxfImportSourceSchema) }, strict),
-  Type.Object({ ...base, kind: Type.Literal('extrude'), sketchId: identifier, distance: scalar, symmetric: Type.Boolean(), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
+  CadSketchFeatureSchema,
+  Type.Object({ ...base, kind: Type.Literal('extrude'), sketchId: identifier, regionSelection: Type.Optional(CadSketchRegionSelectionSchema), distance: scalar, symmetric: Type.Boolean(), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
   Type.Object({ ...base, kind: Type.Literal('revolve'), sketchId: identifier, angle: scalar, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
   Type.Object({ ...base, kind: Type.Literal('loft'), sketchIds: Type.Array(identifier, { minItems: MIN_CAD_LOFT_SECTIONS, maxItems: MAX_CAD_LOFT_SECTIONS, uniqueItems: true }), ruled: Type.Boolean(), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
   Type.Object({ ...base, kind: Type.Union([Type.Literal('fillet'), Type.Literal('chamfer')]), targetId: identifier, radius: scalar, selection: Type.Optional(Type.Union([CadEdgeSelectionSchema, Type.Null()])) }, strict),
@@ -123,6 +126,8 @@ export function parseCadDocument(value: unknown): CadDocument {
       if (!visibleBodies.has(id)) throw new CadError('unavailable-body', `Feature "${feature.name}" references suppressed or already consumed body "${id}". Select its current successor.`);
     }
     const operandInstances = solidDependencies.reduce((total, id) => total + (expandedInstances.get(id) ?? 1), 0);
+    if ((feature.kind === 'extrude' || feature.kind === 'pocket') && feature.regionSelection !== undefined)
+      validateCadSketchRegionSelection(feature.regionSelection);
     const pocket = feature.kind === 'pocket' && !feature.suppressed ? resolveCadPocketInputs(feature, previous, document.parameters) : null;
     // New section generators add one operand before join/cut. Keep the existing
     // Pad/Revolve preflight counts unchanged for saved-history compatibility.
@@ -168,6 +173,7 @@ export function parseCadDocument(value: unknown): CadDocument {
         if (feature.kind === 'extrude') {
           const distance = e(feature.distance);
           if (Math.abs(distance) <= 1e-7 || Math.abs(distance) > 1e6) throw new CadError('invalid-dimension', 'Extrusion distance must be nonzero and within one million millimetres.');
+          if (!feature.suppressed && feature.regionSelection !== undefined) resolveCadSketchRegions(sketch, document.parameters, feature.regionSelection);
         } else {
           const angle = e(feature.angle);
           if (angle <= 1e-7 || angle > 360) throw new CadError('invalid-dimension', 'Revolve angle must be greater than zero and at most 360 degrees.');

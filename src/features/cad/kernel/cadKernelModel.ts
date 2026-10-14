@@ -2,7 +2,7 @@ import { cast, Compound, CompoundSketch, getOC, isShape3D, makeAx1, measureVolum
 import type { CadBuildResult, CadDocument, CadFeature, CadMesh, CadScalar, CadSketchFeature } from '../../../domain/cad/cadDocument';
 import { evaluateCadAngle, evaluateCadScalar } from '../../../domain/cad/cadExpression';
 import { CadError } from '../../../domain/cad/cadError';
-import { resolveCadSketchRegions } from '../../../domain/cad/cadSketchGeometry';
+import { resolveCadSketchRegions, type CadSketchRegion } from '../../../domain/cad/cadSketchGeometry';
 import type { CadSectionRequest, CadSectionResult } from '../../../domain/cad/cadSection';
 import { createCadKernelPlane } from './cadKernelPlane';
 import { resolveCadExtrudeRevolvePlacement, resolveCadWorldDatum, type CadDatumFrameLookup, type CadResolvedFrame } from '../../../domain/cad/cadDatumPlanes';
@@ -95,7 +95,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
     for (const shape of shapes) if (!retained.has(shape)) { cadKernelDisposeShape(shape); shapes.delete(shape); }
   }
 
-  function fromSketch(feature: Extract<CadFeature, { kind: 'extrude' | 'revolve' }>): Shape3D {
+  function fromSketch(feature: Extract<CadFeature, { kind: 'extrude' | 'revolve' }>, regions: readonly CadSketchRegion[]): Shape3D {
     const sketch = sketches.get(feature.sketchId);
     if (!sketch) throw new CadError('missing-sketch', 'The source sketch is unavailable or suppressed.');
     const placement = resolveCadExtrudeRevolvePlacement(feature, sketch, document.parameters, frameLookup);
@@ -109,7 +109,6 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
     const consumedSketches: Sketch[] = [];
     try {
       const origin: SimplePoint = plane.origin.toTuple();
-      const regions = resolveCadSketchRegions(sketch, document.parameters);
       let result: Shape3D | undefined;
       for (const region of regions) {
         const boundaries = [region.boundary, ...region.voids];
@@ -164,9 +163,11 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         }
         case 'extrude': case 'revolve': {
           const sourceSketch = sketches.get(feature.sketchId);
-          instances = sourceSketch ? resolveCadSketchRegions(sourceSketch, document.parameters).length : 1;
+          if (!sourceSketch) throw new CadError('missing-sketch', 'The source sketch is unavailable or suppressed.');
+          const regions = resolveCadSketchRegions(sourceSketch, document.parameters, feature.kind === 'extrude' ? feature.regionSelection : undefined);
+          instances = regions.length;
           if (feature.targetId !== null) instances = checkedInstances(instances + instancesOf(feature.targetId));
-          result = fromSketch(feature);
+          result = fromSketch(feature, regions);
           if (feature.operation !== 'new') {
             if (!feature.targetId) throw new CadError('missing-target', 'Join and cut need a target body.');
             const target = body(feature.targetId);

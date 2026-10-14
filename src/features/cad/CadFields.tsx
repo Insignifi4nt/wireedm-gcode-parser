@@ -3,6 +3,7 @@ import { createContext, useContext, useLayoutEffect } from 'react';
 import { MousePointer2 } from 'lucide-react';
 import { CadFeatureReferencePickingContext } from './cadFeatureReferencePicking';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
+import { cadScalarValueIntent, inspectCadScalarValue, parseCadNumericQuantity as numericValue } from '@/domain/cad/cadScalarValueIntent';
 import { CadContextHelp } from './CadContextHelp';
 import { cadScalarHelp } from './cadFieldHelp';
 import { CadExpressionBinding } from './CadExpressionBinding';
@@ -22,23 +23,13 @@ export interface CadScalarEditContextValue {
 export const CadScalarEditContext = createContext<CadScalarEditContextValue | null>(null);
 type ScalarFieldProps = { label: string; inputLabel?: string; fieldKey?: string; value: CadScalar; parameters: CadDocument['parameters']; onChange(value: CadScalar): void; unit?: string };
 
-function numericValue(text: string): number {
-  const value = Number(text);
-  if (!text.trim() || !Number.isFinite(value)) throw new Error('Enter a finite number. Edit formulas with fx.');
-  // The shared parser rejects JavaScript numeric syntax and applies the scalar range.
-  evaluateCadScalar(text, {});
-  return value;
-}
-function isNumericLiteral(value: CadScalar | undefined): value is CadScalar {
-  return typeof value === 'number' || typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value));
-}
-
 function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onChange, unit = 'mm', context }: ScalarFieldProps & { fieldKey: string; context: CadScalarEditContextValue }) {
-  let resolved: number | undefined, issue = '';
-  try { resolved = evaluateCadScalar(value, context.parameters); } catch (error) { issue = error instanceof Error ? error.message : 'Invalid expression.'; }
-  const alias = typeof value === 'string' && Object.hasOwn(context.parameters, value.trim()) ? value.trim() : null;
-  const literal = isNumericLiteral(value);
-  const locked = !literal && !alias || resolved === undefined;
+  const binding = inspectCadScalarValue(value, context.parameters);
+  const resolved = binding.kind === 'invalid' ? undefined : binding.quantity;
+  let issue = binding.kind === 'invalid' ? binding.reason : '';
+  const alias = binding.kind === 'parameter' ? binding.name : null;
+  const literal = binding.kind === 'literal';
+  const locked = binding.kind === 'formula' || binding.kind === 'invalid';
   const raw = context.valueDrafts[key], draft = raw?.source === value ? raw.text : undefined;
   let text = resolved === undefined ? '—' : String(resolved);
   if (draft !== undefined && !locked) {
@@ -62,14 +53,11 @@ function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onC
         const next = event.target.value; context.setValueDraft(key, { source: value, text: next });
         try {
           const number = numericValue(next); context.setIssue(key, null);
-          if (number !== resolved) {
-            if (alias) context.changeParameter(alias, number);
-            else {
-              const accepted = context.acceptedScalars[key];
-              const source = !context.relationEdits[key] && isNumericLiteral(accepted) && Number(accepted) === number ? accepted : number;
-              context.setValueDraft(key, { source, text: next }); onChange(source);
-            }
-          }
+          const intent = cadScalarValueIntent({ source: value, parameters: context.parameters, quantity: number,
+            acceptedSource: context.acceptedScalars[key], relationEdited: context.relationEdits[key] });
+          if (intent.kind === 'parameter') context.changeParameter(intent.name, intent.value);
+          else if (intent.kind === 'scalar') { context.setValueDraft(key, { source: intent.source, text: next }); onChange(intent.source); }
+          else if (intent.kind === 'locked') context.setIssue(key, intent.reason);
         } catch (error) { context.setIssue(key, error instanceof Error ? error.message : 'Invalid numeric value.'); }
       }} />{issue && <small className="cad-field-hint">{issue}</small>}</label>;
 }

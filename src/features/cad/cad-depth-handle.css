@@ -1,0 +1,15 @@
+.cad-depth-label {
+  position: absolute;
+  z-index: 2;
+  max-width: min(240px, calc(100% - 8px));
+  padding: 3px 6px;
+  border: 1px solid #3c5963;
+  border-radius: 3px;
+  background: #17242eee;
+  color: #c5e9ee;
+  font-size: 11px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+.cad-depth-label[data-active='true'] { border-color: #b59454; color: #f3d08b; }
+.cad-depth-label[data-locked='true'] { color: #a6bbc5; }

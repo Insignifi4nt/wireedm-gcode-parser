@@ -6,8 +6,47 @@ import { CadToolEditEnvelope } from './cadToolSchemas';
 import { cadSiteTools } from './cadSiteTools';
 import type { CadController } from './useCadController';
 import type { CadBuildResult } from '@/domain/cad/cadDocument';
+import { refs as regionRefs, pad as regionPad, pocket as regionPocket, sketch as regionSketch } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
 
 describe('CAD tool argument boundary and discovery', () => {
+  it.each(['extrude', 'pocket'] as const)('advertises the exact optional closed-cell selection schema for %s without widening other feature kinds', async kind => {
+    const describe = cadSiteTools(() => ({} as CadController)).find(tool => tool.name === 'cad_describe_features');
+    if (!describe) throw new Error('Missing feature discovery');
+    const reply = await describe.execute({ kind }) as { ok: boolean; data: { schema: Parameters<typeof Value.Check>[0]; description: string } };
+    expect(reply.ok).toBe(true); expect(reply.data.description).toContain('regionSelection');
+    const feature = kind === 'extrude' ? regionPad([regionRefs.outer]) : regionPocket([regionRefs.outer]);
+    expect(Value.Check(reply.data.schema, feature)).toBe(true); expect(Value.Check(CadFeatureSchema, feature)).toBe(true);
+    for (const regionSelection of [[], [regionRefs.outer, regionRefs.outer], [{ ...regionRefs.outer, nativeKey: 'face' }], [{ ...regionRefs.outer, voidProfileIds: ['bore', 'bore'] }]])
+      expect(Value.Check(reply.data.schema, { ...feature, regionSelection })).toBe(false);
+    expect(Value.Check(CadFeatureSchema, { id: 'revolve', name: 'Revolve', kind: 'revolve', suppressed: false,
+      sketchId: 'regions', angle: 180, axis: 'x', operation: 'new', targetId: null, regionSelection: [regionRefs.outer] })).toBe(false);
+  });
+
+  it('keeps region inspection and reference reading narrow and refuses extra or invalid arguments before operations', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid region query reached operations'); });
+    const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions');
+    const read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+    if (!inspect || !read) throw new Error('Missing region inspection/read tools');
+    expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', sketchId: 'regions', offset: 100001, limit: 1 })).toBe(true);
+    expect(Value.Check(read.inputSchema, { expectedVersion: 'current', sketchId: 'regions', boundaryProfileId: 'outer', offset: 100001, length: 4096 })).toBe(true);
+    for (const proposal of [{ sketch: regionSketch() }, { parameterValues: { location: 50 } }, { sketch: regionSketch(), parameterValues: { location: 50 } }]) {
+      expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', sketchId: 'regions', proposal })).toBe(true);
+      expect(Value.Check(read.inputSchema, { expectedVersion: 'current', sketchId: 'regions', boundaryProfileId: 'outer', proposal })).toBe(true);
+    }
+    for (const input of [{ expectedVersion: 'current', sketchId: 'regions', point: [0, 0] }, { expectedVersion: 'current', sketchId: 'regions', offset: -1 },
+      { expectedVersion: 'current', sketchId: 'regions', limit: 0 }, { expectedVersion: 'current', sketchId: 'not/an/id' }])
+      expect(await inspect.execute(input)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    for (const input of [{ expectedVersion: 'current', sketchId: 'regions', boundaryProfileId: 'outer', length: 4097 },
+      { expectedVersion: 'current', sketchId: 'regions', boundaryProfileId: 'outer', source: 'guess' }, { expectedVersion: 'current', sketchId: 'regions' }])
+      expect(await read.execute(input)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    for (const proposal of [{}, { sketch: regionPad() }, { sketch: { ...regionSketch(), profiles: [{ unknown: true }] } },
+      { parameterValues: { location: '50' } }, { parameterValues: { location: Infinity } }, { parameters: { location: 50 } }]) {
+      expect(await inspect.execute({ expectedVersion: 'current', sketchId: 'regions', proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+      expect(await read.execute({ expectedVersion: 'current', sketchId: 'regions', boundaryProfileId: 'outer', proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(controller).not.toHaveBeenCalled(); expect(inspect.annotations?.readOnlyHint).toBe(true); expect(read.annotations?.readOnlyHint).toBe(true);
+  });
+
   it('advertises the same complete sketch profile capacity that the shared authoring schema accepts', async () => {
     const tool = cadSiteTools(() => ({} as CadController)).find(entry => entry.name === 'cad_describe_features');
     if (!tool) throw new Error('Missing feature discovery');

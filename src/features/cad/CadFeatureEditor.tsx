@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ContextType } from 'react';
 import { Check, X } from 'lucide-react';
 import type { CadDocument, CadFeature, CadPlane, CadProfile, CadScalar, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
@@ -23,6 +23,8 @@ import { CadContextHelp } from './CadContextHelp';
 import { cadFeatureHelp } from './cadFieldHelp';
 import { cadFeatureCandidateEdits, cadFeatureCandidateKey, type CadFeaturePreviewCommand, type CadFeaturePreviewState } from './cadFeaturePreview';
 import { CadFeatureReferencePickingContext, type CadFeatureReferencePickCommand } from './cadFeatureReferencePicking';
+import { cadScalarValueIntent, parseCadNumericQuantity } from '@/domain/cad/cadScalarValueIntent';
+import { inspectCadExtrudeDepth, type CadExtrudeDepthControl, type CadExtrudeDepthState } from './cadExtrudeDepthInteraction';
 
 export const featureLabels: Record<CadFeature['kind'], string> = {
   'datum-plane': 'Plane', sketch: 'Sketch', curve: 'Curve', imported: 'Imported solid', extrude: 'Pad / Pocket', pocket: 'Pocket', revolve: 'Revolve', loft: 'Loft', sweep: 'Sweep', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / Rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
@@ -48,6 +50,7 @@ interface CadFeatureEditorProps {
   featurePreview?: CadFeaturePreviewState;
   previewEnabled?: boolean;
   onReferencePick?(command: CadFeatureReferencePickCommand): void;
+  onDepthInteractionReady?(control: CadExtrudeDepthControl | null, released?: CadExtrudeDepthControl): void;
 }
 
 export function CadFeatureEditor(props: CadFeatureEditorProps) {
@@ -57,7 +60,7 @@ export function CadFeatureEditor(props: CadFeatureEditorProps) {
   return <CadFeatureEditorForm key={`${props.feature.id}/${props.feature.kind}`} {...props} />;
 }
 
-function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onPendingChange, currentBodyIds, documentVersion, onFeaturePreview, featurePreview, previewEnabled = true, onReferencePick }: CadFeatureEditorProps) {
+function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onPendingChange, currentBodyIds, documentVersion, onFeaturePreview, featurePreview, previewEnabled = true, onReferencePick, onDepthInteractionReady }: CadFeatureEditorProps) {
   const previewOwner = useId(), previewCallback = useRef(onFeaturePreview);
   previewCallback.current = onFeaturePreview;
   const baseline = useRef({ feature, version: documentVersion });
@@ -65,11 +68,19 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
   const staleDraft = baseline.current.version !== documentVersion;
   const draftSource = useRef(feature);
   const pickerCallback = useRef(onReferencePick); pickerCallback.current = onReferencePick;
-  const [picker, setPicker] = useState<Extract<CadFeatureReferencePickCommand, { kind: 'pick' }> | null>(null);
+  const [picker, setPicker] = useState<Exclude<CadFeatureReferencePickCommand, { kind: 'clear' }> | null>(null);
   const pickCurrent = picker?.expectedVersion === documentVersion ? picker : null;
+  const pickToken = useRef<symbol | null>(null);
+  const regionStart = useRef<{ feature: CadFeature; document: CadDocument; version: string } | null>(null);
+  const pickEnvironment = useRef({ document, documentVersion }); pickEnvironment.current = { document, documentVersion };
   const pickerFocus = useRef<HTMLElement | null>(null);
   const wasPicking = useRef(false);
-  const endPick = () => { setPicker(null); };
+  const endPick = (token = pickToken.current, keepSelection = false) => {
+    if (token !== pickToken.current) return;
+    const saved = regionStart.current, current = pickEnvironment.current;
+    if (!keepSelection && saved && saved.document === current.document && saved.version === current.documentVersion) setDraft(saved.feature);
+    pickToken.current = null; regionStart.current = null; setPicker(null);
+  };
   useLayoutEffect(() => {
     if (wasPicking.current && !pickCurrent && pickerFocus.current?.isConnected) pickerFocus.current.focus({ preventScroll: true });
     wasPicking.current = Boolean(pickCurrent);
@@ -80,6 +91,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
   const [fieldIssues, setFieldIssues] = useState<Readonly<Record<string, string>>>({});
   const [relationPending, setRelationPendingFields] = useState<Readonly<Record<string, boolean>>>({});
   const [relationEdits, setRelationEdits] = useState<Readonly<Record<string, boolean>>>({});
+  const [depthGestureActive, setDepthGestureActive] = useState(false);
   const acceptedScalars = useMemo(() => {
     const values: Record<string, CadScalar> = {};
     mapCadFeatureScalars(feature, (value, path) => { values[path] = value; return value; });
@@ -108,24 +120,107 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
   const [error, setError] = useState<string | null>(null);
   const capturedEdges = feature.kind === 'fillet' || feature.kind === 'chamfer' ? feature.selection : null;
   const candidateEdits = useMemo(() => cadFeatureCandidateEdits({ feature: draft, isNew, parameters: parameterEdits }), [draft, isNew, parameterEdits]);
-  useEffect(() => { draftSource.current = feature; setDraft(feature); setParameterEdits({}); setValueDrafts({}); setRelationEdits({}); setError(null); setPicker(null); }, [feature]);
-  useLayoutEffect(() => { onPendingChange(isNew || changed || scalarPending || Boolean(pickCurrent)); }, [isNew, changed, scalarPending, pickCurrent, onPendingChange]);
+  useEffect(() => { draftSource.current = feature; setDraft(feature); setParameterEdits({}); setValueDrafts({}); setRelationEdits({}); setError(null); setPicker(null); pickToken.current = null; regionStart.current = null; }, [feature]);
+  useLayoutEffect(() => { onPendingChange(isNew || changed || scalarPending || Boolean(pickCurrent) || depthGestureActive); }, [isNew, changed, scalarPending, pickCurrent, depthGestureActive, onPendingChange]);
   useLayoutEffect(() => { onReferencePick?.(pickCurrent ?? { kind: 'clear', owner: previewOwner }); }, [onReferencePick, pickCurrent, previewOwner]);
   useLayoutEffect(() => () => pickerCallback.current?.({ kind: 'clear', owner: previewOwner }), [previewOwner]);
   useLayoutEffect(() => {
     if (!onFeaturePreview || !documentVersion) return;
-    if (!staleDraft && draftSource.current === feature && previewEnabled && (isNew || changed || scalarPending)) {
+    if (!staleDraft && draftSource.current === feature && previewEnabled && pickCurrent?.kind !== 'pick' && (isNew || changed || scalarPending)) {
       onFeaturePreview(scalarPending
         ? { kind: 'blocked', owner: previewOwner, expectedVersion: documentVersion, edits: candidateEdits, message: Object.values(fieldIssues)[0] ?? 'Finish editing the relation before applying this feature.' }
         : { kind: 'candidate', owner: previewOwner, expectedVersion: documentVersion, edits: candidateEdits });
     }
     else onFeaturePreview({ kind: 'clear', owner: previewOwner });
-  }, [candidateEdits, isNew, changed, scalarPending, fieldIssues, documentVersion, previewOwner, onFeaturePreview, previewEnabled, staleDraft, feature]);
+  }, [candidateEdits, isNew, changed, scalarPending, fieldIssues, documentVersion, previewOwner, onFeaturePreview, previewEnabled, pickCurrent?.kind, staleDraft, feature]);
   useLayoutEffect(() => () => previewCallback.current?.({ kind: 'clear', owner: previewOwner }), [previewOwner]);
   const preview = featurePreview && featurePreview.kind !== 'idle' && featurePreview.owner === previewOwner && featurePreview.baseVersion === documentVersion ? featurePreview : null;
   const currentPreviewReady = useMemo(() => !scalarPending && preview?.kind === 'ready' && preview.definitionKey === cadFeatureCandidateKey(candidateEdits), [preview, candidateEdits, scalarPending]);
   const previewSolidCount = currentPreviewReady && preview?.kind === 'ready' ? preview.result.meshes.find(mesh => mesh.featureId === preview.featureId)?.solidCount : undefined;
   const waitingForPreview = Boolean(onFeaturePreview && documentVersion && !currentPreviewReady);
+  const depthModel = useMemo(() => {
+    if (!onDepthInteractionReady || !documentVersion) return null;
+    try { return inspectCadExtrudeDepth(effectiveDocument, draft); } catch { return null; }
+  }, [onDepthInteractionReady, documentVersion, effectiveDocument, draft]);
+  const depthState = useMemo<CadExtrudeDepthState | null>(() => {
+    if (!depthModel) return null;
+    const reason = staleDraft || draftSource.current !== feature ? 'The part changed. Cancel and reopen this feature.'
+      : !previewEnabled || pickCurrent ? 'Finish the current selection or dialog first.'
+        : scalarPending ? 'Finish editing Length or its relation first.'
+          : !depthGestureActive && (isNew || changed) && waitingForPreview ? 'Wait for the current preview before dragging.' : null;
+    return { model: depthModel, definitionKey: cadFeatureCandidateKey(candidateEdits), gestureActive: depthGestureActive,
+      capability: reason ? { kind: 'locked', reason } : depthModel.capability };
+  }, [depthModel, staleDraft, feature, previewEnabled, pickCurrent, scalarPending, depthGestureActive, isNew, changed, waitingForPreview, candidateEdits]);
+  const depthSnapshot = { draft, parameterEdits, valueDrafts, fieldIssues, relationEdits, error };
+  const depthEnvironment = useRef({ state: depthState, document, documentVersion, previewEnabled, pickCurrent, staleDraft, snapshot: depthSnapshot });
+  depthEnvironment.current = { state: depthState, document, documentVersion, previewEnabled, pickCurrent, staleDraft, snapshot: depthSnapshot };
+  const depthGesture = useRef<{ token: string; document: CadDocument; version: string; sketchId: string; snapshot: typeof depthSnapshot } | null>(null);
+  const depthListeners = useRef(new Set<() => void>()), depthMounted = useRef(true);
+  const restoreDepthSnapshot = useCallback((saved: typeof depthSnapshot) => {
+    setDraft(saved.draft); setParameterEdits(saved.parameterEdits); setValueDrafts(saved.valueDrafts);
+    setFieldIssues(saved.fieldIssues); setRelationEdits(saved.relationEdits); setError(saved.error);
+  }, []);
+  const depthControl = useMemo<CadExtrudeDepthControl>(() => {
+    const baseVersion = documentVersion ?? '', featureId = feature.id;
+    const current = () => {
+      const env = depthEnvironment.current;
+      return depthMounted.current && env.documentVersion === baseVersion && !env.staleDraft ? env : null;
+    };
+    const owns = (token: string) => {
+      const env = current(), gesture = depthGesture.current;
+      return env && gesture?.token === token && env.document === gesture.document && env.state?.model.sketchId === gesture.sketchId
+        && env.previewEnabled && !env.pickCurrent ? { env, gesture } : null;
+    };
+    const finish = () => { depthGesture.current = null; setDepthGestureActive(false); };
+    return { owner: previewOwner, featureId, baseVersion,
+      subscribe(listener) { depthListeners.current.add(listener); return () => { depthListeners.current.delete(listener); }; },
+      getState: () => current()?.state ?? null,
+      begin(expectedDefinitionKey) {
+        const env = current();
+        if (!env?.state || env.state.definitionKey !== expectedDefinitionKey || env.state.capability.kind !== 'editable' || depthGesture.current) return null;
+        const token = crypto.randomUUID();
+        depthGesture.current = { token, document: env.document, version: baseVersion, sketchId: env.state.model.sketchId, snapshot: env.snapshot };
+        setDepthGestureActive(true); return token;
+      },
+      setQuantity(token, quantityMm) {
+        const owned = owns(token), env = owned?.env, candidate = env?.snapshot.draft;
+        if (!env || candidate?.kind !== 'extrude') return false;
+        const text = String(quantityMm); setValueDraft('distance', { source: candidate.distance, text });
+        try {
+          const quantity = parseCadNumericQuantity(text), intent = cadScalarValueIntent({ source: candidate.distance,
+            parameters: { ...env.document.parameters, ...env.snapshot.parameterEdits }, quantity,
+            acceptedSource: acceptedScalars.distance, relationEdited: env.snapshot.relationEdits.distance });
+          if (intent.kind === 'locked') return false;
+          setIssue('distance', null); setError(null);
+          if (intent.kind === 'parameter') changeParameter(intent.name, intent.value);
+          else if (intent.kind === 'scalar') { setValueDraft('distance', { source: intent.source, text }); setDraft({ ...candidate, distance: intent.source }); }
+        } catch (cause) { setIssue('distance', cause instanceof Error ? cause.message : 'Invalid numeric value.'); }
+        return true;
+      },
+      release(token) { if (!owns(token)) return false; finish(); return true; },
+      cancel(token) {
+        const owned = owns(token); if (!owned) return false;
+        finish(); restoreDepthSnapshot(owned.gesture.snapshot); return true;
+      }
+    };
+  }, [documentVersion, feature.id, previewOwner, setValueDraft, setIssue, changeParameter, acceptedScalars, restoreDepthSnapshot]);
+  useLayoutEffect(() => {
+    const gesture = depthGesture.current;
+    if (gesture) {
+      const sameSource = !staleDraft && gesture.document === document && gesture.version === documentVersion
+        && draft.kind === 'extrude' && gesture.sketchId === draft.sketchId;
+      if (!sameSource || !previewEnabled || pickCurrent || !depthModel) {
+        depthGesture.current = null; setDepthGestureActive(false);
+        if (sameSource) restoreDepthSnapshot(gesture.snapshot);
+      }
+    }
+    depthListeners.current.forEach(listener => listener());
+  }, [depthState, staleDraft, previewEnabled, pickCurrent, depthModel, document, documentVersion, draft, restoreDepthSnapshot]);
+  useLayoutEffect(() => {
+    onDepthInteractionReady?.(depthModel ? depthControl : null);
+    return () => onDepthInteractionReady?.(null, depthControl);
+  }, [onDepthInteractionReady, Boolean(depthModel), depthControl]);
+  useLayoutEffect(() => { depthMounted.current = true; return () => { depthMounted.current = false; depthGesture.current = null; depthListeners.current.forEach(listener => listener()); }; }, []);
   const update = (next: CadFeature) => { setDraft(next); setError(null); };
   const featureIndex = document.features.findIndex((entry) => entry.id === feature.id);
   const preceding = featureIndex < 0 ? document.features : document.features.slice(0, featureIndex);
@@ -170,15 +265,37 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
     case 'circular-pattern': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<label className="cad-field"><span>Instances, including original</span><input type="number" min="2" max="100" value={draft.count} onChange={(event) => update({ ...draft, count: Number(event.target.value) })} /></label><SelectField label="Axis" value={draft.axis} options={[{ value: 'x', label: 'World X' }, { value: 'y', label: 'World Y' }, { value: 'z', label: 'World Z' }]} onChange={axis => update({ ...draft, axis })} />{scalar('angle', 'Angular extent', draft.angle, angle => update({ ...draft, angle }), 'deg')}<VectorFields label="Axis center" unit="mm">{scalar('center.0', 'Center X', draft.center[0], value => update({ ...draft, center: [value, draft.center[1], draft.center[2]] }))}{scalar('center.1', 'Center Y', draft.center[1], value => update({ ...draft, center: [draft.center[0], value, draft.center[2]] }))}{scalar('center.2', 'Center Z', draft.center[2], value => update({ ...draft, center: [draft.center[0], draft.center[1], value] }))}</VectorFields></>; break;
     case 'mirror': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<SelectField label="Mirror plane through origin" value={draft.plane} options={planeOptions} onChange={(plane) => update({ ...draft, plane })} /></>; break;
   }
-  const pickingContext = onReferencePick && documentVersion && !staleDraft ? { precedingIds: new Set(preceding.map(feature => feature.id)), begin: (label: string, eligibleIds: readonly string[], onSelect: (id: string) => void) => {
-    pickerFocus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null;
-    setPicker({ kind: 'pick', owner: previewOwner, expectedVersion: documentVersion, label, eligibleIds, onSelect: id => { if (!eligibleIds.includes(id)) return; onSelect(id); endPick(); }, onCancel: endPick });
-  } } : null;
-  return <form className="cad-property-form" onKeyDown={event => { if (pickCurrent && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); endPick(); } }} onSubmit={(event) => { event.preventDefault(); if (pickCurrent || staleDraft || scalarPending) return; if (waitingForPreview) { setError('Wait for a valid preview of this edit.'); return; } try { onApply(draft, parameterEdits); setError(null); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to apply this feature.'); } }}>
+  const pickingContext = useMemo<ContextType<typeof CadFeatureReferencePickingContext>>(() => {
+    if (!onReferencePick || !documentVersion || staleDraft) return null;
+    const owns = (token: symbol) => pickToken.current === token && pickEnvironment.current.document === document && pickEnvironment.current.documentVersion === documentVersion;
+    const begin = () => {
+      if (pickToken.current || depthGestureActive) return null;
+      pickerFocus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null;
+      const token = Symbol('feature-pick'); pickToken.current = token; return token;
+    };
+    return { precedingIds: new Set(preceding.map(feature => feature.id)),
+      begin(label: string, eligibleIds: readonly string[], onSelect: (id: string) => void) {
+        const token = begin(); if (!token) return;
+        setPicker({ kind: 'pick', owner: previewOwner, expectedVersion: documentVersion, label, eligibleIds,
+          onSelect(id) { if (!owns(token) || !eligibleIds.includes(id)) return; onSelect(id); endPick(token, true); }, onCancel: () => endPick(token) });
+      },
+      beginRegions(sketchId, cells, placement, selection, onSelect) {
+        if ((draft.kind !== 'extrude' && draft.kind !== 'pocket') || draft.sketchId !== sketchId || !preceding.some(feature => feature.id === sketchId && feature.kind === 'sketch' && !feature.suppressed)) return;
+        const token = begin(); if (!token) return;
+        regionStart.current = { feature: draft, document, version: documentVersion };
+        setPicker({ kind: 'pick-regions', owner: previewOwner, expectedVersion: documentVersion, label: 'Sketch areas', sketchId, cells, placement, selection,
+          onSelect(next) {
+            if (!owns(token)) return;
+            onSelect(next); setPicker(previous => previous?.kind === 'pick-regions' ? { ...previous, selection: next } : previous);
+          }, onFinish: () => { if (owns(token)) endPick(token, true); }, onCancel: () => endPick(token) });
+      }
+    };
+  }, [onReferencePick, documentVersion, staleDraft, preceding, depthGestureActive, previewOwner, document, draft]);
+  return <form className="cad-property-form" onKeyDown={event => { if (pickCurrent && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); endPick(); } }} onSubmit={(event) => { event.preventDefault(); if (pickCurrent || staleDraft || scalarPending || depthGestureActive) return; if (waitingForPreview) { setError('Wait for a valid preview of this edit.'); return; } try { onApply(draft, parameterEdits); setError(null); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to apply this feature.'); } }}>
     <div className="cad-property-title">{isNew ? 'Create' : 'Edit'} {featureLabels[draft.kind]}<CadContextHelp label={featureLabels[draft.kind]}>{cadFeatureHelp[draft.kind]}</CadContextHelp></div>
-    <fieldset className="cad-feature-fields" disabled={Boolean(pickCurrent) || staleDraft}>
+    <fieldset className="cad-feature-fields" disabled={Boolean(pickCurrent) || staleDraft || depthGestureActive}>
     <CadFeatureReferencePickingContext.Provider value={pickingContext}>{fields}</CadFeatureReferencePickingContext.Provider></fieldset>
-    {pickCurrent && <div className="cad-reference-pick-status" role="status">Pick {pickCurrent.label.toLowerCase()} in the model or history<button type="button" aria-label="Cancel source selection" onClick={endPick}><X size={13} /></button></div>}
+    {pickCurrent?.kind === 'pick' && <div className="cad-reference-pick-status" role="status">Pick {pickCurrent.label.toLowerCase()} in the model or history<button type="button" aria-label="Cancel source selection" onClick={() => endPick()}><X size={13} /></button></div>}
     {preview && <div className={`cad-feature-preview-status${preview.kind === 'error' ? ' is-error' : ''}`} role={preview.kind === 'error' ? 'alert' : 'status'}>
       {preview.kind === 'error' ? preview.message : preview.kind === 'ready' && currentPreviewReady
         ? `Preview${previewSolidCount !== undefined && previewSolidCount > 1 ? ` · ${previewSolidCount} solids` : ''} · Apply to keep`
@@ -186,7 +303,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
     </div>}
     {error && <p className="cad-error" role="alert">{error}</p>}
     {staleDraft && <p className="cad-error" role="alert">The part changed. Cancel this edit and reopen the current feature.</p>}
-    {(isNew || changed || scalarPending || staleDraft) && <div className="cad-form-actions"><button type="button" onClick={onCancel}><X size={13} /> Cancel</button><button type="submit" className="cad-primary" disabled={!isNew && !changed || scalarPending || waitingForPreview || Boolean(pickCurrent) || staleDraft}><Check size={13} /> Apply</button></div>}
+    {(isNew || changed || scalarPending || staleDraft || depthGestureActive) && <div className="cad-form-actions"><button type="button" onClick={onCancel}><X size={13} /> Cancel</button><button type="submit" className="cad-primary" disabled={!isNew && !changed || scalarPending || waitingForPreview || Boolean(pickCurrent) || staleDraft || depthGestureActive}><Check size={13} /> Apply</button></div>}
   </form>;
 }
 

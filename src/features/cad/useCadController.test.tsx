@@ -21,6 +21,7 @@ import { loadEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { importCadDxfSketch, type CadDxfImportInput, type CadDxfImportResult } from '@/domain/cad/cadDxfImport';
 import { importCadDxfCurve, type CadDxfCurveImportInput, type CadDxfCurveImportResult } from '@/domain/cad/cadCurveDxf';
 import { parseDxf } from '@/domain/dxf/parseDxf';
+import { part as regionPart, refs as regionRefs, sketch as regionSketch, pad as regionPad } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
 
 const kernel = vi.hoisted(() => ({ build: vi.fn(), section: vi.fn(), export: vi.fn(), importSolid: vi.fn(), importDxf: vi.fn(), importDxfCurve: vi.fn(), inspectTopology: vi.fn(), resolveTopologyPicks: vi.fn(), dispose: vi.fn() }));
 const createClient = vi.hoisted(() => vi.fn());
@@ -1039,6 +1040,126 @@ describe('CAD controller asynchronous guards', () => {
     expect(h.session.getSnapshot().document.name).toBe('Accepted edit');
     expect(new TextEncoder().encode(JSON.stringify(receipt)).length).toBeLessThan(32 * 1024);
   });
+  it('inspects complete closed cells through public guarded tools without native work, history or source changes', async () => {
+    const h = await harness(); await act(async () => h.session.replace(regionPart([regionSketch()])));
+    const before = h.session.getSnapshot(), text = JSON.stringify(before.document);
+    const tools = cadSiteTools(h.cad);
+    const inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions');
+    const read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+    if (!inspect || !read) throw new Error('Missing region inspection/read tools');
+    const first = await inspect.execute({ expectedVersion: before.version, sketchId: 'regions', offset: 0, limit: 2 });
+    expect(first).toMatchObject({ ok: true, data: { version: before.version, sketchId: 'regions', total: 4, nextOffset: 2,
+      items: [{ reference: regionRefs.bore, areaMm2: expect.closeTo(32 * Math.PI, 9), defaultMaterial: false },
+        { reference: regionRefs.island, areaMm2: expect.closeTo(4 * Math.PI, 9), defaultMaterial: true }] } });
+    const second = await inspect.execute({ expectedVersion: before.version, sketchId: 'regions', offset: 2, limit: 2 });
+    expect(second).toMatchObject({ ok: true, data: { total: 4, nextOffset: null, items: [{ reference: regionRefs.outer }, { reference: regionRefs.separate }] } });
+    const chunks: string[] = []; let offset: number | null = 0;
+    while (offset !== null) {
+      const reply = await read.execute({ expectedVersion: before.version, sketchId: 'regions', boundaryProfileId: 'bore', offset, length: 17 }) as {
+        ok: boolean; data: { text: string; nextOffset: number | null; totalLength: number }
+      };
+      expect(reply.ok).toBe(true); chunks.push(reply.data.text); offset = reply.data.nextOffset;
+    }
+    expect(chunks.join('')).toBe(JSON.stringify(regionRefs.bore));
+    expect(h.session.getSnapshot()).toEqual(before); expect(JSON.stringify(h.session.getSnapshot().document)).toBe(text);
+    expect(createClient).not.toHaveBeenCalled();
+    await act(async () => h.session.setWorkflowOpen(true));
+    for (const tool of [inspect, read]) expect(await tool.execute({ expectedVersion: before.version, sketchId: 'regions',
+      ...(tool === read ? { boundaryProfileId: 'bore' } : {}) })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    await act(async () => h.session.setWorkflowOpen(false));
+    await act(async () => h.session.edit([{ kind: 'rename-document', name: 'Renamed' }], before.version));
+    expect(await read.execute({ expectedVersion: before.version, sketchId: 'regions', boundaryProfileId: 'bore' })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    const abort = new AbortController(); abort.abort();
+    expect(await inspect.execute({ expectedVersion: h.session.getSnapshot().version, sketchId: 'regions' }, { signal: abort.signal })).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+  });
+
+  it('preflights proposed source cells through guarded reads and repairs shared-driver selections in one atomic public edit', async () => {
+    const h = await harness(); vi.useFakeTimers();
+    try {
+      const first = { ...regionSketch(), profiles: regionSketch().profiles.map(profile => profile.id === 'bore' && profile.geometry.kind === 'circle'
+        ? { ...profile, geometry: { ...profile.geometry, x: 'location' } } : profile) };
+      const second = { ...first, id: 'second', name: 'Second' };
+      await act(async () => h.session.replace(regionPart([first, regionPad([regionRefs.outer]), second,
+        { ...regionPad([regionRefs.outer]), id: 'second_pad', sketchId: 'second' }], { location: 0 })));
+      const before = h.session.getSnapshot(), original = JSON.stringify(before.document), tools = cadSiteTools(h.cad);
+      const inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+      const edit = tools.find(tool => tool.name === 'cad_edit_document');
+      if (!inspect || !read || !edit) throw new Error('Missing public region operations');
+      const proposedSource = { ...second, profiles: second.profiles.filter(profile => profile.id !== 'island').concat([
+        { id: 'fresh', name: 'Fresh', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 1 } },
+      ]) };
+      const proposal = { sketch: proposedSource, parameterValues: { location: 50 } }, expected = { boundaryProfileId: 'outer', voidProfileIds: ['fresh'], ancestorProfileIds: [] };
+      const reply = await inspect.execute({ expectedVersion: before.version, sketchId: 'second', proposal });
+      expect(reply).toMatchObject({ ok: true, data: { version: before.version, proposed: true,
+        items: expect.arrayContaining([{ boundaryProfileId: 'outer', reference: expected, areaMm2: expect.closeTo(99 * Math.PI, 9),
+          name: 'outer', kind: 'circle', depth: 0, defaultMaterial: true, boundaryLengthMm: expect.closeTo(22 * Math.PI, 9),
+          boundsMm: { minX: -10, minY: -10, maxX: 10, maxY: 10 }, referenceOmitted: false, voidProfileCount: 1, ancestorProfileCount: 0,
+          referenceLength: JSON.stringify(expected).length, referenceByteLength: new TextEncoder().encode(JSON.stringify(expected)).length }]) } });
+      let offset: number | null = 0; const chunks: string[] = [];
+      while (offset !== null) {
+        const chunk = await read.execute({ expectedVersion: before.version, sketchId: 'second', boundaryProfileId: 'outer', proposal, offset, length: 17 }) as {
+          ok: boolean; data: { text: string; nextOffset: number | null; proposed: boolean }
+        };
+        expect(chunk.ok).toBe(true); expect(chunk.data.proposed).toBe(true); chunks.push(chunk.data.text); offset = chunk.data.nextOffset;
+      }
+      expect(chunks.join('')).toBe(JSON.stringify(expected));
+      expect(await read.execute({ expectedVersion: before.version, sketchId: 'second', boundaryProfileId: 'outer', proposal: { parameterValues: { location: 0 } } }))
+        .toMatchObject({ ok: true, data: { proposed: true, text: JSON.stringify(regionRefs.outer) } });
+      expect(await inspect.execute({ expectedVersion: before.version, sketchId: 'second', proposal: { sketch: { ...proposedSource, id: 'wrong' } } }))
+        .toMatchObject({ ok: false, error: { code: 'invalid-region-proposal' } });
+      const invalidSource = { ...proposedSource, profiles: [{ id: 'bad', name: 'Bad', construction: false,
+        geometry: { kind: 'circle', x: 0, y: 0, radius: -1 } }] };
+      expect(await inspect.execute({ expectedVersion: before.version, sketchId: 'second', proposal: { sketch: invalidSource } }))
+        .toMatchObject({ ok: false, error: { code: 'invalid-profile' } });
+      expect(h.session.getSnapshot()).toBe(before); expect(JSON.stringify(h.session.getSnapshot().document)).toBe(original); expect(createClient).not.toHaveBeenCalled();
+      await act(async () => h.session.setWorkflowOpen(true));
+      for (const tool of [inspect, read]) expect(await tool.execute({ expectedVersion: before.version, sketchId: 'second', proposal,
+        ...(tool === read ? { boundaryProfileId: 'outer' } : {}) })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+      await act(async () => h.session.setWorkflowOpen(false));
+      const abort = new AbortController(), pending = inspect.execute({ expectedVersion: before.version, sketchId: 'second', proposal }, { signal: abort.signal });
+      abort.abort(); expect(await pending).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+      const earlier = { boundaryProfileId: 'outer', voidProfileIds: ['island'], ancestorProfileIds: [] };
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits: [
+        { kind: 'set-parameter', name: 'location', value: 50 }, { kind: 'update-feature', feature: proposedSource },
+        { kind: 'update-feature', feature: regionPad([earlier]) }, { kind: 'update-feature', feature: { ...regionPad([expected]), id: 'second_pad', sketchId: 'second' } },
+      ] })).toMatchObject({ ok: true }); });
+      const accepted = h.session.getSnapshot(); expect(accepted.document.features[2]).toEqual(proposedSource); expect(accepted.document.features[0]).toEqual(first);
+      expect(await read.execute({ expectedVersion: before.version, sketchId: 'second', boundaryProfileId: 'outer', proposal }))
+        .toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+      await act(async () => h.cad().undo(accepted.version)); expect(h.session.getSnapshot().document).toEqual(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+      await act(async () => h.cad().redo(h.session.getSnapshot().version)); expect(h.session.getSnapshot().document).toEqual(accepted.document);
+      expect(createClient).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('returns honest oversized-cell summaries and reads the exact complete signature in bounded public chunks', async () => {
+    const h = await harness();
+    const childIds = Array.from({ length: 1001 }, (_, index) => `child_${String(index).padStart(5, '0')}_${'x'.repeat(84)}`);
+    const source = { ...regionSketch(false), profiles: [{ id: 'outer', name: 'Outer', construction: false,
+      geometry: { kind: 'circle' as const, x: 0, y: 0, radius: 200 } }, ...childIds.map((id, index) => ({ id, name: id, construction: false,
+      geometry: { kind: 'circle' as const, x: (index % 32 - 15.5) * 4, y: (Math.floor(index / 32) - 15.5) * 4, radius: .5 } }))] };
+    await act(async () => h.session.replace(regionPart([source])));
+    const before = h.session.getSnapshot();
+    const tools = cadSiteTools(h.cad), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions');
+    const read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+    if (!inspect || !read) throw new Error('Missing region inspection/read tools');
+    const expected = { boundaryProfileId: 'outer', voidProfileIds: childIds, ancestorProfileIds: [] }, exact = JSON.stringify(expected);
+    const summary = await inspect.execute({ expectedVersion: before.version, sketchId: 'regions', offset: 1001, limit: 1 });
+    expect(summary).toMatchObject({ ok: true, data: { total: 1002, nextOffset: null, items: [{ boundaryProfileId: 'outer', referenceOmitted: true,
+      voidProfileCount: 1001, ancestorProfileCount: 0, referenceLength: exact.length, referenceByteLength: new TextEncoder().encode(exact).length }] } });
+    expect(new TextEncoder().encode(JSON.stringify(summary)).length).toBeLessThan(32 * 1024);
+    const chunks: string[] = []; let offset: number | null = 0;
+    while (offset !== null) {
+      const reply = await read.execute({ expectedVersion: before.version, sketchId: 'regions', boundaryProfileId: 'outer', offset, length: 4096 }) as {
+        ok: boolean; data: { text: string; nextOffset: number | null }
+      };
+      expect(reply.ok).toBe(true); expect(new TextEncoder().encode(JSON.stringify(reply)).length).toBeLessThan(32 * 1024);
+      chunks.push(reply.data.text); offset = reply.data.nextOffset;
+    }
+    expect(chunks.join('')).toBe(exact); expect(JSON.parse(chunks.join(''))).toEqual(expected);
+    expect(h.session.getSnapshot()).toEqual(before); expect(createClient).not.toHaveBeenCalled();
+  });
+
   it('captures bounded real-image data with CAD draft provenance and exposes only its local artifact receipt', async () => {
     const h = await harness(true); const snapshot = h.session.getSnapshot();
     let state: CadViewportState = { documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,

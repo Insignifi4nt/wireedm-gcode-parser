@@ -31,10 +31,13 @@ export function CadSettingsPanel() {
           {(preferences.navigationMode === 'trackpad' ? [['Two-finger scroll', 'Pan'], ['Pinch', 'Zoom'], ['Alt + two-finger scroll', 'Orbit in 3D']]
             : [['Left drag', 'Orbit in 3D'], ['Right drag', 'Pan'], ['Scroll wheel', 'Zoom']]).map(([gesture, action]) => <tr key={gesture} className="border-b border-border/60"><th className="py-2 pr-3 font-normal text-muted-foreground">{gesture}</th><td className="py-2">{action}</td></tr>)}
         </tbody></table>
-      </div> : <label className="flex max-w-md cursor-pointer items-start gap-3 rounded-sm border border-border p-3">
+      </div> : <div className="grid max-w-md gap-3"><label className="flex cursor-pointer items-start gap-3 rounded-sm border border-border p-3">
         <input type="checkbox" className="mt-0.5" checked={preferences.showOnPartDimensions} onChange={event => update({ ...preferences, showOnPartDimensions: event.target.checked })} />
         <span><span className="block font-medium">On-part dimensions</span><span className="mt-1 block text-[11px] text-muted-foreground">Show editable dimension controls beside selected sketch geometry.</span></span>
-      </label>}
+      </label><label className="flex cursor-pointer items-start gap-3 rounded-sm border border-border p-3">
+        <input type="checkbox" className="mt-0.5" checked={preferences.showDepthHandles === true} onChange={event => update({ ...preferences, showDepthHandles: event.target.checked })} />
+        <span><span className="block font-medium">Extrusion depth handles</span><span className="mt-1 block text-[11px] text-muted-foreground">Drag a Pad or Pocket's depth on the part. Apply keeps the edit; Cancel restores it.</span></span>
+      </label></div>}
     </div>
     {sessionOnly && <div role="status" className="text-[11px] text-amber-200">Applied for this session. Browser preferences could not be saved.</div>}
   </div>;

@@ -1,5 +1,11 @@
 # Node 24 and CI repair checkpoint
 
+## Latest complete execution
+
+Actual GitHub run 38627593990 at fba236e004fb863e29d81bfc029be36b001397ac succeeds: all 366 unit files / 3,883 cases, conformance, machine-package validation, production build and documentation/native-source checks pass. The 124 Chromium journeys finish with 123 passes, no failure or flaky retry, and the unchanged optional local-folder smoke skip. All 34 CAD journeys pass on their first attempt. No suite retry, timeout or product guard was weakened. Current region/depth product work remains uncommitted and requires its own review, browser and complete CI gates. Logs: `tmp/cad-initial-capture-complete-ci.log`.
+
+## Earlier checkpoints
+
 ## Latest actual CI continuation
 
 Actual GitHub run 38623929179 at 4a16f44774a2a49d9ebfd16a8938f733005b07e2 succeeds: all 366 unit files / 3,883 cases, conformance, machine-package validation and production build pass. Of 124 Chromium journeys, 122 pass on their first attempt, one graphics-loss journey passes on retry and the unchanged optional folder smoke fixture is skipped. Its initial pre-loss capture at line 179 correctly rejects a changing observed view with STALE_VIEW. The next narrow repair uses the already reviewed bounded capture client only at that initial call, adds exact provenance/version/build checks and preserves all deliberate graphics-loss, unavailable-capture, recovery, native and opaque-image assertions. No suite retry, timeout or product guard changes. Complete next-head execution remains required. Logs: `tmp/cad-capture-complete-ci.log` and `cad-capture-github-watch.log`.

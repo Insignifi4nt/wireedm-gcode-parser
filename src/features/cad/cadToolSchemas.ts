@@ -13,6 +13,8 @@ const featureEnvelope = Type.Object({
   id: featureBase.id, name: featureBase.name, suppressed: featureBase.suppressed,
   kind: Type.String()
 }, { additionalProperties: true });
+export const CadToolSketchEnvelope = Type.Object({ ...featureEnvelope.properties, kind: Type.Literal('sketch') },
+  { additionalProperties: true, description: 'Full sketch: cad_describe_features(kind=sketch).' });
 
 const pluginBase = CadPluginPackageSchema.anyOf[0].properties;
 export const CadToolPluginPackageEnvelope = Type.Object({
