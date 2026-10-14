@@ -1,6 +1,6 @@
 # Actual app integration review
 
-The icon branch is rebased onto `feature/parametric-cad-workbench` at `c36aa3b`. Conflicts retained the latest CAD implementations; icon substitutions were applied afterward. CAD/domain implementations match the target branch. A literal/JSX-text comparison found only the intended text-icon, decorative accessibility and icon-layout substitutions, with control labels, data values and operation names preserved.
+The icon branch includes `feature/parametric-cad-workbench` at `8375c29`. It was first rebased onto `c36aa3b`, then merged the newer published capacity/storage/runtime checkpoint cleanly. Conflicts retained the latest CAD implementations; icon substitutions were applied afterward. CAD/domain implementations match the target branch. A literal/JSX-text comparison found only the intended text-icon, decorative accessibility and icon-layout substitutions, with control labels, data values and operation names preserved.
 
 The current audit now uses the published 282-occurrence inventory instead of the historical 228-occurrence scout. All 282 originals resolve to their intended semantic icons, all eight dynamic slots remain rendered, and all 17 feature kinds remain mapped. There are 297 current references including 15 additional text/semantic icon references, with no Lucide imports, unresolved exports or semantic mismatches.
 
@@ -25,3 +25,7 @@ The Storage category keeps the conventional browser-cache/storage cylinder, whic
 Two optical limits were reviewed and retained: the imported-body marker is small at 14 pixels, but preserves the body projection and incoming arrow without crowding its facets; the combined edge-treatment menu uses the familiar fillet-family glyph, with a dropdown and an explicit round-or-bevel title. Its separate Fillet and Chamfer menu choices have distinct drawings. Neither finding justified adding detail to the compact toolbar.
 
 Root verified the final live catalog has 134 cards, six comparison families, one 24-unit viewBox, one 1.75-unit stroke width, and actual CSS sizes of 12/14/15/16/20/24 plus the larger header specimen. The catalog remains open as the user-facing deliverable. No perfection or unlabelled universal-recognition claim is made.
+
+## Latest CAD checkpoint follow-up
+
+The published `8375c29` inventory preserves the same 282 occurrence IDs and eight dynamic slots. None of the actual UI icon call sites changed. CAD domain and controller implementations remain identical to the new target branch. Node 24.22.0 passes all 100 UI files / 1,034 tests with two workers, icon checks, geometry constraints, integration-map parity, release compatibility and production build checks. Root refreshed the actual catalog and checked CAD startup, the toolbar, feature tree and File menu on the rebuilt isolated preview. See [CAD screenshot](icon-review/actual-app/cad-root-8375c29.png) and [catalog screenshot](icon-review/actual-app/catalog-8375c29.png). Luna's follow-up interactive browser was unavailable; the earlier three interactive reviews cover the unchanged icon call sites.

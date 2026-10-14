@@ -21,3 +21,7 @@ One low-priority polish candidate: the combined **Fillet / Chamfer** trigger use
 - [Enabled File menu actions](actual-app/cad-luna-file-menu-solid.png)
 - [View controls, solid model](actual-app/cad-luna-view-controls-solid.png)
 - [Fillet/Chamfer menu](actual-app/cad-luna-edge-treatment-menu.png)
+
+## 8375c29 checkpoint follow-up
+
+I visually inspected the two later captures supplied by the root agent: [CAD workbench](actual-app/cad-root-8375c29.png) and [icon catalog](actual-app/catalog-8375c29.png). My interactive browser surface was unavailable for this checkpoint, so I did not interact with or independently capture the refreshed app. The empty CAD toolbar and catalog specimens retain the same thin-stroke family; the 14 px operation glyphs remain distinguishable with their labels, and the basic geometry, face/edge, body, and repetition icons keep clear outlines. Disabled body commands are subdued in the empty model as expected. I found no new actionable shape, closure, or consistency defect.

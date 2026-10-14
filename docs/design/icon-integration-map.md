@@ -1,6 +1,6 @@
 # Icon integration map
 
-Published CAD checkpoint: `c36aa3b50a30f82ded3508652d9e7917c69b6b59`. Complete set: 134 original glyphs, 282 direct usages, 8 dynamic slots, 206 expanded variants and 15 text controls. This is a concrete mapping for integration; the CAD implementation has not been copied into this worktree.
+Published CAD checkpoint: `8375c294d09e0a43b48b7c37d977cc59fd9a4065`. Complete set: 134 original glyphs, 282 direct usages, 8 dynamic slots, 206 expanded variants and 15 text controls. This is a concrete mapping for integration; the CAD implementation has not been copied into this worktree.
 
 The [JSON](icon-integration-map.json) includes semantic component exports, original path data, exact SVG SHA-256 digests, stable usage IDs, source-file hashes and owning control/call metadata. The [crosswalk](final-inventory-crosswalk.md) also accounts for excluded geometry, cursor, native and text channels.
 

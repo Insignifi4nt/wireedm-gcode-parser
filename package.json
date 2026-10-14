@@ -9,7 +9,7 @@
     "icons:check": "node scripts/generate-icons.mjs --check && node scripts/audit-icon-current-integration.mjs --check && npm run icons:geometry && vitest --run src/components/icons",
     "icons:geometry": "node scripts/icon-revisions/check-cam-v3-geometry.mjs --check",
     "icons:integration": "node scripts/build-icon-integration-map.mjs",
-    "icons:audit": "node scripts/audit-icon-current-integration.mjs && node scripts/reconcile-icon-inventory.mjs --inventory docs/design/inventory/checkpoints/c36aa3b/icon-inventory.audit.json --markdown docs/design/inventory/checkpoints/c36aa3b/icon-inventory.md",
+    "icons:audit": "node scripts/audit-icon-current-integration.mjs && node scripts/reconcile-icon-inventory.mjs --inventory docs/design/inventory/checkpoints/8375c29/icon-inventory.audit.json --markdown docs/design/inventory/checkpoints/8375c29/icon-inventory.md",
     "icons:review": "node scripts/render-icon-review.mjs && node scripts/audit-icon-review-coverage.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",

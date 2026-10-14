@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-10-14T16:56:21.414Z",
+  "generatedAt": "2026-10-14T17:26:30.697Z",
   "baseline": {
-    "path": "docs/design/inventory/checkpoints/c36aa3b/icon-inventory.audit.json",
+    "path": "docs/design/inventory/checkpoints/8375c29/icon-inventory.audit.json",
     "publishedCheckpoint": "c36aa3b50a30f82ded3508652d9e7917c69b6b59",
     "originalOccurrenceCount": 282,
     "originalDynamicSlotCount": 8,
     "originalContextPreserved": true
   },
   "currentSource": {
-    "scannedProductionTsFiles": 436,
+    "scannedProductionTsFiles": 438,
     "catalogImports": 249,
     "currentImportedSymbolReferences": 297,
     "catalogExportsParsed": 227,

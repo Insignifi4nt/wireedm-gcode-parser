@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "publishedCadCheckpoint": "c36aa3b50a30f82ded3508652d9e7917c69b6b59",
+  "publishedCadCheckpoint": "8375c294d09e0a43b48b7c37d977cc59fd9a4065",
   "externalSnapshot": {
-    "generatedAt": "2026-10-14T15:49:20.282Z",
-    "revision": "09795ec5e0e404f5ce69ff2173dea119a69f66ce",
-    "auditSha256": "1f7cf96e5d9963b049eedfa014ed7e941da0bb4ea1d0a09bead3665f83f3d11e",
-    "sourceHashDigest": "7789160785ab08b37ef1858f968fa2dddd46ee30f8db62fc772dde062143df24"
+    "generatedAt": "2026-10-14T17:17:33.459Z",
+    "revision": "c36aa3b50a30f82ded3508652d9e7917c69b6b59",
+    "auditSha256": "938c390a3c96ff05747e4ef422fcf10d7960978504721dd0419a88aaa3a981dc",
+    "sourceHashDigest": "7fe452340154b25ccb46722749d83fb1a8dcf8d7ba8aa708b6862f3f67df07f3"
   },
   "catalog": {
     "count": 134,
