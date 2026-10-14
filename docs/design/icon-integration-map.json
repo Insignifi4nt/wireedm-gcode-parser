@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "publishedCadCheckpoint": "8375c294d09e0a43b48b7c37d977cc59fd9a4065",
+  "publishedCadCheckpoint": "b0be1bce26f8eb671d27d17d17a33812afd52443",
   "externalSnapshot": {
-    "generatedAt": "2026-10-14T17:17:33.459Z",
-    "revision": "c36aa3b50a30f82ded3508652d9e7917c69b6b59",
-    "auditSha256": "938c390a3c96ff05747e4ef422fcf10d7960978504721dd0419a88aaa3a981dc",
-    "sourceHashDigest": "7fe452340154b25ccb46722749d83fb1a8dcf8d7ba8aa708b6862f3f67df07f3"
+    "generatedAt": "2026-10-14T18:21:53.733Z",
+    "revision": "8375c294d09e0a43b48b7c37d977cc59fd9a4065",
+    "auditSha256": "c3ad60bdc2dfdb5f54c441ea5840440961b1b82817ca2d07f8c4cbb02bc5c5bd",
+    "sourceHashDigest": "0e121029329c3049bab2ef2d60b90d69d00c72303d6d02b6b31855b5f1337327"
   },
   "catalog": {
     "count": 134,
@@ -2349,9 +2349,9 @@
     {
       "usageId": "use.17d6c49b16a9",
       "file": "src/features/cad/CadCommandDock.tsx",
-      "snapshotLine": 26,
+      "snapshotLine": 30,
       "snapshotColumn": 56,
-      "snapshotSourceHash": "6b18576199ab8779af7059316fe70a08ac478b335fad73904dc4d2f42161062f",
+      "snapshotSourceHash": "e16b3da10032756eb795866c404a95ce65965f0e33f77b166bae26757ea81c53",
       "sourceSymbol": "ChevronDown",
       "canonicalDrawing": "icon.lucide.chevron-down",
       "expression": "ChevronDown",
@@ -2372,9 +2372,9 @@
     {
       "usageId": "use.28edd08da582",
       "file": "src/features/cad/CadContextHelp.tsx",
-      "snapshotLine": 64,
-      "snapshotColumn": 188,
-      "snapshotSourceHash": "0a93559cae05eb384838f7abde866f5f71e6e1ce7eee0f8fabbee9971e7c2068",
+      "snapshotLine": 71,
+      "snapshotColumn": 215,
+      "snapshotSourceHash": "5fdb914f46230a88a5617b2321ad60f3cffdbfb3c0a17cb5773c920bdb38ef6d",
       "sourceSymbol": "Info",
       "canonicalDrawing": "icon.lucide.info",
       "expression": "Info",
@@ -2390,14 +2390,14 @@
         }
       ],
       "disposition": "semantic-override",
-      "reason": "Contextual action/visual meaning in src/features/cad/CadContextHelp.tsx:64 resolves to help, overriding the generic imported glyph alias."
+      "reason": "Contextual action/visual meaning in src/features/cad/CadContextHelp.tsx:71 resolves to help, overriding the generic imported glyph alias."
     },
     {
       "usageId": "use.3c1668dc8ef2",
       "file": "src/features/cad/CadContextHelp.tsx",
-      "snapshotLine": 67,
+      "snapshotLine": 74,
       "snapshotColumn": 127,
-      "snapshotSourceHash": "0a93559cae05eb384838f7abde866f5f71e6e1ce7eee0f8fabbee9971e7c2068",
+      "snapshotSourceHash": "5fdb914f46230a88a5617b2321ad60f3cffdbfb3c0a17cb5773c920bdb38ef6d",
       "sourceSymbol": "X",
       "canonicalDrawing": "icon.lucide.x",
       "expression": "X",
@@ -4061,9 +4061,9 @@
     {
       "usageId": "use.677f18c1c4b5",
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "snapshotLine": 473,
+      "snapshotLine": 442,
       "snapshotColumn": 280,
-      "snapshotSourceHash": "476bdcdca5743fc974e145c402e093754ef421434363fc56b6a712a082aed900",
+      "snapshotSourceHash": "b8e891b2095ded0c8997fffaac9b1d470d9563407f67664b0d8047d5f2d2cd48",
       "sourceSymbol": "Maximize2",
       "canonicalDrawing": "icon.lucide.maximize-2",
       "expression": "Maximize2",
@@ -4084,9 +4084,9 @@
     {
       "usageId": "use.e847dcdbea73",
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "snapshotLine": 473,
+      "snapshotLine": 442,
       "snapshotColumn": 425,
-      "snapshotSourceHash": "476bdcdca5743fc974e145c402e093754ef421434363fc56b6a712a082aed900",
+      "snapshotSourceHash": "b8e891b2095ded0c8997fffaac9b1d470d9563407f67664b0d8047d5f2d2cd48",
       "sourceSymbol": "Grid2X2",
       "canonicalDrawing": "icon.lucide.grid-2x2",
       "expression": "Grid2X2",
@@ -4107,9 +4107,9 @@
     {
       "usageId": "use.9e3c15469d52",
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "snapshotLine": 473,
+      "snapshotLine": 442,
       "snapshotColumn": 570,
-      "snapshotSourceHash": "476bdcdca5743fc974e145c402e093754ef421434363fc56b6a712a082aed900",
+      "snapshotSourceHash": "b8e891b2095ded0c8997fffaac9b1d470d9563407f67664b0d8047d5f2d2cd48",
       "sourceSymbol": "Magnet",
       "canonicalDrawing": "icon.lucide.magnet",
       "expression": "Magnet",
@@ -4130,9 +4130,9 @@
     {
       "usageId": "use.fe732cfdd5c1",
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "snapshotLine": 480,
+      "snapshotLine": 449,
       "snapshotColumn": 434,
-      "snapshotSourceHash": "476bdcdca5743fc974e145c402e093754ef421434363fc56b6a712a082aed900",
+      "snapshotSourceHash": "b8e891b2095ded0c8997fffaac9b1d470d9563407f67664b0d8047d5f2d2cd48",
       "sourceSymbol": "Check",
       "canonicalDrawing": "icon.lucide.check",
       "expression": "Check",
@@ -4153,9 +4153,9 @@
     {
       "usageId": "use.425d9ab4e8af",
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "snapshotLine": 480,
+      "snapshotLine": 449,
       "snapshotColumn": 658,
-      "snapshotSourceHash": "476bdcdca5743fc974e145c402e093754ef421434363fc56b6a712a082aed900",
+      "snapshotSourceHash": "b8e891b2095ded0c8997fffaac9b1d470d9563407f67664b0d8047d5f2d2cd48",
       "sourceSymbol": "Undo2",
       "canonicalDrawing": "icon.lucide.undo-2",
       "expression": "Undo2",
@@ -4176,9 +4176,9 @@
     {
       "usageId": "use.e9fc8e08e6ce",
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "snapshotLine": 480,
+      "snapshotLine": 449,
       "snapshotColumn": 786,
-      "snapshotSourceHash": "476bdcdca5743fc974e145c402e093754ef421434363fc56b6a712a082aed900",
+      "snapshotSourceHash": "b8e891b2095ded0c8997fffaac9b1d470d9563407f67664b0d8047d5f2d2cd48",
       "sourceSymbol": "X",
       "canonicalDrawing": "icon.lucide.x",
       "expression": "X",
@@ -4199,9 +4199,9 @@
     {
       "usageId": "use.6f3a6f726e66",
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "snapshotLine": 482,
+      "snapshotLine": 451,
       "snapshotColumn": 106,
-      "snapshotSourceHash": "476bdcdca5743fc974e145c402e093754ef421434363fc56b6a712a082aed900",
+      "snapshotSourceHash": "b8e891b2095ded0c8997fffaac9b1d470d9563407f67664b0d8047d5f2d2cd48",
       "sourceSymbol": "Check",
       "canonicalDrawing": "icon.lucide.check",
       "expression": "Check",
@@ -4222,9 +4222,9 @@
     {
       "usageId": "use.9ac7844c966d",
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "snapshotLine": 482,
+      "snapshotLine": 451,
       "snapshotColumn": 209,
-      "snapshotSourceHash": "476bdcdca5743fc974e145c402e093754ef421434363fc56b6a712a082aed900",
+      "snapshotSourceHash": "b8e891b2095ded0c8997fffaac9b1d470d9563407f67664b0d8047d5f2d2cd48",
       "sourceSymbol": "X",
       "canonicalDrawing": "icon.lucide.x",
       "expression": "X",
@@ -8656,14 +8656,14 @@
     {
       "usageId": "use.526981a64633",
       "file": "src/features/cad/CadContextHelp.tsx",
-      "snapshotLine": 64,
-      "snapshotColumn": 168,
-      "snapshotSourceHash": "0a93559cae05eb384838f7abde866f5f71e6e1ce7eee0f8fabbee9971e7c2068",
+      "snapshotLine": 71,
+      "snapshotColumn": 195,
+      "snapshotSourceHash": "5fdb914f46230a88a5617b2321ad60f3cffdbfb3c0a17cb5773c920bdb38ef6d",
       "slotKind": "dynamic-content-slot",
       "component": "CadContextHelp",
       "expression": "{triggerContent ?? <Info size={12} aria-hidden=\"true\" />}",
       "callName": null,
-      "context": "{triggerContent ?? <Info size={12} aria-hidden=\"true\" />} | <button ref={trigger} type=\"button\" className=\"cad-context-help-trigger\" aria-label={buttonLabel ?? `${label} help`} aria-haspopup=\"dialog\" aria-expanded={open} aria-controls={open ? id : undefined} onMouseEnter={() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }} onMouseLeave={() => { suppressed.current = false; leave(); }} onFocus={() => { if (activation === 'preview' && !suppressed.current) show(true); }} onBlur={event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }} onClick={event => { if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}>{triggerContent ?? <Info size={12} aria-hidden=\"true\" />}</button> | ReactNode supplied by parent prop or tab descriptor; absent triggerContent defaults to Info",
+      "context": "{triggerContent ?? <Info size={12} aria-hidden=\"true\" />} | <button ref={trigger} type=\"button\" className=\"cad-context-help-trigger\" aria-label={buttonLabel ?? `${label} help`} aria-haspopup=\"dialog\" aria-expanded={shown} aria-controls={shown ? id : undefined} onMouseEnter={() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }} onMouseLeave={() => { suppressed.current = false; leave(); }} onFocus={() => { if (activation === 'preview' && !suppressed.current) show(true); }} onBlur={event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }} onClick={event => { if (!ownerVisible) return; if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}>{triggerContent ?? <Info size={12} aria-hidden=\"true\" />}</button> | ReactNode supplied by parent prop or tab descriptor; absent triggerContent defaults to Info",
       "replacements": [
         {
           "catalogId": "info",
@@ -10115,10 +10115,10 @@
       "usageId": "use.8cf9c5c4ca15",
       "sourceChannel": "sharedGraphicCalls",
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "snapshotLine": 473,
-      "snapshotSourceHash": "476bdcdca5743fc974e145c402e093754ef421434363fc56b6a712a082aed900",
+      "snapshotLine": 442,
+      "snapshotSourceHash": "b8e891b2095ded0c8997fffaac9b1d470d9563407f67664b0d8047d5f2d2cd48",
       "expression": "<CadContextHelp label=\"Sketch navigation\">",
-      "context": "<CadContextHelp label=\"Sketch navigation\"> | <div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${center[0] - width / 2} ${-center[1] - span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); i",
+      "context": "<CadContextHelp label=\"Sketch navigation\"> | <div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}> <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role=\"application\" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio=\"none\" onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => { if (profileDrag.current) return; if (event.button === 0) suppressProfileClick.current = false; if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; } if (event.isPrimary === false) return; if (event.button === 1 || event.button === 2) { if (viewLocked) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); } } else if (event.button === 0 && !interactionLocked) { // SVG's native focus ring is measured in drawing units. Keep pointer // focus on the canvas rather than the profile's millimetre bounding box. event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); if (tool === 'select' &&",
       "originalDisposition": "excluded-control-call",
       "reason": "Shared form/help/control call has no independent icon prop; its concrete icon children are separately inventoried.",
       "ownReplacements": [],
@@ -12649,7 +12649,7 @@
       "usageId": "use.582faecabec1.help-info",
       "parentUsageId": "use.582faecabec1",
       "file": "src/features/cad/CadSketchProfilePanel.tsx",
-      "context": "\\ | !editor.isNew)`; `editor`; `default triggerContent; help call rendered`; binding [src/features/cad/CadContextHelp.tsx:64:188](../../src/features/cad/CadContextHelp.tsx#L64) | Open help for \"Sketch relation\"; explains the configuration, meaning, range or scalar expression",
+      "context": "\\ | !editor.isNew)`; `editor`; `default triggerContent; help call rendered`; binding [src/features/cad/CadContextHelp.tsx:71:215](../../src/features/cad/CadContextHelp.tsx#L71) | Open help for \"Sketch relation\"; explains the configuration, meaning, range or scalar expression",
       "replacements": [
         {
           "catalogId": "help",
@@ -14077,7 +14077,7 @@
       "usageId": "use.582faecabec1.help-close",
       "parentUsageId": "use.582faecabec1",
       "file": "src/features/cad/CadSketchProfilePanel.tsx",
-      "context": "\\ | !editor.isNew)`; `editor`; `matching help popover open`; binding [src/features/cad/CadContextHelp.tsx:67:127](../../src/features/cad/CadContextHelp.tsx#L67) | Close help for \"Sketch relation\"; returns to the originating configuration",
+      "context": "\\ | !editor.isNew)`; `editor`; `matching help popover open`; binding [src/features/cad/CadContextHelp.tsx:74:127](../../src/features/cad/CadContextHelp.tsx#L74) | Close help for \"Sketch relation\"; returns to the originating configuration",
       "replacements": [
         {
           "catalogId": "close",

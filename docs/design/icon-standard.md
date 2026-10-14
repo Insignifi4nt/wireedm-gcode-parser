@@ -1,6 +1,6 @@
 # Wire EDM icon standard
 
-Status: the 134-icon set is integrated against CAD checkpoint `8375c29` and reviewed in the actual app by Luna subagents. The PR targets `feature/parametric-cad-workbench`. The [final handoff](icon-final-handoff.md) records the concrete assets, source-purpose mapping and validation. App release 0.0.698 follows CAD 0.0.697.
+Status: the 134-icon set is integrated against CAD checkpoint `b0be1bc` and reviewed in the actual app by Luna subagents. The PR targets `feature/parametric-cad-workbench`. The [final handoff](icon-final-handoff.md) records the concrete assets, source-purpose mapping and validation. App release 0.0.698 follows CAD 0.0.697.
 
 ## Target
 

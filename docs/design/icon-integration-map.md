@@ -1,6 +1,6 @@
 # Icon integration map
 
-Published CAD checkpoint: `8375c294d09e0a43b48b7c37d977cc59fd9a4065`. Complete set: 134 original glyphs, 282 direct usages, 8 dynamic slots, 206 expanded variants and 15 text controls. This is a concrete mapping for integration; the CAD implementation has not been copied into this worktree.
+Published CAD checkpoint: `b0be1bce26f8eb671d27d17d17a33812afd52443`. Complete set: 134 original glyphs, 282 direct usages, 8 dynamic slots, 206 expanded variants and 15 text controls. This is a concrete mapping for integration; the CAD implementation has not been copied into this worktree.
 
 The [JSON](icon-integration-map.json) includes semantic component exports, original path data, exact SVG SHA-256 digests, stable usage IDs, source-file hashes and owning control/call metadata. The [crosswalk](final-inventory-crosswalk.md) also accounts for excluded geometry, cursor, native and text channels.
 
@@ -24,7 +24,7 @@ These are renderer slots, not additional occurrences. Match each parent ID to ex
 | --- | --- | --- | --- | --- | ---: |
 | `use.ff7ede67da54` | src/app/WorkbenchSettingsDialog.tsx | 124 | `{icon}` | browser-cache, adjust, body | 0 |
 | `use.560ea95b7eba` | src/components/ui/SlidingTabs.tsx | 51 | `{tab.icon}` | cam-editor, simulation | 0 |
-| `use.526981a64633` | src/features/cad/CadContextHelp.tsx | 64 | `{triggerContent ?? <Info size={12} aria-hidden="true" />}` | info, link, close, help | 0 |
+| `use.526981a64633` | src/features/cad/CadContextHelp.tsx | 71 | `{triggerContent ?? <Info size={12} aria-hidden="true" />}` | info, link, close, help | 0 |
 | `use.575772b2f782` | src/features/cad/CadFeatureTree.tsx | 194 | `<Icon size={14} />` | datum-plane, sketch, curve, imported-body, pad, pocket, revolve, loft, sweep, fillet, chamfer, shell, boolean, move-3d, linear-pattern, circular-pattern, mirror | 17 |
 | `use.ca1d7d33f3d0` | src/features/cad/CadWorkbench.tsx | 555 | `<Icon size={15} strokeWidth={1.5} />` | sketch, datum-plane, curve, add, select, rectangle, circle, slot, polyline, closed-path, measure, move, pad-pocket, revolve, loft, sweep, fillet, chamfer, shell, boolean, move-3d, mirror, linear-pattern, circular-pattern, pattern | 0 |
 | `use.1e307a885857` | src/features/editor/EditorProgramLinesPanel.tsx | 170 | `<ToggleIcon className="size-3 shrink-0" />` | expand-right, expand-down | 2 |
@@ -84,14 +84,14 @@ These are renderer slots, not additional occurrences. Match each parent ID to ex
 
 | Stable usage ID | Snapshot line | Original symbol | Semantic replacement |
 | --- | --- | --- | --- |
-| `use.17d6c49b16a9` | 26 | `ChevronDown` | `ExpandDownIcon` |
+| `use.17d6c49b16a9` | 30 | `ChevronDown` | `ExpandDownIcon` |
 
 ### src/features/cad/CadContextHelp.tsx
 
 | Stable usage ID | Snapshot line | Original symbol | Semantic replacement |
 | --- | --- | --- | --- |
-| `use.28edd08da582` | 64 | `Info` | `HelpIcon` |
-| `use.3c1668dc8ef2` | 67 | `X` | `CloseIcon` |
+| `use.28edd08da582` | 71 | `Info` | `HelpIcon` |
+| `use.3c1668dc8ef2` | 74 | `X` | `CloseIcon` |
 
 ### src/features/cad/CadDxfExportDialog.tsx
 
@@ -216,14 +216,14 @@ These are renderer slots, not additional occurrences. Match each parent ID to ex
 
 | Stable usage ID | Snapshot line | Original symbol | Semantic replacement |
 | --- | --- | --- | --- |
-| `use.677f18c1c4b5` | 473 | `Maximize2` | `FitViewIcon` |
-| `use.e847dcdbea73` | 473 | `Grid2X2` | `GridIcon` |
-| `use.9e3c15469d52` | 473 | `Magnet` | `SnapIcon` |
-| `use.fe732cfdd5c1` | 480 | `Check` | `ConfirmIcon` |
-| `use.425d9ab4e8af` | 480 | `Undo2` | `UndoIcon` |
-| `use.e9fc8e08e6ce` | 480 | `X` | `CloseIcon` |
-| `use.6f3a6f726e66` | 482 | `Check` | `ConfirmIcon` |
-| `use.9ac7844c966d` | 482 | `X` | `CloseIcon` |
+| `use.677f18c1c4b5` | 442 | `Maximize2` | `FitViewIcon` |
+| `use.e847dcdbea73` | 442 | `Grid2X2` | `GridIcon` |
+| `use.9e3c15469d52` | 442 | `Magnet` | `SnapIcon` |
+| `use.fe732cfdd5c1` | 449 | `Check` | `ConfirmIcon` |
+| `use.425d9ab4e8af` | 449 | `Undo2` | `UndoIcon` |
+| `use.e9fc8e08e6ce` | 449 | `X` | `CloseIcon` |
+| `use.6f3a6f726e66` | 451 | `Check` | `ConfirmIcon` |
+| `use.9ac7844c966d` | 451 | `X` | `CloseIcon` |
 
 ### src/features/cad/CadSketchDimensionControls.tsx
 

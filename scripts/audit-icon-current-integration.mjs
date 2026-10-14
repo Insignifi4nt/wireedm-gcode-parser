@@ -4,7 +4,7 @@ import path from 'node:path';
 import ts from 'typescript';
 
 const root = process.cwd();
-const baselinePath = path.join(root, 'docs/design/inventory/checkpoints/8375c29/icon-inventory.audit.json');
+const baselinePath = path.join(root, 'docs/design/inventory/checkpoints/b0be1bc/icon-inventory.audit.json');
 const outputPath = path.join(root, 'docs/design/current-integration-audit.json');
 const published = JSON.parse(readFileSync(baselinePath, 'utf8'));
 const integration = JSON.parse(readFileSync(path.join(root, 'docs/design/icon-integration-map.json'), 'utf8'));

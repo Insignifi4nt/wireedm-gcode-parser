@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-10-14T17:26:30.697Z",
+  "generatedAt": "2026-10-14T18:31:03.922Z",
   "baseline": {
-    "path": "docs/design/inventory/checkpoints/8375c29/icon-inventory.audit.json",
-    "publishedCheckpoint": "c36aa3b50a30f82ded3508652d9e7917c69b6b59",
+    "path": "docs/design/inventory/checkpoints/b0be1bc/icon-inventory.audit.json",
+    "publishedCheckpoint": "8375c294d09e0a43b48b7c37d977cc59fd9a4065",
     "originalOccurrenceCount": 282,
     "originalDynamicSlotCount": 8,
     "originalContextPreserved": true
   },
   "currentSource": {
-    "scannedProductionTsFiles": 438,
+    "scannedProductionTsFiles": 439,
     "catalogImports": 249,
     "currentImportedSymbolReferences": 297,
     "catalogExportsParsed": 227,
@@ -461,15 +461,15 @@
       ]
     },
     {
-      "originId": "slot.6f084ccd48efe19c",
+      "originId": "slot.938aec82bdcd7492",
       "originFile": "src/features/cad/CadContextHelp.tsx",
-      "originalLine": 64,
+      "originalLine": 71,
       "renderer": "triggerContent ?? <Info size={12} aria-hidden=\"true\" />",
       "mapName": null,
       "mapPropertyExpression": "{triggerContent ?? <Info size={12} aria-hidden=\"true\" />}",
       "currentRenderers": [
         {
-          "line": 64,
+          "line": 71,
           "expression": "{triggerContent ?? <HelpIcon size={12} aria-hidden=\"true\" />}"
         }
       ],
@@ -1801,14 +1801,14 @@
     {
       "originId": "use.17d6c49b16a9",
       "originFile": "src/features/cad/CadCommandDock.tsx",
-      "originalLine": 26,
+      "originalLine": 30,
       "originalColumn": 56,
       "originalSymbol": "ChevronDown",
       "intendedCatalogId": "expand-down",
       "scoutActualSymbol": "ExpandDownIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadCommandDock.tsx",
-        "line": 26,
+        "line": 30,
         "column": 56,
         "symbol": "ExpandDownIcon",
         "exportedSymbol": "ExpandDownIcon",
@@ -1824,20 +1824,20 @@
     {
       "originId": "use.28edd08da582",
       "originFile": "src/features/cad/CadContextHelp.tsx",
-      "originalLine": 64,
-      "originalColumn": 188,
+      "originalLine": 71,
+      "originalColumn": 215,
       "originalSymbol": "Info",
       "intendedCatalogId": "help",
       "scoutActualSymbol": "HelpIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadContextHelp.tsx",
-        "line": 64,
-        "column": 188,
+        "line": 71,
+        "column": 215,
         "symbol": "HelpIcon",
         "exportedSymbol": "HelpIcon",
         "catalogId": "help",
-        "confidenceScore": 889.92,
-        "context": "<button ref={trigger} type=\"button\" className=\"cad-context-help-trigger\" aria-label={buttonLabel ?? `${label} help`} aria-haspopup=\"dialog\" aria-expanded={open} aria-controls={open ? id : undefined} onMouseEnter={() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }} onMouseLeave={() => { suppressed.current = false; leave(); }} onFocus={() => { if (activation === 'preview' && !suppressed.current) show(true); }} onBlur={event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }} onClick={event => { if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}>{triggerContent ?? <HelpIcon size={12} aria-hidden=\"true\" />}</button>"
+        "confidenceScore": 890,
+        "context": "<button ref={trigger} type=\"button\" className=\"cad-context-help-trigger\" aria-label={buttonLabel ?? `${label} help`} aria-haspopup=\"dialog\" aria-expanded={shown} aria-controls={shown ? id : undefined} onMouseEnter={() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }} onMouseLeave={() => { suppressed.current = false; leave(); }} onFocus={() => { if (activation === 'preview' && !suppressed.current) show(true); }} onBlur={event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }} onClick={event => { if (!ownerVisible) return; if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}>{triggerContent ?? <HelpIcon size={12} aria-hidden=\"true\" />}</button>"
       },
       "resolution": "resolved",
       "actualSymbol": "HelpIcon",
@@ -1847,14 +1847,14 @@
     {
       "originId": "use.3c1668dc8ef2",
       "originFile": "src/features/cad/CadContextHelp.tsx",
-      "originalLine": 67,
+      "originalLine": 74,
       "originalColumn": 127,
       "originalSymbol": "X",
       "intendedCatalogId": "close",
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadContextHelp.tsx",
-        "line": 67,
+        "line": 74,
         "column": 127,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
@@ -3457,14 +3457,14 @@
     {
       "originId": "use.677f18c1c4b5",
       "originFile": "src/features/cad/CadSketchCanvas.tsx",
-      "originalLine": 473,
+      "originalLine": 442,
       "originalColumn": 280,
       "originalSymbol": "Maximize2",
       "intendedCatalogId": "fit-view",
       "scoutActualSymbol": "FitViewIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 473,
+        "line": 442,
         "column": 280,
         "symbol": "FitViewIcon",
         "exportedSymbol": "FitViewIcon",
@@ -3480,14 +3480,14 @@
     {
       "originId": "use.e847dcdbea73",
       "originFile": "src/features/cad/CadSketchCanvas.tsx",
-      "originalLine": 473,
+      "originalLine": 442,
       "originalColumn": 425,
       "originalSymbol": "Grid2X2",
       "intendedCatalogId": "grid",
       "scoutActualSymbol": "GridIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 473,
+        "line": 442,
         "column": 427,
         "symbol": "GridIcon",
         "exportedSymbol": "GridIcon",
@@ -3503,14 +3503,14 @@
     {
       "originId": "use.9e3c15469d52",
       "originFile": "src/features/cad/CadSketchCanvas.tsx",
-      "originalLine": 473,
+      "originalLine": 442,
       "originalColumn": 570,
       "originalSymbol": "Magnet",
       "intendedCatalogId": "snap",
       "scoutActualSymbol": "SnapIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 473,
+        "line": 442,
         "column": 573,
         "symbol": "SnapIcon",
         "exportedSymbol": "SnapIcon",
@@ -3526,14 +3526,14 @@
     {
       "originId": "use.fe732cfdd5c1",
       "originFile": "src/features/cad/CadSketchCanvas.tsx",
-      "originalLine": 480,
+      "originalLine": 449,
       "originalColumn": 434,
       "originalSymbol": "Check",
       "intendedCatalogId": "confirm",
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 480,
+        "line": 449,
         "column": 434,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -3549,14 +3549,14 @@
     {
       "originId": "use.425d9ab4e8af",
       "originFile": "src/features/cad/CadSketchCanvas.tsx",
-      "originalLine": 480,
+      "originalLine": 449,
       "originalColumn": 658,
       "originalSymbol": "Undo2",
       "intendedCatalogId": "undo",
       "scoutActualSymbol": "UndoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 480,
+        "line": 449,
         "column": 664,
         "symbol": "UndoIcon",
         "exportedSymbol": "UndoIcon",
@@ -3572,14 +3572,14 @@
     {
       "originId": "use.e9fc8e08e6ce",
       "originFile": "src/features/cad/CadSketchCanvas.tsx",
-      "originalLine": 480,
+      "originalLine": 449,
       "originalColumn": 786,
       "originalSymbol": "X",
       "intendedCatalogId": "close",
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 480,
+        "line": 449,
         "column": 795,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
@@ -3595,14 +3595,14 @@
     {
       "originId": "use.6f3a6f726e66",
       "originFile": "src/features/cad/CadSketchCanvas.tsx",
-      "originalLine": 482,
+      "originalLine": 451,
       "originalColumn": 106,
       "originalSymbol": "Check",
       "intendedCatalogId": "confirm",
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 482,
+        "line": 451,
         "column": 106,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -3618,14 +3618,14 @@
     {
       "originId": "use.9ac7844c966d",
       "originFile": "src/features/cad/CadSketchCanvas.tsx",
-      "originalLine": 482,
+      "originalLine": 451,
       "originalColumn": 209,
       "originalSymbol": "X",
       "intendedCatalogId": "close",
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 482,
+        "line": 451,
         "column": 215,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { iconSource } from './icon-source.mjs';
 
 const crosswalk = JSON.parse(readFileSync('docs/design/final-inventory-crosswalk.json', 'utf8'));
-const provenance = JSON.parse(readFileSync('docs/design/inventory/checkpoints/8375c29/provenance.json', 'utf8'));
+const provenance = JSON.parse(readFileSync('docs/design/inventory/checkpoints/b0be1bc/provenance.json', 'utf8'));
 const exports = readFileSync('src/components/icons/index.ts', 'utf8');
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const component = id => id.split('-').map(word=>word[0].toUpperCase()+word.slice(1)).join('')+'Icon';

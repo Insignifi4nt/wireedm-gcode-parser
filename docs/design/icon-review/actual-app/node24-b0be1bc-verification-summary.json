@@ -1,0 +1,19 @@
+{
+  "runtime": "Node 24.22.0",
+  "maxWorkers": 2,
+  "testFiles": 102,
+  "totalTests": 1053,
+  "passedTests": 1052,
+  "failedTests": 1,
+  "success": false,
+  "publishedCadBase": "b0be1bce26f8eb671d27d17d17a33812afd52443",
+  "catalogEntries": 134,
+  "failures": [
+    {
+      "file": "src/features/cad/CadDatumEditing.test.tsx",
+      "test": "datum placement editing with shared Session history changes placement explicitly without rewriting imported local geometry/source and preserves Cancel",
+      "message": "AssertionError: expected '0' to be '2' // Object.is equality\n    at C:/Users/cristian/.codex/worktrees/665a/Wire_EDM/src/features/cad/CadDatumEditing.test.tsx:100:80\n    at file:///C:/Users/cristian/.codex/worktrees/665a/Wire_EDM/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20"
+    }
+  ],
+  "scopeNote": "The failing datum assertion is byte-identical to the CAD target. It expects world coordinates after the target introduced local cached geometry. Parent CAD task is repairing it separately; no test or geometry change is made by the icon task."
+}
