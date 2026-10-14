@@ -155,7 +155,7 @@ for (const file of codeFiles) {
     }
     if (ts.isCallExpression(node) && /^(?:toastIcon|toolButton|setupButton|scalar)$/.test(node.expression.getText(sf))) renderCalls.push(record(node, sf, { kind: 'icon-render-call', renderer: node.expression.getText(sf), arguments: node.arguments.map(argument => compact(argument.getText(sf))) }));
     if (ts.isJsxExpression(node) && node.expression && /^(?:icon|tab\.icon)$|^triggerContent(?:\s*\?\?|$)/.test(node.expression.getText(sf))) dynamicSlots.push(record(node, sf, { kind: 'dynamic-content-slot', tag: node.expression.getText(sf), declaration: 'ReactNode supplied by parent prop or tab descriptor; absent triggerContent defaults to Info' }));
-    if (ts.isNewExpression(node) && /(?:AxesHelper|ArrowHelper|GridHelper|CanvasTexture|Sprite|SphereGeometry|CylinderGeometry)$/.test(node.expression.getText(sf))) programmaticGraphics.push(record(node, sf, { kind: 'programmatic-graphic', constructor: node.expression.getText(sf) }));
+    if (ts.isNewExpression(node) && /(?:AxesHelper|ArrowHelper|GridHelper|CanvasTexture|Sprite|SphereGeometry|CylinderGeometry|ConeGeometry)$/.test(node.expression.getText(sf))) programmaticGraphics.push(record(node, sf, { kind: 'programmatic-graphic', constructor: node.expression.getText(sf) }));
     if (ts.isJsxText(node) || ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
       const value = compact(node.text);
       if (symbolGlyph.test(value) || tinyGlyph.test(value)) glyphCandidates.push(record(node, sf, { kind: 'glyph-candidate', value }));

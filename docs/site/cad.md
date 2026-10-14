@@ -16,6 +16,8 @@ Open **Settings → CAD** for horizontal **Navigation** and **Display** sections
 
 Display controls **On-part dimensions**, the editable dimension labels beside selected constrained sketch geometry. Hiding them keeps dimension actions, configuration and parameter links available.
 
+Enable **Extrusion depth handles** in Display to drag Length directly on a selected Pad or distance Pocket. Handles are off by default. Release previews the edit; **Apply** accepts it and **Cancel** restores the part. Escape during a drag restores its starting provisional value. A formula-driven length or a length also driving the source placement remains controlled by its relation; use Length or **fx** to edit it.
+
 Right-click a feature or profile in the tree for Rename, configuration, construction, suppression and deletion actions. F2 renames the focused feature or contour. Keyboard users can press Shift+F10 or the Context Menu key on the focused target. Escape closes a menu and returns focus. A stationary right click opens context actions; dragging with the right button pans the view.
 
 Editing a feature previews the candidate part before Apply. Read-only camera navigation remains available during the edit. Native geometry must finish checking before Apply becomes available. Apply accepts one history step; Cancel restores the accepted part and its exact selections. The current document and saved files remain unchanged while a candidate is being previewed.
@@ -71,6 +73,14 @@ Saved instances embed the exact package and version. Earlier plugin API 1-only p
 5. Save the document. Saved CAD documents appear in the CAD library. Returning to the workbench retains the in-memory draft; save before closing the browser or changing documents. A browser may warn before refresh or exit when CAD has unsaved content or a pending edit. This does not save the draft, and browsers cannot guarantee the warning on every exit.
 
 Use isometric, top, front or right views, fit the part, and navigate with the viewport mouse controls. Rendering updates on demand. The solid engine loads only when needed, so its first operation can take longer. Rebuilding and failed models are labelled; export cannot silently use a failed history.
+
+### Choose extrusion areas
+
+Pad / Pocket uses **Whole sketch** by default, including its holes and islands. Click **Areas** to choose individual closed areas on the model. Click replaces the selection; Shift adds or removes an area. You can choose a bore's interior or combine neighboring nested areas. The sketch and its dimensions remain intact.
+
+The panel's checkmark keeps the area choice in the pending feature; **Apply** accepts the whole edit. The area chooser's Cancel or Escape restores the previous choice and retains earlier pending values, such as Length. The × beside Areas restores Whole sketch. Switching between Distance and Through all retains the area choice; deliberately choosing another sketch starts with its whole sketch.
+
+All source contours must still be valid and nested or separate. Touching, crossing and self-intersecting contours reject. If a later edit changes a selected area's holes or nesting, choose its areas again; the app does not silently use a different area.
 
 **Cut** in Pad, Revolve, Loft, Sweep and Boolean must intersect positive target material. A missed body, outward cut or contact-only tool reports a diagnostic; a cut that removes the whole target also rejects. Check the sketch or tool placement, extent, direction and target. Numerically unresolved material is rejected explicitly. The preceding valid bodies remain visible, with later features unevaluated and solid export blocked. Saved no-effect cuts accepted by an older preview may now show this diagnostic; their definitions are not rewritten. Through-all Pocket already uses the same material-evidence policy.
 

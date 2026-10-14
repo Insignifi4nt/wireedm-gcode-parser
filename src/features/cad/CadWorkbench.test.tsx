@@ -14,18 +14,24 @@ import { getCadPreferences, setCadPreferences } from './cadPreferences';
 import { cadFeatureCandidateKey, type CadFeaturePreviewState } from './cadFeaturePreview';
 import type { CadRenderedViewControls, CadWorkbenchViewportControls } from './cadViewportControls';
 import type { CadViewportContextMenuRequest } from './CadViewport';
+import type { CadFeatureRegionPickCommand } from './cadFeatureReferencePicking';
+import type { CadExtrudeDepthControl } from './cadExtrudeDepthInteraction';
 
 let requestViewportMenu: ((request: CadViewportContextMenuRequest) => void) | undefined;
 let pickViewportFeature: ((id: string | null) => void) | undefined;
 let pickViewportPlane: ((plane: CadSketchPlane) => void) | undefined;
+let viewportRegions: CadFeatureRegionPickCommand | null = null;
+let viewportDepth: CadExtrudeDepthControl | null = null;
 
 // jsdom cannot create a WebGL context. These tests exercise the real UI and domain edits.
 vi.mock('./CadViewport', async () => {
   const { useEffect } = await import('react');
-  return { CadViewport: ({ onControlsReady, meshes = [], navigationLocked, onContextMenu, onSelect, onSelectPlane }: { meshes?: CadBuildResult['meshes']; navigationLocked?: boolean; onSelect(id: string | null): void; onSelectPlane?(plane: CadSketchPlane): void; onContextMenu?(request: CadViewportContextMenuRequest): void; onControlsReady?(controls: CadRenderedViewControls | null, released?: CadRenderedViewControls): void }) => {
+  return { CadViewport: ({ onControlsReady, meshes = [], navigationLocked, onContextMenu, onSelect, onSelectPlane, sourceReferencePickIds, regionSelection, depthControl }: { meshes?: CadBuildResult['meshes']; navigationLocked?: boolean; sourceReferencePickIds?: readonly string[]; regionSelection?: CadFeatureRegionPickCommand | null; depthControl?: CadExtrudeDepthControl | null; onSelect(id: string | null): void; onSelectPlane?(plane: CadSketchPlane): void; onContextMenu?(request: CadViewportContextMenuRequest): void; onControlsReady?(controls: CadRenderedViewControls | null, released?: CadRenderedViewControls): void }) => {
     requestViewportMenu = onContextMenu;
     pickViewportFeature = onSelect;
     pickViewportPlane = onSelectPlane;
+    viewportRegions = regionSelection ?? null;
+    viewportDepth = depthControl ?? null;
     // Match WebGL's passive publication/disposal lifetime, while the real SVG
     // publishes in layout effects. Their order matters when changing modes.
     useEffect(() => {
@@ -34,7 +40,7 @@ vi.mock('./CadViewport', async () => {
       onControlsReady?.(controls);
       return () => onControlsReady?.(null, controls);
     }, [onControlsReady]);
-    return <div aria-label="3D model viewport" data-displayed-volumes={meshes.map(mesh => mesh.volume).join(',')} data-navigation-locked={String(navigationLocked)} />;
+    return <div aria-label="3D model viewport" data-displayed-volumes={meshes.map(mesh => mesh.volume).join(',')} data-navigation-locked={String(navigationLocked)} data-source-reference-pick-ids={sourceReferencePickIds?.join(',') ?? ''} />;
   } };
 });
 
@@ -57,6 +63,8 @@ const statusMessage = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks();
   currentViewport = null;
+  viewportRegions = null;
+  viewportDepth = null;
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
@@ -301,6 +309,114 @@ describe('CAD sketch interaction', () => {
     expect(container.querySelector('.cad-center')?.contains(container.querySelector('[data-cad-model-tree]'))).toBe(true);
     expect(currentDocument).toBe(initial);
   });
+  it('owns optional depth interaction through the real feature editor and releases one correlated batch to ordinary Apply/Undo', async () => {
+    setCadPreferences({ navigationMode: 'mouse', showOnPartDimensions: true, showDepthHandles: true });
+    const original = solidDocument(), initial = applyCadEdits(original, [{ kind: 'set-parameter', name: 'depth', value: 10 },
+      { kind: 'update-feature', feature: { ...original.features[1], kind: 'extrude', sketchId: 'sketch', distance: ' depth ', symmetric: false, operation: 'new', targetId: null } }]);
+    const preview = vi.fn<NonNullable<CadWorkbenchProps['onFeaturePreview']>>();
+    await mount(initial, { build: topologyBuild, buildState: 'ready', onFeaturePreview: preview });
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    const control = viewportDepth;
+    if (!control) throw new Error('Expected the current editor depth control.');
+    const before = currentSession.getSnapshot(), state = control.getState();
+    let token: string | null = null;
+    await act(async () => { token = control.begin(state!.definitionKey); });
+    if (!token) throw new Error('Expected editable gesture.');
+    await act(async () => control.setQuantity(token!, 20));
+    expect(viewportDepth).toBe(control); expect(field('Length').value).toBe('20');
+    expect(currentDocument).toBe(initial); expect(currentSession.getSnapshot()).toMatchObject({ version: before.version, workflowOpen: true });
+    const command = preview.mock.calls.map(([entry]) => entry).filter(entry => entry.kind === 'candidate').at(-1);
+    if (!command || command.kind !== 'candidate') throw new Error('Missing provisional depth preview.');
+    await act(async () => replaceFeaturePreview({ kind: 'ready', owner: command.owner, baseVersion: command.expectedVersion, featureId: 'pad',
+      candidateId: 'depth-preview', definitionKey: cadFeatureCandidateKey(command.edits), document: applyCadEdits(initial, command.edits),
+      result: { ...topologyBuild, meshes: topologyBuild.meshes.map(mesh => ({ ...mesh, volume: 40_000 })) } }));
+    expect(button('Apply').disabled).toBe(true);
+    await act(async () => control.release(token!)); await click('Apply');
+    expect(currentDocument.parameters.depth).toBe(20); expect(currentDocument.features).toEqual(initial.features);
+    await act(async () => currentSession.undo()); expect(currentDocument).toEqual(initial);
+  });
+
+  it('qualifies depth handles by device preference and selection ownership without changing the accepted part', async () => {
+    setCadPreferences({ navigationMode: 'trackpad', showOnPartDimensions: false });
+    const initial = solidDocument(); await mount(initial, { build: topologyBuild, buildState: 'ready' });
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    expect(viewportDepth).toBeNull();
+    await act(async () => setCadPreferences({ navigationMode: 'trackpad', showOnPartDimensions: false, showDepthHandles: true }));
+    const previous = viewportDepth;
+    if (!previous) throw new Error('Explicit preference must expose the current editor handle.');
+    await click('Pick closed areas from model'); expect(viewportDepth).toBeNull();
+    await click('Cancel area selection'); expect(viewportDepth).toBe(previous);
+    await act(async () => setCadPreferences({ navigationMode: 'trackpad', showOnPartDimensions: false, showDepthHandles: false }));
+    expect(viewportDepth).toBeNull(); expect(currentDocument).toBe(initial);
+    await act(async () => replaceDocument({ ...initial, name: 'Another accepted part' }));
+    expect(previous.getState()).toBeNull(); expect(viewportDepth).toBeNull(); expect(currentDocument.name).toBe('Another accepted part');
+  });
+
+  it('keeps the correlated quantity preview while choosing areas and cancels only that choice before one Apply/Undo', async () => {
+    const original = solidDocument();
+    const initial = applyCadEdits(original, [{ kind: 'set-parameter', name: 'depth', value: 10 },
+      { kind: 'update-feature', feature: { ...original.features[1], kind: 'extrude', sketchId: 'sketch', distance: ' depth ', symmetric: false, operation: 'new', targetId: null } }]);
+    const preview = vi.fn<NonNullable<CadWorkbenchProps['onFeaturePreview']>>();
+    await mount(initial, { build: topologyBuild, buildState: 'ready', onFeaturePreview: preview });
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    const version = currentSession.getSnapshot().version;
+    await input(field('Length'), '20');
+    const candidateCommand = preview.mock.calls.map(([command]) => command).filter(command => command.kind === 'candidate').at(-1);
+    if (!candidateCommand || candidateCommand.kind !== 'candidate') throw new Error('Expected correlated preview.');
+    const candidate = applyCadEdits(initial, candidateCommand.edits);
+    await act(async () => replaceFeaturePreview({ kind: 'ready', owner: candidateCommand.owner, baseVersion: candidateCommand.expectedVersion, featureId: 'pad',
+      candidateId: 'candidate', definitionKey: cadFeatureCandidateKey(candidateCommand.edits), document: candidate,
+      result: { ...topologyBuild, meshes: topologyBuild.meshes.map(mesh => ({ ...mesh, volume: 40_000 })) } }));
+    await click('Pick closed areas from model');
+    expect(viewportRegions?.sketchId).toBe('sketch'); expect(viewportRegions?.selection).toBeUndefined();
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-displayed-volumes')).toBe('40000');
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-source-reference-pick-ids')).toBe('sketch');
+    expect(requestViewportMenu).toBeUndefined(); expect(currentSession.getSnapshot()).toMatchObject({ version, workflowOpen: true });
+    if (!viewportRegions) throw new Error('Missing owned region picker.');
+    await act(async () => viewportRegions?.onSelect([]));
+    expect(button('Apply').disabled).toBe(true); expect(currentDocument).toBe(initial);
+    await click('Cancel area selection');
+    expect(viewportRegions).toBeNull(); expect(field('Length').value).toBe('20'); expect(currentDocument).toBe(initial);
+    await click('Apply');
+    expect(currentDocument.parameters.depth).toBe(20); expect(currentDocument.features[1]).toEqual(initial.features[1]);
+    await act(async () => currentSession.undo()); expect(currentDocument).toEqual(initial);
+  });
+
+  it('retains source-owned area picking through an accepted native build publication without loosening whole-source picks', async () => {
+    const initial = solidDocument(); await mount(initial, { build: topologyBuild, buildState: 'ready' });
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    await click('Pick closed areas from model'); const command = viewportRegions;
+    if (!command) throw new Error('Missing source-owned areas.');
+    const before = currentSession.getSnapshot();
+    await act(async () => replaceBuild({ ...topologyBuild, buildId: 'republished-native-build' }));
+    expect(viewportRegions).toBe(command); expect(currentDocument).toBe(initial);
+    expect(currentSession.getSnapshot()).toMatchObject({ version: before.version, workflowOpen: true });
+    await act(async () => command.onSelect(command.cells.cells.filter(cell => cell.defaultMaterial).map(cell => cell.reference)));
+    expect(viewportRegions?.cells).toBe(command.cells); expect(viewportRegions?.placement).toBe(command.placement);
+    await click('Cancel area selection'); expect(viewportRegions).toBeNull();
+    await click('Pick profile sketch from model');
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-source-reference-pick-ids')).toBe('sketch');
+    await act(async () => replaceBuild({ ...topologyBuild, buildId: 'another-native-build' }));
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-source-reference-pick-ids')).toBe('');
+    expect(currentDocument).toBe(initial);
+  });
+
+  it('invalidates area-picking callbacks on document replacement without substituting a new source or leaving a picker open', async () => {
+    const initial = solidDocument(); await mount(initial, { build: topologyBuild, buildState: 'ready' });
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    await click('Pick closed areas from model'); const previous = viewportRegions;
+    if (!previous) throw new Error('Missing owned region picker.');
+    const replacement = { ...initial, name: 'Replacement part' };
+    await act(async () => replaceDocument(replacement));
+    const acceptedReplacement = currentDocument, replacementVersion = currentSession.getSnapshot().version;
+    expect(viewportRegions).toBeNull();
+    await act(async () => { previous.onSelect([{ boundaryProfileId: 'rectangle', voidProfileIds: [], ancestorProfileIds: [] }]); previous.onFinish(); previous.onCancel(); });
+    expect(currentDocument).toBe(acceptedReplacement); expect(currentDocument).toEqual(replacement);
+    expect(currentSession.getSnapshot().version).toBe(replacementVersion);
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-source-reference-pick-ids')).toBe('');
+    expect(container.querySelector('[aria-label="Finish area selection"]')).toBeNull();
+  });
+
   it('picks a profile sketch with type guards and invalidates the owned picker on document replacement', async () => {
     const original = solidDocument(), first = original.features[0];
     if (first.kind !== 'sketch') throw new Error('Expected sketch fixture.');
@@ -311,14 +427,17 @@ describe('CAD sketch interaction', () => {
     await click('Pad sketch');
     expect((container.querySelector('[aria-label="Profile sketch"]') as HTMLSelectElement).value).toBe('sketch-b');
     await click('Pick profile sketch from model');
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-source-reference-pick-ids')).toBe('sketch,sketch-b');
     await act(async () => pickViewportFeature?.('pad'));
     expect(container.querySelector('[aria-label="Cancel source selection"]')).not.toBeNull();
     expect((container.querySelector('[aria-label="Profile sketch"]') as HTMLSelectElement).value).toBe('sketch-b');
     await act(async () => pickViewportFeature?.('sketch'));
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-source-reference-pick-ids')).toBe('');
     expect((container.querySelector('[aria-label="Profile sketch"]') as HTMLSelectElement).value).toBe('sketch');
     await click('Pick profile sketch from model');
     await act(async () => replaceDocument({ ...initial, name: 'Replaced part' }));
     expect(container.querySelector('[aria-label="Cancel source selection"]')).toBeNull();
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-source-reference-pick-ids')).toBe('');
     expect(currentDocument.features).toEqual(initial.features);
     expect(currentDocument.name).toBe('Replaced part');
     await click('Cancel');
@@ -447,11 +566,14 @@ describe('CAD sketch interaction', () => {
     await act(async () => replaceFeaturePreview({ kind: 'ready', owner: command.owner, baseVersion: command.expectedVersion, featureId: 'pad', candidateId: 'candidate', definitionKey: cadFeatureCandidateKey(command.edits), document: candidate,
       result: { ...topologyBuild, buildId: 'candidate-build', meshes: topologyBuild.meshes.map(mesh => ({ ...mesh, volume: 40_000 })) } }));
     expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-displayed-volumes')).toBe('40000');
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-source-reference-pick-ids')).toBe('');
     await click('Pick profile sketch from model');
     expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-displayed-volumes')).toBe('20000');
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-source-reference-pick-ids')).toBe('sketch');
     expect(requestViewportMenu).toBeUndefined();
     expect(preview.mock.calls.at(-1)?.[0]).toEqual({ kind: 'clear', owner: command.owner });
     await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-source-reference-pick-ids')).toBe('');
     expect(field('Length').value).toBe('20');
     expect(preview.mock.calls.at(-1)?.[0]).toMatchObject({ kind: 'candidate', edits: [{ kind: 'update-feature', feature: { distance: 20 } }] });
     expect(currentDocument.features.find(feature => feature.id === 'pad')).toMatchObject({ distance: 10 });

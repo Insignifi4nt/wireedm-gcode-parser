@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 export type CadNavigationMode = 'mouse' | 'trackpad';
-export interface CadPreferences { readonly navigationMode: CadNavigationMode; readonly showOnPartDimensions: boolean }
+export interface CadPreferences { readonly navigationMode: CadNavigationMode; readonly showOnPartDimensions: boolean; readonly showDepthHandles?: boolean }
 export const CAD_PREFERENCES_KEY = 'wire-edm:cad-preferences:v1';
 const defaults: CadPreferences = Object.freeze({ navigationMode: 'mouse', showOnPartDimensions: true });
 let current = defaults;
@@ -16,8 +16,10 @@ function parse(raw: string | null): CadPreferences {
   try {
     const value: unknown = JSON.parse(raw);
     if (value && typeof value === 'object' && 'navigationMode' in value && 'showOnPartDimensions' in value
-      && (value.navigationMode === 'mouse' || value.navigationMode === 'trackpad') && typeof value.showOnPartDimensions === 'boolean') {
-      return Object.freeze({ navigationMode: value.navigationMode, showOnPartDimensions: value.showOnPartDimensions });
+      && (value.navigationMode === 'mouse' || value.navigationMode === 'trackpad') && typeof value.showOnPartDimensions === 'boolean'
+      && (!('showDepthHandles' in value) || typeof value.showDepthHandles === 'boolean')) {
+      return Object.freeze({ navigationMode: value.navigationMode, showOnPartDimensions: value.showOnPartDimensions,
+        ...('showDepthHandles' in value ? { showDepthHandles: value.showDepthHandles as boolean } : {}) });
     }
   } catch { /* Invalid device preferences never rewrite stored originals. */ }
   return defaults;

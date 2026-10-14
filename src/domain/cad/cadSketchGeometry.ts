@@ -7,6 +7,7 @@ import { signedDxfArcSweepRadians } from '@/domain/dxf/arcSweep';
 import { angleIsOnSweep, pathBounds, signedAreaOfPath } from '@/domain/path-intel/segments';
 import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
 import { cadAnalyticSegments, cadPathClosureTolerance, resolveCadPathSegments, type ResolvedCadPathSegment } from './cadAnalyticSegments';
+import { selectCadSketchRegions, type CadSketchCellReference } from './cadSketchRegionSelection';
 export { cadPathClosureTolerance, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 
 export type ResolvedCadProfile =
@@ -126,6 +127,8 @@ export function cadSketchToEntities(sketch: CadSketchFeature, parameters: Readon
 export interface CadResolvedSketchContour {
   readonly profile: CadSketchProfile; readonly geometry: ResolvedCadProfile;
   readonly depth: number; readonly parentId: string | null; readonly point: DxfPoint;
+  /** Reuses this resolution's prepared analytic path during physical area picking. */
+  readonly containsPoint: (point: DxfPoint) => boolean;
 }
 /** Every even-depth boundary adds material; its immediate children leave voids. */
 export interface CadSketchRegion {
@@ -277,7 +280,7 @@ export function cadProfileContainsPoint(profile: ResolvedCadProfile, point: DxfP
 }
 
 /** Infer regions from exact analytic contours, independent of authored orientation or CAM. */
-export function resolveCadSketchRegions(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): readonly CadSketchRegion[] {
+export function resolveCadSketchContours(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): readonly CadResolvedSketchContour[] {
   const profiles = sketch.profiles.map(profile => ({ profile, geometry: resolveCadProfile(profile.geometry, parameters) }));
   // Preparation belongs to this resolution only: parameter edits always rebuild
   // the exact curves, but containment comparisons reuse them within this call.
@@ -358,11 +361,14 @@ export function resolveCadSketchRegions(sketch: CadSketchFeature, parameters: Re
   const depths = new Map(nested.map(contour => [contour.profile, contour.depth]));
   const resolved: CadResolvedSketchContour[] = nested.map(contour => {
     const parent = contour.containers.find(container => depths.get(container.profile) === contour.depth - 1);
-    return { profile: contour.profile, geometry: contour.geometry, point: contour.point, depth: contour.depth, parentId: parent?.profile.id ?? null };
+    return { profile: contour.profile, geometry: contour.geometry, point: contour.point, depth: contour.depth, parentId: parent?.profile.id ?? null,
+      containsPoint: (point: DxfPoint) => contour.path ? closedPathContainsPoint(contour.path.refs, point, contour.path.byId) : cadProfileContainsPoint(contour.geometry, point) };
   });
-  return resolved.filter(contour => contour.depth % 2 === 0).map(boundary => ({ boundary,
-    voids: resolved.filter(contour => contour.parentId === boundary.profile.id && contour.depth === boundary.depth + 1)
-  }));
+  return resolved;
+}
+
+export function resolveCadSketchRegions(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>, selection?: readonly CadSketchCellReference[]): readonly CadSketchRegion[] {
+  return selectCadSketchRegions(resolveCadSketchContours(sketch, parameters), selection);
 }
 
 export function validateCadSketchGeometry(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): void {

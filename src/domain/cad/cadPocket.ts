@@ -11,6 +11,7 @@ import { resolveCadSketchRegions, cadProfileToEntities, type CadSketchRegion } f
 import { cadFeatureProducesBody, cadVisibleBodyIds } from './cadFeatureInputs';
 import { cadPocketSectionScale } from './cadPocketSectionScale';
 import { requireCadPrincipalPlane } from './cadDatumPlanes';
+import { CadSketchRegionSelectionSchema } from './cadSketchRegionSelection';
 export {
   resolveCadPocketExtent,
   CAD_POCKET_NATIVE_PRECISION,
@@ -26,6 +27,7 @@ export const CadPocketFeatureSchema = Type.Object(
     ...CadFeatureBaseSchemaFields,
     kind: Type.Literal('pocket'),
     sketchId: CadIdentifierSchema,
+    regionSelection: Type.Optional(CadSketchRegionSelectionSchema),
     targetId: CadIdentifierSchema,
     extent: Type.Object({ kind: Type.Literal('through-all'), direction: CadPocketDirectionSchema }, { additionalProperties: false }),
   },
@@ -69,7 +71,7 @@ export function resolveCadPocketInputs(
   if (!cadVisibleBodyIds([...precedingFeatures.values()]).includes(feature.targetId))
     throw new CadError('unavailable-body', 'Pocket target is suppressed or consumed. Choose its current successor.');
   const offset = evaluateCadScalar(sketch.offset, parameters);
-  const regions = resolveCadSketchRegions(sketch, parameters);
+  const regions = resolveCadSketchRegions(sketch, parameters, feature.regionSelection);
   if (!regions.length)
     throw new CadError('empty-sketch', 'Pocket requires active closed material contours; construction references do not remove material.');
   let sectionEdgeCount = 0;

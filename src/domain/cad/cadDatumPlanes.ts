@@ -184,7 +184,7 @@ export function resolveCadExtrudeRevolvePlacement(
   const placement = resolveCadSketchPlacement(sketch, parameters, lookup);
   if (typeof sketch.plane === 'string') return placement; // Preserve accepted legacy precision semantics.
   let localScale = 0;
-  for (const region of resolveCadSketchRegions(sketch, parameters))
+  for (const region of resolveCadSketchRegions(sketch, parameters, feature.kind === 'extrude' ? feature.regionSelection : undefined))
     for (const contour of [region.boundary, ...region.voids]) {
       for (const entity of cadProfileToEntities(contour.geometry)) {
         if (entity.type === 'line')
