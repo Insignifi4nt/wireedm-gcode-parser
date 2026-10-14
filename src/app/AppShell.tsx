@@ -8,7 +8,7 @@ import {
 } from 'react';
 import {
   Database,
-  HardDrive,
+  WireEdmMarkIcon,
   PanelLeftClose,
   PanelLeftOpen,
   Settings as SettingsIcon
@@ -211,7 +211,7 @@ export function AppShell({
       >
         {headerContent ?? (
           <div className="mr-4 flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground">
-            <HardDrive className="size-4 text-primary" />
+            <WireEdmMarkIcon className="size-4 text-primary" />
             <span className="truncate">Wire EDM Workbench</span>
           </div>
         )}

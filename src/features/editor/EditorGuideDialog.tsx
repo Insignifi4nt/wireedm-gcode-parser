@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Crosshair, X } from '@/components/icons';
+import { LocateIcon, X } from '@/components/icons';
 
 import { Button } from '@/components/ui/button';
 import { useModalFocus } from '@/components/ui/useModalFocus';
@@ -130,7 +130,7 @@ export function EditorGuideDialog({
                           type="button"
                           variant="outline"
                         >
-                          <Crosshair />
+                          <LocateIcon />
                           {copy.highlightLabel}
                         </Button>
                       )}

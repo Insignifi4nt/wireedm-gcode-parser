@@ -427,7 +427,7 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 62
+          "inkPixels": 58
         },
         {
           "size": 14,
@@ -435,19 +435,19 @@
         },
         {
           "size": 15,
-          "inkPixels": 94
+          "inkPixels": 104
         },
         {
           "size": 16,
-          "inkPixels": 111
+          "inkPixels": 115
         },
         {
           "size": 20,
-          "inkPixels": 167
+          "inkPixels": 180
         },
         {
           "size": 24,
-          "inkPixels": 168
+          "inkPixels": 172
         }
       ]
     },
@@ -667,27 +667,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 48
+          "inkPixels": 49
         },
         {
           "size": 14,
-          "inkPixels": 73
+          "inkPixels": 78
         },
         {
           "size": 15,
-          "inkPixels": 87
+          "inkPixels": 83
         },
         {
           "size": 16,
-          "inkPixels": 95
+          "inkPixels": 92
         },
         {
           "size": 20,
-          "inkPixels": 140
+          "inkPixels": 129
         },
         {
           "size": 24,
-          "inkPixels": 149
+          "inkPixels": 139
         }
       ]
     },
@@ -727,27 +727,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 48
+          "inkPixels": 47
         },
         {
           "size": 14,
-          "inkPixels": 82
+          "inkPixels": 81
         },
         {
           "size": 15,
-          "inkPixels": 90
+          "inkPixels": 91
         },
         {
           "size": 16,
-          "inkPixels": 99
+          "inkPixels": 98
         },
         {
           "size": 20,
-          "inkPixels": 139
+          "inkPixels": 138
         },
         {
           "size": 24,
-          "inkPixels": 149
+          "inkPixels": 147
         }
       ]
     },
@@ -769,15 +769,15 @@
         },
         {
           "size": 16,
-          "inkPixels": 99
+          "inkPixels": 98
         },
         {
           "size": 20,
-          "inkPixels": 136
+          "inkPixels": 135
         },
         {
           "size": 24,
-          "inkPixels": 148
+          "inkPixels": 147
         }
       ]
     },
@@ -787,19 +787,19 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 59
+          "inkPixels": 51
         },
         {
           "size": 14,
-          "inkPixels": 88
+          "inkPixels": 90
         },
         {
           "size": 15,
-          "inkPixels": 100
+          "inkPixels": 99
         },
         {
           "size": 16,
-          "inkPixels": 112
+          "inkPixels": 109
         },
         {
           "size": 20,
@@ -807,7 +807,7 @@
         },
         {
           "size": 24,
-          "inkPixels": 177
+          "inkPixels": 175
         }
       ]
     },
@@ -889,7 +889,7 @@
         },
         {
           "size": 16,
-          "inkPixels": 121
+          "inkPixels": 120
         },
         {
           "size": 20,
@@ -897,7 +897,7 @@
         },
         {
           "size": 24,
-          "inkPixels": 201
+          "inkPixels": 200
         }
       ]
     },
@@ -967,27 +967,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 73
+          "inkPixels": 71
         },
         {
           "size": 14,
-          "inkPixels": 96
+          "inkPixels": 108
         },
         {
           "size": 15,
-          "inkPixels": 86
+          "inkPixels": 115
         },
         {
           "size": 16,
-          "inkPixels": 111
+          "inkPixels": 128
         },
         {
           "size": 20,
-          "inkPixels": 155
+          "inkPixels": 199
         },
         {
           "size": 24,
-          "inkPixels": 178
+          "inkPixels": 193
         }
       ]
     },
@@ -1237,27 +1237,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 45
+          "inkPixels": 43
         },
         {
           "size": 14,
-          "inkPixels": 59
+          "inkPixels": 55
         },
         {
           "size": 15,
-          "inkPixels": 60
+          "inkPixels": 53
         },
         {
           "size": 16,
-          "inkPixels": 70
+          "inkPixels": 64
         },
         {
           "size": 20,
-          "inkPixels": 97
+          "inkPixels": 90
         },
         {
           "size": 24,
-          "inkPixels": 125
+          "inkPixels": 118
         }
       ]
     },
@@ -1417,27 +1417,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 52
+          "inkPixels": 59
         },
         {
           "size": 14,
-          "inkPixels": 88
+          "inkPixels": 95
         },
         {
           "size": 15,
-          "inkPixels": 98
+          "inkPixels": 104
         },
         {
           "size": 16,
-          "inkPixels": 106
+          "inkPixels": 115
         },
         {
           "size": 20,
-          "inkPixels": 145
+          "inkPixels": 159
         },
         {
           "size": 24,
-          "inkPixels": 186
+          "inkPixels": 202
         }
       ]
     },
@@ -1807,27 +1807,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 68
+          "inkPixels": 54
         },
         {
           "size": 14,
-          "inkPixels": 84
+          "inkPixels": 107
         },
         {
           "size": 15,
-          "inkPixels": 94
+          "inkPixels": 118
         },
         {
           "size": 16,
-          "inkPixels": 105
+          "inkPixels": 126
         },
         {
           "size": 20,
-          "inkPixels": 150
+          "inkPixels": 212
         },
         {
           "size": 24,
-          "inkPixels": 205
+          "inkPixels": 201
         }
       ]
     },
@@ -2042,6 +2042,66 @@
       ]
     },
     {
+      "id": "insert-points",
+      "bounds": {},
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 55
+        },
+        {
+          "size": 14,
+          "inkPixels": 65
+        },
+        {
+          "size": 15,
+          "inkPixels": 69
+        },
+        {
+          "size": 16,
+          "inkPixels": 83
+        },
+        {
+          "size": 20,
+          "inkPixels": 110
+        },
+        {
+          "size": 24,
+          "inkPixels": 120
+        }
+      ]
+    },
+    {
+      "id": "locate",
+      "bounds": {},
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 52
+        },
+        {
+          "size": 14,
+          "inkPixels": 64
+        },
+        {
+          "size": 15,
+          "inkPixels": 50
+        },
+        {
+          "size": 16,
+          "inkPixels": 76
+        },
+        {
+          "size": 20,
+          "inkPixels": 92
+        },
+        {
+          "size": 24,
+          "inkPixels": 120
+        }
+      ]
+    },
+    {
       "id": "pin",
       "bounds": {},
       "sizes": [
@@ -2197,7 +2257,7 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 68
+          "inkPixels": 74
         },
         {
           "size": 14,
@@ -2205,19 +2265,19 @@
         },
         {
           "size": 15,
-          "inkPixels": 103
+          "inkPixels": 94
         },
         {
           "size": 16,
-          "inkPixels": 116
+          "inkPixels": 103
         },
         {
           "size": 20,
-          "inkPixels": 172
+          "inkPixels": 171
         },
         {
           "size": 24,
-          "inkPixels": 172
+          "inkPixels": 209
         }
       ]
     },
@@ -2437,27 +2497,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 49
+          "inkPixels": 31
         },
         {
           "size": 14,
-          "inkPixels": 63
+          "inkPixels": 42
         },
         {
           "size": 15,
-          "inkPixels": 65
+          "inkPixels": 44
         },
         {
           "size": 16,
-          "inkPixels": 78
+          "inkPixels": 44
         },
         {
           "size": 20,
-          "inkPixels": 113
+          "inkPixels": 72
         },
         {
           "size": 24,
-          "inkPixels": 146
+          "inkPixels": 92
         }
       ]
     },
@@ -2527,27 +2587,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 62
+          "inkPixels": 45
         },
         {
           "size": 14,
-          "inkPixels": 98
+          "inkPixels": 86
         },
         {
           "size": 15,
-          "inkPixels": 103
+          "inkPixels": 94
         },
         {
           "size": 16,
-          "inkPixels": 116
+          "inkPixels": 103
         },
         {
           "size": 20,
-          "inkPixels": 200
+          "inkPixels": 172
         },
         {
           "size": 24,
-          "inkPixels": 176
+          "inkPixels": 152
         }
       ]
     },
@@ -2647,27 +2707,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 56
+          "inkPixels": 70
         },
         {
           "size": 14,
-          "inkPixels": 74
+          "inkPixels": 108
         },
         {
           "size": 15,
-          "inkPixels": 68
+          "inkPixels": 113
         },
         {
           "size": 16,
-          "inkPixels": 86
+          "inkPixels": 127
         },
         {
           "size": 20,
-          "inkPixels": 117
+          "inkPixels": 194
         },
         {
           "size": 24,
-          "inkPixels": 133
+          "inkPixels": 202
         }
       ]
     },
@@ -2677,27 +2737,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 61
+          "inkPixels": 73
         },
         {
           "size": 14,
-          "inkPixels": 74
+          "inkPixels": 90
         },
         {
           "size": 15,
-          "inkPixels": 71
+          "inkPixels": 88
         },
         {
           "size": 16,
-          "inkPixels": 84
+          "inkPixels": 110
         },
         {
           "size": 20,
-          "inkPixels": 134
+          "inkPixels": 156
         },
         {
           "size": 24,
-          "inkPixels": 170
+          "inkPixels": 210
         }
       ]
     },
@@ -2707,27 +2767,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 55
+          "inkPixels": 42
         },
         {
           "size": 14,
-          "inkPixels": 76
+          "inkPixels": 62
         },
         {
           "size": 15,
-          "inkPixels": 90
+          "inkPixels": 67
         },
         {
           "size": 16,
-          "inkPixels": 102
+          "inkPixels": 78
         },
         {
           "size": 20,
-          "inkPixels": 158
+          "inkPixels": 106
         },
         {
           "size": 24,
-          "inkPixels": 188
+          "inkPixels": 146
         }
       ]
     },
@@ -2947,27 +3007,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 62
+          "inkPixels": 72
         },
         {
           "size": 14,
-          "inkPixels": 91
+          "inkPixels": 97
         },
         {
           "size": 15,
-          "inkPixels": 75
+          "inkPixels": 90
         },
         {
           "size": 16,
-          "inkPixels": 94
+          "inkPixels": 104
         },
         {
           "size": 20,
-          "inkPixels": 140
+          "inkPixels": 164
         },
         {
           "size": 24,
-          "inkPixels": 166
+          "inkPixels": 202
         }
       ]
     },
@@ -3187,27 +3247,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 57
+          "inkPixels": 46
         },
         {
           "size": 14,
-          "inkPixels": 73
+          "inkPixels": 57
         },
         {
           "size": 15,
-          "inkPixels": 82
+          "inkPixels": 59
         },
         {
           "size": 16,
-          "inkPixels": 90
+          "inkPixels": 66
         },
         {
           "size": 20,
-          "inkPixels": 133
+          "inkPixels": 101
         },
         {
           "size": 24,
-          "inkPixels": 180
+          "inkPixels": 132
         }
       ]
     },
@@ -3217,27 +3277,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 48
+          "inkPixels": 33
         },
         {
           "size": 14,
-          "inkPixels": 66
+          "inkPixels": 41
         },
         {
           "size": 15,
-          "inkPixels": 66
+          "inkPixels": 48
         },
         {
           "size": 16,
-          "inkPixels": 77
+          "inkPixels": 51
         },
         {
           "size": 20,
-          "inkPixels": 115
+          "inkPixels": 75
         },
         {
           "size": 24,
-          "inkPixels": 140
+          "inkPixels": 95
         }
       ]
     },
@@ -3247,27 +3307,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 68
+          "inkPixels": 71
         },
         {
           "size": 14,
-          "inkPixels": 91
+          "inkPixels": 97
         },
         {
           "size": 15,
-          "inkPixels": 98
+          "inkPixels": 93
         },
         {
           "size": 16,
-          "inkPixels": 109
+          "inkPixels": 104
         },
         {
           "size": 20,
-          "inkPixels": 162
+          "inkPixels": 164
         },
         {
           "size": 24,
-          "inkPixels": 203
+          "inkPixels": 204
         }
       ]
     },
@@ -3367,27 +3427,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 58
+          "inkPixels": 62
         },
         {
           "size": 14,
-          "inkPixels": 75
+          "inkPixels": 96
         },
         {
           "size": 15,
-          "inkPixels": 87
+          "inkPixels": 93
         },
         {
           "size": 16,
-          "inkPixels": 100
+          "inkPixels": 111
         },
         {
           "size": 20,
-          "inkPixels": 140
+          "inkPixels": 163
         },
         {
           "size": 24,
-          "inkPixels": 144
+          "inkPixels": 179
         }
       ]
     },
@@ -3397,27 +3457,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 68
+          "inkPixels": 62
         },
         {
           "size": 14,
-          "inkPixels": 99
+          "inkPixels": 93
         },
         {
           "size": 15,
-          "inkPixels": 106
+          "inkPixels": 89
         },
         {
           "size": 16,
-          "inkPixels": 116
+          "inkPixels": 112
         },
         {
           "size": 20,
-          "inkPixels": 177
+          "inkPixels": 173
         },
         {
           "size": 24,
-          "inkPixels": 208
+          "inkPixels": 192
         }
       ]
     },
@@ -3457,27 +3517,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 60
+          "inkPixels": 46
         },
         {
           "size": 14,
-          "inkPixels": 94
+          "inkPixels": 85
         },
         {
           "size": 15,
-          "inkPixels": 101
+          "inkPixels": 99
         },
         {
           "size": 16,
-          "inkPixels": 114
+          "inkPixels": 103
         },
         {
           "size": 20,
-          "inkPixels": 159
+          "inkPixels": 150
         },
         {
           "size": 24,
-          "inkPixels": 169
+          "inkPixels": 168
         }
       ]
     },
@@ -3517,23 +3577,23 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 70
+          "inkPixels": 68
         },
         {
           "size": 14,
-          "inkPixels": 128
+          "inkPixels": 100
         },
         {
           "size": 15,
-          "inkPixels": 140
+          "inkPixels": 132
         },
         {
           "size": 16,
-          "inkPixels": 144
+          "inkPixels": 140
         },
         {
           "size": 20,
-          "inkPixels": 240
+          "inkPixels": 224
         },
         {
           "size": 24,
@@ -3547,27 +3607,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 52
+          "inkPixels": 48
         },
         {
           "size": 14,
-          "inkPixels": 65
+          "inkPixels": 94
         },
         {
           "size": 15,
-          "inkPixels": 47
+          "inkPixels": 101
         },
         {
           "size": 16,
-          "inkPixels": 76
+          "inkPixels": 114
         },
         {
           "size": 20,
-          "inkPixels": 102
+          "inkPixels": 190
         },
         {
           "size": 24,
-          "inkPixels": 114
+          "inkPixels": 172
         }
       ]
     },
@@ -3577,27 +3637,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 54
+          "inkPixels": 49
         },
         {
           "size": 14,
-          "inkPixels": 65
+          "inkPixels": 94
         },
         {
           "size": 15,
-          "inkPixels": 44
+          "inkPixels": 101
         },
         {
           "size": 16,
-          "inkPixels": 74
+          "inkPixels": 114
         },
         {
           "size": 20,
-          "inkPixels": 102
+          "inkPixels": 190
         },
         {
           "size": 24,
-          "inkPixels": 112
+          "inkPixels": 172
         }
       ]
     },
@@ -3607,15 +3667,15 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 67
+          "inkPixels": 48
         },
         {
           "size": 14,
-          "inkPixels": 92
+          "inkPixels": 72
         },
         {
           "size": 15,
-          "inkPixels": 67
+          "inkPixels": 77
         },
         {
           "size": 16,
@@ -3623,11 +3683,11 @@
         },
         {
           "size": 20,
-          "inkPixels": 144
+          "inkPixels": 140
         },
         {
           "size": 24,
-          "inkPixels": 156
+          "inkPixels": 144
         }
       ]
     },
@@ -3637,27 +3697,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 75
+          "inkPixels": 94
         },
         {
           "size": 14,
-          "inkPixels": 116
+          "inkPixels": 120
         },
         {
           "size": 15,
-          "inkPixels": 101
+          "inkPixels": 114
         },
         {
           "size": 16,
-          "inkPixels": 132
+          "inkPixels": 148
         },
         {
           "size": 20,
-          "inkPixels": 202
+          "inkPixels": 218
         },
         {
           "size": 24,
-          "inkPixels": 208
+          "inkPixels": 232
         }
       ]
     },
@@ -3667,27 +3727,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 104
+          "inkPixels": 85
         },
         {
           "size": 14,
-          "inkPixels": 126
+          "inkPixels": 114
         },
         {
           "size": 15,
-          "inkPixels": 107
+          "inkPixels": 102
         },
         {
           "size": 16,
-          "inkPixels": 144
+          "inkPixels": 130
         },
         {
           "size": 20,
-          "inkPixels": 208
+          "inkPixels": 189
         },
         {
           "size": 24,
-          "inkPixels": 220
+          "inkPixels": 201
         }
       ]
     },
@@ -3697,27 +3757,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 59
+          "inkPixels": 41
         },
         {
           "size": 14,
-          "inkPixels": 86
+          "inkPixels": 87
         },
         {
           "size": 15,
-          "inkPixels": 78
+          "inkPixels": 98
         },
         {
           "size": 16,
-          "inkPixels": 100
+          "inkPixels": 106
         },
         {
           "size": 20,
-          "inkPixels": 140
+          "inkPixels": 181
         },
         {
           "size": 24,
-          "inkPixels": 155
+          "inkPixels": 160
         }
       ]
     },
@@ -3727,27 +3787,27 @@
       "sizes": [
         {
           "size": 12,
-          "inkPixels": 62
+          "inkPixels": 73
         },
         {
           "size": 14,
-          "inkPixels": 99
+          "inkPixels": 106
         },
         {
           "size": 15,
-          "inkPixels": 107
+          "inkPixels": 114
         },
         {
           "size": 16,
-          "inkPixels": 117
+          "inkPixels": 126
         },
         {
           "size": 20,
-          "inkPixels": 191
+          "inkPixels": 203
         },
         {
           "size": 24,
-          "inkPixels": 190
+          "inkPixels": 197
         }
       ]
     },
@@ -3881,23 +3941,23 @@
         },
         {
           "size": 14,
-          "inkPixels": 114
+          "inkPixels": 108
         },
         {
           "size": 15,
-          "inkPixels": 119
+          "inkPixels": 103
         },
         {
           "size": 16,
-          "inkPixels": 138
+          "inkPixels": 128
         },
         {
           "size": 20,
-          "inkPixels": 238
+          "inkPixels": 194
         },
         {
           "size": 24,
-          "inkPixels": 210
+          "inkPixels": 188
         }
       ]
     },
@@ -3941,23 +4001,23 @@
         },
         {
           "size": 14,
-          "inkPixels": 100
+          "inkPixels": 104
         },
         {
           "size": 15,
-          "inkPixels": 98
+          "inkPixels": 128
         },
         {
           "size": 16,
-          "inkPixels": 114
+          "inkPixels": 138
         },
         {
           "size": 20,
-          "inkPixels": 168
+          "inkPixels": 213
         },
         {
           "size": 24,
-          "inkPixels": 186
+          "inkPixels": 232
         }
       ]
     }

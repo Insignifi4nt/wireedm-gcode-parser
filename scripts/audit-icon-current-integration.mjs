@@ -200,7 +200,3 @@ if (report.currentSource.lucideImportsRemaining || report.currentSource.unresolv
 console.log(JSON.stringify({ output: slash(outputPath), exports: exportedIds.size, currentImports: currentImports.length, currentRefs: currentUses.length,
   baselineRefs: baseline.occurrences.length, matched: report.reconciliation.matchedOriginOccurrences, resolved: report.reconciliation.resolvedOriginOccurrences,
   unresolved: unresolved.length, unmatchedCurrent: unmatchedCurrent.length, lucideImportsRemaining: report.currentSource.lucideImportsRemaining, featureKindMapEntries: Object.keys(cadMap).length, dynamicSlots: dynamicSlotAudit.length }, null, 2));
-
-
-
-

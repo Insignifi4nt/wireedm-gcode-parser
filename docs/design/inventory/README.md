@@ -10,3 +10,5 @@ These files preserve the read-only CAD handoff inventory exactly as received. Th
 The crosswalk supplies original icon IDs and exclusion reasons for each applicable usage. Source geometry, mathematical notation, native controls and browser cursor affordances retain their documented scope exclusions. Newer CAD code is planned for integration after its reviewed commit; this evidence does not transfer implementation ownership.
 
 The local audit copy plus its Markdown can be supplied to `scripts/reconcile-icon-inventory.mjs` for a repeatable mapping audit. The Markdown is required because it records the expanded renderer variants and relations separately from the JSON source bindings.
+
+The CAD task later published its recoverable implementation checkpoint at `09795ec`. This is the eventual integration baseline; the exact original snapshot above remains unchanged as evidence. That task continues hardening independently and retains ownership of all app servers.

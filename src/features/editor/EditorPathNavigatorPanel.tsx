@@ -6,8 +6,9 @@ import {
   Ellipsis,
   FlipHorizontal,
   FlipVertical,
-  Flag,
-  Info,
+  LeadInIcon,
+  LeadOutIcon,
+  CircleHelp,
   Move,
   RotateCcw,
   RotateCw
@@ -526,7 +527,7 @@ export function EditorPathNavigatorPanel({
               title="Contour Tree help"
               type="button"
             >
-              <Info aria-hidden="true" className="size-3.5" />
+              <CircleHelp aria-hidden="true" className="size-3.5" />
             </button>
             <div
               className="pointer-events-none invisible absolute left-[-36px] top-7 z-30 w-[170px] border border-border bg-card p-2 text-[10px] normal-case leading-4 text-foreground opacity-0 shadow-xl transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
@@ -2514,7 +2515,11 @@ function renderLeadRow(
       title={`${label}: ${formatPoint(lead.from)} → ${formatPoint(lead.to)}`}
       type="button"
     >
-      <Flag className="size-3 shrink-0" aria-hidden="true" />
+      {travelRole === 'lead-in' ? (
+        <LeadInIcon className="size-3 shrink-0" aria-hidden="true" />
+      ) : (
+        <LeadOutIcon className="size-3 shrink-0" aria-hidden="true" />
+      )}
       <span className="font-medium text-foreground">{label}</span>
       <span className="truncate">{strategy}</span>
       {reviewRequired && <span className="text-amber-200">Review required</span>}

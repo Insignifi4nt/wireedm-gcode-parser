@@ -608,12 +608,26 @@
   },
   {
     "id": "start-point",
-    "label": "Contour start",
+    "label": "Program start",
     "category": "cam",
     "aliases": [
       "Flag"
     ],
     "file": "start-point.svg"
+  },
+  {
+    "id": "insert-points",
+    "label": "Insert measured points",
+    "category": "cam",
+    "aliases": [],
+    "file": "insert-points.svg"
+  },
+  {
+    "id": "locate",
+    "label": "Locate highlighted control",
+    "category": "navigation",
+    "aliases": [],
+    "file": "locate.svg"
   },
   {
     "id": "pin",

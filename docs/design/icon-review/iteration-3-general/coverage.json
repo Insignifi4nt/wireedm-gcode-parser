@@ -1,0 +1,290 @@
+{
+  "reviewedCount": 57,
+  "entries": [
+    {
+      "id": "navigate-back",
+      "label": "Back",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "navigate-forward",
+      "label": "Forward",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "move-up",
+      "label": "Move up",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "move-down",
+      "label": "Move down",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "expand-right",
+      "label": "Expand",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "expand-down",
+      "label": "Expand menu",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "more",
+      "label": "More actions",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "close",
+      "label": "Close or cancel",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "confirm",
+      "label": "Apply or confirm",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "add",
+      "label": "Add",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "remove",
+      "label": "Remove",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "delete",
+      "label": "Delete",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "save",
+      "label": "Save",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "rename",
+      "label": "Rename or edit",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "copy",
+      "label": "Copy",
+      "decision": "refine-iteration-2"
+    },
+    {
+      "id": "undo",
+      "label": "Undo",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "redo",
+      "label": "Redo",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "refresh",
+      "label": "Refresh or rebuild",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "download",
+      "label": "Download or export",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "upload",
+      "label": "Upload or install",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "file-new",
+      "label": "New document",
+      "decision": "refine-iteration-2"
+    },
+    {
+      "id": "folder-open",
+      "label": "Open folder",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "file-import",
+      "label": "Import file",
+      "decision": "refine-iteration-2"
+    },
+    {
+      "id": "file-export",
+      "label": "Generate controller file",
+      "decision": "refine-iteration-2"
+    },
+    {
+      "id": "file-inspect",
+      "label": "Inspect file",
+      "decision": "refine-iteration-2"
+    },
+    {
+      "id": "file-code",
+      "label": "Controller program",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "file-json",
+      "label": "Structured interchange",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "file-body",
+      "label": "Solid model file",
+      "decision": "refine-iteration-2"
+    },
+    {
+      "id": "history",
+      "label": "Revision history",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "browser-cache",
+      "label": "Browser cache",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "folder-storage",
+      "label": "Folder storage",
+      "decision": "evaluate-candidate"
+    },
+    {
+      "id": "settings",
+      "label": "Workbench settings",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "adjust",
+      "label": "Adjust parameters",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "help",
+      "label": "Help",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "info",
+      "label": "Information",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "warning",
+      "label": "Warning",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "success",
+      "label": "Completed successfully",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "error",
+      "label": "Error",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "notifications",
+      "label": "Notifications",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "busy",
+      "label": "Operation in progress",
+      "decision": "refine-iteration-2"
+    },
+    {
+      "id": "visible",
+      "label": "Show geometry",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "hidden",
+      "label": "Hide geometry",
+      "decision": "evaluate-candidate"
+    },
+    {
+      "id": "panel-left-close",
+      "label": "Hide left panel",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "panel-left-open",
+      "label": "Show left panel",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "panel-right-close",
+      "label": "Hide right panel",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "panel-right-open",
+      "label": "Show right panel",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "camera-capture",
+      "label": "Capture view",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "suppressed",
+      "label": "Suppressed feature",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "dirty",
+      "label": "Unsaved changes",
+      "decision": "evaluate-candidate"
+    },
+    {
+      "id": "locked",
+      "label": "Locked",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "folder-plus",
+      "label": "New parameter group",
+      "decision": "refine-iteration-2"
+    },
+    {
+      "id": "link",
+      "label": "Linked expression",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "search",
+      "label": "Search",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "plugin",
+      "label": "Parametric plugin",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "wire-edm-mark",
+      "label": "Wire EDM Workbench",
+      "decision": "evaluate-candidate"
+    },
+    {
+      "id": "navigation-mouse",
+      "label": "Mouse navigation",
+      "decision": "retain-after-review"
+    },
+    {
+      "id": "navigation-trackpad",
+      "label": "Trackpad navigation",
+      "decision": "evaluate-candidate"
+    }
+  ]
+}

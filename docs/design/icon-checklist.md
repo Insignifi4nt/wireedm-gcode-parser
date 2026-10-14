@@ -20,6 +20,10 @@ Branch: `design/original-workbench-icons`. Starting commit: `c16a15e`. CAD refer
 
 ## Progress
 
+2026-10-14, critical iteration checkpoint: all 134 IDs have explicit grouped review coverage, and all 244 current imported references have semantic review. Thirty-five drawings were revised or added. Closed contour, exact inset, interior clearance and lead symmetry checks pass. Root rejected proposals that reduced differentiation or crowded small glyphs. The updated catalog compares CAD, selection/pattern, CAM, machine/transport, document/storage, and view/input families. Review evidence and integration limits are in `critical-iteration-checkpoint.md`; PR publication remains held.
+
+2026-10-14, user-directed second design pass: PR creation is held while every family receives a critical geometric and semantic review. Lead placement, contour closure and consistency across related operations require further inspection. Earlier verification establishes implementation behavior, not final design acceptance.
+
 2026-10-14: The external inventory has not appeared yet. Current CAD source uses the same cube for imported bodies, Pad, Pocket and Shell. Its generic copy and rotation symbols also represent patterns and mirror. Final mappings must use operation semantics rather than replacing each imported component name globally.
 
 The user authorized independent design iteration and hand-authored final SVGs. This overrides the Product Design ideation workflow's selection pause and its generic preference for existing icon libraries.

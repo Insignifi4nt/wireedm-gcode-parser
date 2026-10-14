@@ -1,6 +1,6 @@
 # Wire EDM icon standard
 
-Status: original set implemented and rendered. Release integration is reviewed on a draft PR after CAD 0.0.697.
+Status: implementation checkpoint complete; critical visual iteration continues at the user's request. No PR has been opened. Release integration will follow the reviewed CAD 0.0.697 base.
 
 ## Target
 

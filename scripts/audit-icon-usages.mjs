@@ -207,6 +207,3 @@ else lines.push('No unused Lucide component imports.');
 lines.push('', '## Notes', '', '- Unique alias mappings are proposed from the catalog’s explicit alias list; call-site context is retained for review.', '- The repeated `Box` symbol is context-dependent. Simulation stock bounds and CAD solid-body operations share the imported Lucide symbol, so each use is reported with its local meaning and lower confidence.', '- This scout covers imported Lucide components. It does not claim coverage of hand-authored SVG/CSS pictures, Unicode glyphs, native controls, or non-Lucide graphics.');
 writeFileSync(path.join(root, 'docs/design/icon-usage-scout.md'), lines.join('\n') + '\n');
 console.log(JSON.stringify({ catalogEntries: ids.length, catalogAliases: catalogAliases.length, scannedFiles: files.length, filesWithImports: filesWithImports.size, importCount: importRecords.length, references: mapped.length, aliasesReferenced: importedAliasesUsed.size, idsCovered: usedIds.size, ambiguousUsages: ambiguousAliasUsages.length, missingCatalogAliases: missingCatalogAliases.length, importedUnused: importedUnused.length, outputs: ['docs/design/icon-usage-scout.json','docs/design/icon-usage-scout.md'] }, null, 2));
-
-
-

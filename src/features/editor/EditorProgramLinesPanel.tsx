@@ -1,7 +1,7 @@
 import type { MouseEvent } from 'react';
 import {
   ArrowDown,
-  ArrowRightFromLine,
+  StartPointIcon,
   ArrowUp,
   ChevronDown,
   ChevronRight,
@@ -341,7 +341,7 @@ export function EditorProgramLinesPanel({
                 onClick={onSetStartHere}
                 type="button"
               >
-                <ArrowRightFromLine className="size-3" />
+                <StartPointIcon className="size-3" />
                 Start Here
               </button>
               <button

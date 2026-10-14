@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-14T13:28:18.876Z",
+  "generatedAt": "2026-10-14T14:06:37.785Z",
   "externalInventory": {
     "path": "C:\\Users\\cristian\\.codex\\worktrees\\665a\\Wire_EDM\\docs\\design\\inventory\\source-icon-inventory.audit.json",
     "generatedAt": "2026-10-14T13:07:23.675Z",
@@ -474,7 +474,7 @@
   },
   "currentCatalog": {
     "source": "scripts/icon-source.mjs",
-    "entries": 132,
+    "entries": 134,
     "aliasCount": 93,
     "ids": [
       "navigate-back",
@@ -545,6 +545,8 @@
       "flip-horizontal",
       "flip-vertical",
       "start-point",
+      "insert-points",
+      "locate",
       "pin",
       "departure",
       "turn",
@@ -627,8 +629,9 @@
       "excluded": 0,
       "gap": 0,
       "dispositions": {
-        "mapped": 221,
-        "semantic-override": 61
+        "dynamic-variants": 1,
+        "mapped": 212,
+        "semantic-override": 69
       }
     },
     "dynamicSlots": {
@@ -807,14 +810,38 @@
           "mismatches": []
         },
         "targetedSemantics": {
-          "expected": 27,
+          "expected": 34,
+          "mismatches": []
+        },
+        "dynamicLeadPair": {
+          "expected": [
+            [
+              "LeadInIcon",
+              "lead-in"
+            ],
+            [
+              "LeadOutIcon",
+              "lead-out"
+            ]
+          ],
+          "checkedSourceId": "use.7bb20f269b9d",
+          "current": [
+            [
+              "LeadInIcon",
+              "lead-in"
+            ],
+            [
+              "LeadOutIcon",
+              "lead-out"
+            ]
+          ],
           "mismatches": []
         },
         "complete": true
       },
       "complete": true
     },
-    "currentCatalogEntries": 132,
+    "currentCatalogEntries": 134,
     "currentCatalogAliases": 93,
     "sourceHashCount": 451,
     "sourceHashDigest": "31330be834080e7d068ff5a25b1bab1727fba744645876f90656a3f9b6d75ede",
@@ -834,8 +861,9 @@
         "excluded": 0,
         "gap": 0,
         "dispositions": {
-          "mapped": 221,
-          "semantic-override": 61
+          "dynamic-variants": 1,
+          "mapped": 212,
+          "semantic-override": 69
         }
       },
       "dynamicSlots": {
@@ -10399,10 +10427,10 @@
         "sourceCanonical": "icon.lucide.hard-drive",
         "imported": null,
         "catalogIds": [
-          "folder-storage"
+          "wire-edm-mark"
         ],
-        "disposition": "mapped",
-        "reason": "Current catalog alias HardDrive resolves to folder-storage.",
+        "disposition": "semantic-override",
+        "reason": "Contextual action/visual meaning in src/app/AppShell.tsx:214 resolves to wire-edm-mark, overriding the generic imported glyph alias.",
         "source": {
           "file": "src/app/AppShell.tsx",
           "line": 214,
@@ -10439,7 +10467,7 @@
           "kind": "jsx-icon",
           "id": "use.351faffd1991"
         },
-        "catalogId": "folder-storage"
+        "catalogId": "wire-edm-mark"
       },
       {
         "sourceId": "use.78943e173e76",
@@ -21505,10 +21533,10 @@
         "sourceCanonical": "icon.lucide.crosshair",
         "imported": null,
         "catalogIds": [
-          "origin"
+          "locate"
         ],
-        "disposition": "mapped",
-        "reason": "Current catalog alias Crosshair resolves to origin.",
+        "disposition": "semantic-override",
+        "reason": "Contextual action/visual meaning in src/features/editor/EditorGuideDialog.tsx:133 resolves to locate, overriding the generic imported glyph alias.",
         "source": {
           "file": "src/features/editor/EditorGuideDialog.tsx",
           "line": 133,
@@ -21559,7 +21587,7 @@
           "kind": "jsx-icon",
           "id": "use.acb4ec7916e2"
         },
-        "catalogId": "origin"
+        "catalogId": "locate"
       },
       {
         "sourceId": "use.aa36c8c52358",
@@ -22153,10 +22181,10 @@
         "sourceCanonical": "icon.lucide.magnet",
         "imported": null,
         "catalogIds": [
-          "snap"
+          "circle-center"
         ],
-        "disposition": "mapped",
-        "reason": "Current catalog alias Magnet resolves to snap.",
+        "disposition": "semantic-override",
+        "reason": "Contextual action/visual meaning in src/features/editor/EditorInspectorPanel.tsx:1104 resolves to circle-center, overriding the generic imported glyph alias.",
         "source": {
           "file": "src/features/editor/EditorInspectorPanel.tsx",
           "line": 1104,
@@ -22203,7 +22231,7 @@
           "kind": "jsx-icon",
           "id": "use.cbc57f4ad9fc"
         },
-        "catalogId": "snap"
+        "catalogId": "circle-center"
       },
       {
         "sourceId": "use.0e673e8e8a96",
@@ -22284,10 +22312,10 @@
         "sourceCanonical": "icon.lucide.magnet",
         "imported": null,
         "catalogIds": [
-          "snap"
+          "circle-center"
         ],
-        "disposition": "mapped",
-        "reason": "Current catalog alias Magnet resolves to snap.",
+        "disposition": "semantic-override",
+        "reason": "Contextual action/visual meaning in src/features/editor/EditorInspectorPanel.tsx:1137 resolves to circle-center, overriding the generic imported glyph alias.",
         "source": {
           "file": "src/features/editor/EditorInspectorPanel.tsx",
           "line": 1137,
@@ -22333,7 +22361,7 @@
           "kind": "jsx-icon",
           "id": "use.620dbb21888c"
         },
-        "catalogId": "snap"
+        "catalogId": "circle-center"
       },
       {
         "sourceId": "use.6c239ce305c6",
@@ -22479,10 +22507,10 @@
         "sourceCanonical": "icon.lucide.arrow-right-from-line",
         "imported": null,
         "catalogIds": [
-          "departure"
+          "insert-points"
         ],
-        "disposition": "mapped",
-        "reason": "Current catalog alias ArrowRightFromLine resolves to departure.",
+        "disposition": "semantic-override",
+        "reason": "Contextual action/visual meaning in src/features/editor/EditorInspectorPanel.tsx:1289 resolves to insert-points, overriding the generic imported glyph alias.",
         "source": {
           "file": "src/features/editor/EditorInspectorPanel.tsx",
           "line": 1289,
@@ -22537,7 +22565,7 @@
           "kind": "jsx-icon",
           "id": "use.aa22e4024d24"
         },
-        "catalogId": "departure"
+        "catalogId": "insert-points"
       },
       {
         "sourceId": "use.8220926976b8",
@@ -22955,10 +22983,10 @@
         "sourceCanonical": "icon.lucide.info",
         "imported": null,
         "catalogIds": [
-          "info"
+          "help"
         ],
-        "disposition": "mapped",
-        "reason": "Current catalog alias Info resolves to info.",
+        "disposition": "semantic-override",
+        "reason": "Contextual action/visual meaning in src/features/editor/EditorPathNavigatorPanel.tsx:529 resolves to help, overriding the generic imported glyph alias.",
         "source": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
           "line": 529,
@@ -23003,7 +23031,7 @@
           "kind": "jsx-icon",
           "id": "use.040fa55fc9cc"
         },
-        "catalogId": "info"
+        "catalogId": "help"
       },
       {
         "sourceId": "use.dfe6ef6b1093",
@@ -23788,10 +23816,11 @@
         "sourceCanonical": "icon.lucide.flag",
         "imported": null,
         "catalogIds": [
-          "start-point"
+          "lead-in",
+          "lead-out"
         ],
-        "disposition": "mapped",
-        "reason": "Current catalog alias Flag resolves to start-point.",
+        "disposition": "dynamic-variants",
+        "reason": "Lead tree rows select the matching interior lead direction icon from travelRole. The legacy flag did not distinguish entry from exit.",
         "source": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
           "line": 2517,
@@ -23848,8 +23877,7 @@
           "source": "lucide-react",
           "kind": "jsx-icon",
           "id": "use.7bb20f269b9d"
-        },
-        "catalogId": "start-point"
+        }
       },
       {
         "sourceId": "use.6480b272ff61",
@@ -24057,10 +24085,10 @@
         "sourceCanonical": "icon.lucide.magnet",
         "imported": null,
         "catalogIds": [
-          "snap"
+          "circle-center"
         ],
-        "disposition": "mapped",
-        "reason": "Current catalog alias Magnet resolves to snap.",
+        "disposition": "semantic-override",
+        "reason": "Contextual action/visual meaning in src/features/editor/EditorPreview.tsx:963 resolves to circle-center, overriding the generic imported glyph alias.",
         "source": {
           "file": "src/features/editor/EditorPreview.tsx",
           "line": 963,
@@ -24105,7 +24133,7 @@
           "kind": "jsx-icon",
           "id": "use.224e71e5aace"
         },
-        "catalogId": "snap"
+        "catalogId": "circle-center"
       },
       {
         "sourceId": "use.c12bc8666173",
@@ -24883,10 +24911,10 @@
         "sourceCanonical": "icon.lucide.arrow-right-from-line",
         "imported": null,
         "catalogIds": [
-          "departure"
+          "start-point"
         ],
-        "disposition": "mapped",
-        "reason": "Current catalog alias ArrowRightFromLine resolves to departure.",
+        "disposition": "semantic-override",
+        "reason": "Contextual action/visual meaning in src/features/editor/EditorProgramLinesPanel.tsx:344 resolves to start-point, overriding the generic imported glyph alias.",
         "source": {
           "file": "src/features/editor/EditorProgramLinesPanel.tsx",
           "line": 344,
@@ -24926,7 +24954,7 @@
           "kind": "jsx-icon",
           "id": "use.4dca56b9193d"
         },
-        "catalogId": "departure"
+        "catalogId": "start-point"
       },
       {
         "sourceId": "use.476a8abaec18",
@@ -92911,13 +92939,13 @@
   ],
   "currentCheckoutIntegration": {
     "source": "C:\\Users\\cristian\\.codex\\worktrees\\665a\\Wire_EDM\\docs\\design\\current-integration-audit.json",
-    "generatedAt": "2026-10-14T13:28:18.697Z",
+    "generatedAt": "2026-10-14T14:06:37.571Z",
     "currentSource": {
       "scannedProductionTsFiles": 396,
-      "catalogImports": 193,
-      "currentImportedSymbolReferences": 243,
-      "catalogExportsParsed": 225,
-      "catalogEntriesParsed": 132,
+      "catalogImports": 195,
+      "currentImportedSymbolReferences": 244,
+      "catalogExportsParsed": 227,
+      "catalogEntriesParsed": 134,
       "exportsWithoutCatalogEntries": [],
       "lucideImportsRemaining": 0,
       "unresolvedIconImports": 0,
@@ -92928,7 +92956,7 @@
       "uniquelyClaimedCurrentUses": 228,
       "resolvedOriginOccurrences": 228,
       "unresolvedOriginOccurrences": 0,
-      "unmatchedCurrentReferences": 15
+      "unmatchedCurrentReferences": 16
     },
     "occurrences": [
       {
@@ -92943,16 +92971,16 @@
           "file": "src/app/AppShell.tsx",
           "line": 214,
           "column": 14,
-          "symbol": "HardDrive",
-          "exportedSymbol": "HardDrive",
-          "catalogId": "folder-storage",
-          "confidenceScore": 270.44,
-          "context": "return ( <div className=\"technical-workbench flex h-dvh flex-col overflow-hidden bg-background text-foreground\" data-app-shell data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'} > <header aria-hidden={compactModalOpen ? true : undefined} className=\"flex h-10 shrink-0 items-center border-b border-border bg-[#11171b] px-2\" data-app-header inert={compactModalOpen ? true : undefined} > {headerContent ?? ( <div className=\"mr-4 flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground\"> <HardDrive className=\"size-4 text-primary\" /> <span className=\"truncate\">Wire EDM Workbench</span> </div> )} <div className=\"ml-auto flex items-center gap-2\" data-app-header-system-controls> <StatusNotificationMenu notifications={statusNotifications} agentContent={agentPanelContent} /> <span aria-label={storageStatusLabel} className={`inline-flex h-7 items-center gap-2 rounded-[2px] border px-2 text-[10px] ${ storageStatusTone === 'temporary' ? 'border-amber-500/50 bg-amber-500/10 text-amber-100' : storageStatusTone === 'error' ? 'border-destructive/60 bg-destructive/10 text-destructive' : 'border-border bg-background/60 text-muted-foreground' }`} data-storage-status role=\"status\" title={connectedWorkbench?.adapter.persistenceWarning ?? storageStatusLabel} > <Database className=\"size-3.5\" /> <span data-storage-status-label>{storageStatusLabel}</span> </span> <Button aria-label=\"O"
+          "symbol": "WireEdmMarkIcon",
+          "exportedSymbol": "WireEdmMarkIcon",
+          "catalogId": "wire-edm-mark",
+          "confidenceScore": 258.28,
+          "context": "return ( <div className=\"technical-workbench flex h-dvh flex-col overflow-hidden bg-background text-foreground\" data-app-shell data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'} > <header aria-hidden={compactModalOpen ? true : undefined} className=\"flex h-10 shrink-0 items-center border-b border-border bg-[#11171b] px-2\" data-app-header inert={compactModalOpen ? true : undefined} > {headerContent ?? ( <div className=\"mr-4 flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground\"> <WireEdmMarkIcon className=\"size-4 text-primary\" /> <span className=\"truncate\">Wire EDM Workbench</span> </div> )} <div className=\"ml-auto flex items-center gap-2\" data-app-header-system-controls> <StatusNotificationMenu notifications={statusNotifications} agentContent={agentPanelContent} /> <span aria-label={storageStatusLabel} className={`inline-flex h-7 items-center gap-2 rounded-[2px] border px-2 text-[10px] ${ storageStatusTone === 'temporary' ? 'border-amber-500/50 bg-amber-500/10 text-amber-100' : storageStatusTone === 'error' ? 'border-destructive/60 bg-destructive/10 text-destructive' : 'border-border bg-background/60 text-muted-foreground' }`} data-storage-status role=\"status\" title={connectedWorkbench?.adapter.persistenceWarning ?? storageStatusLabel} > <Database className=\"size-3.5\" /> <span data-storage-status-label>{storageStatusLabel}</span> </span> <Button aria-la"
         },
         "resolution": "resolved",
-        "actualSymbol": "HardDrive",
-        "actualCatalogId": "folder-storage",
-        "catalogIdChangedFromOriginalIntent": false
+        "actualSymbol": "WireEdmMarkIcon",
+        "actualCatalogId": "wire-edm-mark",
+        "catalogIdChangedFromOriginalIntent": true
       },
       {
         "originId": "origin.544730b287e44747",
@@ -92969,8 +92997,8 @@
           "symbol": "Database",
           "exportedSymbol": "Database",
           "catalogId": "browser-cache",
-          "confidenceScore": 270.44,
-          "context": "return ( <div className=\"technical-workbench flex h-dvh flex-col overflow-hidden bg-background text-foreground\" data-app-shell data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'} > <header aria-hidden={compactModalOpen ? true : undefined} className=\"flex h-10 shrink-0 items-center border-b border-border bg-[#11171b] px-2\" data-app-header inert={compactModalOpen ? true : undefined} > {headerContent ?? ( <div className=\"mr-4 flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground\"> <HardDrive className=\"size-4 text-primary\" /> <span className=\"truncate\">Wire EDM Workbench</span> </div> )} <div className=\"ml-auto flex items-center gap-2\" data-app-header-system-controls> <StatusNotificationMenu notifications={statusNotifications} agentContent={agentPanelContent} /> <span aria-label={storageStatusLabel} className={`inline-flex h-7 items-center gap-2 rounded-[2px] border px-2 text-[10px] ${ storageStatusTone === 'temporary' ? 'border-amber-500/50 bg-amber-500/10 text-amber-100' : storageStatusTone === 'error' ? 'border-destructive/60 bg-destructive/10 text-destructive' : 'border-border bg-background/60 text-muted-foreground' }`} data-storage-status role=\"status\" title={connectedWorkbench?.adapter.persistenceWarning ?? storageStatusLabel} > <Database className=\"size-3.5\" /> <span data-storage-status-label>{storageStatusLabel}</span> </span> <Button aria-label=\"O"
+          "confidenceScore": 269.28,
+          "context": "return ( <div className=\"technical-workbench flex h-dvh flex-col overflow-hidden bg-background text-foreground\" data-app-shell data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'} > <header aria-hidden={compactModalOpen ? true : undefined} className=\"flex h-10 shrink-0 items-center border-b border-border bg-[#11171b] px-2\" data-app-header inert={compactModalOpen ? true : undefined} > {headerContent ?? ( <div className=\"mr-4 flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground\"> <WireEdmMarkIcon className=\"size-4 text-primary\" /> <span className=\"truncate\">Wire EDM Workbench</span> </div> )} <div className=\"ml-auto flex items-center gap-2\" data-app-header-system-controls> <StatusNotificationMenu notifications={statusNotifications} agentContent={agentPanelContent} /> <span aria-label={storageStatusLabel} className={`inline-flex h-7 items-center gap-2 rounded-[2px] border px-2 text-[10px] ${ storageStatusTone === 'temporary' ? 'border-amber-500/50 bg-amber-500/10 text-amber-100' : storageStatusTone === 'error' ? 'border-destructive/60 bg-destructive/10 text-destructive' : 'border-border bg-background/60 text-muted-foreground' }`} data-storage-status role=\"status\" title={connectedWorkbench?.adapter.persistenceWarning ?? storageStatusLabel} > <Database className=\"size-3.5\" /> <span data-storage-status-label>{storageStatusLabel}</span> </span> <Button aria-la"
         },
         "resolution": "resolved",
         "actualSymbol": "Database",
@@ -95887,16 +95915,16 @@
           "file": "src/features/editor/EditorGuideDialog.tsx",
           "line": 133,
           "column": 28,
-          "symbol": "Crosshair",
-          "exportedSymbol": "Crosshair",
-          "catalogId": "origin",
-          "confidenceScore": 313,
-          "context": "<Button data-editor-guide-highlight={step.highlightTarget} onClick={() => onHighlight(step.highlightTarget!)} size=\"sm\" type=\"button\" variant=\"outline\" > <Crosshair /> {copy.highlightLabel} </Button>"
+          "symbol": "LocateIcon",
+          "exportedSymbol": "LocateIcon",
+          "catalogId": "locate",
+          "confidenceScore": 294.86,
+          "context": "<Button data-editor-guide-highlight={step.highlightTarget} onClick={() => onHighlight(step.highlightTarget!)} size=\"sm\" type=\"button\" variant=\"outline\" > <LocateIcon /> {copy.highlightLabel} </Button>"
         },
         "resolution": "resolved",
-        "actualSymbol": "Crosshair",
-        "actualCatalogId": "origin",
-        "catalogIdChangedFromOriginalIntent": false
+        "actualSymbol": "LocateIcon",
+        "actualCatalogId": "locate",
+        "catalogIdChangedFromOriginalIntent": true
       },
       {
         "originId": "origin.5b6fbaa4bd760d0b",
@@ -96092,12 +96120,12 @@
         "scoutActualSymbol": "Magnet",
         "matchedCurrent": {
           "file": "src/features/editor/EditorInspectorPanel.tsx",
-          "line": 1104,
+          "line": 1105,
           "column": 16,
           "symbol": "Magnet",
           "exportedSymbol": "Magnet",
           "catalogId": "snap",
-          "confidenceScore": 403,
+          "confidenceScore": 320.5,
           "context": "<button aria-label=\"Toggle preview grid snap\" aria-pressed={gridSnapEnabled} className={`inline-flex h-6 items-center gap-1 border px-2 font-mono text-[10px] outline-none transition hover:bg-accent ${ gridSnapEnabled ? 'border-primary text-primary' : 'border-border text-muted-foreground' } ${guideHighlightClass('grid-snap', guideHighlightTarget)}`} data-editor-grid-snap {...guideTargetProps('grid-snap', guideHighlightTarget)} onClick={onToggleGridSnap} title={previewCoordinateUnits ? `Snap cursor and measurement clicks to the 5 ${previewCoordinateUnits} preview grid` : 'Snap cursor and measurement clicks to the 5 coordinate-unit preview grid. Units are undeclared.'} type=\"button\" > <Magnet className=\"size-3\" /> {gridSnapEnabled ? 'ON' : 'OFF'} </button>"
         },
         "resolution": "resolved",
@@ -96115,12 +96143,12 @@
         "scoutActualSymbol": "MousePointer2",
         "matchedCurrent": {
           "file": "src/features/editor/EditorInspectorPanel.tsx",
-          "line": 1122,
+          "line": 1123,
           "column": 14,
           "symbol": "MousePointer2",
           "exportedSymbol": "MousePointer2",
           "catalogId": "select",
-          "confidenceScore": 403,
+          "confidenceScore": 320.5,
           "context": "<button aria-label=\"Select geometry on canvas\" aria-pressed={canvasMouseMode === 'select'} className={`flex h-6 items-center justify-center gap-1 border px-1.5 text-[10px] outline-none transition hover:bg-accent ${ canvasMouseMode === 'select' ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground' }`} data-editor-canvas-mouse-mode-select onClick={() => onSetCanvasMouseMode('select')} type=\"button\" > <MousePointer2 className=\"size-3\" /> Select </button>"
         },
         "resolution": "resolved",
@@ -96138,18 +96166,18 @@
         "scoutActualSymbol": "Magnet",
         "matchedCurrent": {
           "file": "src/features/editor/EditorInspectorPanel.tsx",
-          "line": 1137,
+          "line": 1138,
           "column": 14,
-          "symbol": "Magnet",
-          "exportedSymbol": "Magnet",
-          "catalogId": "snap",
-          "confidenceScore": 403,
-          "context": "<button aria-label=\"Place measurement points on canvas\" aria-pressed={canvasMouseMode === 'point'} className={`flex h-6 items-center justify-center gap-1 border px-1.5 text-[10px] outline-none transition hover:bg-accent ${ canvasMouseMode === 'point' ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground' }`} data-editor-canvas-mouse-mode-point onClick={() => onSetCanvasMouseMode('point')} type=\"button\" > <Magnet className=\"size-3\" /> Point </button>"
+          "symbol": "CircleCenterIcon",
+          "exportedSymbol": "CircleCenterIcon",
+          "catalogId": "circle-center",
+          "confidenceScore": 306.87,
+          "context": "<button aria-label=\"Place measurement points on canvas\" aria-pressed={canvasMouseMode === 'point'} className={`flex h-6 items-center justify-center gap-1 border px-1.5 text-[10px] outline-none transition hover:bg-accent ${ canvasMouseMode === 'point' ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground' }`} data-editor-canvas-mouse-mode-point onClick={() => onSetCanvasMouseMode('point')} type=\"button\" > <CircleCenterIcon className=\"size-3\" /> Point </button>"
         },
         "resolution": "resolved",
-        "actualSymbol": "Magnet",
-        "actualCatalogId": "snap",
-        "catalogIdChangedFromOriginalIntent": false
+        "actualSymbol": "CircleCenterIcon",
+        "actualCatalogId": "circle-center",
+        "catalogIdChangedFromOriginalIntent": true
       },
       {
         "originId": "origin.4682706b3ec8e0c3",
@@ -96161,12 +96189,12 @@
         "scoutActualSymbol": "Magnet",
         "matchedCurrent": {
           "file": "src/features/editor/EditorInspectorPanel.tsx",
-          "line": 1163,
+          "line": 1164,
           "column": 20,
           "symbol": "Magnet",
           "exportedSymbol": "Magnet",
           "catalogId": "snap",
-          "confidenceScore": 403,
+          "confidenceScore": 320.5,
           "context": "<button aria-label={`Magnetize latest point ${mode}`} aria-pressed={pathConstructionMode === mode} className={`flex h-6 items-center justify-center gap-1 border px-1.5 text-[10px] outline-none transition hover:bg-accent ${ pathConstructionMode === mode ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground' }`} disabled={isSaving} key={mode} onClick={() => onActivatePathConstructionMode( pathConstructionMode === mode ? null : mode )} type=\"button\" > <Magnet className=\"size-3\" /> {mode === 'perpendicular' ? 'Perpendicular' : 'Tangent'} </button>"
         },
         "resolution": "resolved",
@@ -96184,12 +96212,12 @@
         "scoutActualSymbol": "Trash2",
         "matchedCurrent": {
           "file": "src/features/editor/EditorInspectorPanel.tsx",
-          "line": 1274,
+          "line": 1275,
           "column": 20,
           "symbol": "Trash2",
           "exportedSymbol": "Trash2",
           "catalogId": "delete",
-          "confidenceScore": 403,
+          "confidenceScore": 320.5,
           "context": "<button aria-label={`Delete measurement point P${index + 1}`} className=\"flex size-5 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-destructive/10 hover:text-destructive\" onClick={() => onDeleteMeasurementPoint(point.id)} title=\"Delete point\" type=\"button\" > <Trash2 className=\"size-3\" /> </button>"
         },
         "resolution": "resolved",
@@ -96207,18 +96235,18 @@
         "scoutActualSymbol": "ArrowRightFromLine",
         "matchedCurrent": {
           "file": "src/features/editor/EditorInspectorPanel.tsx",
-          "line": 1289,
+          "line": 1290,
           "column": 14,
-          "symbol": "ArrowRightFromLine",
-          "exportedSymbol": "ArrowRightFromLine",
-          "catalogId": "departure",
-          "confidenceScore": 313,
-          "context": "<Button className=\"h-6 px-2 text-[10px]\" disabled={!program || measurementPoints.length === 0 || isSaving} onClick={onInsertMeasurementPoints} size=\"sm\" type=\"button\" variant=\"outline\" > <ArrowRightFromLine /> Insert Points </Button>"
+          "symbol": "InsertPointsIcon",
+          "exportedSymbol": "InsertPointsIcon",
+          "catalogId": "insert-points",
+          "confidenceScore": 214.95,
+          "context": "<Button className=\"h-6 px-2 text-[10px]\" disabled={!program || measurementPoints.length === 0 || isSaving} onClick={onInsertMeasurementPoints} size=\"sm\" type=\"button\" variant=\"outline\" > <InsertPointsIcon /> Insert Points </Button>"
         },
         "resolution": "resolved",
-        "actualSymbol": "ArrowRightFromLine",
-        "actualCatalogId": "departure",
-        "catalogIdChangedFromOriginalIntent": false
+        "actualSymbol": "InsertPointsIcon",
+        "actualCatalogId": "insert-points",
+        "catalogIdChangedFromOriginalIntent": true
       },
       {
         "originId": "origin.bc7a02ad6b532582",
@@ -96230,12 +96258,12 @@
         "scoutActualSymbol": "Download",
         "matchedCurrent": {
           "file": "src/features/editor/EditorInspectorPanel.tsx",
-          "line": 1300,
+          "line": 1301,
           "column": 14,
           "symbol": "Download",
           "exportedSymbol": "Download",
           "catalogId": "download",
-          "confidenceScore": 313,
+          "confidenceScore": 230.5,
           "context": "<Button className=\"h-6 px-2 text-[10px]\" disabled={measurementPoints.length === 0} onClick={() => onExportMeasurementPoints('csv')} size=\"sm\" type=\"button\" variant=\"outline\" > <Download /> Export CSV </Button>"
         },
         "resolution": "resolved",
@@ -96345,18 +96373,18 @@
         "scoutActualSymbol": "Info",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 529,
+          "line": 530,
           "column": 16,
-          "symbol": "Info",
-          "exportedSymbol": "Info",
-          "catalogId": "info",
-          "confidenceScore": 393,
-          "context": "<button aria-describedby=\"contour-tree-help-tooltip\" aria-label=\"Contour Tree help\" className=\"flex size-6 items-center justify-center text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring\" title=\"Contour Tree help\" type=\"button\" > <Info aria-hidden=\"true\" className=\"size-3.5\" /> </button>"
+          "symbol": "CircleHelp",
+          "exportedSymbol": "CircleHelp",
+          "catalogId": "help",
+          "confidenceScore": 295.93,
+          "context": "<button aria-describedby=\"contour-tree-help-tooltip\" aria-label=\"Contour Tree help\" className=\"flex size-6 items-center justify-center text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring\" title=\"Contour Tree help\" type=\"button\" > <CircleHelp aria-hidden=\"true\" className=\"size-3.5\" /> </button>"
         },
         "resolution": "resolved",
-        "actualSymbol": "Info",
-        "actualCatalogId": "info",
-        "catalogIdChangedFromOriginalIntent": false
+        "actualSymbol": "CircleHelp",
+        "actualCatalogId": "help",
+        "catalogIdChangedFromOriginalIntent": true
       },
       {
         "originId": "origin.327db814c091a7b4",
@@ -96368,12 +96396,12 @@
         "scoutActualSymbol": "Ellipsis",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 553,
+          "line": 554,
           "column": 16,
           "symbol": "Ellipsis",
           "exportedSymbol": "Ellipsis",
           "catalogId": "more",
-          "confidenceScore": 393,
+          "confidenceScore": 310.5,
           "context": "<button aria-expanded={geometryTreeOptionsOpen} aria-haspopup=\"menu\" aria-label=\"Geometry tree options\" className=\"flex size-6 items-center justify-center text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring\" onClick={() => setGeometryTreeOptionsOpen((open) => !open)} title=\"Geometry tree options\" type=\"button\" > <Ellipsis aria-hidden=\"true\" className=\"size-4\" /> </button>"
         },
         "resolution": "resolved",
@@ -96391,12 +96419,12 @@
         "scoutActualSymbol": "Move",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 886,
+          "line": 887,
           "column": 14,
           "symbol": "Move",
           "exportedSymbol": "Move",
           "catalogId": "move",
-          "confidenceScore": 403,
+          "confidenceScore": 320.5,
           "context": "<button aria-label={ activePathTransformTarget === 'document' ? 'Apply translation to document geometry' : 'Apply translation to selected path geometry' } className={`mt-2 w-full ${textButtonClass}`} data-upid-transform-apply disabled={!canTranslateActiveTarget} onClick={() => { if (activePathTransformTarget === 'document') { onTranslatePathDocument({ x: translateX, y: translateY }); } else { onTranslatePathSelection({ x: translateX, y: translateY }); } }} type=\"button\" > <Move className=\"size-3\" /> Apply Translation </button>"
         },
         "resolution": "resolved",
@@ -96414,12 +96442,12 @@
         "scoutActualSymbol": "RotateCcw",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 920,
+          "line": 921,
           "column": 20,
           "symbol": "RotateCcw",
           "exportedSymbol": "RotateCcw",
           "catalogId": "rotate-counterclockwise",
-          "confidenceScore": 403,
+          "confidenceScore": 320.5,
           "context": "<button aria-label={`Rotate ${activePathTransformTarget} 90 degrees counterclockwise`} className={iconButtonClass} disabled={!canOrientActiveTarget} onClick={() => activePathTransformTarget === 'document' ? onRotatePathDocument(90) : onRotatePathSelection(90) } title={`Rotate ${activePathTransformTarget} 90 degrees counterclockwise`} type=\"button\" > <RotateCcw className=\"size-3\" /> </button>"
         },
         "resolution": "resolved",
@@ -96437,12 +96465,12 @@
         "scoutActualSymbol": "RotateCw",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 932,
+          "line": 933,
           "column": 20,
           "symbol": "RotateCw",
           "exportedSymbol": "RotateCw",
           "catalogId": "rotate-clockwise",
-          "confidenceScore": 403,
+          "confidenceScore": 320.5,
           "context": "<button aria-label={`Rotate ${activePathTransformTarget} 90 degrees clockwise`} className={iconButtonClass} disabled={!canOrientActiveTarget} onClick={() => activePathTransformTarget === 'document' ? onRotatePathDocument(-90) : onRotatePathSelection(-90) } title={`Rotate ${activePathTransformTarget} 90 degrees clockwise`} type=\"button\" > <RotateCw className=\"size-3\" /> </button>"
         },
         "resolution": "resolved",
@@ -96460,12 +96488,12 @@
         "scoutActualSymbol": "FlipVertical",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 956,
+          "line": 957,
           "column": 20,
           "symbol": "FlipVertical",
           "exportedSymbol": "FlipVertical",
           "catalogId": "flip-vertical",
-          "confidenceScore": 403,
+          "confidenceScore": 320.5,
           "context": "<button aria-label={`Mirror ${activePathTransformTarget} across X axis`} className={iconButtonClass} disabled={!canOrientActiveTarget} onClick={() => activePathTransformTarget === 'document' ? onMirrorPathDocument('x') : onMirrorPathSelection('x') } title={`Mirror ${activePathTransformTarget} across X axis`} type=\"button\" > <FlipVertical className=\"size-3\" /> </button>"
         },
         "resolution": "resolved",
@@ -96483,12 +96511,12 @@
         "scoutActualSymbol": "FlipHorizontal",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 968,
+          "line": 969,
           "column": 20,
           "symbol": "FlipHorizontal",
           "exportedSymbol": "FlipHorizontal",
           "catalogId": "flip-horizontal",
-          "confidenceScore": 403,
+          "confidenceScore": 320.5,
           "context": "<button aria-label={`Mirror ${activePathTransformTarget} across Y axis`} className={iconButtonClass} disabled={!canOrientActiveTarget} onClick={() => activePathTransformTarget === 'document' ? onMirrorPathDocument('y') : onMirrorPathSelection('y') } title={`Mirror ${activePathTransformTarget} across Y axis`} type=\"button\" > <FlipHorizontal className=\"size-3\" /> </button>"
         },
         "resolution": "resolved",
@@ -96506,12 +96534,12 @@
         "scoutActualSymbol": "ArrowUp",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 1994,
+          "line": 1995,
           "column": 12,
           "symbol": "ArrowUp",
           "exportedSymbol": "ArrowUp",
           "catalogId": "move-up",
-          "confidenceScore": 393,
+          "confidenceScore": 310.5,
           "context": "<button aria-label=\"Move cut sequence operation up\" className=\"flex items-center justify-center text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40\" disabled={pathElement.orderIndex <= 0 || isSaving} onClick={(event) => moveOperation(event, -1)} title=\"Move cut operation up\" type=\"button\" > <ArrowUp className=\"size-3\" /> </button>"
         },
         "resolution": "resolved",
@@ -96529,12 +96557,12 @@
         "scoutActualSymbol": "ArrowDown",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 2004,
+          "line": 2005,
           "column": 12,
           "symbol": "ArrowDown",
           "exportedSymbol": "ArrowDown",
           "catalogId": "move-down",
-          "confidenceScore": 393,
+          "confidenceScore": 310.5,
           "context": "<button aria-label=\"Move cut sequence operation down\" className=\"flex items-center justify-center border-t border-border text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40\" disabled={pathElement.orderIndex >= operationCount - 1 || isSaving} onClick={(event) => moveOperation(event, 1)} title=\"Move cut operation down\" type=\"button\" > <ArrowDown className=\"size-3\" /> </button>"
         },
         "resolution": "resolved",
@@ -96552,12 +96580,12 @@
         "scoutActualSymbol": "ChevronDown",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 2148,
+          "line": 2149,
           "column": 26,
           "symbol": "ChevronDown",
           "exportedSymbol": "ChevronDown",
           "catalogId": "expand-down",
-          "confidenceScore": 393,
+          "confidenceScore": 310.5,
           "context": "<button aria-expanded={expanded} aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`} className=\"flex items-center justify-center text-muted-foreground outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring\" onClick={(event) => { event.preventDefault(); event.stopPropagation(); togglePathElementExpanded(element.id); }} title={`${expanded ? 'Collapse' : 'Expand'} ${label}`} type=\"button\" > {expanded ? <ChevronDown className=\"size-3\" /> : <ChevronRight className=\"size-3\" />} </button>"
         },
         "resolution": "resolved",
@@ -96575,12 +96603,12 @@
         "scoutActualSymbol": "ChevronRight",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 2148,
+          "line": 2149,
           "column": 63,
           "symbol": "ChevronRight",
           "exportedSymbol": "ChevronRight",
           "catalogId": "expand-right",
-          "confidenceScore": 393,
+          "confidenceScore": 310.5,
           "context": "<button aria-expanded={expanded} aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`} className=\"flex items-center justify-center text-muted-foreground outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring\" onClick={(event) => { event.preventDefault(); event.stopPropagation(); togglePathElementExpanded(element.id); }} title={`${expanded ? 'Collapse' : 'Expand'} ${label}`} type=\"button\" > {expanded ? <ChevronDown className=\"size-3\" /> : <ChevronRight className=\"size-3\" />} </button>"
         },
         "resolution": "resolved",
@@ -96598,12 +96626,12 @@
         "scoutActualSymbol": "ChevronDown",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 2273,
+          "line": 2274,
           "column": 33,
           "symbol": "ChevronDown",
           "exportedSymbol": "ChevronDown",
           "catalogId": "expand-down",
-          "confidenceScore": 393,
+          "confidenceScore": 310.5,
           "context": "<button aria-expanded={cutPathExpanded} aria-label={`${cutPathExpanded ? 'Collapse' : 'Expand'} cut path in ${label}`} className={`flex h-6 w-full min-w-0 items-center gap-1 border-b border-border/40 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring pr-2`} data-upid-cut-path-disclosure onClick={() => toggleCutPathExpanded(element.id)} style={{ paddingLeft: `${22 + (treeDepth + 1) * 10}px` }} type=\"button\" > {cutPathExpanded ? <ChevronDown className=\"size-3\" /> : <ChevronRight className=\"size-3\" />} <span className=\"truncate\">Cut path</span> <span className=\"shrink-0\"> · {element.segmentRefs.length} {element.segmentRefs.length === 1 ? 'segment' : 'segments'} </span> </button>"
         },
         "resolution": "resolved",
@@ -96621,12 +96649,12 @@
         "scoutActualSymbol": "ChevronRight",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 2273,
+          "line": 2274,
           "column": 70,
           "symbol": "ChevronRight",
           "exportedSymbol": "ChevronRight",
           "catalogId": "expand-right",
-          "confidenceScore": 393,
+          "confidenceScore": 310.5,
           "context": "<button aria-expanded={cutPathExpanded} aria-label={`${cutPathExpanded ? 'Collapse' : 'Expand'} cut path in ${label}`} className={`flex h-6 w-full min-w-0 items-center gap-1 border-b border-border/40 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring pr-2`} data-upid-cut-path-disclosure onClick={() => toggleCutPathExpanded(element.id)} style={{ paddingLeft: `${22 + (treeDepth + 1) * 10}px` }} type=\"button\" > {cutPathExpanded ? <ChevronDown className=\"size-3\" /> : <ChevronRight className=\"size-3\" />} <span className=\"truncate\">Cut path</span> <span className=\"shrink-0\"> · {element.segmentRefs.length} {element.segmentRefs.length === 1 ? 'segment' : 'segments'} </span> </button>"
         },
         "resolution": "resolved",
@@ -96644,18 +96672,18 @@
         "scoutActualSymbol": "Flag",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 2517,
-          "column": 8,
-          "symbol": "Flag",
-          "exportedSymbol": "Flag",
-          "catalogId": "start-point",
-          "confidenceScore": 363.37,
-          "context": "<button aria-label={`Select ${travelRole} for ${pathElement.displayName}`} aria-pressed={selected} className={`flex w-full items-center gap-2 border-l border-border/70 px-2 py-1 text-left text-[10px] text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring ${ selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : 'hover:bg-accent' }`} data-upid-operation-id={pathElement.operationId} data-upid-path-element-id={pathElement.id} data-upid-hovered={hovered ? 'true' : undefined} data-upid-selected={selected ? 'true' : undefined} data-upid-travel-role={travelRole} data-upid-tree-row-action={`select-${travelRole}`} data-upid-tree-row-kind={travelRole} data-upid-tree-row-level=\"1\" onBlur={() => onHoverPathElement(null)} onClick={() => onSelectPathElement(element)} onFocus={() => onHoverPathElement(element)} onMouseEnter={() => onHoverPathElement(element)} onMouseLeave={() => onHoverPathElement(null)} onPointerEnter={() => onHoverPathElement(element)} onPointerLeave={() => onHoverPathElement(null)} title={`${label}: ${formatPoint(lead.from)} → ${formatPoint(lead.to)}`} type=\"button\" > <Flag className=\"size-3 shrink-0\" aria-hidden=\"true\" /> <span className=\"font-medium text-foreground\">{label}</span> <span className=\"truncate\">{strategy}</span> {reviewRequired && <span className=\"text-amber-200\">Review required</span>} <span className=\""
+          "line": 2519,
+          "column": 10,
+          "symbol": "LeadInIcon",
+          "exportedSymbol": "LeadInIcon",
+          "catalogId": "lead-in",
+          "confidenceScore": 269.15,
+          "context": "<button aria-label={`Select ${travelRole} for ${pathElement.displayName}`} aria-pressed={selected} className={`flex w-full items-center gap-2 border-l border-border/70 px-2 py-1 text-left text-[10px] text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring ${ selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : 'hover:bg-accent' }`} data-upid-operation-id={pathElement.operationId} data-upid-path-element-id={pathElement.id} data-upid-hovered={hovered ? 'true' : undefined} data-upid-selected={selected ? 'true' : undefined} data-upid-travel-role={travelRole} data-upid-tree-row-action={`select-${travelRole}`} data-upid-tree-row-kind={travelRole} data-upid-tree-row-level=\"1\" onBlur={() => onHoverPathElement(null)} onClick={() => onSelectPathElement(element)} onFocus={() => onHoverPathElement(element)} onMouseEnter={() => onHoverPathElement(element)} onMouseLeave={() => onHoverPathElement(null)} onPointerEnter={() => onHoverPathElement(element)} onPointerLeave={() => onHoverPathElement(null)} title={`${label}: ${formatPoint(lead.from)} → ${formatPoint(lead.to)}`} type=\"button\" > {travelRole === 'lead-in' ? ( <LeadInIcon className=\"size-3 shrink-0\" aria-hidden=\"true\" /> ) : ( <LeadOutIcon className=\"size-3 shrink-0\" aria-hidden=\"true\" /> )} <span className=\"font-medium text-foreground\">{label}</span> <span className=\"truncate\">{st"
         },
         "resolution": "resolved",
-        "actualSymbol": "Flag",
-        "actualCatalogId": "start-point",
-        "catalogIdChangedFromOriginalIntent": false
+        "actualSymbol": "LeadInIcon",
+        "actualCatalogId": "lead-in",
+        "catalogIdChangedFromOriginalIntent": true
       },
       {
         "originId": "origin.77616a319946b0d6",
@@ -96667,12 +96695,12 @@
         "scoutActualSymbol": "ChevronDown",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 2686,
+          "line": 2691,
           "column": 31,
           "symbol": "ChevronDown",
           "exportedSymbol": "ChevronDown",
           "catalogId": "expand-down",
-          "confidenceScore": 393,
+          "confidenceScore": 300.5,
           "context": "<button aria-controls={detailsId} aria-expanded={detailsExpanded} aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} segment ${index + 1} details in ${pathElement.displayName}`} className=\"order-first flex items-center justify-center text-muted-foreground outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring\" onClick={(event) => { event.preventDefault(); event.stopPropagation(); onToggleDetails(); }} title={`${detailsExpanded ? 'Hide' : 'Show'} exact geometry and endpoints`} type=\"button\" > {detailsExpanded ? <ChevronDown className=\"size-3.5\" /> : <ChevronRight className=\"size-3.5\" />} </button>"
         },
         "resolution": "resolved",
@@ -96690,12 +96718,12 @@
         "scoutActualSymbol": "ChevronRight",
         "matchedCurrent": {
           "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
-          "line": 2686,
+          "line": 2691,
           "column": 70,
           "symbol": "ChevronRight",
           "exportedSymbol": "ChevronRight",
           "catalogId": "expand-right",
-          "confidenceScore": 393,
+          "confidenceScore": 300.5,
           "context": "<button aria-controls={detailsId} aria-expanded={detailsExpanded} aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} segment ${index + 1} details in ${pathElement.displayName}`} className=\"order-first flex items-center justify-center text-muted-foreground outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring\" onClick={(event) => { event.preventDefault(); event.stopPropagation(); onToggleDetails(); }} title={`${detailsExpanded ? 'Hide' : 'Show'} exact geometry and endpoints`} type=\"button\" > {detailsExpanded ? <ChevronDown className=\"size-3.5\" /> : <ChevronRight className=\"size-3.5\" />} </button>"
         },
         "resolution": "resolved",
@@ -96738,16 +96766,16 @@
           "file": "src/features/editor/EditorPreview.tsx",
           "line": 963,
           "column": 18,
-          "symbol": "Magnet",
-          "exportedSymbol": "Magnet",
-          "catalogId": "snap",
-          "confidenceScore": 393,
-          "context": "<button aria-label=\"Place measurement points on canvas\" aria-pressed={canvasMouseMode === 'point'} className={`flex size-5 items-center justify-center border text-muted-foreground outline-none transition hover:bg-accent ${ canvasMouseMode === 'point' ? 'border-primary bg-primary text-primary-foreground' : 'border-border' }`} data-editor-preview-mouse-mode-point onClick={() => onSetCanvasMouseMode('point')} title=\"Place measurement points\" type=\"button\" > <Magnet className=\"size-3\" /> </button>"
+          "symbol": "CircleCenterIcon",
+          "exportedSymbol": "CircleCenterIcon",
+          "catalogId": "circle-center",
+          "confidenceScore": 378.97,
+          "context": "<button aria-label=\"Place measurement points on canvas\" aria-pressed={canvasMouseMode === 'point'} className={`flex size-5 items-center justify-center border text-muted-foreground outline-none transition hover:bg-accent ${ canvasMouseMode === 'point' ? 'border-primary bg-primary text-primary-foreground' : 'border-border' }`} data-editor-preview-mouse-mode-point onClick={() => onSetCanvasMouseMode('point')} title=\"Place measurement points\" type=\"button\" > <CircleCenterIcon className=\"size-3\" /> </button>"
         },
         "resolution": "resolved",
-        "actualSymbol": "Magnet",
-        "actualCatalogId": "snap",
-        "catalogIdChangedFromOriginalIntent": false
+        "actualSymbol": "CircleCenterIcon",
+        "actualCatalogId": "circle-center",
+        "catalogIdChangedFromOriginalIntent": true
       },
       {
         "originId": "origin.60804f1405e3c0e0",
@@ -97060,16 +97088,16 @@
           "file": "src/features/editor/EditorProgramLinesPanel.tsx",
           "line": 344,
           "column": 18,
-          "symbol": "ArrowRightFromLine",
-          "exportedSymbol": "ArrowRightFromLine",
-          "catalogId": "departure",
-          "confidenceScore": 303,
-          "context": "<button className=\"flex h-5 shrink-0 items-center gap-1 border border-border px-1.5 font-mono text-[10px] text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40\" disabled={selectedLines.length !== 1 || isSaving} onClick={onSetStartHere} type=\"button\" > <ArrowRightFromLine className=\"size-3\" /> Start Here </button>"
+          "symbol": "StartPointIcon",
+          "exportedSymbol": "StartPointIcon",
+          "catalogId": "start-point",
+          "confidenceScore": 288.97,
+          "context": "<button className=\"flex h-5 shrink-0 items-center gap-1 border border-border px-1.5 font-mono text-[10px] text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40\" disabled={selectedLines.length !== 1 || isSaving} onClick={onSetStartHere} type=\"button\" > <StartPointIcon className=\"size-3\" /> Start Here </button>"
         },
         "resolution": "resolved",
-        "actualSymbol": "ArrowRightFromLine",
-        "actualCatalogId": "departure",
-        "catalogIdChangedFromOriginalIntent": false
+        "actualSymbol": "StartPointIcon",
+        "actualCatalogId": "start-point",
+        "catalogIdChangedFromOriginalIntent": true
       },
       {
         "originId": "origin.ea449f421968c9cc",
@@ -98232,6 +98260,13 @@
         "symbol": "WarningIcon",
         "catalogId": "warning",
         "context": "<button key={`${diagnostic.code}-${index}`} disabled={locked} onClick={() => diagnostic.featureId && choose(diagnostic.featureId)}><WarningIcon size={12} />{diagnostic.featureId ? `${document.features.find((entry) => entry.id === diagnostic.featureId)?.name ?? 'Feature'}: ` : ''}{diagnostic.message}</button>"
+      },
+      {
+        "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
+        "line": 2521,
+        "symbol": "LeadOutIcon",
+        "catalogId": "lead-out",
+        "context": "<button aria-label={`Select ${travelRole} for ${pathElement.displayName}`} aria-pressed={selected} className={`flex w-full items-center gap-2 border-l border-border/70 px-2 py-1 text-left text-[10px] text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring ${ selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : 'hover:bg-accent' }`} data-upid-operation-id={pathElement.operationId} data-upid-path-element-id={pathElement.id} data-upid-hovered={hovered ? 'true' : undefined} data-upid-selected={selected ? 'true' : undefined} data-upid-travel-role={travelRole} data-upid-tree-row-action={`select-${travelRole}`} data-upid-tree-row-kind={travelRole} data-upid-tree-row-level=\"1\" onBlur={() => onHoverPathElement(null)} onClick={() => onSelectPathElement(element)} onFocus={() => onHoverPathElement(element)} onMouseEnter={() => onHoverPathElement(element)} onMouseLeave={() => onHoverPathElement(null)} onPointerEnter={() => onHoverPathElement(element)} onPointerLeave={() => onHoverPathElement(null)} title={`${label}: ${formatPoint(lead.from)} → ${formatPoint(lead.to)}`} type=\"button\" > {travelRole === 'lead-in' ? ( <LeadInIcon className=\"size-3 shrink-0\" aria-hidden=\"true\" /> ) : ( <LeadOutIcon className=\"size-3 shrink-0\" aria-hidden=\"true\" /> )} <span className=\"font-medium text-foreground\">{label}</span> <span className=\"truncate\">{st"
       },
       {
         "file": "src/features/editor/EditorProgramTree.tsx",

@@ -46,7 +46,7 @@ export const iconCatalog = {
     "label": "More actions",
     "category": "navigation",
     "paths": [
-      "M4.2 12a0.8 0.8 0 1 0 1.6 0a0.8 0.8 0 1 0 -1.6 0M11.2 12a0.8 0.8 0 1 0 1.6 0a0.8 0.8 0 1 0 -1.6 0M18.2 12a0.8 0.8 0 1 0 1.6 0a0.8 0.8 0 1 0 -1.6 0"
+      "M4.2 12a0.8 0.8 0 1 0 1.6 0a0.8 0.8 0 1 0 -1.6 0ZM11.2 12a0.8 0.8 0 1 0 1.6 0a0.8 0.8 0 1 0 -1.6 0ZM18.2 12a0.8 0.8 0 1 0 1.6 0a0.8 0.8 0 1 0 -1.6 0Z"
     ]
   },
   "close": {
@@ -102,7 +102,7 @@ export const iconCatalog = {
     "label": "Copy",
     "category": "actions",
     "paths": [
-      "M8 8h12v13h-12ZM16 8V3H3v13h5"
+      "M8 8h13v13H8ZM16 8V3H3v13h5"
     ]
   },
   "undo": {
@@ -158,7 +158,7 @@ export const iconCatalog = {
     "label": "New document",
     "category": "files",
     "paths": [
-      "M5 3h9l5 5v4M14 3v5h5M5 3v18h8M18 14v7M14.5 17.5h7"
+      "M5 21V3h9l5 5v3M14 3v5h5M5 21h5M16 12v8M12 16h8"
     ]
   },
   "folder-open": {
@@ -172,21 +172,21 @@ export const iconCatalog = {
     "label": "Import file",
     "category": "files",
     "paths": [
-      "M5 3h9l5 5v4M14 3v5h5M5 3v18h5M16 21V12M12 16l4-4 4 4"
+      "M5 21V3h9l5 5v3M14 3v5h5M5 21h5M21 16h-9M16 12l-4 4 4 4"
     ]
   },
   "file-export": {
     "label": "Generate controller file",
     "category": "files",
     "paths": [
-      "M5 3h9l5 5v4M14 3v5h5M5 3v18h5M12 16h9M17 12l4 4-4 4"
+      "M5 21V3h9l5 5v3M14 3v5h5M5 21h5M12 16h9M17 12l4 4-4 4"
     ]
   },
   "file-inspect": {
     "label": "Inspect file",
     "category": "files",
     "paths": [
-      "M5 3h9l5 5v4M14 3v5h5M5 3v18h5M11 16a4 4 0 1 0 8 0a4 4 0 1 0 -8 0M18 19l3 3"
+      "M5 21V3h9l5 5v3M14 3v5h5M5 21h5M12 16a4 4 0 1 0 8 0a4 4 0 1 0-8 0ZM19 19l3 3"
     ]
   },
   "file-code": {
@@ -207,7 +207,7 @@ export const iconCatalog = {
     "label": "Solid model file",
     "category": "files",
     "paths": [
-      "M5 3h9l5 5v5M14 3v5h5M5 3v18h4M11 15l5-2 5 2v5l-5 2-5-2ZM11 15l5 2 5-2M16 17v5"
+      "M5 21V3h9l5 5v3M14 3v5h5M5 21h5M11 15l5-2 5 2v5l-5 2-5-2ZM11 15l5 2 5-2M16 17v5"
     ]
   },
   "history": {
@@ -228,56 +228,56 @@ export const iconCatalog = {
     "label": "Folder storage",
     "category": "storage",
     "paths": [
-      "M6 4h12l3 10v6H3v-6ZM3 14h18M6 17h.1M17 17h.1"
+      "M3 21V4h6l3 3h9v14ZM3 10h18M6 17h8M18 17h.1"
     ]
   },
   "settings": {
     "label": "Workbench settings",
     "category": "actions",
     "paths": [
-      "M9 3h6l1 4 4 1v8l-4 1-1 4H9l-1-4-4-1V8l4-1ZM9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"
+      "M9 3h6l1 4 4 1v8l-4 1-1 4H9l-1-4-4-1V8l4-1ZM9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0Z"
     ]
   },
   "adjust": {
     "label": "Adjust parameters",
     "category": "actions",
     "paths": [
-      "M3 6h6M13 6h8M3 12h12M19 12h2M3 18h2M9 18h12M9 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M15 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M5 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"
+      "M3 6h6M13 6h8M3 12h12M19 12h2M3 18h2M9 18h12M9 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0ZM15 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0ZM5 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0Z"
     ]
   },
   "help": {
     "label": "Help",
     "category": "status",
     "paths": [
-      "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0M9 9a3 3 0 1 1 5 2l-2 2v1M11.35 17a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0"
+      "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0ZM9 9a3 3 0 1 1 5 2l-2 2v1M11.35 17a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0Z"
     ]
   },
   "info": {
     "label": "Information",
     "category": "status",
     "paths": [
-      "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0M12 11v6M11.35 7a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0"
+      "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0ZM12 11v6M11.35 7a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0Z"
     ]
   },
   "warning": {
     "label": "Warning",
     "category": "status",
     "paths": [
-      "M12 3l10 18H2ZM12 9v5M11.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0"
+      "M12 3l10 18H2ZM12 9v5M11.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0Z"
     ]
   },
   "success": {
     "label": "Completed successfully",
     "category": "status",
     "paths": [
-      "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0M7 12l3 3 7-7"
+      "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0ZM7 12l3 3 7-7"
     ]
   },
   "error": {
     "label": "Error",
     "category": "status",
     "paths": [
-      "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0M8 8l8 8M16 8l-8 8"
+      "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0ZM8 8l8 8M16 8l-8 8"
     ]
   },
   "notifications": {
@@ -291,7 +291,7 @@ export const iconCatalog = {
     "label": "Operation in progress",
     "category": "status",
     "paths": [
-      "M12 3a9 9 0 1 1-9 9M5 5l1 1"
+      "M12 3a9 9 0 1 1-9 9"
     ]
   },
   "play": {
@@ -326,14 +326,14 @@ export const iconCatalog = {
     "label": "Show geometry",
     "category": "view",
     "paths": [
-      "M2 12c5-10 15-10 20 0-5 10-15 10-20 0ZM9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"
+      "M2 12c5-10 15-10 20 0-5 10-15 10-20 0ZM9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0Z"
     ]
   },
   "hidden": {
     "label": "Hide geometry",
     "category": "view",
     "paths": [
-      "M3 3l18 18M8 5c5-2 10 0 14 7l-3 4M15 19c-5 1-10-1-13-7l3-4"
+      "M3 3l18 18M8 5c5-2 10 0 14 7l-3 4M15 19c-5 1-10-1-13-7l3-4M9 12a3 3 0 0 0 3 3"
     ]
   },
   "fit-view": {
@@ -347,14 +347,14 @@ export const iconCatalog = {
     "label": "Zoom in",
     "category": "view",
     "paths": [
-      "M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0M15 15l6 6M6 10h8M10 6v8"
+      "M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0ZM15 15l6 6M6 10h8M10 6v8"
     ]
   },
   "zoom-out": {
     "label": "Zoom out",
     "category": "view",
     "paths": [
-      "M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0M15 15l6 6M6 10h8"
+      "M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0ZM15 15l6 6M6 10h8"
     ]
   },
   "select": {
@@ -382,21 +382,21 @@ export const iconCatalog = {
     "label": "Origin or crosshair",
     "category": "geometry",
     "paths": [
-      "M7 12a5 5 0 1 0 10 0a5 5 0 1 0 -10 0M12 2v5M12 17v5M2 12h5M17 12h5"
+      "M7 12a5 5 0 1 0 10 0a5 5 0 1 0 -10 0ZM12 2v5M12 17v5M2 12h5M17 12h5"
     ]
   },
   "circle": {
     "label": "Circle profile",
     "category": "geometry",
     "paths": [
-      "M4 12a8 8 0 1 0 16 0a8 8 0 1 0 -16 0"
+      "M4 12a8 8 0 1 0 16 0a8 8 0 1 0 -16 0Z"
     ]
   },
   "circle-center": {
     "label": "Circle center",
     "category": "geometry",
     "paths": [
-      "M4 12a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M11.35 12a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0"
+      "M4 12a8 8 0 1 0 16 0a8 8 0 1 0 -16 0ZM11.35 12a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0Z"
     ]
   },
   "rectangle": {
@@ -410,7 +410,7 @@ export const iconCatalog = {
     "label": "Reference curve",
     "category": "cad",
     "paths": [
-      "M3 18C8 18 5 6 12 6s4 12 9 12M2.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0M20.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0"
+      "M3 18C8 18 5 6 12 6s4 12 9 12M2.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0ZM20.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0Z"
     ]
   },
   "sketch": {
@@ -424,7 +424,8 @@ export const iconCatalog = {
     "label": "CAM editor",
     "category": "cam",
     "paths": [
-      "M3 18l5-13 11 2 2 11-11 3ZM8 5l4 8M19 7l-7 6M10 21l2-8M10.5 13a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0"
+      "M7 3h10l4 4v10l-4 4H7l-4-4V7Z",
+      "M13 6l4 4-6 6-4 1 1-4Z"
     ]
   },
   "body": {
@@ -470,10 +471,27 @@ export const iconCatalog = {
     ]
   },
   "start-point": {
-    "label": "Contour start",
+    "label": "Program start",
     "category": "cam",
     "paths": [
       "M5 21V3h13l-3 4 3 4H5"
+    ]
+  },
+  "insert-points": {
+    "label": "Insert measured points",
+    "category": "cam",
+    "paths": [
+      "M2.8 6a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0Z",
+      "M2.8 12a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0Z",
+      "M2.8 18a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0Z",
+      "M8 12h5M10 9l3 3-3 3M16 6h5M16 12h5M16 18h5"
+    ]
+  },
+  "locate": {
+    "label": "Locate highlighted control",
+    "category": "navigation",
+    "paths": [
+      "M7 12a5 5 0 1 0 10 0a5 5 0 1 0 -10 0ZM12 2v5M12 17v5M2 12h5M17 12h5"
     ]
   },
   "pin": {
@@ -501,7 +519,7 @@ export const iconCatalog = {
     "label": "Trim geometry",
     "category": "geometry",
     "paths": [
-      "M8 9l12 12M8 15L20 3M2 6a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M2 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"
+      "M8 9l12 12M8 15L20 3M2 6a3 3 0 1 0 6 0a3 3 0 1 0 -6 0ZM2 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0Z"
     ]
   },
   "scan": {
@@ -515,7 +533,9 @@ export const iconCatalog = {
     "label": "Section view",
     "category": "view",
     "paths": [
-      "M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5M2 12h20M8 8v8M16 8v8"
+      "M4 7l8-4 8 4v10l-8 4-8-4Z",
+      "M4 7l8 4 8-4M12 11v10",
+      "M6 9l4 2M6 12l4 2"
     ]
   },
   "view": {
@@ -536,7 +556,7 @@ export const iconCatalog = {
     "label": "Planning geometry",
     "category": "cam",
     "paths": [
-      "M3 20L9 6l6 14ZM11 9a5 5 0 1 0 10 0a5 5 0 1 0 -10 0"
+      "M3 20L9 6l6 14ZM11 9a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z"
     ]
   },
   "panel-left-close": {
@@ -571,7 +591,7 @@ export const iconCatalog = {
     "label": "Datum plane",
     "category": "cad",
     "paths": [
-      "M3 16l6-10 12 2-6 10ZM4 20h5M7 20v-4"
+      "M4 8l8-4 8 4-8 4Z"
     ]
   },
   "pad": {
@@ -592,7 +612,7 @@ export const iconCatalog = {
     "label": "Pad and Pocket command",
     "category": "cad",
     "paths": [
-      "M3 21V9h6v5h6V9h6v12ZM12 11V3M9 6l3-3 3 3"
+      "M3 15h6V9h6v6h6v6H3ZM6 3v4M4 5h4M18 5h4"
     ]
   },
   "fillet": {
@@ -620,21 +640,21 @@ export const iconCatalog = {
     "label": "Revolve",
     "category": "cad",
     "paths": [
-      "M12 3v18M8 5H5v11h3M16 8c7 2 7 8 0 10M16 14v4h4"
+      "M7 3H17V7H15V17H17V21H7V17H9V7H7ZM12 2v20M19 6c3 3 3 9 0 12M17 16l2 2 2-2"
     ]
   },
   "loft": {
     "label": "Loft",
     "category": "cad",
     "paths": [
-      "M6 4h12l-2 16H8ZM6 4q6 4 12 0M8 20q4-3 8 0M7 11q5 3 10 0"
+      "M12 3l4 2-4 2-4-2ZM12 14l8 4-8 4-8-4ZM16 5l4 13M12 7v15M8 5L4 18"
     ]
   },
   "sweep": {
     "label": "Sweep",
     "category": "cad",
     "paths": [
-      "M3 14h6v7H3ZM3 14C7 8 13 4 21 3v6c-5 1-9 4-12 8M9 14C13 9 17 7 21 6"
+      "M3 17C7 8 12 3 19 3L21 7C15 8 11 13 8 21Z"
     ]
   },
   "boolean": {
@@ -676,7 +696,7 @@ export const iconCatalog = {
     "label": "Circular pattern",
     "category": "cad",
     "paths": [
-      "M10 3h4v4h-4ZM3 16h4v4h-4ZM17 16h4v4h-4ZM5 12a7 7 0 0 1 3-5M16 7a7 7 0 0 1 3 5M9 20h6M11.35 13a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0"
+      "M10 3h4v4h-4ZM3 16h4v4h-4ZM17 16h4v4h-4ZM5 12a7 7 0 0 1 3-5M16 7a7 7 0 0 1 3 5M9 20h6M11.35 13a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0Z"
     ]
   },
   "mirror": {
@@ -690,7 +710,7 @@ export const iconCatalog = {
     "label": "Imported body",
     "category": "cad",
     "paths": [
-      "M4 10v7l8 4 8-4v-7M4 10l8 4 8-4M12 14v7M12 2v8M9 7l3 3 3-3"
+      "M4 8l8-4 8 4v9l-8 4-8-4ZM4 8l8 4 8-4M12 12v9M12 2v7M9 6l3 3 3-3"
     ]
   },
   "slot": {
@@ -704,7 +724,7 @@ export const iconCatalog = {
     "label": "Polyline",
     "category": "geometry",
     "paths": [
-      "M3 18l6-13 7 11 5-7M2.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0M8.35 5a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0M15.35 16a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0M20.35 9a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0"
+      "M3 18l6-13 7 11 5-7M2.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0ZM8.35 5a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0ZM15.35 16a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0ZM20.35 9a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0Z"
     ]
   },
   "closed-path": {
@@ -718,14 +738,14 @@ export const iconCatalog = {
     "label": "Three-point arc",
     "category": "geometry",
     "paths": [
-      "M3 18a9 9 0 0 1 18 0M2.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0M11.35 9a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0M20.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0"
+      "M3 18a9 9 0 0 1 18 0M2.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0ZM11.35 9a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0ZM20.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0Z"
     ]
   },
   "line": {
     "label": "Line",
     "category": "geometry",
     "paths": [
-      "M4 19L20 5M3.35 19a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0M19.35 5a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0"
+      "M4 19L20 5M3.35 19a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0ZM19.35 5a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0Z"
     ]
   },
   "construction": {
@@ -746,21 +766,21 @@ export const iconCatalog = {
     "label": "Select face",
     "category": "cad",
     "paths": [
-      "M3 11l6-7 10 3-6 7ZM6 11l4-4 5 1M16 13l6 4-3 1-1 4Z"
+      "M4 10l8-4 8 4-8 4ZM18 14l4 3-2 1-1 4Z"
     ]
   },
   "select-edge": {
     "label": "Select edge",
     "category": "cad",
     "paths": [
-      "M4 17L17 4M2.5 17a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0M15.5 4a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0M14 12l8 5-4 1-1 4Z"
+      "M4 16L18 9M3 16a1 1 0 1 0 2 0a1 1 0 1 0 -2 0ZM17 9a1 1 0 1 0 2 0a1 1 0 1 0 -2 0ZM14 11l4 3-2 1-1 4Z"
     ]
   },
   "select-body": {
     "label": "Select body",
     "category": "cad",
     "paths": [
-      "M3 8l7-4 7 4v9l-7 4-7-4ZM3 8l7 4 7-4M10 12v9M18 12l4 3-2 1-1 4Z"
+      "M4 8l8-4 8 4v9l-8 4-8-4ZM4 8l8 4 8-4M12 12v9M18 12l4 3-2 1-1 4Z"
     ]
   },
   "camera-orbit": {
@@ -781,21 +801,26 @@ export const iconCatalog = {
     "label": "Capture view",
     "category": "files",
     "paths": [
-      "M3 7h5l2-3h4l2 3h5v13H3ZM8 13a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"
+      "M3 7h5l2-3h4l2 3h5v13H3ZM8 13a4 4 0 1 0 8 0a4 4 0 1 0 -8 0Z"
     ]
   },
   "send-cam": {
     "label": "Send to CAM",
     "category": "cam",
     "paths": [
-      "M3 5h8v14H3ZM6 8h2M6 12h2M14 12h7M17 8l4 4-4 4"
+      "M3 7l4-3h7l5 5-4 10H5l-2-5Z",
+      "M7 9h5v5H7Z",
+      "M17 12h5M19 9l3 3-3 3"
     ]
   },
   "section-cam": {
     "label": "Section for CAM",
     "category": "cam",
     "paths": [
-      "M3 6l6-3 6 3v10l-6 3-6-3ZM3 6l6 3 6-3M9 9v10M2 12h14M18 10l4 4-4 4M16 14h6"
+      "M3 7l6-3 6 3v9l-6 3-6-3Z",
+      "M3 7l6 3 6-3M9 10v9",
+      "M3 12h12",
+      "M17 12h5M19 9l3 3-3 3"
     ]
   },
   "suppressed": {
@@ -809,7 +834,7 @@ export const iconCatalog = {
     "label": "Unsaved changes",
     "category": "status",
     "paths": [
-      "M5 3h9l5 5v13H5ZM14 3v5h5M8 17h8M8 12h4"
+      "M5 21V3h9l5 5v3M14 3v5h5M5 21h5M12 21l1-4 6-6 3 3-6 6ZM17 13l3 3"
     ]
   },
   "locked": {
@@ -823,56 +848,67 @@ export const iconCatalog = {
     "label": "Contour offset",
     "category": "cam",
     "paths": [
-      "M3 3h18v18h-18ZM7 7h10v10h-10Z"
+      "M7 3h10l4 4v10l-4 4H7l-4-4V7Z",
+      "M8.243 6h7.514L18 8.243v7.514L15.757 18H8.243L6 15.757V8.243Z"
     ]
   },
   "lead-in": {
     "label": "Lead in",
     "category": "cam",
     "paths": [
-      "M4 4v16h16M4 12h12M12 8l4 4-4 4"
+      "M7 3h10l4 4v10l-4 4H7l-4-4V7Z",
+      "M6 12h12M15 9l3 3-3 3"
     ]
   },
   "lead-out": {
     "label": "Lead out",
     "category": "cam",
     "paths": [
-      "M4 4v16h16M12 12h9M17 8l4 4-4 4"
+      "M7 3h10l4 4v10l-4 4H7l-4-4V7Z",
+      "M18 12H6M9 9l-3 3 3 3"
     ]
   },
   "wire": {
     "label": "Wire electrode",
     "category": "simulation",
     "paths": [
-      "M4 4h16M4 20h16M12 4v16M7 9h10v6H7Z"
+      "M6 3h12v4H6Z",
+      "M6 17h12v4H6Z",
+      "M12 7v10"
     ]
   },
   "simulation": {
     "label": "Machine simulation",
     "category": "simulation",
     "paths": [
-      "M4 3h16v18H4ZM4 7h16M12 7v8M8 15h8v6M7 4.5h.1"
+      "M3 4h18v16H3Z",
+      "M6 11h12v6H6Z",
+      "M12 8v10",
+      "M8 14h4"
     ]
   },
   "machine-setup": {
     "label": "Machine setup",
     "category": "simulation",
     "paths": [
-      "M3 4h18v16H3ZM3 8h18M8 8v12M12 12h6M12 16h6"
+      "M3 4h18v16H3Z",
+      "M7 16h10M8 15V8M8 15h8",
+      "M6 10l2-2 2 2M14 13l2 2-2 2"
     ]
   },
   "toolpath": {
     "label": "Cutting path",
     "category": "cam",
     "paths": [
-      "M3 20V4h13v10H8v6h13M17 17l4 3-4 2"
+      "M7 3h10l4 4v10l-4 4H7l-4-4V7Z",
+      "M15 8v6M12 11l3 3 3-3"
     ]
   },
   "folder-plus": {
     "label": "New parameter group",
     "category": "files",
     "paths": [
-      "M3 8V4h6l3 3h9v14H3ZM3 8h9M16 11v7M12.5 14.5h7"
+      "M3 21V4h6l3 3h9v14ZM3 10h18M16 12v6M13 15h6"
     ]
   },
   "link": {
@@ -886,7 +922,7 @@ export const iconCatalog = {
     "label": "Search",
     "category": "navigation",
     "paths": [
-      "M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0M15 15l6 6"
+      "M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0ZM15 15l6 6"
     ]
   },
   "plugin": {
@@ -907,7 +943,7 @@ export const iconCatalog = {
     "label": "Wire EDM Workbench",
     "category": "brand",
     "paths": [
-      "M3 3h18v18H3ZM12 3v18M6 15l6-6 6 6"
+      "M3 8h6v12H3ZM15 5h6v12h-6ZM12 2v20"
     ]
   },
   "navigation-mouse": {
@@ -921,7 +957,8 @@ export const iconCatalog = {
     "label": "Trackpad navigation",
     "category": "view",
     "paths": [
-      "M5 4h14v12H5ZM2 16h20l-2 5H4ZM9 18h6"
+      "M3 10h3M18 10h3v11H3V10",
+      "M7 13V5a2 2 0 0 1 4 0v6M11 11V4a2 2 0 0 1 4 0v9h3v4l-3 3H9l-4-5a1.5 1.5 0 0 1 2-2Z"
     ]
   }
 } as const;

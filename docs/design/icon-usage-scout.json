@@ -16508,11 +16508,20 @@
     "originalComponentOccurrenceCount": 228,
     "matchedOriginOccurrenceCount": 228,
     "resolvedOriginOccurrenceCount": 228,
-    "currentCatalogImportCount": 192,
-    "currentComponentReferenceCount": 241,
+    "currentCatalogImportCount": 195,
+    "currentComponentReferenceCount": 244,
     "currentDynamicFeatureRendererCount": 2,
     "lucideImportsRemaining": 0,
     "semanticOverrides": [
+      {
+        "originId": "origin.2a32724520bba089",
+        "originalFile": "src/app/AppShell.tsx",
+        "originalLine": 214,
+        "originalSymbol": "HardDrive",
+        "intendedCatalogId": "folder-storage",
+        "actualSymbol": "WireEdmMarkIcon",
+        "actualCatalogId": "wire-edm-mark"
+      },
       {
         "originId": "origin.b984431696b44949",
         "originalFile": "src/features/cad/CadPatternCommand.tsx",
@@ -16838,6 +16847,69 @@
         "actualCatalogId": "datum-plane"
       },
       {
+        "originId": "origin.a5855a659f783d72",
+        "originalFile": "src/features/editor/EditorGuideDialog.tsx",
+        "originalLine": 133,
+        "originalSymbol": "Crosshair",
+        "intendedCatalogId": "origin",
+        "actualSymbol": "LocateIcon",
+        "actualCatalogId": "locate"
+      },
+      {
+        "originId": "origin.007c05dde3ff61ae",
+        "originalFile": "src/features/editor/EditorInspectorPanel.tsx",
+        "originalLine": 1137,
+        "originalSymbol": "Magnet",
+        "intendedCatalogId": "snap",
+        "actualSymbol": "CircleCenterIcon",
+        "actualCatalogId": "circle-center"
+      },
+      {
+        "originId": "origin.f1054758118e5136",
+        "originalFile": "src/features/editor/EditorInspectorPanel.tsx",
+        "originalLine": 1289,
+        "originalSymbol": "ArrowRightFromLine",
+        "intendedCatalogId": "departure",
+        "actualSymbol": "InsertPointsIcon",
+        "actualCatalogId": "insert-points"
+      },
+      {
+        "originId": "origin.53c059b19aace7d1",
+        "originalFile": "src/features/editor/EditorPathNavigatorPanel.tsx",
+        "originalLine": 529,
+        "originalSymbol": "Info",
+        "intendedCatalogId": "info",
+        "actualSymbol": "CircleHelp",
+        "actualCatalogId": "help"
+      },
+      {
+        "originId": "origin.1e106ab317a17ce2",
+        "originalFile": "src/features/editor/EditorPathNavigatorPanel.tsx",
+        "originalLine": 2517,
+        "originalSymbol": "Flag",
+        "intendedCatalogId": "start-point",
+        "actualSymbol": "LeadInIcon",
+        "actualCatalogId": "lead-in"
+      },
+      {
+        "originId": "origin.32aa6180d8f16a71",
+        "originalFile": "src/features/editor/EditorPreview.tsx",
+        "originalLine": 963,
+        "originalSymbol": "Magnet",
+        "intendedCatalogId": "snap",
+        "actualSymbol": "CircleCenterIcon",
+        "actualCatalogId": "circle-center"
+      },
+      {
+        "originId": "origin.2ae6318e672cac28",
+        "originalFile": "src/features/editor/EditorProgramLinesPanel.tsx",
+        "originalLine": 344,
+        "originalSymbol": "ArrowRightFromLine",
+        "intendedCatalogId": "departure",
+        "actualSymbol": "StartPointIcon",
+        "actualCatalogId": "start-point"
+      },
+      {
         "originId": "origin.c764f9ef99c8e319",
         "originalFile": "src/features/simulation/SimulationViewport.tsx",
         "originalLine": 71,
@@ -16934,8 +17006,8 @@
         "line": 72
       }
     },
-    "currentUnresolvedIconImportCount": 1,
-    "currentUnresolvedCatalogReferenceCount": 1,
-    "currentUnmatchedReferenceCount": 13
+    "currentUnresolvedIconImportCount": 0,
+    "currentUnresolvedCatalogReferenceCount": 0,
+    "currentUnmatchedReferenceCount": 16
   }
 }

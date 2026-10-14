@@ -1,5 +1,14 @@
 # Icon verification
 
+## Critical iteration after the first checkpoint
+
+Grouped review covers all 134 current IDs. The integrated pass revises 35 drawings or adds explicit semantic entries, checks actual contour inset and arrow clearance, and reviews all 244 current references. Its decisions and limitations are in [critical-iteration-checkpoint.md](critical-iteration-checkpoint.md). The first-checkpoint browser screenshots below predate this pass; current SVG inspection uses offline actual-size rendering because the CAD task owns the app servers.
+
+- Updated consumer verification passed all 72 React UI files, 716 tests. This includes the root application regression suites as well as app/component/feature consumers.
+- All six SVG/catalog/accessibility tests, generated-file parity, 244 current reference resolutions and 1,964-row inventory reconciliation passed. The 34 targeted semantics and dynamic lead-direction check passed.
+- The production TypeScript/Vite build, 30 hosted documentation pages, checks across 95 static documentation files, and pinned STEP/CAD source distributions passed. Existing Vite externalization and chunk-size warnings remain unrelated to the icon changes.
+- The path-based checker passed eight matching inset sides at three units, closed contours, inside/clearance checks and exactly mirrored entry/exit arrows. Full dark/light sheets cover all six sizes without empty or clipped glyphs.
+
 Reviewed 2026-10-14. Starting source: `c16a15e`. The final handoff inventory is reconciled separately with its own snapshot and source hashes in the crosswalk.
 
 ## Evidence

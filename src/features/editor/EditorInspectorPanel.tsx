@@ -1,5 +1,6 @@
 import {
-  ArrowRightFromLine,
+  InsertPointsIcon,
+  CircleCenterIcon,
   Download,
   Magnet,
   MousePointer2,
@@ -1134,7 +1135,7 @@ export function EditorInspectorPanel({
             onClick={() => onSetCanvasMouseMode('point')}
             type="button"
           >
-            <Magnet className="size-3" />
+            <CircleCenterIcon className="size-3" />
             Point
           </button>
         </div>
@@ -1286,7 +1287,7 @@ export function EditorInspectorPanel({
             type="button"
             variant="outline"
           >
-            <ArrowRightFromLine />
+            <InsertPointsIcon />
             Insert Points
           </Button>}
           <Button

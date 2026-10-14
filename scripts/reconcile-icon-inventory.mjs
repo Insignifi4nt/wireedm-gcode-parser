@@ -95,6 +95,10 @@ function contextualSemantic(r) {
   const file = r.file || '';
   const ctx = `${r.expression || ''} ${r.visibleText || ''} ${r.containerText || ''} ${JSON.stringify(r.callArguments || [])} ${JSON.stringify(r.jsxParents || [])}`;
   const mapProperty = typeof r.mapProperty === 'string' ? r.mapProperty.replace(/^['"`]|['"`]$/g, '') : '';
+  if (file.endsWith('EditorInspectorPanel.tsx') && r.alias === 'ArrowRightFromLine') return 'insert-points';
+  if (file.endsWith('EditorProgramLinesPanel.tsx') && r.alias === 'ArrowRightFromLine') return 'start-point';
+  if (file.endsWith('EditorGuideDialog.tsx') && r.alias === 'Crosshair') return 'locate';
+  if (file.endsWith('AppShell.tsx') && r.alias === 'HardDrive') return 'wire-edm-mark';
   if (file.endsWith('CadFeatureTree.tsx') && mapProperty && mappings.feature[mapProperty]) return mappings.feature[mapProperty];
   if (file.endsWith('CadWorkbench.tsx') && r.callName === 'toolButton') {
     const label = String(r.callArguments?.[0] || '').replace(/^['"`]|['"`]$/g, '');
@@ -113,6 +117,8 @@ function contextualSemantic(r) {
   }
   if (file.endsWith('SimulationPanel.tsx') && r.alias === 'FileBox' && /Machine model settings/.test(ctx)) return 'machine-setup';
   if (file.endsWith('EditorPage.tsx') && r.alias === 'Box' && /label: 'Simulation', icon: <Box/.test(ctx)) return 'simulation';
+  if (file.endsWith('EditorPathNavigatorPanel.tsx') && r.alias === 'Info' && /Contour Tree help/.test(ctx)) return 'help';
+  if (['EditorInspectorPanel.tsx','EditorPreview.tsx'].some((name)=>file.endsWith(name)) && r.alias === 'Magnet' && /Place measurement points on canvas/.test(ctx)) return 'circle-center';
   if (file.endsWith('CadContextHelp.tsx') && r.alias === 'Info') return 'help';
   if (file.endsWith('CadFeatureTree.tsx') && r.alias === 'Square' && (r.visibleText === 'Reference' || r.visibleText === 'plane')) return 'datum-plane';
   if (file.endsWith('CadViewport.tsx') && r.alias === 'Maximize2' && /Fit model/.test(r.containerText || '')) return 'fit-view';
@@ -159,6 +165,9 @@ channels.importBindings = rowsFor('importBindings', audit.imports || [], (row, r
   return setIncluded(row, ids, 'alias-candidates', `Imported ${r.alias || r.imported} from ${r.source}; catalog alias candidates: ${ids.join(', ') || '(none)'}.`);
 });
 channels.occurrences = rowsFor('occurrences', audit.occurrences || [], (row, r) => {
+  if (r.file?.endsWith('EditorPathNavigatorPanel.tsx') && r.alias === 'Flag') {
+    return setIncluded(row, ['lead-in', 'lead-out'], 'dynamic-variants', 'Lead tree rows select the matching interior lead direction icon from travelRole. The legacy flag did not distinguish entry from exit.');
+  }
   const contextual = contextualSemantic(r);
   if (contextual && catalogIds.has(contextual)) return setIncluded(row, [contextual], 'semantic-override', `Contextual action/visual meaning in ${r.file}:${r.line} resolves to ${contextual}, overriding the generic imported glyph alias.`);
   const semantic = semanticOverrides.get(r.alias || '') || semanticOverrides.get(r.component || '');
@@ -326,18 +335,31 @@ const exactSemanticExpectations = [
   ['use.ac4e2349bd2a','simulation'], ['use.2c9511b19310','locked'], ['use.cd64ca9e6fe7','link'],
   ['use.fd11477e899b','fit-view'], ['use.915c2834aa5d','grid'], ['use.ebfc71d9bb7f','datum-plane'],
   ['use.41090c5821df','datum-plane'], ['use.ece394eff765','section-cam'], ['use.1368999d2fba','send-cam'], ['use.28edd08da582','help'],
+  ['use.aa22e4024d24','insert-points'], ['use.4dca56b9193d','start-point'], ['use.acb4ec7916e2','locate'], ['use.351faffd1991','wire-edm-mark'],
+  ['use.040fa55fc9cc','help'],
+  ['use.620dbb21888c','circle-center'], ['use.224e71e5aace','circle-center'],
 ];
 const exactSemanticMismatches = exactSemanticExpectations.flatMap(([sourceId,expected])=>{
   const actual = occurrenceById.get(sourceId)?.catalogId;
   return actual === expected ? [] : [{ sourceId, expected, actual:actual || null }];
 });
+const dynamicLeadExpectation = { sourceId:'use.7bb20f269b9d', file:'src/features/editor/EditorPathNavigatorPanel.tsx', symbols:[['LeadInIcon','lead-in'],['LeadOutIcon','lead-out']] };
+const dynamicLeadRow = occurrenceById.get(dynamicLeadExpectation.sourceId);
+const currentDynamicLead = currentIntegration?.occurrences?.find((r)=>r.originFile===dynamicLeadExpectation.file && r.originalSymbol==='Flag');
+const dynamicLeadActuals = [currentDynamicLead?.matchedCurrent, ...(currentIntegration?.unmatchedCurrent || []).filter((r)=>r.file===dynamicLeadExpectation.file && ['LeadInIcon','LeadOutIcon'].includes(r.symbol))]
+  .filter(Boolean).map((r)=>[r.exportedSymbol || r.symbol, r.catalogId]);
+const dynamicLeadMismatches = !dynamicLeadRow || dynamicLeadRow.disposition!=='dynamic-variants'
+  || dynamicLeadExpectation.symbols.some(([symbol,id])=>!dynamicLeadRow.catalogIds?.includes(id) || !dynamicLeadActuals.some(([actualSymbol,actualId])=>actualSymbol===symbol && actualId===id))
+  ? [{ sourceId:dynamicLeadExpectation.sourceId, expected:dynamicLeadExpectation.symbols, mapped:dynamicLeadRow?.catalogIds || [], current:dynamicLeadActuals }]
+  : [];
 const semanticChecks = {
   featureBindings:{ expected:17, actual:featureBindingRows.length, mismatches:featureMismatches },
   toolButtons:{ expected:toolButtonRows.length, actual:toolButtonRows.filter((r)=>Object.keys(mappings.tools).some((key)=>key.toLowerCase()===String(r.callArguments?.[0]||'').replace(/^['"`]|['"`]$/g,'').toLowerCase())).length, mismatches:toolButtonMismatches },
   expandedVariantParents:{ checked:expanded.filter((r)=>[...channels.dynamicSlots,...channels.renderCalls].some((p)=>p.sourceId===r.parentSourceId && p.catalogIds?.length)).length, mismatches:variantParentMismatches },
   targetedSemantics:{ expected:exactSemanticExpectations.length, mismatches:exactSemanticMismatches },
+  dynamicLeadPair:{ expected:dynamicLeadExpectation.symbols, checkedSourceId:dynamicLeadExpectation.sourceId, current:dynamicLeadActuals, mismatches:dynamicLeadMismatches },
 };
-semanticChecks.complete = featureBindingRows.length === 17 && featureMismatches.length === 0 && toolButtonMismatches.length === 0 && variantParentMismatches.length === 0 && exactSemanticMismatches.length === 0;
+semanticChecks.complete = featureBindingRows.length === 17 && featureMismatches.length === 0 && toolButtonMismatches.length === 0 && variantParentMismatches.length === 0 && exactSemanticMismatches.length === 0 && dynamicLeadMismatches.length === 0;
 const completenessChecks = {
   markdownSupplied:Boolean(markdownPath),
   expandedVariants:{ expected:expectedExpanded, actual:expanded.length, matches:expectedExpanded === expanded.length },
