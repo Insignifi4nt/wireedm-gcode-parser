@@ -1,6 +1,6 @@
 # Icon integration map
 
-Published CAD checkpoint: `b0be1bce26f8eb671d27d17d17a33812afd52443`. Complete set: 134 original glyphs, 282 direct usages, 8 dynamic slots, 206 expanded variants and 15 text controls. This is a concrete mapping for integration; the CAD implementation has not been copied into this worktree.
+Published CAD checkpoint: `25b3994af33d3a7f011651a42603f8dd898af597`. Complete set: 134 original glyphs, 282 direct usages, 8 dynamic slots, 206 expanded variants and 15 text controls. This is a concrete mapping for integration; the CAD implementation has not been copied into this worktree.
 
 The [JSON](icon-integration-map.json) includes semantic component exports, original path data, exact SVG SHA-256 digests, stable usage IDs, source-file hashes and owning control/call metadata. The [crosswalk](final-inventory-crosswalk.md) also accounts for excluded geometry, cursor, native and text channels.
 
@@ -25,7 +25,7 @@ These are renderer slots, not additional occurrences. Match each parent ID to ex
 | `use.ff7ede67da54` | src/app/WorkbenchSettingsDialog.tsx | 124 | `{icon}` | browser-cache, adjust, body | 0 |
 | `use.560ea95b7eba` | src/components/ui/SlidingTabs.tsx | 51 | `{tab.icon}` | cam-editor, simulation | 0 |
 | `use.526981a64633` | src/features/cad/CadContextHelp.tsx | 71 | `{triggerContent ?? <Info size={12} aria-hidden="true" />}` | info, link, close, help | 0 |
-| `use.575772b2f782` | src/features/cad/CadFeatureTree.tsx | 194 | `<Icon size={14} />` | datum-plane, sketch, curve, imported-body, pad, pocket, revolve, loft, sweep, fillet, chamfer, shell, boolean, move-3d, linear-pattern, circular-pattern, mirror | 17 |
+| `use.575772b2f782` | src/features/cad/CadFeatureTree.tsx | 197 | `<Icon size={14} />` | datum-plane, sketch, curve, imported-body, pad, pocket, revolve, loft, sweep, fillet, chamfer, shell, boolean, move-3d, linear-pattern, circular-pattern, mirror | 17 |
 | `use.ca1d7d33f3d0` | src/features/cad/CadWorkbench.tsx | 555 | `<Icon size={15} strokeWidth={1.5} />` | sketch, datum-plane, curve, add, select, rectangle, circle, slot, polyline, closed-path, measure, move, pad-pocket, revolve, loft, sweep, fillet, chamfer, shell, boolean, move-3d, mirror, linear-pattern, circular-pattern, pattern | 0 |
 | `use.1e307a885857` | src/features/editor/EditorProgramLinesPanel.tsx | 170 | `<ToggleIcon className="size-3 shrink-0" />` | expand-right, expand-down | 2 |
 | `use.29a204b4a6e6` | src/features/editor/EditorProgramLinesPanel.tsx | 198 | `<ToggleIcon className="size-3 shrink-0" />` | expand-right, expand-down | 2 |
@@ -140,19 +140,19 @@ These are renderer slots, not additional occurrences. Match each parent ID to ex
 | `use.6f827927337e` | 13 | `Copy` | `LinearPatternIcon` |
 | `use.c2c41105223b` | 13 | `RotateCw` | `CircularPatternIcon` |
 | `use.3f1edecc92fd` | 13 | `Copy` | `MirrorIcon` |
-| `use.2f77851c1e33` | 154 | `ChevronRight` | `ExpandRightIcon` |
-| `use.fcf02c091bb0` | 154 | `FileBox` | `FileBodyIcon` |
-| `use.1eb2f4a20ae0` | 159 | `ChevronRight` | `ExpandRightIcon` |
-| `use.ebfc71d9bb7f` | 159 | `Square` | `DatumPlaneIcon` |
-| `use.41090c5821df` | 163 | `Square` | `DatumPlaneIcon` |
-| `use.d59977f0aa01` | 164 | `PencilRuler` | `SketchIcon` |
-| `use.61875549904e` | 169 | `ChevronRight` | `ExpandRightIcon` |
-| `use.d187b69fb127` | 169 | `SlidersHorizontal` | `AdjustIcon` |
-| `use.fca58697fbbd` | 175 | `ChevronRight` | `ExpandRightIcon` |
-| `use.64be08614163` | 175 | `Layers` | `LayersIcon` |
-| `use.762baa8d0d08` | 188 | `ChevronRight` | `ExpandRightIcon` |
-| `use.3e4076277ba8` | 202 | `Circle` | `CircleIcon` |
-| `use.dd39086cd35d` | 202 | `Square` | `RectangleIcon` |
+| `use.2f77851c1e33` | 157 | `ChevronRight` | `ExpandRightIcon` |
+| `use.fcf02c091bb0` | 157 | `FileBox` | `FileBodyIcon` |
+| `use.1eb2f4a20ae0` | 162 | `ChevronRight` | `ExpandRightIcon` |
+| `use.ebfc71d9bb7f` | 162 | `Square` | `DatumPlaneIcon` |
+| `use.41090c5821df` | 166 | `Square` | `DatumPlaneIcon` |
+| `use.d59977f0aa01` | 167 | `PencilRuler` | `SketchIcon` |
+| `use.61875549904e` | 172 | `ChevronRight` | `ExpandRightIcon` |
+| `use.d187b69fb127` | 172 | `SlidersHorizontal` | `AdjustIcon` |
+| `use.fca58697fbbd` | 178 | `ChevronRight` | `ExpandRightIcon` |
+| `use.64be08614163` | 178 | `Layers` | `LayersIcon` |
+| `use.762baa8d0d08` | 191 | `ChevronRight` | `ExpandRightIcon` |
+| `use.3e4076277ba8` | 205 | `Circle` | `CircleIcon` |
+| `use.dd39086cd35d` | 205 | `Square` | `RectangleIcon` |
 
 ### src/features/cad/CadFields.tsx
 

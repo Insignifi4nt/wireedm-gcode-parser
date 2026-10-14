@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-10-14T18:31:03.922Z",
+  "generatedAt": "2026-10-14T18:55:46.054Z",
   "baseline": {
-    "path": "docs/design/inventory/checkpoints/b0be1bc/icon-inventory.audit.json",
-    "publishedCheckpoint": "8375c294d09e0a43b48b7c37d977cc59fd9a4065",
+    "path": "docs/design/inventory/checkpoints/25b3994/icon-inventory.audit.json",
+    "publishedCheckpoint": "b0be1bce26f8eb671d27d17d17a33812afd52443",
     "originalOccurrenceCount": 282,
     "originalDynamicSlotCount": 8,
     "originalContextPreserved": true
@@ -579,15 +579,15 @@
       ]
     },
     {
-      "originId": "slot.f1b825464aa1cb4c",
+      "originId": "slot.405abb298c87ca32",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 194,
+      "originalLine": 197,
       "renderer": "Icon",
       "mapName": null,
       "mapPropertyExpression": "<Icon size={14} />",
       "currentRenderers": [
         {
-          "line": 194,
+          "line": 197,
           "expression": "<Icon size={14} />"
         }
       ],
@@ -1172,7 +1172,7 @@
   "newlyAddedCurrentReferences": [
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 195,
+      "line": 198,
       "symbol": "WarningIcon",
       "catalogId": "warning",
       "context": "<button type=\"button\" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)} aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${diagnostic.message}` : ''}`} onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)} onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); }}> <Icon size={14} /><span className=\"cad-feature-name\">{feature.name}</span> {diagnostic && <span className=\"cad-tree-error\" aria-label={diagnostic.message}><WarningIcon size={12} /></span>}{feature.suppressed && <span className=\"cad-tree-muted\">off</span>} </button>",
@@ -2514,14 +2514,14 @@
     {
       "originId": "use.2f77851c1e33",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 154,
+      "originalLine": 157,
       "originalColumn": 8,
       "originalSymbol": "ChevronRight",
       "intendedCatalogId": "expand-right",
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 154,
+        "line": 157,
         "column": 8,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
@@ -2537,14 +2537,14 @@
     {
       "originId": "use.fcf02c091bb0",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 154,
+      "originalLine": 157,
       "originalColumn": 72,
       "originalSymbol": "FileBox",
       "intendedCatalogId": "file-body",
       "scoutActualSymbol": "FileBodyIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 154,
+        "line": 157,
         "column": 75,
         "symbol": "FileBodyIcon",
         "exportedSymbol": "FileBodyIcon",
@@ -2560,14 +2560,14 @@
     {
       "originId": "use.1eb2f4a20ae0",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 159,
+      "originalLine": 162,
       "originalColumn": 10,
       "originalSymbol": "ChevronRight",
       "intendedCatalogId": "expand-right",
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 159,
+        "line": 162,
         "column": 10,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
@@ -2583,14 +2583,14 @@
     {
       "originId": "use.ebfc71d9bb7f",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 159,
+      "originalLine": 162,
       "originalColumn": 74,
       "originalSymbol": "Square",
       "intendedCatalogId": "datum-plane",
       "scoutActualSymbol": "DatumPlaneIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 159,
+        "line": 162,
         "column": 77,
         "symbol": "DatumPlaneIcon",
         "exportedSymbol": "DatumPlaneIcon",
@@ -2606,14 +2606,14 @@
     {
       "originId": "use.41090c5821df",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 163,
+      "originalLine": 166,
       "originalColumn": 181,
       "originalSymbol": "Square",
       "intendedCatalogId": "datum-plane",
       "scoutActualSymbol": "DatumPlaneIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 163,
+        "line": 166,
         "column": 181,
         "symbol": "DatumPlaneIcon",
         "exportedSymbol": "DatumPlaneIcon",
@@ -2629,14 +2629,14 @@
     {
       "originId": "use.d59977f0aa01",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 164,
+      "originalLine": 167,
       "originalColumn": 139,
       "originalSymbol": "PencilRuler",
       "intendedCatalogId": "sketch",
       "scoutActualSymbol": "SketchIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 164,
+        "line": 167,
         "column": 139,
         "symbol": "SketchIcon",
         "exportedSymbol": "SketchIcon",
@@ -2652,14 +2652,14 @@
     {
       "originId": "use.61875549904e",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 169,
+      "originalLine": 172,
       "originalColumn": 12,
       "originalSymbol": "ChevronRight",
       "intendedCatalogId": "expand-right",
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 169,
+        "line": 172,
         "column": 12,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
@@ -2675,14 +2675,14 @@
     {
       "originId": "use.d187b69fb127",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 169,
+      "originalLine": 172,
       "originalColumn": 76,
       "originalSymbol": "SlidersHorizontal",
       "intendedCatalogId": "adjust",
       "scoutActualSymbol": "AdjustIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 169,
+        "line": 172,
         "column": 79,
         "symbol": "AdjustIcon",
         "exportedSymbol": "AdjustIcon",
@@ -2698,14 +2698,14 @@
     {
       "originId": "use.fca58697fbbd",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 175,
+      "originalLine": 178,
       "originalColumn": 10,
       "originalSymbol": "ChevronRight",
       "intendedCatalogId": "expand-right",
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 175,
+        "line": 178,
         "column": 10,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
@@ -2721,14 +2721,14 @@
     {
       "originId": "use.64be08614163",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 175,
+      "originalLine": 178,
       "originalColumn": 74,
       "originalSymbol": "Layers",
       "intendedCatalogId": "layers",
       "scoutActualSymbol": "LayersIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 175,
+        "line": 178,
         "column": 77,
         "symbol": "LayersIcon",
         "exportedSymbol": "LayersIcon",
@@ -2744,14 +2744,14 @@
     {
       "originId": "use.762baa8d0d08",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 188,
+      "originalLine": 191,
       "originalColumn": 291,
       "originalSymbol": "ChevronRight",
       "intendedCatalogId": "expand-right",
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 188,
+        "line": 191,
         "column": 291,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
@@ -2767,14 +2767,14 @@
     {
       "originId": "use.3e4076277ba8",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 202,
+      "originalLine": 205,
       "originalColumn": 52,
       "originalSymbol": "Circle",
       "intendedCatalogId": "circle",
       "scoutActualSymbol": "CircleIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 202,
+        "line": 205,
         "column": 52,
         "symbol": "CircleIcon",
         "exportedSymbol": "CircleIcon",
@@ -2790,14 +2790,14 @@
     {
       "originId": "use.dd39086cd35d",
       "originFile": "src/features/cad/CadFeatureTree.tsx",
-      "originalLine": 202,
+      "originalLine": 205,
       "originalColumn": 75,
       "originalSymbol": "Square",
       "intendedCatalogId": "rectangle",
       "scoutActualSymbol": "RectangleIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 202,
+        "line": 205,
         "column": 79,
         "symbol": "RectangleIcon",
         "exportedSymbol": "RectangleIcon",
@@ -7783,7 +7783,7 @@
   "unmatchedCurrent": [
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 195,
+      "line": 198,
       "symbol": "WarningIcon",
       "catalogId": "warning",
       "context": "<button type=\"button\" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)} aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${diagnostic.message}` : ''}`} onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)} onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); }}> <Icon size={14} /><span className=\"cad-feature-name\">{feature.name}</span> {diagnostic && <span className=\"cad-tree-error\" aria-label={diagnostic.message}><WarningIcon size={12} /></span>}{feature.suppressed && <span className=\"cad-tree-muted\">off</span>} </button>"

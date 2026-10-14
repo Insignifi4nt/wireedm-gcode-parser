@@ -1,0 +1,11 @@
+{
+  "runtime": "Node 24.22.0",
+  "maxWorkers": 2,
+  "testFiles": 104,
+  "totalTests": 1061,
+  "passedTests": 1061,
+  "failedTests": 0,
+  "success": true,
+  "publishedCadBase": "25b3994af33d3a7f011651a42603f8dd898af597",
+  "catalogEntries": 134
+}

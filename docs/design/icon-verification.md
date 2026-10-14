@@ -2,11 +2,11 @@
 
 ## Integrated CAD branch and actual browser review
 
-The branch now includes published CAD head `b0be1bc` after merging the latest precision and help repairs and the PR targets `feature/parametric-cad-workbench`. Latest CAD implementations were retained during conflict resolution. The current audit resolves all 282 published original usages, eight dynamic slots and 17 feature kinds; 297 current references include 15 additional semantic/text-symbol replacements. No Lucide imports, unresolved exports or semantic mismatches remain.
+The branch now includes published CAD head `25b3994` after merging the latest datum, initial Fit and gear-help repairs and the PR targets `feature/parametric-cad-workbench`. Latest CAD implementations were retained during conflict resolution. The current audit resolves all 282 published original usages, eight dynamic slots and 17 feature kinds; 297 current references include 15 additional semantic/text-symbol replacements. No Lucide imports, unresolved exports or semantic mismatches remain.
 
 Three Luna subagents reviewed the actual integrated browser app on the configured isolated Playwright origin. Their real sketch/Pad, feature-tree, menu, settings, controller-import, selected-state and dark/light catalog screenshots and decisions are linked in [actual-app-integration-review.md](actual-app-integration-review.md). Root verified the final catalog's live DOM metrics and filtering explanation. A diagnostic accessibility test covers the new feature-tree warning badge and its retained message.
 
-Node 24.22.0 ran 102 UI/geometry files and 1,053 tests with two workers: 1,052 passed and one unchanged `CadDatumEditing` assertion failed. That test expects world-space SVG coordinates after the target introduced cached local geometry. The parent CAD task is repairing the stale assertion separately; the icon branch preserves the target test and geometry behavior. All six icon tests, exact icon geometry, integration-map parity, release compatibility and production TypeScript/Vite/documentation/pinned-source checks pass. [Current verification summary](icon-review/actual-app/node24-b0be1bc-verification-summary.json) records the exact result. Earlier all-pass checkpoint summaries remain preserved.
+Node 24.22.0 passes all 104 UI/geometry files and 1,061 tests with two workers on the current checkpoint, including the parent-repaired datum assertion and new initial Sketch Fit/gear-help coordinate cases. All six icon tests, exact icon geometry, integration-map parity, release compatibility and production TypeScript/Vite/documentation/pinned-source checks pass. [Current verification summary](icon-review/actual-app/node24-25b3994-verification-summary.json) records the exact result. Earlier checkpoint summaries, including the previous stale-assertion failure, remain preserved.
 
 ## Published CAD checkpoint reconciliation
 
@@ -55,3 +55,7 @@ This branch advances the app once to 0.0.698, following the concurrent CAD relea
 ## CAD precision and View-help checkpoint
 
 The current `b0be1bc` inventory covers 455 production files / 422 parsed files and 1,964 crosswalk rows with zero gaps. All 282 occurrence IDs and eight dynamic slots remain present. Two new geometry rows stay outside action-icon replacement. CAD domain, local-coordinate helpers, profile geometry cache and controller files match the target. Conflict resolution preserves the entire target Canvas and Context Help implementations, with only typed glyph substitutions. Luna independently inspected those diffs and verified in the actual rebuilt app that closing the View drawer removes its navigation-help dialog.
+
+## Datum, initial Fit and gear-help follow-up
+
+PR #13 includes parent checkpoint 25b3994 through merge commit 8829044. Luna independently confirmed the tree expansion commits before initial Sketch Fit; only its existing action glyphs and warning badge differ from the target. Gear-help diagrams, the datum test, gear-help coordinate tests and initial-Fit tests are byte-identical to the target. All 104 current UI/geometry files / 1,061 tests pass. The earlier parent failure is resolved by the imported parent fix, with no separate CAD implementation in the icon task.
