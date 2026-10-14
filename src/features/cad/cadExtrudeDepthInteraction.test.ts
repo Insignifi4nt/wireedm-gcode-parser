@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { CadDocument, CadFeature, CadPlane } from '@/domain/cad/cadDocument';
-import { createCadDocument } from '@/domain/cad/cadSchema';
+import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { inspectCadExtrudeDepth } from './cadExtrudeDepthInteraction';
 
 function part(plane: CadPlane = 'XY', distance: number | string = ' depth ', symmetric = false): CadDocument {
@@ -87,7 +87,8 @@ it('anchors only the selected material and reuses its exact bounds through unrel
   const source = { ...sketch, profiles: [...sketch.profiles, { id: 'remote', name: 'Remote', construction: false,
     geometry: { kind: 'rectangle', x: 30, y: 10, width: 20, height: 10, cornerRadius: 0 } }] } satisfies typeof sketch;
   const selected = { ...pad, regionSelection: [{ boundaryProfileId: 'remote', voidProfileIds: [], ancestorProfileIds: [] }] };
-  const candidate = { ...document, features: [source, selected] }, saved = JSON.stringify(candidate);
+  // Reuse belongs to the detached immutable source actually supplied by a session.
+  const candidate = parseCadDocument({ ...document, features: [source, selected] }), saved = JSON.stringify(candidate);
   const model = inspectCadExtrudeDepth(candidate, selected);
   expect(model?.materialBoundsMm).toEqual({ minX: 30, minY: 10, maxX: 50, maxY: 20 });
   expect(inspectCadExtrudeDepth({ ...candidate, parameters: { depth: 30, other: 5 } }, selected)?.materialBoundsMm).toBe(model?.materialBoundsMm);

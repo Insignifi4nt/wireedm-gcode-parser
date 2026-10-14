@@ -1,6 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import type { CadDiagnostic, CadDocument, CadFeature, CadProfile, CadSketchProfile } from './cadDocument';
+import type { CadDiagnostic, CadDocument, CadFeature, CadProfile, CadSketchFeature, CadSketchProfile } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { CadPluginProfileSchema } from './plugins/cadPlugins';
@@ -76,6 +76,12 @@ export const CadDocumentSchema = Type.Object({
 // Only this parser's detached, deeply frozen successful outputs are trusted.
 // Mutable inputs, lookalikes and structured clones still cross the full boundary.
 const acceptedDocuments = new WeakSet<CadDocument>();
+const acceptedSketchSources = new WeakSet<CadSketchFeature>();
+
+/** Provenance for internal geometry reuse; a caller's frozen lookalike is not accepted. */
+export function isAcceptedCadSketchSource(sketch: CadSketchFeature): boolean {
+  return acceptedSketchSources.has(sketch);
+}
 
 /** Strict boundary parser. Never rewrites IDs, geometry, units or saved expressions. */
 export function parseCadDocument(value: unknown): CadDocument {
@@ -230,6 +236,7 @@ export function parseCadDocument(value: unknown): CadDocument {
     Object.freeze(value);
   }
   freeze(document);
+  for (const feature of document.features) if (feature.kind === 'sketch') acceptedSketchSources.add(feature);
   acceptedDocuments.add(document);
   return document;
 }

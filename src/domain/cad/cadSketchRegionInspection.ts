@@ -1,13 +1,14 @@
 import type { CadDocument, CadProfile, CadSketchFeature } from './cadDocument';
 import type { DxfPoint } from '../dxf/types';
 import { CadError } from './cadError';
-import { CadDocumentSchema, CadSketchFeatureSchema, parseCadDocument } from './cadSchema';
+import { CadDocumentSchema, CadSketchFeatureSchema, isAcceptedCadSketchSource, parseCadDocument } from './cadSchema';
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { isCadImportData } from './cadImportData';
 import { measureCadResolvedProfile, type CadBounds2 } from './cadMeasurements';
 import { resolveCadSketchContours, type CadResolvedSketchContour, type CadSketchRegion } from './cadSketchGeometry';
 import { createCadSketchCellIndex, selectCadSketchRegions, type CadSketchCellReference } from './cadSketchRegionSelection';
+import { cadScalarParameterNames, mapCadFeatureScalars } from './cadParameters';
 
 export interface CadPreparedSketchCell {
   readonly reference: CadSketchCellReference;
@@ -24,8 +25,48 @@ export interface CadPreparedSketchCells {
   resolve(selection?: readonly CadSketchCellReference[]): readonly CadSketchRegion[];
 }
 
-/** One immutable candidate preparation serves shading, hover, selection and union. */
+const preparations = new WeakMap<CadSketchFeature, { names: readonly string[]; values: readonly (number | undefined)[]; cells: CadPreparedSketchCells }>();
+
+/** Reuse source geometry only; placement and complete history still validate separately. */
 export function prepareCadSketchCells(sketch: CadSketchFeature, parameters: CadDocument['parameters']): CadPreparedSketchCells {
+  if (!isAcceptedCadSketchSource(sketch)) return resolveCells(sketch, parameters);
+  const previous = preparations.get(sketch);
+  let names = previous?.names;
+  if (!names) {
+    const used = new Set<string>();
+    mapCadFeatureScalars(sketch, (value, path) => {
+      if (path.startsWith('profiles.')) for (const name of cadScalarParameterNames(value)) used.add(name);
+      return value;
+    });
+    names = [...used];
+  }
+  const values: (number | undefined)[] = [], environment: Record<string, number> = Object.create(null);
+  for (const name of names) {
+    const field = Object.getOwnPropertyDescriptor(parameters, name);
+    if (!field) { values.push(undefined); continue; }
+    // Preserve the ordinary evaluator for accessors/invalid values without ever
+    // adopting their result. Own data is captured once for both key and geometry.
+    if (!('value' in field) || typeof field.value !== 'number' || !Number.isFinite(field.value)) return resolveCells(sketch, parameters);
+    values.push(field.value); environment[name] = field.value;
+  }
+  if (previous && values.every((value, index) => Object.is(value, previous.values[index]))) return previous.cells;
+  const cells = resolveCells(sketch, environment);
+  function freezeGeometry(value: unknown): void {
+    if (value === null || typeof value !== 'object') return;
+    for (const child of Object.values(value)) freezeGeometry(child);
+    Object.freeze(value);
+  }
+  for (const cell of cells.cells) {
+    // Only newly resolved objects are frozen here. The profile is borrowed from
+    // the already deeply frozen parser source; raw caller inputs stay untouched.
+    freezeGeometry(cell.boundary.geometry); Object.freeze(cell.boundary.point); Object.freeze(cell.boundary);
+  }
+  preparations.set(sketch, { names, values, cells });
+  return cells;
+}
+
+/** One complete candidate preparation serves shading, hover, selection and union. */
+function resolveCells(sketch: CadSketchFeature, parameters: CadDocument['parameters']): CadPreparedSketchCells {
   if (sketch.suppressed) throw new CadError('suppressed-sketch', `Sketch "${sketch.name}" is suppressed. Resume it before choosing its areas.`);
   const contours = resolveCadSketchContours(sketch, parameters);
   const index = createCadSketchCellIndex(contours);
