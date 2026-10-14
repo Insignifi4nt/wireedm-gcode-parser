@@ -128,19 +128,28 @@ describe('curve document and history boundaries', () => {
     for (const feature of [{ ...curve(), role: 'outer' }, curve(Array(1)), curve([line([0, 0], [Infinity, 0])]), curve([line([0, 0], [1e9 + 1, 0])]),
       curve([{ kind: 'line', start: [0, 0], end: ['missing', 0] }]), curve([{ ...arc, radius: -1 }])]) expect(() => document([feature])).toThrow(CadError);
   });
-  it('bounds each curve and the aggregate document edges without changing the original', () => {
+  it('accepts exact curves beyond former per-curve and aggregate edge ceilings without changing the original', () => {
     const segments = Array.from({ length: 2048 }, (_, index) => line([index, 0], [index + 1, 0]));
     const original = document(Array.from({ length: 4 }, (_, index) => ({ ...curve(segments), id: `rail_${index}` })));
     expect(original.features).toHaveLength(4);
-    expect(() => document([curve([...segments, line([2048, 0], [2049, 0])])])).toThrow(CadError);
-    expectCode(() => applyCadEdits(original, [{ kind: 'add-feature', feature: curve() }]), 'geometry-limit');
+    const longer = document([curve([...segments, line([2048, 0], [2049, 0])])]);
+    expect(longer.features[0]).toMatchObject({ segments: [...segments, line([2048, 0], [2049, 0])] });
+    const expanded = applyCadEdits(original, [{ kind: 'add-feature', feature: curve() }]);
+    expect(expanded.features).toHaveLength(5); expect(expanded.features.slice(0, 4)).toEqual(original.features);
     expect(original.features).toHaveLength(4);
   });
-  it('preserves exact original DXF source, freezes accepted data and applies the existing 4 MiB document limit', () => {
+  it('preserves and freezes exact original DXF sources above the former aggregate document limit', () => {
     const source = { format: 'dxf' as const, fileName: 'rail.dxf', text: '\uFEFF0\r\nEOF\r\n', units: 'mm' as const };
     const accepted = document([{ ...curve(), source }]); source.text = 'Changed';
     expect(accepted.features[0]).toMatchObject({ source: { text: '\uFEFF0\r\nEOF\r\n' } }); expect(Object.isFrozen(accepted.features[0])).toBe(true);
-    const large = { ...source, text: 'a'.repeat(1_500_000) };
-    expectCode(() => document(Array.from({ length: 3 }, (_, index) => ({ ...curve(), id: `large_${index}`, source: large }))), 'document-size');
+    const large = { ...source, text: '\uFEFF0\r\nEOF\r\n' + ' '.repeat(1_500_000) };
+    const largeDocument = document(Array.from({ length: 3 }, (_, index) => ({ ...curve(), id: `large_${index}`, source: large })));
+    expect(largeDocument.features).toHaveLength(3);
+    for (const feature of largeDocument.features) {
+      expect(feature).toMatchObject({ source: large, segments: curve().segments });
+      expect(Object.isFrozen(feature)).toBe(true);
+      if (feature.kind !== 'curve') throw new Error('Missing accepted reference curve.');
+      expect(Object.isFrozen(feature.source)).toBe(true);
+    }
   });
 });

@@ -78,7 +78,7 @@ describe('named CAD dimension groups and ownership', () => {
     expect(renamed.profiles[0].geometry.package).toEqual(CAD_GEAR_V2_PLUGIN);
     expect(renamed.profiles[0].geometry.inputs).toMatchObject({ module: 'sin', teeth: 'pi' });
   });
-  it('rejects invalid groups, metadata, duplicate names and limit overflow without changing its input', () => {
+  it('rejects invalid groups, metadata, duplicate names and invalid geometry without changing its input', () => {
     const before = applyCadEdits(initial(), [addGear]); const text = JSON.stringify(before);
     const invalid: CadEdit[][] = [
       [{ ...addGear }], [{ kind: 'rename-parameter', name: 'p_gear_module', newName: 'p_gear_teeth' }],
@@ -89,9 +89,22 @@ describe('named CAD dimension groups and ownership', () => {
     for (const edits of invalid) expect(() => applyCadEdits(before, edits)).toThrow();
     expect(() => parseCadDocument({ ...before, parameterMetadata: { absent: { source: { kind: 'manual' } } } })).toThrow('missing parameter');
     expect(() => parseCadDocument({ ...before, parameterMetadata: { p_gear_module: { groupId: 'absent', source: { kind: 'manual' } } } })).toThrow('missing group');
-    const full = parseCadDocument({ ...initial(), parameters: Object.fromEntries(Array.from({ length: 128 }, (_, index) => [`dimension_${index}`, index])) });
-    expect(() => applyCadEdits(full, [addGear])).toThrow(); expect(Object.keys(full.parameters)).toHaveLength(128);
     expect(JSON.stringify(before)).toBe(text);
+  });
+  it('adds valid scoped plugin drivers beyond former parameter and group counts while preserving previous dimensions and provenance', () => {
+    const parameters = Object.fromEntries(Array.from({ length: 128 }, (_, index) => [`dimension_${index}`, index]));
+    const before = parseCadDocument({ ...initial(), parameters,
+      parameterGroups: Array.from({ length: 64 }, (_, index) => ({ id: `group_${index}`, name: `Group ${index}` })),
+      parameterMetadata: Object.fromEntries(Object.keys(parameters).map(name => [name, { groupId: 'group_63', source: { kind: 'manual' } }])),
+    }), original = JSON.stringify(before), after = applyCadEdits(before, [addGear]);
+    expect(after.parameters).toMatchObject(before.parameters); expect(Object.keys(after.parameters)).toHaveLength(132);
+    expect(after.parameterGroups).toEqual([...before.parameterGroups ?? [], { id: 'gear_dimensions', name: 'Gear' }]);
+    expect(after.parameterMetadata).toMatchObject(before.parameterMetadata!);
+    expect(after.parameterMetadata?.p_gear_module).toMatchObject({ groupId: 'gear_dimensions', source: { kind: 'plugin', profileId: 'gear', inputName: 'module' } });
+    const sketch = after.features[0];
+    if (sketch.kind !== 'sketch') throw new Error('Expected sketch');
+    expect(resolveCadProfile(sketch.profiles[0].geometry, after.parameters)).toEqual(resolveCadProfile(createCadPluginProfile(CAD_GEAR_V2_PLUGIN), {}));
+    expect(parseCadDocument(JSON.parse(JSON.stringify(after)))).toEqual(after); expect(JSON.stringify(before)).toBe(original);
   });
   it('strict edit discovery agrees with executed group and plugin operations', () => {
     const edits: CadEdit[] = [addGear, { kind: 'set-parameter-group', group: { id: 'other', name: 'Other' } },

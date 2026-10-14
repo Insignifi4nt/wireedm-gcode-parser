@@ -90,6 +90,8 @@ export interface CadMesh {
   readonly edges: readonly number[];
   readonly faceGroups: readonly CadMeshTopologyGroup[]; readonly edgeGroups: readonly CadMeshTopologyGroup[];
   readonly volume: number;
+  /** Native solid components in this validated body; absent in older build DTOs. */
+  readonly solidCount?: number;
   readonly bounds: { readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number] };
 }
 export interface CadBuildResult {

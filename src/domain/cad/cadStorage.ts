@@ -4,8 +4,6 @@ import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageA
 import type { CadDocument } from './cadDocument';
 import { parseCadDocument } from './cadSchema';
 
-export { MAX_CAD_DOCUMENT_BYTES as MAX_CAD_FILE_BYTES } from './cadImports';
-import { MAX_CAD_DOCUMENT_BYTES as MAX_CAD_FILE_BYTES } from './cadImports';
 const prefix = 'cad/documents/';
 export interface SavedCadDocument {
   readonly document: CadDocument;
@@ -33,13 +31,8 @@ async function fingerprint(text: string) {
 }
 async function readRaw(adapter: WorkbenchStorageAdapter, path: string, signal?: AbortSignal) {
   signal?.throwIfAborted();
-  if (adapter.readBoundedExactText) {
-    const read = await adapter.readBoundedExactText(path, MAX_CAD_FILE_BYTES, signal);
-    if (read.status === 'too-large') throw new CadStorageError('FILE_TOO_LARGE', 'CAD document exceeds 4 MiB. Preserve the original file.');
-    return read.status === 'read' ? read.text : null;
-  }
-  const raw = await (adapter.readExactText?.(path) ?? adapter.readText(path));
-  if (raw !== null && new TextEncoder().encode(raw).length > MAX_CAD_FILE_BYTES) throw new CadStorageError('FILE_TOO_LARGE', 'CAD document exceeds 4 MiB.');
+  const raw = await (adapter.readExactText?.(path, signal) ?? adapter.readText(path));
+  signal?.throwIfAborted();
   return raw;
 }
 async function parseSaved(raw: string, id: string): Promise<SavedCadDocument> {
@@ -73,7 +66,6 @@ export async function saveCadDocument(adapter: WorkbenchStorageAdapter, document
   const path = cadDocumentPath(validated.id);
   const updatedAt = new Date().toISOString();
   const raw = JSON.stringify({ format: 'wireedm-cad-save', schemaVersion: 1, updatedAt, document: validated });
-  if (new TextEncoder().encode(raw).length > MAX_CAD_FILE_BYTES) throw new CadStorageError('FILE_TOO_LARGE', 'CAD document exceeds 4 MiB.');
   options.signal?.throwIfAborted();
   // Prepare every fallible receipt field before a durable write. Once the
   // journal starts, cancellation or cleanup failure must retain this receipt.

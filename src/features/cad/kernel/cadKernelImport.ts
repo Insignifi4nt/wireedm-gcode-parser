@@ -6,7 +6,6 @@ import { cadSolidImportBytes, parseCadSolidImportSource, type CadSolidImportResu
 import { CadKernelTopology } from './cadKernelTopology';
 import { assertCadStepLengthUnits } from './cadKernelStepUnits';
 
-export const MAX_CAD_STL_FACETS = 4000;
 function castSolid(raw: TopoDS_Shape): Shape3D {
   const shape = cast(raw);
   if (isShape3D(shape)) return shape;
@@ -17,11 +16,12 @@ function readStep(path: string, data: string): Shape3D {
   const oc = getOC(); const reader = new oc.STEPControl_Reader();
   try {
     if (reader.ReadFile(path) !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) throw new CadError('step-read', 'OpenCascade could not read this STEP file.');
-    assertCadStepLengthUnits(data);
+    if (!assertCadStepLengthUnits(data).nativeTransferSupported) throw new CadError('step-units-unsupported',
+      'This STEP uses a conversion-based length unit referring to another conversion-based unit. The current native reader cannot resolve that structure reliably. Re-export with SI length units or a direct conversion to SI. The original file has not changed.');
     // OC length conversion uses millimetres as the reference unit. Apply after ReadFile.
     reader.SetSystemLengthUnit(1);
     const roots = reader.NbRootsForTransfer();
-    if (roots < 1 || roots > 256) throw new CadError('step-roots', 'STEP import requires 1–256 transferable roots.');
+    if (!Number.isSafeInteger(roots) || roots < 1) throw new CadError('step-roots', 'STEP import requires transferable roots.');
     if (reader.TransferRoots() !== roots) throw new CadError('step-transfer', 'Not every STEP root could be transferred. Import was rejected to preserve all source geometry.');
     const raw = reader.OneShape();
     try { if (raw.IsNull()) throw new CadError('import-empty', 'The STEP file contains no geometry.'); return castSolid(raw); }
@@ -34,7 +34,6 @@ function stlFacetCount(bytes: Uint8Array): number {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const count = view.getUint32(80, true);
     if (84 + count * 50 === bytes.length) {
-      if (count > MAX_CAD_STL_FACETS) return count;
       for (let facet = 0; facet < count; facet++) for (let coordinate = 0; coordinate < 12; coordinate++) {
         const value = view.getFloat32(84 + facet * 50 + coordinate * 4, true);
         if (!Number.isFinite(value)) throw new CadError('stl-coordinate', 'STL facets must contain finite normals and vertices.');
@@ -58,13 +57,13 @@ function stlFacetCount(bytes: Uint8Array): number {
     if (!match && /^\s*$/.test(contents[1].slice(offset))) break;
     if (!match || match.slice(1).some(value => !Number.isFinite(Number(value)))) throw new CadError('stl-coordinate', 'ASCII STL requires complete facets with finite normals and vertices.');
     offset = facet.lastIndex;
-    if (++count > MAX_CAD_STL_FACETS) return count;
+    ++count;
   }
   return count;
 }
 function readStl(path: string, bytes: Uint8Array, units: 'mm' | 'inch'): Shape3D {
   const facets = stlFacetCount(bytes);
-  if (facets < 4 || facets > MAX_CAD_STL_FACETS) throw new CadError('stl-facets', `Closed faceted STL import requires 4–${MAX_CAD_STL_FACETS} triangles. Simplify larger meshes or use STEP.`);
+  if (facets < 4) throw new CadError('stl-facets', 'Closed faceted STL import requires at least four complete triangles.');
   const oc = getOC(); const reader = new oc.StlAPI_Reader(); const raw = new oc.TopoDS_Shell();
   let input: Shape3D | undefined;
   const sewing = new oc.BRepBuilderAPI_Sewing(1e-7, true, true, false, false);
@@ -113,7 +112,7 @@ function analyze(shape: Shape3D, source: CadSolidImportSource, sourceBytes: numb
   const solids = cadKernelSolids(shape);
   let volume = 0;
   try {
-    if (!solids.length || solids.length > 256 || !cadKernelIsValid(shape)) throw new CadError('import-invalid', 'The file must contain 1–256 valid closed manifold solids.');
+    if (!solids.length || !cadKernelIsValid(shape)) throw new CadError('import-invalid', 'The file must contain valid closed manifold solids.');
     for (const solid of solids) {
       const shells = solid.wrapped; const shellExplorer = new oc.TopExp_Explorer(shells, oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
       try {

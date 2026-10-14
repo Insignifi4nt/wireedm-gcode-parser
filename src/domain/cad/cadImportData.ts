@@ -1,22 +1,44 @@
-/** Bounded own JSON data, checked before a schema can read any accessor. */
+/** Complete acyclic own JSON data, checked before a schema can read any accessor. */
 export function isCadImportData(value: unknown): boolean {
-  let remaining = 200_000;
-  function visit(item: unknown, depth: number): boolean {
-    if (--remaining < 0 || depth > 24) return false;
-    if (item === null || typeof item === 'string' || typeof item === 'boolean') return true;
-    if (typeof item === 'number') return Number.isFinite(item);
-    if (typeof item !== 'object') return false;
-    const array = Array.isArray(item); const prototype: unknown = Object.getPrototypeOf(item);
-    if (array ? prototype !== Array.prototype || item.length > remaining : prototype !== Object.prototype && prototype !== null) return false;
-    const fields = Object.getOwnPropertyDescriptors(item); const names = Reflect.ownKeys(fields);
-    if (names.length > remaining || array && names.length !== item.length + 1) return false;
-    for (const name of names) {
-      if (typeof name !== 'string') return false;
-      if (array && name === 'length') continue;
-      const field = fields[name];
-      if (!field.enumerable || !('value' in field) || !visit(field.value, depth + 1)) return false;
+  interface Frame { item: object; names: readonly PropertyKey[]; index: number; arrayLength: number | null }
+  const ancestors = new WeakSet<object>();
+  const frames: Frame[] = [];
+  let current = value;
+  try {
+    while (true) {
+      if (current !== null && typeof current === 'object') {
+        if (ancestors.has(current)) return false;
+        const array = Array.isArray(current), prototype: unknown = Object.getPrototypeOf(current);
+        if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) return false;
+        const names = Reflect.ownKeys(current);
+        let arrayLength: number | null = null;
+        if (array) {
+          const length: unknown = Object.getOwnPropertyDescriptor(current, 'length')?.value;
+          if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0 || names.length !== length + 1) return false;
+          arrayLength = length;
+        }
+        ancestors.add(current);
+        frames.push({ item: current, names, index: 0, arrayLength });
+      } else if (typeof current === 'number' ? !Number.isFinite(current)
+        : current !== null && typeof current !== 'string' && typeof current !== 'boolean') return false;
+      let next = false;
+      while (frames.length) {
+        const frame = frames[frames.length - 1];
+        if (frame.index === frame.names.length) { ancestors.delete(frame.item); frames.pop(); continue; }
+        const name = frame.names[frame.index++];
+        if (typeof name !== 'string') return false;
+        if (frame.arrayLength !== null) {
+          if (name === 'length') continue;
+          const index = Number(name);
+          if (!Number.isSafeInteger(index) || index < 0 || index >= frame.arrayLength || String(index) !== name) return false;
+        }
+        const field = Object.getOwnPropertyDescriptor(frame.item, name);
+        if (!field?.enumerable || !('value' in field)) return false;
+        current = field.value; next = true; break;
+      }
+      if (!next) return true;
     }
-    return true;
+  } catch {
+    return false;
   }
-  try { return visit(value, 0); } catch { return false; }
 }

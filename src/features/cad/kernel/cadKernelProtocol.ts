@@ -1,7 +1,6 @@
 import type { CadBuildResult, CadDocument, CadMesh, CadMeshTopologyGroup } from '../../../domain/cad/cadDocument';
 import { isCadSectionResult, type CadSectionRequest, type CadSectionResult } from '../../../domain/cad/cadSection';
-import { cadMeshScalarCount, MAX_CAD_PREVIEW_SCALARS } from './cadKernelLimits';
-import { MAX_CAD_TOPOLOGY_PER_BODY, MAX_CAD_TOPOLOGY_ELEMENTS, isCadTopologyInspectResult, isCadTopologyResolvePicksResult, type CadTopologyInspectRequest, type CadTopologyInspectResult,
+import { isCadTopologyInspectResult, isCadTopologyResolvePicksResult, type CadTopologyInspectRequest, type CadTopologyInspectResult,
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
 import { isCadSolidImportResult, type CadSolidImportSource, type CadSolidImportResult } from '../../../domain/cad/cadImports';
 import { isCadDxfImportResult, type CadDxfImportInput, type CadDxfImportResult } from '../../../domain/cad/cadDxfImport';
@@ -46,23 +45,28 @@ export function isCadKernelReply(value: unknown): value is CadKernelReply {
   const result = value.result;
   if (!('buildId' in result) || typeof result.buildId !== 'string' || !result.buildId.length || result.buildId.length > 128
     || !('durationMs' in result) || typeof result.durationMs !== 'number' || !Number.isFinite(result.durationMs) || result.durationMs < 0
-    || !('meshes' in result) || !Array.isArray(result.meshes) || result.meshes.length > 256 || !result.meshes.every(isCadMesh)
+    || !('meshes' in result) || !Array.isArray(result.meshes)
     || !('diagnostics' in result) || !Array.isArray(result.diagnostics) || result.diagnostics.length > 512) return false;
-  if (new Set(result.meshes.map(mesh => mesh.featureId)).size !== result.meshes.length
-    || result.meshes.reduce((total, mesh) => total + cadMeshScalarCount(mesh), 0) > MAX_CAD_PREVIEW_SCALARS
-    || result.meshes.reduce((total, mesh) => total + new Set([...mesh.faceGroups, ...mesh.edgeGroups].map(group => group.key)).size, 0) > MAX_CAD_TOPOLOGY_ELEMENTS) return false;
-  return result.diagnostics.every(diagnostic => typeof diagnostic === 'object' && diagnostic !== null && typeof diagnostic.code === 'string'
-    && diagnostic.code.length <= 128 && typeof diagnostic.message === 'string' && diagnostic.message.length <= 8192
-    && (diagnostic.featureId === undefined || typeof diagnostic.featureId === 'string' && diagnostic.featureId.length <= 96));
+  const bodyIds = new Set<string>();
+  for (const mesh of result.meshes) {
+    if (!isCadMesh(mesh) || bodyIds.has(mesh.featureId)) return false;
+    bodyIds.add(mesh.featureId);
+  }
+  for (const diagnostic of result.diagnostics) {
+    if (typeof diagnostic !== 'object' || diagnostic === null || typeof diagnostic.code !== 'string'
+      || diagnostic.code.length > 128 || typeof diagnostic.message !== 'string' || diagnostic.message.length > 8192
+      || diagnostic.featureId !== undefined && (typeof diagnostic.featureId !== 'string' || diagnostic.featureId.length > 96)) return false;
+  }
+  return true;
 }
 
 function isNumbers(value: unknown): value is number[] {
-  if (!Array.isArray(value) || value.length > MAX_CAD_PREVIEW_SCALARS) return false;
+  if (!Array.isArray(value)) return false;
   for (const number of value) if (typeof number !== 'number' || !Number.isFinite(number)) return false;
   return true;
 }
 function isGroups(value: unknown, length: number, stride: number): value is CadMeshTopologyGroup[] {
-  if (!Array.isArray(value) || value.length > MAX_CAD_TOPOLOGY_PER_BODY) return false;
+  if (!Array.isArray(value)) return false;
   let end = 0;
   for (const group of value) {
     if (typeof group !== 'object' || group === null || typeof group.key !== 'string' || !group.key.length || group.key.length > 128 || /\s/.test(group.key)
@@ -82,6 +86,8 @@ function isCadMesh(value: unknown): value is CadMesh {
     || !('faceGroups' in value) || !isGroups(value.faceGroups, value.indices.length, 3)
     || !('edgeGroups' in value) || !isGroups(value.edgeGroups, value.edges.length / 3, 2)
     || !('volume' in value) || typeof value.volume !== 'number' || !Number.isFinite(value.volume) || value.volume <= 0
+    || ('solidCount' in value && value.solidCount !== undefined && (typeof value.solidCount !== 'number'
+      || !Number.isSafeInteger(value.solidCount) || value.solidCount <= 0))
     || !('bounds' in value) || typeof value.bounds !== 'object' || value.bounds === null
     || !('min' in value.bounds) || !isNumbers(value.bounds.min) || value.bounds.min.length !== 3
     || !('max' in value.bounds) || !isNumbers(value.bounds.max) || value.bounds.max.length !== 3) return false;
@@ -89,6 +95,6 @@ function isCadMesh(value: unknown): value is CadMesh {
   if (!value.indices.every(index => Number.isInteger(index) && index >= 0 && index < vertices)) return false;
   const min = value.bounds.min; const max = value.bounds.max;
   const faceKeys = new Set(value.faceGroups.map(group => group.key));
-  if (value.edgeGroups.some(group => faceKeys.has(group.key)) || new Set([...value.faceGroups, ...value.edgeGroups].map(group => group.key)).size > MAX_CAD_TOPOLOGY_PER_BODY) return false;
+  if (value.edgeGroups.some(group => faceKeys.has(group.key))) return false;
   return min.every((coordinate, axis) => coordinate <= max[axis]);
 }

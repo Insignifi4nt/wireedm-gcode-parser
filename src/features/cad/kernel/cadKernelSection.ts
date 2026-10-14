@@ -51,7 +51,6 @@ export function sectionCadKernelShape(shape: Shape3D, section: Pick<CadSectionRe
         const entities: DxfEntity[] = [];
         try {
           if (!edges.length) throw new CadError('empty-section', 'The plane does not cut a closed outline through this body.');
-          if (edges.length > 8192) throw new CadError('section-limit', 'The section contains too many analytic edges. Simplify the model.');
           for (const edge of edges) {
             const curve = edge.curve;
             try {

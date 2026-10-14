@@ -100,8 +100,8 @@ const WCS_PLANAR_Z_EPSILON = 1e-9;
 const SPLINE_APPROXIMATION_WARNING = 'Flattened DXF SPLINE geometry into line segments.';
 
 export function parseDxf(text: string, options: DxfParseOptions = {}): DxfParseResult {
-  assertDxfTextSize(text);
-  const budget = new DxfResourceBudget();
+  assertDxfTextSize(text, options.mode);
+  const budget = new DxfResourceBudget(options.mode);
   const curveChordError = validCurveChordError(options.curveChordError);
   const pairs = toPairs(text, budget);
   const unitDeclaration = parseDrawingUnitDeclaration(pairs);
@@ -130,7 +130,7 @@ export function parseDxf(text: string, options: DxfParseOptions = {}): DxfParseR
       ...entityResult.warnings
     ])
   };
-  new DxfResourceBudget().reserveExpandedData(result);
+  new DxfResourceBudget(options.mode).reserveExpandedData(result);
   return result;
 }
 
@@ -431,7 +431,7 @@ function parseEntitiesFromPairs(entityPairs: DxfPair[], context: EntityParseCont
         continue;
       }
 
-      const parsedInsert = parseInsert(pairsForEntity);
+      const parsedInsert = parseInsert(pairsForEntity, context.budget);
       const insert = parsedInsert && ocs.negativeZ ? reflectInsertAcrossYAxis(parsedInsert) : parsedInsert;
       if (!insert) {
         pushWarnings(warnings, context.budget, 'Rejected malformed DXF INSERT geometry.');
@@ -446,14 +446,14 @@ function parseEntitiesFromPairs(entityPairs: DxfPair[], context: EntityParseCont
       }
 
       const expanded = expandInsert(insert, context);
-      entities.push(...expanded.entities);
+      for (const entity of expanded.entities) entities.push(entity);
       expanded.unsupportedEntities.forEach((entity) => addUnsupported(unsupportedEntities, context.budget, entity));
       pushWarnings(warnings, context.budget, ...expanded.warnings);
       index = nextIndex - 1;
       continue;
     }
 
-    if (!SUPPORTED_ENTITY_TYPES.has(entityType)) {
+    if (!SUPPORTED_ENTITY_TYPES.has(entityType) || context.budget.mode === 'exact-cad' && entityType === 'SPLINE') {
       addUnsupported(unsupportedEntities, context.budget, entityType);
       index = nextIndex - 1;
       continue;
@@ -489,7 +489,7 @@ function parseEntitiesFromPairs(entityPairs: DxfPair[], context: EntityParseCont
       reserveEntities(context.budget, parsedEntities);
       const sourcedEntities = parsedEntities.map((entity) => withEntitySource(entity, context));
       context.budget.reserveExpandedData(sourcedEntities);
-      entities.push(...sourcedEntities);
+      for (const entity of sourcedEntities) entities.push(entity);
       if (entityType === 'SPLINE') {
         pushWarnings(warnings, context.budget, SPLINE_APPROXIMATION_WARNING);
       }
@@ -797,7 +797,7 @@ function parseSpline(pairs: DxfPair[], curveChordError: number, budget: DxfResou
   return entities.length > 0 ? entities : null;
 }
 
-function parseInsert(pairs: DxfPair[]): DxfInsertEntity | null {
+function parseInsert(pairs: DxfPair[], budget: DxfResourceBudget): DxfInsertEntity | null {
   const blockName = stringValue(pairs, 2);
   if (!blockName) return null;
 
@@ -806,8 +806,8 @@ function parseInsert(pairs: DxfPair[]): DxfInsertEntity | null {
   const scaleX = optionalNumberValue(pairs, 41, 1);
   const scaleY = optionalNumberValue(pairs, 42, 1);
   const rotationDegrees = optionalNumberValue(pairs, 50, 0);
-  const columnCount = optionalPositiveIntegerValue(pairs, 70, 1);
-  const rowCount = optionalPositiveIntegerValue(pairs, 71, 1);
+  const columnCount = optionalPositiveIntegerValue(pairs, 70, 1, budget);
+  const rowCount = optionalPositiveIntegerValue(pairs, 71, 1, budget);
   const columnSpacing = optionalNumberValue(pairs, 44, 0);
   const rowSpacing = optionalNumberValue(pairs, 45, 0);
   if (
@@ -1360,15 +1360,15 @@ function optionalIntegerValue(pairs: DxfPair[], code: number, fallback: number) 
   return value != null && Number.isInteger(value) ? value : null;
 }
 
-function optionalPositiveIntegerValue(pairs: DxfPair[], code: number, fallback: number) {
+function optionalPositiveIntegerValue(pairs: DxfPair[], code: number, fallback: number, budget: DxfResourceBudget) {
   const declared = pairs.find((pair) => pair.code === code);
-  if (declared && Number(declared.value) > DXF_RESOURCE_LIMITS.insertInstances) {
+  if (declared && budget.mode !== 'exact-cad' && Number(declared.value) > DXF_RESOURCE_LIMITS.insertInstances) {
     throw new DxfResourceLimitError('insertInstances');
   }
   const value = optionalIntegerValue(pairs, code, fallback);
   // Huge declared counts must abort the import, not turn into skipped geometry.
   if (value != null && !Number.isSafeInteger(value)) {
-    throw new DxfResourceLimitError('insertInstances');
+    budget.check('insertInstances', value);
   }
   return value != null && value >= 1 ? value : null;
 }

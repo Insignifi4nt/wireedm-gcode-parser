@@ -12,7 +12,8 @@ import { applyCadEdits } from './cadOperations';
 import { CAD_GEAR_V2_PLUGIN } from './plugins/cadPlugins';
 import { importCadDxfSketch } from './cadDxfImport';
 import { importCadDxfCurve } from './cadCurveDxf';
-import { cadDocumentPath, listCadDocuments, loadCadDocument, saveCadDocument, MAX_CAD_FILE_BYTES } from './cadStorage';
+import { cadDocumentPath, listCadDocuments, loadCadDocument, saveCadDocument } from './cadStorage';
+import { CAD_FORMER_DOCUMENT_BYTES } from './__tests__/cadBudgetFixture';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -234,12 +235,12 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
     const path = cadDocumentPath(document.id);
     const original = await adapter.readExactText?.(path);
-    if (!original || !adapter.readBoundedExactText) throw new Error('Expected exact bounded adapter');
+    if (!original || !adapter.readExactText) throw new Error('Expected exact adapter');
     const external = original.replace('"name":"Original"', '"name":"Externally edited"');
-    const read = adapter.readBoundedExactText.bind(adapter);
+    const read = adapter.readExactText.bind(adapter);
     let changed = false;
-    vi.spyOn(adapter, 'readBoundedExactText').mockImplementation(async (target, limit, signal) => {
-      const result = await read(target, limit, signal);
+    vi.spyOn(adapter, 'readExactText').mockImplementation(async (target, signal) => {
+      const result = await read(target, signal);
       if (target === path && !changed) { changed = true; await adapter.writeText(path, external); }
       return result;
     });
@@ -375,16 +376,16 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     expect((await listCadDocuments(adapter)).entries.map(entry => entry.id)).toEqual(['cad_later', 'cad_earlier']);
     for (let index = 0; index < saves.length; index++) expect(await adapter.readExactText?.(cadDocumentPath(saves[index].document.id))).toBe(originals[index]);
   });
-  it('rejects oversized stored originals without truncating or replacing them, including compressed cache files', async () => {
+  it('reads large stored originals without truncation and refuses unreviewed replacement, including compressed cache files', async () => {
     const document = createCadDocument('Original', 'cad_oversized'); const path = cadDocumentPath(document.id);
     const exact = JSON.stringify({ format: 'wireedm-cad-save', schemaVersion: 1, updatedAt: '2026-10-13T00:00:00.000Z', document })
-      + ' '.repeat(MAX_CAD_FILE_BYTES);
+      + ' '.repeat(CAD_FORMER_DOCUMENT_BYTES);
     await adapter.writeText(path, exact);
     const write = vi.spyOn(adapter, 'writeText');
-    await expect(loadCadDocument(adapter, document.id)).rejects.toMatchObject({ code: 'FILE_TOO_LARGE' });
-    await expect(saveCadDocument(adapter, document, { expectedSavedVersion: null })).rejects.toMatchObject({ code: 'FILE_TOO_LARGE' });
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(document);
+    await expect(saveCadDocument(adapter, document, { expectedSavedVersion: null })).rejects.toMatchObject({ code: 'SAVED_DOCUMENT_CHANGED' });
     const library = await listCadDocuments(adapter);
-    expect(library.entries).toEqual([]); expect(library.diagnostics).toMatchObject([{ path, message: expect.stringContaining('4 MiB') }]);
+    expect(library.entries).toMatchObject([{ id: document.id }]); expect(library.diagnostics).toEqual([]);
     expect(write).not.toHaveBeenCalled();
     expect(await adapter.readExactText?.(path)).toBe(exact);
     expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();

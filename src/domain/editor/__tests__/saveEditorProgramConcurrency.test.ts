@@ -54,7 +54,7 @@ describe.each(['browser-cache', 'directory'] as const)('external program stale s
     const { adapter, imported } = await fixture();
     const read = adapter.readExactText!.bind(adapter);
     const paths = [imported.editorProgram.filePath, imported.project.source.files[0].path, 'workbench.json'];
-    const originals = await Promise.all(paths.map(read));
+    const originals = await Promise.all(paths.map(path => read(path)));
     const controller = new AbortController(), reason = new DOMException('Cancelled before journal', 'AbortError');
     const ensure = adapter.ensureDirectory.bind(adapter);
     vi.spyOn(adapter, 'ensureDirectory').mockImplementation(async path => {
@@ -66,7 +66,7 @@ describe.each(['browser-cache', 'directory'] as const)('external program stale s
       draft: { model: 'gcode-text', text: 'G0 X40 Y0' }, beforeWrite: () => controller.signal.throwIfAborted()
     })).rejects.toBe(reason);
     expect(writes).not.toHaveBeenCalled();
-    expect(await Promise.all(paths.map(read))).toEqual(originals);
+    expect(await Promise.all(paths.map(path => read(path)))).toEqual(originals);
     expect(await adapter.readText('transactions/workbench-files.json')).toBeNull();
   });
 

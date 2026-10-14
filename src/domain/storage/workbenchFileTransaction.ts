@@ -3,7 +3,6 @@ import { Value } from '@sinclair/typebox/value';
 import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
 export const WORKBENCH_FILE_TRANSACTION_PATH = 'transactions/workbench-files.json';
-const maximumBytes = 384 * 1024 * 1024;
 const schema = Type.Object({
   format: Type.Literal('wire-edm-file-transaction'), schemaVersion: Type.Literal(1),
   files: Type.Array(Type.Object({ path: Type.String({ minLength: 1, maxLength: 1024 }),
@@ -72,7 +71,6 @@ export async function recoverWorkbenchFileTransaction(adapter: WorkbenchStorageA
   // A new folder handle can exist before its atomic first write commits.
   // No owned files are changed until the nonempty journal has been verified.
   if (raw === '') { await finish(adapter); return; }
-  if (new TextEncoder().encode(raw).byteLength > maximumBytes) throw new Error('File recovery journal exceeds its size limit.');
   const value: unknown = JSON.parse(raw);
   if (!Value.Check(schema, value)) throw new Error('Invalid file recovery journal. Preserve storage for recovery.');
   checkFiles(value.files);
@@ -107,7 +105,6 @@ export async function commitWorkbenchFileTransaction(
   const transaction: Transaction = { format: 'wire-edm-file-transaction', schemaVersion: 1, files };
   if (!Value.Check(schema, transaction)) throw new Error('File transaction exceeds its file limit.');
   const raw = JSON.stringify(transaction);
-  if (new TextEncoder().encode(raw).byteLength > maximumBytes) throw new Error('File recovery data exceeds its size limit.');
   await adapter.ensureDirectory('transactions');
   // Cancellation is still reversible here. Once the journal starts, finish and report the durable result.
   try { beforeWrite?.(); }

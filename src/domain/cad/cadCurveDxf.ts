@@ -37,7 +37,7 @@ const unitDeclarationSchema = Type.Union([
   Type.Object({ status: Type.Union([Type.Literal('recognized'), Type.Literal('unknown'), Type.Literal('unitless')]), units: drawingUnits }, strict)
 ]);
 const resultSchema = Type.Object({ curve: CadFeatureSchema, unitDeclaration: unitDeclarationSchema,
-  scaleToMillimeters: Type.Number({ exclusiveMinimum: 0 }), sourceEntityCount: Type.Integer({ minimum: 1, maximum: 2048 }) }, strict);
+  scaleToMillimeters: Type.Number({ exclusiveMinimum: 0 }), sourceEntityCount: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }) }, strict);
 
 export function parseCadDxfCurveImportInput(value: unknown): CadDxfCurveImportInput {
   if (!isCadImportData(value) || !Value.Check(CadDxfCurveImportInputSchema, value)) throw new CadError('invalid-dxf-source', 'Provide DXF filename, exact text and optional units, Curve ID and name.');
@@ -103,7 +103,7 @@ export function importCadDxfCurve(input: CadDxfCurveImportInput): CadDxfCurveImp
   const source = parseCadDxfImportSource({ format: 'dxf', fileName: input.fileName, text: input.text, ...(input.units === undefined ? {} : { units: input.units }) });
   assertCompleteCadDxf(source.text);
   assertExactCurvePolylineModes(source.text);
-  const parsed = parseDxf(source.text);
+  const parsed = parseDxf(source.text, { mode: 'exact-cad' });
   if (parsed.unsupportedEntities.length || parsed.warnings.length || parsed.entities.some(entity => entity.type === 'circle' || entity.type === 'line' && entity.approximation)) {
     throw new CadError('dxf-inexact', 'Curve DXF requires one complete open line/arc chain without closed, omitted or approximated geometry.');
   }
@@ -118,7 +118,6 @@ export function importCadDxfCurve(input: CadDxfCurveImportInput): CadDxfCurveImp
   }
   const built = exactSegments(parsed.entities);
   if (!built.length) throw new CadError('dxf-empty', 'DXF has no open Curve geometry.');
-  if (built.length > 2048) throw new CadError('geometry-limit', 'A Curve may contain at most 2048 exact edges.');
   const byId = new Map(built.map(segment => [segment.id, segment]));
   const tolerance = cadPathClosureTolerance(built.flatMap(segment => [
     { x: segment.start.x * scale, y: segment.start.y * scale }, { x: segment.end.x * scale, y: segment.end.y * scale }

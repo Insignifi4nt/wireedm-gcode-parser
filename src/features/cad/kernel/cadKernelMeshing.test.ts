@@ -65,13 +65,27 @@ describe('native preview extraction precision', () => {
     } finally { topology.dispose(); shape.delete(); first.delete(); second.delete(); }
   });
 
-  it('checks native counts before copying, deletes failed extraction handles and leaves source topology usable for retry', () => {
+  it.each([-3, 3.5, 4, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])('rejects invalid native triangle count %s, releases handles and preserves the exact source for retry', countValue => {
     const oc = getOC(); const shape = makeBox([100000000, 0, 0], [100000002, 2, 2]); const topology = new CadKernelTopology(shape);
     const rawDisposed = vi.spyOn(oc.ReplicadMeshData.prototype, 'delete'); const transformDisposed = vi.spyOn(oc.BRepBuilderAPI_Transform.prototype, 'delete');
-    const count = vi.spyOn(oc.ReplicadMeshData.prototype, 'getTrianglesSize').mockReturnValueOnce(3_000_003);
+    const count = vi.spyOn(oc.ReplicadMeshData.prototype, 'getTrianglesSize').mockReturnValueOnce(countValue);
     try {
-      expect(() => preview(shape)).toThrow('bounded mesh'); expect(rawDisposed).toHaveBeenCalledTimes(1); expect(transformDisposed).toHaveBeenCalledTimes(1); count.mockRestore();
+      expect(() => preview(shape)).toThrow(expect.objectContaining({ code: 'invalid-mesh' })); expect(rawDisposed).toHaveBeenCalledTimes(1); expect(transformDisposed).toHaveBeenCalledTimes(1); count.mockRestore();
       const result = preview(shape); expect(topology.meshGroups(result.mesh, result.edgeMesh).faceGroups).toHaveLength(6); expect(measureVolume(shape)).toBeCloseTo(8, 6);
+    } finally { topology.dispose(); shape.delete(); }
+  });
+  it.each(['unaligned', 'fractional', 'invalid-signed', 'invalid-unsigned', 'past-heap'] as const)('rejects a %s native preview pointer without reading outside physical memory and permits retry', kind => {
+    const oc = getOC(), shape = makeBox([100000000, 0, 0], [100000002, 2, 2]), topology = new CadKernelTopology(shape);
+    const rawDisposed = vi.spyOn(oc.ReplicadMeshData.prototype, 'delete'), transformDisposed = vi.spyOn(oc.BRepBuilderAPI_Transform.prototype, 'delete');
+    const value = kind === 'unaligned' ? 1 : kind === 'fractional' ? .5 : kind === 'invalid-signed' ? -0x80000001
+      : kind === 'invalid-unsigned' ? 0x100000000 : oc.wasmMemory.buffer.byteLength;
+    const pointer = vi.spyOn(oc.ReplicadMeshData.prototype, 'getVerticesPtr').mockReturnValueOnce(value);
+    try {
+      expect(() => preview(shape)).toThrow(expect.objectContaining({ code: 'invalid-mesh' }));
+      expect(rawDisposed).toHaveBeenCalledTimes(1); expect(transformDisposed).toHaveBeenCalledTimes(1); pointer.mockRestore();
+      const result = preview(shape);
+      expect(topology.meshGroups(result.mesh, result.edgeMesh).faceGroups).toHaveLength(6);
+      expect(measureVolume(shape)).toBeCloseTo(8, 6);
     } finally { topology.dispose(); shape.delete(); }
   });
 });

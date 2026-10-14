@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createCadKernelClient, type CadWorkerTransport } from './cadKernelClient';
 import type { CadKernelRequest } from './cadKernelProtocol';
 import { createCadDocument } from '../../../domain/cad/cadSchema';
@@ -23,6 +23,42 @@ class TestTransport implements CadWorkerTransport {
 }
 
 describe('CAD worker lifetime and cancellation', () => {
+  it('accepts a large exact source and matching native counts without allocating another encoded original for reply matching', async () => {
+    const source = { format: 'step' as const, fileName: 'large.step', encoding: 'utf8' as const, data: 'ISO-10303-21;\r\n' + '孔😀'.repeat(320_000) };
+    const sourceBytes = new TextEncoder().encode(source.data).length, transport = new TestTransport(), client = createCadKernelClient(() => transport);
+    const encode = vi.spyOn(TextEncoder.prototype, 'encode').mockImplementation(() => { throw new Error('Unexpected full encoding copy'); });
+    try {
+      const imported = client.importSolid(source);
+      expect(transport.messages[0]).toMatchObject({ kind: 'import-solid', source });
+      transport.onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'solid-imported', result: {
+        format: 'step', fileName: source.fileName, representation: 'exact-brep', volume: 257, solidCount: 257, sourceBytes,
+        bounds: { min: [0, 0, 0], max: [769, 1, 1] },
+      } } }));
+      expect(await imported).toMatchObject({ solidCount: 257, sourceBytes }); expect(transport.terminated).toBe(false);
+      const mismatch = client.importSolid(source), rejected = expect(mismatch).rejects.toThrow('does not match');
+      transport.onmessage?.(new MessageEvent('message', { data: { id: 2, kind: 'solid-imported', result: {
+        format: 'step', fileName: source.fileName, representation: 'exact-brep', volume: 257, solidCount: 257, sourceBytes: sourceBytes - 1,
+        bounds: { min: [0, 0, 0], max: [769, 1, 1] },
+      } } }));
+      await rejected; expect(transport.terminated).toBe(true);
+    } finally { encode.mockRestore(); client.dispose(); }
+  });
+  it('preserves optional native solid counts and rejects invalid counts at the worker boundary', async () => {
+    const mesh = { featureId: 'body', name: 'Body', positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2], edges: [], volume: 1,
+      faceGroups: [{ start: 0, count: 3, key: 'face' }], edgeGroups: [], bounds: { min: [0, 0, 0], max: [1, 1, 1] } };
+    const reply = (changed: unknown) => ({ id: 1, kind: 'built', result: { buildId: 'counted', meshes: [changed], diagnostics: [], durationMs: 1 } });
+    expect(isCadKernelReply(reply(mesh))).toBe(true);
+    expect(isCadKernelReply(reply({ ...mesh, solidCount: 2 }))).toBe(true);
+    for (const solidCount of [0, -1, 1.5, Infinity, NaN, '2', null, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(isCadKernelReply(reply({ ...mesh, solidCount })), String(solidCount)).toBe(false);
+    }
+    for (const counted of [mesh, { ...mesh, solidCount: 2 }]) {
+      const transport = new TestTransport(), client = createCadKernelClient(() => transport), pending = client.build(createCadDocument());
+      transport.onmessage?.(new MessageEvent('message', { data: reply(counted) }));
+      expect((await pending).meshes[0]).toEqual(counted);
+      expect(transport.terminated).toBe(false); client.dispose();
+    }
+  });
   it('checks preview triangle topology and rejects malformed buffers before rendering', () => {
     const mesh = { featureId: 'body', name: 'Body', positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2], edges: [], volume: 1,
       faceGroups: [{ start: 0, count: 3, key: 'face' }], edgeGroups: [],
@@ -117,16 +153,6 @@ describe('CAD worker lifetime and cancellation', () => {
     expect((await section).contourCount).toBe(1);
     client.dispose();
   });
-  it('retains the completed build for inspection and recycles before the next explicit build', async () => {
-    const transports: TestTransport[] = [];
-    const client = createCadKernelClient(() => { const transport = new TestTransport(); transports.push(transport); return transport; });
-    for (let id = 1; id <= 16; id++) { const build = client.build(createCadDocument()); transports[0].reply(id); await build; }
-    expect(transports).toHaveLength(1); expect(transports[0].terminated).toBe(false);
-    const inspection = client.inspectTopology(createCadDocument(), inspectionRequest); transports[0].inspectReply(17);
-    expect(await inspection).toEqual(inspectionResult); expect(transports[0].terminated).toBe(false);
-    const build = client.build(createCadDocument()); expect(transports[0].terminated).toBe(true); expect(transports).toHaveLength(2);
-    transports[0].inspectReply(17); transports[1].reply(18); await build; client.dispose();
-  });
   it('preserves coded stale-build diagnostics and rejects mismatched topology body/build replies', async () => {
     const transport = new TestTransport(); const client = createCadKernelClient(() => transport);
     const inspection = client.inspectTopology(createCadDocument(), inspectionRequest);
@@ -136,15 +162,6 @@ describe('CAD worker lifetime and cancellation', () => {
     const mismatch = client.inspectTopology(createCadDocument(), inspectionRequest); const mismatchRejected = expect(mismatch).rejects.toThrow('does not match');
     transport.inspectReply(2, { ...inspectionResult, buildId: 'another-build' }); await mismatchRejected;
     expect(transport.terminated).toBe(true); client.dispose();
-  });
-  it('bounds read/export job lifetime and requires an explicit rebuild to restart it', async () => {
-    const transports: TestTransport[] = [];
-    const client = createCadKernelClient(() => { const transport = new TestTransport(); transports.push(transport); return transport; });
-    const build = client.build(createCadDocument()); transports[0].reply(1); await build;
-    for (let id = 2; id <= 128; id++) { const inspection = client.inspectTopology(createCadDocument(), inspectionRequest); transports[0].inspectReply(id); await inspection; }
-    await expect(client.inspectTopology(createCadDocument(), inspectionRequest)).rejects.toMatchObject({ code: 'STALE_BUILD' });
-    expect(transports[0].messages).toHaveLength(128);
-    const rebuild = client.build(createCadDocument()); expect(transports[0].terminated).toBe(true); transports[1].reply(130); await rebuild; client.dispose();
   });
   it('cancels topology resolution by terminating its worker and cannot publish a late selector', async () => {
     const transport = new TestTransport(); const client = createCadKernelClient(() => transport); const controller = new AbortController();

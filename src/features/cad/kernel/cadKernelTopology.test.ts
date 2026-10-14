@@ -240,14 +240,26 @@ describe('exact topology and selected mechanical features', () => {
       first.dispose(); expect(() => first.inspectTopology({ bodyId: 'box', expectedBuildId: first.result.buildId, selection: { kind: 'picks', picks: [pick] } })).toThrow('snapshot is stale');
     } finally { first.dispose(); second.dispose(); }
   });
-  it('bounds large exact topology before tessellation and handles cleanup after rejection', () => {
-    const shapes = Array.from({ length: 556 }, (_, index) => makeBox([index * 2, 0, 0], [index * 2 + 1, 1, 1]));
+  it('retains every exact element of a compound above the former body topology cap and cleans up its inventory', () => {
+    const shapes = Array.from({ length: 2084 }, (_, index) => makeBox([index * 2, 0, 0], [index * 2 + 1, 1, 1]));
     const compound = makeCompound(shapes);
-    try { expect(() => new CadKernelTopology(compound.asShape3D())).toThrow('at most 10000'); }
+    try {
+      const topology = new CadKernelTopology(compound.asShape3D());
+      try {
+        expect(topology.count).toBe(37512);
+        const tail = topology.inspect({ bodyId: 'large', expectedBuildId: 'large-build', selection: { kind: 'page', topology: 'edge', offset: 25000, limit: 100 } }, 'large-build');
+        expect(tail).toMatchObject({ total: 25008, nextOffset: null });
+        expect(tail.descriptors).toHaveLength(8); expect(isCadTopologyInspectResult(tail)).toBe(true);
+        expect(tail.descriptors.every(descriptor => descriptor.kind === 'edge' && descriptor.curveType === 'line' && Math.abs(descriptor.length - 1) < 1e-9)).toBe(true);
+        const end = topology.inspect({ bodyId: 'large', expectedBuildId: 'large-build', selection: { kind: 'page', topology: 'edge', offset: 25008, limit: 100 } }, 'large-build');
+        expect(end).toMatchObject({ descriptors: [], total: 25008, nextOffset: null });
+        expect(() => topology.inspect({ bodyId: 'large', expectedBuildId: 'large-build', selection: { kind: 'page', topology: 'edge', offset: 25009, limit: 100 } }, 'large-build')).toThrow('beyond the available');
+      } finally { topology.dispose(); }
+    }
     finally { compound.delete(); shapes.forEach(shape => shape.delete()); }
     built(boxDocument(), model => expect(page(model, 'edge')).toHaveLength(12));
   });
-  it('preserves preceding bodies when individually valid solids exceed the complete topology budget', () => {
+  it('builds and exports all valid bodies beyond the former complete topology cap', () => {
     const features: CadFeature[] = [];
     for (let body = 0; body < 4; body++) {
       const points: [number, number][] = Array.from({ length: 2000 }, (_, index) => [body * 3 + Math.cos(index * Math.PI / 1000), Math.sin(index * Math.PI / 1000)]);
@@ -255,14 +267,12 @@ describe('exact topology and selected mechanical features', () => {
         { ...base(`body_${body}`), kind: 'extrude', sketchId: `sketch_${body}`, distance: 1, symmetric: false, operation: 'new', targetId: null });
     }
     built(parseCadDocument({ ...boxDocument(), features }), model => {
-      expect(model.result.diagnostics[0]).toMatchObject({ featureId: 'body_3', code: 'topology-limit' });
-      expect(model.result.diagnostics[0].message).toContain('25000');
-      expect(model.result.meshes.map(mesh => mesh.featureId)).toEqual(['body_0', 'body_1', 'body_2']);
+      expect(model.result.diagnostics).toEqual([]);
+      expect(model.result.meshes.map(mesh => mesh.featureId)).toEqual(['body_0', 'body_1', 'body_2', 'body_3']);
       expect(model.result.meshes.every(mesh => mesh.volume > 3.14 && mesh.volume < 3.142)).toBe(true);
-      expect(() => model.export('step')).toThrow('Fix the feature diagnostics');
+      expect(model.export('step').size).toBeGreaterThan(0);
     });
-  // Four 2,000-edge native solids approach the real model budget. This checks
-  // retained geometry after rejection, not a 20-second performance promise.
+  // Four 2,000-edge native solids exercise real geometry beyond the old policy.
   }, 60_000);
 });
 

@@ -183,6 +183,18 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('shows the selected native body component count beside volume without inferring a count from older builds or changing history', async () => {
+    const counted = { ...topologyBuild, meshes: topologyBuild.meshes.map(mesh => ({ ...mesh, solidCount: 2 })) };
+    await mount(solidDocument(), { build: counted, buildState: 'ready' });
+    const before = currentSession.getSnapshot(); await click('Pad 1');
+    expect(container.querySelector('.cad-solid-info')?.textContent).toContain('20,000 mm³');
+    expect(container.querySelector('.cad-solid-info')?.textContent).toContain('2 solids');
+    await act(async () => replaceBuild(topologyBuild));
+    const unknown = container.querySelector('.cad-solid-info');
+    expect(unknown?.textContent).toContain('20,000 mm³');
+    expect(unknown?.textContent).not.toMatch(/\d+ solids?/);
+    expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: before.canUndo });
+  });
   it('correlates sketch fillet preview measurements with the visible contour without accepting the draft', async () => {
     await mount(solidDocument()); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' })); await click('Plate profile');
     const before = currentSession.getSnapshot(); await click('Sketch fillet');

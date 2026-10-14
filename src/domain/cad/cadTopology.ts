@@ -4,8 +4,6 @@ import type { CadPoint3, CadScalar } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 
-export const MAX_CAD_TOPOLOGY_PER_BODY = 10_000;
-export const MAX_CAD_TOPOLOGY_ELEMENTS = 25_000;
 export const MAX_CAD_TOPOLOGY_PICKS = 64;
 export const MAX_CAD_TOPOLOGY_PREDICATES = 8;
 export const MAX_CAD_TOPOLOGY_PAGE = 100;
@@ -110,7 +108,7 @@ export const CadTopologyPickSchema = Type.Object({ kind: Type.Union([Type.Litera
 const picks = Type.Array(CadTopologyPickSchema, { minItems: 1, maxItems: MAX_CAD_TOPOLOGY_PICKS });
 export const CadTopologyPickSetSchema = Type.Object({ documentVersion: opaque, buildId: opaque, bodyId: identifier, picks }, strict);
 export const CadTopologyInspectRequestSchema = Type.Object({ bodyId: identifier, expectedBuildId: opaque, selection: Type.Union([
-  Type.Object({ kind: Type.Literal('page'), topology: Type.Union([Type.Literal('edge'), Type.Literal('face')]), offset: Type.Integer({ minimum: 0, maximum: MAX_CAD_TOPOLOGY_ELEMENTS }), limit: Type.Integer({ minimum: 1, maximum: MAX_CAD_TOPOLOGY_PAGE }) }, strict),
+  Type.Object({ kind: Type.Literal('page'), topology: Type.Union([Type.Literal('edge'), Type.Literal('face')]), offset: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }), limit: Type.Integer({ minimum: 1, maximum: MAX_CAD_TOPOLOGY_PAGE }) }, strict),
   Type.Object({ kind: Type.Literal('picks'), picks }, strict)
 ]) }, strict);
 export const CadTopologyResolvePicksRequestSchema = Type.Object({ bodyId: identifier, expectedBuildId: opaque, purpose: Type.Union([Type.Literal('fillet'), Type.Literal('chamfer'), Type.Literal('shell')]), picks }, strict);
@@ -129,7 +127,7 @@ export const CadTopologyDescriptorSchema = Type.Union([
   Type.Object({ ...descriptorBase, kind: Type.Literal('face'), surfaceType: Type.Literal('other'), nativeType: Type.String({ minLength: 1, maxLength: 64 }), area }, strict)
 ]);
 export const CadTopologyInspectResultSchema = Type.Object({ bodyId: identifier, buildId: opaque, descriptors: Type.Array(CadTopologyDescriptorSchema, { maxItems: MAX_CAD_TOPOLOGY_PAGE }),
-  total: Type.Integer({ minimum: 0, maximum: MAX_CAD_TOPOLOGY_ELEMENTS }), nextOffset: Type.Union([Type.Integer({ minimum: 0, maximum: MAX_CAD_TOPOLOGY_ELEMENTS }), Type.Null()]) }, strict);
+  total: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }), nextOffset: Type.Union([Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }), Type.Null()]) }, strict);
 export const CadTopologyResolvePicksResultSchema = Type.Union([
   Type.Object({ bodyId: identifier, buildId: opaque, purpose: Type.Union([Type.Literal('fillet'), Type.Literal('chamfer')]), selection: CadEdgeSelectionSchema }, strict),
   Type.Object({ bodyId: identifier, buildId: opaque, purpose: Type.Literal('shell'), opening: CadFaceQuerySchema }, strict)

@@ -8,11 +8,10 @@ import { createCadKernelPlane } from './cadKernelPlane';
 import { resolveCadExtrudeRevolvePlacement, resolveCadWorldDatum, type CadDatumFrameLookup, type CadResolvedFrame } from '../../../domain/cad/cadDatumPlanes';
 import { cadKernelProfileDrawing, cadKernelSketchOnPlane } from './cadKernelSketch';
 import { sectionCadKernelShape } from './cadKernelSection';
-import { cadMeshScalarCount, MAX_CAD_PREVIEW_SCALARS } from './cadKernelLimits';
 import { CadKernelTopology } from './cadKernelTopology';
 import { applyCadEdgeOperation, applyCadShell } from './cadKernelOperations';
 import { loadCadSolidImport } from './cadKernelImport';
-import { resolveCadCircularPattern } from '../../../domain/cad/cadPatterns';
+import { MAX_CAD_PATTERN_INSTANCES, resolveCadCircularPattern } from '../../../domain/cad/cadPatterns';
 import { resolveCadLoftSections } from '../../../domain/cad/cadLoft';
 import { buildCadLoftSolid } from './cadKernelLoft';
 import { resolveCadSweepInputs } from '../../../domain/cad/cadSweep';
@@ -23,7 +22,7 @@ import { cadKernelSolidEvidence, cutCadKernelConfirmedMaterial } from './cadKern
 import { meshCadKernelPreview } from './cadKernelMeshing';
 import { cadKernelConsumeShape, cadKernelDisposeOwned, cadKernelDisposeShape, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
 import { exportCadKernelStep } from './cadKernelExport';
-import { MAX_CAD_TOPOLOGY_ELEMENTS, MAX_CAD_TOPOLOGY_PER_BODY, parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
+import { parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
 
 /** BRep state stays inside the worker. Only tessellation and export bytes leave it. */
@@ -38,7 +37,7 @@ export interface CadKernelModel {
 
 const meshOptions = { tolerance: 0.05, angularTolerance: 0.15 };
 
-function validateSolid(shape: Shape3D) {
+function validateSolid(shape: Shape3D): number {
   if (shape.isNull) throw new CadError('empty-solid', 'The operation produced no solid.');
   const solids = cadKernelSolids(shape);
   try {
@@ -49,15 +48,16 @@ function validateSolid(shape: Shape3D) {
   if (!cadKernelIsValid(shape)) throw new CadError('invalid-solid', 'OpenCascade rejected the resulting topology. Reduce the dimensions or choose a different feature.');
   const volume = measureVolume(shape);
   if (!Number.isFinite(volume) || volume <= 1e-9) throw new CadError('empty-solid', 'The operation must produce a closed solid with positive volume.');
+  return solids.length;
 }
 
-function shapeMesh(shape: Shape3D, feature: CadFeature, topology: CadKernelTopology): CadMesh {
+function shapeMesh(shape: Shape3D, feature: CadFeature, topology: CadKernelTopology, solidCount: number): CadMesh {
   const box = shape.boundingBox;
   try {
     const [min, max] = box.bounds;
     const { mesh, edgeMesh } = meshCadKernelPreview(shape, { min, max }, meshOptions);
     return { featureId: feature.id, name: feature.name, positions: mesh.vertices, normals: mesh.normals, indices: mesh.triangles,
-      edges: edgeMesh.lines, ...topology.meshGroups(mesh, edgeMesh), volume: measureVolume(shape), bounds: { min, max } };
+      edges: edgeMesh.lines, ...topology.meshGroups(mesh, edgeMesh), volume: measureVolume(shape), solidCount, bounds: { min, max } };
   } finally { box.delete(); }
 }
 
@@ -81,8 +81,13 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
     return found.shape;
   };
   const instancesOf = (id: string) => bodies.get(id)?.instances ?? 1;
-  const boundedInstances = (count: number) => {
-    if (count > 1000) throw new CadError('instance-limit', 'Expanded nested patterns and Boolean operands may contain at most 1000 solid instances. Reduce the pattern counts.');
+  const checkedInstances = (count: number) => {
+    if (!Number.isSafeInteger(count) || count < 1) throw new CadError('invalid-instances', 'Expanded solid instance counts must be positive safe integers.');
+    return count;
+  };
+  const checkedPatternInstances = (count: number) => {
+    checkedInstances(count);
+    if (count > MAX_CAD_PATTERN_INSTANCES) throw new CadError('instance-limit', 'Expanded nested patterns may contain at most 1000 solid instances. Reduce the pattern counts.');
     return count;
   };
   function releaseTransientShapes() {
@@ -105,21 +110,6 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
     try {
       const origin: SimplePoint = plane.origin.toTuple();
       const regions = resolveCadSketchRegions(sketch, document.parameters);
-      if (feature.kind === 'extrude' && feature.operation === 'new' && regions.length === 1) {
-        const region = regions[0], authored = region.boundary.profile.geometry;
-        if (authored.kind === 'plugin' && authored.package.generator.kind === 'builtin'
-          && ['wireedm.spur-gear.v2', 'wireedm.spur-gear.v3'].includes(authored.package.generator.implementation)
-          && region.boundary.geometry.kind === 'path' && region.voids.every(hole => hole.geometry.kind === 'circle')) {
-          // A straight prism contributes one wall face and three edges per
-          // boundary edge, plus its two caps. Generated gear chords stay
-          // distinct; Replicad circles use two semicircle edges/walls, so each
-          // bore adds two walls, four rims and two connecting edges.
-          // Scope to known gear prisms: Booleans and general profiles may merge.
-          const predicted = 4 * (region.boundary.geometry.segments.length + 2 * region.voids.length) + 2;
-          if (predicted > MAX_CAD_TOPOLOGY_PER_BODY) throw new CadError('topology-limit',
-            `This gear extrusion would create approximately ${predicted} faces and edges, exceeding the ${MAX_CAD_TOPOLOGY_PER_BODY} per-body limit. In the gear profile's Advanced settings, choose a custom curve tolerance and increase it, or reduce tooth count. Requested accuracy is never changed automatically.`);
-        }
-      }
       let result: Shape3D | undefined;
       for (const region of regions) {
         const boundaries = [region.boundary, ...region.voids];
@@ -170,12 +160,12 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         case 'curve': references.set(feature.id, feature); continue; // Exact reference geometry produces and consumes no native body.
         case 'imported': {
           const imported = loadCadSolidImport(feature.source);
-          result = own(imported.shape); instances = boundedInstances(imported.analysis.solidCount); break;
+          result = own(imported.shape); instances = checkedInstances(imported.analysis.solidCount); break;
         }
         case 'extrude': case 'revolve': {
           const sourceSketch = sketches.get(feature.sketchId);
           instances = sourceSketch ? resolveCadSketchRegions(sourceSketch, document.parameters).length : 1;
-          if (feature.targetId !== null) instances = boundedInstances(instances + instancesOf(feature.targetId));
+          if (feature.targetId !== null) instances = checkedInstances(instances + instancesOf(feature.targetId));
           result = fromSketch(feature);
           if (feature.operation !== 'new') {
             if (!feature.targetId) throw new CadError('missing-target', 'Join and cut need a target body.');
@@ -190,7 +180,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           if (feature.operation !== 'new') {
             if (!feature.targetId) throw new CadError('missing-target', 'Join and cut need a target body.');
             const target = body(feature.targetId);
-            instances = boundedInstances(1 + instancesOf(feature.targetId));
+            instances = checkedInstances(1 + instancesOf(feature.targetId));
             const loft = own(buildCadLoftSolid(sections, feature.ruled));
             result = own(feature.operation === 'join' ? target.fuse(loft) : cutCadKernelConfirmedMaterial(target, loft));
             consumed.push(feature.targetId);
@@ -202,7 +192,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           if (feature.operation !== 'new') {
             if (!feature.targetId) throw new CadError('missing-target', 'Join and cut need a target body.');
             const target = body(feature.targetId);
-            instances = boundedInstances(1 + instancesOf(feature.targetId));
+            instances = checkedInstances(1 + instancesOf(feature.targetId));
             const sweep = own(buildCadSweepSolid(inputs));
             result = own(feature.operation === 'join' ? target.fuse(sweep) : cutCadKernelConfirmedMaterial(target, sweep));
             consumed.push(feature.targetId);
@@ -213,7 +203,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           const target = body(feature.targetId);
           const prefix = new Map(document.features.slice(0, featureIndex).map(entry => [entry.id, entry]));
           const inputs = resolveCadPocketInputs(feature, prefix, document.parameters);
-          instances = boundedInstances(inputs.regionCount + instancesOf(feature.targetId));
+          instances = checkedInstances(inputs.regionCount + instancesOf(feature.targetId));
           result = own(buildCadPocketCut(target, inputs)); consumed.push(feature.targetId); break;
         }
         case 'fillet': case 'chamfer': {
@@ -242,7 +232,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         }
         case 'boolean': {
           const target = body(feature.targetId); const tool = body(feature.toolId);
-          instances = boundedInstances(instancesOf(feature.targetId) + instancesOf(feature.toolId));
+          instances = checkedInstances(instancesOf(feature.targetId) + instancesOf(feature.toolId));
           result = own(feature.operation === 'union' ? target.fuse(tool) : feature.operation === 'cut' ? cutCadKernelConfirmedMaterial(target, tool) : target.intersect(tool));
           consumed.push(feature.targetId, feature.toolId); break;
         }
@@ -260,7 +250,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         case 'linear-pattern': {
           if (!Number.isInteger(feature.count) || feature.count < 2 || feature.count > 100) throw new CadError('pattern-limit', 'Patterns require 2–100 instances.');
           const source = body(feature.sourceId);
-          instances = boundedInstances(instancesOf(feature.sourceId) * feature.count);
+          instances = checkedPatternInstances(instancesOf(feature.sourceId) * feature.count);
           const spacing = feature.spacing.map(number);
           result = source;
           for (let index = 1; index < feature.count; index++) {
@@ -279,7 +269,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         case 'circular-pattern': {
           const pattern = resolveCadCircularPattern(feature, document.parameters);
           const source = body(feature.sourceId);
-          instances = boundedInstances(instancesOf(feature.sourceId) * pattern.count);
+          instances = checkedPatternInstances(instancesOf(feature.sourceId) * pattern.count);
           const center: SimplePoint = [...pattern.center]; const direction: SimplePoint = [...pattern.direction];
           result = source;
           for (const angle of pattern.angles.slice(1)) {
@@ -297,14 +287,10 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         }
         default: { const exhaustive: never = feature; throw new Error(`Unsupported feature: ${exhaustive}`); }
       }
-      validateSolid(result);
+      const solidCount = validateSolid(result);
       const topology = new CadKernelTopology(result);
       try {
-        const retainedTopology = [...bodies.entries()].reduce((total, [id, entry]) => total + (consumed.includes(id) ? 0 : entry.topology.count), 0);
-        if (retainedTopology + topology.count > MAX_CAD_TOPOLOGY_ELEMENTS) throw new CadError('topology-limit', `The complete model may contain at most ${MAX_CAD_TOPOLOGY_ELEMENTS} distinct faces and edges. Simplify the model.`);
-        const mesh = shapeMesh(result, feature, topology);
-        const retainedScalars = [...bodies.entries()].reduce((total, [id, entry]) => total + (consumed.includes(id) ? 0 : cadMeshScalarCount(entry.mesh)), 0);
-        if (retainedScalars + cadMeshScalarCount(mesh) > MAX_CAD_PREVIEW_SCALARS) throw new CadError('mesh-limit', 'The complete model exceeds the bounded preview buffer budget. Simplify the geometry or reduce body and pattern counts.');
+        const mesh = shapeMesh(result, feature, topology, solidCount);
         for (const id of consumed) { visible.delete(id); bodies.get(id)?.topology.dispose(); bodies.delete(id); }
         bodies.set(feature.id, { shape: result, feature, mesh, instances, topology });
       } catch (error) { topology.dispose(); throw error; }

@@ -7,7 +7,8 @@ import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadBuildResult, CadFeature } from '@/domain/cad/cadDocument';
 import type { CadSectionResult } from '@/domain/cad/cadSection';
 import type { CadTopologyDescriptor, CadTopologyInspectRequest } from '@/domain/cad/cadTopology';
-import { loadCadDocument } from '@/domain/cad/cadStorage';
+import { cadDocumentPath, loadCadDocument } from '@/domain/cad/cadStorage';
+import { CAD_BUDGET_APP_ID, CAD_FORMER_DOCUMENT_BYTES, cadBudgetFixture, cadBudgetOriginals, utf8Bytes, utf8Hash } from '@/domain/cad/__tests__/cadBudgetFixture';
 import { CadSession } from './cadSession';
 import { useCadController, type CadController } from './useCadController';
 import { cadSiteTools } from './cadSiteTools';
@@ -33,10 +34,32 @@ function deferred<T>() {
   const promise = new Promise<T>(done => { resolve = done; });
   return { promise, resolve };
 }
+function sourceTextFile(text: string, name: string) {
+  const file = new File([text], name), bytes = new TextEncoder().encode(text);
+  Object.defineProperty(file, 'stream', { value: () => {
+    let offset = 0;
+    return new ReadableStream<Uint8Array>({ pull(controller) {
+      if (offset === bytes.length) { controller.close(); return; }
+      const end = Math.min(offset + 64 * 1024, bytes.length); controller.enqueue(bytes.subarray(offset, end)); offset = end;
+    } });
+  } });
+  return file;
+}
 async function openWorkbench(namespace: string) {
   const result = await initializeWorkbenchCatalog(createBrowserCacheAdapter(localStorage, { namespace }));
   if (!result.ok) throw new Error(result.error.message);
   return result.workbench;
+}
+function largeGroupedParameterDocument() {
+  const names = Array.from({ length: 1001 }, (_, index) => `p_${String(index).padStart(5, '0')}_${'x'.repeat(56)}`);
+  const groups = Array.from({ length: 8 }, (_, index) => ({ id: `group_${index}_${'x'.repeat(87)}`, name: `${'孔'.repeat(154)}_${index}` }));
+  const parameters = Object.fromEntries(names.map((name, index) => [name, (index + 1) / 7]));
+  const document = parseCadDocument({ ...createCadDocument('Grouped parameters', 'cad_context_source'), parameters, parameterGroups: groups,
+    parameterMetadata: Object.fromEntries(names.map((name, index) => [name, { groupId: groups[Math.floor(index / 128)].id, source: { kind: 'manual' } }])),
+    features: [{ id: 'section', kind: 'sketch', name: 'Linked section', suppressed: false, plane: 'XY', offset: 0,
+      profiles: [{ id: 'circle', name: 'Linked radius', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: names[1000] } }] }],
+  });
+  return { document, names, groups };
 }
 async function harness(withGeometry = false, allowHandoff = false) {
   let workbench: ConnectedWorkbenchCatalog | null = await openWorkbench('cad-controller-a');
@@ -63,6 +86,187 @@ async function harness(withGeometry = false, allowHandoff = false) {
 }
 
 describe('CAD controller asynchronous guards', () => {
+  it('returns truthful bounded context for 1001 parameters and full member groups while every exact value remains readable', async () => {
+    const h = await harness(), source = largeGroupedParameterDocument();
+    await act(async () => { await h.cad().importDocumentValue(source.document); });
+    const before = h.session.getSnapshot(), tools = cadSiteTools(h.cad);
+    const context = tools.find(tool => tool.name === 'cad_get_context'), inspect = tools.find(tool => tool.name === 'cad_inspect_parameters');
+    const read = tools.find(tool => tool.name === 'cad_read_document');
+    if (!context || !inspect || !read) throw new Error('Missing parameter read tools.');
+    const result = await context.execute({});
+    expect(result).toMatchObject({ ok: true, data: { version: before.version, documentId: before.document.id,
+      parameterCount: 1001, omittedParameters: true, parameterGroupCount: 8, omittedParameterGroups: true,
+      dirty: true, savedVersion: null, workflowOpen: false } });
+    const data = (result as { data: { parameters: Record<string, number>; parameterGroups: typeof source.groups; omittedParameterCount: number; omittedParameterGroupCount: number } }).data;
+    expect(Object.keys(data.parameters).length + data.omittedParameterCount).toBe(1001);
+    expect(data.parameterGroups.length + data.omittedParameterGroupCount).toBe(8);
+    expect(utf8Bytes(JSON.stringify(data.parameters))).toBeLessThanOrEqual(4096);
+    expect(utf8Bytes(JSON.stringify(data.parameterGroups))).toBeLessThanOrEqual(4096);
+    for (const [name, value] of Object.entries(data.parameters)) expect(value).toBe(source.document.parameters[name]);
+    expect(data.parameterGroups).toEqual(source.groups.slice(0, data.parameterGroups.length));
+    expect(utf8Bytes(JSON.stringify(result))).toBeLessThan(32768);
+    const parameters: Record<string, number> = {}; let offset: number | null = 0;
+    while (offset !== null) {
+      const page = await inspect.execute({ expectedVersion: before.version, offset, limit: 50 });
+      expect(page).toMatchObject({ ok: true, data: { version: before.version, total: 1001 } });
+      const pageData = (page as { data: { items: { name: string; value: number; groupId: string }[]; nextOffset: number | null } }).data;
+      expect(pageData.items.length).toBeGreaterThan(0);
+      for (const parameter of pageData.items) {
+        expect(parameters).not.toHaveProperty(parameter.name); parameters[parameter.name] = parameter.value;
+        expect(parameter.groupId).toBe(source.document.parameterMetadata?.[parameter.name].groupId);
+      }
+      if (pageData.nextOffset !== null) expect(pageData.nextOffset).toBeGreaterThan(offset);
+      offset = pageData.nextOffset;
+    }
+    expect(parameters).toEqual(source.document.parameters);
+    let text = ''; offset = 0;
+    while (offset !== null) {
+      const chunk = await read.execute({ expectedVersion: before.version, offset, length: 4096 });
+      expect(chunk).toMatchObject({ ok: true });
+      const chunkData = (chunk as { data: { text: string; nextOffset: number | null } }).data;
+      text += chunkData.text; offset = chunkData.nextOffset;
+    }
+    expect(JSON.parse(text)).toEqual(before.document);
+    expect(h.session.getSnapshot()).toBe(before);
+  });
+  it('returns a fresh bounded receipt after a real large-parameter edit and rejects stale retries without duplicate history', async () => {
+    const h = await harness(), source = largeGroupedParameterDocument();
+    await act(async () => { await h.cad().importDocumentValue(source.document); });
+    const before = h.session.getSnapshot(), tools = cadSiteTools(h.cad);
+    const edit = tools.find(tool => tool.name === 'cad_edit_document'), context = tools.find(tool => tool.name === 'cad_get_context'), history = tools.find(tool => tool.name === 'cad_history');
+    if (!edit || !context || !history) throw new Error('Missing guarded mutation tools.');
+    const request = { expectedVersion: before.version, edits: [{ kind: 'set-parameter', name: source.names[1000], value: 20.123456789012345 }] };
+    let result: unknown;
+    await act(async () => { result = await edit.execute(request); });
+    const after = h.session.getSnapshot();
+    expect(after.document.parameters[source.names[1000]]).toBe(20.123456789012345);
+    expect(after.document.features).toEqual(before.document.features);
+    expect(result).toMatchObject({ ok: true, data: { version: after.version, documentId: after.document.id,
+      parameterCount: 1001, omittedParameters: true, dirty: true, savedVersion: null, workflowOpen: false, canUndo: true } });
+    expect(utf8Bytes(JSON.stringify(result))).toBeLessThan(32768);
+    expect(await context.execute({})).toMatchObject({ ok: true, data: { version: after.version, documentId: after.document.id } });
+    await act(async () => { expect(await edit.execute(request)).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } }); });
+    expect(h.session.getSnapshot()).toBe(after);
+    await act(async () => { expect(await edit.execute({ ...request, expectedVersion: after.version })).toMatchObject({ ok: true, data: { version: after.version } }); });
+    expect(h.session.getSnapshot()).toBe(after);
+    await act(async () => { expect(await history.execute({ expectedVersion: after.version, direction: 'undo' })).toMatchObject({ ok: true }); });
+    expect(h.session.getSnapshot().document).toEqual(before.document);
+    expect(h.session.getSnapshot().canUndo).toBe(false);
+    const undone = h.session.getSnapshot();
+    await act(async () => { expect(await history.execute({ expectedVersion: undone.version, direction: 'redo' })).toMatchObject({ ok: true,
+      data: { parameterCount: 1001, omittedParameters: true, canUndo: true, canRedo: false } }); });
+    expect(h.session.getSnapshot().document).toEqual(after.document);
+  });
+  it('returns complete small summaries and bounded large import/open receipts with exact saved state', async () => {
+    const h = await harness(), tools = cadSiteTools(h.cad);
+    const context = tools.find(tool => tool.name === 'cad_get_context'), imported = tools.find(tool => tool.name === 'cad_import_document');
+    const save = tools.find(tool => tool.name === 'cad_save_document'), open = tools.find(tool => tool.name === 'cad_open_document'), workspace = tools.find(tool => tool.name === 'cad_open_workspace');
+    if (!context || !imported || !save || !open || !workspace) throw new Error('Missing document receipt tools.');
+    expect(await context.execute({})).toMatchObject({ ok: true, data: { parameters: {}, parameterCount: 0, omittedParameters: false,
+      omittedParameterCount: 0, parameterGroups: [], parameterGroupCount: 0, omittedParameterGroups: false, omittedParameterGroupCount: 0 } });
+    const small = parseCadDocument({ ...createCadDocument('Small dimensions', 'cad_small_context'), parameters: { width: 12.123456789012345, depth: .125 },
+      parameterGroups: [{ id: 'dimensions', name: 'Dimensions' }] });
+    let smallReceipt: unknown;
+    await act(async () => { smallReceipt = await imported.execute({ expectedVersion: h.session.getSnapshot().version, document: small }); });
+    expect(smallReceipt).toMatchObject({ ok: true, data: { parameters: small.parameters, parameterCount: 2, omittedParameters: false,
+      omittedParameterCount: 0, parameterGroups: small.parameterGroups, parameterGroupCount: 1, omittedParameterGroups: false, omittedParameterGroupCount: 0 } });
+    await act(async () => { expect(await save.execute({ expectedVersion: h.session.getSnapshot().version })).toMatchObject({ ok: true, data: { saved: true } }); });
+    const source = largeGroupedParameterDocument(); let largeReceipt: unknown;
+    await act(async () => { largeReceipt = await imported.execute({ expectedVersion: h.session.getSnapshot().version, document: source.document }); });
+    const accepted = h.session.getSnapshot();
+    expect(largeReceipt).toMatchObject({ ok: true, data: { imported: true, sourceDocumentId: source.document.id, version: accepted.version,
+      documentId: accepted.document.id, parameterCount: 1001, omittedParameters: true, dirty: true, savedVersion: null, canUndo: false } });
+    expect(utf8Bytes(JSON.stringify(largeReceipt))).toBeLessThan(32768);
+    expect(accepted.document.parameters).toEqual(source.document.parameters);
+    expect(accepted.document.parameterMetadata).toEqual(source.document.parameterMetadata);
+    let savedReceipt: unknown;
+    await act(async () => { savedReceipt = await save.execute({ expectedVersion: accepted.version }); });
+    const saved = await loadCadDocument(h.workbench().adapter, accepted.document.id);
+    expect(savedReceipt).toMatchObject({ ok: true, data: { saved: true, draftMarkedSaved: true, documentId: accepted.document.id, savedVersion: saved.savedVersion, version: accepted.version } });
+    await act(async () => { h.cad().back(); expect(await workspace.execute({})).toMatchObject({ ok: true, data: { open: true,
+      documentId: accepted.document.id, version: accepted.version, dirty: false, savedVersion: saved.savedVersion, parameterCount: 1001 } }); });
+    let reopenedReceipt: unknown;
+    await act(async () => { reopenedReceipt = await open.execute({ expectedVersion: accepted.version, documentId: accepted.document.id }); });
+    const reopened = h.session.getSnapshot();
+    expect(reopenedReceipt).toMatchObject({ ok: true, data: { open: true, version: reopened.version, documentId: accepted.document.id,
+      dirty: false, savedVersion: saved.savedVersion, workflowOpen: false, parameterCount: 1001, omittedParameters: true } });
+    expect(reopened.document).toEqual(accepted.document);
+    expect(utf8Bytes(JSON.stringify(reopenedReceipt))).toBeLessThan(32768);
+  });
+  it.each([CAD_FORMER_DOCUMENT_BYTES - 1, CAD_FORMER_DOCUMENT_BYTES, CAD_FORMER_DOCUMENT_BYTES + 1, CAD_FORMER_DOCUMENT_BYTES + 64 * 1024])('exports, imports and saves a %i-byte document with fixed-length fresh identity and exact payload', async bytes => {
+    const h = await harness();
+    const source = parseCadDocument(cadBudgetFixture(bytes));
+    const originalHashes = await Promise.all(cadBudgetOriginals(source).map(utf8Hash));
+    await act(async () => { await h.cad().importDocumentValue(source); });
+    const imported = h.session.getSnapshot();
+    expect(imported.document.id).toHaveLength(CAD_BUDGET_APP_ID.length);
+    expect(utf8Bytes(JSON.stringify(imported.document))).toBe(bytes);
+    const blobs: Blob[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => { if (blob instanceof Blob) blobs.push(blob); return 'blob:cad-budget'; });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const receipt = h.cad().exportDocument(imported.version);
+    expect(receipt).toMatchObject({ downloadRequested: true, fileName: 'Limită Ω part.cad.json', version: imported.version });
+    expect(click).toHaveBeenCalledOnce(); expect(blobs).toHaveLength(1);
+    expect(blobs[0].size).toBe(bytes);
+    const text = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsText(blobs[0]);
+    });
+    expect(text).toBe(JSON.stringify(imported.document));
+    expect(JSON.parse(text)).toEqual(imported.document);
+    expect(h.session.getSnapshot()).toBe(imported);
+    let savedReceipt: unknown;
+    await act(async () => { savedReceipt = await h.cad().save(imported.version); });
+    const saved = await loadCadDocument(h.workbench().adapter, imported.document.id);
+    expect(savedReceipt).toMatchObject({ saved: true, draftMarkedSaved: true, documentId: imported.document.id, savedVersion: saved.savedVersion, version: imported.version });
+    const path = cadDocumentPath(imported.document.id), savedOriginal = await h.workbench().adapter.readExactText?.(path);
+    const file = new File([text], 'part.cad.json');
+    await act(async () => { await h.cad().importDocument(file); });
+    const roundTrip = h.session.getSnapshot();
+    expect(roundTrip.document.id).not.toBe(imported.document.id);
+    expect(roundTrip.document.features).toEqual(source.features);
+    expect(roundTrip.document.parameters).toEqual(source.parameters);
+    expect(await Promise.all(cadBudgetOriginals(roundTrip.document).map(utf8Hash))).toEqual(originalHashes);
+    expect(roundTrip).toMatchObject({ dirty: true, savedVersion: null, canUndo: false, canRedo: false });
+    expect(await h.workbench().adapter.readExactText?.(path)).toBe(savedOriginal);
+    expect((await loadCadDocument(h.workbench().adapter, imported.document.id)).savedVersion).toBe(saved.savedVersion);
+    await act(async () => { await h.cad().save(roundTrip.version); });
+    expect((await loadCadDocument(h.workbench().adapter, roundTrip.document.id)).document).toEqual(roundTrip.document);
+  });
+  it.each(['file', 'agent'] as const)('imports a large short-identity %s document as a fresh draft without replacing its earlier saved original', async mode => {
+    const h = await harness(true);
+    await act(async () => { await h.cad().save(); });
+    const before = h.session.getSnapshot(), adapter = h.workbench().adapter;
+    const path = cadDocumentPath(before.document.id), original = await adapter.readExactText?.(path);
+    const saved = await loadCadDocument(adapter, before.document.id);
+    const source = parseCadDocument(cadBudgetFixture(CAD_FORMER_DOCUMENT_BYTES + 1, 'a'));
+    let receipt: unknown;
+    if (mode === 'file') {
+      const text = JSON.stringify(source);
+      const file = new File([text], 'part.cad.json');
+      await act(async () => { receipt = await h.cad().importDocument(file); });
+    } else {
+      await act(async () => { receipt = await h.cad().importDocumentValue(source, before.version); });
+    }
+    const imported = h.session.getSnapshot();
+    expect(receipt).toMatchObject({ imported: true, sourceDocumentId: 'a', documentId: imported.document.id, version: imported.version });
+    expect(utf8Bytes(JSON.stringify(imported.document))).toBe(CAD_FORMER_DOCUMENT_BYTES + CAD_BUDGET_APP_ID.length);
+    expect(imported.document.features).toEqual(source.features);
+    expect(imported.document.parameters).toEqual(source.parameters);
+    expect(imported).toMatchObject({ dirty: true, savedVersion: null, canUndo: false, canRedo: false });
+    expect(await adapter.readExactText?.(path)).toBe(original);
+    expect(await loadCadDocument(adapter, before.document.id)).toEqual(saved);
+  });
+  it('validates the final fresh-identity document while retaining exact source geometry', async () => {
+    const h = await harness();
+    const source = parseCadDocument(cadBudgetFixture(CAD_FORMER_DOCUMENT_BYTES - (CAD_BUDGET_APP_ID.length - 1), 'a'));
+    let receipt: unknown;
+    await act(async () => { receipt = await h.cad().importDocumentValue(source); });
+    const accepted = h.session.getSnapshot();
+    expect(receipt).toMatchObject({ imported: true, sourceDocumentId: 'a', documentId: accepted.document.id, version: accepted.version });
+    expect(utf8Bytes(JSON.stringify(accepted.document))).toBe(CAD_FORMER_DOCUMENT_BYTES);
+    expect(accepted.document.features).toEqual(source.features);
+    expect(accepted).toMatchObject({ dirty: true, savedVersion: null, canUndo: false });
+  });
   it('uses a separately owned native preview and restores the accepted build identity on Cancel without changing history', async () => {
     const h = await harness(true), acceptedBuild: CadBuildResult = { buildId: 'accepted-build', meshes: [], diagnostics: [], durationMs: 1 };
     kernel.build.mockResolvedValue(acceptedBuild);
@@ -527,8 +731,7 @@ describe('CAD controller asynchronous guards', () => {
   it('routes the visible explicit Curve import choice through the same worker and cancels curve exports before downloads', async () => {
     const h = await harness();
     kernel.importDxfCurve.mockImplementation(async (input: CadDxfCurveImportInput) => importCadDxfCurve(input));
-    const file = new File([curveDxf], 'Rail.dxf');
-    Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(curveDxf).buffer });
+    const file = sourceTextFile(curveDxf, 'Rail.dxf');
     await act(async () => { await h.cad().importDocument(file); });
     expect(h.session.getSnapshot().workflowOpen).toBe(true);
     await act(async () => { await h.cad().confirmImport('mm', 'curve'); });
@@ -609,6 +812,54 @@ describe('CAD controller asynchronous guards', () => {
   const solidSource = { format: 'step' as const, fileName: 'Valve.step', encoding: 'utf8' as const, data: 'ISO-10303-21;\r\nEND-ISO-10303-21;\r\n' };
   const solidAnalysis = { format: 'step' as const, fileName: solidSource.fileName, representation: 'exact-brep' as const, volume: 1000, solidCount: 1,
     sourceBytes: new TextEncoder().encode(solidSource.data).length, bounds: { min: [0, 0, 0] as const, max: [10, 10, 10] as const } };
+  it.each(['step', 'dxf'] as const)('reads exact local %s text through bounded Blob slices instead of a full byte buffer', async format => {
+    const h = await harness(), text = format === 'step' ? '\uFEFF' + solidSource.data + '/* 名😀 */\r\n' + ' '.repeat(100_000)
+      : '\uFEFF0\r\nSECTION\r\n2\r\nENTITIES\r\n0\r\nCIRCLE\r\n10\r\n0\r\n20\r\n0\r\n40\r\n2\r\n0\r\nENDSEC\r\n0\r\nEOF\r\n' + ' '.repeat(100_000);
+    const bytes = new TextEncoder().encode(text), fileName = `source.${format}`, file = new File([text], fileName), originalSlice = file.slice.bind(file);
+    const fullRead = vi.fn(() => { throw new Error('A full source byte buffer was requested'); });
+    Object.defineProperty(file, 'stream', { value: undefined }); Object.defineProperty(file, 'arrayBuffer', { value: fullRead });
+    const slices = vi.fn((start = 0, end = file.size) => {
+      const slice = originalSlice(start, end); Object.defineProperty(slice, 'arrayBuffer', { value: async () => bytes.buffer.slice(start, end) }); return slice;
+    }); Object.defineProperty(file, 'slice', { value: slices });
+    if (format === 'step') kernel.importSolid.mockResolvedValue({ ...solidAnalysis, fileName, sourceBytes: bytes.length });
+    else kernel.importDxf.mockResolvedValue(importCadDxfSketch({ fileName, text, units: 'mm' }));
+    await act(async () => { await h.cad().importDocument(file); await h.cad().confirmImport(format === 'step' ? 'file' : 'mm'); });
+    expect(slices).toHaveBeenCalledTimes(2); expect(fullRead).not.toHaveBeenCalled();
+    const feature = h.session.getSnapshot().document.features[0];
+    expect(feature).toMatchObject({ source: format === 'step' ? { data: text } : { text } });
+    await act(async () => { await h.cad().save(); });
+    expect((await loadCadDocument(h.workbench().adapter, h.session.getSnapshot().document.id)).document.features[0]).toEqual(feature);
+  });
+  it('cancels a pending textual slice immediately and rejects invalid UTF-8 without accepting partial source or late data', async () => {
+    const h = await harness(), before = h.session.getSnapshot(), input = deferred<ArrayBuffer>(), started = deferred<void>(), file = new File(['STEP'], 'pending.step');
+    Object.defineProperty(file, 'stream', { value: undefined });
+    Object.defineProperty(file, 'arrayBuffer', { value: () => { throw new Error('Full read'); } });
+    Object.defineProperty(file, 'slice', { value: () => { const slice = new Blob(['STEP']); Object.defineProperty(slice, 'arrayBuffer', { value: () => { started.resolve(); return input.promise; } }); return slice; } });
+    await act(async () => { await h.cad().importDocument(file); });
+    let operation: Promise<unknown> | undefined, rejected: Promise<void> | undefined;
+    await act(async () => { operation = h.cad().confirmImport('file'); rejected = expect(operation).rejects.toMatchObject({ name: 'AbortError' }); await started.promise; });
+    await act(async () => { h.cad().cancelImport(); await rejected; });
+    await act(async () => input.resolve(new TextEncoder().encode(solidSource.data).buffer));
+    expect(kernel.importSolid).not.toHaveBeenCalled(); expect(h.session.getSnapshot()).toEqual(before);
+    const invalid = new File([new Uint8Array([0xff, 0xfe])], 'invalid.step');
+    Object.defineProperty(invalid, 'stream', { value: () => new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array([0xff, 0xfe])); controller.close(); } }) });
+    await act(async () => { await h.cad().importDocument(invalid); await expect(h.cad().confirmImport('file')).rejects.toMatchObject({ code: 'INVALID_ENCODING' }); });
+    expect(h.session.getSnapshot().document).toBe(before.document); expect(kernel.importSolid).not.toHaveBeenCalled();
+    await act(async () => h.cad().cancelImport());
+  });
+  it('reviews and imports a local STEP above the former byte cap through the same exact-source agent boundary, then saves its original', async () => {
+    const h = await harness(), before = h.session.getSnapshot(), text = solidSource.data + ' '.repeat(2 * 1024 * 1024), bytes = new TextEncoder().encode(text);
+    const file = sourceTextFile(text, solidSource.fileName);
+    kernel.importSolid.mockResolvedValue({ ...solidAnalysis, sourceBytes: bytes.length, solidCount: 257 });
+    await act(async () => { await h.cad().importDocument(file); });
+    expect(h.cad().importFile?.file).toBe(file); expect(h.session.getSnapshot().document).toBe(before.document);
+    await act(async () => { await h.cad().confirmImport('file'); });
+    const imported = h.session.getSnapshot();
+    expect(imported.document.features[0]).toMatchObject({ kind: 'imported', source: { ...solidSource, data: text } });
+    expect(kernel.importSolid).toHaveBeenCalledWith({ ...solidSource, data: text }, expect.any(AbortSignal));
+    await act(async () => { await h.cad().save(); });
+    expect((await loadCadDocument(h.workbench().adapter, imported.document.id)).document).toEqual(imported.document);
+  });
   it('imports a validated native solid through the shared agent operation and preserves its original on save', async () => {
     const h = await harness(); const before = h.session.getSnapshot();
     kernel.importSolid.mockResolvedValue(solidAnalysis);
@@ -659,9 +910,7 @@ describe('CAD controller asynchronous guards', () => {
   });
   it('cancels native parsing without changing the draft or publishing a failure banner', async () => {
     const h = await harness(); const before = h.session.getSnapshot();
-    const bytes = new TextEncoder().encode(solidSource.data); const buffer = new ArrayBuffer(bytes.length); new Uint8Array(buffer).set(bytes);
-    const file = new File([solidSource.data], solidSource.fileName);
-    Object.defineProperty(file, 'arrayBuffer', { value: async () => buffer });
+    const file = sourceTextFile(solidSource.data, solidSource.fileName);
     const parsed = deferred<typeof solidAnalysis>(); kernel.importSolid.mockReturnValue(parsed.promise);
     await act(async () => { await h.cad().importDocument(file); });
     let operation: Promise<unknown> | undefined;
@@ -995,25 +1244,57 @@ describe('CAD controller asynchronous guards', () => {
     expect(result).toMatchObject({ ok: true, data: { open: true, name: 'Part' } });
   });
   it('preserves the draft if storage switches during a portable file read', async () => {
-    const h = await harness(); const input = deferred<ArrayBuffer>();
+    const h = await harness(); const input = deferred<Uint8Array>(), started = deferred<void>();
     const file = new File([], 'import.cad.json');
-    Object.defineProperty(file, 'arrayBuffer', { value: () => input.promise });
+    let cancelled = false;
+    Object.defineProperty(file, 'stream', { value: () => new ReadableStream<Uint8Array>({
+      async pull(controller) { started.resolve(); const bytes = await input.promise; if (!cancelled) { controller.enqueue(bytes); controller.close(); } },
+      cancel() { cancelled = true; },
+    }) });
     const initial = h.session.getSnapshot();
     let operation: Promise<unknown> | undefined;
-    await act(async () => { operation = h.cad().importDocument(file); });
+    let rejection: Promise<void> | undefined;
+    await act(async () => {
+      operation = h.cad().importDocument(file); rejection = expect(operation).rejects.toMatchObject({ code: 'STALE_STATE' }); await started.promise;
+    });
     await h.switchWorkbench(await openWorkbench('cad-controller-b'));
     await act(async () => {
-      input.resolve(new TextEncoder().encode(JSON.stringify(createCadDocument('Imported', 'cad_imported'))).buffer);
-      await expect(operation).rejects.toMatchObject({ code: 'STALE_STATE' });
+      input.resolve(new TextEncoder().encode(JSON.stringify(createCadDocument('Imported', 'cad_imported'))));
+      await rejection;
     });
+    expect(cancelled).toBe(true);
     expect(h.session.getSnapshot().document).toBe(initial.document);
+  });
+  it.each(['cancel', 'unmount'] as const)('releases an active portable JSON read on %s without accepting its late complete data', async change => {
+    const h = await harness(true);
+    await act(async () => { await h.cad().save(); });
+    const before = h.session.getSnapshot(), path = cadDocumentPath(before.document.id);
+    const original = await h.workbench().adapter.readExactText?.(path);
+    const input = deferred<Uint8Array>(), started = deferred<void>(), cancel = vi.fn();
+    let cancelled = false;
+    const file = new File([], 'large.cad.json');
+    Object.defineProperty(file, 'stream', { value: () => new ReadableStream<Uint8Array>({
+      async pull(controller) { started.resolve(); const bytes = await input.promise; if (!cancelled) { controller.enqueue(bytes); controller.close(); } },
+      cancel() { cancelled = true; cancel(); },
+    }) });
+    let rejection: Promise<void> | undefined;
+    await act(async () => {
+      const pending = h.cad().importDocument(file); rejection = expect(pending).rejects.toMatchObject({ name: 'AbortError' }); await started.promise;
+    });
+    await act(async () => {
+      if (change === 'cancel') h.cad().cancelImport(); else { root?.unmount(); root = undefined; }
+      input.resolve(new TextEncoder().encode(JSON.stringify(cadBudgetFixture(CAD_FORMER_DOCUMENT_BYTES + 1))));
+      await rejection;
+    });
+    expect(cancel).toHaveBeenCalled(); expect(cancelled).toBe(true);
+    expect(h.session.getSnapshot()).toBe(before);
+    expect(await h.workbench().adapter.readExactText?.(path)).toBe(original);
   });
   it('rejects malformed UTF-8 CAD JSON without replacing characters or the draft', async () => {
     const h = await harness(); const initial = h.session.getSnapshot();
     const bytes = new TextEncoder().encode(JSON.stringify(createCadDocument('Invalid byte here', 'cad_source')));
     bytes[bytes.indexOf('I'.charCodeAt(0))] = 0xff;
     const file = new File([bytes], 'broken.wireedm-cad');
-    Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.buffer });
     await act(async () => { await expect(h.cad().importDocument(file)).rejects.toMatchObject({ code: 'INVALID_ENCODING' }); });
     expect(h.session.getSnapshot()).toBe(initial);
   });
@@ -1023,7 +1304,6 @@ describe('CAD controller asynchronous guards', () => {
     const document = { ...createCadDocument('Unicode Ø', 'cad_source'), features: [{ id: 'source', name: 'Original', kind: 'imported', suppressed: false, source: original }] };
     const bytes = new TextEncoder().encode(`\uFEFF${JSON.stringify(document)}`);
     const file = new File([bytes], 'source.wireedm-cad');
-    Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.buffer });
     await act(async () => { await h.cad().importDocument(file); });
     expect(h.session.getSnapshot().document).toMatchObject({ name: 'Unicode Ø', features: [{ source: original }] });
   });

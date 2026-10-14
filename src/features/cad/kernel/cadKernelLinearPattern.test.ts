@@ -33,6 +33,7 @@ describe('bounded native linear-pattern staging', () => {
     built([...seed, linear({ spacing: [spacing, 0, 0] })], model => {
       expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes).toHaveLength(1);
       const mesh = model.result.meshes[0]; expect(mesh.featureId).toBe('pattern'); expect(mesh.volume).toBeCloseTo(96, 7);
+      expect(mesh.solidCount).toBe(4);
       expect(mesh.bounds.min[0]).toBeCloseTo(Math.min(0, spacing * 3), 7);
       expect(mesh.bounds.max[0]).toBeCloseTo(Math.max(0, spacing * 3) + 2, 7);
       expect(model.section({ bodyId: 'pattern', plane: 'XY', offset: 2 }).contourCount).toBe(4);
@@ -42,6 +43,7 @@ describe('bounded native linear-pattern staging', () => {
   it.each([1, -1])('retains the fused material result for overlapping copies, spacing=%s', spacing => {
     built([...seed, linear({ spacing: [spacing, 0, 0] })], model => {
       expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes[0].volume).toBeCloseTo(60, 7);
+      expect(model.result.meshes[0].solidCount).toBe(1);
       expect(model.section({ bodyId: 'pattern', plane: 'XY', offset: 2 }).contourCount).toBe(1);
     });
   });

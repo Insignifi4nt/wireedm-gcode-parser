@@ -2,7 +2,7 @@ import { act, useState, useSyncExternalStore } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createCadDocument } from '@/domain/cad/cadSchema';
-import type { CadDocument } from '@/domain/cad/cadDocument';
+import type { CadBuildResult, CadDocument } from '@/domain/cad/cadDocument';
 import { CadFeatureEditor } from './CadFeatureEditor';
 import { CadSession } from './cadSession';
 import { cadFeatureCandidateEdits, cadFeatureCandidateKey, type CadFeaturePreviewCommand, type CadFeaturePreviewState } from './cadFeaturePreview';
@@ -32,6 +32,36 @@ async function changeLengthExpression(value: string) {
   const close = document.querySelector<HTMLButtonElement>('button[aria-label="Close Length relation help"]'); if (!close) throw new Error('Missing relation close');
   await act(async () => close.click());
 }
+it('shows the current native preview solid count while keeping old, failed and unknown preview facts distinct from Apply eligibility', async () => {
+  const session = new CadSession(part), before = session.getSnapshot(), preview = vi.fn<(command: CadFeaturePreviewCommand) => void>();
+  let publish: ((state: CadFeaturePreviewState) => void) | undefined;
+  function Harness() {
+    const [state, setState] = useState<CadFeaturePreviewState>({ kind: 'idle' }); publish = setState;
+    return <CadFeatureEditor feature={before.document.features[1]} document={before.document} isNew={false} documentVersion={before.version}
+      featurePreview={state} onFeaturePreview={preview} onApply={vi.fn()} onCancel={vi.fn()} onPendingChange={session.setWorkflowOpen} />;
+  }
+  await act(async () => root.render(<Harness />)); await changeLength('20');
+  const command = preview.mock.calls.at(-1)?.[0]; if (!command || command.kind !== 'candidate') throw new Error('Expected candidate');
+  const mesh = { featureId: 'pad', name: 'Pad', positions: [], normals: [], indices: [], edges: [], faceGroups: [], edgeGroups: [], volume: 4000,
+    bounds: { min: [0, 0, 0] as const, max: [20, 10, 20] as const } };
+  const result: CadBuildResult = { buildId: 'current', meshes: [{ ...mesh, solidCount: 2 }], diagnostics: [], durationMs: 1 };
+  const ready: Extract<CadFeaturePreviewState, { kind: 'ready' }> = { kind: 'ready', owner: command.owner, baseVersion: command.expectedVersion, featureId: 'pad', candidateId: 'current',
+    definitionKey: cadFeatureCandidateKey(command.edits), document: applyCadEdits(before.document, command.edits), result };
+  await act(async () => publish?.(ready));
+  expect(container.querySelector('.cad-feature-preview-status')?.textContent).toBe('Preview · 2 solids · Apply to keep');
+  const apply = container.querySelector<HTMLButtonElement>('button[type="submit"]'); if (!apply) throw new Error('Apply missing'); expect(apply.disabled).toBe(false);
+  await changeLength('21');
+  expect(container.querySelector('.cad-feature-preview-status')?.textContent).toBe('Updating preview · last valid result'); expect(apply.disabled).toBe(true);
+  const next = preview.mock.calls.at(-1)?.[0]; if (!next || next.kind !== 'candidate') throw new Error('Expected next candidate');
+  await act(async () => publish?.({ ...ready, kind: 'waiting', definitionKey: cadFeatureCandidateKey(next.edits), candidateId: 'next', lastValid: ready }));
+  expect(container.querySelector('.cad-feature-preview-status')?.textContent).toBe('Updating preview · last valid result'); expect(apply.disabled).toBe(true);
+  await act(async () => publish?.({ ...ready, kind: 'error', definitionKey: cadFeatureCandidateKey(next.edits), candidateId: 'next', stage: 'kernel', message: 'Join could not be built', diagnostics: [], lastValid: ready }));
+  expect(container.querySelector('.cad-feature-preview-status')?.textContent).toBe('Join could not be built'); expect(apply.disabled).toBe(true);
+  await act(async () => publish?.({ ...ready, candidateId: 'unknown', definitionKey: cadFeatureCandidateKey(next.edits), document: applyCadEdits(before.document, next.edits),
+    result: { ...result, meshes: [mesh] } }));
+  expect(container.querySelector('.cad-feature-preview-status')?.textContent).toBe('Preview · Apply to keep'); expect(apply.disabled).toBe(false);
+  expect(session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: false });
+});
 it('edits a displayed Pad depth through its exact named driver, previews all dependents and commits the correlated batch as one reversible history step', async () => {
   const outline = part.features[0], pad = part.features[1]; if (outline.kind !== 'sketch' || pad.kind !== 'extrude') throw new Error('Expected sources');
   const document = { ...part, features: [outline, { ...pad, distance: ' depth ' },

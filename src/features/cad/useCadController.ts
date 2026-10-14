@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
 import type { CadBuildResult, CadDocument } from '@/domain/cad/cadDocument';
 import { cadFeatureProducesBody, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
-import { listCadDocuments, loadCadDocument, saveCadDocument, MAX_CAD_FILE_BYTES, type CadLibraryEntry } from '@/domain/cad/cadStorage';
+import { listCadDocuments, loadCadDocument, saveCadDocument, type CadLibraryEntry } from '@/domain/cad/cadStorage';
+import { readExactUtf8Blob } from '@/domain/storage/exactTextStream';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { isCadSectionResult, parseCadSectionRequest, type CadSectionRequest } from '@/domain/cad/cadSection';
 import type { DraftReadSnapshot } from '@/features/webmcp/workbenchSiteTools';
@@ -13,7 +14,7 @@ import { installCadPlugin, listCadPlugins } from '@/domain/cad/plugins/cadPlugin
 import type { CadViewportCommand, CadWorkbenchViewportControls, CadViewportState } from './cadViewportControls';
 import { preparePreviewCapture, downloadPreviewCapture, type PreviewCaptureArtifact } from '@/features/webmcp/previewCapture';
 import { createCadTopologyActions } from './cadTopologyActions';
-import { cadBytesToBase64, cadSolidImportBytes, isCadSolidImportResult, MAX_CAD_IMPORT_BYTES, parseCadSolidImportSource, type CadSolidImportSource } from '@/domain/cad/cadImports';
+import { cadBytesToBase64, cadSolidImportByteLength, isCadSolidImportResult, parseCadSolidImportSource, type CadSolidImportSource } from '@/domain/cad/cadImports';
 import { parseCadDxfImportSource, type CadDxfUnits } from '@/domain/cad/cadDxfSource';
 import type { DxfUnitDeclaration } from '@/domain/dxf/types';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
@@ -257,27 +258,36 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   async function importDocument(file: File) {
     const workbench = connected(); assertCanSwitch(); requireCleanReplacement();
     if (/\.(step|stp|stl|dxf)$/i.test(file.name)) {
-      if (!file.size || file.size > MAX_CAD_IMPORT_BYTES) throw new ToolError('FILE_TOO_LARGE', 'CAD geometry files must be nonempty and at most 2 MiB.');
+      if (!file.size) throw new ToolError('EMPTY_FILE', 'CAD geometry files must be nonempty.');
       setImportFile({ file, version: session.getSnapshot().version, adapter: workbench.adapter }); session.setWorkflowOpen(true, 'import');
       return;
     }
-    if (file.size > MAX_CAD_FILE_BYTES) throw new ToolError('FILE_TOO_LARGE', 'CAD imports must be 4 MiB or smaller.');
     const expected = session.getSnapshot().version;
+    const controller = new AbortController();
+    importAbort.current?.abort(); importAbort.current = controller;
     return run(async () => {
-      const bytes = await file.arrayBuffer();
-      if (bytes.byteLength > MAX_CAD_FILE_BYTES) throw new ToolError('FILE_TOO_LARGE', 'CAD imports must be 4 MiB or smaller.');
-      let text: string;
-      try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
-      catch { throw new ToolError('INVALID_ENCODING', 'CAD JSON must contain valid UTF-8. The draft has not changed.'); }
-      return acceptImportedDocument(JSON.parse(text), workbench, expected);
+      try {
+        let text: string;
+        try { text = await readExactUtf8Blob(file, controller.signal); }
+        catch (error) {
+          if (current.current.app.connectedWorkbench?.adapter !== workbench.adapter) throw new ToolError('STALE_STATE', 'Storage changed during CAD import.');
+          controller.signal.throwIfAborted();
+          if (error instanceof TypeError) throw new ToolError('INVALID_ENCODING', 'CAD JSON must contain valid UTF-8. The draft has not changed.');
+          throw error;
+        }
+        // Only the document transport BOM is removed; embedded source strings stay exact.
+        return acceptImportedDocument(JSON.parse(text.replace(/^\uFEFF/, '')), workbench, expected, controller.signal);
+      } finally {
+        if (importAbort.current === controller) importAbort.current = null;
+      }
     });
   }
   function acceptImportedDocument(value: unknown, workbench: NonNullable<App['connectedWorkbench']>, expectedVersion: string, signal?: AbortSignal) {
     signal?.throwIfAborted(); session.assertVersion(expectedVersion); assertCanSwitch(); requireCleanReplacement();
     if (current.current.app.connectedWorkbench?.adapter !== workbench.adapter) throw new ToolError('STALE_STATE', 'Storage changed during CAD import.');
     const document = parseCadDocument(value);
-    if (new TextEncoder().encode(JSON.stringify(document)).length > MAX_CAD_FILE_BYTES) throw new ToolError('FILE_TOO_LARGE', 'CAD imports must be 4 MiB or smaller.');
-    // Portable imports always receive a fresh identity; never overwrite an installed save.
+    // Portable imports receive a fresh identity. replace validates the final
+    // document before changing the accepted draft or any installed save.
     session.replace({ ...document, id: `cad_${crypto.randomUUID()}` }); setBuild(null); changeOpen(true);
     return { imported: true, documentId: session.getSnapshot().document.id, sourceDocumentId: document.id, version: session.getSnapshot().version };
   }
@@ -299,7 +309,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       const analysis = await client.importSolid(source, signal);
       signal?.throwIfAborted(); session.assertVersion(expectedVersion); assertCanSwitch(); requireCleanReplacement(scope);
       if (current.current.app.connectedWorkbench?.adapter !== workbench.adapter) throw new ToolError('STALE_STATE', 'Storage changed during CAD import.');
-      if (!isCadSolidImportResult(analysis) || analysis.format !== source.format || analysis.fileName !== source.fileName || analysis.sourceBytes !== cadSolidImportBytes(source).length) {
+      if (!isCadSolidImportResult(analysis) || analysis.format !== source.format || analysis.fileName !== source.fileName || analysis.sourceBytes !== cadSolidImportByteLength(source)) {
         throw new ToolError('INVALID_IMPORT_RESULT', 'CAD import did not return a matching validated solid.');
       }
       const document = parseCadDocument({ ...createCadDocument(source.fileName.replace(/\.(step|stp|stl)$/i, '')), features: [{
@@ -352,16 +362,27 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     connected(); session.assertVersion(pending.version); requireCleanReplacement('import');
     const controller = new AbortController(); importAbort.current = controller;
     try {
-      const bytes = new Uint8Array(await pending.file.arrayBuffer());
+      const stl = /\.stl$/i.test(pending.file.name);
+      if (stl && units !== 'mm' && units !== 'inch') throw new ToolError('INVALID_UNITS', 'Choose millimeters or inches for STL.');
+      let contents: string | Uint8Array;
+      if (stl) contents = new Uint8Array(await pending.file.arrayBuffer());
+      else {
+        try { contents = await readExactUtf8Blob(pending.file, controller.signal); }
+        catch (error) {
+          controller.signal.throwIfAborted();
+          if (error instanceof TypeError) throw new ToolError('INVALID_ENCODING', 'CAD geometry text must contain valid UTF-8. The draft has not changed.');
+          throw error;
+        }
+      }
       controller.signal.throwIfAborted();
+      session.assertVersion(pending.version);
       if (current.current.app.connectedWorkbench?.adapter !== pending.adapter) throw new ToolError('STALE_STATE', 'Storage changed during CAD import.');
-      if (/\.dxf$/i.test(pending.file.name)) return await (dxfKind === 'curve' ? importDxfCurveSource : importDxfSource)({ format: 'dxf', fileName: pending.file.name,
-        text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes), ...(units === 'file' ? {} : { units }) }, pending.version, controller.signal, 'import');
+      if (typeof contents === 'string' && /\.dxf$/i.test(pending.file.name)) return await (dxfKind === 'curve' ? importDxfCurveSource : importDxfSource)({ format: 'dxf', fileName: pending.file.name,
+        text: contents, ...(units === 'file' ? {} : { units }) }, pending.version, controller.signal, 'import');
       if (dxfKind !== 'sketch') throw new ToolError('INVALID_IMPORT_KIND', 'Curve import requires a DXF file.');
-      if (/\.stl$/i.test(pending.file.name) && units !== 'mm' && units !== 'inch') throw new ToolError('INVALID_UNITS', 'Choose millimeters or inches for STL.');
-      const source: CadSolidImportSource = /\.stl$/i.test(pending.file.name)
-        ? { format: 'stl', fileName: pending.file.name, encoding: 'base64', data: cadBytesToBase64(bytes), units: units === 'inch' ? 'inch' : 'mm' }
-        : { format: 'step', fileName: pending.file.name, encoding: 'utf8', data: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) };
+      const source: CadSolidImportSource = typeof contents === 'string'
+        ? { format: 'step', fileName: pending.file.name, encoding: 'utf8', data: contents }
+        : { format: 'stl', fileName: pending.file.name, encoding: 'base64', data: cadBytesToBase64(contents), units: units === 'inch' ? 'inch' : 'mm' };
       return await importSolidSource(source, pending.version, controller.signal, 'import');
     } finally { if (importAbort.current === controller) importAbort.current = null; }
   }
@@ -454,7 +475,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   function exportDocument(expectedVersion = session.getSnapshot().version) {
     editable(expectedVersion); session.assertWorkflowClosed();
     const document = session.getSnapshot().document;
-    downloadCadBlob(new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' }), `${fileBase(document.name)}.cad.json`);
+    downloadCadBlob(new Blob([JSON.stringify(document)], { type: 'application/json' }), `${fileBase(document.name)}.cad.json`);
     return { downloadRequested: true, fileName: `${fileBase(document.name)}.cad.json`, version: expectedVersion };
   }
   async function exportSolid(format: 'step' | 'stl', expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {

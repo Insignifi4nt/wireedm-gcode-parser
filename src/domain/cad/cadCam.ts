@@ -41,7 +41,7 @@ function appendPluginNotes(result: PathPlanningDocument, sketches: readonly CadS
 
 /** Shared analytic handoff for sketches and validated exact-kernel planar sections. */
 export function cadEntitiesToCam(entities: readonly DxfEntity[], sourceDocument?: CadDocument): PathPlanningDocument {
-  if (entities.length === 0 || entities.length > 8192 || entities.some(entity => entity.type === 'polyline' || entity.type === 'lwpolyline')) throw new CadError('cam-geometry', 'CAD handoff requires one to 8192 analytic line, arc or circle entities.');
+  if (entities.length === 0 || entities.some(entity => entity.type === 'polyline' || entity.type === 'lwpolyline')) throw new CadError('cam-geometry', 'CAD handoff requires complete analytic line, arc or circle entities.');
   const units = dxfUnitsFromInsunitsCode(4);
   const result = createPathPlanningDocumentFromDxfEntities([...entities], { endpointTolerance: 1e-7, coincidenceEpsilon: 1e-9 }, {
     units, unitDeclaration: { status: 'recognized', units }, coordinateScaleToMillimeters: 1,

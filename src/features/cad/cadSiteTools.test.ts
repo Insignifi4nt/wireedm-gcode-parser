@@ -5,8 +5,36 @@ import { CadEditSchema } from '@/domain/cad/cadOperations';
 import { CadToolEditEnvelope } from './cadToolSchemas';
 import { cadSiteTools } from './cadSiteTools';
 import type { CadController } from './useCadController';
+import type { CadBuildResult } from '@/domain/cad/cadDocument';
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('advertises the same complete sketch profile capacity that the shared authoring schema accepts', async () => {
+    const tool = cadSiteTools(() => ({} as CadController)).find(entry => entry.name === 'cad_describe_features');
+    if (!tool) throw new Error('Missing feature discovery');
+    const reply = await tool.execute({ kind: 'sketch' }) as { readonly ok: boolean; readonly data: { readonly schema: Parameters<typeof Value.Check>[0] } };
+    if (!reply.ok) throw new Error('Expected discovery');
+    const data = reply.data as { schema: Parameters<typeof Value.Check>[0] };
+    const sketch = { kind: 'sketch', id: 'many', name: 'Many contours', suppressed: false, plane: 'XY', offset: 0,
+      profiles: Array.from({ length: 257 }, (_, index) => ({ id: `circle_${index}`, name: `Circle ${index}`, construction: false, geometry: { kind: 'circle', x: index * 4, y: 0, radius: 1 } })) };
+    expect(Value.Check(CadFeatureSchema, sketch)).toBe(true); expect(Value.Check(data.schema, sketch)).toBe(true);
+    expect(Value.Check(data.schema, { ...sketch, unknown: true })).toBe(false);
+  });
+  it('reports native solid counts per paginated body and keeps older unknown counts explicitly null', async () => {
+    const mesh = { featureId: 'joined', name: 'Joined', positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2], edges: [],
+      faceGroups: [{ start: 0, count: 3, key: 'face' }], edgeGroups: [], volume: 8064, bounds: { min: [0, 0, 0] as const, max: [24, 20, 20] as const } };
+    const build: CadBuildResult = { buildId: 'accepted_join', meshes: [{ ...mesh, solidCount: 2 }, { ...mesh, featureId: 'older', name: 'Older body', volume: 64 }], diagnostics: [], durationMs: 1 };
+    const inspectBuild = vi.fn(async () => build), tool = cadSiteTools(() => ({ inspectBuild }) as unknown as CadController).find(entry => entry.name === 'cad_build');
+    if (!tool) throw new Error('Missing build tool');
+    expect(await tool.execute({ expectedVersion: 'accepted', offset: 0, limit: 1 })).toMatchObject({ ok: true, data: {
+      version: 'accepted', buildId: 'accepted_join', totalBodies: 2, nextBodyOffset: 1,
+      bodies: [{ featureId: 'joined', volumeMm3: 8064, solidCount: 2 }],
+    } });
+    expect(await tool.execute({ expectedVersion: 'accepted', offset: 1, limit: 1 })).toMatchObject({ ok: true, data: {
+      totalBodies: 2, nextBodyOffset: null, bodies: [{ featureId: 'older', volumeMm3: 64, solidCount: null }],
+    } });
+    expect(inspectBuild).toHaveBeenCalledTimes(2); expect(inspectBuild).toHaveBeenCalledWith('accepted', expect.any(AbortSignal));
+    expect(build.meshes[1]).not.toHaveProperty('solidCount');
+  });
   it('advertises plane selection with the shared strict view-only contract and rejects creation or face-derived arguments before operations', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid plane selection reached operations'); });
     const tool = cadSiteTools(controller).find(tool => tool.name === 'cad_set_viewport');
@@ -181,7 +209,10 @@ describe('CAD tool argument boundary and discovery', () => {
     expect(controller).not.toHaveBeenCalled();
     expect(JSON.stringify(tool.inputSchema).length).toBeLessThan(JSON.stringify(CadDocumentSchema).length / 3);
     expect(Value.Check(tool.inputSchema, { ...input, document: { ...document, unknown: true } })).toBe(false);
-    expect(Value.Check(tool.inputSchema, { ...input, document: { ...document, features: Array(257).fill(document.features[0]) } })).toBe(false);
+    const largeEnvelope = { ...input, document: { ...document, features: Array(257).fill(document.features[0]) } };
+    expect(Value.Check(tool.inputSchema, largeEnvelope)).toBe(true);
+    expect(await tool.execute(largeEnvelope)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(controller).not.toHaveBeenCalled();
   });
   it('rejects inherited and accessor arguments before schema reads or any shared operation', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('A malformed request reached the controller'); });

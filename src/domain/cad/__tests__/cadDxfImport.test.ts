@@ -5,7 +5,7 @@ import { cadSketchToDxf, cadSketchToCam } from '../cadCam';
 import { cadSketchToEntities, cadProfileContainsPoint, resolveCadProfile, resolveCadSketchRegions } from '../cadSketchGeometry';
 import { measureCadSketch } from '../cadMeasurements';
 import { importCadDxfSketch, isCadDxfImportResult, parseCadDxfImportInput } from '../cadDxfImport';
-import { parseCadDxfImportSource, MAX_CAD_DXF_SOURCE_BYTES } from '../cadDxfSource';
+import { parseCadDxfImportSource } from '../cadDxfSource';
 import { CadError } from '../cadError';
 
 function part(geometries: readonly CadProfile[]): CadDocument {
@@ -28,6 +28,34 @@ function dxf(body: readonly (string | number)[], units: string | number | null =
 const circleBody = ['0', 'CIRCLE', '8', 'original-layer', '10', '0', '20', '0', '40', '2'];
 
 describe('exact standalone CAD DXF round trip', () => {
+  it('preserves a complete local DXF beyond the shared CAM byte ceiling without dropping its analytic contour', () => {
+    const text = dxf(circleBody) + ' '.repeat(16 * 1024 * 1024 + 1);
+    const imported = importCadDxfSketch({ fileName: 'large-local.dxf', text });
+    expect(imported.sketch.source?.text).toBe(text); expect(imported.sourceEntityCount).toBe(1); expect(imported.contourCount).toBe(1);
+    expect(isCadDxfImportResult(imported)).toBe(true);
+    expect(measureCadSketch(fromSketch(imported.sketch), imported.sketch.id).materialAreaMm2).toBeCloseTo(4 * Math.PI, 7);
+  });
+  it('imports and exports every edge of a closed contour beyond former profile and aggregate edge ceilings', () => {
+    const count = 8193, radius = 100, vertices = Array.from({ length: count }, (_, index) => ({ x: radius * Math.cos(index * 2 * Math.PI / count), y: radius * Math.sin(index * 2 * Math.PI / count) }));
+    const text = dxf(vertices.flatMap((vertex, index) => {
+      const next = vertices[(index + 1) % count]; return ['0', 'LINE', '10', vertex.x, '20', vertex.y, '11', next.x, '21', next.y];
+    }));
+    const imported = importCadDxfSketch({ fileName: 'many-edges.dxf', text });
+    expect(imported.sourceEntityCount).toBe(count); expect(imported.contourCount).toBe(1); expect(imported.sketch.source?.text).toBe(text);
+    expect(isCadDxfImportResult(imported)).toBe(true);
+    const document = fromSketch(imported.sketch), measurements = measureCadSketch(document, imported.sketch.id);
+    expect(measurements.materialAreaMm2).toBeCloseTo(count * radius ** 2 * Math.sin(2 * Math.PI / count) / 2, 6);
+    const exported = cadSketchToDxf(document, imported.sketch.id), roundtrip = importCadDxfSketch({ fileName: 'again.dxf', text: exported });
+    expect(roundtrip.sourceEntityCount).toBe(count); expect(roundtrip.sketch.profiles).toHaveLength(1);
+    // Direct polygon authoring uses the same geometry capacity contract as the imported path.
+    expect(part([{ kind: 'polygon', points: vertices.map(vertex => [vertex.x, vertex.y]) }]).features).toHaveLength(1);
+  }, 30_000);
+  it('retains every independent analytic profile beyond the former 256-contour ceiling', () => {
+    const count = 257, text = dxf(Array.from({ length: count }, (_, index) => ['0', 'CIRCLE', '10', index * 4, '20', 0, '40', 1]).flat());
+    const imported = importCadDxfSketch({ fileName: 'profiles.dxf', text });
+    expect(imported.contourCount).toBe(count); expect(imported.sketch.profiles).toHaveLength(count); expect(isCadDxfImportResult(imported)).toBe(true);
+    expect(measureCadSketch(fromSketch(imported.sketch), imported.sketch.id).materialAreaMm2).toBeCloseTo(count * Math.PI, 7);
+  });
   it.each([
     { name: 'rectangle', geometry: { kind: 'rectangle', x: 1, y: 2, width: 20, height: 10, cornerRadius: 0 } },
     { name: 'rounded rectangle', geometry: { kind: 'rectangle', x: 1, y: 2, width: 20, height: 10, cornerRadius: 2 } },
@@ -155,10 +183,14 @@ describe('DXF units, exact source lineage and import rejection', () => {
     expect(() => importCadDxfSketch({ fileName: 'insert.dxf', text: complete.replace('2\nSHAPE\n10\n0\n20\n0\n30\n0\n0\nENDSEC', '2\nSHAPE\n10\n0\n20\n0\n30\n10\n0\nENDSEC') })).toThrow('block insertion heights');
     expect(() => importCadDxfSketch({ fileName: 'block.dxf', text: complete.replace('30\n0\n0\nCIRCLE', '30\n10\n0\nCIRCLE') })).toThrow('block insertion heights');
   });
-  it('bounds UTF-8 original source and rejects non-own data at the source boundary', () => {
+  it('preserves UTF-8 originals above the former source cap and rejects non-own or malformed data', () => {
     const source = { format: 'dxf', fileName: 'part.dxf', text: dxf(circleBody) };
     expect(() => parseCadDxfImportSource(Object.create(source))).toThrow(CadError);
-    expect(() => parseCadDxfImportSource({ ...source, text: 'é'.repeat(MAX_CAD_DXF_SOURCE_BYTES / 2 + 1) })).toThrow('2 MiB');
+    const text = dxf([...Array.from({ length: 1000 }, () => [999, '孔😀'.repeat(320)]).flat(), ...circleBody]);
+    expect(new TextEncoder().encode(text).length).toBeGreaterThan(2 * 1024 * 1024);
+    const imported = importCadDxfSketch({ fileName: 'part.dxf', text });
+    expect(imported.sketch.source?.text).toBe(text); expect(imported.contourCount).toBe(1);
+    expect(isCadDxfImportResult(imported)).toBe(true); expect(measureCadSketch(fromSketch(imported.sketch), imported.sketch.id).materialAreaMm2).toBeCloseTo(4 * Math.PI, 7);
     expect(() => parseCadDxfImportSource({ ...source, fileName: '../part.dxf' })).toThrow(CadError);
     for (const fileName of ['part\n.dxf', 'part\u0000.dxf', 'part\u007f.dxf']) expect(() => parseCadDxfImportSource({ ...source, fileName })).toThrow(CadError);
     expect(() => parseCadDxfImportSource({ ...source, text: '\ud800' })).toThrow('unpaired');

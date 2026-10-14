@@ -124,6 +124,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
   useLayoutEffect(() => () => previewCallback.current?.({ kind: 'clear', owner: previewOwner }), [previewOwner]);
   const preview = featurePreview && featurePreview.kind !== 'idle' && featurePreview.owner === previewOwner && featurePreview.baseVersion === documentVersion ? featurePreview : null;
   const currentPreviewReady = useMemo(() => !scalarPending && preview?.kind === 'ready' && preview.definitionKey === cadFeatureCandidateKey(candidateEdits), [preview, candidateEdits, scalarPending]);
+  const previewSolidCount = currentPreviewReady && preview?.kind === 'ready' ? preview.result.meshes.find(mesh => mesh.featureId === preview.featureId)?.solidCount : undefined;
   const waitingForPreview = Boolean(onFeaturePreview && documentVersion && !currentPreviewReady);
   const update = (next: CadFeature) => { setDraft(next); setError(null); };
   const featureIndex = document.features.findIndex((entry) => entry.id === feature.id);
@@ -179,7 +180,9 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
     <CadFeatureReferencePickingContext.Provider value={pickingContext}>{fields}</CadFeatureReferencePickingContext.Provider></fieldset>
     {pickCurrent && <div className="cad-reference-pick-status" role="status">Pick {pickCurrent.label.toLowerCase()} in the model or history<button type="button" aria-label="Cancel source selection" onClick={endPick}><X size={13} /></button></div>}
     {preview && <div className={`cad-feature-preview-status${preview.kind === 'error' ? ' is-error' : ''}`} role={preview.kind === 'error' ? 'alert' : 'status'}>
-      {preview.kind === 'waiting' || preview.kind === 'building' ? preview.lastValid ? 'Updating preview · last valid result' : 'Updating preview...' : preview.kind === 'ready' ? 'Preview · Apply to keep' : preview.message}
+      {preview.kind === 'error' ? preview.message : preview.kind === 'ready' && currentPreviewReady
+        ? `Preview${previewSolidCount !== undefined && previewSolidCount > 1 ? ` · ${previewSolidCount} solids` : ''} · Apply to keep`
+        : preview.kind === 'ready' || preview.lastValid ? 'Updating preview · last valid result' : 'Updating preview...'}
     </div>}
     {error && <p className="cad-error" role="alert">{error}</p>}
     {staleDraft && <p className="cad-error" role="alert">The part changed. Cancel this edit and reopen the current feature.</p>}

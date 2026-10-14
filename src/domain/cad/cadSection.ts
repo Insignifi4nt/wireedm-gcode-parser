@@ -20,7 +20,7 @@ const entity = Type.Union([
   Type.Object({ type: Type.Literal('arc'), layer, center: point, radius, startAngle: scalarNumber, endAngle: scalarNumber,
     sweepRadians: scalarNumber, clockwise: Type.Boolean(), start: point, end: point }, strict)
 ]);
-export const CadSectionResultSchema = Type.Object({ bodyId, plane, offset: scalarNumber, entities: Type.Array(entity, { minItems: 1, maxItems: 8192 }), contourCount: Type.Integer({ minimum: 1, maximum: 8192 }) }, strict);
+export const CadSectionResultSchema = Type.Object({ bodyId, plane, offset: scalarNumber, entities: Type.Array(entity, { minItems: 1 }), contourCount: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }) }, strict);
 export function parseCadSectionRequest(value: unknown): CadSectionRequest {
   if (!Value.Check(CadSectionRequestSchema, value)) throw new CadError('invalid-section', 'A section needs one current body, an XY/XZ/YZ plane and a finite offset in millimetres.');
   return value;

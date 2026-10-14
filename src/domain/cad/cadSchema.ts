@@ -3,11 +3,11 @@ import { Value } from '@sinclair/typebox/value';
 import type { CadDiagnostic, CadDocument, CadFeature, CadProfile, CadSketchProfile } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
-import { CadPluginProfileSchema, resolveCadPluginProfile } from './plugins/cadPlugins';
+import { CadPluginProfileSchema } from './plugins/cadPlugins';
 import { CadParameterGroupSchema, CadParameterMetadataSchema, CadParameterNameSchema, validateCadParameterMetadata } from './cadParameters';
 import { validateCadSketchGeometry } from './cadSketchGeometry';
 import { CadEdgeSelectionSchema, CadFaceQuerySchema, resolveCadEdgeSelection, validateCadShellOpening } from './cadTopology';
-import { CadSolidImportSourceSchema, MAX_CAD_DOCUMENT_BYTES, parseCadSolidImportSource } from './cadImports';
+import { CadSolidImportSourceSchema, parseCadSolidImportSource } from './cadImports';
 import { CadDxfImportSourceSchema, parseCadDxfImportSource } from './cadDxfSource';
 import { isCadImportData } from './cadImportData';
 import { MAX_CAD_PATTERN_COUNT, MAX_CAD_PATTERN_INSTANCES, MIN_CAD_PATTERN_COUNT, resolveCadCircularPattern } from './cadPatterns';
@@ -36,8 +36,8 @@ export const CadProfileSchema = Type.Union([
   CadPluginProfileSchema,
   Type.Object({ kind: Type.Literal('rectangle'), x: scalar, y: scalar, width: scalar, height: scalar, cornerRadius: scalar }, strict),
   Type.Object({ kind: Type.Literal('circle'), x: scalar, y: scalar, radius: scalar }, strict),
-  Type.Object({ kind: Type.Literal('polygon'), points: Type.Array(point2, { minItems: 3, maxItems: 2048 }) }, strict),
-  Type.Object({ kind: Type.Literal('path'), segments: Type.Array(CadPathSegmentSchema, { minItems: 1, maxItems: 2048 }) }, strict),
+  Type.Object({ kind: Type.Literal('polygon'), points: Type.Array(point2, { minItems: 3 }) }, strict),
+  Type.Object({ kind: Type.Literal('path'), segments: Type.Array(CadPathSegmentSchema, { minItems: 1 }) }, strict),
   Type.Object({ kind: Type.Literal('slot'), x: scalar, y: scalar, length: scalar, width: scalar, angle: scalar }, strict)
 ]);
 export const CadSketchProfileSchema = Type.Object({ id: identifier, name: label, construction: Type.Boolean(),
@@ -49,7 +49,7 @@ export const CadFeatureSchema = Type.Union([
   CadSweepFeatureSchema,
   CadPocketFeatureSchema,
   Type.Object({ ...base, kind: Type.Literal('imported'), source: CadSolidImportSourceSchema }, strict),
-  Type.Object({ ...base, kind: Type.Literal('sketch'), plane: CadSketchPlaneSchema, offset: scalar, profiles: Type.Array(CadSketchProfileSchema, { maxItems: 256 }), source: Type.Optional(CadDxfImportSourceSchema) }, strict),
+  Type.Object({ ...base, kind: Type.Literal('sketch'), plane: CadSketchPlaneSchema, offset: scalar, profiles: Type.Array(CadSketchProfileSchema), source: Type.Optional(CadDxfImportSourceSchema) }, strict),
   Type.Object({ ...base, kind: Type.Literal('extrude'), sketchId: identifier, distance: scalar, symmetric: Type.Boolean(), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
   Type.Object({ ...base, kind: Type.Literal('revolve'), sketchId: identifier, angle: scalar, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
   Type.Object({ ...base, kind: Type.Literal('loft'), sketchIds: Type.Array(identifier, { minItems: MIN_CAD_LOFT_SECTIONS, maxItems: MAX_CAD_LOFT_SECTIONS, uniqueItems: true }), ruled: Type.Boolean(), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
@@ -64,10 +64,10 @@ export const CadFeatureSchema = Type.Union([
 export const CadDocumentSchema = Type.Object({
   format: Type.Literal('wireedm-cad'), schemaVersion: Type.Literal(1),
   id: Type.String({ pattern: '^[a-z0-9][a-z0-9_-]{0,95}$' }), name: label, units: Type.Literal('mm'),
-  parameters: Type.Record(Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]{0,63}$' }), number, { maxProperties: 128, additionalProperties: false }),
-  parameterGroups: Type.Optional(Type.Array(CadParameterGroupSchema, { maxItems: 64 })),
-  parameterMetadata: Type.Optional(Type.Record(CadParameterNameSchema, CadParameterMetadataSchema, { maxProperties: 128, additionalProperties: false })),
-  features: Type.Array(CadFeatureSchema, { maxItems: 256 })
+  parameters: Type.Record(Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]{0,63}$' }), number, { additionalProperties: false }),
+  parameterGroups: Type.Optional(Type.Array(CadParameterGroupSchema)),
+  parameterMetadata: Type.Optional(Type.Record(CadParameterNameSchema, CadParameterMetadataSchema, { additionalProperties: false })),
+  features: Type.Array(CadFeatureSchema)
 }, strict);
 
 // Only this parser's detached, deeply frozen successful outputs are trusted.
@@ -82,20 +82,12 @@ export function parseCadDocument(value: unknown): CadDocument {
     const error = Value.Errors(CadDocumentSchema, value).First();
     throw new CadError('invalid-document', `Invalid CAD document${error ? ` at ${error.path || '/'}: ${error.message}` : '.'}`);
   }
-  // Bound embedded originals before cloning or entering native geometry code.
-  let sourceCharacters = 0;
-  for (const feature of value.features) {
-    if (feature.kind === 'imported') sourceCharacters += feature.source.data.length;
-    if ((feature.kind === 'sketch' || feature.kind === 'curve') && feature.source) sourceCharacters += feature.source.text.length;
-    if (sourceCharacters > MAX_CAD_DOCUMENT_BYTES) throw new CadError('document-size', 'CAD documents must be at most 4 MiB including original imported files.');
-  }
   // A boundary input may have inherited fields or accessors. Validate semantics
   // against its detached own-data snapshot, never against changing getters.
   let snapshot: Static<typeof CadDocumentSchema>;
   try { snapshot = structuredClone(value); }
   catch { throw new CadError('invalid-document', 'CAD document must contain portable declarative data.'); }
   if (!Value.Check(CadDocumentSchema, snapshot)) throw new CadError('invalid-document', 'CAD document must contain its own complete JSON fields.');
-  if (new TextEncoder().encode(JSON.stringify(snapshot)).length > MAX_CAD_DOCUMENT_BYTES) throw new CadError('document-size', 'CAD documents must be at most 4 MiB including original imported files.');
   const document: CadDocument = snapshot;
   validateCadParameterMetadata(document);
   if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/.test(document.id)) throw new CadError('invalid-document-id', 'Document ID is a reserved filesystem name.');
@@ -107,7 +99,6 @@ export function parseCadDocument(value: unknown): CadDocument {
   const datumLookup = Object.freeze({ get: (id: string) => datumFrames.get(id) });
   const visibleBodies = new Set<string>();
   const expandedInstances = new Map<string, number>();
-  let geometryBudget = 0;
   let instanceBudget = 0;
   const e = (value: number | string) => evaluateCadScalar(value, document.parameters);
   for (const feature of document.features) {
@@ -147,8 +138,6 @@ export function parseCadDocument(value: unknown): CadDocument {
       }
       case 'imported': parseCadSolidImportSource(feature.source); break;
       case 'curve': {
-        geometryBudget += feature.segments.length;
-        if (geometryBudget > 8192) throw new CadError('geometry-limit', 'Document contains too many sketch or reference curve edges.');
         resolveCadCurveGeometry(feature, document.parameters);
         if (!feature.suppressed) resolveCadSketchPlacement(feature, document.parameters, datumLookup);
         break;
@@ -166,10 +155,7 @@ export function parseCadDocument(value: unknown): CadDocument {
             if (dimensionIds.has(constraint.id)) throw new CadError('duplicate-sketch-constraint', 'Sketch dimension IDs must be unique within their sketch.');
             dimensionIds.add(constraint.id);
           }
-          const geometry = profile.geometry.kind === 'plugin' ? resolveCadPluginProfile(profile.geometry, document.parameters) : profile.geometry;
-          geometryBudget += geometry.kind === 'polygon' ? geometry.points.length : geometry.kind === 'path' ? geometry.segments.length : 8;
         }
-        if (geometryBudget > 8192) throw new CadError('geometry-limit', 'Document contains too many sketch edges.');
         validateCadSketchGeometry(feature, document.parameters);
         if (!feature.suppressed) resolveCadSketchPlacement(feature, document.parameters, datumLookup);
         break;

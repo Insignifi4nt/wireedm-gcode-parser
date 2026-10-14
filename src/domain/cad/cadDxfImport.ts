@@ -35,8 +35,8 @@ const unitDeclarationSchema = Type.Union([
   Type.Object({ status: Type.Union([Type.Literal('recognized'), Type.Literal('unknown'), Type.Literal('unitless')]), units: drawingUnits }, strict)
 ]);
 const resultSchema = Type.Object({ sketch: CadFeatureSchema, unitDeclaration: unitDeclarationSchema,
-  scaleToMillimeters: Type.Number({ exclusiveMinimum: 0 }), sourceEntityCount: Type.Integer({ minimum: 1, maximum: 8192 }),
-  contourCount: Type.Integer({ minimum: 1, maximum: 256 }) }, strict);
+  scaleToMillimeters: Type.Number({ exclusiveMinimum: 0 }), sourceEntityCount: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+  contourCount: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }) }, strict);
 
 export function parseCadDxfImportInput(value: unknown): CadDxfImportInput {
   if (!isCadImportData(value) || !Value.Check(CadDxfImportInputSchema, value)) throw new CadError('invalid-dxf-source', 'Provide DXF filename, exact text and optional units, sketch ID and name.');
@@ -104,7 +104,7 @@ export function importCadDxfSketch(input: CadDxfImportInput): CadDxfImportResult
   input = parseCadDxfImportInput(input);
   const source = parseCadDxfImportSource({ format: 'dxf', fileName: input.fileName, text: input.text, ...(input.units !== undefined ? { units: input.units } : {}) });
   assertCompleteCadDxf(source.text);
-  const parsed = parseDxf(source.text);
+  const parsed = parseDxf(source.text, { mode: 'exact-cad' });
   if (parsed.unsupportedEntities.length || parsed.warnings.length || parsed.entities.some(entity => entity.type === 'line' && entity.approximation)) {
     throw new CadError('dxf-inexact', 'DXF contains unsupported, omitted or approximated geometry. CAD requires complete exact lines, circular arcs and circles.');
   }
@@ -116,7 +116,6 @@ export function importCadDxfSketch(input: CadDxfImportInput): CadDxfImportResult
   const built = pathSegmentsFromDxfEntities(parsed.entities, { endpointTolerance: 0, coincidenceEpsilon: 0 });
   if (built.diagnostics.length || built.segments.some(segment => !segment.source.exact)) throw new CadError('dxf-inexact', 'DXF cannot be imported without discarding or approximating a segment.');
   if (!built.segments.length) throw new CadError('dxf-empty', 'DXF has no closed sketch geometry.');
-  if (built.segments.length > 8192) throw new CadError('geometry-limit', 'CAD DXF sketches may contain at most 8192 exact edges.');
   const scaled = (point: Point2): Point2 => ({ x: point.x * scaleToMillimeters, y: point.y * scaleToMillimeters });
   const segments: PathSegment[] = built.segments.map(segment => {
     const common = { id: segment.id, source: segment.source };

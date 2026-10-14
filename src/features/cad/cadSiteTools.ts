@@ -12,7 +12,7 @@ import { CadSolidImportSourceSchema } from '@/domain/cad/cadImports';
 import { CadDxfImportSourceSchema } from '@/domain/cad/cadDxfSource';
 import { isCadImportData } from '@/domain/cad/cadImportData';
 import type { CadDiagnostic, CadDocument, CadFeature } from '@/domain/cad/cadDocument';
-import { object, page, pageFields, siteTool, ToolError } from '@/features/webmcp/siteTools';
+import { object, page, pageFields as workbenchPageFields, siteTool, ToolError } from '@/features/webmcp/siteTools';
 import { jsonByteLength, summarizeDiagnostic } from '@/features/webmcp/diagnosticSummaries';
 import { CadSessionError } from './cadSession';
 import { CadPluginPackageSchema, fingerprintCadPluginPackage } from '@/domain/cad/plugins/cadPlugins';
@@ -26,6 +26,7 @@ import { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS } from '@/domain/cad/cadLo
 
 const id = Type.String({ minLength: 1, maxLength: 160 });
 const version = { expectedVersion: id };
+const pageFields = { ...workbenchPageFields, offset: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })) };
 const pathConstructionSchema = object({ start: CadConstructionPointSchema,
   steps: Type.Array(CadPathConstructionStepSchema, { minItems: 1, maxItems: 128 }) });
 const documentText = new WeakMap<CadDocument, string>();
@@ -35,9 +36,34 @@ function diagnosticSummary(diagnostics: readonly CadDiagnostic[]) {
   while (summaries.length && jsonByteLength(summaries) > 4096) summaries.pop();
   return { diagnostics: summaries, omittedDiagnostics: diagnostics.length - summaries.length };
 }
+/** Tool summaries retain complete entries; the immutable document stays complete. */
+function parameterContext(document: CadDocument) {
+  const parameters: Record<string, number> = {};
+  let parameterCount = 0, retainedParameterCount = 0, parameterBytes = 2, parametersFull = false;
+  for (const name in document.parameters) {
+    if (!Object.hasOwn(document.parameters, name)) continue;
+    parameterCount++;
+    if (parametersFull) continue;
+    const value = document.parameters[name];
+    const bytes = jsonByteLength({ [name]: value }) - 2 + (retainedParameterCount ? 1 : 0);
+    if (parameterBytes + bytes > 4096) { parametersFull = true; continue; }
+    parameters[name] = value; retainedParameterCount++; parameterBytes += bytes;
+  }
+  const allGroups = document.parameterGroups ?? [], parameterGroups: { id: string; name: string }[] = [];
+  let groupBytes = 2;
+  for (const group of allGroups) {
+    const summary = { id: group.id, name: group.name };
+    const bytes = jsonByteLength(summary) + (parameterGroups.length ? 1 : 0);
+    if (groupBytes + bytes > 4096) break;
+    parameterGroups.push(summary); groupBytes += bytes;
+  }
+  return { parameters, parameterCount, omittedParameters: retainedParameterCount < parameterCount,
+    omittedParameterCount: parameterCount - retainedParameterCount, parameterGroups, parameterGroupCount: allGroups.length,
+    omittedParameterGroups: parameterGroups.length < allGroups.length, omittedParameterGroupCount: allGroups.length - parameterGroups.length };
+}
 const featureDescriptions: Record<CadFeature['kind'], string> = {
   'datum-plane': 'An independent world reference plane. definition.kind=world uses basePlane XY/XZ/YZ, world origin in mm and rotation in degrees around world X then Y then Z. Rotation turns its basis without rotating its origin. All coordinates accept parameter expressions. Sketch/Curve plane may reference this preceding active feature with {kind:datum-plane,featureId}; offset remains along its normal. No body, material or CAM role. cad_inspect_plane resolves the frame without loading the solid engine. Datum Pad/Revolve/Loft/Sweep require conservative placement precision. Loft sections must share oriented axes and normal; use cad_inspect_loft before adding one. Sweep preserves authored section and rail frames; its section normal must align with the first rail tangent. Datum Through-all Pocket is not yet supported and is rejected before editing.',
-  curve: 'An ordered open reference chain of 1–2048 exact lines and circular arcs on XY, XZ, YZ or a preceding active datum-plane at a signed normal offset. Dimensions accept parameter expressions. Segments must connect within modeling precision without closing, crossing, touching nonadjacent segments or overlapping. Sharp corners are allowed. Curves are independent references, never solid bodies or closed material profiles. Retains original DXF source when imported; exact open DXF export preserves traversal in local millimeters.',
+  curve: 'An ordered open reference chain of exact lines and circular arcs on XY, XZ, YZ or a preceding active datum-plane at a signed normal offset. Dimensions accept parameter expressions. Segments must connect within modeling precision without closing, crossing, touching nonadjacent segments or overlapping. Sharp corners are allowed. Curves are independent references, never solid bodies or closed material profiles. Retains original DXF source when imported; exact open DXF export preserves traversal in local millimeters.',
   sketch: 'Plane-local closed profiles on XY/XZ/YZ or a preceding active datum-plane, with optional construction geometry. Offset follows the resolved plane normal; changing placement preserves local coordinates. Nesting automatically determines material, voids and islands. Dimensions accept finite arithmetic over document parameters. Use cad_inspect_plane for world placement.',
   imported: 'An independent solid from an original STEP or STL file. Original source bytes are preserved in the document. STEP retains exact BRep; STL is faceted and requires explicit mm/inch source units. Native validation rejects open or invalid solids.',
   extrude: 'Pad the preceding sketch, symmetrically if requested. New creates a body; join/cut consumes and replaces targetId.',
@@ -79,8 +105,7 @@ export function cadSiteTools(getController: () => CadController) {
     const hasCurves = state.document.features.some(feature => feature.kind === 'curve');
     return { open: cad.isOpen(), version: state.version, documentId: state.document.id, name: state.document.name,
       units: state.document.units, dirty: state.dirty, savedVersion: state.savedVersion,
-      featureCount: state.document.features.length, parameters: state.document.parameters, parameterGroups: (state.document.parameterGroups ?? []).slice(0, 10),
-      parameterGroupCount: state.document.parameterGroups?.length ?? 0, omittedParameterGroups: (state.document.parameterGroups?.length ?? 0) > 10,
+      featureCount: state.document.features.length, ...parameterContext(state.document),
       canUndo: state.canUndo, canRedo: state.canRedo, workflowOpen: state.workflowOpen, busy: cad.isBusy(),
       buildState: cad.buildState, buildVersion: cad.buildVersion, buildId: cad.build?.buildId ?? null,
       ...diagnosticSummary(cad.build?.diagnostics ?? []),
@@ -140,11 +165,11 @@ export function cadSiteTools(getController: () => CadController) {
       return { segments, units: 'mm', segmentCount: segments.length, lengthMm: curve.length,
         startMm: curve.start, endMm: curve.end, boundsMm: curve.bounds, persisted: false };
     }),
-    tool('cad_import_curve_dxf', 'Import one complete open planar line/arc chain from DXF as a fresh unsaved Curve document. Uses File > Import > Curve checks. Preserves exact source text, direction of ordered polylines, and exact circular arcs. Missing/unknown units require explicit mm/inch/cm/m; conflicting overrides, closed/multiple/branching chains, unsupported entities and approximations fail before replacing the draft. Maximum 2 MiB UTF-8. Refuses unsaved work, active workflows and stale versions; supports cancellation.', object({ ...version, source: CadDxfImportSourceSchema }),
+    tool('cad_import_curve_dxf', 'Import one complete open planar line/arc chain from DXF as a fresh unsaved Curve document. Uses File > Import > Curve checks. Preserves exact source text, direction of ordered polylines, and exact circular arcs. Missing/unknown units require explicit mm/inch/cm/m; conflicting overrides, closed/multiple/branching chains, unsupported entities and approximations fail before replacing the draft. Refuses unsaved work, active workflows and stale versions; supports cancellation.', object({ ...version, source: CadDxfImportSourceSchema }),
       (cad, input, signal) => cad.importDxfCurveSource(input.source, input.expectedVersion, signal), false),
     tool('cad_measure_curve', 'Measure one exact open Curve in local and world millimeters: analytic length, bounds, ordered start/end points, plane and offset. Uses expressions in the current version. A suppressed Curve on an unavailable datum retains local measurements and returns null world placement with placementDiagnostic. Curves are reference geometry without material area or CAM contour roles. No document or storage changes.', object({ ...version, curveId: id }), async (cad, input, signal) => ({ version: input.expectedVersion, ...await cad.measureCurve(input.curveId, input.expectedVersion, signal) })),
     tool('cad_export_curve_dxf', 'Request an exact open Curve DXF download in local millimeters. Writes an ordered open LWPOLYLINE with signed circular bulges, preserving traversal. Does not close the curve, project a solid or assign CAM roles. Fails if DXF cannot preserve exact support within modeling precision.', object({ ...version, curveId: id }), (cad, input, signal) => cad.exportCurveDxf(input.curveId, input.expectedVersion, signal), false),
-    tool('cad_get_context', 'Read the shared CAD draft version, parameters, supported operations, saved state and build diagnostics. Millimeters, desktop CAD. No storage writes.', object({}), cad => context(cad)),
+    tool('cad_get_context', 'Read the shared CAD draft version, saved/workflow state, supported operations and bounded exact parameter/group summaries with total and omission counts. Read omitted parameter details with cad_inspect_parameters or complete data with cad_read_document at this version. Millimeters, desktop CAD. No storage writes.', object({}), cad => context(cad)),
     tool('cad_inspect_parameters', 'Read current named dimensions, groups, historical manual/plugin provenance and actual expression usages without changing the draft. With name, paginate its dimension-bearing references and read active/inactive reasons and downstream history; without name, paginate parameter summaries. Suppressed features and automatic plugin inputs are distinguished from effective links. Source is creation history and can outlive its original feature. Rejects stale versions, cancellation and pending UI workflows.', object({ ...version, name: Type.Optional(CadParameterNameSchema), ...pageFields }), async (cad, input, signal) => {
       const inspection = await cad.inspectParameters(input.expectedVersion, signal);
       const bindingSummary = (binding: typeof inspection.pluginInputs[number]) => ({ featureId: binding.featureId, profileId: binding.profileId,
@@ -180,7 +205,7 @@ export function cadSiteTools(getController: () => CadController) {
       if (kind === 'sketch' && 'profiles' in schema.properties) {
         // Saved legacy constraints remain parseable, but new contours use nesting.
         const authoringSchema = Type.Object({ ...schema.properties,
-          profiles: Type.Array(Type.Omit(schema.properties.profiles.items, ['role']), { maxItems: 256 })
+          profiles: Type.Array(Type.Omit(schema.properties.profiles.items, ['role']))
         }, { additionalProperties: false });
         return { kind, description: featureDescriptions[kind], schema: authoringSchema };
       }
@@ -190,13 +215,13 @@ export function cadSiteTools(getController: () => CadController) {
     tool('cad_create_document', 'Create a blank CAD draft with a fresh identity. Does not save. Save an existing nonempty draft before replacing it.', object({ ...version, name: Type.String({ minLength: 1, maxLength: 160 }) }), (cad, input) => {
       cad.newDocument(input.name, input.expectedVersion); return context(cad);
     }, false),
-    tool('cad_import_document', 'Import a complete validated wireedm-cad document as a NEW unsaved draft with a fresh identity. Call cad_describe_features for complete feature schemas; the compact feature envelope does not relax validation. Uses the visible CAD JSON Import operation; preserves expressions and feature IDs, never overwrites saved CAD. Refuses unsaved CAD/CAM drafts, stale versions and active workflows. 4 MiB maximum. Typed declarative CAD data only, not executable source.', object({ ...version, document: CadDocumentSchema }), async (cad, input, signal) => {
+    tool('cad_import_document', 'Import a complete validated wireedm-cad document as a NEW unsaved draft with a fresh identity. Call cad_describe_features for complete feature schemas; the compact feature envelope does not relax validation. Uses the visible CAD JSON Import operation; preserves expressions and feature IDs, never overwrites saved CAD. Refuses unsaved CAD/CAM drafts, stale versions and active workflows. Typed declarative CAD data only, not executable source.', object({ ...version, document: CadDocumentSchema }), async (cad, input, signal) => {
       const imported = await cad.importDocumentValue(input.document, input.expectedVersion, signal);
       return { ...context(cad), imported: imported.imported, sourceDocumentId: imported.sourceDocumentId };
     }, false, object({ ...version, document: CadToolDocumentEnvelope })),
-    tool('cad_import_solid', 'Import a STEP or watertight STL file as a fresh unsaved CAD document using the same native checks as File > Import. STEP accepts UTF-8 text and embedded units. STL accepts standard padded base64 with explicit mm/inch units and produces faceted geometry. Preserves original source; maximum 2 MiB decoded. Refuses unsaved CAD/CAM work and open workflows. Native parsing, topology and positive-volume validation must succeed before changing the draft.', object({ ...version, source: CadSolidImportSourceSchema }),
+    tool('cad_import_solid', 'Import a STEP or watertight STL file as a fresh unsaved CAD document using the same native checks as File > Import. STEP accepts UTF-8 text and embedded units. STL accepts standard padded base64 with explicit mm/inch units and produces faceted geometry. Preserves the complete original source. Refuses unsaved CAD/CAM work and open workflows. Native parsing, topology and positive-volume validation must succeed before changing the draft.', object({ ...version, source: CadSolidImportSourceSchema }),
       (cad, input, signal) => cad.importSolidSource(input.source, input.expectedVersion, signal), false),
-    tool('cad_import_dxf', 'Import a complete exact DXF as a fresh CAD document containing an editable planar sketch. Preserves original text, circular arcs and analytic nesting. Uses declared units; missing/unknown units require explicit mm/inch/cm/m. Conflicting unit overrides, open/branching contours, unsupported curves and approximation are rejected. Maximum 2 MiB UTF-8. Uses the same cancellable worker operation as File > Import and refuses unsaved work or active workflows.', object({ ...version, source: CadDxfImportSourceSchema }),
+    tool('cad_import_dxf', 'Import a complete exact DXF as a fresh CAD document containing an editable planar sketch. Preserves original text, circular arcs and analytic nesting. Uses declared units; missing/unknown units require explicit mm/inch/cm/m. Conflicting unit overrides, open/branching contours, unsupported curves and approximation are rejected. Uses the same cancellable worker operation as File > Import and refuses unsaved work or active workflows.', object({ ...version, source: CadDxfImportSourceSchema }),
       (cad, input, signal) => cad.importDxfSource(input.source, input.expectedVersion, signal), false),
     tool('cad_list_documents', 'List real saved CAD documents in the active browser cache or workbench folder. Failed files are reported and preserved.', object(pageFields), async (cad, input, signal) => {
       const result = await cad.list(signal);
@@ -209,7 +234,7 @@ export function cadSiteTools(getController: () => CadController) {
       cad.session.assertVersion(input.expectedVersion);
       return { version: input.expectedVersion, ...page(cad.session.getSnapshot().document.features, input) };
     }),
-    tool('cad_read_document', 'Read complete current CAD JSON in exact bounded UTF-16 chunks, including large sketches that exceed one feature-page response. Concatenate text until nextOffset is null, then parse JSON. Offsets count JavaScript UTF-16 code units. Pin the same expectedVersion for every chunk. No save or browser download.', object({ ...version, offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 16 * 1024 * 1024 })), length: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096 })) }), (cad, input) => {
+    tool('cad_read_document', 'Read complete current CAD JSON in exact bounded UTF-16 chunks, including large sketches that exceed one feature-page response. Concatenate text until nextOffset is null, then parse JSON. Offsets count JavaScript UTF-16 code units. Pin the same expectedVersion for every chunk. No save or browser download.', object({ ...version, offset: pageFields.offset, length: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096 })) }), (cad, input) => {
       cad.session.assertVersion(input.expectedVersion);
       const document = cad.session.getSnapshot().document;
       let text = documentText.get(document);
@@ -235,16 +260,16 @@ export function cadSiteTools(getController: () => CadController) {
     tool('cad_get_viewport', 'Read CAD selection, selectedReferencePlane, awaitingSketchPlane, sketch/curve editor identity, named view, grid state, displayed build version, installed referenceVersion, referencePlanes and referenceFeatureIds. Reference IDs identify visible world-space sketch outlines, curves and datum-plane glyphs; referencePlanes lists principal XY/XZ/YZ glyphs without inventing feature IDs. Use this to verify a view change before capture.', object(version), (cad, input) => cad.readViewport(input.expectedVersion)),
     tool('cad_set_viewport', 'Use visible CAD viewport operations: named view, fit/grid, feature/profile/reference-plane selection, enter/finish sketch or curve editing, body/face/edge pick mode and exact-build topology selection. Plane selection never inserts a sketch: use cad_edit_document with an explicit plane to create one. Does not edit geometry or save. Active workflows block changes. Read cad_get_viewport after applying.', object({ ...version, command: CadViewportCommandSchema }), (cad, input) => cad.changeViewport(input.command, input.expectedVersion), false),
     tool('cad_capture_preview', 'Capture actual CAD sketch, curve or solid preview pixels as a bounded PNG with document version, view state and SHA-256. The browser-local blob URL is not a public URL or desktop screenshot. Both 2D and 3D show current draft content, including unsaved edits. Views containing active solid features require the current build; reference-only views, including standalone datum planes, require current installed referenceVersion and referenceFeatureIds without loading the solid engine. Stale geometry or selection layers are rejected. Optional download requests a browser save; a visible CAD preview PNG link supports retry.', object({ ...version, download: Type.Optional(Type.Boolean()) }), (cad, input, signal) => cad.captureViewport(input.expectedVersion, input.download ?? false, signal), false),
-    tool('cad_build', 'Evaluate current CAD history in the exact solid kernel and inspect paginated body volume (mm³), bounds (mm) and feature diagnostics. Follow nextBodyOffset with offset/limit on the same version. Lazy kernel initialization may take several seconds. Does not save or create CAM output.', object({ ...version, ...pageFields }), async (cad, input, signal) => {
+    tool('cad_build', 'Evaluate current CAD history in the exact solid kernel and inspect paginated body volume (mm³), bounds (mm), native solidCount (null if unavailable) and feature diagnostics. One body can contain multiple solids. Follow nextBodyOffset with offset/limit on the same version. Lazy kernel initialization may take several seconds. Does not save or create CAM output.', object({ ...version, ...pageFields }), async (cad, input, signal) => {
       const result = await cad.inspectBuild(input.expectedVersion, signal);
-      const bodies = page(result.meshes, input, mesh => ({ featureId: mesh.featureId, name: mesh.name, volumeMm3: mesh.volume, boundsMm: mesh.bounds, triangles: mesh.indices.length / 3,
+      const bodies = page(result.meshes, input, mesh => ({ featureId: mesh.featureId, name: mesh.name, volumeMm3: mesh.volume, solidCount: mesh.solidCount ?? null, boundsMm: mesh.bounds, triangles: mesh.indices.length / 3,
         previewFaces: new Set(mesh.faceGroups.map(group => group.key)).size, previewEdges: new Set(mesh.edgeGroups.map(group => group.key)).size }));
       return { version: input.expectedVersion, buildId: result.buildId, durationMs: result.durationMs, ...diagnosticSummary(result.diagnostics),
         bodies: bodies.items, totalBodies: bodies.total, nextBodyOffset: bodies.nextOffset };
     }),
     tool('cad_inspect_topology', 'Inspect exact faces or edges of a successfully built body in world coordinates. Pin expectedVersion and expectedBuildId from cad_build. Returns bounded descriptors and opaque keys for this build only; follow nextOffset. Lengths/coordinates are mm; areas mm². Stale snapshots are rejected without rebuilding. Keys must never be saved in features.', object({
       ...version, bodyId: id, expectedBuildId: id, kind: Type.Union([Type.Literal('edge'), Type.Literal('face')]),
-      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 25000 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 }))
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 }))
     }), async (cad, input, signal) => {
       const offset = input.offset ?? 0;
       const result = await cad.inspectTopology({ bodyId: input.bodyId, expectedBuildId: input.expectedBuildId,

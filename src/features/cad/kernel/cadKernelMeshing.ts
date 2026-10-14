@@ -2,21 +2,19 @@ import { getOC, type Shape3D, type ShapeEdgeMesh, type ShapeMesh } from 'replica
 import type { BRepBuilderAPI_Transform, TopoDS_Shape } from 'replicad-opencascadejs';
 import type { CadMesh } from '../../../domain/cad/cadDocument';
 import { CadError } from '../../../domain/cad/cadError';
-import { MAX_CAD_TOPOLOGY_PER_BODY } from '../../../domain/cad/cadTopology';
-import { MAX_CAD_PREVIEW_SCALARS } from './cadKernelLimits';
 
 interface MeshOptions { readonly tolerance: number; readonly angularTolerance: number }
 type TopologyKind = 'face' | 'edge';
 
-function meshError(message: string): never { throw new CadError('mesh-limit', message); }
-function checkedCount(count: number, multiple: number, maximum: number): number {
-  if (!Number.isSafeInteger(count) || count < 0 || count % multiple || count > maximum) meshError('The preview exceeds its bounded mesh buffer budget. Simplify the model.');
+function checkedCount(count: number, multiple: number): number {
+  if (!Number.isSafeInteger(count) || count < 0 || count % multiple) throw new CadError('invalid-mesh', 'The kernel returned an invalid preview buffer size.');
   return count;
 }
 
 /** Native pointers are read only after checking sizes, against the current heap. */
 function readNumbers(pointer: number, count: number, format: 'float' | 'unsigned' | 'signed'): number[] {
   const buffer = getOC().wasmMemory.buffer;
+  if (!Number.isSafeInteger(pointer) || pointer < -0x80000000 || pointer > 0xffffffff) throw new CadError('invalid-mesh', 'The kernel returned an invalid preview buffer pointer.');
   const start = (pointer >>> 0) / 4;
   if (!Number.isInteger(start) || start + count > buffer.byteLength / 4) throw new CadError('invalid-mesh', 'The kernel returned an invalid preview buffer.');
   const heap = format === 'float' ? new Float32Array(buffer) : format === 'unsigned' ? new Uint32Array(buffer) : new Int32Array(buffer);
@@ -55,7 +53,6 @@ function transformedIndices(shape: TopoDS_Shape, localized: TopoDS_Shape, transf
                 const previous = indices.get(key);
                 if (previous !== undefined && previous !== sourceIndex) throw new CadError('topology-mapping', 'Preview translation does not preserve exact topology identity.');
                 indices.set(key, sourceIndex);
-                if (indices.size > MAX_CAD_TOPOLOGY_PER_BODY) throw new CadError('topology-limit', 'The translated preview exceeds the body topology limit.');
               } finally { modified.Nullify(); modified.delete(); }
             } finally { original.Nullify(); original.delete(); }
             explorer.Next();
@@ -97,11 +94,11 @@ export function meshCadKernelPreview(shape: Shape3D, bounds: CadMesh['bounds'], 
           const raw = oc.ReplicadMeshExtractor.extractWithTopologyIndices(localized, options.tolerance, options.angularTolerance, false);
           let mesh: ShapeMesh;
           try {
-            const vertices = checkedCount(raw.getVerticesSize(), 3, MAX_CAD_PREVIEW_SCALARS);
-            const normals = checkedCount(raw.getNormalsSize(), 3, MAX_CAD_PREVIEW_SCALARS);
-            const triangles = checkedCount(raw.getTrianglesSize(), 3, 3_000_000);
-            if (vertices !== normals || vertices + normals + triangles > MAX_CAD_PREVIEW_SCALARS) meshError('The preview exceeds its bounded mesh buffer budget. Simplify the model.');
-            const groups = readNumbers(raw.getFaceGroupsPtr(), checkedCount(raw.getFaceGroupsSize(), 3, MAX_CAD_TOPOLOGY_PER_BODY * 3), 'signed');
+            const vertices = checkedCount(raw.getVerticesSize(), 3);
+            const normals = checkedCount(raw.getNormalsSize(), 3);
+            const triangles = checkedCount(raw.getTrianglesSize(), 3);
+            if (vertices !== normals) throw new CadError('invalid-mesh', 'The kernel returned mismatched preview vertices and normals.');
+            const groups = readNumbers(raw.getFaceGroupsPtr(), checkedCount(raw.getFaceGroupsSize(), 3), 'signed');
             const faceGroups: ShapeMesh['faceGroups'] = [];
             for (let index = 0; index < groups.length; index += 3) faceGroups.push({ start: groups[index], count: groups[index + 1], faceId: sourceIndex(indices, 'face', groups[index + 2]) });
             mesh = { vertices: restoreWorld(readNumbers(raw.getVerticesPtr(), vertices, 'float'), origin), normals: readNumbers(raw.getNormalsPtr(), normals, 'float'),
@@ -109,9 +106,8 @@ export function meshCadKernelPreview(shape: Shape3D, bounds: CadMesh['bounds'], 
           } finally { raw.delete(); }
           const rawEdges = oc.ReplicadEdgeMeshExtractor.extractWithTopologyIndices(localized, options.tolerance, options.angularTolerance);
           try {
-            const retained = mesh.vertices.length + mesh.normals.length + mesh.triangles.length;
-            const lineCount = checkedCount(rawEdges.getLinesSize(), 6, MAX_CAD_PREVIEW_SCALARS - retained);
-            const groups = readNumbers(rawEdges.getEdgeGroupsPtr(), checkedCount(rawEdges.getEdgeGroupsSize(), 3, MAX_CAD_TOPOLOGY_PER_BODY * 3), 'signed');
+            const lineCount = checkedCount(rawEdges.getLinesSize(), 6);
+            const groups = readNumbers(rawEdges.getEdgeGroupsPtr(), checkedCount(rawEdges.getEdgeGroupsSize(), 3), 'signed');
             const edgeGroups: ShapeEdgeMesh['edgeGroups'] = [];
             for (let index = 0; index < groups.length; index += 3) edgeGroups.push({ start: groups[index], count: groups[index + 1], edgeId: sourceIndex(indices, 'edge', groups[index + 2]) });
             return { mesh, edgeMesh: { lines: restoreWorld(readNumbers(rawEdges.getLinesPtr(), lineCount, 'float'), origin), edgeGroups } };

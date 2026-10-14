@@ -5,7 +5,7 @@ import { isCadKernelEnvelope, isCadKernelReply, type CadKernelReply, type CadKer
 import { CadError } from '../../../domain/cad/cadError';
 import { parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
-import { parseCadSolidImportSource, cadSolidImportBytes, type CadSolidImportSource, type CadSolidImportResult } from '../../../domain/cad/cadImports';
+import { parseCadSolidImportSource, cadSolidImportByteLength, type CadSolidImportSource, type CadSolidImportResult } from '../../../domain/cad/cadImports';
 import { parseCadDxfImportInput, type CadDxfImportInput, type CadDxfImportResult } from '../../../domain/cad/cadDxfImport';
 import { parseCadDxfCurveImportInput, type CadDxfCurveImportInput, type CadDxfCurveImportResult } from '../../../domain/cad/cadCurveDxf';
 
@@ -36,7 +36,6 @@ interface PendingJob {
 type CommandWithoutId<T> = T extends CadKernelRequest ? Omit<T, 'id'> : never;
 type CadKernelCommand = CommandWithoutId<CadKernelRequest>;
 const abortError = () => new DOMException('CAD operation canceled.', 'AbortError');
-const MAX_CAD_WORKER_JOBS = 128;
 
 function matchesTopologyRequest(request: CadKernelRequest, reply: CadKernelReply): boolean {
   if (reply.kind === 'error') return true;
@@ -44,7 +43,7 @@ function matchesTopologyRequest(request: CadKernelRequest, reply: CadKernelReply
   if (request.kind === 'export') return reply.kind === 'exported';
   if (request.kind === 'section') return reply.kind === 'sectioned';
   if (request.kind === 'import-solid') return reply.kind === 'solid-imported' && reply.result.format === request.source.format
-    && reply.result.fileName === request.source.fileName && reply.result.sourceBytes === cadSolidImportBytes(request.source).length;
+    && reply.result.fileName === request.source.fileName && reply.result.sourceBytes === cadSolidImportByteLength(request.source);
   if (request.kind === 'import-dxf') return reply.kind === 'dxf-imported'
     && reply.result.sketch.source?.fileName === request.input.fileName && reply.result.sketch.source.text === request.input.text
     && reply.result.sketch.source.units === request.input.units
@@ -70,24 +69,20 @@ function matchesTopologyRequest(request: CadKernelRequest, reply: CadKernelReply
   return false;
 }
 
-/** A single finite queue bounds kernel memory; active cancellation terminates WASM. */
+/** A finite queue owns one worker; cancellation, failure and disposal release WASM. */
 export function createCadKernelClient(makeWorker: () => CadWorkerTransport = () => new Worker(new URL('./cadKernel.worker.ts', import.meta.url), { type: 'module', name: 'wireedm-cad-kernel' })): CadKernelClient {
   let worker: CadWorkerTransport | undefined;
   let active: PendingJob | undefined;
   const queue: PendingJob[] = [];
   let disposed = false;
   let id = 0;
-  let jobs = 0;
-  let deadline: ReturnType<typeof setTimeout> | undefined;
-  function terminate() { if (deadline) clearTimeout(deadline); deadline = undefined; worker?.terminate(); worker = undefined; jobs = 0; }
+  function terminate() { worker?.terminate(); worker = undefined; }
   function finish(reply: CadKernelReply | Error) {
     const job = active;
     if (!job) return;
     active = undefined;
-    if (deadline) clearTimeout(deadline); deadline = undefined;
     job.cleanup();
     if ('kind' in reply) job.resolve(reply); else job.reject(reply);
-    ++jobs;
     pump();
   }
   function fail(error: Error) { terminate(); finish(error); }
@@ -96,9 +91,6 @@ export function createCadKernelClient(makeWorker: () => CadWorkerTransport = () 
     active = queue.shift();
     if (!active) return;
     try {
-      // Keep a completed build alive for picks. Refresh only at an explicit build.
-      if (active.request.kind === 'build' && jobs >= 16) terminate();
-      if (active.request.kind !== 'build' && jobs >= MAX_CAD_WORKER_JOBS) { finish(new CadError('STALE_BUILD', 'The CAD worker reached its bounded job lifetime. Rebuild the document before inspecting or exporting again.')); return; }
       if (!worker) {
         const transport = makeWorker(); worker = transport;
         transport.onmessage = event => {
@@ -112,7 +104,6 @@ export function createCadKernelClient(makeWorker: () => CadWorkerTransport = () 
         transport.onerror = () => { if (worker === transport) fail(new Error('The CAD worker stopped. Retry the operation to restart it.')); };
         transport.onmessageerror = () => { if (worker === transport) fail(new Error('The CAD worker response could not be read.')); };
       }
-      deadline = setTimeout(() => fail(new Error('The CAD operation exceeded two minutes. Simplify the model and retry.')), 120_000);
       worker.postMessage(active.request);
     } catch (error) { fail(error instanceof Error ? error : new Error('Unable to start the CAD worker.')); }
   }
@@ -125,7 +116,9 @@ export function createCadKernelClient(makeWorker: () => CadWorkerTransport = () 
       : command.kind === 'import-dxf-curve' ? { ...command, input: parseCadDxfCurveImportInput(command.input) }
       : { ...command, document: parseCadDocument(command.document) };
     return new Promise((resolve, reject) => {
-      const payload: CadKernelRequest = structuredClone({ ...validated, id: ++id });
+      // Boundary parsers already capture immutable input. postMessage performs the
+      // worker crossing; another full clone here duplicates large imported originals.
+      const payload: CadKernelRequest = { ...validated, id: ++id };
       const job: PendingJob = { request: payload, resolve, reject, cleanup: () => signal?.removeEventListener('abort', cancel) };
       const cancel = () => {
         if (active === job) { fail(abortError()); return; }

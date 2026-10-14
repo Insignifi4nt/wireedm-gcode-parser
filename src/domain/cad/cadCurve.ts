@@ -15,9 +15,8 @@ import { cadPlanePointToWorld, type CadNumericPoint2, type CadNumericPoint3 } fr
 import { cadFramePointToWorld, cadFrameDirectionToWorld, cadPrincipalFrame, resolveCadSketchPlacement, type CadDatumFrameLookup, type CadResolvedFrame, type CadResolvedPlacement } from './cadDatumPlanes';
 import { cadFrameEntityBounds } from './cadFrameBounds';
 
-export const MAX_CAD_CURVE_SEGMENTS = 2048;
 export const CadCurveFeatureSchema = Type.Object({ ...CadFeatureBaseSchemaFields, kind: Type.Literal('curve'), plane: CadSketchPlaneSchema, offset: CadScalarSchema,
-  segments: Type.Array(CadPathSegmentSchema, { minItems: 1, maxItems: MAX_CAD_CURVE_SEGMENTS }), source: Type.Optional(CadDxfImportSourceSchema)
+  segments: Type.Array(CadPathSegmentSchema, { minItems: 1 }), source: Type.Optional(CadDxfImportSourceSchema)
 }, { additionalProperties: false });
 export interface CadBounds3 { readonly min: CadNumericPoint3; readonly max: CadNumericPoint3 }
 export interface CadCurveGeometry {

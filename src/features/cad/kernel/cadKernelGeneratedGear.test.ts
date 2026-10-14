@@ -8,7 +8,6 @@ import { resolveConfiguredCadGear, resolveGeneratedCadGear } from '../../../doma
 import { createCadDocument, parseCadDocument } from '../../../domain/cad/cadSchema';
 import { cadEntitiesToCam } from '../../../domain/cad/cadCam';
 import { CAD_GEAR_V2_PLUGIN, CAD_GEAR_V3_PLUGIN, createCadPluginProfile, inspectCadPluginProfile } from '../../../domain/cad/plugins/cadPlugins';
-import { MAX_CAD_TOPOLOGY_PER_BODY } from '../../../domain/cad/cadTopology';
 import { parsePortableUpid } from '../../../domain/upid/portableUpidProject';
 import { buildCadKernelModel } from './cadKernelModel';
 
@@ -36,7 +35,6 @@ it.each([{ teeth: 18, symmetric: false }, { teeth: 50, symmetric: true }])('cons
     expect(model.result.meshes).toHaveLength(1);
     expect(model.result.meshes[0].volume).toBeCloseTo(area * 10, 6);
     const topology = new Set([...model.result.meshes[0].faceGroups, ...model.result.meshes[0].edgeGroups].map(group => group.key));
-    expect(topology.size).toBeLessThanOrEqual(MAX_CAD_TOPOLOGY_PER_BODY);
     expect(topology.size).toBe(4 * gear.edgeCount + 10); // Native bore uses two semicircle edges/walls.
     const section = model.section({ bodyId: 'solid', plane: 'XY', offset: symmetric ? 0 : 5 });
     expect(section.contourCount).toBe(2);
@@ -50,7 +48,7 @@ it.each([{ teeth: 18, symmetric: false }, { teeth: 50, symmetric: true }])('cons
   } finally { model.dispose(); }
 }, 60_000);
 
-it('preflights larger gear topology without silently changing requested precision', () => {
+it('builds a larger gear above the former topology policy without changing requested precision', () => {
   const profile = createCadPluginProfile(CAD_GEAR_V2_PLUGIN);
   const doc = parseCadDocument({ ...createCadDocument('Over-budget gear', 'over_budget_gear'), features: [
     { id: 'outline', kind: 'sketch', name: 'Outline', suppressed: false, plane: 'XY', offset: 0, profiles: [
@@ -58,13 +56,18 @@ it('preflights larger gear topology without silently changing requested precisio
     ] },
     { id: 'solid', kind: 'extrude', name: 'Solid', suppressed: false, sketchId: 'outline', distance: 10, symmetric: true, operation: 'new', targetId: null },
   ] });
-  const original = structuredClone(doc), model = buildCadKernelModel(doc);
+  const original = structuredClone(doc), gear = resolveGeneratedCadGear({ ...DEFAULT_CAD_GEAR, teeth: 60 }, {}), model = buildCadKernelModel(doc);
   try {
-    expect(model.result.meshes).toEqual([]);
-    expect(model.result.diagnostics[0]).toMatchObject({ featureId: 'solid', code: 'topology-limit', message: expect.stringContaining('custom curve tolerance') });
+    expect(model.result.diagnostics).toEqual([]);
+    expect(model.result.meshes).toHaveLength(1);
+    expect(model.result.meshes[0].faceGroups.length + model.result.meshes[0].edgeGroups.length).toBeGreaterThan(10_000);
+    const area = gear.segments.reduce((sum, segment) => sum + (segment.kind === 'line'
+      ? (segment.start[0] * segment.end[1] - segment.start[1] * segment.end[0]) / 2
+      : segment.radius ** 2 * segment.sweep * Math.PI / 360), 0);
+    expect(model.result.meshes[0].volume).toBeCloseTo(area * 10, 6);
     expect(doc).toEqual(original);
   } finally { model.dispose(); }
-});
+}, 60_000);
 
 it('builds and sections a custom cutter-root gear using its correlated shift and certified boundary', () => {
   const profile = createCadPluginProfile(CAD_GEAR_V3_PLUGIN);
@@ -94,15 +97,23 @@ it('builds and sections a custom cutter-root gear using its correlated shift and
   } finally { model.dispose(); }
 }, 60_000);
 
-it('preflights configured gear topology before creating an oversized native solid', () => {
+it('builds configured gear topology at its requested accuracy beyond the former body policy', () => {
   const profile = createCadPluginProfile(CAD_GEAR_V3_PLUGIN); profile.inputs.teeth = 120;
   const doc = parseCadDocument({ ...createCadDocument(), features: [
     { id: 'outline', kind: 'sketch', name: 'Outline', suppressed: false, plane: 'XY', offset: 0, profiles: [{ id: 'gear', name: 'Gear', construction: false, geometry: profile }] },
     { id: 'solid', kind: 'extrude', name: 'Solid', suppressed: false, sketchId: 'outline', distance: 10, symmetric: true, operation: 'new', targetId: null },
   ] });
+  const original = JSON.stringify(doc), values = inspectCadPluginProfile(profile, {}).values;
+  const gear = resolveConfiguredCadGear({ ...DEFAULT_CAD_GEAR, teeth: 120, profileShift: values.effectiveShift, cutterTipRadius: values.effectiveCutterTipRadius }, {});
   const model = buildCadKernelModel(doc);
   try {
-    expect(model.result.meshes).toEqual([]);
-    expect(model.result.diagnostics[0]).toMatchObject({ code: 'topology-limit', featureId: 'solid' });
+    expect(model.result.diagnostics).toEqual([]);
+    expect(model.result.meshes).toHaveLength(1);
+    expect(model.result.meshes[0].faceGroups.length + model.result.meshes[0].edgeGroups.length).toBeGreaterThan(10_000);
+    const area = gear.segments.reduce((sum, segment) => sum + (segment.kind === 'line'
+      ? (segment.start[0] * segment.end[1] - segment.start[1] * segment.end[0]) / 2
+      : segment.radius ** 2 * segment.sweep * Math.PI / 360), 0);
+    expect(model.result.meshes[0].volume).toBeCloseTo(area * 10, 6);
+    expect(JSON.stringify(doc)).toBe(original);
   } finally { model.dispose(); }
-});
+}, 60_000);

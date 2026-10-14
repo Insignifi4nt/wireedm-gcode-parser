@@ -6,8 +6,8 @@ export interface WorkbenchStorageAdapter {
   readonly persistenceWarning?: string;
   ensureDirectory(path: string): Promise<void>;
   readText(path: string): Promise<string | null>;
-  /** Exact UTF-8 round trip for portable backups; reject binary files instead of losing bytes. */
-  readExactText?(path: string): Promise<string | null>;
+  /** Complete exact UTF-8 text; reject malformed encoding and cancel reads without truncating originals. */
+  readExactText?(path: string, signal?: AbortSignal): Promise<string | null>;
   /** Read-only recovery capture: bound reads/expansion and omit a file that exceeds the byte limit; never return truncated text. */
   readBoundedExactText?(path: string, maxBytes: number, signal?: AbortSignal): Promise<BoundedExactTextResult>;
   deleteText(path: string): Promise<void>;

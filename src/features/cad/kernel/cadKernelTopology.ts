@@ -9,7 +9,6 @@ import {
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult, type CadTopologyPick,
   type CadVector3, type CadEdgeQuery, type CadFaceQuery, type ResolvedCadEdgePredicate, type ResolvedCadFacePredicate,
   type CadEdgeSelection,
-  MAX_CAD_TOPOLOGY_PER_BODY,
 } from '../../../domain/cad/cadTopology';
 type EdgeDescriptor = Extract<CadTopologyDescriptor, { kind: 'edge' }>;
 type FaceDescriptor = Extract<CadTopologyDescriptor, { kind: 'face' }>;
@@ -127,7 +126,7 @@ function exactCount(actual: number, expected: number) {
     `The geometric selector matched ${actual} element(s), but requires exactly ${expected}. Revise the selector; ambiguous matches are never chosen automatically.`);
 }
 
-/** One bounded topology inventory owns native handles; descriptors are computed on demand. */
+/** One exact topology inventory owns native handles; descriptors are computed on demand. */
 export class CadKernelTopology {
   private readonly entries = new Map<string, Entry>();
   private readonly indices = new Map<string, Entry>();
@@ -146,7 +145,6 @@ export class CadKernelTopology {
                 const identity = `${kind}:${indexed.Add(raw)}`;
                 const existing = this.indices.get(identity);
                 if (!existing) {
-                  if (this.entries.size >= MAX_CAD_TOPOLOGY_PER_BODY) throw new CadError('topology-limit', `Each body may contain at most ${MAX_CAD_TOPOLOGY_PER_BODY} distinct faces and edges. Simplify the model.`);
                   const key = `${kind}-${crypto.randomUUID()}`;
                   const entry: Entry = kind === 'edge' ? { kind, key, shape: new Edge(oc.TopoDS.Edge(raw)) } : { kind, key, shape: new Face(oc.TopoDS.Face(raw)) };
                   this.entries.set(key, entry); this.indices.set(identity, entry);

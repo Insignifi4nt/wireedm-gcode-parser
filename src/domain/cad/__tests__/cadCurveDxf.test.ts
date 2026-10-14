@@ -5,7 +5,6 @@ import { resolveCadCurve } from '../cadCurve';
 import { cadCurveToDxf, exportCadCurveDxf, importCadDxfCurve, isCadDxfCurveImportResult, parseCadDxfCurveImportInput } from '../cadCurveDxf';
 import { createCadDocument, parseCadDocument } from '../cadSchema';
 import { importCadDxfSketch } from '../cadDxfImport';
-import { MAX_CAD_DXF_SOURCE_BYTES } from '../cadDxfSource';
 import { cadPathClosureTolerance } from '../cadAnalyticSegments';
 
 const curve = (segments: readonly CadPathSegment[], fields: Partial<Pick<CadCurveFeature,'plane'|'offset'|'suppressed'>> = {}): CadCurveFeature => ({
@@ -156,19 +155,27 @@ describe('exact ordered open Curve DXF exchange', () => {
     const text=block+dxf(['0','INSERT','2','rail','10',0,'20',0]);
     expect(()=>importCadDxfCurve({fileName:'block-width.dxf',text})).toThrow(/width/);
   });
-  it('rejects malformed files, unsafe own-data inputs and oversized exact originals',()=>{
+  it('preserves large exact originals while rejecting malformed files and unsafe own-data inputs',()=>{
     const text=dxf(polyline([{x:0,y:0},{x:10,y:0}]));
     expect(()=>importCadDxfCurve({fileName:'broken.dxf',text:text.replace('0\nEOF\n','')})).toThrow(/complete/);
     let accessed=0; const hostile={fileName:'evil.dxf',get text(){++accessed;return text;}};
     expect(()=>parseCadDxfCurveImportInput(hostile)).toThrow(); expect(accessed).toBe(0);
     expect(()=>parseCadDxfCurveImportInput({fileName:'bad.dxf',text,unknown:true})).toThrow();
-    expect(()=>parseCadDxfCurveImportInput({fileName:'large.dxf',text:'é'.repeat(MAX_CAD_DXF_SOURCE_BYTES/2+1)})).toThrow(/2 MiB/);
+    const large = dxf([...Array.from({length:1000},()=>[999,'孔😀'.repeat(320)]).flat(),...polyline([{x:0,y:0},{x:10,y:0}])]);
+    expect(new TextEncoder().encode(large).length).toBeGreaterThan(2*1024*1024);
+    const imported=importCadDxfCurve({fileName:'large.dxf',text:large});
+    expect(imported.curve.source?.text).toBe(large); expect(isCadDxfCurveImportResult(imported)).toBe(true);
+    expect(resolveCadCurve(imported.curve,{}).length).toBe(10);
     const hostileCurve={...curve([line]),get suppressed(){++accessed;return false;}};
     expect(()=>exportCadCurveDxf(hostileCurve,{})).toThrow(/own complete/);expect(accessed).toBe(0);
   });
-  it('bounds the complete edge chain and rejects uncertain bulge support instead of flattening it',()=>{
+  it('retains a complete edge chain beyond the former 2048-edge ceiling and rejects uncertain bulge support instead of flattening it',()=>{
     const tooLarge=dxf(polyline(Array.from({length:2050},(_,index)=>({x:index,y:0}))));
-    expect(()=>importCadDxfCurve({fileName:'large.dxf',text:tooLarge})).toThrow(/2048/);
+    const imported=importCadDxfCurve({fileName:'large.dxf',text:tooLarge});
+    expect(imported.curve.segments).toHaveLength(2049); expect(imported.curve.source?.text).toBe(tooLarge);
+    expect(isCadDxfCurveImportResult(imported)).toBe(true); expect(resolveCadCurve(imported.curve,{}).length).toBe(2049);
+    const again=importCadDxfCurve({fileName:'again.dxf',text:exportCadCurveDxf(imported.curve,{})});
+    expect(again.curve.segments).toHaveLength(2049); expect(resolveCadCurve(again.curve,{}).end).toEqual([2049,0]);
     const tinyArc=curve([{kind:'arc',center:[0,500000],radius:500000,startAngle:270-0.00001,sweep:0.00002}]);
     expect(()=>exportCadCurveDxf(tinyArc,{})).toThrow(/precision|bulge/);
     roundtrip(curve([{kind:'arc',center:[100000000,100000000],radius:5,startAngle:0,sweep:180}]));

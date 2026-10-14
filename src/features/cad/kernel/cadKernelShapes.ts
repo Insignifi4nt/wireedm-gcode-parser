@@ -47,14 +47,19 @@ function subshapes<T extends { readonly wrapped: TopoDS_Shape; delete(): void }>
   const oc = getOC(), shapes: T[] = [];
   const explorer = new oc.TopExp_Explorer(shape.wrapped, kind, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
   try {
-    while (explorer.More()) {
-      const raw = explorer.Current();
-      try {
-        if (!shapes.some(shape => shape.wrapped.IsSame(raw))) shapes.push(create(raw));
-      } finally { raw.Nullify(); raw.delete(); }
-      explorer.Next();
-    }
-    return shapes;
+    const indices = new oc.NCollection_IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher();
+    try {
+      while (explorer.More()) {
+        const raw = explorer.Current();
+        try {
+          // Native indexed maps resolve collisions with IsSame, including location.
+          // New entries retain explorer order without a quadratic JS/native scan.
+          if (indices.Add(raw) > shapes.length) shapes.push(create(raw));
+        } finally { raw.Nullify(); raw.delete(); }
+        explorer.Next();
+      }
+      return shapes;
+    } finally { indices.delete(); }
   } catch (error) { for (const shape of shapes) cadKernelDisposeShape(shape); throw error; }
   finally { explorer.delete(); }
 }

@@ -6,7 +6,7 @@ import { exportSTEP, getOC, makeBox, makeCompound, makePolygon, setOC } from 're
 import { cadBytesToBase64, isCadSolidImportResult, type CadSolidImportSource } from '../../../domain/cad/cadImports';
 import type { CadDocument, CadFeature } from '../../../domain/cad/cadDocument';
 import { parseCadDocument } from '../../../domain/cad/cadSchema';
-import { loadCadSolidImport, prepareCadSolidImport, MAX_CAD_STL_FACETS } from './cadKernelImport';
+import { loadCadSolidImport, prepareCadSolidImport } from './cadKernelImport';
 import { buildCadKernelModel } from './cadKernelModel';
 import { createCadKernelRuntime } from './cadKernelRuntime';
 import { isCadKernelReply } from './cadKernelProtocol';
@@ -98,6 +98,12 @@ describe('original-source native solid import', () => {
     try {
       const pair: CadSolidImportSource = { format: 'step', encoding: 'utf8', fileName: 'pair.step', data: await exportSTEP([{ shape: first }, { shape: second }]).text() };
       const result = prepareCadSolidImport(pair); expect(result.solidCount).toBe(2); expect(result.volume).toBeCloseTo(2000, 6);
+      const model = buildCadKernelModel(document(pair));
+      try {
+        expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes[0].solidCount).toBe(2);
+        expect(model.result.meshes[0].volume).toBeCloseTo(2000, 6);
+        expect(isCadKernelReply({ id: 1, kind: 'built', result: model.result })).toBe(true);
+      } finally { model.dispose(); }
       const surface: CadSolidImportSource = { ...pair, data: await exportSTEP([{ shape: face }]).text() };
       expect(() => prepareCadSolidImport(surface)).toThrow(/surfaces|closed manifold/);
       const mixed: CadSolidImportSource = { ...pair, data: await exportSTEP([{ shape: first }, { shape: face }]).text() };
@@ -125,9 +131,9 @@ describe('original-source native solid import', () => {
     expect(() => prepareCadSolidImport({ ...binaryStl, data: cadBytesToBase64(bytes.slice(0, -3)) })).toThrow(/byte length|complete/);
     const nonfinite = bytes.slice(); new DataView(nonfinite.buffer).setFloat32(96, NaN, true);
     expect(() => prepareCadSolidImport({ ...binaryStl, data: cadBytesToBase64(nonfinite) })).toThrow('finite');
-    const oversized = new Uint8Array(84 + (MAX_CAD_STL_FACETS + 1) * 50);
-    new DataView(oversized.buffer).setUint32(80, MAX_CAD_STL_FACETS + 1, true);
-    expect(() => prepareCadSolidImport({ ...binaryStl, data: cadBytesToBase64(oversized) })).toThrow('4000');
+    const lateInvalid = new Uint8Array(84 + 4001 * 50), lateView = new DataView(lateInvalid.buffer);
+    lateView.setUint32(80, 4001, true); lateView.setFloat32(84 + 4000 * 50 + 12, NaN, true);
+    expect(() => prepareCadSolidImport({ ...binaryStl, data: cadBytesToBase64(lateInvalid) })).toThrow('finite');
     if (asciiStl.format !== 'stl') throw new Error('Expected STL');
     const ascii = new TextDecoder().decode(Uint8Array.from(atob(asciiStl.data), character => character.charCodeAt(0)));
     for (const corrupt of [ascii.replace(/vertex\s+\S+/, 'vertex NaN'), ascii.replace(/vertex\s+\S+/, 'vertex 1e309'), ascii.replace(/endfacet/, 'missingfacet')]) {
