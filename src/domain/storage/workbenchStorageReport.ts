@@ -47,7 +47,7 @@ export async function inspectWorkbenchStorage(workbench: ConnectedWorkbenchCatal
       complete: problems.length === 0, problems,
       files: inventory.paths.map((path) => ({
         path,
-        category: referenced.has(path) ? 'referenced' as const
+        category: referenced.has(path) || /^cad\//i.test(path) ? 'referenced' as const
           : path.startsWith('legacy/') ? 'retained-backup' as const
           : path.startsWith('transactions/') ? 'transaction' as const
           : 'unreferenced' as const

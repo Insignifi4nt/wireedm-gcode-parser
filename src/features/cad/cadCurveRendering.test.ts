@@ -1,0 +1,83 @@
+import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
+import type { CadCurveFeature, CadPathSegment } from '@/domain/cad/cadDocument';
+import { pickCadCurveReference, prepareCadCurveReferences } from './cadCurveRendering';
+import { cadLocalRenderPositions, cadRenderOrigin } from './cadRenderCoordinates';
+
+const line = (plane: CadCurveFeature['plane'] = 'XY', offset = 0): CadCurveFeature => ({ id: 'rail', name: 'Rail', kind: 'curve', suppressed: false, plane, offset,
+  segments: [{ kind: 'line', start: [0, 0], end: [10, 0] }] });
+function reference(curve = line()) {
+  const prepared = prepareCadCurveReferences([curve], {});
+  const geometry = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(prepared[0].positions, 3));
+  const lines = new THREE.LineSegments(geometry); lines.userData.featureId = curve.id; return lines;
+}
+
+describe('curve display geometry', () => {
+  it('maps exact local geometry to the shared signed world basis without changing source expressions', () => {
+    const curve = { ...line('XZ', 4), segments: [{ kind: 'line' as const, start: [0, 'rise'] as const, end: [10, 'rise'] as const }] };
+    expect(prepareCadCurveReferences([curve], { rise: 3 })[0]).toMatchObject({ positions: [0, -4, 3, 10, -4, 3], bounds: { min: [0, -4, 3], max: [10, -4, 3] } });
+    expect(curve.segments[0].start[1]).toBe('rise');
+    expect(prepareCadCurveReferences([{ ...curve, suppressed: true }], { rise: 3 })).toEqual([]);
+  });
+
+  it('keeps clockwise major-arc traversal and endpoints in display samples', () => {
+    const curve: CadCurveFeature = { ...line(), segments: [{ kind: 'arc', center: [0, 0], radius: 5, startAngle: 0, sweep: -270 }] };
+    const result = prepareCadCurveReferences([curve], {})[0];
+    expect(result.positions.slice(0, 3)).toEqual([5, 0, 0]); expect(result.positions[4]).toBeLessThan(0);
+    expect(result.positions.at(-3)).toBeCloseTo(0); expect(result.positions.at(-2)).toBeCloseTo(5);
+    expect(curve.segments[0]).toMatchObject({ sweep: -270 });
+  });
+
+  it('retains arc sampling accuracy independently of the number of curves', () => {
+    const segments: readonly CadPathSegment[] = Array.from({ length: 256 }, (_, index) => ({ kind: 'arc', center: [index * 2 + 1, 0], radius: 1, startAngle: 180, sweep: index % 2 ? 180 : -180 }));
+    const curves: CadCurveFeature[] = Array.from({ length: 32 }, (_, index) => ({ ...line(), id: `rail_${index}`, offset: index * 5, segments }));
+    const result = prepareCadCurveReferences(curves, {});
+    expect(result).toHaveLength(32);
+    const single = prepareCadCurveReferences([curves[0]], {})[0];
+    expect(single.positions.length / 6).toBe(256 * 60);
+    for (const curve of result) expect(curve.positions).toHaveLength(single.positions.length);
+    expect(result.reduce((sum, curve) => sum + curve.positions.length / 6, 0)).toBe(32 * 256 * 60);
+  });
+});
+
+describe('reference feature picking', () => {
+  it.each([0, 100000000])('keeps a reference behind a solid silhouette hidden at world offset %s', worldOffset => {
+    const camera = new THREE.OrthographicCamera(-20, 20, 20, -20, .01, 1000);
+    camera.position.set(worldOffset, worldOffset, worldOffset + 100); camera.lookAt(worldOffset, worldOffset, worldOffset); camera.updateMatrixWorld();
+    const prepared = prepareCadCurveReferences([{ ...line(), segments: [{ kind: 'line', start: [worldOffset - 5, worldOffset + .9], end: [worldOffset + 5, worldOffset + .9] }], offset: worldOffset }], {})[0];
+    const origin = cadRenderOrigin(prepared.bounds);
+    const geometry = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(prepared.positions, origin), 3));
+    const lines = new THREE.LineSegments(geometry); lines.position.set(...origin); lines.userData.featureId = 'rail'; lines.updateMatrixWorld();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(12, 2, 2)); body.position.set(worldOffset, worldOffset, worldOffset + 1); body.updateMatrixWorld();
+    const raycaster = new THREE.Raycaster();
+    const pick = () => pickCadCurveReference({ raycaster, references: [lines], bodies: [body], camera, viewportHeight: 400 });
+    try {
+      // Pointer is four pixels from the line and just outside the solid's silhouette.
+      // The line itself is still behind the solid, so a pointer-ray miss cannot reveal it.
+      const point = new THREE.Vector3(worldOffset, worldOffset + 1.3, worldOffset).project(camera);
+      raycaster.setFromCamera(new THREE.Vector2(point.x, point.y), camera);
+      expect(raycaster.intersectObject(body)).toEqual([]); expect(pick()).toBeNull();
+      // The same outline in front remains selectable, including from outside the silhouette.
+      lines.position.z += 3; lines.updateMatrixWorld(); expect(pick()).toBe('rail');
+      const outsideTolerance = new THREE.Vector3(worldOffset, worldOffset + 1.6, worldOffset).project(camera);
+      raycaster.setFromCamera(new THREE.Vector2(outsideTolerance.x, outsideTolerance.y), camera); expect(pick()).toBeNull();
+    } finally { geometry.dispose(); body.geometry.dispose(); }
+  });
+
+  it.each([1, 2])('uses six pixels at zoom %s without relying on body topology', zoom => {
+    const camera = new THREE.OrthographicCamera(-20, 20, 20, -20, 0.01, 1000); camera.position.set(5, 0, 100); camera.zoom = zoom;
+    camera.lookAt(5, 0, 0); camera.updateProjectionMatrix(); camera.updateMatrixWorld(); const raycaster = new THREE.Raycaster(); const lines = reference();
+    const pick = (pixels: number) => { raycaster.setFromCamera(new THREE.Vector2(0, pixels * 2 / 400), camera); return pickCadCurveReference({ raycaster, references: [lines], bodies: [], camera, viewportHeight: 400 }); };
+    expect(pick(5)).toBe('rail'); expect(pick(7)).toBeNull(); lines.geometry.dispose();
+  });
+
+  it('rejects hidden references behind a solid and selects a visible reference in front', () => {
+    const camera = new THREE.OrthographicCamera(-20, 20, 20, -20, 0.01, 1000); camera.position.set(5, 0, 100); camera.lookAt(5, 0, 0); camera.updateMatrixWorld();
+    const raycaster = new THREE.Raycaster(); raycaster.setFromCamera(new THREE.Vector2(), camera);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(12, 2, 2)); body.position.set(5, 0, 1); body.updateMatrixWorld();
+    const hidden = reference(), visible = reference(line('XY', 3));
+    expect(pickCadCurveReference({ raycaster, references: [hidden], bodies: [body], camera, viewportHeight: 400 })).toBeNull();
+    expect(pickCadCurveReference({ raycaster, references: [visible], bodies: [body], camera, viewportHeight: 400 })).toBe('rail');
+    hidden.geometry.dispose(); visible.geometry.dispose(); body.geometry.dispose();
+  });
+});

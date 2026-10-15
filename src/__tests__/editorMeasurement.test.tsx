@@ -38,7 +38,7 @@ describe('Editor measurement points', () => {
     await renderApp(context, { downloadTextFile });
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -124,7 +124,7 @@ describe('Editor measurement points', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -272,7 +272,7 @@ describe('Editor measurement points', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -370,7 +370,7 @@ describe('Editor measurement points', () => {
       await renderApp(context);
 
       const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-        button.textContent?.includes('Open Editor')
+        button.getAttribute('aria-label') === 'Open Editor'
       );
 
       await act(async () => {
@@ -441,7 +441,7 @@ async function renderEditorWithMeasurementPoint(
   await renderApp(context);
 
   const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-    button.textContent?.includes('Open Editor')
+    button.getAttribute('aria-label') === 'Open Editor'
   );
 
   await act(async () => {

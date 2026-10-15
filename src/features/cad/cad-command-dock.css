@@ -1,0 +1,10 @@
+.cad-command-dock { position: absolute; z-index: 10; bottom: 6px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; width: max-content; max-width: calc(100% - 24px); pointer-events: none; }
+.cad-command-dock > .cad-toolbar { position: relative; inset: auto; transform: none; max-width: 100%; flex-shrink: 0; pointer-events: auto; }
+.cad-command-view-drawer { display: grid; grid-template-rows: 0fr; width: max-content; max-width: 100%; min-width: 0; opacity: 0; transition: grid-template-rows 180ms ease, opacity 180ms ease; }
+.cad-command-view-content { overflow: hidden; min-height: 0; min-width: 0; pointer-events: auto; }
+.cad-command-dock.is-view-open .cad-command-view-drawer { grid-template-rows: 1fr; opacity: 1; }
+.cad-command-dock .cad-view-tools { position: relative; inset: auto; box-sizing: border-box; justify-content: center; width: max-content; max-width: 100%; margin: 4px auto 0; min-height: 31px; overflow-x: auto; }
+.cad-command-dock .cad-view-tools > * { flex-shrink: 0; }
+.cad-workbench .cad-command-view-tab { display: inline-flex; justify-content: center; gap: 4px; min-height: 15px; padding: 1px 12px; font-size: 10px; line-height: 13px; pointer-events: auto; }
+.cad-command-dock.is-view-open .cad-command-view-tab svg { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { }

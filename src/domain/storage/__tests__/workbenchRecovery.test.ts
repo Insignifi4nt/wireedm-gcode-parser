@@ -85,15 +85,18 @@ it('bounds compressed cache expansion, preserves valid compressed BOM text, and 
   expect(exported.receipt.omittedFiles).toBe(1);
 });
 
-it('cancels streaming decompression and explicitly omits compressed files when the bounded primitive is unavailable', async () => {
-  const adapter = setup('cache'); await adapter.writeText('compressed.nc', 'G90\r\n'.repeat(4000));
+it('cancels portable decompression and rescues complete compressed originals without the native primitive', async () => {
+  const namespace = crypto.randomUUID(), adapter = createBrowserCacheAdapter(localStorage, { namespace }), text = 'G90\r\n'.repeat(4000);
+  await adapter.writeText('compressed.nc', text);
+  const key = `${namespace}:file:compressed.nc`, original = localStorage.getItem(key);
   const control = new AbortController();
   const pending = adapter.readBoundedExactText!('compressed.nc', 30_000, control.signal);
   control.abort(); await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   vi.stubGlobal('DecompressionStream', undefined);
   const exported = await captureWorkbenchRecovery(recoveryStorageSource(adapter, { code: 'BLOCKED', message: '' }));
-  expect(JSON.parse(exported.text).files).toContainEqual({ path: 'compressed.nc', status: 'unreadable', message: 'Bounded gzip reading is unavailable in this browser.' });
-  expect(exported.receipt).toMatchObject({ omittedFiles: 1, contentComplete: false });
+  expect(JSON.parse(exported.text).files).toContainEqual(expect.objectContaining({ path: 'compressed.nc', status: 'captured', text }));
+  expect(exported.receipt).toMatchObject({ omittedFiles: 0, capturedFiles: 1, contentComplete: true });
+  expect(localStorage.getItem(key)).toBe(original);
 });
 
 it('preserves malformed plain-cache UTF-16 code units with a truthful logical hash', async () => {

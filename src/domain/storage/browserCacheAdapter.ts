@@ -1,7 +1,8 @@
 import { gunzip, gunzipSync, gzip, gzipSync, strFromU8, strToU8 } from 'fflate';
 
 import { MAX_STORAGE_INVENTORY_ENTRIES, type WorkbenchStorageAdapter } from './workbenchStorageAdapter';
-import { assertReadLimit, exceedsUtf8Limit, readBoundedGzip } from './boundedExactText';
+import { assertReadLimit, exceedsUtf8Limit, isWellFormedText, readBoundedGzip } from './boundedExactText';
+import { readExactUtf8GzipBase64 } from './exactTextStream';
 
 const COMPRESSED_TEXT_PREFIX = '\u0000wire-edm-cache-gzip-v1:';
 const MIN_COMPRESS_LENGTH = 4096;
@@ -39,7 +40,15 @@ export function createBrowserCacheAdapter(
       }
     },
     readText: async (path: string) => decodeStoredText(storage.getItem(fileKey(namespace, path))),
-    readExactText: async (path: string) => decodeStoredText(storage.getItem(fileKey(namespace, path)), true),
+    readExactText: async (path: string, signal?: AbortSignal) => {
+      signal?.throwIfAborted();
+      const stored = storage.getItem(fileKey(namespace, path));
+      if (stored === null) return null;
+      if (stored.startsWith(COMPRESSED_TEXT_PREFIX)) return readExactUtf8GzipBase64(stored.slice(COMPRESSED_TEXT_PREFIX.length), signal);
+      if (!isWellFormedText(stored)) throw new Error('Cached text cannot round-trip as exact UTF-8: malformed Unicode. Preserve the original for recovery.');
+      signal?.throwIfAborted();
+      return stored;
+    },
     readBoundedExactText: async (path, maxBytes, signal) => {
       assertReadLimit(maxBytes); signal?.throwIfAborted();
       const stored = storage.getItem(fileKey(namespace, path));
@@ -85,10 +94,10 @@ async function encodeStoredText(contents: string): Promise<string> {
   return needsEnvelope || compressed.length < contents.length ? compressed : contents;
 }
 
-async function decodeStoredText(stored: string | null, preserveBom = false): Promise<string | null> {
+async function decodeStoredText(stored: string | null): Promise<string | null> {
   if (stored === null || !stored.startsWith(COMPRESSED_TEXT_PREFIX)) return stored;
   const bytes = await gunzipAsync(strToU8(atob(stored.slice(COMPRESSED_TEXT_PREFIX.length)), true));
-  return preserveBom ? new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) : strFromU8(bytes);
+  return strFromU8(bytes);
 }
 
 function gzipAsync(value: Uint8Array): Promise<Uint8Array> {

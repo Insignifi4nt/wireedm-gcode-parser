@@ -149,4 +149,6 @@ export interface DxfParseResult {
 
 export interface DxfParseOptions {
   curveChordError?: number;
+  /** Local CAD retains exact supported geometry without CAM import-policy ceilings. */
+  mode?: 'exact-cad';
 }

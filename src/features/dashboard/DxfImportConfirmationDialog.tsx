@@ -1,3 +1,5 @@
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { useEffect, useRef, type FormEvent } from 'react';
 import { X } from 'lucide-react';
 
@@ -181,15 +183,15 @@ export function DxfImportConfirmationDialog({
               </p>
             )}
           </div>
-          <button
+          <Button variant="outline" size="icon"
             aria-label={reimport ? 'Close DXF unit re-import review' : 'Close DXF import review'}
-            className="flex size-7 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground disabled:opacity-45"
+            className="flex size-7 shrink-0 items-center justify-center"
             disabled={cancellationBlocked}
             onClick={onCancel}
             type="button"
           >
             <X className="size-4" />
-          </button>
+          </Button>
         </header>
 
         <div className="work-region-scrollbar min-h-0 overflow-auto p-4 font-mono text-[11px]">
@@ -210,9 +212,9 @@ export function DxfImportConfirmationDialog({
                 </div>
                 <label className="grid gap-1 text-muted-foreground">
                   DXF units
-                  <select
+                  <Select
                     aria-label="DXF units"
-                    className="h-8 border border-border bg-background px-2 text-foreground outline-none focus:border-ring"
+                    className="h-8 px-2"
                     disabled={submitting}
                     onChange={(event) => onUnitCandidateChange(event.currentTarget.value)}
                     ref={unitSelectRef}
@@ -224,11 +226,11 @@ export function DxfImportConfirmationDialog({
                         {candidate.label} (×{formatScale(candidate.scaleToMillimeters)})
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 {overridesDeclaration && (
                   <label className="flex items-start gap-2 border border-amber-500/50 bg-amber-500/10 p-2 text-amber-200">
-                    <input
+                    <Input
                       aria-label="Override declared DXF units"
                       checked={declaredUnitOverrideAcknowledged}
                       className="mt-0.5"
@@ -262,7 +264,7 @@ export function DxfImportConfirmationDialog({
 
             {reimport && rebuildRequired && (
               <label className="flex items-start gap-2 border border-amber-500/50 bg-amber-500/10 p-3 text-amber-200">
-                <input
+                <Input
                   aria-label="Rebuild path geometry from raw DXF"
                   checked={rebuildAcknowledged}
                   className="mt-0.5"
@@ -292,10 +294,10 @@ export function DxfImportConfirmationDialog({
         </div>
 
         <footer className="flex items-center justify-end gap-2 border-t border-border p-3">
-          <Button disabled={cancellationBlocked} onClick={onCancel} type="button" variant="outline">
+          <Button size="md" disabled={cancellationBlocked} onClick={onCancel} type="button" variant="outline">
             Cancel
           </Button>
-          <Button disabled={confirmationBlocked} type="submit">
+          <Button variant="default" size="md" disabled={confirmationBlocked} type="submit">
             {submitting
               ? reimport ? 'Re-importing...' : 'Importing...'
               : reimport ? 'Re-import and open' : 'Import and open'}

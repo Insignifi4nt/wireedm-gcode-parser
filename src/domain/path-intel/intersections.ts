@@ -378,7 +378,10 @@ function intersectLineCircular(
   const discriminant = quadraticB * quadraticB - 4 * quadraticA * quadraticC;
   const discriminantScale = Math.max(
     Math.abs(quadraticB * quadraticB),
-    Math.abs(4 * quadraticA * quadraticC),
+    // C subtracts two positive squared magnitudes. At an endpoint tangent its
+    // result is near zero, but its rounding error comes from those magnitudes.
+    // Using |C| here loses that error bound and invents two tangent roots.
+    4 * quadraticA * (dot(start, start) + radius * radius),
     Number.MIN_VALUE
   );
   const discriminantTolerance = ROUNDING_FACTOR * Number.EPSILON * discriminantScale;

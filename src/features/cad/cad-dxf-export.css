@@ -1,0 +1,31 @@
+.cad-dxf-export { margin: auto; width: min(660px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0; overflow: auto; border: 1px solid var(--border); border-radius: 5px; background: var(--card); color: var(--muted-foreground); box-shadow: 0 16px 60px color-mix(in srgb, var(--background) 55%, transparent); font: 11px/1.45 ui-sans-serif, system-ui, sans-serif; }
+.cad-dxf-export::backdrop { background: color-mix(in srgb, var(--background) 65%, transparent); }
+.cad-dxf-export > header { display: flex; align-items: center; justify-content: space-between; padding: 11px 15px; border-bottom: 1px solid var(--border); }
+.cad-dxf-export h2 { margin: 0 0 2px; font-size: 13px; font-weight: 550; }
+.cad-dxf-export header span { color: var(--muted-foreground); font-size: 10px; }
+.cad-dxf-close { display: grid; place-items: center; width: 26px; height: 26px; }
+.cad-dxf-content { display: grid; grid-template-columns: 215px minmax(0, 1fr); gap: 10px 15px; padding: 12px 15px; }
+.cad-dxf-source-heading { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; color: var(--foreground); }
+.cad-dxf-source-types { grid-column: 1 / -1; display: flex; margin: 0 0 3px; padding: 0; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+.cad-dxf-source-types > label { display: flex; flex: 1; align-items: center; justify-content: center; gap: 6px; padding: 7px; border-right: 1px solid var(--border); cursor: pointer; }
+.cad-dxf-source-types > label:last-child { border-right: 0; }
+.cad-dxf-source-types > label.is-active { background: var(--accent); color: var(--accent-foreground); }
+.cad-dxf-source-types > label:has(input:disabled) { opacity: .4; cursor: default; }
+.cad-dxf-source-types input { margin: 0; }
+.cad-dxf-settings { display: flex; flex-direction: column; gap: 10px; }
+.cad-dxf-settings label { display: flex; flex-direction: column; gap: 4px; color: var(--muted-foreground); }
+.cad-dxf-settings label > span { display: flex; gap: 4px; align-items: center; }
+.cad-dxf-settings small { color: var(--muted-foreground); font-size: 10px; }
+.cad-dxf-settings input { width: 100%; min-height: 28px; padding: 4px 7px; font: inherit; }
+.cad-dxf-settings select { width: 100%; min-height: 28px; padding: 4px 7px; overflow: hidden; text-overflow: ellipsis; }
+.cad-dxf-plane-row { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 9px; }
+.cad-dxf-coordinate-note { color: var(--muted-foreground); font-size: 10px; }
+.cad-dxf-preview { display: grid; place-items: center; min-height: 190px; border: 1px solid var(--border); border-radius: 3px; background: var(--card); overflow: hidden; }
+.cad-dxf-preview > svg { display: block; width: 100%; height: 220px; }
+.cad-dxf-preview > p { max-width: 180px; padding: 16px; text-align: center; color: var(--muted-foreground); }
+.cad-dxf-status { grid-column: 2; min-height: 15px; color: var(--muted-foreground); font-size: 10px; }
+.cad-dxf-error { grid-column: 1 / -1; margin: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 3px; color: var(--destructive); background: var(--card); }
+.cad-dxf-export footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 15px; border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: 10px; }
+.cad-dxf-export footer > div { display: flex; gap: 7px; }
+.cad-dxf-secondary, .cad-dxf-primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 5px 10px; font: 11px/1.4 ui-sans-serif, system-ui, sans-serif; white-space: nowrap; }
+@media (max-width: 560px) { .cad-dxf-content { grid-template-columns: 1fr; } .cad-dxf-status { grid-column: 1; } .cad-dxf-export footer { align-items: flex-end; } .cad-dxf-export footer > span { max-width: 125px; } }

@@ -7,7 +7,6 @@ import {
   type ReactNode
 } from 'react';
 import {
-  Database,
   HardDrive,
   PanelLeftClose,
   PanelLeftOpen,
@@ -85,33 +84,6 @@ export function AppShell({
     setSettingsSection('machine-output');
     setSettingsOpen(true);
   }, []);
-  const isReady = workbenchStatus === 'ready' && connectedWorkbench;
-  const isConnectingStorage =
-    workbenchStatus === 'initializing' || workbenchStatus === 'connecting-storage';
-  const isTemporaryStorage = isReady && connectedWorkbench.adapter.kind === 'memory';
-  const activeStorageLabel = !connectedWorkbench
-    ? isConnectingStorage
-      ? 'Preparing storage'
-      : 'No storage'
-    : connectedWorkbench.adapter.kind === 'directory'
-      ? 'Workbench folder'
-      : connectedWorkbench.adapter.kind === 'browser-cache'
-        ? 'Browser cache'
-        : 'Temporary storage';
-  const storageStatusLabel = isTemporaryStorage
-    ? 'Temporary storage only'
-    : isReady
-      ? connectedWorkbench.adapter.kind === 'directory'
-        ? 'Workbench folder connected'
-        : `${activeStorageLabel} active`
-      : isConnectingStorage
-        ? 'Connecting Workbench Folder'
-        : 'Storage not connected';
-  const storageStatusTone = isTemporaryStorage
-    ? 'temporary'
-    : workbenchStatus === 'error' || (!connectedWorkbench && !isConnectingStorage)
-      ? 'error'
-      : 'neutral';
   const hasRailContent = railContent !== null;
   const replaceRailChrome = Boolean(railContent?.replaceRailChrome);
   const requestedSidebarCollapsed = railContent?.isCollapsed ?? shellRailCollapsed;
@@ -217,22 +189,6 @@ export function AppShell({
         )}
         <div className="ml-auto flex items-center gap-2" data-app-header-system-controls>
           <StatusNotificationMenu notifications={statusNotifications} agentContent={agentPanelContent} />
-          <span
-            aria-label={storageStatusLabel}
-            className={`inline-flex h-7 items-center gap-2 rounded-[2px] border px-2 text-[10px] ${
-              storageStatusTone === 'temporary'
-                ? 'border-amber-500/50 bg-amber-500/10 text-amber-100'
-                : storageStatusTone === 'error'
-                  ? 'border-destructive/60 bg-destructive/10 text-destructive'
-                  : 'border-border bg-background/60 text-muted-foreground'
-            }`}
-            data-storage-status
-            role="status"
-            title={connectedWorkbench?.adapter.persistenceWarning ?? storageStatusLabel}
-          >
-            <Database className="size-3.5" />
-            <span data-storage-status-label>{storageStatusLabel}</span>
-          </span>
           <Button
             aria-label="Open settings"
             onClick={() => { setSettingsSection('storage'); setSettingsOpen(true); }}
@@ -273,9 +229,9 @@ export function AppShell({
           >
             {!replaceRailChrome && (
               <div className="flex h-7 shrink-0 items-center justify-end border-b border-border px-1">
-                <button
+                <Button variant="outline" size="icon"
                   aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}
-                  className="flex size-7 items-center justify-center rounded-[2px] border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex size-7 items-center justify-center"
                   onClick={() => {
                     const nextCollapsed = !sidebarCollapsed;
                     if (railContent.onCollapsedChange) {
@@ -292,7 +248,7 @@ export function AppShell({
                   ) : (
                     <PanelLeftClose className="size-3.5" />
                   )}
-                </button>
+                </Button>
               </div>
             )}
             <div

@@ -1,3 +1,5 @@
+import { Tooltip } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
 import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
 
 import type { UpidEditorTree } from '@/domain/upid/upidEditorTree';
@@ -69,38 +71,38 @@ export function EditorUpidRail({
         className="flex w-9 shrink-0 flex-col items-center gap-2 border-r border-border bg-card py-1 text-[10px]"
         data-editor-upid-rail
       >
-        <button
+        <Button size="icon"
           aria-label="Expand UPID rail"
-          className="flex size-7 items-center justify-center outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex size-7 items-center justify-center"
           onClick={() => onCollapseChange(false)}
           title="Expand UPID rail"
           type="button"
         >
           <span aria-hidden="true">›</span>
-        </button>
-        <button
+        </Button>
+        <Button variant="outline" size="icon"
           aria-label={`Switch to ${nextMode === 'geometry' ? 'Geometry' : 'Program'} lens`}
-          className="flex size-6 items-center justify-center border border-border font-semibold outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex items-center justify-center font-semibold"
           onClick={() => onModeChange(nextMode)}
           title={`${formatMode(mode)} lens`}
           type="button"
         >
           {mode === 'program' ? 'P' : 'G'}
-        </button>
-        <span
+        </Button>
+        <Tooltip content={`Program status: ${formatStatus(status)}`}><span tabIndex={0}
           aria-label={`Program status: ${formatStatus(status)}`}
           className={`size-2 rounded-full ${statusColor(status)}`}
           role="img"
-          title={`Program status: ${formatStatus(status)}`}
-        />
+
+        /></Tooltip>
         {selectedOperationOrdinal === null ? null : (
-          <span
+          <Tooltip content={`Selected operation ${selectedOperationOrdinal}`}><span tabIndex={0}
             aria-label={`Selected operation ${selectedOperationOrdinal}`}
             className="technical-value text-[10px] text-muted-foreground"
-            title={`Selected operation ${selectedOperationOrdinal}`}
+
           >
             {String(selectedOperationOrdinal).padStart(2, '0')}
-          </span>
+          </span></Tooltip>
         )}
       </aside>
     );
@@ -114,7 +116,7 @@ export function EditorUpidRail({
     >
       <div className="flex h-8 items-center border-b border-border px-1">
         <div aria-label="UPID rail lens" className="flex min-w-0 flex-1" role="tablist">
-          <button
+          <Button
             aria-label="Program lens"
             aria-controls={panelIds.program}
             aria-selected={mode === 'program'}
@@ -128,8 +130,8 @@ export function EditorUpidRail({
             type="button"
           >
             Program
-          </button>
-          <button
+          </Button>
+          <Button
             aria-label="Geometry lens"
             aria-controls={panelIds.geometry}
             aria-selected={mode === 'geometry'}
@@ -143,17 +145,17 @@ export function EditorUpidRail({
             type="button"
           >
             Geometry
-          </button>
+          </Button>
         </div>
-        <button
+        <Button size="icon"
           aria-label="Collapse UPID rail"
-          className="flex size-6 items-center justify-center outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex items-center justify-center"
           onClick={() => onCollapseChange(true)}
           title="Collapse UPID rail"
           type="button"
         >
           <span aria-hidden="true">‹</span>
-        </button>
+        </Button>
       </div>
       <div
         aria-labelledby={tabIds.program}

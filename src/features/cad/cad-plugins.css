@@ -1,0 +1,88 @@
+.cad-plugin-overlay { position: fixed; inset: 0; z-index: 100; background: color-mix(in srgb, var(--background) 65%, transparent); display: grid; place-items: center; padding: 16px; }
+.cad-plugin-panel { width: min(540px, 100%); max-height: min(650px, 85vh); overflow: auto; background: var(--card); border: 1px solid var(--border); border-radius: 5px; box-shadow: 0 12px 45px color-mix(in srgb, var(--background) 55%, transparent); padding: 0; color: var(--muted-foreground); font-size: 12px; }
+.cad-plugin-panel.is-authoring { width: min(650px, 100%); }
+.cad-plugin-panel header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.cad-plugin-panel header strong { font-size: 13px; font-weight: 550; }
+.cad-plugin-panel .cad-plugin-icon-button { padding: 5px; }
+.cad-plugin-search { display: flex; align-items: center; gap: 9px; margin: 12px 14px; padding: 0 8px; border: 1px solid var(--border); border-radius: 3px; background: var(--card); color: var(--muted-foreground); }
+.cad-plugin-search input { width: 100%; }
+.cad-plugin-list { margin: 0 14px 14px; }
+.cad-plugin-list article { display: flex; gap: 8px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.cad-plugin-row-copy { flex: 1; min-width: 0; }
+.cad-plugin-row-copy > div { display: flex; gap: 8px; align-items: baseline; }
+.cad-plugin-row-copy strong { color: var(--foreground); font-weight: 500; }
+.cad-plugin-row-copy small { color: var(--muted-foreground); font-size: 10px; }
+.cad-plugin-row-copy p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.45; }
+.cad-plugin-panel footer { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; background: var(--card); border-top: 1px solid var(--border); }
+.cad-plugin-panel footer > span { color: var(--muted-foreground); font-size: 10px; }
+.cad-plugin-panel footer > button { font-size: 11px; }
+.cad-plugin-empty { padding: 12px 14px; color: var(--muted-foreground); }
+.cad-plugin-author-toolbar { display: flex; justify-content: space-between; padding: 8px 10px; }
+.cad-plugin-source { display: flex; flex-direction: column; gap: 6px; margin: 0 14px; color: var(--muted-foreground); font-size: 10px; }
+.cad-plugin-source textarea { width: 100%; min-height: 230px; resize: vertical; padding: 10px; font: 11px/1.5 ui-monospace, monospace; }
+.cad-plugin-author-help { margin: 10px 14px; font-size: 11px; color: var(--muted-foreground); }
+.cad-plugin-author-help summary { cursor: pointer; }
+.cad-plugin-author-help p { line-height: 1.6; }
+.cad-plugin-author-actions { display: flex; justify-content: flex-end; gap: 8px; margin: 12px 14px; }
+.cad-plugin-review, .cad-plugin-notice { margin: 10px 14px; color: var(--muted-foreground); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cad-plugin-panel > .cad-error { margin: 10px 14px; }
+.cad-properties.cad-plugin-inspector { position: absolute; right: 12px; bottom: 108px; width: min(320px, calc(100% - 24px)); max-height: calc(100% - 120px); height: auto; border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 8px 24px color-mix(in srgb, var(--background) 55%, transparent); z-index: 5; background: var(--card); }
+.cad-plugin-form { padding: 12px; }
+.cad-plugin-form .cad-property-title { margin: 0 0 10px; font-size: 13px; }
+.cad-plugin-field { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(0, 1.25fr); align-items: center; gap: 8px; margin: 6px 0; min-width: 0; color: var(--muted-foreground); font-size: 11px; }
+.cad-plugin-field > span { display: flex; align-items: center; gap: 3px; }
+.cad-plugin-input-wrap { position: relative; min-width: 0; }
+.cad-plugin-input-wrap > input, .cad-plugin-input-wrap > select, .cad-plugin-field > select { width: 100%; min-height: 27px; padding: 4px 7px; font-size: 11px; }
+.cad-plugin-input-wrap > input { padding-right: 28px; }
+.cad-plugin-unit, .cad-plugin-expression { position: absolute; right: 7px; top: 6px; font-size: 10px; color: var(--muted-foreground); pointer-events: none; }
+.cad-plugin-expression { right: 28px; color: var(--muted-foreground); font-style: italic; }
+.cad-plugin-field.is-disabled > span { color: var(--muted-foreground); }
+.cad-plugin-placement { display: flex; flex-wrap: wrap; gap: 7px; margin: 11px 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.cad-plugin-field.is-placement { display: flex; gap: 4px; flex: 1; min-width: 78px; margin: 0; }
+.cad-plugin-field.is-placement > span { flex-shrink: 0; font-size: 10px; }
+.cad-plugin-field.is-placement .cad-plugin-input-wrap { flex: 1; }
+.cad-plugin-field.is-placement input { padding: 4px 5px; }
+.cad-plugin-field.is-placement .cad-plugin-expression { display: none; }
+.cad-plugin-disclosure { margin: 0; border-top: 1px solid var(--border); padding: 8px 0; font-size: 11px; }
+.cad-plugin-disclosure > summary { cursor: pointer; color: var(--muted-foreground); font-size: 11px; }
+.cad-plugin-disclosure[open] > summary { margin-bottom: 9px; }
+.cad-plugin-disclosure p { color: var(--muted-foreground); font-size: 10px; line-height: 1.55; margin: 8px 0 0; }
+.cad-plugin-derived { margin: 0; font-variant-numeric: tabular-nums; }
+.cad-plugin-derived > div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.cad-plugin-derived dt { color: var(--muted-foreground); font-size: 10px; }
+.cad-plugin-derived dd { display: flex; gap: 4px; margin: 0; font-size: 11px; color: var(--foreground); }
+.cad-plugin-derived small { color: var(--muted-foreground); font-size: 10px; }
+.cad-plugin-form .cad-form-actions { margin-top: 3px; padding-top: 9px; }
+.cad-plugin-form .cad-form-actions button { font-size: 11px; padding: 5px 9px; }
+.cad-plugin-form .cad-error { font-size: 11px; margin: 8px 0; }
+.cad-plugin-form .cad-error p { margin: 3px 0; }
+.cad-plugin-profile-options .cad-field { margin: 7px 0; }
+.cad-plugin-profile-options .cad-check { margin-bottom: 4px; font-size: 11px; }
+.cad-plugin-upgrade { border: 1px solid var(--border); padding: 7px; margin-bottom: 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 10px; color: var(--muted-foreground); }
+.cad-plugin-upgrade button { margin-left: auto; font-size: 10px; padding: 4px; }
+.cad-plugin-upgrade small { flex-basis: 100%; font-size: 10px; color: var(--muted-foreground); }
+.cad-workbench .cad-plugin-break-link { grid-column: 2; padding: 1px; justify-self: end; font-size: 9px; }
+@media (max-width: 600px) { .cad-plugin-panel footer { gap: 8px; } .cad-plugin-panel footer > span { display: none; } .cad-properties.cad-plugin-inspector { right: 6px; bottom: 108px; width: min(300px, calc(100% - 12px)); max-height: calc(100% - 120px); } }
+.cad-body { position: relative; }
+.cad-properties .cad-property-form { padding: 11px 12px; }
+.cad-properties .cad-property-title { margin-bottom: 11px; font-size: 12px; }
+.cad-properties .cad-field { display: grid; grid-template-columns: minmax(85px, .9fr) minmax(0, 1.1fr); align-items: center; gap: 5px 8px; margin-bottom: 7px; }
+.cad-properties .cad-field > span { gap: 5px; font-size: 11px; }
+.cad-properties .cad-field input, .cad-properties .cad-field select { min-height: 27px; font-size: 11px; }
+.cad-properties .cad-field > .cad-field-hint { display: none; }
+.cad-properties .cad-field.is-invalid > .cad-field-hint { display: block; grid-column: 2; font-size: 10px; margin: 0; }
+.cad-properties .cad-field-section { margin: 11px 0 8px; padding-top: 8px; }
+.cad-plugin-lock { position: absolute; right: 8px; top: 8px; color: var(--muted-foreground); pointer-events: none; }
+.cad-plugin-lock.has-unit { right: 29px; }
+.cad-plugin-key-dimensions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 8px 0 2px; font-variant-numeric: tabular-nums; }
+.cad-plugin-key-dimensions > div { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; }
+.cad-plugin-key-dimensions span { display: flex; align-items: center; gap: 3px; color: var(--muted-foreground); font-size: 10px; }
+.cad-plugin-key-dimensions output { color: var(--foreground); font-size: 11px; }
+.cad-plugin-key-dimensions small { margin-left: 3px; color: var(--muted-foreground); font-size: 9px; }
+.cad-plugin-input-wrap:has(.cad-plugin-expression) > input, .cad-plugin-input-wrap:has(.cad-plugin-lock.has-unit) > input { padding-right: 47px; }
+.cad-plugin-root-value { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 6px 0 8px; font-size: 11px; }
+.cad-plugin-root-value > span { display: flex; align-items: center; gap: 4px; color: var(--muted-foreground); }
+.cad-plugin-root-value output { color: var(--foreground); font-variant-numeric: tabular-nums; }
+.cad-plugin-root-value small { margin-left: 4px; color: var(--muted-foreground); font-size: 10px; }
+.cad-workbench .cad-plugin-root-upgrade { font-size: 10px; padding: 4px 7px; }
+.cad-plugin-root-upgrade-note { display: block; color: var(--muted-foreground); font-size: 9px; margin-top: 5px; }

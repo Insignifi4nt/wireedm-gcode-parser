@@ -11,8 +11,8 @@ test('keeps existing cache untouched without Web Locks while temporary imports r
   });
   const temporary = await context.newPage();
   await ready(temporary);
-  await expect(temporary.locator('[data-storage-status]')).toHaveAttribute('aria-label', 'Temporary storage only');
   await temporary.getByRole('button', { name: 'Open settings', exact: true }).click();
+  await expect(temporary.getByRole('dialog')).toContainText('Temporary storage');
   await expect(temporary.getByRole('dialog')).toContainText('cannot coordinate persistent edits across tabs');
   await expect(temporary.getByRole('dialog')).toContainText('Existing browser-cache projects are untouched');
   await temporary.screenshot({ path: 'tmp/cam-audit/15-temporary-storage-reason.png', fullPage: true });
@@ -30,7 +30,9 @@ test('keeps existing cache untouched without Web Locks while temporary imports r
   expect(await cache(temporary)).toEqual(before);
   await temporary.reload();
   await dismissOnboarding(temporary);
-  await expect(temporary.locator('[data-storage-status]')).toHaveAttribute('aria-label', 'Temporary storage only');
+  await temporary.getByRole('button', { name: 'Open settings', exact: true }).click();
+  await expect(temporary.getByRole('dialog')).toContainText('Temporary storage');
+  await temporary.getByRole('button', { name: 'Close settings', exact: true }).click();
   await expect(temporary.getByRole('button', { name: /^Open project / })).toHaveCount(0);
   expect(await cache(temporary)).toEqual(before);
 });

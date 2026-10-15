@@ -1,0 +1,370 @@
+--- a/src/ocjs_bindgen/codegen/embind/class_.py
++++ b/src/ocjs_bindgen/codegen/embind/class_.py
+@@ -155,7 +155,7 @@
+   nonPublicDestructor = any(x.kind == clang.cindex.CursorKind.DESTRUCTOR and not x.access_specifier == clang.cindex.AccessSpecifier.PUBLIC for x in theClass.get_children())
+   placementDelete = next((x for x in theClass.get_children() if x.spelling == "operator delete" and len(list(x.get_arguments())) == 2), None) is not None
+   if nonPublicDestructor or placementDelete:
+-    output += "namespace emscripten { namespace internal { template<> void raw_destructor<" + classCpp + ">(" + classCpp + "* ptr) { /* do nothing */ } } }\n"
++    output += "namespace emscripten { namespace internal { template<> void raw_destructor<" + classCpp + ">(" + classCpp + "* ptr) { ::ocjs::destroy(ptr); } } }\n"
+   return output
+ 
+ 
+--- a/src/ocjs_bindgen/embind_builtins.py
++++ b/src/ocjs_bindgen/embind_builtins.py
+@@ -20,6 +20,24 @@
+ 
+ OCJS_RBV_PREAMBLE = r"""
+ #include <emscripten/val.h>
++
++#include <type_traits>
++#include <utility>
++
++namespace ocjs {
++  // Same SFINAE deletion test as upstream193f333: private destructors and
++  // placement-only deletes stay untouched; ordinary deletes run normally.
++  template <typename T, typename = void>
++  struct is_deletable : std::false_type {};
++  template <typename T>
++  struct is_deletable<T, std::void_t<decltype(delete std::declval<T*>())>> : std::true_type {};
++  template <typename T>
++  void destroy(T* ptr) {
++    if constexpr (is_deletable<T>::value) {
++      delete ptr;
++    }
++  }
++}
+ 
+ extern "C" void ocjs_register_rbv_dispose();
+ 
+--- a/src/patches/libembind-overloading.patch
++++ b/src/patches/libembind-overloading.patch
+@@ -3,7 +3,7 @@
+ @@ -55,23 +55,195 @@
+      throw new UnboundTypeError(`${message}: ` + unboundTypes.map(getTypeName).join([', ']));
+    },
+-
++ 
+ +  $getSignature__deps: ['$registeredTypes'],
+ +  $getSignature: (args, keys) => {
+ +    var signature = '';
+@@ -199,7 +199,7 @@
+ +      }
+      }
+    },
+-
++ 
+ @@ -81,44 +253,81 @@
+     name: The name of the symbol that's being exposed.
+     value: The object itself to expose (function, class, ...)
+@@ -234,6 +234,9 @@
+ -      ensureOverloadTable(Module, name, name);
+ -      if (Module[name].overloadTable.hasOwnProperty(numArguments)) {
+ -        throwBindingError(`Cannot register multiple overloads of a function with the same number of arguments (${numArguments})!`);
++-      }
++-      // Add the new function into the overload table.
++-      Module[name].overloadTable[numArguments] = value;
+ +      if (
+ +        (undefined === Module[name].overloadTable && Module[name].argCount === numArguments)
+ +        || (undefined !== Module[name].overloadTable && undefined !== Module[name].overloadTable[numArguments])
+@@ -247,22 +250,16 @@
+ +        // Add the new function into the overload table.
+ +        Module[name].overloadTable[numArguments] = value;
+ +        Module[name].overloadTable[numArguments].signature = rawSignature;
+-       }
+--      // Add the new function into the overload table.
+--      Module[name].overloadTable[numArguments] = value;
+-     } else {
+-       Module[name] = value;
+--      Module[name].argCount = numArguments;
+++      }
+++    } else {
+++      Module[name] = value;
+ +      if (undefined !== rawSignature) {
+ +        Module[name].argCount = numArguments;
+ +        Module[name].signature = rawSignature;
+ +      }
+-     }
+-   },
+- 
+--  $replacePublicSymbol__deps: ['$throwInternalError'],
+--  $replacePublicSymbol__docs: '/** @param {number=} numArguments */',
+--  $replacePublicSymbol: (name, value, numArguments) => {
+++    }
+++  },
+++
+ +  $replacePublicSymbol__deps: ['$throwInternalError', '$throwBindingError'],
+ +  $replacePublicSymbol__docs: `/**
+ +    @param {number=} numArguments,
+@@ -270,13 +267,12 @@
+ +    @param {string=} rawSignature
+ +     */`,
+ +  $replacePublicSymbol: (name, value, numArguments, signatureArray, rawSignature) => {
+-     if (!Module.hasOwnProperty(name)) {
+-       throwInternalError('Replacing nonexistent public symbol');
+-     }
+++    if (!Module.hasOwnProperty(name)) {
+++      throwInternalError('Replacing nonexistent public symbol');
+++    }
+ +    var signatureString = undefined !== signatureArray ? signatureArray.join(', ') : undefined;
+-     // If there's an overload table for this symbol, replace the symbol in the overload table instead.
+-     if (undefined !== Module[name].overloadTable && undefined !== numArguments) {
+--      Module[name].overloadTable[numArguments] = value;
+++    // If there's an overload table for this symbol, replace the symbol in the overload table instead.
+++    if (undefined !== Module[name].overloadTable && undefined !== numArguments) {
+ +      if (undefined !== Module[name].overloadTable[numArguments] && undefined !== Module[name].overloadTable[numArguments].signatures && signatureString) {
+ +        if (undefined !== Module[name].overloadTable[numArguments].signatures[rawSignature]) {
+ +          delete Module[name].overloadTable[numArguments].signatures[rawSignature];
+@@ -293,6 +289,21 @@
+      } else {
+        Module[name] = value;
+        Module[name].argCount = numArguments;
++-    }
++-  },
++-
++-  $replacePublicSymbol__deps: ['$throwInternalError'],
++-  $replacePublicSymbol__docs: '/** @param {number=} numArguments */',
++-  $replacePublicSymbol: (name, value, numArguments) => {
++-    if (!Module.hasOwnProperty(name)) {
++-      throwInternalError('Replacing nonexistent public symbol');
++-    }
++-    // If there's an overload table for this symbol, replace the symbol in the overload table instead.
++-    if (undefined !== Module[name].overloadTable && undefined !== numArguments) {
++-      Module[name].overloadTable[numArguments] = value;
++-    } else {
++-      Module[name] = value;
++-      Module[name].argCount = numArguments;
+ +      Module[name].signature = signatureString;
+ +      Module[name].signatureArray = signatureArray;
+      }
+@@ -311,10 +322,11 @@
+      name = getFunctionName(name);
+  
+      rawInvoker = embind__requireFunction(signature, rawInvoker, isAsync);
++-
++-    exposePublicSymbol(name, function() {
+ +    var rawSignatureArray = argTypes.slice(1);
+ +    var rawSignatureString = rawSignatureArray.join(', ');
+- 
+--    exposePublicSymbol(name, function() {
+++
+ +    var unboundTypesHandler = function() {
+        throwUnboundTypeError(`Cannot call ${name} due to unbound types`, argTypes);
+ -    }, argCount - 1);
+@@ -339,7 +351,37 @@
+        return [];
+      });
+    },
+-@@ -1654,7 +1868,7 @@
++@@ -1343,6 +1567,7 @@
++         return makeClassHandle(this.registeredClass.instancePrototype, {
++           ptrType: this,
++           ptr,
+++          borrowed: !this.isReference,
++         });
++       }
++     }
++@@ -1377,11 +1602,13 @@
++       return makeClassHandle(toType.registeredClass.instancePrototype, {
++         ptrType: toType,
++         ptr: dp,
+++        borrowed: !this.isReference,
++       });
++     }
++   },
++ 
++   $runDestructor: ($$) => {
+++    if ($$.borrowed) return;
++     if ($$.smartPtr) {
++       $$.smartPtrType.rawDestructor($$.smartPtr);
++     } else {
++@@ -1645,6 +1872,7 @@
++       ptrType: o.ptrType,
++       smartPtr: o.smartPtr,
++       smartPtrType: o.smartPtrType,
+++      borrowed: o.borrowed,
++     };
++   },
++ 
++@@ -1654,7 +1882,7 @@
+      '$makeLegalFunctionName', '$AsciiToString',
+      '$RegisteredClass', '$RegisteredPointer', '$replacePublicSymbol',
+      '$embind__requireFunction', '$throwUnboundTypeError',
+@@ -348,7 +390,7 @@
+    _embind_register_class: (rawType,
+                             rawPointerType,
+                             rawConstPointerType,
+-@@ -1702,9 +1916,45 @@
++@@ -1702,11 +1930,49 @@
+            if (undefined === registeredClass.constructor_body) {
+              throw new BindingError(`${name} has no accessible constructor`);
+            }
+@@ -394,9 +436,14 @@
+ +              throw new BindingError(`Tried to invoke ctor of ${name} with invalid signature (${params}) - expected [${signatures}] parameters instead!`);
+ +            }
+            }
+-           return body.apply(this, args);
++-          return body.apply(this, args);
+++          var instance = body.apply(this, args);
+++          if (instance && instance.$$) instance.$$.borrowed = false;
+++          return instance;
+          });
+-@@ -1777,7 +2027,7 @@
++ 
++         var instancePrototype = Object.create(basePrototype, {
++@@ -1777,7 +2043,7 @@
+    _embind_register_class_constructor__deps: [
+      '$heap32VectorToArray', '$embind__requireFunction',
+      '$whenDependentTypesAreResolved',
+@@ -405,19 +452,20 @@
+    _embind_register_class_constructor: (
+      rawClassType,
+      argCount,
+-@@ -1801,17 +2061,47 @@
++@@ -1801,17 +2067,47 @@
+        if (undefined === classType.registeredClass.constructor_body) {
+          classType.registeredClass.constructor_body = [];
+        }
+ -      if (undefined !== classType.registeredClass.constructor_body[argCount - 1]) {
+ -        throw new BindingError(`Cannot register multiple constructors with identical number of parameters (${argCount-1}) for class '${classType.name}'! Overload resolution is currently only performed using the parameter count, not actual type info!`);
++-      }
++-      classType.registeredClass.constructor_body[argCount - 1] = () => {
+ +
+ +      var rawSignatureArray = rawArgTypes.slice(1);
+ +      var rawSignatureString = rawSignatureArray.join(', ');
+ +      if (undefined !== classType.registeredClass.constructor_body[argCount - 1] && undefined !== classType.registeredClass.constructor_body[argCount - 1].signatures[rawSignatureString]) {
+ +        throw new BindingError(`Cannot register multiple constructors with identical javascript types of parameters for class '${classType.name}'!`);
+-       }
+--      classType.registeredClass.constructor_body[argCount - 1] = () => {
+++      }
+ +
+ +      function unboundTypesHandler() {
+          throwUnboundTypeError(`Cannot construct ${classType.name} due to unbound types`, rawArgTypes);
+@@ -437,7 +485,7 @@
+ +      classType.registeredClass.constructor_body[argCount - 1].signatures[rawSignatureString] = unboundTypesHandler;
+ +      // Reserve source-registration order before dependency callbacks run.
+ +      classType.registeredClass.constructor_body[argCount - 1].signaturesArray.push(rawSignatureArray);
+-
++ 
+        whenDependentTypesAreResolved([], rawArgTypes, (argTypes) => {
+          // Insert empty slot for context type (argTypes[1]).
+          argTypes.splice(1, 0, null);
+@@ -458,7 +506,7 @@
+          return [];
+        });
+        return [];
+-@@ -1866,7 +2142,8 @@
++@@ -1866,7 +2162,8 @@
+    _embind_register_class_function__deps: [
+      '$craftInvokerFunction', '$heap32VectorToArray', '$AsciiToString',
+      '$embind__requireFunction', '$throwUnboundTypeError',
+@@ -468,26 +516,26 @@
+    _embind_register_class_function: (rawClassType,
+                                      methodName,
+                                      argCount,
+-@@ -1900,21 +2177,42 @@
++@@ -1900,21 +2197,42 @@
+  
+        var proto = classType.registeredClass.instancePrototype;
+        var method = proto[methodName];
+ -      if (undefined === method || (undefined === method.overloadTable && method.className !== classType.name && method.argCount === argCount - 2)) {
++-        // This is the first overload to be registered, OR we are replacing a
++-        // function in the base class with a function in the derived class.
+ +
+ +      var rawSignatureArray = rawArgTypes.slice(2);
+ +      var rawSignatureString = rawSignatureArray.join(', ');
+ +      unboundTypesHandler.signature = rawSignatureString;
+ +      unboundTypesHandler.signatureArray = rawSignatureArray;
+ +      if (undefined === method) {
+--        // This is the first overload to be registered, OR we are replacing a
+--        // function in the base class with a function in the derived class.
+ +        // First registrations use the same owned dispatcher representation.
+ +        // Inherited methods take the same signature-table path regardless of timing.
+          unboundTypesHandler.argCount = argCount - 2;
+          unboundTypesHandler.className = classType.name;
+          proto[methodName] = unboundTypesHandler;
++-      } else {
+ +        createOwnedSignatureDispatcher(proto, methodName, humanName, argCount - 2);
+--      } else {
+ +      } else if (
+ +        (undefined === proto[methodName].overloadTable && proto[methodName].argCount !== argCount - 2)
+ +        || (undefined !== proto[methodName].overloadTable && undefined === proto[methodName].overloadTable[argCount - 2])) 
+@@ -515,25 +563,25 @@
+  
+          // Replace the initial unbound-handler-stub function with the
+          // appropriate member function, now that all types are resolved. If
+-@@ -1923,9 +2213,16 @@
++@@ -1923,9 +2241,16 @@
+          if (undefined === proto[methodName].overloadTable) {
+            // Set argCount in case an overload is registered later
+            memberFunction.argCount = argCount - 2;
+ +          memberFunction.signature = signatureString;
+ +          memberFunction.signatureArray = rawSignatureArray;
+            proto[methodName] = memberFunction;
+--        } else {
+ +        } else if (undefined === proto[methodName].overloadTable[argCount - 2].signatures) {
+ +          memberFunction.signature = signatureString;
+ +          memberFunction.signatureArray = rawSignatureArray;
+-           proto[methodName].overloadTable[argCount - 2] = memberFunction;
+-+        } else {
+++          proto[methodName].overloadTable[argCount - 2] = memberFunction;
++         } else {
++-          proto[methodName].overloadTable[argCount - 2] = memberFunction;
+ +          delete proto[methodName].overloadTable[argCount - 2].signatures[rawSignatureString];
+ +          proto[methodName].overloadTable[argCount - 2].signatures[signatureString] = memberFunction;
+          }
+  
+          return [];
+-@@ -2004,7 +2302,8 @@
++@@ -2004,7 +2329,8 @@
+    _embind_register_class_class_function__deps: [
+      '$craftInvokerFunction', '$ensureOverloadTable', '$heap32VectorToArray',
+      '$AsciiToString', '$embind__requireFunction', '$throwUnboundTypeError',
+@@ -543,7 +591,7 @@
+    _embind_register_class_class_function: (rawClassType,
+                                            methodName,
+                                            argCount,
+-@@ -2031,15 +2330,27 @@
++@@ -2031,15 +2357,27 @@
+        }
+  
+        var proto = classType.registeredClass.constructor;
+@@ -555,8 +603,8 @@
+ -        // This is the first function to be registered with this name.
+          unboundTypesHandler.argCount = argCount-1;
+          proto[methodName] = unboundTypesHandler;
++-      } else {
+ +        createOwnedSignatureDispatcher(proto, methodName, humanName, argCount - 1);
+--      } else {
+ +      } else if (
+ +        (undefined === proto[methodName].overloadTable && proto[methodName].argCount !== argCount - 1)
+ +        || (undefined !== proto[methodName].overloadTable && undefined === proto[methodName].overloadTable[argCount - 1])
+@@ -573,7 +621,7 @@
+        }
+  
+        whenDependentTypesAreResolved([], rawArgTypes, (argTypes) => {
+-@@ -2048,11 +2357,24 @@
++@@ -2048,11 +2386,24 @@
+          // go into an overload table.
+          var invokerArgsArray = [argTypes[0] /* return value */, null /* no class 'this'*/].concat(argTypes.slice(1) /* actual params */);
+          var func = craftInvokerFunction(humanName, invokerArgsArray, null /* no class 'this'*/, rawInvoker, fn, isAsync);
+@@ -588,12 +636,12 @@
+ +          func.signature = signatureString;
+ +          func.signatureArray = rawSignatureArray;
+            proto[methodName] = func;
+--        } else {
+ +        } else if (undefined === proto[methodName].overloadTable[argCount-1].signatures) {
+ +          func.signature = signatureString;
+ +          func.signatureArray = rawSignatureArray;
+-           proto[methodName].overloadTable[argCount-1] = func;
+-+        } else {
+++          proto[methodName].overloadTable[argCount-1] = func;
++         } else {
++-          proto[methodName].overloadTable[argCount-1] = func;
+ +          delete proto[methodName].overloadTable[argCount-1].signatures[rawSignatureString];
+ +          proto[methodName].overloadTable[argCount-1].signatures[signatureString] = func;
+          }
+--- a/src/patches/libembind-overloading.expected.sha256
++++ b/src/patches/libembind-overloading.expected.sha256
+@@ -1 +1 @@
+-ff9e49e2fbf66621342a010797890a47c779b2c01e79a385b37ca2c23762f646
++055112f3d20266b947ce22a76f4df7e4bf3f2c7eebb57571bdbf3a6e3bd3de29

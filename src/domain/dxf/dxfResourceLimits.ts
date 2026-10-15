@@ -42,9 +42,13 @@ export class DxfResourceLimitError extends Error {
 
 export class DxfResourceBudget {
   private readonly used = new Map<DxfResource, number>();
+  constructor(readonly mode?: 'exact-cad') {}
 
   check(resource: DxfResource, amount: number) {
-    if (!Number.isSafeInteger(amount) || amount < 0 || amount > DXF_RESOURCE_LIMITS[resource]) {
+    if (this.mode === 'exact-cad' && (!Number.isSafeInteger(amount) || amount < 0)) {
+      throw new Error(`DXF ${RESOURCE_LABELS[resource]} must be a nonnegative safe integer. No geometry was imported.`);
+    }
+    if (!Number.isSafeInteger(amount) || amount < 0 || this.mode !== 'exact-cad' && amount > DXF_RESOURCE_LIMITS[resource]) {
       throw new DxfResourceLimitError(resource);
     }
   }
@@ -62,6 +66,7 @@ export class DxfResourceBudget {
    * on every occurrence because JSON serialization repeats them too.
    */
   reserveExpandedData(value: unknown) {
+    if (this.mode === 'exact-cad') return;
     const pending = [value];
     while (pending.length > 0) {
       const current = pending.pop();
@@ -90,7 +95,8 @@ export function assertDxfFileSize(size: number) {
   new DxfResourceBudget().check('inputBytes', size);
 }
 
-export function assertDxfTextSize(text: string) {
+export function assertDxfTextSize(text: string, mode?: 'exact-cad') {
+  if (mode === 'exact-cad') return;
   assertDxfFileSize(text.length);
   let bytes = 0;
   let lines = 1;

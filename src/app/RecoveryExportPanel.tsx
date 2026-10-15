@@ -21,8 +21,8 @@ export function RecoveryExportPanel({ recovery, disabled = false }: { recovery: 
     <p className="break-words text-muted-foreground">{source.diagnostic.message}{source.diagnostic.messageTruncated ? '… (diagnostic shortened)' : ''}</p>
     <p className="text-muted-foreground">Download the readable files and recovery diagnostics from this location. This does not repair storage or create a verified restore backup. Unreadable or oversized files are listed as omissions. Storage remains unchanged.</p>
     <div className="flex flex-wrap gap-2">
-      <Button disabled={locked} variant="outline" onClick={() => { void recovery.onExport().catch(() => undefined); }}>Capture and download recovery export</Button>
-      {receipt && <Button disabled={locked} variant="outline" onClick={() => { void recovery.onDownload().catch(() => undefined); }}>Download captured recovery export again</Button>}
+      <Button size="md" disabled={locked} variant="outline" onClick={() => { void recovery.onExport().catch(() => undefined); }}>Capture and download recovery export</Button>
+      {receipt && <Button size="md" disabled={locked} variant="outline" onClick={() => { void recovery.onDownload().catch(() => undefined); }}>Download captured recovery export again</Button>}
     </div>
     {recovery.busy && <p role="status">Reading recovery files…</p>}
     {recovery.error && <p className="break-words text-destructive" role="alert">{recovery.error}</p>}

@@ -1,3 +1,6 @@
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { APP_VERSION } from '@/domain/release/appRelease';
 import type { AuthoringFile, PackageAuthoringRequest, PackageAuthoringResult } from '@/domain/machine-package/packageAuthoringTools';
@@ -125,50 +128,50 @@ export function PackageToolsPage() {
     <main>
       <h1>Build and check a machine package</h1>
       <p>Work with JSON and evidence files in this browser. Checks run locally; nothing is installed, saved to your project library, or sent to a server. Download your work before leaving this page.</p>
-      <nav aria-label="Package tools">{(['post', 'build', 'inspect'] as const).map((value) => <button key={value} aria-pressed={mode === value} disabled={busy} onClick={() => { setMode(value); invalidate(); }} type="button">{{ post: 'Check post', build: 'Build package', inspect: 'Inspect package' }[value]}</button>)}</nav>
+      <nav aria-label="Package tools">{(['post', 'build', 'inspect'] as const).map((value) => <Button key={value} aria-pressed={mode === value} disabled={busy} onClick={() => { setMode(value); invalidate(); }} type="button">{{ post: 'Check post', build: 'Build package', inspect: 'Inspect package' }[value]}</Button>)}</nav>
       <fieldset disabled={busy}>
         {mode === 'post' && <section aria-label="Check post">
           <h2>Check a post and calculate its hash</h2>
           <p>Paste or choose a .wireedm-post.json file. The report includes its canonical content hash and fixture results. Use that hash in the machine setup’s exact post reference.</p>
-          <label>Post JSON file<input type="file" accept=".json,application/json" onChange={(event) => { void readJson(event.target.files?.[0], 'post'); event.target.value = ''; }} /></label>
-          <label>Post JSON<textarea value={postText} onChange={(event) => { setPostText(event.target.value); invalidate(); }} spellCheck={false} /></label>
-          <button disabled={!postText.trim()} onClick={() => void work(async () => { await execute({ operation: 'check-post', text: postText }); })} type="button">Validate post and run conformance</button>
+          <label>Post JSON file<Input type="file" accept=".json,application/json" onChange={(event) => { void readJson(event.target.files?.[0], 'post'); event.target.value = ''; }} /></label>
+          <label>Post JSON<Textarea value={postText} onChange={(event) => { setPostText(event.target.value); invalidate(); }} spellCheck={false} /></label>
+          <Button disabled={!postText.trim()} onClick={() => void work(async () => { await execute({ operation: 'check-post', text: postText }); })} type="button">Validate post and run conformance</Button>
         </section>}
         {mode === 'build' && <section aria-label="Build package">
           <h2>Build a complete package</h2>
           <p>The <a href={`${base}documentation/reference/docs/post-authoring/v1/schema/machine-package.schema.json`}>package document</a> contains the manifest, physical machine, complete setups and posts. Add every referenced evidence file and match its path and SHA-256 in the document.</p>
-          <label>Package document file<input type="file" accept=".json,application/json" onChange={(event) => { void readJson(event.target.files?.[0], 'build'); event.target.value = ''; }} /></label>
-          <label>Package document JSON<textarea value={documentText} onChange={(event) => { setDocumentText(event.target.value); invalidate(); }} spellCheck={false} /></label>
-          <label>Add evidence files<input type="file" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; if (files.length) void addFiles(files); }} /></label>
-          <details><summary>Add text evidence</summary><label>Text evidence path<input value={textPath} onChange={(event) => setTextPath(event.target.value)} /></label><label>Evidence text<textarea value={evidenceText} onChange={(event) => setEvidenceText(event.target.value)} /></label><button type="button" disabled={!textPath.trim() || !evidenceText} onClick={() => void addTextEvidence(textPath, evidenceText)}>Add text file</button></details>
+          <label>Package document file<Input type="file" accept=".json,application/json" onChange={(event) => { void readJson(event.target.files?.[0], 'build'); event.target.value = ''; }} /></label>
+          <label>Package document JSON<Textarea value={documentText} onChange={(event) => { setDocumentText(event.target.value); invalidate(); }} spellCheck={false} /></label>
+          <label>Add evidence files<Input type="file" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; if (files.length) void addFiles(files); }} /></label>
+          <details><summary>Add text evidence</summary><label>Text evidence path<Input value={textPath} onChange={(event) => setTextPath(event.target.value)} /></label><label>Evidence text<Textarea value={evidenceText} onChange={(event) => setEvidenceText(event.target.value)} /></label><Button type="button" disabled={!textPath.trim() || !evidenceText} onClick={() => void addTextEvidence(textPath, evidenceText)}>Add text file</Button></details>
           <ul className="evidence-list">{evidence.map((file, index) => <li key={index}>
-            <label>Evidence path {index + 1}<input value={file.path} onChange={(event) => { const path = event.target.value; setEvidence(evidence.map((item, itemIndex) => itemIndex === index ? { ...item, path } : item)); invalidate(); }} /></label>
+            <label>Evidence path {index + 1}<Input value={file.path} onChange={(event) => { const path = event.target.value; setEvidence(evidence.map((item, itemIndex) => itemIndex === index ? { ...item, path } : item)); invalidate(); }} /></label>
             <span>{file.bytes.byteLength} bytes · SHA-256</span><code>{file.hash}</code>
-            <button type="button" onClick={() => { setEvidence(evidence.filter((_, itemIndex) => itemIndex !== index)); invalidate(); }}>Remove evidence {index + 1}</button>
+            <Button type="button" onClick={() => { setEvidence(evidence.filter((_, itemIndex) => itemIndex !== index)); invalidate(); }}>Remove evidence {index + 1}</Button>
           </li>)}</ul>
-          <button disabled={!documentText.trim()} type="button" onClick={() => void work(async () => { await execute({ operation: 'build-package', text: documentText, files: evidence }); })}>Validate and build package</button>
+          <Button disabled={!documentText.trim()} type="button" onClick={() => void work(async () => { await execute({ operation: 'build-package', text: documentText, files: evidence }); })}>Validate and build package</Button>
         </section>}
         {mode === 'inspect' && <section aria-label="Inspect package">
           <h2>Validate an existing package</h2>
           <p>Choose a .wireedm-package to check its structure, evidence, exact bindings and post conformance. Safely readable contents can become editable build input even if validation fails; they must pass all checks before a rebuilt package is available.</p>
-          <label>Machine package file<input type="file" accept=".wireedm-package,application/zip" onChange={(event) => { setArchive(event.target.files?.[0] ?? null); invalidate(); }} /></label>
-          <button disabled={!archive} type="button" onClick={() => void work(async () => {
+          <label>Machine package file<Input type="file" accept=".wireedm-package,application/zip" onChange={(event) => { setArchive(event.target.files?.[0] ?? null); invalidate(); }} /></label>
+          <Button disabled={!archive} type="button" onClick={() => void work(async () => {
             if (!archive) return;
             if (archive.size > 32 * 1024 * 1024) throw new Error('Package exceeds the 32 MiB archive limit.');
             await execute({ operation: 'inspect-package', bytes: new Uint8Array(await archive.arrayBuffer()) });
-          })}>Validate and inspect package</button>
+          })}>Validate and inspect package</Button>
         </section>}
       </fieldset>
-      {busy && <p role="status">Checking inputs… {canCancel && <button type="button" onClick={() => cancel.current?.()}>Cancel check</button>}</p>}
+      {busy && <p role="status">Checking inputs… {canCancel && <Button type="button" onClick={() => cancel.current?.()}>Cancel check</Button>}</p>}
       {error && <p className="error" role="alert">{error}</p>}
       {result && <section aria-label="Check results" className="results">
         <h2>{result.report.ok ? 'Checks passed' : 'Checks failed'}</h2>
         <p role="status">{result.report.ok ? 'Software validation completed. This does not certify physical machine behavior.' : 'Review the diagnostics and correct the inputs before building or installing.'}</p>
-        <button type="button" onClick={() => download('package-check-report.json', JSON.stringify(result.report, null, 2))}>Download report</button>
-        {result.output?.archive && <button type="button" onClick={() => download(result.output!.fileName!, result.output!.archive!)}>Download .wireedm-package</button>}
-        {result.output && <button type="button" onClick={() => download('wireedm-package.json', result.output!.documentText)}>Download package document</button>}
-        {result.output && mode === 'inspect' && <button type="button" onClick={() => void reusePackage()}>Use as build input</button>}
-        <label>Validation report<textarea className="report" readOnly value={JSON.stringify(result.report, null, 2)} onFocus={(event) => event.currentTarget.select()} /></label>
+        <Button type="button" onClick={() => download('package-check-report.json', JSON.stringify(result.report, null, 2))}>Download report</Button>
+        {result.output?.archive && <Button type="button" onClick={() => download(result.output!.fileName!, result.output!.archive!)}>Download .wireedm-package</Button>}
+        {result.output && <Button type="button" onClick={() => download('wireedm-package.json', result.output!.documentText)}>Download package document</Button>}
+        {result.output && mode === 'inspect' && <Button type="button" onClick={() => void reusePackage()}>Use as build input</Button>}
+        <label>Validation report<Textarea className="report" readOnly value={JSON.stringify(result.report, null, 2)} onFocus={(event) => event.currentTarget.select()} /></label>
       </section>}
     </main>
   </>;

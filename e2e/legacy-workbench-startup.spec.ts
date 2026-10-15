@@ -29,7 +29,6 @@ test('opens a phone browser cache with the former external-program layout and ke
     [`imports/${id}.iso`, originalProgram], [activeFilePath, editedProgram]
   ] });
   await page.goto('/');
-  await expect(page.locator('[data-storage-status-label]')).toHaveText('Browser cache active');
   await expect(page.getByRole('button', { name: `Open project ${id} in editor` })).toBeVisible();
   await page.getByRole('button', { name: `Open project ${id} in editor` }).click();
   await expect(page.locator('path[data-preview-source="gcode"][data-type="cut"]').first()).toHaveAttribute('d', 'M 0 0 L 40 20');

@@ -1,3 +1,5 @@
+import { MenuSurface, MenuItem } from '@/components/ui/menu';
+import { Button } from '@/components/ui/button';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 export interface EditorWorkflowMenuCommand {
@@ -153,8 +155,8 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
       : activeCommand?.disabledReason;
 
     return (
-      <div
-        className={`z-[60] min-w-[220px] max-w-[300px] overflow-hidden border border-border bg-card ${
+      <MenuSurface
+        className={`z-[60] min-w-[220px] max-w-[300px] overflow-hidden ${
           compact
             ? 'fixed w-[min(260px,calc(100vw-8px))]'
             : `absolute top-7 ${menuAlignment === 'right' ? 'right-0' : 'left-0'}`
@@ -188,9 +190,9 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
       >
         {compact && (
           <div className="flex h-7 items-center gap-1 border-b border-border px-1">
-            <button
+            <MenuItem
               aria-label="Back to workflow categories"
-              className="h-6 px-1.5 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+              className="h-6 w-auto px-1.5 text-[10px]"
               data-editor-workflow-compact-back
               onClick={() => {
                 focusCategoryAfterRender.current = group.title;
@@ -202,15 +204,15 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
               type="button"
             >
               ‹ Categories
-            </button>
+            </MenuItem>
             <span className="truncate text-[11px] font-semibold">{group.title}</span>
           </div>
         )}
-        <div className="divide-y divide-border px-1 py-1">
+        <div>
           {group.commands.map((command) => {
             const disabledReasonId = `editor-workflow-command-${compact ? 'compact-' : ''}${command.id}-reason`;
             return (
-              <button
+              <MenuItem
                 ref={(element) => {
                   if (element) commandRefs.current.set(command.id, element);
                   else commandRefs.current.delete(command.id);
@@ -218,7 +220,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
                 aria-describedby={!command.enabled && command.disabledReason ? disabledReasonId : undefined}
                 aria-disabled={!command.enabled || undefined}
                 aria-label={command.ariaLabel ?? command.label}
-                className="flex min-h-[32px] w-full items-center px-2 text-left text-[11px] leading-4 text-foreground outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-disabled:cursor-not-allowed aria-disabled:text-muted-foreground aria-disabled:opacity-55"
+                className="flex min-h-[32px] w-full items-center px-2 text-left text-[11px] leading-4"
                 data-editor-workflow-command={command.id}
                 key={command.id}
                 onFocus={() => setActiveCommandId(command.id)}
@@ -237,7 +239,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
                 {!command.enabled && command.disabledReason && (
                   <span className="sr-only" id={disabledReasonId}>{command.disabledReason}</span>
                 )}
-              </button>
+              </MenuItem>
             );
           })}
         </div>
@@ -249,7 +251,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
             {description}
           </p>
         )}
-      </div>
+      </MenuSurface>
     );
   }
 
@@ -276,7 +278,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
 
           return (
             <div className="relative" key={group.title}>
-              <button
+              <Button
                 ref={(element) => {
                   if (element) triggerRefs.current.set(group.title, element);
                   else triggerRefs.current.delete(group.title);
@@ -285,7 +287,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
                 aria-expanded={isOpen}
                 aria-haspopup="menu"
                 aria-label={`${group.title} menu`}
-                className="px-1.5 py-1 text-[11px] leading-4 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                className="px-1.5 py-1 text-[11px] leading-4"
                 onClick={() => {
                   setCompactOpen(false);
                   if (isOpen) closeMenu();
@@ -309,7 +311,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
                 type="button"
               >
                 {group.title}
-              </button>
+              </Button>
               {isOpen && renderCommandMenu(group, false)}
             </div>
           );
@@ -317,7 +319,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
       </div>
 
       <div className="hidden" data-editor-workflow-compact>
-        <button
+        <Button
           ref={compactTriggerRef}
           aria-controls={
             compactOpen
@@ -329,7 +331,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
           aria-expanded={compactOpen}
           aria-haspopup="menu"
           aria-label="Open Workflows"
-          className="h-7 border border-border px-2 text-[11px] text-foreground outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring"
+          className="h-7 px-2 text-[11px]"
           onClick={(event) => {
             positionCompactMenu(event.currentTarget);
             setOpenMenu(null);
@@ -348,10 +350,10 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
           type="button"
         >
           Workflows
-        </button>
+        </Button>
         {compactOpen && openMenu === null && (
-          <div
-            className="fixed z-[60] w-[min(260px,calc(100vw-8px))] overflow-hidden border border-border bg-card p-1"
+          <MenuSurface
+            className="fixed z-[60] w-[min(260px,calc(100vw-8px))] overflow-hidden p-1"
             data-editor-workflow-category-menu
             id="editor-workflow-compact-popover"
             onKeyDown={(event) => {
@@ -371,13 +373,13 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
             style={compactMenuPosition}
           >
             {visibleGroups.map((group, index) => (
-              <button
+              <MenuItem
                 ref={(element) => {
                   if (element) categoryRefs.current.set(group.title, element);
                   else categoryRefs.current.delete(group.title);
                 }}
                 aria-label={`Open ${group.title} workflows`}
-                className="flex min-h-8 w-full items-center border-b border-border px-2 text-left text-[11px] text-foreground outline-none last:border-b-0 hover:bg-accent focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                className="flex min-h-8 w-full items-center border-b px-2 text-left text-[11px] last:border-b-0"
                 data-editor-workflow-category={group.title}
                 key={group.title}
                 onClick={() => {
@@ -395,9 +397,9 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
                 type="button"
               >
                 {group.title}
-              </button>
+              </MenuItem>
             ))}
-          </div>
+          </MenuSurface>
         )}
         {compactOpen && openMenu !== null && (() => {
           const group = visibleGroups.find((candidate) => candidate.title === openMenu);

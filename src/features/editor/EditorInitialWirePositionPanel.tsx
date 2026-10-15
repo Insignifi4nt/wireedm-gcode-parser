@@ -1,3 +1,5 @@
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { useEffect, useMemo, useState } from 'react';
 
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
@@ -49,7 +51,7 @@ export function EditorInitialWirePositionPanel({
         Set the wire's starting coordinates in the part coordinate system. This does not move the wire.
       </p>
       <div className="border border-border bg-background/35 p-2">
-        <div className="mb-1 uppercase text-muted-foreground">Current setup</div>
+        <div className="mb-1 text-muted-foreground">Current setup</div>
         <div className={resolution.status === 'ready' ? 'text-emerald-300' : 'text-amber-300'}>
           {resolution.status === 'ready'
             ? `${resolution.source === 'geometry-linked' ? 'Geometry-linked' : 'Manual'} · reviewed`
@@ -61,13 +63,13 @@ export function EditorInitialWirePositionPanel({
       </div>
 
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
-        <legend className="px-1 uppercase text-muted-foreground">Exact part coordinates</legend>
+        <legend className="px-1 text-muted-foreground">Exact part coordinates</legend>
         <div className="grid grid-cols-2 gap-1">
           <label className="grid gap-0.5 text-muted-foreground">
             X
-            <input
+            <Input
               aria-label="Initial wire X"
-              className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+              className="px-1.5 font-mono"
               inputMode="decimal"
               onChange={(event) => {
                 setXDraft(event.currentTarget.value);
@@ -78,9 +80,9 @@ export function EditorInitialWirePositionPanel({
           </label>
           <label className="grid gap-0.5 text-muted-foreground">
             Y
-            <input
+            <Input
               aria-label="Initial wire Y"
-              className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+              className="px-1.5 font-mono"
               inputMode="decimal"
               onChange={(event) => {
                 setYDraft(event.currentTarget.value);
@@ -97,29 +99,30 @@ export function EditorInitialWirePositionPanel({
               : 'Enter valid X and Y coordinates, then review and set the point to update the preview.'}
           </p>
         )}
-        <button
+        <Button variant="outline" size="md"
           aria-label="Review and set manual initial wire position"
-          className="h-7 border border-border bg-background px-2 text-foreground disabled:opacity-40"
+          className="px-2"
           disabled={!manualPoint}
           onClick={setManual}
           type="button"
         >
           Review and set manual point
-        </button>
+        </Button>
       </fieldset>
 
       {circles.length > 0 && <div className="grid gap-1 border border-border p-2">
-        <div className="uppercase text-muted-foreground">Or link to a circular source center</div>
+        <div className="text-muted-foreground">Or link to a circular source center</div>
         <p className="text-muted-foreground">The starting point follows the selected circle or arc when geometry moves.</p>
         {circles.map((circle, index) => {
           const owner = document.plan.operations.find((operation) => operation.segmentRefs.some((ref) => ref.segmentId === circle.id));
           const segmentIndex = owner?.segmentRefs.findIndex((ref) => ref.segmentId === circle.id) ?? index;
           const label = `${owner?.displayName ?? `Source ${index + 1}`} · ${circle.kind === 'circle' ? 'Circle center' : `Arc ${segmentIndex + 1} center`} · R${circle.radius.toFixed(3)}`;
           return (
-            <button
+            <Button variant="outline" size="md"
               aria-label={`Link initial wire to ${label}`}
+              title={label}
               aria-pressed={linkedSegmentId === circle.id}
-              className="flex h-7 items-center justify-between border border-border bg-background px-2 text-left disabled:opacity-40"
+              className="flex items-center justify-between px-2 text-left"
               data-initial-wire-circle-center={circle.id}
               disabled={disabled}
               key={circle.id}
@@ -130,11 +133,11 @@ export function EditorInitialWirePositionPanel({
               }}
               type="button"
             >
-              <span className="min-w-0 truncate" title={label}>{label}</span>
+              <span className="min-w-0 truncate">{label}</span>
               <span className="shrink-0 font-mono text-muted-foreground">
                 X{circle.center.x.toFixed(3)} Y{circle.center.y.toFixed(3)}
               </span>
-            </button>
+            </Button>
           );
         })}
       </div>}

@@ -159,7 +159,7 @@ it('preserves a UTF-8 BOM and rejects binary files instead of silently changing 
   await empty(target);
   await restoreWorkbenchBackup(target, backup);
   expect(await target.readExactText!('exports/bom.iso')).toBe('\uFEFF%\r\nM02\r\n');
-  const fakeBinaryRoot = { name: 'binary', getFileHandle: async () => ({ getFile: async () => ({ arrayBuffer: async () => new Uint8Array([0xff, 0xfe]).buffer }) }) } as unknown as FileSystemDirectoryHandle;
+  const fakeBinaryRoot = { name: 'binary', getFileHandle: async () => ({ getFile: async () => new Blob([new Uint8Array([0xff, 0xfe])]) }) } as unknown as FileSystemDirectoryHandle;
   await expect(createBrowserDirectoryAdapter(fakeBinaryRoot).readExactText!('binary.bin')).rejects.toThrow('exact UTF-8');
 });
 

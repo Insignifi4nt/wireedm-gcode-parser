@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import { lazy, Suspense, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useModalFocus } from '@/components/ui/useModalFocus';
 import { AgentRepairPrompt } from '@/components/AgentRepairPrompt';
@@ -193,7 +195,7 @@ export function EditorControllerArtifactDialog({
             <span className="text-muted-foreground">App {APP_VERSION}</span>
             <p className="text-muted-foreground">Generate from the exact saved project revision and the machine&apos;s active setup.</p>
           </div>
-          <button aria-label="Close controller artifact export" className="h-7 border border-border px-2 disabled:opacity-40" disabled={generating} onClick={onClose} type="button">Close</button>
+          <Button variant="outline" size="md" aria-label="Close controller artifact export" className="px-2" disabled={generating} onClick={onClose} type="button">Close</Button>
         </header>
 
         {hasUnsavedChanges && (
@@ -202,11 +204,11 @@ export function EditorControllerArtifactDialog({
           </p>
         )}
 
-        <label className="grid gap-1 uppercase text-muted-foreground">
+        <label className="grid gap-1 text-muted-foreground">
           Physical machine
-          <select
+          <Select
             aria-label="Controller export machine"
-            className="h-8 border border-border bg-background px-2 text-foreground"
+            className="h-8 px-2"
             disabled={generating}
             onChange={(event) => {
               setMachineId(event.currentTarget.value);
@@ -215,7 +217,7 @@ export function EditorControllerArtifactDialog({
           >
             <option value="">Select a machine</option>
             {machines.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}
-          </select>
+          </Select>
         </label>
 
         {machines.length === 0 && (
@@ -234,10 +236,10 @@ export function EditorControllerArtifactDialog({
           </p>
         )}
         {(machines.length === 0 || (selectedMachine && (!activeSetup || !activePost))) && (
-          <button className="h-8 w-fit border border-border px-3 disabled:opacity-40" disabled={generating}
+          <Button variant="outline" className="h-8 w-fit px-3" disabled={generating}
             onClick={() => { if (!generating) onOpenMachineSettings(); }} type="button">
             Open Machines &amp; setups
-          </button>
+          </Button>
         )}
         {activeSetup && activePost && (
           <div className="technical-value grid gap-1 border-y border-border py-2 text-muted-foreground">
@@ -250,9 +252,9 @@ export function EditorControllerArtifactDialog({
           </div>
         )}
 
-        <button className="h-8 border border-primary bg-primary px-3 text-primary-foreground disabled:opacity-40" disabled={!canGenerate} onClick={() => void generate()} type="button">
+        <Button variant="primary" className="h-8 px-3" disabled={!canGenerate} onClick={() => void generate()} type="button">
           {generating ? 'Generating…' : 'Generate controller artifact'}
-        </button>
+        </Button>
 
         {failure && (
           <div className="border border-destructive/60 bg-destructive/10 p-2 text-destructive" role="alert">
@@ -296,8 +298,8 @@ export function EditorControllerArtifactDialog({
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
               <span className="min-w-0 max-w-full break-all font-mono">{artifact.fileName}</span>
               <div className="flex min-w-0 max-w-full flex-wrap gap-2">
-                <button className="min-h-7 border border-border px-2 disabled:opacity-40" disabled={inspecting} onClick={() => void inspect()} type="button">{inspecting ? 'Opening inspection…' : inspectionFailure ? 'Retry inspection' : 'Inspect G-code'}</button>
-                <button className="min-h-7 min-w-0 max-w-full break-all border border-border px-2" onClick={download} type="button">Download {artifact.fileName}</button>
+                <Button variant="outline" className="min-h-7 px-2" disabled={inspecting} onClick={() => void inspect()} type="button">{inspecting ? 'Opening inspection…' : inspectionFailure ? 'Retry inspection' : 'Inspect G-code'}</Button>
+                <Button variant="outline" className="min-h-7 min-w-0 max-w-full break-all px-2" onClick={download} type="button">Download {artifact.fileName}</Button>
               </div>
             </div>
             {inspectionFailure !== null && <p className="border border-destructive/60 bg-destructive/10 p-2 text-destructive" role="alert">

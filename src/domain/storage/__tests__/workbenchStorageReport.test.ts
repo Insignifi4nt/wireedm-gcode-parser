@@ -32,6 +32,8 @@ describe.each(['cache', 'folder'] as const)('storage review with %s persistence'
     if (!deleted.ok) throw new Error(deleted.error.message);
     await storage.writeText('legacy/v2/workbench.json', 'EXACT BACKUP');
     await storage.writeText('exports/old.iso', 'KEEP');
+    await storage.writeText('cad/documents/cad_broken.cad.json', 'MALFORMED ORIGINAL');
+    await storage.writeText('CAD/recovery/part.cad.json', 'CASE VARIANT ORIGINAL');
     const write = vi.spyOn(storage, 'writeText');
     const remove = vi.spyOn(storage, 'deleteText');
     const report = await inspectWorkbenchStorage(deleted.workbench);
@@ -40,12 +42,16 @@ describe.each(['cache', 'folder'] as const)('storage review with %s persistence'
       { path: 'imports/part.upid', category: 'referenced' },
       { path: 'projects/part.json', category: 'referenced' },
       { path: 'legacy/v2/workbench.json', category: 'retained-backup' },
+      { path: 'cad/documents/cad_broken.cad.json', category: 'referenced' },
+      { path: 'CAD/recovery/part.cad.json', category: 'referenced' },
       { path: 'exports/old.iso', category: 'unreferenced' }
     ]));
     expect(write).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
     expect(JSON.stringify(report)).not.toContain('EXACT BACKUP');
     expect(JSON.stringify(report)).not.toContain('SOURCE');
+    expect(await storage.readText('cad/documents/cad_broken.cad.json')).toBe('MALFORMED ORIGINAL');
+    expect(await storage.readText('CAD/recovery/part.cad.json')).toBe('CASE VARIANT ORIGINAL');
   });
 
   it('reports incomplete scans and pending recovery without deleting transaction files', async () => {

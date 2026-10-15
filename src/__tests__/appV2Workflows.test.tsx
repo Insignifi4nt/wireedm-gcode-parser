@@ -1,6 +1,14 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
+import { createBrowserDirectoryAdapter } from '@/domain/storage/browserDirectoryAdapter';
+import { initializeWorkbenchConnection } from '@/domain/storage/initializeWorkbenchConnection';
+import { WORKBENCH_FILE_TRANSACTION_PATH } from '@/domain/storage/workbenchFileTransaction';
+import { FakeDirectoryHandle } from '@/domain/storage/__tests__/fakeDirectoryHandle';
+import { saveEditorProgram } from '@/domain/editor/saveEditorProgram';
+import { loadEditorProgram } from '@/domain/editor/loadEditorProgram';
+import { createDxfImportServices } from '@/app/dxfImportServices';
+import { directDxfProcessor } from '@/features/dxf-import/dxfProcessorTestSupport';
 
 import {
   cleanupAppTestContext,
@@ -27,8 +35,16 @@ describe('V2 app workflows', () => {
 
   afterEach(() => cleanupAppTestContext(context));
 
-  it('saves the actual dirty draft when header Save returns from Simulation to Editor', async () => {
-    await renderApp(context);
+  it.each(['browser-cache', 'directory'] as const)('saves the actual dirty draft in %s when header Save returns from Simulation to Editor', async kind => {
+    const adapter = kind === 'browser-cache' ? createBrowserCacheAdapter(window.localStorage)
+      : createBrowserDirectoryAdapter(new FakeDirectoryHandle('simulation-save') as unknown as FileSystemDirectoryHandle);
+    // Observe the actual durable operation rather than assuming microtask flushes
+    // finish streaming storage I/O. Both adapters execute their real transaction.
+    const save = vi.fn(saveEditorProgram);
+    const commitImport = vi.fn(createDxfImportServices(directDxfProcessor).commitDxfProjectImport);
+    const load = vi.fn(loadEditorProgram);
+    await renderApp(context, { saveEditorProgram: save, commitDxfProjectImport: commitImport, loadEditorProgram: load,
+      ...(kind === 'directory' ? { connectRememberedWorkbenchDirectory: () => initializeWorkbenchConnection(adapter) } : {}) });
     const container = context.container;
     async function click(selector: string) {
       const button = container.querySelector<HTMLButtonElement>(selector);
@@ -37,6 +53,17 @@ describe('V2 app workflows', () => {
     }
     await prepareDxfImport(container, new File([simpleLineDxf()], 'simulation-save.dxf'));
     await confirmPendingDxfImport(container, 'millimeters');
+    expect(commitImport).toHaveBeenCalledOnce();
+    await act(async () => {
+      const imported = await commitImport.mock.results[0].value;
+      if (!imported.ok) throw new Error(imported.error.message);
+    });
+    expect(load).toHaveBeenCalledOnce();
+    await act(async () => {
+      const loaded = await load.mock.results[0].value;
+      if (!loaded.ok) throw new Error(loaded.error.message);
+    });
+    expect(container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
     await click('button[aria-label="Geometry menu"]');
     await click('[data-editor-workflow-command="geometry.transform"]');
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Translate X"]')!;
@@ -47,10 +74,20 @@ describe('V2 app workflows', () => {
     await click('#workspace-tab-simulation');
     await click('button[aria-label="Save active document"]');
     expect(container.querySelector('#workspace-tab-editor')?.getAttribute('aria-selected')).toBe('true');
+    expect(save).toHaveBeenCalledOnce();
+    let receipt: Awaited<ReturnType<typeof saveEditorProgram>> | undefined;
+    await act(async () => { receipt = await save.mock.results[0].value; });
+    if (!receipt?.ok) throw new Error(receipt?.error.message ?? 'Save did not return a durable receipt.');
     expect(container.querySelector('[data-editor-document-state]')?.textContent).toBe('Saved');
-    const manifest = await storedJson('workbench.json');
-    const saved = await storedJson(manifest.projects[0].path);
+    const manifest = JSON.parse((await adapter.readExactText!('workbench.json'))!);
+    const saved = JSON.parse((await adapter.readExactText!(manifest.projects[0].path))!);
     expect(saved.content.document.segments[0].start.x).toBe(3);
+    expect(receipt.project).toEqual(saved);
+    expect(receipt.editorProgram.model).toBe('upid-document');
+    if (receipt.editorProgram.model !== 'upid-document') throw new Error('Expected the saved UPID editor document.');
+    expect(receipt.editorProgram.pathDocument.segments[0].start.x).toBe(3);
+    expect(await adapter.readExactText!(saved.source.files[0].path)).toBe(simpleLineDxf());
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
   });
 
   it('creates a strict browser-cache catalog with no machine or export defaults', async () => {
@@ -127,7 +164,6 @@ describe('V2 app workflows', () => {
     await renderApp(context);
 
     await vi.waitFor(() => expect(context.container.textContent).toContain('Legacy workbench manifest schema violation'));
-    expect(context.container.textContent).toContain('Storage not connected');
     expect((await storedJson('workbench.json')).schemaVersion).toBe(1);
   });
 

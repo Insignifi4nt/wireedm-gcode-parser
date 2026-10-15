@@ -1,0 +1,116 @@
+import { commitWorkbenchFileTransaction, WorkbenchFileConflictError } from '@/domain/storage/workbenchFileTransaction';
+import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
+import type { CadDocument } from './cadDocument';
+import { parseCadDocument } from './cadSchema';
+
+const prefix = 'cad/documents/';
+export interface SavedCadDocument {
+  readonly document: CadDocument;
+  readonly savedVersion: string;
+  readonly updatedAt: string;
+}
+export interface CadLibraryEntry {
+  readonly id: string; readonly name: string; readonly savedVersion: string;
+  readonly updatedAt: string; readonly featureCount: number;
+}
+export class CadStorageError extends Error {
+  constructor(readonly code: string, message: string) { super(message); }
+}
+
+export function cadDocumentPath(id: string) {
+  if (!/^[a-z0-9][a-z0-9_-]{0,95}$/.test(id) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(id)) {
+    throw new CadStorageError('INVALID_ID', 'CAD document identity is not a portable file name.');
+  }
+  return `${prefix}${id}.cad.json`;
+}
+
+async function fingerprint(text: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+}
+async function readRaw(adapter: WorkbenchStorageAdapter, path: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const raw = await (adapter.readExactText?.(path, signal) ?? adapter.readText(path));
+  signal?.throwIfAborted();
+  return raw;
+}
+async function parseSaved(raw: string, id: string): Promise<SavedCadDocument> {
+  const value: unknown = JSON.parse(raw);
+  if (!value || typeof value !== 'object' || !('format' in value) || value.format !== 'wireedm-cad-save' ||
+      !('schemaVersion' in value) || value.schemaVersion !== 1 || !('document' in value) ||
+      !('updatedAt' in value) || typeof value.updatedAt !== 'string' || !Number.isFinite(Date.parse(value.updatedAt)) ||
+      Object.keys(value).sort().join(',') !== 'document,format,schemaVersion,updatedAt') {
+    throw new CadStorageError('INVALID_SAVED_DOCUMENT', 'Unsupported CAD save. Preserve the original; no data was changed.');
+  }
+  const document = parseCadDocument(value.document);
+  if (document.id !== id) throw new CadStorageError('IDENTITY_MISMATCH', 'CAD document identity differs from its file name.');
+  return { document, updatedAt: value.updatedAt, savedVersion: await fingerprint(raw) };
+}
+
+export async function loadCadDocument(adapter: WorkbenchStorageAdapter, id: string, signal?: AbortSignal): Promise<SavedCadDocument> {
+  return withWorkbenchMutationLock(adapter, async () => {
+    const raw = await readRaw(adapter, cadDocumentPath(id), signal);
+    if (raw === null) throw new CadStorageError('NOT_FOUND', 'The CAD document no longer exists in this workbench.');
+    const saved = await parseSaved(raw, id);
+    signal?.throwIfAborted();
+    return saved;
+  });
+}
+
+/** Same transaction and cross-tab lock for cache and folders. No index or catalog migration. */
+export async function saveCadDocument(adapter: WorkbenchStorageAdapter, document: CadDocument, options: {
+  expectedSavedVersion: string | null; signal?: AbortSignal; beforeWrite?: () => void;
+}): Promise<SavedCadDocument> {
+  const validated = parseCadDocument(document);
+  const path = cadDocumentPath(validated.id);
+  const updatedAt = new Date().toISOString();
+  const raw = JSON.stringify({ format: 'wireedm-cad-save', schemaVersion: 1, updatedAt, document: validated });
+  options.signal?.throwIfAborted();
+  // Prepare every fallible receipt field before a durable write. Once the
+  // journal starts, cancellation or cleanup failure must retain this receipt.
+  const savedVersion = await fingerprint(raw);
+  return withWorkbenchMutationLock(adapter, async () => {
+    options.signal?.throwIfAborted();
+    const existing = await readRaw(adapter, path, options.signal);
+    if ((existing === null ? null : await fingerprint(existing)) !== options.expectedSavedVersion) {
+      throw new CadStorageError('SAVED_DOCUMENT_CHANGED', 'This CAD document changed in storage. Export your draft, then reopen the saved document before editing.');
+    }
+    try {
+      await commitWorkbenchFileTransaction(adapter, [{ path, contents: raw, expectedPrevious: existing }], () => {
+        options.signal?.throwIfAborted(); options.beforeWrite?.();
+      });
+    } catch (error) {
+      if (error instanceof WorkbenchFileConflictError) throw new CadStorageError('SAVED_DOCUMENT_CHANGED', 'This CAD document changed in storage. Export your draft, then reopen the saved document before editing.');
+      throw error;
+    }
+    return { document: validated, updatedAt, savedVersion };
+  });
+}
+
+export async function listCadDocuments(adapter: WorkbenchStorageAdapter, signal?: AbortSignal): Promise<{
+  entries: CadLibraryEntry[]; diagnostics: { path: string; message: string }[]; truncated: boolean;
+}> {
+  return withWorkbenchMutationLock(adapter, async () => {
+    if (!adapter.listFiles) throw new CadStorageError('INVENTORY_UNAVAILABLE', 'This storage connection cannot list CAD documents.');
+    const inventory = await adapter.listFiles(signal);
+    const entries: CadLibraryEntry[] = [];
+    const diagnostics: { path: string; message: string }[] = [];
+    for (const path of inventory.paths.filter(path => path.startsWith(prefix) && path.endsWith('.cad.json')).slice(0, 500)) {
+      signal?.throwIfAborted();
+      try {
+        const id = path.slice(prefix.length, -'.cad.json'.length);
+        if (cadDocumentPath(id) !== path) throw new Error('Unexpected CAD document path.');
+        const raw = await readRaw(adapter, path, signal);
+        if (raw === null) throw new Error('File disappeared during reading.');
+        const saved = await parseSaved(raw, id);
+        entries.push({ id, name: saved.document.name, savedVersion: saved.savedVersion, updatedAt: saved.updatedAt, featureCount: saved.document.features.length });
+      } catch (error) {
+        signal?.throwIfAborted();
+        diagnostics.push({ path, message: error instanceof Error ? error.message : 'Cannot read CAD document.' });
+      }
+    }
+    return { entries: entries.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)), diagnostics,
+      truncated: inventory.truncated || inventory.paths.filter(path => path.startsWith(prefix) && path.endsWith('.cad.json')).length > 500 };
+  });
+}

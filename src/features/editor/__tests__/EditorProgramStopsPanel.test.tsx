@@ -81,7 +81,7 @@ describe('EditorProgramStopsPanel', () => {
     const select = container.querySelector<HTMLSelectElement>('[aria-label="Program stop placement"]')!;
     await act(async () => setSelect(select, 'after-exit'));
     expect(container.textContent).toContain('There is no exit lead');
-    expect(select.title).toContain('No rapid travel occurs');
+    expect(select.getAttribute('aria-description')).toContain('No rapid travel occurs');
     operation.transitions = { exit: { strategy: 'manual-straight', move: 'cut', from: { x: 10, y: 0 },
       to: { x: 15, y: 0 }, review: 'reviewed' } };
     await act(async () => render());

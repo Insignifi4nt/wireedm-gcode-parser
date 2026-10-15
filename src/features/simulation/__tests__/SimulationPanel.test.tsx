@@ -76,8 +76,11 @@ describe('SimulationPanel saved-process integration', () => {
     await render({ dirty: true });
     const savedPlan = scene().plan;
     expect(container.textContent).toContain('Saved contour');
-    expect(container.textContent).toContain('SAVED UPID');
-    expect(container.querySelector(`[title="${props.savedAt}"]`)).not.toBeNull();
+    expect(container.textContent).toContain('Saved UPID');
+    const savedTime = container.querySelector<HTMLElement>(`[aria-description="${props.savedAt}"]`);
+    expect(savedTime).not.toBeNull();
+    await act(async () => savedTime?.focus());
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(props.savedAt);
     expect(container.textContent).toContain('Unsaved editor changes are excluded.');
     await clickText('Return to editor to save');
     expect(props.onEdit).toHaveBeenCalledOnce();

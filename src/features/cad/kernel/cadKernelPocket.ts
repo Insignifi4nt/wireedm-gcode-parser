@@ -1,0 +1,80 @@
+import { cast, getOC, isShape3D, Plane, Vector, type Drawing, type Shape3D, type SimplePoint, type Sketch } from 'replicad';
+import { CadError } from '../../../domain/cad/cadError';
+import { resolveCadPocketExtent, type CadResolvedPocketInputs } from '../../../domain/cad/cadPocket';
+import { cadKernelPlaneBasis } from './cadKernelPlane';
+import { cadKernelProfileDrawing, cadKernelSketchOnPlane } from './cadKernelSketch';
+import { cadKernelDisposeOwned } from './cadKernelShapes';
+import { cadKernelShapeTolerance as pocketShapeTolerance, cadKernelSolidEvidence as solidEvidence } from './cadKernelCutEvidence';
+
+export function prepareCadPocketExtent(target: Shape3D, inputs: CadResolvedPocketInputs): ReturnType<typeof resolveCadPocketExtent> {
+  // A Boolean may omit an unresolved target component completely. Its absence
+  // from Common cannot be certified by inspecting only the returned material.
+  solidEvidence(target, 'target');
+  const box = target.boundingBox;
+  try {
+    const [min, max] = box.bounds;
+    return resolveCadPocketExtent({ plane: inputs.plane, offsetMm: inputs.offset,
+      direction: inputs.direction, sectionScaleMm: inputs.sectionScaleMm, targetBounds: { min, max }, nativeToleranceMm: pocketShapeTolerance(target) });
+  } finally { box.delete(); }
+}
+
+function extrudePocketRegion(wires: readonly Sketch[], span: number, normal: SimplePoint): Shape3D {
+  const first = wires[0];
+  if (!first) throw new CadError('empty-sketch', 'Pocket needs a closed non-construction material profile.');
+  const oc = getOC(); const owned = new Set<{ delete(): void }>();
+  const own = <T extends { delete(): void }>(value: T): T => { owned.add(value); return value; };
+  try {
+    const maker = own(new oc.BRepBuilderAPI_MakeFace(first.wire.wrapped, true));
+    for (const hole of wires.slice(1)) maker.Add(hole.wire.wrapped);
+    if (!maker.IsDone()) throw new CadError('pocket-tool', 'Pocket profiles could not form a planar cutting face.');
+    const face = own(maker.Face());
+    // All nested loops have explicit material meaning. As in Replicad's
+    // CompoundSketch, fix traversal orientation only; no geometric healing.
+    const fixer = own(new oc.ShapeFix_Face(face)); fixer.FixOrientation();
+    const oriented = own(fixer.Face());
+    const vector = own(new Vector([normal[0] * span, normal[1] * span, normal[2] * span]));
+    const builder = own(new oc.BRepPrimAPI_MakePrism(oriented, vector.wrapped, false, true));
+    if (!builder.IsDone()) throw new CadError('pocket-tool', 'OpenCascade could not extrude the through-all cutting face.');
+    const raw = own(builder.Shape()); const shape = cast(raw);
+    if (!isShape3D(shape)) { cadKernelDisposeOwned(shape); throw new CadError('pocket-tool', 'Pocket profiles did not produce a solid cutting tool.'); }
+    return shape;
+  } finally { for (const value of owned) cadKernelDisposeOwned(value); }
+}
+
+/** Borrow the exact prefix target. The caller owns the returned committed cut. */
+export function buildCadPocketCut(target: Shape3D, inputs: CadResolvedPocketInputs): Shape3D {
+  const extent = prepareCadPocketExtent(target, inputs); const basis = cadKernelPlaneBasis(inputs.plane);
+  const origin: SimplePoint = [basis.normal[0] * extent.startStationMm, basis.normal[1] * extent.startStationMm, basis.normal[2] * extent.startStationMm];
+  const plane = new Plane(origin, basis.u, basis.normal); const drawings: Drawing[] = []; const sketches: Sketch[] = [];
+  const shapes = new Set<Shape3D>(); const own = (shape: Shape3D) => { shapes.add(shape); return shape; };
+  const release = (shape: Shape3D) => { cadKernelDisposeOwned(shape); shapes.delete(shape); };
+  let tool: Shape3D | undefined;
+  try {
+    for (const region of inputs.regions) {
+      const wires = [region.boundary, ...region.voids].map(contour => {
+        const drawing = cadKernelProfileDrawing(contour.geometry, drawings); const wire = cadKernelSketchOnPlane(drawing, plane); sketches.push(wire); return wire;
+      });
+      const piece = own(extrudePocketRegion(wires, extent.spanMm, basis.normal)); const regionEvidence = solidEvidence(piece, 'tool');
+      // Refuse each unresolved region separately: a larger cutting region must
+      // not hide a thin annulus that native Common may omit at its tolerance.
+      if (regionEvidence.volume <= Math.max(1e-9, 4 * regionEvidence.tolerance * regionEvidence.surfaceArea)) {
+        throw new CadError('unsupported-pocket-removal', 'A cutting region is too thin to resolve at native precision. Enlarge its material width or revise its holes.');
+      }
+      if (tool) {
+        const previous = tool; tool = own(previous.fuse(piece)); solidEvidence(tool, 'tool'); release(previous); release(piece);
+      } else tool = piece;
+    }
+    if (!tool) throw new CadError('empty-sketch', 'Pocket needs a closed non-construction material profile.');
+    const common = own(target.intersect(tool)); const evidence = solidEvidence(common, 'common');
+    // Evidence is checked per Common solid at its own precision scale.
+    // Whole-target subtraction can lose a small bore or even become negative;
+    // a broad removed component must not hide a second unresolved component.
+    if (evidence.tolerance * 4 > extent.capMarginMm) throw new CadError('unsupported-pocket-precision', 'Pocket intersection exceeds the reserved cap precision. Revise the target or profile.');
+    release(common);
+    const result = own(target.cut(tool)); const final = solidEvidence(result, 'result');
+    if (final.tolerance * 4 > extent.capMarginMm) throw new CadError('unsupported-pocket-precision', 'Pocket result exceeds the reserved cap precision. Revise the target or profile.');
+    shapes.delete(result); return result;
+  } finally {
+    for (const shape of shapes) cadKernelDisposeOwned(shape); sketches.forEach(cadKernelDisposeOwned); plane.delete(); drawings.forEach(drawing => drawing.blueprint.delete());
+  }
+}

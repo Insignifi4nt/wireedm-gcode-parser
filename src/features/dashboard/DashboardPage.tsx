@@ -28,6 +28,7 @@ interface DashboardPageProps {
   latestImport: ImportedDxfProject | null;
   pendingDxfImport: PendingDashboardDxfImport | null;
   onOpenEditor: () => void;
+  onOpenCad?: () => void;
   onOpenLatestImportInEditor: () => void;
   onOpenProject: (projectId: string) => void | Promise<void>;
   onDeleteProject: (projectId: string) => Promise<void>;
@@ -59,6 +60,7 @@ export function DashboardPage({
   latestImport,
   pendingDxfImport,
   onOpenEditor,
+  onOpenCad,
   onOpenLatestImportInEditor,
   onOpenProject,
   onDeleteProject,
@@ -107,7 +109,7 @@ export function DashboardPage({
       data-workbench-page
     >
       <section
-        className="work-region-scrollbar grid h-full min-h-0 auto-rows-max content-start gap-3 overflow-auto p-3 min-[1180px]:grid-cols-[minmax(0,1fr)_332px] min-[1180px]:items-start"
+        className="work-region-scrollbar dashboard-layout"
         data-workbench-scroll-region
       >
         <ProjectListPanel
@@ -133,6 +135,7 @@ export function DashboardPage({
             onImportUpidFile={onImportUpidFile}
             onImportProgramFile={onImportProgramFile}
             onOpenEditor={onOpenEditor}
+            onOpenCad={onOpenCad}
             onInspectGCode={() => setInspectingGCode(true)}
             programErrorMessage={programImportErrorMessage}
             programImporting={programImportStatus === 'importing'}

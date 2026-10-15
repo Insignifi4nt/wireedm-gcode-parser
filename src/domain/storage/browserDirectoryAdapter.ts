@@ -1,5 +1,6 @@
 import { MAX_STORAGE_INVENTORY_ENTRIES, type WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 import { assertReadLimit } from './boundedExactText';
+import { readExactUtf8Blob } from './exactTextStream';
 
 export function createBrowserDirectoryAdapter(
   root: FileSystemDirectoryHandle
@@ -24,12 +25,15 @@ export function createBrowserDirectoryAdapter(
         throw error;
       }
     },
-    readExactText: async (path: string) => {
+    readExactText: async (path: string, signal?: AbortSignal) => {
+      signal?.throwIfAborted();
       try {
         const handle = await getFile(root, splitPath(path), false);
         const file = await handle.getFile();
-        return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(await file.arrayBuffer());
+        signal?.throwIfAborted();
+        return await readExactUtf8Blob(file, signal);
       } catch (error) {
+        signal?.throwIfAborted();
         if (isNotFoundError(error)) return null;
         throw new Error(`Cannot back up ${path} as exact UTF-8 text: ${error instanceof Error ? error.message : String(error)}`);
       }

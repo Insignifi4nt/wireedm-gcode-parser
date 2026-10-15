@@ -3,7 +3,6 @@ import { Value } from '@sinclair/typebox/value';
 import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
 export const WORKBENCH_FILE_TRANSACTION_PATH = 'transactions/workbench-files.json';
-const maximumBytes = 384 * 1024 * 1024;
 const schema = Type.Object({
   format: Type.Literal('wire-edm-file-transaction'), schemaVersion: Type.Literal(1),
   files: Type.Array(Type.Object({ path: Type.String({ minLength: 1, maxLength: 1024 }),
@@ -21,6 +20,11 @@ export class WorkbenchFileWriteError extends Error {
 /** Distinguish a rejected pre-write guard from a storage write failure. No journal exists yet. */
 export class WorkbenchFileGuardError extends Error {
   constructor(readonly reason: unknown) { super('File transaction cancelled before writing.'); }
+}
+
+/** A caller's optimistic original must be the same image retained for recovery. */
+export class WorkbenchFileConflictError extends Error {
+  constructor(readonly path: string) { super(`File changed before transaction capture: ${path}`); }
 }
 
 export function isPortableStoragePath(path: string) {
@@ -67,7 +71,6 @@ export async function recoverWorkbenchFileTransaction(adapter: WorkbenchStorageA
   // A new folder handle can exist before its atomic first write commits.
   // No owned files are changed until the nonempty journal has been verified.
   if (raw === '') { await finish(adapter); return; }
-  if (new TextEncoder().encode(raw).byteLength > maximumBytes) throw new Error('File recovery journal exceeds its size limit.');
   const value: unknown = JSON.parse(raw);
   if (!Value.Check(schema, value)) throw new Error('Invalid file recovery journal. Preserve storage for recovery.');
   checkFiles(value.files);
@@ -85,7 +88,7 @@ export async function recoverWorkbenchFileTransaction(adapter: WorkbenchStorageA
 
 /** Caller holds the lock. Write the catalog last; exact before/after images permit crash recovery. */
 export async function commitWorkbenchFileTransaction(
-  adapter: WorkbenchStorageAdapter, changes: readonly { path: string; contents: string | null }[],
+  adapter: WorkbenchStorageAdapter, changes: readonly { path: string; contents: string | null; expectedPrevious?: string | null }[],
   beforeWrite?: () => void
 ) {
   if (!changes.length) return;
@@ -93,12 +96,15 @@ export async function commitWorkbenchFileTransaction(
   const ordered = [...changes].sort((a, b) => Number(a.path === 'workbench.json') - Number(b.path === 'workbench.json'));
   checkFiles(ordered.map(({ path, contents }) => ({ path, previous: null, next: contents })));
   const files: Transaction['files'] = [];
-  for (const { path, contents } of ordered) files.push({ path, previous: await readExact(adapter, path), next: contents });
+  for (const { path, contents, expectedPrevious } of ordered) {
+    const previous = await readExact(adapter, path);
+    if (expectedPrevious !== undefined && previous !== expectedPrevious) throw new WorkbenchFileConflictError(path);
+    files.push({ path, previous, next: contents });
+  }
   checkFiles(files);
   const transaction: Transaction = { format: 'wire-edm-file-transaction', schemaVersion: 1, files };
   if (!Value.Check(schema, transaction)) throw new Error('File transaction exceeds its file limit.');
   const raw = JSON.stringify(transaction);
-  if (new TextEncoder().encode(raw).byteLength > maximumBytes) throw new Error('File recovery data exceeds its size limit.');
   await adapter.ensureDirectory('transactions');
   // Cancellation is still reversible here. Once the journal starts, finish and report the durable result.
   try { beforeWrite?.(); }

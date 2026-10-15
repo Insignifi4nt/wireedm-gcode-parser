@@ -1,0 +1,90 @@
+{
+  "format": "wire-edm-cad-kernel-sources",
+  "schemaVersion": 1,
+  "packageName": "replicad-opencascadejs",
+  "packageVersion": "1.1.0-wireedm.2",
+  "gitHead": "e4b05f67dc4e2393a876ce8c5064a9c93db05bf1",
+  "bindingGeneratorCommit": "ebd263f15337b440b391492af073662707e86482",
+  "occtCommit": "b8f597c677811d1f9f4d8a97f5ae2825c0353a42",
+  "archives": [
+    {
+      "fileName": "replicad-e4b05f67dc4e2393a876ce8c5064a9c93db05bf1.tar.gz",
+      "url": "https://codeload.github.com/sgenoud/replicad/tar.gz/e4b05f67dc4e2393a876ce8c5064a9c93db05bf1",
+      "byteLength": 17426998,
+      "sha256": "92180710da11a6e67ab75eaac8b494b29d32011415c22e29f7fecb1c796da783"
+    },
+    {
+      "fileName": "opencascade.js-ebd263f15337b440b391492af073662707e86482.tar.gz",
+      "url": "https://codeload.github.com/tauCAD/opencascade.js/tar.gz/ebd263f15337b440b391492af073662707e86482",
+      "byteLength": 4449501,
+      "sha256": "1e0342c8dbdc04d1835c776d5e95ab25fcad56a5f4cafcbecad92a959b6b00b7"
+    },
+    {
+      "fileName": "OCCT-b8f597c677811d1f9f4d8a97f5ae2825c0353a42.tar.gz",
+      "url": "https://codeload.github.com/Open-Cascade-SAS/OCCT/tar.gz/b8f597c677811d1f9f4d8a97f5ae2825c0353a42",
+      "byteLength": 45131814,
+      "sha256": "dba62b81078dd43cec23feba89432be301582341001edad1b93342ad8bda35ea"
+    },
+    {
+      "fileName": "rapidjson-24b5e7a8b27f42fa16b96fc70aade9106cf7102f.tar.gz",
+      "url": "https://codeload.github.com/Tencent/rapidjson/tar.gz/24b5e7a8b27f42fa16b96fc70aade9106cf7102f",
+      "byteLength": 1116703,
+      "sha256": "2d2601a82d2d3b7e143a3c8d43ef616671391034bc46891a9816b79cf2d3e7a8"
+    },
+    {
+      "fileName": "freetype-de8b92dd7ec634e9e2b25ef534c54a3537555c11.tar.gz",
+      "url": "https://codeload.github.com/freetype/freetype/tar.gz/de8b92dd7ec634e9e2b25ef534c54a3537555c11",
+      "byteLength": 2496556,
+      "sha256": "14791d34053acf30394912a8b963277bee60b35fbb3038795d86555ba0415a44"
+    }
+  ],
+  "installedArtifacts": [
+    {
+      "fileName": "replicad_single.js",
+      "byteLength": 60170,
+      "sha256": "5ba5161518781c04af771ae4e841956613dde4e679766ddaaeb581b778e1a8be"
+    },
+    {
+      "fileName": "replicad_single.wasm",
+      "byteLength": 22987129,
+      "sha256": "f3315403717f650c207eccd2f372afc380005b4f219bad31991d6f115fdc1744"
+    },
+    {
+      "fileName": "replicad_single.d.ts",
+      "byteLength": 1619008,
+      "sha256": "28ae81bd478d13e1abb3a1f2c908666250c670d7c2aac2cc2a70f4ab5e951fcd"
+    }
+  ],
+  "modification": {
+    "kind": "native-ownership-and-topology",
+    "upstreamCommit": "193f3339893c909abdd5e62a6f1dc6742369fa30",
+    "toolchainImage": "ghcr.io/taucad/opencascade.js@sha256:215198af0e2ca4c5f308e5540869f2419784dc290062d3eb03d34e4f22e0188c",
+    "files": [
+      {
+        "fileName": "replicad-opencascadejs-1.1.0-wireedm.2.tgz",
+        "byteLength": 7531960,
+        "sha256": "b1319454ea17e68475c907e1c9b0b7c78ae54c3bf6bf21d3fd3c555f02418958"
+      },
+      {
+        "fileName": "replicad-ownership-backport.patch",
+        "byteLength": 16497,
+        "sha256": "001ff0a239158e0972b796d900f6034fcb8161ce67bf5d28b1d4afdbd2f97960"
+      },
+      {
+        "fileName": "replicad-indexed-topology.patch",
+        "byteLength": 4426,
+        "sha256": "891b2547a46d66fdab2f3ec099b981f979be2e0b573be4f0eb45be975ff65135"
+      },
+      {
+        "fileName": "replicad-ownership-rebuild.tar.gz",
+        "byteLength": 18346,
+        "sha256": "05d1609850e0ff2e6297b616657f535548d020c0118913b9ef0d8124b1510c9d"
+      },
+      {
+        "fileName": "replicad-ownership-build.json",
+        "byteLength": 4136,
+        "sha256": "21fa1c8b690be71e0d70fc25eabc905a5ea1b435e204e2a362c2d1f91f8c66a9"
+      }
+    ]
+  }
+}

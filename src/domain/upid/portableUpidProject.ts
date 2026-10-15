@@ -50,6 +50,8 @@ export interface ImportPortableUpidProjectInput {
   readonly fileName: string;
   readonly text: string;
   readonly now?: Date;
+  /** Last cancellable point, inside the shared storage lock before any journal write. */
+  readonly beforeWrite?: () => void;
 }
 
 export type PortableUpidProjectError =
@@ -153,6 +155,7 @@ export async function importPortableUpidProject(
   if (!created.ok) return created;
   const stored = await addStoredWorkbenchProject(workbench, {
     project: created.project,
+    beforeWrite: input.beforeWrite,
     ownedFiles: [{ path: sourcePath, contents: input.text }]
   });
   if (!stored.ok) return stored;

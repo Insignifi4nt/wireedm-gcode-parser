@@ -1,3 +1,7 @@
+import { Tooltip } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { AlertTriangle, ArrowLeft, Box, Check, ChevronRight, FileBox, Info, LoaderCircle, Pause, Play, RotateCcw, SkipBack, SkipForward, X } from 'lucide-react';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
@@ -126,25 +130,25 @@ export default function SimulationPanel({ document, projectName, savedAt, dirty,
     ? ' Machine surface check failed.' : machineCheckIncomplete ? ' Machine surface check incomplete.'
       : machineScan.status === 'scanning' ? ' Machine surface check in progress.' : ''}`;
   function setupButton(panel: SetupPanel, label: string, content: ReactNode) {
-    return <button type="button" aria-label={label} aria-expanded={openPanel === panel} aria-controls={popoverId} aria-haspopup="dialog"
+    return <Button type="button" aria-label={label} aria-expanded={openPanel === panel} aria-controls={popoverId} aria-haspopup="dialog"
       aria-describedby={panel === 'checks' ? checksDescriptionId : undefined}
       className={panel === 'checks' && findingCount ? 'sim-tool has-findings' : 'sim-tool'} onClick={event => {
         lastSetupTrigger.current = event.currentTarget;
         setPlaying(false); setOpenPanel(current => current === panel ? null : panel);
-      }}>{content}</button>;
+      }}>{content}</Button>;
   }
 
   return <section className="sim-workspace" aria-label="Saved process simulation" data-final-part={finalPartOnly}>
     <div className="sim-main">
       <div className="sim-context-bar">
         {plan && <div className="sim-presentation-switch" role="group" aria-label="Simulation view">
-          <button type="button" aria-pressed={!finalPartOnly} onClick={() => setFinalPartOnly(false)}>Process</button>
-          <button type="button" aria-pressed={finalPartOnly} onClick={() => { setPlaying(false); setFinalPartOnly(true); closeSetup(); }}>Final part</button>
+          <Button type="button" aria-pressed={!finalPartOnly} onClick={() => setFinalPartOnly(false)}>Process</Button>
+          <Button type="button" aria-pressed={finalPartOnly} onClick={() => { setPlaying(false); setFinalPartOnly(true); closeSetup(); }}>Final part</Button>
         </div>}
-        {plan && !finalPartOnly && <select className="sim-operation-select" aria-label="Simulation operation" value={activeOperation?.id ?? ''} onChange={event => {
+        {plan && !finalPartOnly && <Select className="sim-operation-select" aria-label="Simulation operation" value={activeOperation?.id ?? ''} onChange={event => {
           const operation = operationStarts.find(item => item.id === event.target.value);
           if (operation) { setPlaying(false); setElapsed(operation.time); }
-        }}><option value="" disabled>Jump to operation</option>{operationStarts.map((operation, index) => <option key={operation.id} value={operation.id ?? ''}>{index + 1}. {operation.name}</option>)}</select>}
+        }}><option value="" disabled>Jump to operation</option>{operationStarts.map((operation, index) => <option key={operation.id} value={operation.id ?? ''}>{index + 1}. {operation.name}</option>)}</Select>}
         <div className="sim-tools" ref={setupTools}>
           {setupButton('stock', 'Stock settings', <><Box size={14} /><span>Stock</span><small>{[settings.stock.width, settings.stock.depth, settings.stock.thickness].map(value => Number(value.toFixed(3))).join(' × ')}</small></>)}
           {setupButton('machine', 'Machine model settings', <><FileBox size={14} /><span>Machine</span>{machine && <i aria-label="Model loaded" />}</>)}
@@ -153,8 +157,8 @@ export default function SimulationPanel({ document, projectName, savedAt, dirty,
           {setupButton('info', 'Simulation information', <Info size={15} />)}
         </div>
       </div>
-      {dirty && <div className="sim-draft-notice"><AlertTriangle size={13} />Unsaved editor changes are excluded.<button type="button" onClick={onEdit}>Return to editor to save<ChevronRight size={12} /></button></div>}
-      {!result ? <div className="sim-unavailable" role="status"><LoaderCircle className="animate-spin" size={28} /><h2>Preparing the saved process</h2><p>Building the timeline and checking material obstructions. You can return to the editor while this runs.</p><button type="button" onClick={onEdit}><ArrowLeft size={14} />Return to editor</button></div> : plan && snapshot ? <>
+      {dirty && <div className="sim-draft-notice"><AlertTriangle size={13} />Unsaved editor changes are excluded.<Button type="button" onClick={onEdit}>Return to editor to save<ChevronRight size={12} /></Button></div>}
+      {!result ? <div className="sim-unavailable" role="status"><LoaderCircle className="animate-spin" size={28} /><h2>Preparing the saved process</h2><p>Building the timeline and checking material obstructions. You can return to the editor while this runs.</p><Button type="button" onClick={onEdit}><ArrowLeft size={14} />Return to editor</Button></div> : plan && snapshot ? <>
         <div className="sim-scene-wrap"><SimulationViewport plan={plan} snapshot={snapshot} machine={machine} placement={placement} presentation={presentation} onCaptureReady={onCaptureReady} />
           {finalPartOnly ? <div className="sim-state-card"><strong>Final part</strong><span>Nominal geometry</span></div> : <div className="sim-state-card"><span className={snapshot.wire.cutting ? 'sim-state-dot cutting' : 'sim-state-dot'} />
             <strong>{snapshot.phase === 'complete' ? 'Complete' : elapsed >= plan.machiningDurationSeconds ? 'Settling' : !playing && elapsed === 0 ? 'Ready' : !playing ? 'Paused' : phaseNames[snapshot.phase]}</strong>
@@ -166,7 +170,7 @@ export default function SimulationPanel({ document, projectName, savedAt, dirty,
           </div>}
         </div>
         {!finalPartOnly && <div className="sim-playback">
-          <input aria-label="Simulation timeline" type="range" min={0} max={plan.durationSeconds || 1} step="any" value={elapsed}
+          <Input aria-label="Simulation timeline" type="range" min={0} max={plan.durationSeconds || 1} step="any" value={elapsed}
             onKeyDown={event => {
               if (event.key !== 'Home' && event.key !== 'End') return;
               event.preventDefault(); setPlaying(false); setElapsed(event.key === 'End' ? plan.durationSeconds : 0);
@@ -176,28 +180,28 @@ export default function SimulationPanel({ document, projectName, savedAt, dirty,
               setElapsed(value >= plan.durationSeconds - Math.max(1, plan.durationSeconds) * 1e-12 ? plan.durationSeconds : value);
             }} />
           <div className="sim-playback-row"><div className="sim-transport">
-            <button type="button" aria-label="Restart simulation" onClick={() => { setPlaying(false); setElapsed(0); }}><RotateCcw size={14} /></button>
-            <button type="button" aria-label="Previous simulation event" onClick={() => step(-1)}><SkipBack size={14} /></button>
-            <button className="sim-play" type="button" aria-label={playing ? 'Pause simulation' : 'Play simulation'} onClick={() => { if (elapsed >= plan.durationSeconds) setElapsed(0); setPlaying(value => !value); }}>{playing ? <Pause size={16} /> : <Play size={16} />}</button>
-            <button type="button" aria-label="Next simulation event" onClick={() => step(1)}><SkipForward size={14} /></button>
+            <Button type="button" aria-label="Restart simulation" onClick={() => { setPlaying(false); setElapsed(0); }}><RotateCcw size={14} /></Button>
+            <Button type="button" aria-label="Previous simulation event" onClick={() => step(-1)}><SkipBack size={14} /></Button>
+            <Button variant="primary" className="sim-play" type="button" aria-label={playing ? 'Pause simulation' : 'Play simulation'} onClick={() => { if (elapsed >= plan.durationSeconds) setElapsed(0); setPlaying(value => !value); }}>{playing ? <Pause size={16} /> : <Play size={16} />}</Button>
+            <Button type="button" aria-label="Next simulation event" onClick={() => step(1)}><SkipForward size={14} /></Button>
             <span className="sim-time">{timeLabel(elapsed)}<span> / {timeLabel(plan.durationSeconds)}</span></span>
-          </div><div className="sim-rate"><select aria-label="Simulation playback speed" value={speed} onChange={event => setSpeed(Number(event.target.value))}>{[0.25, 0.5, 1, 2, 5, 10].map(rate => <option key={rate} value={rate}>{rate}×</option>)}</select></div></div>
+          </div><div className="sim-rate"><Select aria-label="Simulation playback speed" value={speed} onChange={event => setSpeed(Number(event.target.value))}>{[0.25, 0.5, 1, 2, 5, 10].map(rate => <option key={rate} value={rate}>{rate}×</option>)}</Select></div></div>
         </div>}
-      </> : <div className="sim-unavailable"><AlertTriangle size={28} /><h2>{workerFailed ? 'Simulation preparation stopped' : 'Finish the machining setup'}</h2><p>{workerFailed ? 'The saved project is unchanged.' : 'The saved process needs explicit machining intent before it can be simulated.'}</p><ul>{diagnostics.map((diagnostic, index) => <li key={`${diagnostic.code}-${index}`}>{diagnostic.message}</li>)}</ul>{workerFailed && <button type="button" onClick={retry}>Retry simulation</button>}<button type="button" onClick={onEdit}><ArrowLeft size={14} />Review in editor</button></div>}
+      </> : <div className="sim-unavailable"><AlertTriangle size={28} /><h2>{workerFailed ? 'Simulation preparation stopped' : 'Finish the machining setup'}</h2><p>{workerFailed ? 'The saved project is unchanged.' : 'The saved process needs explicit machining intent before it can be simulated.'}</p><ul>{diagnostics.map((diagnostic, index) => <li key={`${diagnostic.code}-${index}`}>{diagnostic.message}</li>)}</ul>{workerFailed && <Button type="button" onClick={retry}>Retry simulation</Button>}<Button type="button" onClick={onEdit}><ArrowLeft size={14} />Review in editor</Button></div>}
     </div>
     <div ref={setupPopover} id={popoverId} role="dialog" aria-modal="false" aria-label={openPanel ? panelTitles[openPanel] : 'Simulation setup'} tabIndex={-1} className="sim-setup-popover" hidden={!openPanel}>
-      <div className="sim-popover-heading"><strong>{openPanel ? panelTitles[openPanel] : ''}</strong><button type="button" aria-label="Close simulation settings" onClick={() => closeSetup(true)}><X size={15} /></button></div>
+      <div className="sim-popover-heading"><strong>{openPanel ? panelTitles[openPanel] : ''}</strong><Button type="button" aria-label="Close simulation settings" onClick={() => closeSetup(true)}><X size={15} /></Button></div>
       <div data-sim-panel="stock" hidden={openPanel !== 'stock'}>
       <form onSubmit={applyStock} className="sim-section"><div className="sim-section-title"><span>Dimensions</span><span>mm</span></div>
-        <div className="sim-dimensions">{(['width', 'depth', 'thickness'] as const).map(key => <label key={key}><span>{key === 'width' ? 'Width · X' : key === 'depth' ? 'Depth · Y' : 'Height · Z'}</span><input aria-label={`Stock ${key}`} name={key} type="number" step="any" min="0.001" required defaultValue={settings.stock[key]} /></label>)}</div>
-        <label className="sim-select-row"><span>Released pieces</span><select aria-label="Released piece behavior" name="retention" defaultValue={settings.retention}><option value="fall">Fall under gravity</option><option value="retain">Retained in place</option></select></label>
-        <label className="sim-select-row"><span>Waste handling</span><select aria-label="Waste handling" name="wasteHandling" defaultValue={settings.wasteHandling ?? 'remove-before-next-operation'}><option value="remove-before-next-operation">Remove between cuts</option><option value="keep">Keep for interference</option></select></label>
-        <details className="sim-details"><summary>Placement & wire</summary><div className="sim-fields-grid">{(['originX', 'originY', 'bottomZ'] as const).map(key => <label key={key}><span>{key === 'originX' ? 'Origin X' : key === 'originY' ? 'Origin Y' : 'Bottom Z'}</span><input aria-label={`Stock ${key}`} name={key} type="number" step="any" required defaultValue={settings.stock[key]} /></label>)}<label><span>Wire Ø</span><input aria-label="Wire diameter" name="wireDiameter" type="number" step="any" min="0.001" required defaultValue={settings.wireDiameter} /></label><label><span>Support Z</span><input aria-label="Support floor Z" name="supportFloorZ" type="number" step="any" required defaultValue={settings.supportFloorZ ?? settings.stock.bottomZ - (settings.guideClearanceMm ?? 20)} /></label></div></details>
-        {formError && <p className="sim-error" role="alert">{formError}</p>}<button className="sim-apply" type="submit"><Check size={13} />Apply stock</button>
+        <div className="sim-dimensions">{(['width', 'depth', 'thickness'] as const).map(key => <label key={key}><span>{key === 'width' ? 'Width · X' : key === 'depth' ? 'Depth · Y' : 'Height · Z'}</span><Input aria-label={`Stock ${key}`} name={key} type="number" step="any" min="0.001" required defaultValue={settings.stock[key]} /></label>)}</div>
+        <label className="sim-select-row"><span>Released pieces</span><Select aria-label="Released piece behavior" name="retention" defaultValue={settings.retention}><option value="fall">Fall under gravity</option><option value="retain">Retained in place</option></Select></label>
+        <label className="sim-select-row"><span>Waste handling</span><Select aria-label="Waste handling" name="wasteHandling" defaultValue={settings.wasteHandling ?? 'remove-before-next-operation'}><option value="remove-before-next-operation">Remove between cuts</option><option value="keep">Keep for interference</option></Select></label>
+        <details className="sim-details"><summary>Placement & wire</summary><div className="sim-fields-grid">{(['originX', 'originY', 'bottomZ'] as const).map(key => <label key={key}><span>{key === 'originX' ? 'Origin X' : key === 'originY' ? 'Origin Y' : 'Bottom Z'}</span><Input aria-label={`Stock ${key}`} name={key} type="number" step="any" required defaultValue={settings.stock[key]} /></label>)}<label><span>Wire Ø</span><Input aria-label="Wire diameter" name="wireDiameter" type="number" step="any" min="0.001" required defaultValue={settings.wireDiameter} /></label><label><span>Support Z</span><Input aria-label="Support floor Z" name="supportFloorZ" type="number" step="any" required defaultValue={settings.supportFloorZ ?? settings.stock.bottomZ - (settings.guideClearanceMm ?? 20)} /></label></div></details>
+        {formError && <p className="sim-error" role="alert">{formError}</p>}<Button variant="primary" size="md" className="sim-apply" type="submit"><Check size={13} />Apply stock</Button>
       </form>
       <div className="sim-section sim-visibility"><div className="sim-section-title">Process visibility</div>
-        <label><input type="checkbox" aria-label="Show remaining stock" checked={showStock} onChange={event => setShowStock(event.target.checked)} />Show remaining stock</label>
-        <label><input type="checkbox" aria-label="Show waste material" checked={showWaste} onChange={event => setShowWaste(event.target.checked)} />Show waste material</label>
+        <label><Input type="checkbox" aria-label="Show remaining stock" checked={showStock} onChange={event => setShowStock(event.target.checked)} />Show remaining stock</label>
+        <label><Input type="checkbox" aria-label="Show waste material" checked={showWaste} onChange={event => setShowWaste(event.target.checked)} />Show waste material</label>
         <p>Visibility does not change collision checks.</p>
       </div>
       </div>
@@ -207,20 +211,20 @@ export default function SimulationPanel({ document, projectName, savedAt, dirty,
       <div data-sim-panel="checks" hidden={openPanel !== 'checks'}>
       <div className="sim-section sim-findings"><div className="sim-section-title"><span>Material</span><span className={warnings.length ? 'sim-warning-count' : ''}>{warnings.length}</span></div>
         {actionableDiagnostics.map((diagnostic, index) => <p className="sim-diagnostic" key={`${diagnostic.code}-${index}`}>{diagnostic.message}</p>)}
-        {warnings.length ? <div className="sim-warning-list">{warnings.map(warning => <button key={warning.id} type="button" onClick={() => { setPlaying(false); setFinalPartOnly(false); setElapsed(warning.elapsedSeconds); }}><AlertTriangle size={13} /><span>{warning.message}<small>{timeLabel(warning.elapsedSeconds)} · {warning.envelope}</small></span></button>)}</div> : <p>{plan ? 'No material obstruction flagged.' : 'Waiting for a valid saved process.'}</p>}
+        {warnings.length ? <div className="sim-warning-list">{warnings.map(warning => <Button key={warning.id} type="button" onClick={() => { setPlaying(false); setFinalPartOnly(false); setElapsed(warning.elapsedSeconds); }}><AlertTriangle size={13} /><span>{warning.message}<small>{timeLabel(warning.elapsedSeconds)} · {warning.envelope}</small></span></Button>)}</div> : <p>{plan ? 'No material obstruction flagged.' : 'Waiting for a valid saved process.'}</p>}
         {machineScan.status === 'scanning' && <p role="status">Checking wire motion against machine surfaces…</p>}
         {machineScan.status === 'error' && <p className="sim-error" role="alert">{machineScan.message}</p>}
         {machineScan.status === 'ready' && <div className="sim-machine-findings">
           <div className="sim-section-title"><span>Machine surfaces</span><span>{machineScan.result.warnings.length}</span></div>
           {!machineScan.result.complete && <p className="sim-error">{machineScan.result.message}</p>}
-          <div className="sim-warning-list">{machineWarnings.map(warning => <button key={warning.id} type="button" onClick={() => { setPlaying(false); setFinalPartOnly(false); setElapsed(warning.elapsedSeconds); }}><AlertTriangle size={13} /><span>{warning.message}<small>{timeLabel(warning.elapsedSeconds)} · {warning.approximate ? 'approximate envelope' : 'surface intersection'}</small></span></button>)}</div>
+          <div className="sim-warning-list">{machineWarnings.map(warning => <Button key={warning.id} type="button" onClick={() => { setPlaying(false); setFinalPartOnly(false); setElapsed(warning.elapsedSeconds); }}><AlertTriangle size={13} /><span>{warning.message}<small>{timeLabel(warning.elapsedSeconds)} · {warning.approximate ? 'approximate envelope' : 'surface intersection'}</small></span></Button>)}</div>
           <details className="sim-details"><summary>Machine scan limits</summary><ul>{machineScan.result.limitations.map(limitation => <li key={limitation}>{limitation}</li>)}</ul></details>
         </div>}
         <p className="sim-screening-note">Approximate checks · not verified machine clearance.</p>
       </div>
       </div>
       <div data-sim-panel="info" className="sim-section sim-information" hidden={openPanel !== 'info'}>
-        <p><strong>{projectName}</strong> · SAVED UPID</p><p title={savedAt}>Saved {new Date(savedAt).toLocaleString()}</p>
+        <p><strong>{projectName}</strong> · Saved UPID</p><Tooltip content={savedAt}><p tabIndex={0} >Saved {new Date(savedAt).toLocaleString()}</p></Tooltip>
         <p>Geometric preview with assumed speeds; no machine-cycle or cut-quality prediction. Settings and machine models last for this session.</p>
         {plan && <details className="sim-details"><summary>Assumptions & limitations</summary><ul>{diagnostics.map((diagnostic, index) => <li key={`${diagnostic.code}-${index}`}>{diagnostic.message}</li>)}</ul></details>}
       </div>

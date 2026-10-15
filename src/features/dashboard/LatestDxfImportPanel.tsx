@@ -1,3 +1,4 @@
+import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import type { ImportedDxfProject } from '@/domain/dxf/importDxfProject';
 
@@ -24,7 +25,7 @@ export function LatestDxfImportPanel({
         <div className="space-y-3">
           <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-2">
             <dt className="text-muted-foreground">Project</dt>
-            <dd className="truncate" title={latestImport.project.name}>{latestImport.project.name}</dd>
+            <Tooltip content={latestImport.project.name}><dd tabIndex={0} className="truncate" >{latestImport.project.name}</dd></Tooltip>
             <dt className="text-muted-foreground">Entities</dt>
             <dd>{latestImport.entityCount}</dd>
             <dt className="text-muted-foreground">Warnings</dt>
@@ -40,7 +41,7 @@ export function LatestDxfImportPanel({
             </div>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button
+            <Button size="md"
               disabled={interactionLocked}
               onClick={onOpenLatestImportInEditor}
               variant="default"

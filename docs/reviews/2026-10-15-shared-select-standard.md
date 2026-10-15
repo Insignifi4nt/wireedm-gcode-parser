@@ -1,0 +1,15 @@
+# Shared select and UI standard
+
+The view-angle popup inherited feature-specific transparent styling. The app had 54 native select elements across 24 production TSX files, with several independent CAD/simulation appearance and focus rules. The implementation keeps the native control and centralizes the repeated presentation.
+
+`src/components/ui/select.tsx` forwards native HTML select props and refs to one element. Its shared token stylesheet owns trigger, option/optgroup, selected-option, disabled, invalid and visible keyboard-focus states, including disabled fieldsets and native forced-colors behavior. Popup colors are explicitly opaque. Component defaults occupy Tailwind's component layer so utility sizing still works. Feature styles retain sizing, spacing and contextual typography. The compact density serves the constrained editor toolbar; native numeric `size` remains available.
+
+All 54 production elements now use the shared primitive. Handlers, options, optgroups, names, labels, native forms and selection state stay in their original domain composition. Machine settings retain their existing typed domain adapter and alias the imported native primitive to avoid its pre-existing local `Select` name. The first focused run exposed that collision before the import alias correction. No new dependency, custom popup, model change or storage operation was introduced.
+
+`AGENTS.md` and `docs/maintainers/ui-components.md` establish reuse of existing shared primitives and semantic tokens for recurring UI patterns. `npm run ui:check` parses production TS/TSX and rejects raw JSX selects/direct select factory calls outside the shared module. Review and Pages CI run it. Scanner coverage distinguishes comments/strings, JSX, TS factory calls and harmless angle-bracket type assertions.
+
+Red-first evidence: before migration, the new ownership invariant reported all 54 raw controls; native behavior tests were written before the primitive. Final focused gate passed **20 files / 219 tests**, covering shared behavior/guard, CAD, editor workflows, machine settings, dashboard import/library and simulation. App TypeScript and `npm run ui:check` passed. Native behavior coverage includes controlled change events, labels, refs, focus/blur/keyboard forwarding, uncontrolled values, multiple/optgroups, form submission/reset and disabled fieldsets. Root independently verified unchanged functional source across all 24 call sites.
+
+Remaining legacy categories are raw buttons, text inputs/textareas, specialized source/code editors, numeric/expression/dimension inputs and checkbox/range/file controls. Existing `Button` and `.technical-input` provide foundations, but no unused Input/Textarea wrappers or bulk unrelated migration were added. The reuse standard applies broadly; automated ownership enforcement currently covers selects only.
+
+Root owns actual browser popup/contrast verification and final build/delivery. Native popup rendering remains browser/OS dependent. No build, commit, push, user-tab interaction or saved-record mutation occurred in this implementation.

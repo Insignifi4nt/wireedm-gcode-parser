@@ -147,15 +147,15 @@ test('path editor keeps the UPID rail and essential workflow controls at 1024', 
   await upidRail.getByRole('tab', { name: 'Geometry lens' }).click();
   const contourTreeHelp = page.getByRole('button', { name: 'Contour Tree help' });
   await contourTreeHelp.hover();
-  const contourTreeTooltip = page.locator('[data-upid-contour-tree-tooltip]');
+  const contourTreeTooltip = page.locator('.ui-tooltip-content').filter({ hasText: 'Hover or select a row' });
   await expect(contourTreeTooltip).toBeVisible();
   const contourTreeBox = await page.locator('[data-upid-contour-tree]').boundingBox();
   const contourTreeTooltipBox = await contourTreeTooltip.boundingBox();
   expect(contourTreeBox).not.toBeNull();
   expect(contourTreeTooltipBox).not.toBeNull();
-  expect(contourTreeTooltipBox!.x).toBeGreaterThanOrEqual(contourTreeBox!.x);
+  expect(contourTreeTooltipBox!.x).toBeGreaterThanOrEqual(0);
   expect(contourTreeTooltipBox!.x + contourTreeTooltipBox!.width).toBeLessThanOrEqual(
-    contourTreeBox!.x + contourTreeBox!.width
+    page.viewportSize()!.width
   );
 
   await openWorkflowCommand(page, 'Machining', 'machining.sequence');
@@ -716,7 +716,6 @@ test('compact Workflows launcher owns keyboard focus and popup state at 320px', 
   await confirmPendingDxfImport(page);
   await dismissOnboarding(page);
 
-  await expect(page.getByRole('status', { name: 'Browser cache active' })).toBeVisible();
   const launcher = page.getByRole('button', { name: 'Open Workflows' });
   await launcher.focus();
   await page.keyboard.press('Enter');
@@ -842,21 +841,11 @@ async function drag(locator: import('@playwright/test').Locator, deltaX: number,
   if (!box) throw new Error('Drag target is not visible.');
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
-  await locator.dispatchEvent('pointerdown', { button: 0, clientX: x, clientY: y, pointerType: 'mouse' });
-  await locator.page().evaluate(({ clientX, clientY, deltaX: moveX, deltaY: moveY }) => {
-    window.dispatchEvent(new PointerEvent('pointermove', {
-      bubbles: true,
-      clientX: clientX + moveX,
-      clientY: clientY + moveY,
-      pointerType: 'mouse'
-    }));
-    window.dispatchEvent(new PointerEvent('pointerup', {
-      bubbles: true,
-      clientX: clientX + moveX,
-      clientY: clientY + moveY,
-      pointerType: 'mouse'
-    }));
-  }, { clientX: x, clientY: y, deltaX, deltaY });
+  const mouse = locator.page().mouse;
+  await mouse.move(x, y);
+  await mouse.down();
+  try { await mouse.move(x + deltaX, y + deltaY, { steps: 5 }); }
+  finally { await mouse.up(); }
 }
 
 async function readWidth(locator: import('@playwright/test').Locator) {

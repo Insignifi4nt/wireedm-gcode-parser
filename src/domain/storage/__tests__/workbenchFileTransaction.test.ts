@@ -29,6 +29,38 @@ describe.each(['cache', 'folder'] as const)('%s file transaction recovery', (kin
     expect(await (adapter.readExactText ?? adapter.readText)('projects/part.json')).toBe('\ufeffORIGINAL\r\n');
     expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
   });
+  it.each([null, '\ufeffEXPECTED\r\n'])('checks every expected previous image before writing any file, expected=%s', async expectedPrevious => {
+    const adapter = storage();
+    await adapter.writeText('projects/first.json', 'FIRST ORIGINAL');
+    await adapter.writeText('projects/changed.json', '\ufeffEXTERNAL\r\n');
+    const write = vi.spyOn(adapter, 'writeText'); const guard = vi.fn();
+    await expect(withWorkbenchMutationLock(adapter, () => commitWorkbenchFileTransaction(adapter, [
+      { path: 'projects/first.json', contents: 'FIRST NEXT', expectedPrevious: 'FIRST ORIGINAL' },
+      { path: 'projects/changed.json', contents: 'SECOND NEXT', expectedPrevious },
+    ], guard))).rejects.toMatchObject({ path: 'projects/changed.json' });
+    expect(write).not.toHaveBeenCalled(); expect(guard).not.toHaveBeenCalled();
+    expect(await adapter.readExactText?.('projects/first.json')).toBe('FIRST ORIGINAL');
+    expect(await adapter.readExactText?.('projects/changed.json')).toBe('\ufeffEXTERNAL\r\n');
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+  });
+  it('uses the checked exact previous image for recovery after an interrupted conditional write', async () => {
+    const adapter = storage(); const original = '\ufeffIMPORTED SOURCE\r\n名称\r\n';
+    await adapter.writeText('projects/original.json', original);
+    const write = adapter.writeText.bind(adapter); let failed = false;
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      if (path === 'projects/second.json' && !failed) { failed = true; throw new Error('Interrupted second write'); }
+      await write(path, text);
+    });
+    await expect(withWorkbenchMutationLock(adapter, () => commitWorkbenchFileTransaction(adapter, [
+      { path: 'projects/original.json', contents: 'NEXT', expectedPrevious: original },
+      { path: 'projects/second.json', contents: 'NEW', expectedPrevious: null },
+    ]))).rejects.toThrow('Interrupted second write');
+    expect(await adapter.readExactText?.('projects/original.json')).toBe(original);
+    expect(await adapter.readText('projects/second.json')).toBeNull();
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+    await commitWorkbenchFileTransaction(adapter, [{ path: 'projects/original.json', contents: 'RETRIED', expectedPrevious: original }]);
+    expect(await adapter.readText('projects/original.json')).toBe('RETRIED');
+  });
   it.each([0, 1, 2, 3])('recovers after %i completed file writes without leaving mixed revisions', async (completed) => {
     const adapter = storage();
     await adapter.writeText(WORKBENCH_FILE_TRANSACTION_PATH, JSON.stringify({ format: 'wire-edm-file-transaction', schemaVersion: 1, files }));

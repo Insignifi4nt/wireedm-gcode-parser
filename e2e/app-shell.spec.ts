@@ -16,13 +16,12 @@ test('loads the workbench dashboard in a real browser', async ({ page }) => {
   await expect(page).toHaveTitle(/Wire EDM Workbench/);
   await expect(page.locator('[data-app-shell]')).toBeVisible();
   await expect(page.locator('[data-workbench-page]')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Project Library', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Project library', exact: true })).toBeVisible();
   await expect(page.locator('[data-project-library]')).toBeVisible();
   await expect(
     page.getByRole('button', { name: /Import DXF as Path Project/i })
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /Open Machine Program/i })).toBeVisible();
-  await expect(page.locator('[data-storage-status]')).toHaveText('Browser cache active');
   await expect(page.getByText('flange-slot')).toHaveCount(0);
   await expect(page.getByText('repair-job')).toHaveCount(0);
   await expect(page.getByText(/Latest DXF Import/i)).toHaveCount(0);
@@ -38,7 +37,7 @@ test('loads the workbench dashboard in a real browser', async ({ page }) => {
   );
 
   const workbenchFont = await page
-    .getByRole('heading', { name: 'Project Library', exact: true })
+    .getByRole('heading', { name: 'Project library', exact: true })
     .evaluate((element) => getComputedStyle(element).fontFamily.toLowerCase());
   expect(workbenchFont).not.toContain('mono');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);

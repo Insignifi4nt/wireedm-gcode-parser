@@ -23,7 +23,8 @@ test('keeps project action focus contained and returns it after rename or cancel
   await expect(dialog).toHaveCount(0);
   await expect(rename).toBeFocused();
   await expect(page.getByText('Reviewed plate', { exact: true })).toBeVisible();
-  await page.getByLabel('Search projects', { exact: true }).fill('missing project');
+  await page.getByRole('button', { name: 'Search projects', exact: true }).click();
+  await page.getByRole('searchbox', { name: 'Search projects', exact: true }).fill('missing project');
   await expect(page.locator('[data-project-row]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
   await expect(page.getByText('Reviewed plate', { exact: true })).toBeVisible();

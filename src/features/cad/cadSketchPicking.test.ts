@@ -1,0 +1,89 @@
+import { describe, expect, it } from 'vitest';
+import type { CadProfile, CadSketchProfile } from '@/domain/cad/cadDocument';
+import { createCadSketchProfilePicker } from './cadSketchPicking';
+
+function profile(id: string, geometry: CadProfile, construction = false): CadSketchProfile {
+  return { id, name: id, geometry, construction };
+}
+const circle = (radius: number): CadProfile => ({ kind: 'circle', x: 0, y: 0, radius });
+
+describe('analytic sketch profile picking', () => {
+  it('selects innermost nested contours regardless of legacy role or array ordering', () => {
+    const pick = createCadSketchProfilePicker([
+      { ...profile('hole', circle(5)), role: 'hole' }, profile('outer', circle(10)), profile('island', circle(2))
+    ], {}).pick;
+    expect(pick([0, 0], 0.01)).toBe('island');
+    expect(pick([3, 0], 0.01)).toBe('hole');
+    expect(pick([8, 0], 0.01)).toBe('outer');
+    expect(pick([11, 0], 0.01)).toBeNull();
+  });
+
+  it('prioritizes nearest boundaries, including construction, with a fixed pixel radius', () => {
+    const pick = createCadSketchProfilePicker([profile('outer', circle(20)), profile('construction', circle(5), true)], {}).pick;
+    expect(pick([0, 0], 0.1)).toBe('outer');
+    expect(pick([5.5, 0], 0.1)).toBe('construction');
+    expect(pick([5.7, 0], 0.1)).toBe('outer');
+    const standalone = createCadSketchProfilePicker([profile('construction', circle(5), true)], {}).pick;
+    expect(standalone([0, 0], 0.1)).toBeNull();
+    expect(standalone([5.5, 0], 0.1)).toBe('construction');
+    expect(standalone([5.5, 0], 0.01)).toBeNull();
+    expect(standalone([10.9, 0], 1)).toBe('construction');
+    expect(standalone([11.1, 0], 1)).toBeNull();
+    const nearest = createCadSketchProfilePicker([profile('first', circle(5)), profile('closer', circle(5.3))], {}).pick;
+    expect(nearest([5.25, 0], 0.1)).toBe('closer');
+  });
+
+  it('uses true rotated slot caps and rounded rectangle corners, rather than their boxes', () => {
+    const angle = 37 * Math.PI / 180;
+    const rotate = (x: number, y: number): readonly [number, number] => [x * Math.cos(angle) - y * Math.sin(angle), x * Math.sin(angle) + y * Math.cos(angle)];
+    const slot = createCadSketchProfilePicker([profile('slot', { kind: 'slot', x: 0, y: 0, length: 20, width: 4, angle: 37 })], {}).pick;
+    expect(slot(rotate(9.5, 0), 0.01)).toBe('slot');
+    expect(slot(rotate(9.8, 1.8), 0.01)).toBeNull();
+    expect(slot(rotate(0, 2.05), 0.01)).toBe('slot');
+    const rounded = createCadSketchProfilePicker([profile('rounded', { kind: 'rectangle', x: 0, y: 0, width: 10, height: 10, cornerRadius: 3 })], {}).pick;
+    expect(rounded([0.1, 0.1], 0.01)).toBeNull();
+    expect(rounded([2, 2], 0.01)).toBe('rounded');
+  });
+
+  it('hits signed circular arcs without selecting their complementary curve extensions', () => {
+    const geometry: CadProfile = { kind: 'path', segments: [
+      { kind: 'line', start: [-10, -15], end: [10, -15] },
+      { kind: 'line', start: [10, -15], end: [10, 0] },
+      { kind: 'arc', center: [0, 0], radius: 10, startAngle: 0, sweep: -180 },
+      { kind: 'line', start: [-10, 0], end: [-10, -15] }
+    ] };
+    const pick = createCadSketchProfilePicker([profile('concave', geometry)], {}).pick;
+    expect(pick([0, -10.05], 0.01)).toBe('concave');
+    expect(pick([0, 10], 0.01)).toBeNull();
+    expect(pick([9, -9], 0.01)).toBe('concave');
+    expect(pick([0, -5], 0.01)).toBeNull();
+    expect(pick([10.05, 0], 0.01)).toBe('concave');
+    const full = createCadSketchProfilePicker([profile('full', { kind: 'path', segments: [
+      { kind: 'arc', center: [0, 0], radius: 4, startAngle: 70, sweep: -360 }
+    ] })], {}).pick;
+    expect(full([0, 0], 0.01)).toBe('full');
+    expect(full([0, 4.05], 0.01)).toBe('full');
+  });
+
+  it('preserves small polygon interior areas at large world coordinates', () => {
+    const x = 999999990; const y = 999999990;
+    const geometry: CadProfile = { kind: 'polygon', points: [[x, y], [x + 1, y], [x + 1, y + 1], [x, y + 1]] };
+    const pick = createCadSketchProfilePicker([profile('remote', geometry)], {}).pick;
+    expect(pick([x + 0.5, y + 0.5], 0.001)).toBe('remote');
+    expect(pick([x + 1.01, y + 0.5], 0.001)).toBeNull();
+  });
+
+  it('captures parameter snapshots, leaves source geometry unchanged and rejects invalid view coordinates', () => {
+    const geometry: CadProfile = { kind: 'circle', x: 2, y: 2, radius: 'radius' };
+    const profiles = Object.freeze([Object.freeze(profile('parametric', Object.freeze(geometry)))]);
+    const parameters = { radius: 3 };
+    const first = createCadSketchProfilePicker(profiles, parameters).pick;
+    parameters.radius = 1;
+    expect(first([4, 2], 0.01)).toBe('parametric');
+    expect(createCadSketchProfilePicker(profiles, parameters).pick([4, 2], 0.01)).toBeNull();
+    expect(geometry.radius).toBe('radius');
+    expect(first([NaN, 0], 1)).toBeNull();
+    expect(first([0, 0], Infinity)).toBeNull();
+    expect(first([0, 0], 0)).toBeNull();
+  });
+});

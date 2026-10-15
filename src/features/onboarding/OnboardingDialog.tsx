@@ -40,7 +40,7 @@ export function OnboardingDialog({ open, onDismiss }: OnboardingDialogProps) {
       >
         <Button
           aria-label="Close onboarding"
-          className="absolute right-2 top-2 z-10 border-white/20 bg-black/65 text-white shadow-lg hover:bg-black/90"
+          className="absolute right-2 top-2 z-10 border-white/20 bg-black/65 text-white shadow-lg"
           onClick={onDismiss}
           ref={closeButtonRef}
           size="icon"
@@ -60,7 +60,7 @@ export function OnboardingDialog({ open, onDismiss }: OnboardingDialogProps) {
 
         <div className="flex shrink-0 flex-col gap-4 p-4 sm:p-5">
           <div>
-            <p className="technical-value mb-1 text-[10px] uppercase tracking-[0.22em] text-cyan-300">
+            <p className="technical-value mb-1 text-[10px] tracking-[0.22em] text-cyan-300">
               Your workbench is ready
             </p>
             <h2 className="text-base font-semibold text-foreground sm:text-lg" id="onboarding-title">
@@ -70,7 +70,7 @@ export function OnboardingDialog({ open, onDismiss }: OnboardingDialogProps) {
               Import geometry, review the cut plan, and export locally with your installed machine package.
             </p>
           </div>
-          <Button className="w-full" onClick={onDismiss} type="button">
+          <Button variant="default" size="md" className="w-full" onClick={onDismiss} type="button">
             Go Build!
           </Button>
         </div>

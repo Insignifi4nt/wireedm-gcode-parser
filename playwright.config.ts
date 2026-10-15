@@ -20,7 +20,12 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] }
+      use: {
+        ...devices['Desktop Chrome'],
+        // Pin the isolated test browser's renderer: the default Windows headless
+        // ANGLE path can lose its context during otherwise valid CAD rendering.
+        launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }
+      }
     }
   ]
 });

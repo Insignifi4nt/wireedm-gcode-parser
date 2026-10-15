@@ -1,3 +1,5 @@
+import { Tooltip } from '@/components/ui/tooltip';
+import { Input } from '@/components/ui/input';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Trash2, X } from 'lucide-react';
 
@@ -220,7 +222,7 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
               ) : (
                 <>
                   <label className="flex items-center gap-1.5">
-                    <input aria-label="Select all revisions on this page" type="checkbox" disabled={busy || loading}
+                    <Input aria-label="Select all revisions on this page" type="checkbox" disabled={busy || loading}
                       checked={revisions.length > 0 && revisions.every(({ revisionId }) => selectedIds.has(revisionId))}
                       onChange={(event) => {
                         const checked = event.currentTarget.checked;
@@ -264,18 +266,18 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
             {pageReady && revisions.map((revision) => (
               <li key={revision.revisionId} className="grid gap-2 border border-border p-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                 <div className="flex min-w-0 items-center gap-2">
-                  {selecting && <input aria-label={`Select revision ${revision.revisionId}`} type="checkbox"
+                  {selecting && <Input aria-label={`Select revision ${revision.revisionId}`} type="checkbox"
                     disabled={busy} checked={selectedIds.has(revision.revisionId)}
                     onChange={() => toggleRevision(revision.revisionId)} />}
                   <div className="min-w-0">
                     <p className="font-medium">{revision.savedAt
                       ? new Date(revision.savedAt).toLocaleString()
                       : 'Unavailable revision'}</p>
-                    <p className="mt-1 truncate text-muted-foreground" title={revision.revisionId}>
+                    <Tooltip content={revision.revisionId}><p tabIndex={0} className="mt-1 truncate text-muted-foreground" >
                       {revision.savedAt
                         ? `${revision.machineName} · ${revision.packageId} · ${revision.revisionId}`
                         : `${revision.revisionId} · ${revision.loadError}`}
-                    </p>
+                    </p></Tooltip>
                   </div>
                 </div>
                 {!selecting && <div className="flex min-w-0 flex-wrap gap-1">

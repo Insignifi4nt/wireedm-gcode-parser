@@ -42,10 +42,6 @@ for (const viewport of [
     await onboarding.getByRole('button', { name: 'Go Build!' }).click();
     await expect(page.getByRole('button', { name: 'Open Editor' })).toBeVisible();
 
-    const storageBadge = page.locator('[data-storage-status-label]');
-    await expect(storageBadge).toHaveText('Browser cache active');
-    await expect(storageBadge.locator('..')).not.toHaveClass(/destructive/);
-
     const settingsButton = page.getByRole('button', { name: 'Open settings' });
     await settingsButton.focus();
     await settingsButton.click();
@@ -53,6 +49,7 @@ for (const viewport of [
     const dialog = page.getByRole('dialog', { name: 'Workbench settings' });
     const closeButton = dialog.getByRole('button', { name: 'Close settings' });
     await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('Browser cache active');
     await expect(closeButton).toBeFocused();
     await expect(page.locator('[data-app-header]')).toHaveAttribute('aria-hidden', 'true');
     await expect(page.locator('[data-app-workspace-grid]')).toHaveAttribute('aria-hidden', 'true');
@@ -81,7 +78,6 @@ for (const viewport of [
         .locator('[data-app-header]')
         .evaluate((element) => (element as HTMLElement).inert)
     ).toBe(false);
-    await expect(storageBadge).toHaveText('Browser cache active');
 
     await settingsButton.click();
     await expect(closeButton).toBeFocused();

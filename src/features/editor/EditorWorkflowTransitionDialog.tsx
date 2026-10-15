@@ -117,7 +117,7 @@ export function EditorWorkflowTransitionDialog({
         )}
 
         <div className="flex justify-end gap-2 p-4">
-          <Button
+          <Button size="md"
             data-editor-workflow-transition-action="discard"
             onClick={onDiscard}
             ref={discardButtonRef}
@@ -126,7 +126,7 @@ export function EditorWorkflowTransitionDialog({
           >
             Discard
           </Button>
-          <Button
+          <Button variant="default" size="md"
             aria-describedby={saveAvailability.enabled ? undefined : saveReasonId}
             data-editor-workflow-transition-action="save"
             disabled={!saveAvailability.enabled}

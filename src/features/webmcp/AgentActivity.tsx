@@ -24,7 +24,7 @@ export function AgentActivity({ activity }: { activity: SiteToolActivityState })
       Agent workflow guide <span className="text-[10px]">(opens in a new tab)</span>
     </a>
     {activity.calls.length > 0 && <div className="mt-3 border-t border-border pt-2" aria-label="Recent agent actions">
-      <p className="mb-2 text-[10px] uppercase text-muted-foreground">Recent agent actions</p>
+      <p className="mb-2 text-[10px] text-muted-foreground">Recent agent actions</p>
       <ol className="space-y-2">{activity.calls.map(call => <li key={call.id} className="break-words border border-border bg-background/50 p-2">
         <span className={call.phase === 'failed' ? 'text-destructive' : 'text-foreground'}>{call.toolName.replace(/^edm_/, '').replaceAll('_', ' ')} · {call.phase}</span>
         {call.errorCode && <span className="ml-1 break-all font-mono text-[10px]">{call.errorCode}</span>}

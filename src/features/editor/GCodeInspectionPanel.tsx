@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import { useState, type ReactNode } from 'react';
 import type { GCodeProgramInspection } from '@/domain/editor/gcodeInspectionTypes';
 
@@ -39,26 +40,26 @@ export function GCodeInspectionPanel({ inspection, selectedLine, view, settings,
       </>}
       {view === 'commands' && <>
         <p className="mb-2 text-muted-foreground">Select a command to show its occurrences in source order. Recognition does not mean the controller behavior is simulated.</p>
-        {inspection.commands.slice(activeCommandPage * 100, (activeCommandPage + 1) * 100).map((command) => <button className="block w-full border-t border-border py-2 text-left outline-none hover:bg-accent/40 focus-visible:ring-1 focus-visible:ring-ring"
+        {inspection.commands.slice(activeCommandPage * 100, (activeCommandPage + 1) * 100).map((command) => <Button className="block w-full border-t border-border py-2 text-left h-auto whitespace-normal"
           type="button" key={command.code} onClick={() => onSelectCommand(command.code)} aria-label={`Inspect ${command.code} occurrences`}>
           <span className="flex justify-between gap-2"><strong className="font-mono">{command.code} <span className="font-normal text-muted-foreground">×{command.count}</span></strong>
             <span className={command.coverage === 'modeled' ? 'text-muted-foreground' : 'text-amber-300'}>{coverageLabel(command.coverage)}</span></span>
           <span className="mt-1 block">{command.meaning}</span><span className="mt-1 block text-[10px] text-muted-foreground">{command.scope}</span>
-        </button>)}
+        </Button>)}
         {inspection.commands.length === 0 && <p>No G/M words found.</p>}
         {commandPageCount > 1 && <div className="mt-2 flex items-center justify-between gap-2">
-          <button type="button" className="border border-border px-2 py-1 disabled:opacity-40" disabled={activeCommandPage === 0} onClick={() => setCommandPage(activeCommandPage - 1)}>Previous commands</button>
+          <Button variant="outline" type="button" className="px-2 py-1" disabled={activeCommandPage === 0} onClick={() => setCommandPage(activeCommandPage - 1)}>Previous commands</Button>
           <span>{activeCommandPage + 1} / {commandPageCount}</span>
-          <button type="button" className="border border-border px-2 py-1 disabled:opacity-40" disabled={activeCommandPage + 1 >= commandPageCount} onClick={() => setCommandPage(activeCommandPage + 1)}>Next commands</button>
+          <Button variant="outline" type="button" className="px-2 py-1" disabled={activeCommandPage + 1 >= commandPageCount} onClick={() => setCommandPage(activeCommandPage + 1)}>Next commands</Button>
         </div>}
       </>}
       {view === 'issues' && <>
         <p className="mb-2 text-muted-foreground">These are interpretation limits and text diagnostics, not a controller approval report.</p>
-        {inspection.diagnostics.slice(0, 200).map((issue, index) => <button type="button" key={index} disabled={issue.line < 1}
-          onClick={() => onSelectLine(issue.line)} className="block w-full border-t border-border py-2 text-left outline-none hover:bg-accent/40 focus-visible:ring-1 focus-visible:ring-ring">
+        {inspection.diagnostics.slice(0, 200).map((issue, index) => <Button type="button" key={index} disabled={issue.line < 1}
+          onClick={() => onSelectLine(issue.line)} className="block w-full border-t border-border py-2 text-left h-auto whitespace-normal">
           <span className={issue.type === 'error' ? 'text-destructive' : 'text-amber-300'}>{issue.type} · {issue.line > 0 ? `Line ${issue.line}` : 'Program'}</span>
           <span className="mt-1 block">{issue.message}</span>
-        </button>)}
+        </Button>)}
         {inspection.diagnostics.length > 200 && <p className="mt-2">Showing the first 200 issues. Select other source lines to inspect their diagnostics.</p>}
         {inspection.diagnostics.length === 0 && <p>No text diagnostics in the supported subset.</p>}
       </>}

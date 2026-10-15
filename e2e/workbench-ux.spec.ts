@@ -10,6 +10,8 @@ test('dashboard menus support keyboard entry and resume the native tab order', a
   await expect(importItem).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(importItem).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'About machine programs', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Open Machine Program', exact: true })).toBeFocused();
   await importTrigger.press('ArrowUp');
   await expect(importItem).toBeFocused();
@@ -30,6 +32,12 @@ test('dashboard menus support keyboard entry and resume the native tab order', a
   await page.keyboard.press('Shift+Tab');
   await expect(page.getByRole('button', { name: /^Show revisions for project / })).toBeFocused();
   await exportTrigger.press('ArrowDown');
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'About design and manufacturing', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Design in CAD', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'About geometry import', exact: true })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Import DXF as Path Project', exact: true })).toBeFocused();
 });

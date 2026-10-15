@@ -37,8 +37,12 @@ const AppRailContext = createContext<AppRailContextValue | null>(null);
 
 export const AppRailProvider = AppRailContext.Provider;
 
+export function useOptionalAppRail() {
+  return useContext(AppRailContext);
+}
+
 export function useAppRail() {
-  const context = useContext(AppRailContext);
+  const context = useOptionalAppRail();
   if (!context) {
     throw new Error('useAppRail must be used inside AppShell.');
   }
