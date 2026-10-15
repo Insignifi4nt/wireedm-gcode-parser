@@ -54,7 +54,7 @@ it.each(['fillet', 'chamfer'] as const)('previews explicit %s continuation, canc
   const followed = first.candidate();
   expect(followed.edits[0]).toEqual({ kind: 'add-feature', feature: { ...feature, tangentPropagation: true } });
   expect(apply().disabled).toBe(true); // The older strict preview cannot authorize the changed chain intent.
-  expect(container.textContent).toContain('Picked edges (1) + tangent chains');
+  expect(container.textContent).toContain('1 edge + tangents');
   expect(session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: false, workflowOpen: true });
   const cancel = [...container.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Cancel'); if (!cancel) throw new Error('Missing Cancel');
   await act(async () => cancel.click());

@@ -1,6 +1,6 @@
 # App icon inventory
 
-Snapshot: 2026-10-15T00:44:55.028Z. Git revision `3f70f4dc32374b44351942ce88289d7c3ce55874`. The worktree had 21 modified/untracked entries, recorded verbatim in the audit JSON. The scanned source hashes include those local changes. All line/column references identify this snapshot; use the stable canonical ID and occurrence ID to relocate a symbol after edits.
+Snapshot: 2026-10-15T00:58:40.315Z. Git revision `ab1944a25f5897b5a0ec2943be7fc4adcd5c724e`. The worktree had 7 modified/untracked entries, recorded verbatim in the audit JSON. The scanned source hashes include those local changes. All line/column references identify this snapshot; use the stable canonical ID and occurrence ID to relocate a symbol after edits.
 
 This catalogue covers every first-party icon import/reference found in the scanned production roots, and records the non-library channels separately. Counts distinguish source occurrences from runtime instances. A loop, tooltip or imported plugin can produce arbitrarily many instances; its source call, input binding, conditions and render variants are the inventory unit.
 
@@ -1464,7 +1464,7 @@ Variant routes:
 | `use.7d9638cfad45` | [src/features/cad/CadFeatureEditor.tsx:254:9](../../src/features/cad/CadFeatureEditor.tsx#L254); `CadFeatureEditorForm` | SelectField; `label="Operation"` | No explicit name on this occurrence; parent label or renderer supplies context |
 | `use.bd18e8d079a1` | [src/features/cad/CadFeatureEditor.tsx:258:203](../../src/features/cad/CadFeatureEditor.tsx#L258); `CadFeatureEditorForm` | SelectField; `label="Transition"` | No explicit name on this occurrence; parent label or renderer supplies context |
 | `use.80daa07179a1` | [src/features/cad/CadFeatureEditor.tsx:258:440](../../src/features/cad/CadFeatureEditor.tsx#L258); `CadFeatureEditorForm` | SelectField; `label="Operation"` | No explicit name on this occurrence; parent label or renderer supplies context |
-| `use.63efac79f2af` | [src/features/cad/CadFeatureEditor.tsx:264:9](../../src/features/cad/CadFeatureEditor.tsx#L264); `CadFeatureEditorForm` | SelectField; `label="Scope"` | No explicit name on this occurrence; parent label or renderer supplies context |
+| `use.3a11000377d8` | [src/features/cad/CadFeatureEditor.tsx:264:9](../../src/features/cad/CadFeatureEditor.tsx#L264); `CadFeatureEditorForm` | SelectField; `label="Scope"` | No explicit name on this occurrence; parent label or renderer supplies context |
 | `use.5becd239470b` | [src/features/cad/CadFeatureEditor.tsx:274:66](../../src/features/cad/CadFeatureEditor.tsx#L274); `CadFeatureEditorForm`; `div`; `draft.selection` | CadContextHelp; `label="Follow tangent edges"` | No explicit name on this occurrence; parent label or renderer supplies context |
 | `use.429c2775a14a` | [src/features/cad/CadFeatureEditor.tsx:280:190](../../src/features/cad/CadFeatureEditor.tsx#L280); `CadFeatureEditorForm` | SelectField; `label="Operation"` | No explicit name on this occurrence; parent label or renderer supplies context |
 | `use.1ee15690f33d` | [src/features/cad/CadFeatureEditor.tsx:283:335](../../src/features/cad/CadFeatureEditor.tsx#L283); `CadFeatureEditorForm` | SelectField; `label="Axis"` | No explicit name on this occurrence; parent label or renderer supplies context |
@@ -2602,7 +2602,7 @@ Native arrows/checkmarks/radio dots/disclosure markers are browser/OS drawings, 
 | `use.dc652b759930` | [src/features/cad/CadSketchProfilePanel.tsx:127:74](../../src/features/cad/CadSketchProfilePanel.tsx#L127); `CadSketchProfilePanel`; `summary`; `exactGeometryEditor`; `!editor` | Native disclosure triangle; expand/collapse this details section | Visible text: `Exact geometry`; no explicit icon name; `` |
 | `use.93da32e5f20e` | [src/features/cad/CadSketchProfilePanel.tsx:130:85](../../src/features/cad/CadSketchProfilePanel.tsx#L130); `CadSketchProfilePanel`; `label`; `editor.isNew [true branch]`; `editor.kind === 'dimension' [true branch]`; `editor` | Native dropdown arrow; choose a value for this field | aria-label: `"Dimension quantity"`; `{event => { const quantity = available.find(entry => entry === event.target.value); if (quantity) setEditor({ ...dimensionEditor(quantity), id: editor.id }); }}` |
 | `use.eb641ad93bde` | [src/features/cad/CadTopologyInspector.tsx:18:73](../../src/features/cad/CadTopologyInspector.tsx#L18); `TopologyDetails`; `summary` | Native disclosure triangle; expand/collapse this details section | Visible text: `Measurements`; no explicit icon name; `` |
-| `use.55662645565f` | [src/features/cad/CadTopologyQuerySummary.tsx:11:52](../../src/features/cad/CadTopologyQuerySummary.tsx#L11); `CadTopologyQuerySummary`; `summary` | Native disclosure triangle; expand/collapse this details section | Visible text: `Geometric selector · expects queries edges face`; no explicit icon name; `` |
+| `use.55662645565f` | [src/features/cad/CadTopologyQuerySummary.tsx:11:52](../../src/features/cad/CadTopologyQuerySummary.tsx#L11); `CadTopologyQuerySummary`; `summary` | Native disclosure triangle; expand/collapse this details section | Visible text: `Geometric selector · expects queries edge face s`; no explicit icon name; `` |
 | `use.025c78934354` | [src/features/cad/CadViewport.tsx:787:7](../../src/features/cad/CadViewport.tsx#L787); `CadViewport`; `div` | Native dropdown arrow; choose a value for this field | aria-label: `"Named view"`; `{(event) => { const name = (['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).find((entry) => entry === event.target.value); if (name) controller.current?.setView?.(name); }}` |
 | `use.ad4634752ccf` | [src/features/cad/CadWorkbench.tsx:609:1207](../../src/features/cad/CadWorkbench.tsx#L609); `CadWorkbench`; `label`; `sketch [true branch]` | "checkbox" check/dot; toggle/select option | Visible text: `Construction`; no explicit icon name; `{(event) => setConstruction(event.target.checked)}` |
 | `use.8fb4b127fab0` | [src/features/cad/CadWorkbench.tsx:625:1767](../../src/features/cad/CadWorkbench.tsx#L625); `CadWorkbench`; `label`; `selected [true branch]`; `profile && sketch [false branch]`; `newFeature [false branch]`; `curveCreation [false branch]` | "checkbox" check/dot; toggle/select option | Visible text: `Suppress feature`; no explicit icon name; `{(event) => run(() => props.onEdit({ kind: 'update-feature', feature: { ...selected, suppressed: event.target.checked } }))}` |
@@ -2705,13 +2705,13 @@ File/media counts are recorded separately so excluded categories remain visible.
 
 | Root | Files | Image/vector files | Media paths / scope |
 | --- | --- | --- | --- |
-| `docs` | 253 | 2 | `docs/images/spur-gear-editor.png`; `docs/images/spur-gear-simulation.png` |
+| `docs` | 256 | 2 | `docs/images/spur-gear-editor.png`; `docs/images/spur-gear-simulation.png` |
 | `scripts` | 30 | 0 | No separate image/vector files |
 | `e2e` | 38 | 0 | No separate image/vector files |
 | `tests` | 11 | 0 | No separate image/vector files |
 | `DXF-test-subjects` | 1 | 0 | No separate image/vector files |
 | `vendor` | 6 | 0 | No separate image/vector files |
-| `dist` | 621 | 1 | `dist/assets/wire-edm-onboarding-poster-6gX79SPy.png` |
+| `dist` | 651 | 1 | `dist/assets/wire-edm-onboarding-poster-6gX79SPy.png` |
 | `.cache` | 7 | 0 | No separate image/vector files |
 | `.playwright` | 1 | 0 | No separate image/vector files |
 | `playwright-report` | 1 | 0 | No separate image/vector files |

@@ -264,7 +264,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
         <SelectField label="Scope" value={draft.selection ? 'selected' : 'all'} options={[
           { value: 'all', label: 'All edges of the body' },
           { value: 'selected', label: capturedEdges ? draft.tangentPropagation
-            ? `Picked edges (${capturedEdges.expectedCount}) + tangent chains` : `Selected edges (${capturedEdges.expectedCount})`
+            ? `${capturedEdges.expectedCount} ${capturedEdges.expectedCount === 1 ? 'edge' : 'edges'} + tangents` : `Selected edges (${capturedEdges.expectedCount})`
             : 'Selected edges, pick before starting', disabled: !capturedEdges },
         ]} onChange={scope => update(scope === 'selected' ? { ...draft, selection: capturedEdges } : { ...strict, selection: null })} />
         {scalar('radius', draft.kind === 'fillet' ? 'Radius' : 'Distance', draft.radius, radius => update({ ...draft, radius }))}

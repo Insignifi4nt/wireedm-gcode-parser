@@ -91,7 +91,7 @@ export interface CadWorkbenchProps extends CadPluginCommands {
 function featureDraft(kind: CadFeature['kind'], document: CadDocument, selected: CadFeature | undefined, bodyIds: readonly string[], plane: CadSketchPlane = selected?.kind === 'datum-plane' && !selected.suppressed ? Object.freeze({ kind: 'datum-plane', featureId: selected.id }) : 'XY'): CadFeature {
   const id = crypto.randomUUID();
   const sequence = document.features.filter((feature) => feature.kind === kind).length + 1;
-  const base = { id, name: `${kind === 'extrude' ? 'Pad' : featureLabels[kind]} ${sequence}`, suppressed: false };
+  const base = { id, name: `${kind === 'extrude' ? 'Extrude' : featureLabels[kind]} ${sequence}`, suppressed: false };
   const sourceError = (purpose: CadSketchSourcePurpose, fallback: string) => selected?.kind === 'sketch' ? cadSketchSourceIssueMessage(selected, purpose) ?? fallback : fallback;
   const body = selected && bodyIds.includes(selected.id) ? selected : [...document.features].reverse().find((feature) => bodyIds.includes(feature.id));
   switch (kind) {
