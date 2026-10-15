@@ -36,7 +36,7 @@ describe('Editor import, export, and parse feedback', () => {
   it('selects the legacy Robofil source interpreter for preview and retains it through text edits and save', async () => {
     window.showDirectoryPicker = undefined;
     await renderApp(context);
-    const openEditor = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Open Editor'));
+    const openEditor = [...container.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === 'Open Editor');
     if (!openEditor) throw new Error('Editor action missing');
     await act(async () => openEditor.click());
     await flushAsync();
@@ -72,7 +72,7 @@ describe('Editor import, export, and parse feedback', () => {
 
   it('shows unsupported physical-preview warnings through the external program diagnostics panel', async () => {
     await renderApp(context);
-    const openEditor = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Open Editor'));
+    const openEditor = [...container.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === 'Open Editor');
     if (!openEditor) throw new Error('Editor action missing');
     await act(async () => openEditor.click());
     await flushAsync();
@@ -98,7 +98,7 @@ describe('Editor import, export, and parse feedback', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
     expect(openEditorButton).toBeDefined();
 
@@ -339,7 +339,7 @@ describe('Editor import, export, and parse feedback', () => {
       await renderApp(context);
 
       const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-        button.textContent?.includes('Open Editor')
+        button.getAttribute('aria-label') === 'Open Editor'
       );
 
       await act(async () => {
@@ -408,7 +408,7 @@ describe('Editor import, export, and parse feedback', () => {
     await renderApp(context, { downloadTextFile });
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -463,7 +463,7 @@ describe('Editor import, export, and parse feedback', () => {
 
     await renderApp(context, { downloadTextFile });
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
     await act(async () => {
       openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -509,7 +509,7 @@ describe('Editor import, export, and parse feedback', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
     await act(async () => {
       openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -556,7 +556,7 @@ describe('Editor import, export, and parse feedback', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
     await act(async () => {
       openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -644,7 +644,7 @@ describe('Editor import, export, and parse feedback', () => {
     await renderApp(context, { importExternalProgram, saveEditorProgram });
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
     await act(async () => {
       openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -829,7 +829,7 @@ describe('Editor import, export, and parse feedback', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {

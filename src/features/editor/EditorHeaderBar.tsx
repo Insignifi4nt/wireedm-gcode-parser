@@ -117,7 +117,7 @@ export function EditorHeaderBar({
         <Tooltip content={titleTooltip ?? filePath}><h2 tabIndex={0} className="technical-value truncate text-[12px] font-semibold" >
           {heading}
         </h2></Tooltip>
-        <span className="shrink-0 border border-border bg-background/60 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.04em] text-muted-foreground">
+        <span className="shrink-0 border border-border bg-background/60 px-1.5 py-0.5 text-[10px] tracking-[0.04em] text-muted-foreground">
           {DOCUMENT_CONTEXT_LABELS[documentContext]}
         </span>
       </div>

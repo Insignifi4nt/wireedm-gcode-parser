@@ -391,3 +391,17 @@ The active managed checkout is cad-shared-controls/Wire_EDM. The former checkout
 
 
 - Final source/build/browser evidence and fallback limits are recorded in 2026-10-15-whole-app-controls.md. Existing PR12 receives this reviewed checkpoint; no merge/deployment or extra version increment.
+
+## Dashboard and design system continuation (15 October)
+
+- [x] Remove the library's outer box; align title/count/search/filters and refine real project cards.
+- [x] Expanding shared search preserves native focus, controlled filters and composing Escape behavior.
+- [x] Move Start work explanations into heading help; preserve actual imports, guards and command names.
+- [x] Remove forced-uppercase interface styling across the app, preserving acronyms, axes and source data.
+- [x] Define consumed typography, spacing, density, color, radius, icon and motion tokens in the shared theme.
+- [x] Formalize the supported component/state and responsive rules in maintainer guidance and AGENTS.
+- [x] Enforce shared-control ownership, theme-only control colors and sentence-case styling with focused architecture fixtures.
+- [x] Independent source review and actual picker/help/search inspection; all five affected Chromium journeys pass, including compact layout and focus/recovery workflows.
+- [x] Production build/typecheck, documentation, native source distribution, UI ownership and release checks pass. All393files/4,155cases have passing evidence across the complete run and a106-case rerun after replacing one uppercase-copy assertion with exact preview coordinates. Final results are recorded in `2026-10-15-dashboard-design-system.md`.
+
+No UI test cases/files, copy snapshots or broad test cleanup were added. Current browser session contains the updated dashboard with its existing real library; former gear tabs were already unavailable before this refresh. No saved record, preference or CAD draft was changed. This finishes the dashboard/design-system checkpoint and leaves the broader CAD work separate. Existing PR12 and release0.0.697 remain the publication path.

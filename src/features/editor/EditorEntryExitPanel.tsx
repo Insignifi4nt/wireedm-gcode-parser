@@ -142,7 +142,7 @@ export function EditorEntryExitPanel({
 
   return (
     <section className="grid gap-2 text-[10px]" data-entry-exit-panel>
-      <label className="grid gap-1 uppercase text-muted-foreground">
+      <label className="grid gap-1 text-muted-foreground">
         Operation
         <Select
           aria-label="Entry and exit operation"
@@ -167,7 +167,7 @@ export function EditorEntryExitPanel({
       </label>
 
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
-        <legend className="px-1 uppercase text-muted-foreground">Canvas point picking</legend>
+        <legend className="px-1 text-muted-foreground">Canvas point picking</legend>
         <p className="text-muted-foreground">
           Choose Entry or Exit, then hover to preview a point on the endpoint normal and click to apply that exact perpendicular lead. The operation target stays locked until the point is picked or the mode is cancelled.
         </p>
@@ -208,7 +208,7 @@ export function EditorEntryExitPanel({
       </fieldset>
 
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
-        <legend className="px-1 uppercase text-muted-foreground">Entry</legend>
+        <legend className="px-1 text-muted-foreground">Entry</legend>
         <div className="text-foreground" data-entry-strategy>
           {entryStrategyLabel(transitions.entry)}
         </div>
@@ -273,7 +273,7 @@ export function EditorEntryExitPanel({
       </fieldset>
 
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
-        <legend className="px-1 uppercase text-muted-foreground">Exit</legend>
+        <legend className="px-1 text-muted-foreground">Exit</legend>
         <div className="text-foreground" data-exit-strategy>
           {transitions.exit?.strategy === 'none'
             ? `${reviewLabel(transitions.exit.review)} no exit`

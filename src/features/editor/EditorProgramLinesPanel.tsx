@@ -163,7 +163,7 @@ export function EditorProgramLinesPanel({
           <Button
             aria-expanded={expanded}
             aria-label={`${expanded ? 'Collapse' : 'Expand'} group ${groupId}`}
-            className="flex min-w-0 items-center gap-1.5 font-mono uppercase"
+            className="flex min-w-0 items-center gap-1.5 font-mono"
             data-editor-group-toggle={groupId}
             onClick={() => onToggleGroup(groupId)}
             type="button"
@@ -197,7 +197,7 @@ export function EditorProgramLinesPanel({
             type="button"
           >
             <ToggleIcon className="size-3 shrink-0" />
-            <span className="uppercase">{group.id}</span>
+            <span className="">{group.id}</span>
             <span className="truncate">{title}</span>
           </Button>
           <div className="flex items-center gap-1">

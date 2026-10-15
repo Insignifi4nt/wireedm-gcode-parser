@@ -1698,7 +1698,9 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     expect(container.querySelector('[data-upid-start-inference="midpoint"]')).not.toBeNull();
-    expect(container.querySelector('[data-upid-start-preview-label]')?.textContent).toBe('MIDPOINT');
+    const candidate = container.querySelector('[data-upid-start-preview-point]');
+    expect(Number(candidate?.getAttribute('cx'))).toBe(5);
+    expect(Number(candidate?.getAttribute('cy'))).toBe(0);
     const midpointGuide = container.querySelector('[data-upid-start-inference-guide]');
     expect(midpointGuide).not.toBeNull();
     expect(midpointGuide?.getAttribute('stroke-width')).toBe('2.5');

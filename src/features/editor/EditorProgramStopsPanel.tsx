@@ -165,7 +165,7 @@ export function EditorProgramStopsPanel({
     <section className="grid gap-2 text-[10px]" data-program-stops-panel>
       {commitError && <p role="alert" className="text-red-300">{commitError}</p>}
       <div>
-        <div className="uppercase text-muted-foreground">{operation.displayName}</div>
+        <div className="text-muted-foreground">{operation.displayName}</div>
         <p className="mt-1 text-muted-foreground">
           Stops belong to {operation.displayName}. Choose a machining phase or an exact distance along the planned path.
         </p>
@@ -182,7 +182,7 @@ export function EditorProgramStopsPanel({
         type="button"
       >New stop</Button> : <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}
         onChange={() => setAddCompleted(false)}>
-        <legend className="px-1 uppercase text-muted-foreground">Add stop</legend>
+        <legend className="px-1 text-muted-foreground">Add stop</legend>
         <ProgramStopFields labelPrefix="Program stop" placement={placement} remaining={remaining}
           reason={reason} note={note} onPlacementChange={setPlacement} onRemainingChange={setRemaining}
           onReasonChange={setReason} onNoteChange={setNote} onDraftChange={onDraftChange} placementRef={addPlacementRef}
@@ -215,7 +215,7 @@ export function EditorProgramStopsPanel({
             >
               {isSelected ? (
                 <fieldset className="grid gap-1" disabled={disabled}>
-                  <legend className="px-1 uppercase text-muted-foreground">Edit {stop.id}</legend>
+                  <legend className="px-1 text-muted-foreground">Edit {stop.id}</legend>
                   <ProgramStopFields labelPrefix="Selected stop" placement={selectedPlacement} remaining={selectedRemaining}
                     reason={selectedReason} note={selectedNote} onPlacementChange={setSelectedPlacement}
                     onRemainingChange={setSelectedRemaining} onReasonChange={setSelectedReason}

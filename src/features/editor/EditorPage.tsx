@@ -3728,7 +3728,7 @@ export function EditorPage({
                 onClick={() => setInspectorRailCollapsed(false)}>
                 <PanelRightOpen className="size-3.5" />
               </Button>
-              <span className="rotate-180 font-mono text-[10px] uppercase tracking-wider [writing-mode:vertical-rl]">Code</span>
+              <span className="rotate-180 font-mono text-[10px] tracking-wider [writing-mode:vertical-rl]">Code</span>
             </div>}
             {!inspectorRailCollapsed && <RailResizeHandle
               label="Resize Inspector Rail" className="hidden lg:block" data-editor-inspector-resizer

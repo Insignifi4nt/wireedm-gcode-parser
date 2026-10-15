@@ -61,8 +61,8 @@ body {
 
 /* Source editors must retain fixed-width text despite the shared control reset. */
 .gcode-text-input {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
   line-height: 1.75;
 }
 
@@ -92,14 +92,12 @@ summary:focus-visible {
 .technical-label {
   color: var(--muted-foreground);
   font-family: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-size: var(--text-caption);
+  font-weight: 500;
 }
 
 .technical-value {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 .technical-input {

@@ -655,7 +655,7 @@ export function EditorPathNavigatorPanel({
           'Transform',
         <section data-upid-path-transform>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-[10px] uppercase text-muted-foreground">Placement</span>
+            <span className="text-[10px] text-muted-foreground">Placement</span>
             <span className="truncate text-[10px] text-muted-foreground" data-upid-transform-target>
               {activeTransformTargetLabel}
             </span>
@@ -690,7 +690,7 @@ export function EditorPathNavigatorPanel({
           </div>
             <div className="mb-3 border border-border bg-background/35 p-2" data-upid-transform-document-placement>
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[10px] uppercase text-muted-foreground">Reference</span>
+              <span className="text-[10px] text-muted-foreground">Reference</span>
               <Select
                 aria-label="Document reference point"
                 className="h-6 max-w-[132px] px-1 font-mono text-[10px]"
@@ -726,7 +726,7 @@ export function EditorPathNavigatorPanel({
             </p>
             <dl className="grid gap-1 font-mono text-[10px]">
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
-                <dt className="uppercase text-muted-foreground">Bounds</dt>
+                <dt className="text-muted-foreground">Bounds</dt>
                 <Tooltip content={documentBounds ? formatBounds(documentBounds) : 'No drawable bounds'}><dd
                   className="truncate text-foreground"
                   data-upid-transform-document-bounds
@@ -736,31 +736,31 @@ export function EditorPathNavigatorPanel({
                 </dd></Tooltip>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
-                <dt className="uppercase text-muted-foreground">Center</dt>
+                <dt className="text-muted-foreground">Center</dt>
                 <dd className="truncate text-foreground" data-upid-transform-document-center>
                   {documentCenter ? formatPoint(documentCenter) : '-'}
                 </dd>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
-                <dt className="uppercase text-muted-foreground">Reference</dt>
+                <dt className="text-muted-foreground">Reference</dt>
                 <dd className="truncate text-foreground" data-upid-transform-document-reference-point>
                   {documentReferencePoint ? formatPoint(documentReferencePoint) : '-'}
                 </dd>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
-                <dt className="uppercase text-muted-foreground">To Origin</dt>
+                <dt className="text-muted-foreground">To Origin</dt>
                 <dd className="truncate text-foreground" data-upid-transform-origin-offset>
                   {documentOriginOffset ? formatPoint(documentOriginOffset) : '-'}
                 </dd>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
-                <dt className="uppercase text-muted-foreground">Source Ext</dt>
+                <dt className="text-muted-foreground">Source Ext</dt>
                 <dd className="truncate text-foreground" data-upid-transform-source-extents>
                   {formatDrawingExtents(pathDocument.source.drawing?.extents)}
                 </dd>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
-                <dt className="uppercase text-muted-foreground">Source Base</dt>
+                <dt className="text-muted-foreground">Source Base</dt>
                 <dd className="truncate text-foreground" data-upid-transform-source-base>
                     {pathDocument.source.drawing?.basePoint ? formatPoint(pathDocument.source.drawing.basePoint) : '-'}
                 </dd>
@@ -769,7 +769,7 @@ export function EditorPathNavigatorPanel({
             {documentReferenceMode === 'picked' && (
                 <div className="mt-2 border-t border-border pt-2" data-upid-transform-document-reference-points>
                 <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="text-[10px] uppercase text-muted-foreground">Picked Point</span>
+                  <span className="text-[10px] text-muted-foreground">Picked Point</span>
                   <span className="truncate text-[10px] text-muted-foreground">
                     {pickedDocumentReferencePoint ? formatPoint(pickedDocumentReferencePoint) : 'No point'}
                   </span>
@@ -811,13 +811,13 @@ export function EditorPathNavigatorPanel({
             )}
           </div>
           <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="text-[10px] uppercase text-muted-foreground">Move</span>
+            <span className="text-[10px] text-muted-foreground">Move</span>
             <span className="truncate text-[10px] text-muted-foreground">
               {activePathTransformTarget === 'document' ? 'Document geometry' : 'Selected geometry'}
             </span>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
+            <label className="grid gap-1 text-[10px] text-muted-foreground">
               X
               <Input
                 aria-label="Translate X"
@@ -832,7 +832,7 @@ export function EditorPathNavigatorPanel({
                 value={pathTranslateXDraft}
               />
             </label>
-            <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
+            <label className="grid gap-1 text-[10px] text-muted-foreground">
               Y
               <Input
                 aria-label="Translate Y"
@@ -874,7 +874,7 @@ export function EditorPathNavigatorPanel({
           )}
           <div className="mt-3 border-t border-border pt-2" data-upid-transform-orientation>
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[10px] uppercase text-muted-foreground">Orientation</span>
+              <span className="text-[10px] text-muted-foreground">Orientation</span>
               <span className="truncate text-[10px] text-muted-foreground" data-upid-transform-orientation-origin>
                 {activeTransformCenter ? formatPoint(activeTransformCenter) : '-'}
               </span>
@@ -886,7 +886,7 @@ export function EditorPathNavigatorPanel({
                   activePathTransformTarget === 'selection' ? 'true' : undefined
                 }
             >
-              <span className="truncate text-[10px] uppercase text-muted-foreground">
+              <span className="truncate text-[10px] text-muted-foreground">
                 {activePathTransformTarget}
               </span>
               <div className="grid grid-cols-5 gap-1">
@@ -961,7 +961,7 @@ export function EditorPathNavigatorPanel({
             data-upid-transform-target-center-target={activePathTransformTarget}
           >
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[10px] uppercase text-muted-foreground">
+              <span className="text-[10px] text-muted-foreground">
                 {activePathTransformTarget === 'document' ? 'Reference Target' : 'Center Target'}
               </span>
               <span
@@ -973,7 +973,7 @@ export function EditorPathNavigatorPanel({
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
+              <label className="grid gap-1 text-[10px] text-muted-foreground">
                 X
                 <Input
                   aria-label={`${activeTransformTargetLabel} ${activeTargetReferenceName} target X`}
@@ -987,7 +987,7 @@ export function EditorPathNavigatorPanel({
                   value={pathTargetXDraft}
                 />
               </label>
-              <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
+              <label className="grid gap-1 text-[10px] text-muted-foreground">
                 Y
                 <Input
                   aria-label={`${activeTransformTargetLabel} ${activeTargetReferenceName} target Y`}
@@ -1063,7 +1063,7 @@ export function EditorPathNavigatorPanel({
                 data-upid-transform-selection-center-points
                 data-upid-transform-target-center-points
               >
-                <span className="mb-1 block text-[10px] uppercase text-muted-foreground">Target Point</span>
+                <span className="mb-1 block text-[10px] text-muted-foreground">Target Point</span>
                 <div className="grid max-h-16 grid-cols-4 gap-1 overflow-auto">
                   {measurementPoints.map((point, index) => (
                     <Button
@@ -1094,13 +1094,13 @@ export function EditorPathNavigatorPanel({
               data-upid-transform-center-enabled="true"
             >
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[10px] uppercase text-muted-foreground">Segment Center</span>
+              <span className="text-[10px] text-muted-foreground">Segment Center</span>
               <span className="truncate text-[10px] text-muted-foreground" data-upid-transform-center-current>
                 {selectedSegmentCenter ? formatPoint(selectedSegmentCenter) : '-'}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
+              <label className="grid gap-1 text-[10px] text-muted-foreground">
                 X
                 <Input
                   aria-label="Center target X"
@@ -1113,7 +1113,7 @@ export function EditorPathNavigatorPanel({
                   value={pathTargetXDraft}
                 />
               </label>
-              <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
+              <label className="grid gap-1 text-[10px] text-muted-foreground">
                 Y
                 <Input
                   aria-label="Center target Y"
@@ -1168,7 +1168,7 @@ export function EditorPathNavigatorPanel({
             </div>
             {measurementPoints.length > 0 && (
               <div className="mt-2 border-t border-border pt-2" data-upid-transform-center-points>
-                <span className="mb-1 block text-[10px] uppercase text-muted-foreground">Target Point</span>
+                <span className="mb-1 block text-[10px] text-muted-foreground">Target Point</span>
                 <div className="grid max-h-16 grid-cols-4 gap-1 overflow-auto">
                   {measurementPoints.map((point, index) => (
                     <Button
@@ -1201,7 +1201,7 @@ export function EditorPathNavigatorPanel({
         <section data-upid-endpoint-topology>
           <div className="mb-2 flex items-start justify-between gap-2">
             <span className="min-w-0">
-              <span className="block text-[10px] uppercase text-muted-foreground">Endpoint Topology</span>
+              <span className="block text-[10px] text-muted-foreground">Endpoint Topology</span>
               <span
                 className="block truncate text-[12px] font-semibold text-foreground"
                 data-upid-endpoint-topology-title
@@ -1286,7 +1286,7 @@ export function EditorPathNavigatorPanel({
           'Path Diagnostics',
           <section data-upid-diagnostics>
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-[10px] uppercase text-muted-foreground">Path Diagnostics</span>
+              <span className="text-[10px] text-muted-foreground">Path Diagnostics</span>
               <span className="text-[10px] text-amber-200">
                 {pathDiagnostics.length} {pathDiagnostics.length === 1 ? 'issue' : 'issues'}
               </span>
@@ -1298,7 +1298,7 @@ export function EditorPathNavigatorPanel({
 
               >
                 <div className="mb-1 flex items-center gap-2">
-                  <span className="text-[10px] uppercase text-amber-100">Repair workflow</span>
+                  <span className="text-[10px] text-amber-100">Repair workflow</span>
                 </div>
                 <ol className="grid gap-0.5 text-muted-foreground">
                   <li>
@@ -1348,7 +1348,7 @@ export function EditorPathNavigatorPanel({
         <section className="-m-2" data-upid-cut-sequence>
           <div className="grid gap-1 border-b border-border p-2">
             <label
-              className="grid gap-1 uppercase text-muted-foreground"
+              className="grid gap-1 text-muted-foreground"
               data-upid-manual-order-active={manualOrderActive ? 'true' : undefined}
               data-upid-order-strategy
             >
@@ -1552,9 +1552,9 @@ function formatEndpointMember(member: {
   segmentId: string;
   segmentIndex: number | null;
 }) {
-  const role = member.pointRole ? member.pointRole.toUpperCase() : member.rawEndpointSide.toUpperCase();
+  const role = member.pointRole ?? member.rawEndpointSide;
   const segmentIndex = member.segmentIndex !== null ? `S${member.segmentIndex + 1}` : member.segmentId;
-  return `${segmentIndex} ${role}`;
+  return `${segmentIndex} ${role === 'start' ? 'Start' : 'End'}`;
 }
 
 function TopologyMetric({
@@ -1580,7 +1580,7 @@ function TopologyMetric({
       data-upid-endpoint-topology-summary-card={id}
     >
       <span
-        className="block text-[10px] uppercase text-muted-foreground"
+        className="block text-[10px] text-muted-foreground"
         data-upid-endpoint-topology-summary-label={id}
       >
         {label}
@@ -1674,7 +1674,7 @@ function renderDiagnosticRow({
       role={hoverElement ? 'button' : undefined}
       tabIndex={hoverElement ? 0 : undefined}
     >
-      <div className="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase">
+      <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
         <span className={diagnostic.severity === 'error' ? 'text-destructive' : 'text-amber-200'}>
           {diagnostic.severity}
         </span>
@@ -1742,7 +1742,7 @@ function renderDiagnosticGuidance(
       data-upid-diagnostic-guidance
 
     >
-      <span className="mr-1 uppercase text-foreground" data-upid-diagnostic-guidance-label>
+      <span className="mr-1 text-foreground" data-upid-diagnostic-guidance-label>
         Next
       </span>
       {guidance.text}
@@ -2332,7 +2332,7 @@ function renderManualDecisionBadges(decisions: UpidManualDecisionKind[]) {
     <span className="mt-1 flex flex-wrap gap-1" data-upid-manual-decision-list>
       {decisions.map((decision) => (
         <span
-          className="border border-amber-400/40 bg-amber-400/10 px-1 text-[10px] uppercase text-amber-200"
+          className="border border-amber-400/40 bg-amber-400/10 px-1 text-[10px] text-amber-200"
           data-upid-manual-decision={decision}
           key={decision}
         >
@@ -2349,7 +2349,7 @@ function renderDiagnosticSummaryBadge(summary: UpidPathDiagnosticSummary) {
   return (
     <span className="mt-1 flex flex-wrap gap-1" data-upid-diagnostic-summary-badge>
       <span
-        className={`border px-1 text-[10px] uppercase ${
+        className={`border px-1 text-[10px] ${
           summary.severity === 'error'
             ? 'border-destructive/50 bg-destructive/10 text-destructive'
             : summary.severity === 'warning'
@@ -2525,7 +2525,7 @@ function renderSegmentRow(
   const end = orientedSegmentEnd(segment, ref);
   const segmentLength = segment.length.toFixed(3);
   const geometry = readUpidSegmentGeometry(segment, ref);
-  const segmentKindLabel = `${segment.kind.toUpperCase()} segment`;
+  const segmentKindLabel = `${segment.kind.charAt(0).toUpperCase()}${segment.kind.slice(1)} segment`;
   const diagnosticSummary = summarizeUpidDiagnosticsForPathElementRef(pathDocument, {
     operationId: pathElement.operationId,
     pathElementId: pathElement.id,
@@ -2633,7 +2633,7 @@ function renderSegmentRow(
               S{index + 1}
             </span>
             <span className="shrink-0 text-border">·</span>
-            <span className="shrink-0 font-medium uppercase text-foreground" data-upid-tree-kind-label>
+            <span className="shrink-0 font-medium text-foreground" data-upid-tree-kind-label>
               {segment.kind}
             </span>
             {renderSegmentSummary(geometryPresentation)}

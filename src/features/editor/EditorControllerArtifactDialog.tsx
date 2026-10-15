@@ -204,7 +204,7 @@ export function EditorControllerArtifactDialog({
           </p>
         )}
 
-        <label className="grid gap-1 uppercase text-muted-foreground">
+        <label className="grid gap-1 text-muted-foreground">
           Physical machine
           <Select
             aria-label="Controller export machine"

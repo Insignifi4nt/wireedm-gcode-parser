@@ -51,7 +51,7 @@ export function EditorInitialWirePositionPanel({
         Set the wire's starting coordinates in the part coordinate system. This does not move the wire.
       </p>
       <div className="border border-border bg-background/35 p-2">
-        <div className="mb-1 uppercase text-muted-foreground">Current setup</div>
+        <div className="mb-1 text-muted-foreground">Current setup</div>
         <div className={resolution.status === 'ready' ? 'text-emerald-300' : 'text-amber-300'}>
           {resolution.status === 'ready'
             ? `${resolution.source === 'geometry-linked' ? 'Geometry-linked' : 'Manual'} · reviewed`
@@ -63,7 +63,7 @@ export function EditorInitialWirePositionPanel({
       </div>
 
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
-        <legend className="px-1 uppercase text-muted-foreground">Exact part coordinates</legend>
+        <legend className="px-1 text-muted-foreground">Exact part coordinates</legend>
         <div className="grid grid-cols-2 gap-1">
           <label className="grid gap-0.5 text-muted-foreground">
             X
@@ -111,7 +111,7 @@ export function EditorInitialWirePositionPanel({
       </fieldset>
 
       {circles.length > 0 && <div className="grid gap-1 border border-border p-2">
-        <div className="uppercase text-muted-foreground">Or link to a circular source center</div>
+        <div className="text-muted-foreground">Or link to a circular source center</div>
         <p className="text-muted-foreground">The starting point follows the selected circle or arc when geometry moves.</p>
         {circles.map((circle, index) => {
           const owner = document.plan.operations.find((operation) => operation.segmentRefs.some((ref) => ref.segmentId === circle.id));

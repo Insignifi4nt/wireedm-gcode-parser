@@ -36,8 +36,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {
@@ -96,8 +96,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {
@@ -162,8 +162,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {
@@ -240,8 +240,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {
@@ -307,8 +307,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {
@@ -347,8 +347,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {
@@ -423,8 +423,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {
@@ -470,14 +470,13 @@ describe('Editor preview controls and guide', () => {
     expect(snapToggle?.getAttribute('aria-description')).toBe(declaration
       ? 'Snap cursor and measurement clicks to the 5 mm preview grid'
       : 'Snap cursor and measurement clicks to the 5 coordinate-unit preview grid. Units are undeclared.');
-    expect(container.querySelector('[data-editor-grid-snap]')?.textContent).toBe('OFF');
+    expect(snapToggle?.getAttribute('aria-pressed')).toBe('false');
 
     await act(async () => {
       snapToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(snapToggle?.getAttribute('aria-pressed')).toBe('true');
-    expect(container.querySelector('[data-editor-grid-snap]')?.textContent).toBe('ON');
 
     await act(async () => {
       preview?.dispatchEvent(
@@ -518,8 +517,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {
@@ -592,8 +591,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {
@@ -694,8 +693,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {
@@ -734,8 +733,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {
@@ -773,8 +772,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {
@@ -846,8 +845,8 @@ describe('Editor preview controls and guide', () => {
 
     await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+    const openEditorButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Editor"]'
     );
 
     await act(async () => {

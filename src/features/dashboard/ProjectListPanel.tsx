@@ -1,14 +1,15 @@
-import { Input } from '@/components/ui/input';
+import { SearchField } from '@/components/ui/search-field';
 import { Tooltip } from '@/components/ui/tooltip';
 import { MenuSurface, MenuItem } from '@/components/ui/menu';
 import { Select } from '@/components/ui/select';
 import { useState } from 'react';
-import { ChevronDown, History, Pencil, Save, Trash2 } from 'lucide-react';
+import { ChevronDown, FileCode, History, Pencil, Save, Trash2, Waypoints } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
 import { supportsSaveTextFileAs } from '@/domain/post/saveTextFileAs';
 import { useDashboardMenu } from './useDashboardMenu';
+import './dashboard.css';
 
 type WorkbenchProjectIndexEntry = WorkbenchCatalogManifest['projects'][number];
 
@@ -60,70 +61,66 @@ export function ProjectListPanel({
     <section
       aria-labelledby="project-library-title"
       aria-busy={availability === 'loading'}
-      className="technical-panel min-w-0 min-h-[260px] min-[1180px]:min-h-[420px]"
+      className="dashboard-library"
       data-project-library
     >
-      <div className="technical-panel-header justify-between">
-        <h2 className="text-xs font-semibold" id="project-library-title">
-          Project Library
-        </h2>
-        {availability === 'ready' && <span className="technical-value text-[10px] text-muted-foreground">{projectCountLabel}</span>}
-      </div>
-      <div className="p-3 text-[11px]">
-        {availability !== 'ready' ? <p role="status" className="text-muted-foreground">
-          {availability === 'loading' ? 'Loading projects…' : 'Project library unavailable. Open storage settings to reconnect.'}
-        </p> : projects.length > 0 ? (
-          <div className="grid gap-2">
-            <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(120px,150px)_minmax(120px,150px)]" data-project-list-controls>
-              <Input
-                aria-label="Search projects"
-                className="technical-input px-2 text-[11px]"
-                onChange={(event) => setSearchText(event.currentTarget.value)}
-                placeholder="Search projects"
-                value={searchText}
-              />
+      <header className="dashboard-library-header">
+        <div className="dashboard-library-title">
+          <h2 id="project-library-title">Project library</h2>
+          {availability === 'ready' && <span className="dashboard-count">{projectCountLabel}</span>}
+        </div>
+        {availability === 'ready' && projects.length > 0 && <div className="dashboard-library-controls" data-project-list-controls>
+              <SearchField label="Search projects" value={searchText} onValueChange={setSearchText} />
               <Select
                 aria-label="Project source filter"
-                className="min-h-[30px] px-2 text-[11px]"
+                density="compact"
                 onChange={(event) =>
                   setSourceFilter(event.currentTarget.value as ProjectSourceFilter)
                 }
                 value={sourceFilter}
               >
                 <option value="all">All sources</option>
-                <option value="dxf">Path Project</option>
-                <option value="external-gcode">Machine Program</option>
+                <option value="dxf">Path project</option>
+                <option value="external-gcode">Machine program</option>
               </Select>
               <Select
                 aria-label="Project sort"
-                className="min-h-[30px] px-2 text-[11px]"
+                density="compact"
                 onChange={(event) => setSortMode(event.currentTarget.value as ProjectSortMode)}
                 value={sortMode}
               >
-                <option value="updated-desc">Updated newest</option>
-                <option value="updated-asc">Updated oldest</option>
+                <option value="updated-desc">Newest first</option>
+                <option value="updated-asc">Oldest first</option>
                 <option value="name-asc">Name A-Z</option>
                 <option value="name-desc">Name Z-A</option>
                 <option value="type">Type</option>
               </Select>
-            </div>
-
+        </div>}
+      </header>
+      <div className="dashboard-library-content">
+        {availability !== 'ready' ? <p role="status" className="text-muted-foreground">
+          {availability === 'loading' ? 'Loading projects…' : 'Project library unavailable. Open storage settings to reconnect.'}
+        </p> : projects.length > 0 ? (
+          <>
             {visibleProjects.length > 0 ? (
               <div
                 aria-label="Project list"
-                className="divide-y divide-border border border-border"
+                className="dashboard-projects"
                 role="list"
               >
                 {visibleProjects.map((project) => (
                   <div
-                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 p-2 lg:grid-cols-[minmax(0,1fr)_110px_minmax(120px,150px)_auto]"
+                    className="dashboard-project-card"
                     data-project-row
                     data-project-source={project.sourceKind}
                     key={project.id}
                     role="listitem"
                   >
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-1">
+                    <span className="dashboard-project-kind" aria-hidden="true">
+                      {isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />}
+                    </span>
+                    <div className="dashboard-project-main">
+                      <div className="dashboard-project-name">
                         <Tooltip content={`${project.name}\n${project.path}`}><p className="truncate text-foreground" >{project.name}</p></Tooltip>
                         <Button
                           aria-label={`Rename project ${project.id}`}
@@ -136,12 +133,12 @@ export function ProjectListPanel({
                           variant="ghost"
                         ><Pencil className="size-3" /></Button>
                       </div>
+                      <div className="dashboard-project-meta">
+                        <span>{getProjectSourceLabel(project.sourceKind)}</span>
+                        <ProjectUpdateTime value={project.updatedAt} />
+                      </div>
                     </div>
-                    <span className="col-start-1 row-start-2 text-[10px] text-muted-foreground lg:col-auto lg:row-auto lg:text-[11px]">
-                      {getProjectSourceLabel(project.sourceKind)}
-                    </span>
-                    <ProjectUpdateTime value={project.updatedAt} />
-                    <div className="col-start-2 row-start-1 flex min-w-0 items-center justify-end gap-1 lg:col-auto lg:row-auto">
+                    <div className="dashboard-project-actions">
                       <Button
                         aria-label={`Open project ${project.id} in editor`}
                         disabled={interactionLocked}
@@ -219,7 +216,7 @@ export function ProjectListPanel({
             ) : (
               <div
                 aria-label="Project list"
-                className="border border-border bg-background/50 p-2 text-muted-foreground"
+                className="dashboard-library-empty"
                 role="status"
               >
                 No projects match the active filters.
@@ -227,11 +224,11 @@ export function ProjectListPanel({
                   onClick={() => { setSearchText(''); setSourceFilter('all'); }} size="md">Clear filters</Button>
               </div>
             )}
-          </div>
+          </>
         ) : (
           <div
             aria-label="Project list"
-            className="border border-border bg-background/50 p-2 text-muted-foreground"
+            className="dashboard-library-empty"
             role="region"
           >
             <p>
@@ -246,7 +243,7 @@ export function ProjectListPanel({
 }
 
 function getProjectSourceLabel(sourceKind: WorkbenchProjectIndexEntry['sourceKind']) {
-  return isPathProjectSourceKind(sourceKind) ? 'Path Project' : 'Machine Program';
+  return isPathProjectSourceKind(sourceKind) ? 'Path project' : 'Machine program';
 }
 
 const projectDateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
@@ -258,7 +255,7 @@ function ProjectUpdateTime({ value }: { value: string }) {
   return (
     <Tooltip content={value}><time
       aria-label={`Updated ${valid ? date.toLocaleString() : value}`}
-      className="technical-value flex flex-wrap gap-x-2 text-[10px] text-muted-foreground lg:grid lg:gap-y-0.5"
+      className="dashboard-project-time"
       dateTime={valid ? value : undefined}
 
     >

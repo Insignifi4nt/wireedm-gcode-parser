@@ -97,7 +97,7 @@ export function EditorMachiningParticipationPanel({
   return (
     <section className="grid gap-2 text-[10px]" data-machining-participation-panel>
       <div className="border border-border bg-background/35 p-2">
-        <div className="uppercase text-muted-foreground">{operation.displayName}</div>
+        <div className="text-muted-foreground">{operation.displayName}</div>
         <p className={derived?.status === 'ready' ? 'text-emerald-300' : 'text-amber-300'}>
           {derived?.status === 'ready'
             ? `${derived.operations.length} active machining operation${derived.operations.length === 1 ? '' : 's'}`
@@ -109,7 +109,7 @@ export function EditorMachiningParticipationPanel({
       </div>
 
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
-        <legend className="px-1 uppercase text-muted-foreground">Exclude a range from cutting</legend>
+        <legend className="px-1 text-muted-foreground">Exclude a range from cutting</legend>
         <label className="grid gap-0.5 text-muted-foreground">
           Source segment
           <Select
@@ -181,7 +181,7 @@ export function EditorMachiningParticipationPanel({
         </Button>
       </fieldset>
 
-      {partialOperation && <label className="grid gap-1 border border-border p-2 uppercase text-muted-foreground">
+      {partialOperation && <label className="grid gap-1 border border-border p-2 text-muted-foreground">
         Partial-path wire offset
         <Select
           aria-label="Partial contour wire side"
@@ -208,7 +208,7 @@ export function EditorMachiningParticipationPanel({
       </label>}
 
       {partialEntry && partialEntry.strategy !== 'circle-center' && <div className="grid gap-1 border border-border p-2">
-        <div className="uppercase text-muted-foreground">Derived partial entry</div>
+        <div className="text-muted-foreground">Derived partial entry</div>
         <p className="text-muted-foreground">
           {partialEntry.strategy === 'none'
             ? 'Confirm starting directly at the active contour endpoint without an entry lead.'
@@ -226,7 +226,7 @@ export function EditorMachiningParticipationPanel({
       </div>}
 
       {partialExit?.strategy === 'manual-straight' && <div className="grid gap-1 border border-border p-2">
-        <div className="uppercase text-muted-foreground">Partial exit</div>
+        <div className="text-muted-foreground">Partial exit</div>
         <p className="text-muted-foreground">
           Confirm the exit from ({partialExit.from.x.toFixed(3)}, {partialExit.from.y.toFixed(3)}) to ({partialExit.to.x.toFixed(3)}, {partialExit.to.y.toFixed(3)}) mm.
         </p>

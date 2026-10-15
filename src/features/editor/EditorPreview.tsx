@@ -1408,7 +1408,7 @@ export function EditorPreview({
                   x={handle.center.x}
                   y={svgY}
                 >
-                  CENTER
+                  Center
                 </text>
               </g>
             );
@@ -1550,7 +1550,7 @@ export function EditorPreview({
                 x={constructionPreview.targetPoint.x}
                 y={flipY - constructionPreview.targetPoint.y}
               >
-                {constructionPreview.mode === 'perpendicular' ? 'PERP' : 'TAN'}
+                {constructionPreview.mode === 'perpendicular' ? 'Perp.' : 'Tangent'}
               </text>
             </g>
           )}
@@ -1628,7 +1628,7 @@ export function EditorPreview({
                 x={startPreview.point.x}
                 y={flipY - startPreview.point.y}
               >
-                {startPreview.inferenceRelation.replace('-', ' ').toUpperCase()}
+                {startPreview.inferenceRelation.charAt(0).toUpperCase() + startPreview.inferenceRelation.slice(1).replaceAll('-', ' ')}
               </text>
             </g>
           )}
@@ -1673,7 +1673,7 @@ export function EditorPreview({
                 fill="#fbbf24" fontSize={measurementDisplayScale * 9} fontWeight="bold">Ⅱ</text>
               <text x={stop.point.x + measurementDisplayScale * 9} y={flipY - stop.point.y + measurementDisplayScale * 14}
                 fill="#fde68a" fontSize={measurementTextSize} paintOrder="stroke" stroke="#020617"
-                strokeWidth={measurementTextSize * 0.25}>STOP</text>
+                strokeWidth={measurementTextSize * 0.25}>Stop</text>
             </g>)}
           </g>
           <g data-preview-spatial-actions pointerEvents={actionSelectionEnabled ? undefined : 'none'}>
@@ -1723,7 +1723,7 @@ export function EditorPreview({
                     y={flipY - point.y + measurementDisplayScale * 14}
                     fill={color} fontSize={measurementDisplayScale * 10}
                     paintOrder="stroke" stroke="#020617" strokeWidth={measurementDisplayScale * 2}
-                    pointerEvents="none">{group.length > 1 ? `${group.length} pauses` : generated ? 'RETHREAD' : emitted ? 'PAUSE' : 'STOP'}</text>
+                    pointerEvents="none">{group.length > 1 ? `${group.length} pauses` : generated ? 'Rethread' : emitted ? 'Pause' : 'Stop'}</text>
                 </g>
                 {expanded && group.map((action, index) => <g key={action.key}
                   className="cursor-pointer" onClick={(event) => {

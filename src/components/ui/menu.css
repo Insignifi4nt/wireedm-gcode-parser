@@ -1,11 +1,11 @@
 @layer theme, base, components, utilities;
 @layer components {
-  .ui-menu { padding: 4px; border: 1px solid var(--border); border-radius: var(--popup-radius, 6px); background: var(--popover); color: var(--popover-foreground); box-shadow: var(--popup-shadow, 0 8px 24px #0005); font: inherit; font-size: 11px; outline: none; }
-  .ui-menu-item { min-height: 28px; width: 100%; justify-content: flex-start; text-align: left; }
-  .ui-menu-check { display: inline-flex; align-items: center; width: 14px; flex-shrink: 0; color: var(--primary); }
+  .ui-menu { padding: 4px; border: 1px solid var(--border); border-radius: var(--popup-radius, 6px); background: var(--popover); color: var(--popover-foreground); box-shadow: var(--popup-shadow); font: inherit; font-size: var(--text-control); outline: none; }
+  .ui-menu-item { min-height: var(--field-height); width: 100%; justify-content: flex-start; text-align: left; }
+  .ui-menu-check { display: inline-flex; align-items: center; width: var(--icon-control); flex-shrink: 0; color: var(--primary); }
   .ui-menu-item[aria-disabled="true"] { color: var(--muted-foreground); opacity: .5; cursor: default; }
   .ui-menu-item-danger { color: var(--destructive); }
-  .ui-menu-item-danger:hover:not(:disabled), .ui-menu-item-danger:focus-visible { background: color-mix(in srgb, var(--destructive) 14%, transparent); color: var(--destructive); }
-  .ui-menu-label { padding: 5px 8px; color: var(--muted-foreground); font-size: 10px; font-weight: 500; }
+  .ui-menu-item-danger:hover:not(:disabled), .ui-menu-item-danger:focus-visible { background: var(--destructive-subtle); color: var(--destructive); }
+  .ui-menu-label { padding: 5px 8px; color: var(--muted-foreground); font-size: var(--text-caption); font-weight: 500; }
   .ui-menu-separator { height: 1px; margin: 4px; background: var(--border); }
 }

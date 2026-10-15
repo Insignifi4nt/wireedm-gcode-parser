@@ -23,7 +23,7 @@
 .cad-local-input-row > span { flex: 1; min-width: 0; overflow: hidden; }
 .cad-local-input-row > span > small { display: block; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cad-local-input-row > output { max-width: 65px; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-.cad-local-input-row > small { font-size: 8px; text-transform: uppercase; }
+.cad-local-input-row > small { font-size: 8px; }
 .cad-parameter-editor { --cad-accent: var(--primary); position: fixed; z-index: 50; box-sizing: border-box; overflow-y: auto; background: var(--card); color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 8px 24px color-mix(in srgb, var(--background) 55%, transparent); font: 11px/1.4 Inter, 'Segoe UI', sans-serif; }
 .cad-parameter-editor > header { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .cad-parameter-editor > header > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; font-size: 12px; }

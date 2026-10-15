@@ -72,7 +72,7 @@ export function EditorBetweenContoursPanel({
         Choose how to separate and rethread the wire between cuts. Change connection points in Entry / Exit.
       </p>
 
-      <label className="grid gap-1 uppercase text-muted-foreground">
+      <label className="grid gap-1 text-muted-foreground">
         Destination operation
         <Select
           aria-label="Between contours destination operation"
@@ -99,7 +99,7 @@ export function EditorBetweenContoursPanel({
       ) : (
         <>
           <fieldset className="grid gap-1 border border-border p-2">
-            <legend className="px-1 uppercase text-muted-foreground">
+            <legend className="px-1 text-muted-foreground">
               After {previous?.displayName}
             </legend>
             <ReadOnlyPoint label="From resolved exit" point={route.startPoint} />
@@ -114,7 +114,7 @@ export function EditorBetweenContoursPanel({
           </fieldset>
 
           <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
-            <legend className="px-1 uppercase text-muted-foreground">Rethreading</legend>
+            <legend className="px-1 text-muted-foreground">Rethreading</legend>
             <label className="grid grid-cols-[1fr_120px] items-center gap-2 text-muted-foreground">
               Project default
               <Select

@@ -109,7 +109,7 @@ export function DashboardPage({
       data-workbench-page
     >
       <section
-        className="work-region-scrollbar grid h-full min-h-0 auto-rows-max content-start gap-3 overflow-auto p-3 min-[1180px]:grid-cols-[minmax(0,1fr)_332px] min-[1180px]:items-start"
+        className="work-region-scrollbar dashboard-layout"
         data-workbench-scroll-region
       >
         <ProjectListPanel

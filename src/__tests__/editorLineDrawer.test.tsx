@@ -40,7 +40,7 @@ describe('Editor line drawer operations', () => {
       if (!button) throw new Error(`Missing button ${selector}`);
       await act(async () => button.click());
     };
-    const open = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Open Editor'));
+    const open = [...container.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === 'Open Editor');
     if (!open) throw new Error('Missing Open Editor');
     await act(async () => open.click());
     await flushAsync();
@@ -83,7 +83,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -188,7 +188,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -242,7 +242,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -316,7 +316,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -372,7 +372,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -437,7 +437,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -488,7 +488,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -556,7 +556,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -616,7 +616,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -673,7 +673,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -744,7 +744,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -817,7 +817,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {
@@ -865,7 +865,7 @@ describe('Editor line drawer operations', () => {
     await renderApp(context);
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
+      button.getAttribute('aria-label') === 'Open Editor'
     );
 
     await act(async () => {

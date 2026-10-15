@@ -224,7 +224,7 @@ export default function SimulationPanel({ document, projectName, savedAt, dirty,
       </div>
       </div>
       <div data-sim-panel="info" className="sim-section sim-information" hidden={openPanel !== 'info'}>
-        <p><strong>{projectName}</strong> · SAVED UPID</p><Tooltip content={savedAt}><p tabIndex={0} >Saved {new Date(savedAt).toLocaleString()}</p></Tooltip>
+        <p><strong>{projectName}</strong> · Saved UPID</p><Tooltip content={savedAt}><p tabIndex={0} >Saved {new Date(savedAt).toLocaleString()}</p></Tooltip>
         <p>Geometric preview with assumed speeds; no machine-cycle or cut-quality prediction. Settings and machine models last for this session.</p>
         {plan && <details className="sim-details"><summary>Assumptions & limitations</summary><ul>{diagnostics.map((diagnostic, index) => <li key={`${diagnostic.code}-${index}`}>{diagnostic.message}</li>)}</ul></details>}
       </div>

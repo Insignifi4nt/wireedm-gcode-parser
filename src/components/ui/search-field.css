@@ -1,0 +1,9 @@
+@layer theme, base, components, utilities;
+@layer components {
+  .ui-search { position: relative; width: var(--field-height); height: var(--field-height); flex-shrink: 0; max-width: 100%; transition: width var(--motion-expand) var(--motion-ease); }
+  .ui-search[data-expanded=true] { width: 196px; }
+  .ui-search-input { width: 100%; padding-left: 30px; opacity: 0; pointer-events: none; transition: opacity var(--motion-fast); }
+  .ui-search[data-expanded=true] .ui-search-input { opacity: 1; pointer-events: auto; }
+  .ui-search-trigger { position: absolute; left: 2px; top: 2px; }
+  @media (prefers-reduced-motion: reduce) { .ui-search, .ui-search-input { transition: none; } }
+}

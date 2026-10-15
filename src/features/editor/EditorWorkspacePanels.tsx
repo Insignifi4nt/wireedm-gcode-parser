@@ -180,7 +180,7 @@ export function EditorCompactDrawerSheet({
         role="dialog"
       >
         <div className="flex h-8 items-center justify-between border-b border-border px-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{title}</span>
+          <span className="text-[10px] font-semibold tracking-[0.06em] text-muted-foreground">{title}</span>
           <Button variant="outline" size="icon"
             aria-label={`Close ${title}`}
             className="flex items-center justify-center"
@@ -309,7 +309,7 @@ export function EditorCollapsedDockZone({
         </Button>
         <span className="technical-value text-[10px] text-muted-foreground">{panelCount}</span>
         <Tooltip content={title}><span tabIndex={0}
-          className="rotate-180 truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground [writing-mode:vertical-rl]"
+          className="rotate-180 truncate text-[10px] font-semibold tracking-[0.06em] text-muted-foreground [writing-mode:vertical-rl]"
 
         >
           {title}
@@ -360,7 +360,7 @@ export function EditorPanelDockZone({
       onDrop={handleDrop}
     >
       <div className="flex h-7 shrink-0 items-center justify-between gap-2 border-b border-border px-1">
-        <span className="truncate px-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+        <span className="truncate px-1 text-[10px] font-semibold tracking-[0.06em] text-muted-foreground">
           {title}
         </span>
         <div className="flex items-center gap-1">
@@ -384,7 +384,7 @@ export function EditorPanelDockZone({
       >
         {panelCount === 0 && (
           <div
-            className="grid min-h-24 place-items-center border border-dashed border-border bg-background/25 px-2 text-center text-[10px] uppercase text-muted-foreground"
+            className="grid min-h-24 place-items-center border border-dashed border-border bg-background/25 px-2 text-center text-[10px] text-muted-foreground"
             data-editor-empty-dock={side}
           >
             Drop panels

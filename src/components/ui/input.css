@@ -6,11 +6,11 @@
     border-radius: var(--control-radius, 4px);
     background: var(--surface-inset);
     color: var(--foreground);
-    font: 12px/1.5 var(--font-sans, ui-sans-serif, system-ui, sans-serif);
-    transition: border-color 120ms, background-color 120ms;
+    font: var(--text-body)/1.5 var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    transition: border-color var(--motion-fast), background-color var(--motion-fast);
   }
-  .ui-input { height: 28px; padding: 3px 7px; }
-  .ui-input[data-density=compact] { height: 24px; padding: 2px 6px; font-size: 11px; }
+  .ui-input { height: var(--field-height); padding: 3px 7px; }
+  .ui-input[data-density=compact] { height: var(--control-height); padding: 2px 6px; font-size: var(--text-control); }
   .ui-input::placeholder, .ui-textarea::placeholder { color: var(--muted-foreground); opacity: 1; }
   .ui-input:focus-visible, .ui-textarea:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
   .ui-input[aria-invalid=true], .ui-textarea[aria-invalid=true],
@@ -18,7 +18,7 @@
   .ui-input:is([type=checkbox], [type=radio]) { width: 13px; height: 13px; padding: 0; accent-color: var(--primary); cursor: pointer; vertical-align: middle; }
   .ui-input[type=range] { height: 20px; padding: 0; border: 0; background: transparent; accent-color: var(--primary); cursor: pointer; }
   .ui-input[type=color] { width: 28px; padding: 2px; cursor: pointer; }
-  .ui-input[type=file] { height: auto; min-height: 28px; max-width: 100%; padding: 2px; font-size: 11px; }
+  .ui-input[type=file] { height: auto; min-height: var(--field-height); max-width: 100%; padding: 2px; font-size: var(--text-control); }
   .ui-input::file-selector-button { margin-right: 7px; padding: 2px 7px; border: 1px solid var(--border); border-radius: 4px; background: var(--secondary); color: var(--secondary-foreground); font: inherit; cursor: pointer; }
   .ui-input::file-selector-button:hover { background: var(--accent); color: var(--accent-foreground); }
   .ui-input:disabled, .ui-textarea:disabled { opacity: .45; cursor: not-allowed; }

@@ -242,7 +242,7 @@ export function EditorInspectorPanel({
         <section className="mt-2">
           {pathDocument ? (
             <>
-              <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Project</h3>
+              <h3 className="mb-2 text-[10px] font-semibold text-muted-foreground">Project</h3>
               <dl className="grid grid-cols-[100px_minmax(0,1fr)] gap-y-1.5">
                 <dt className="text-muted-foreground">Operations</dt>
                 <dd data-upid-stat="operations">{pathDocument.plan.operations.length}</dd>
@@ -266,7 +266,7 @@ export function EditorInspectorPanel({
             </>
           ) : draftParseResult ? (
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
-              <dt className="col-span-2 mb-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+              <dt className="col-span-2 mb-0.5 text-[10px] font-semibold text-muted-foreground">
                 Program
               </dt>
               <dt className="text-muted-foreground">Path</dt>
@@ -308,7 +308,7 @@ export function EditorInspectorPanel({
             data-upid-path-element-id={selectedPathElementModel.id}
             data-upid-selected-geometry
           >
-            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Geometry</h3>
+            <h3 className="mb-2 text-[10px] font-semibold text-muted-foreground">Selected Geometry</h3>
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
               <dt className="text-muted-foreground">Element</dt>
               <dd data-upid-selected="label">{selectedPathElementModel.displayName}</dd>
@@ -388,7 +388,7 @@ export function EditorInspectorPanel({
                 data-upid-path-element-id={selectedPathTreeNode.element.id}
                 data-upid-selected-tree-context
               >
-                <h4 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">
+                <h4 className="mb-2 text-[10px] font-semibold text-muted-foreground">
                   Path Tree Context
                 </h4>
                 <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
@@ -588,7 +588,7 @@ export function EditorInspectorPanel({
 
         {selectedPathOverrideRows.length > 0 && (
           <section className="mt-3 border-t border-border pt-3" data-upid-selected-overrides>
-            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Manual Decisions</h3>
+            <h3 className="mb-2 text-[10px] font-semibold text-muted-foreground">Manual Decisions</h3>
             <div className="grid gap-1">
               {selectedPathOverrideRows.map((row) => (
                 <div
@@ -606,7 +606,7 @@ export function EditorInspectorPanel({
 
         {selectedPathDiagnostics.length > 0 && (
           <section className="mt-3 border-t border-border pt-3" data-upid-selected-diagnostics>
-            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">
+            <h3 className="mb-2 text-[10px] font-semibold text-muted-foreground">
               Selection Diagnostics
             </h3>
             <div className="grid gap-1">
@@ -623,7 +623,7 @@ export function EditorInspectorPanel({
 
         {selectedPathTravel && (
           <section className="mt-3 border-t border-border pt-3" data-upid-selected-travel>
-            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Travel</h3>
+            <h3 className="mb-2 text-[10px] font-semibold text-muted-foreground">Selected Travel</h3>
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
               <dt className="text-muted-foreground">Kind</dt>
               <dd data-upid-selected-travel="kind">{selectedPathTravel.kind}</dd>
@@ -648,8 +648,8 @@ export function EditorInspectorPanel({
             data-upid-selected-segment-index={selectedPathSegmentSequenceContext?.current.index}
           >
             <div className="mb-2 flex items-center justify-between gap-2">
-              <h3 className="text-[10px] font-semibold uppercase text-muted-foreground">Selected Segment</h3>
-              <span className="font-mono text-[9px] uppercase text-foreground" data-upid-selected-segment-kind>
+              <h3 className="text-[10px] font-semibold text-muted-foreground">Selected Segment</h3>
+              <span className="font-mono text-[9px] text-foreground" data-upid-selected-segment-kind>
                 {selectedPathSegmentSequenceContext
                   ? `S${selectedPathSegmentSequenceContext.current.index + 1} · `
                   : ''}
@@ -661,7 +661,7 @@ export function EditorInspectorPanel({
               className="border-t border-border/60 pt-2"
               data-upid-selected-segment-section="geometry"
             >
-              <h4 className="mb-1.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <h4 className="mb-1.5 text-[9px] font-semibold tracking-wide text-muted-foreground">
                 Geometry
               </h4>
               <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
@@ -697,7 +697,7 @@ export function EditorInspectorPanel({
                   className="mt-2 border-t border-border/50 pt-1.5"
                   data-upid-selected-segment-section="advanced"
                 >
-                  <summary className="cursor-pointer select-none text-[9px] uppercase tracking-wide text-muted-foreground outline-none hover:text-foreground">
+                  <summary className="cursor-pointer select-none text-[9px] tracking-wide text-muted-foreground outline-none hover:text-foreground">
                     Advanced geometry
                   </summary>
                   <dl className="mt-1.5 grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
@@ -721,7 +721,7 @@ export function EditorInspectorPanel({
               className="mt-2 border-t border-border/60 pt-2"
               data-upid-selected-segment-section="path"
             >
-              <h4 className="mb-1.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <h4 className="mb-1.5 text-[9px] font-semibold tracking-wide text-muted-foreground">
                 Path
               </h4>
               <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
@@ -813,7 +813,7 @@ export function EditorInspectorPanel({
               className="mt-2 border-t border-border/60 pt-2"
               data-upid-selected-segment-section="source"
             >
-              <h4 className="mb-1.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <h4 className="mb-1.5 text-[9px] font-semibold tracking-wide text-muted-foreground">
                 Source
               </h4>
               <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
@@ -870,7 +870,7 @@ export function EditorInspectorPanel({
 
         {selectedPathPoint && (
           <section className="mt-3 border-t border-border pt-3" data-upid-selected-point>
-            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Point</h3>
+            <h3 className="mb-2 text-[10px] font-semibold text-muted-foreground">Selected Point</h3>
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
               <dt className="text-muted-foreground">Role</dt>
               <dd data-upid-selected-point-role>{selectedPathPoint.role}</dd>
@@ -969,7 +969,7 @@ export function EditorInspectorPanel({
 
         {!pathDocument && structure && (
           <section className="mt-3 border-t border-border pt-3">
-            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Structure</h3>
+            <h3 className="mb-2 text-[10px] font-semibold text-muted-foreground">Structure</h3>
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
               <dt className="text-muted-foreground">Header</dt>
               <dd data-editor-structure="header">{structure.header.lines.length}</dd>
@@ -992,7 +992,7 @@ export function EditorInspectorPanel({
               data-editor-parse-issues
               tabIndex={-1}
             >
-              <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Parse Issues</h3>
+              <h3 className="mb-2 text-[10px] font-semibold text-muted-foreground">Parse Issues</h3>
               <div className="border border-border bg-background/50">
                 {[...draftParseResult.errors, ...draftParseResult.warnings].map(
                   (issue, index) => (
@@ -1001,7 +1001,7 @@ export function EditorInspectorPanel({
                       data-editor-parse-issue={index}
                       key={`${issue.type}-${issue.line}-${issue.message}-${index}`}
                     >
-                      <div className="flex items-center justify-between gap-2 text-[10px] uppercase">
+                      <div className="flex items-center justify-between gap-2 text-[10px]">
                         <span className={issue.type === 'error' ? 'text-destructive' : 'text-amber-300'}>
                           {issue.type}
                         </span>
@@ -1030,7 +1030,7 @@ export function EditorInspectorPanel({
               className="mt-3 border-t border-border pt-3"
               data-editor-dxf-unit-provenance
             >
-              <h4 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">
+              <h4 className="mb-2 text-[10px] font-semibold text-muted-foreground">
                 DXF unit provenance
               </h4>
               <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
@@ -1104,7 +1104,7 @@ export function EditorInspectorPanel({
               type="button"
             >
               <Magnet className="size-3" />
-              {gridSnapEnabled ? 'ON' : 'OFF'}
+              {gridSnapEnabled ? 'On' : 'Off'}
             </Button>
           </div>
         </div>
@@ -1170,7 +1170,7 @@ export function EditorInspectorPanel({
           </div>
         )}
         <div className="grid grid-cols-2 gap-1.5">
-          <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
+          <label className="grid gap-1 text-[10px] text-muted-foreground">
             X
             <Input density="compact"
               aria-label="Measurement point X"
@@ -1182,7 +1182,7 @@ export function EditorInspectorPanel({
               value={pointXDraft}
             />
           </label>
-          <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
+          <label className="grid gap-1 text-[10px] text-muted-foreground">
             Y
             <Input density="compact"
               aria-label="Measurement point Y"
@@ -1245,7 +1245,7 @@ export function EditorInspectorPanel({
                 {point.pathSnap ? (
                   <Button
                     aria-label={`Select measurement point target P${index + 1}`}
-                    className="text-left uppercase"
+                    className="text-left"
                     data-measurement-point-mode={index + 1}
                     onClick={() =>
                       onSelectPathElement?.({
@@ -1260,7 +1260,7 @@ export function EditorInspectorPanel({
                   </Button>
                 ) : (
                   <span
-                    className="text-[10px] uppercase text-muted-foreground"
+                    className="text-[10px] text-muted-foreground"
                     data-measurement-point-mode={index + 1}
                   >
                     -
@@ -1378,7 +1378,7 @@ function renderSelectedPathDiagnosticRow({
       role={diagnostic.selectRef ? 'button' : undefined}
       tabIndex={diagnostic.selectRef ? 0 : undefined}
     >
-      <span className="flex min-w-0 items-center justify-between gap-2 text-[10px] uppercase">
+      <span className="flex min-w-0 items-center justify-between gap-2 text-[10px]">
         <span className={diagnostic.severity === 'error' ? 'text-destructive' : 'text-amber-200'}>
           {diagnostic.severity}
         </span>

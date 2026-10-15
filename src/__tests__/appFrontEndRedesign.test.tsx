@@ -27,9 +27,10 @@ describe('App front-end redesign', () => {
     await renderApp(context);
 
     expect(container.textContent).toContain('Workbench');
-    expect(container.textContent).toContain('Import DXF as Path Project');
-    expect(container.textContent).toContain('Open Machine Program');
-    expect(container.textContent).toContain('.gcode, .nc, .iso, .txt');
+    expect(container.querySelector('button[aria-label="Import DXF as Path Project"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Open Machine Program"]')).not.toBeNull();
+    const programInput = container.querySelector<HTMLInputElement>('input[aria-label="Machine program file"]');
+    expect(programInput?.accept.split(',')).toEqual(expect.arrayContaining(['.gcode', '.nc', '.iso', '.txt']));
     expect(container.textContent).toContain('Program workspace');
     expect(container.textContent).not.toContain('Export preview only');
   });
@@ -190,12 +191,12 @@ describe('App front-end redesign', () => {
     ) as HTMLInputElement | null;
     const buttons = [...container.querySelectorAll('button')];
     const dxfButton = buttons.find((button) =>
-      button.textContent?.includes('Import DXF as Path Project')
+      button.getAttribute('aria-label') === 'Import DXF as Path Project'
     );
     const programButton = buttons.find((button) =>
-      button.textContent?.includes('Open Machine Program')
+      button.getAttribute('aria-label') === 'Open Machine Program'
     );
-    const editorButton = buttons.find((button) => button.textContent?.includes('Open Editor'));
+    const editorButton = buttons.find((button) => button.getAttribute('aria-label') === 'Open Editor');
 
     expect(input).not.toBeNull();
     expect(dxfButton).toBeDefined();

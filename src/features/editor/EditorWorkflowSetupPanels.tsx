@@ -32,7 +32,7 @@ export function EditorGeometrySetupPanel({
         Wire centre follows the drawn path without controller compensation. Finished contour uses
         the kept material and travel direction to resolve the controller side.
       </p>
-      <label className="grid gap-1 uppercase text-muted-foreground">
+      <label className="grid gap-1 text-muted-foreground">
         Geometry Basis
         <Select
           aria-label="Geometry basis"
@@ -107,7 +107,7 @@ export function EditorContourSetupPanel({
       <p className="text-muted-foreground">
         Set direction, contour role, and compensation.
       </p>
-      <label className="grid gap-1 uppercase text-muted-foreground">
+      <label className="grid gap-1 text-muted-foreground">
         Target contour
         <Select
           aria-label="Contour setup operation"
@@ -133,7 +133,7 @@ export function EditorContourSetupPanel({
         <RefreshCw className="size-3" />
         Reverse direction
       </Button>
-      <label className="grid gap-1 uppercase text-muted-foreground">
+      <label className="grid gap-1 text-muted-foreground">
         Contour Role
         <Select
           aria-label="Contour role"
@@ -154,7 +154,7 @@ export function EditorContourSetupPanel({
         </Select>
       </label>
       <section className="grid gap-1" data-upid-compensation-review>
-        <label className="grid gap-0.5 uppercase text-muted-foreground">
+        <label className="grid gap-0.5 text-muted-foreground">
           Compensation
           <Select
             aria-label="Compensation kept material"
@@ -281,7 +281,7 @@ export function EditorSetStartPanel({
         Every operation has an automatic contour start. Pick a closed contour to set an exact override.
         Picking inside a segment splits it at that point; manual leads then need review.
       </p>
-      <label className="grid gap-1 uppercase text-muted-foreground">
+      <label className="grid gap-1 text-muted-foreground">
         Target contour
         <Select
           aria-label="Set start operation"
@@ -297,7 +297,7 @@ export function EditorSetStartPanel({
           ) : null)}
         </Select>
       </label>
-      <label className="grid gap-1 uppercase text-muted-foreground">
+      <label className="grid gap-1 text-muted-foreground">
         Point inference
         <Select
           aria-label="Set start point inference"

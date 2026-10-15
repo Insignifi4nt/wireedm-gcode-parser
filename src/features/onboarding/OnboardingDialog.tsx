@@ -60,7 +60,7 @@ export function OnboardingDialog({ open, onDismiss }: OnboardingDialogProps) {
 
         <div className="flex shrink-0 flex-col gap-4 p-4 sm:p-5">
           <div>
-            <p className="technical-value mb-1 text-[10px] uppercase tracking-[0.22em] text-cyan-300">
+            <p className="technical-value mb-1 text-[10px] tracking-[0.22em] text-cyan-300">
               Your workbench is ready
             </p>
             <h2 className="text-base font-semibold text-foreground sm:text-lg" id="onboarding-title">

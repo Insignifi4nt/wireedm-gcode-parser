@@ -1,14 +1,14 @@
 @layer theme, base, components, utilities;
 @layer components {
   .ui-select {
-    min-width: 0; max-width: 100%; min-height: 28px; box-sizing: border-box;
+    min-width: 0; max-width: 100%; min-height: var(--field-height); box-sizing: border-box;
     border: 1px solid var(--input); border-radius: var(--control-radius, 4px);
     background: var(--surface-inset); color: var(--foreground); padding: 4px 8px;
-    font: inherit; font-size: 11px; line-height: 1.4; color-scheme: inherit; cursor: pointer;
-    transition: background 100ms, border-color 100ms;
+    font: inherit; font-size: var(--text-control); line-height: 1.4; color-scheme: inherit; cursor: pointer;
+    transition: background var(--motion-fast), border-color var(--motion-fast);
   }
   .ui-select:hover:not(:disabled) { border-color: var(--control-hover-border, var(--muted-foreground)); }
-  .ui-select[data-density="compact"] { min-height: 24px; padding: 2px 6px; border-color: transparent; background: transparent; }
+  .ui-select[data-density="compact"] { min-height: var(--control-height); padding: 2px 6px; border-color: transparent; background: transparent; }
   .ui-select[data-density="compact"]:hover:not(:disabled), .ui-select[data-density="compact"]:open { background: var(--accent); border-color: transparent; }
   .ui-select:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
   .ui-select[aria-invalid="true"] { border-color: var(--destructive); }
@@ -20,13 +20,13 @@
 
   /* A top-layer picker with native value, form, label and keyboard semantics. */
   @supports (appearance: base-select) {
-    .ui-select:not([multiple]):not([size]), .ui-select:not([multiple])[size="1"] { appearance: base-select; gap: 12px; }
+    .ui-select:not([multiple]):not([size]), .ui-select:not([multiple])[size="1"] { appearance: base-select; display: inline-flex; align-items: center; gap: var(--space-3); }
     .ui-select::picker(select) {
       appearance: base-select; background: var(--popover); color: var(--popover-foreground);
       border: 1px solid var(--border); border-radius: var(--popup-radius, 6px);
-      box-shadow: var(--popup-shadow, 0 8px 24px #0005); padding: 4px; margin-block: 5px;
+      box-shadow: var(--popup-shadow); padding: 4px; margin-block: 5px;
       min-width: anchor-size(width); max-width: min(400px, calc(100vw - 16px));
-      max-height: min(360px, 65vh); overflow: auto; font: inherit; font-size: 11px;
+      max-height: min(360px, 65vh); overflow: auto; font: inherit; font-size: var(--text-control);
     }
     .ui-select::picker-icon {
       content: ""; width: 6px; height: 6px; margin-inline-start: auto; margin-inline-end: 2px;
@@ -34,8 +34,8 @@
       color: var(--muted-foreground); rotate: 45deg; translate: 0 -2px; flex-shrink: 0;
     }
     .ui-select:open::picker-icon { rotate: 225deg; translate: 0 1px; }
-    .ui-select option { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 8px; min-height: 28px; padding: 5px 8px; border: 0; border-radius: 3px; outline: none; }
-    .ui-select option[data-description]::after { content: attr(data-description); grid-column: 1 / -1; color: var(--muted-foreground); font-size: 10px; font-weight: 400; white-space: normal; max-width: 340px; }
+    .ui-select option { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 8px; min-height: var(--field-height); padding: 5px 8px; border: 0; border-radius: 3px; outline: none; }
+    .ui-select option[data-description]::after { content: attr(data-description); grid-column: 1 / -1; color: var(--muted-foreground); font-size: var(--text-caption); font-weight: 400; white-space: normal; max-width: 340px; }
     .ui-select option:hover:not(:disabled), .ui-select option:focus-visible { background: var(--accent); color: var(--accent-foreground); }
     .ui-select option:checked { color: var(--primary); background: var(--accent); }
     .ui-select option::checkmark { color: var(--primary); grid-column: 2; grid-row: 1; margin-inline-start: auto; }

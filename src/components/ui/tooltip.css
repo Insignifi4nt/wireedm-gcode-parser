@@ -10,8 +10,8 @@
     border-radius: var(--control-radius, 4px);
     background: var(--popover);
     color: var(--popover-foreground);
-    box-shadow: 0 4px 14px #0005;
-    font: 11px/1.5 var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    box-shadow: var(--popup-shadow);
+    font: var(--text-control)/1.5 var(--font-sans, ui-sans-serif, system-ui, sans-serif);
     overflow-wrap: anywhere;
     white-space: pre-line;
   }
