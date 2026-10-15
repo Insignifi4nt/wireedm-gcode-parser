@@ -63,13 +63,12 @@ describe('App front-end redesign', () => {
     expect(dialog?.querySelector('textarea[aria-label="Header template"]')).toBeNull();
   });
 
-  it('shows active browser storage in the application header', async () => {
+  it('shows active browser storage in settings', async () => {
     window.showDirectoryPicker = undefined;
     await renderApp(context);
 
-    const status = container.querySelector('[data-app-header] [data-storage-status]');
-    expect(status?.textContent).toBe('Browser cache active');
-    expect(status?.getAttribute('role')).toBe('status');
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Open settings"]')?.click(); });
+    expect(container.querySelector('[role="dialog"][aria-label="Workbench settings"]')?.textContent).toContain('Browser cache active');
   });
 
   it('does not report temporary storage before a workbench adapter is active', async () => {
@@ -77,8 +76,9 @@ describe('App front-end redesign', () => {
       connectRememberedWorkbenchDirectory: () => new Promise<never>(() => undefined)
     });
 
-    const status = container.querySelector('[data-app-header] [data-storage-status]');
-    expect(status?.textContent).toContain('Connecting Workbench Folder');
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Open settings"]')?.click(); });
+    const status = container.querySelector('[role="dialog"][aria-label="Workbench settings"]');
+    expect(status?.textContent).toContain('Connecting');
     expect(status?.textContent).not.toContain('Temporary storage');
   });
 

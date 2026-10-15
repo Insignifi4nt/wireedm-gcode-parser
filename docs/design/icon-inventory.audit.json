@@ -1,64 +1,19 @@
 {
-  "generatedAt": "2026-10-15T20:47:43.587Z",
-  "revision": "e62cb882804c0b998b670031a3a4c3d9e17129fd",
+  "generatedAt": "2026-10-15T21:16:12.822Z",
+  "revision": "06778dfaec8da3b90463f0f8acdf0a524cda4806",
   "dirtyState": [
-    "M AGENTS.md",
-    " M docs/design/icon-inventory.audit.json",
-    " M docs/design/icon-inventory.md",
-    " M docs/maintainers/ui-components.md",
-    " M docs/releases/0.0.697.json",
-    " M docs/reviews/2026-10-14-cad-hardening-checklist.md",
-    " M e2e/app-shell.spec.ts",
-    " M e2e/project-actions.spec.ts",
-    " M scripts/audit-icon-inventory.mjs",
-    " M scripts/check-ui-controls.ts",
+    "M e2e/app-shell.spec.ts",
+    " M e2e/editor-layout.spec.ts",
+    " M e2e/legacy-workbench-startup.spec.ts",
+    " M e2e/settings-accessibility.spec.ts",
+    " M e2e/storage-capabilities.spec.ts",
+    " M e2e/workbench-ux.spec.ts",
     " M src/__tests__/appFrontEndRedesign.test.tsx",
-    " M src/__tests__/editorImportExport.test.tsx",
-    " M src/__tests__/editorLineDrawer.test.tsx",
-    " M src/__tests__/editorMeasurement.test.tsx",
-    " M src/__tests__/editorPathNativeDraft.test.tsx",
-    " M src/__tests__/editorPreviewControls.test.tsx",
-    " M src/__tests__/uiControlStandards.test.ts",
-    " M src/components/ui/button.css",
-    " M src/components/ui/input.css",
-    " M src/components/ui/menu.css",
-    " M src/components/ui/select.css",
-    " M src/components/ui/theme.css",
-    " M src/components/ui/tooltip.css",
-    " M src/features/cad/CadSketchMeasurements.tsx",
-    " M src/features/cad/CadWorkbench.tsx",
-    " M src/features/cad/cad-parameters.css",
-    " M src/features/dashboard/DashboardPage.tsx",
-    " M src/features/dashboard/ProjectListPanel.tsx",
-    " M src/features/dashboard/StartWorkPanel.tsx",
-    " M src/features/dashboard/__tests__/ProjectListPanel.test.tsx",
-    " M src/features/editor/EditorBetweenContoursPanel.tsx",
-    " M src/features/editor/EditorControllerArtifactDialog.tsx",
-    " M src/features/editor/EditorEntryExitPanel.tsx",
-    " M src/features/editor/EditorExecutionDiagnostics.tsx",
-    " M src/features/editor/EditorHeaderBar.tsx",
-    " M src/features/editor/EditorInitialWirePositionPanel.tsx",
-    " M src/features/editor/EditorInspectorPanel.tsx",
-    " M src/features/editor/EditorMachiningParticipationPanel.tsx",
-    " M src/features/editor/EditorPage.tsx",
-    " M src/features/editor/EditorPathNavigatorPanel.tsx",
-    " M src/features/editor/EditorPreview.tsx",
-    " M src/features/editor/EditorProgramLinesPanel.tsx",
-    " M src/features/editor/EditorProgramStopsPanel.tsx",
-    " M src/features/editor/EditorWorkflowSetupPanels.tsx",
-    " M src/features/editor/EditorWorkspacePanels.tsx",
-    " M src/features/onboarding/OnboardingDialog.tsx",
-    " M src/features/simulation/SimulationPanel.tsx",
-    " M src/features/simulation/__tests__/SimulationPanel.test.tsx",
-    " M src/features/webmcp/AgentActivity.tsx",
-    " M src/index.css",
-    "?? docs/reviews/2026-10-15-dashboard-design-review.md",
-    "?? docs/reviews/2026-10-15-dashboard-design-system.md",
-    "?? docs/reviews/2026-10-15-interface-sentence-case.md",
-    "?? src/components/ui/info-tip.tsx",
-    "?? src/components/ui/search-field.css",
-    "?? src/components/ui/search-field.tsx",
-    "?? src/features/dashboard/dashboard.css"
+    " M src/__tests__/appV2Workflows.test.tsx",
+    " M src/app/AppShell.tsx",
+    " M src/features/dashboard/dashboard.css",
+    " M src/features/editor/editorGuideContent.ts",
+    "?? docs/reviews/2026-10-16-dashboard-header-cleanup.md"
   ],
   "scannedRoots": [
     "src/",
@@ -73,7 +28,7 @@
     "package-tools/index.html": "6b692af90461f9356ad428ee3a61c3f985d45cd22f2eb197acced75b48342aee",
     "src/App.tsx": "05c2bb9e860b0d2c4965501fe45c002a0f74a0f9721b00bdc3667e93f88c2128",
     "src/app/AppRailContext.tsx": "d1ebb2a25477ea9462f667d5ad249e50d5adadfd2af80458b943dd7cfefa73b3",
-    "src/app/AppShell.tsx": "6c00553bb881103d444405fe26ea4b86f288cd438e858a12f6a0b6ba3066f5a6",
+    "src/app/AppShell.tsx": "54f6f975027058532e9c1b082f4410909dcb5e7afce34ca0dc9cb556b8eb99ab",
     "src/app/CadSettingsPanel.tsx": "a7d9d7d41b4485aef970d9eda13ab403e4e75a4d989004706bf049b38923f2ae",
     "src/app/MachinePostSettingsPanel.tsx": "a93f121bb136361b09c6772f4f685b55a6dcb46406bef7cb4ff779425e7dbedf",
     "src/app/RecoveryExportPanel.tsx": "7b61062c86f151687696a86977ee27cb084edb962ce22ca0a31b2407b9db7710",
@@ -446,7 +401,7 @@
     "src/features/dashboard/ProjectListPanel.tsx": "32e81cb82b41cdf6b249d92d77c8752784056005f8392497ec00162b28d75358",
     "src/features/dashboard/ProjectRevisionsDialog.tsx": "cdca21cc584bb9bda71f81b7dc1f4be41c8a39f2d1b2640678c19f9f1ef75155",
     "src/features/dashboard/StartWorkPanel.tsx": "cb307a37af7e244b524a4eefb3c31a0216f46cfc55328c8af2d8b91992dc876f",
-    "src/features/dashboard/dashboard.css": "6d1243485a3b1fcf08960818a9ce9ef46952e329df3bc9befa1f6120ca7f2ef9",
+    "src/features/dashboard/dashboard.css": "96a319dedfd5328a3bdf33e940b8d8589c4e0dc8c5d43816cf32f18001113f73",
     "src/features/dashboard/dashboardTypes.ts": "e677e42a32984bf2228e566537db86d9a4f13096937b2960174c3aa6125b9756",
     "src/features/dashboard/useDashboardMenu.ts": "d5b6d218f5f2d295ae216e2e13805d1d042a2be23f7d5d993bd398791820134f",
     "src/features/dxf-import/dxfProcessor.ts": "25d8c0b3240ac6a26514b49f522d34675e0052d1fdc5fd85ee06c5b662bd2b95",
@@ -490,7 +445,7 @@
     "src/features/editor/commands/editorToolSession.ts": "dcc2d65623e379386fe8ab0772bbc08dfd1d9d0c8c915db37a526ecb9f008b03",
     "src/features/editor/editorDraftHistory.ts": "be9f997a38eff1c7f81e8a034898483f486d08d8463390eb1d0000d7893877fb",
     "src/features/editor/editorDraftState.ts": "48d375953c294f3fd79f1ad171e7fea7b657fdeab6f9322935f8efec914d416a",
-    "src/features/editor/editorGuideContent.ts": "d1df7b08c05cb008be689842fa4e3821d5f1e60ea4cb9cc13b6ac0023499e2d8",
+    "src/features/editor/editorGuideContent.ts": "eaba5f2528ec7449d3291f85fcb4d55157f2a6b22524380a59e1a63b47daf2cc",
     "src/features/editor/editorGuideHighlight.ts": "fa39e560952e1319c80e8e5216d5a7880812a51c7fdc6e9c02222e65c43fec23",
     "src/features/editor/editorLineState.ts": "7ff700eff614b4444aaaa1cd6c722483220a42fc2e3b729588926bd917c1962a",
     "src/features/editor/editorPreviewHelpers.ts": "e35622fab4a3817158e77f45492070dd7e70af88dd29573887a1cbe93e871fbd",
@@ -552,13 +507,6 @@
     "src/vite-env.d.ts": "2ce2bc147c02e966e9338c569ed373c0780a8b1019d34a5414b477e42f3c941e"
   },
   "packageDefinitions": [
-    {
-      "canonical": "icon.lucide.database",
-      "file": "node_modules/lucide-react/dist/esm/icons/database.js",
-      "line": 10,
-      "node": "[\n  [\"ellipse\", { cx: \"12\", cy: \"5\", rx: \"9\", ry: \"3\", key: \"msslwz\" }],\n  [\"path\", { d: \"M3 5V19A9 3 0 0 0 21 19V5\", key: \"1wlel7\" }],\n  [\"path\", { d: \"M3 12A9 3 0 0 0 21 12\", key: \"mv7ke4\" }]\n]",
-      "sha256": "6967c05c7d52d46047310d9f0e94b220274ac788b43d12f6e8a9ff989bbcaa9d"
-    },
     {
       "canonical": "icon.lucide.hard-drive",
       "file": "node_modules/lucide-react/dist/esm/icons/hard-drive.js",
@@ -635,6 +583,13 @@
       "line": 10,
       "node": "[\n  [\n    \"path\",\n    {\n      d: \"M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z\",\n      key: \"hh9hay\"\n    }\n  ],\n  [\"path\", { d: \"m3.3 7 8.7 5 8.7-5\", key: \"g66t2b\" }],\n  [\"path\", { d: \"M12 22V12\", key: \"d0xqtd\" }]\n]",
       "sha256": "4cedb71d9c50f9bf027b801ce865c4682a33ee13c24ad1fe5182012018f96248"
+    },
+    {
+      "canonical": "icon.lucide.database",
+      "file": "node_modules/lucide-react/dist/esm/icons/database.js",
+      "line": 10,
+      "node": "[\n  [\"ellipse\", { cx: \"12\", cy: \"5\", rx: \"9\", ry: \"3\", key: \"msslwz\" }],\n  [\"path\", { d: \"M3 5V19A9 3 0 0 0 21 19V5\", key: \"1wlel7\" }],\n  [\"path\", { d: \"M3 12A9 3 0 0 0 21 12\", key: \"mv7ke4\" }]\n]",
+      "sha256": "6967c05c7d52d46047310d9f0e94b220274ac788b43d12f6e8a9ff989bbcaa9d"
     },
     {
       "canonical": "icon.lucide.refresh-cw",
@@ -1179,33 +1134,9 @@
   "imports": [
     {
       "file": "src/app/AppShell.tsx",
-      "line": 11,
+      "line": 10,
       "column": 3,
-      "start": 176,
-      "expression": "Database",
-      "component": "AppShell",
-      "container": null,
-      "attributes": {},
-      "controlAttributes": {},
-      "jsxParents": [],
-      "visibleText": "",
-      "callName": null,
-      "callArguments": [],
-      "containerText": null,
-      "conditions": [],
-      "call": null,
-      "variable": null,
-      "mapProperty": null,
-      "canonical": "icon.lucide.database",
-      "imported": "Database",
-      "alias": "Database",
-      "source": "lucide-react"
-    },
-    {
-      "file": "src/app/AppShell.tsx",
-      "line": 12,
-      "column": 3,
-      "start": 188,
+      "start": 125,
       "expression": "HardDrive",
       "component": "AppShell",
       "container": null,
@@ -1227,9 +1158,9 @@
     },
     {
       "file": "src/app/AppShell.tsx",
-      "line": 13,
+      "line": 11,
       "column": 3,
-      "start": 201,
+      "start": 138,
       "expression": "PanelLeftClose",
       "component": "AppShell",
       "container": null,
@@ -1251,9 +1182,9 @@
     },
     {
       "file": "src/app/AppShell.tsx",
-      "line": 14,
+      "line": 12,
       "column": 3,
-      "start": 219,
+      "start": 156,
       "expression": "PanelLeftOpen",
       "component": "AppShell",
       "container": null,
@@ -1275,9 +1206,9 @@
     },
     {
       "file": "src/app/AppShell.tsx",
-      "line": 15,
+      "line": 13,
       "column": 15,
-      "start": 248,
+      "start": 185,
       "expression": "SettingsIcon",
       "component": "AppShell",
       "container": null,
@@ -6485,9 +6416,9 @@
   "occurrences": [
     {
       "file": "src/app/AppShell.tsx",
-      "line": 215,
+      "line": 186,
       "column": 14,
-      "start": 8628,
+      "start": 7459,
       "expression": "HardDrive",
       "component": "AppShell",
       "container": "div",
@@ -6521,55 +6452,9 @@
     },
     {
       "file": "src/app/AppShell.tsx",
-      "line": 234,
+      "line": 200,
       "column": 14,
-      "start": 9644,
-      "expression": "Database",
-      "component": "AppShell",
-      "container": "span",
-      "attributes": {
-        "className": "\"size-3.5\""
-      },
-      "controlAttributes": {
-        "tabIndex": "{0}",
-        "aria-label": "{storageStatusLabel}",
-        "className": "{`inline-flex h-7 items-center gap-2 rounded-[2px] border px-2 text-[10px] ${ storageStatusTone === 'temporary' ? 'border-amber-500/50 bg-amber-500/10 text-amber-100' : storageStatusTone === 'error' ? 'border-destructive/60 bg-destructive/10 text-destructive' : 'border-border bg-background/60 text-muted-foreground' }`}",
-        "data-storage-status": "true",
-        "role": "\"status\""
-      },
-      "jsxParents": [
-        {
-          "tag": "Database",
-          "attributes": {
-            "className": "\"size-3.5\""
-          }
-        },
-        {
-          "tag": "Tooltip",
-          "attributes": {
-            "content": "{connectedWorkbench?.adapter.persistenceWarning ?? storageStatusLabel}"
-          }
-        }
-      ],
-      "visibleText": "",
-      "callName": null,
-      "callArguments": [],
-      "containerText": "<span tabIndex={0} aria-label={storageStatusLabel} className={`inline-flex h-7 items-center gap-2 rounded-[2px] border px-2 text-[10px] ${ storageStatusTone === 'temporary' ? 'border-amber-500/50 bg-amber-500/10 text-amber-100' : storageStatusTone === 'error' ? 'border-destructive/60 bg-destructive/10 text-destructive' : 'border-border bg-background/60 text-muted-foreground' }`} data-storage-status role=\"status\" > <Database className=\"size-3.5\" /> <span data-storage-status-label>{storageStatusLabel}</span> </span>",
-      "conditions": [],
-      "call": null,
-      "variable": null,
-      "mapProperty": null,
-      "canonical": "icon.lucide.database",
-      "alias": "Database",
-      "source": "lucide-react",
-      "kind": "jsx-icon",
-      "id": "use.78943e173e76"
-    },
-    {
-      "file": "src/app/AppShell.tsx",
-      "line": 245,
-      "column": 14,
-      "start": 10054,
+      "start": 8070,
       "expression": "SettingsIcon",
       "component": "AppShell",
       "container": "Button",
@@ -6615,9 +6500,9 @@
     },
     {
       "file": "src/app/AppShell.tsx",
-      "line": 292,
+      "line": 247,
       "column": 22,
-      "start": 12060,
+      "start": 10076,
       "expression": "PanelLeftOpen",
       "component": "AppShell",
       "container": "Button",
@@ -6673,9 +6558,9 @@
     },
     {
       "file": "src/app/AppShell.tsx",
-      "line": 294,
+      "line": 249,
       "column": 22,
-      "start": 12143,
+      "start": 10159,
       "expression": "PanelLeftClose",
       "component": "AppShell",
       "container": "Button",
@@ -58742,7 +58627,7 @@
       "file": "src/features/editor/editorGuideContent.ts",
       "line": 111,
       "column": 19,
-      "start": 4286,
+      "start": 4294,
       "expression": "'Choose Chain or Keep first point for repeated measurements. Inspect A or B shows that feature’s dimensions while preserving the measured pair. Minimum feature gap uses source geometry before compensation.'",
       "component": "editorGuideContent",
       "container": null,
@@ -58765,7 +58650,7 @@
       "file": "src/features/editor/editorGuideContent.ts",
       "line": 137,
       "column": 19,
-      "start": 5717,
+      "start": 5725,
       "expression": "'Use the Program lens to inspect execution and open the matching workflow. The Geometry lens selects source contours and segments. Cut Sequence controls order; Contour Setup controls direction and kept material; Contour Start sets a closed contour’s start.'",
       "component": "editorGuideContent",
       "container": null,
@@ -58788,7 +58673,7 @@
       "file": "src/features/editor/editorGuideContent.ts",
       "line": 187,
       "column": 19,
-      "start": 8532,
+      "start": 8540,
       "expression": "'Controller Export uses a saved revision and the chosen machine’s active setup. Save the project first, repair blocking diagnostics, then review and download the exact output. Source geometry checks do not simulate stock, fixtures, or machine motion.'",
       "component": "editorGuideContent",
       "container": null,
@@ -60361,7 +60246,7 @@
     "lucideImports": [
       {
         "file": "src/app/AppShell.tsx",
-        "line": 16
+        "line": 14
       },
       {
         "file": "src/app/CadSettingsPanel.tsx",
@@ -60591,7 +60476,7 @@
     "iconSlots": [
       {
         "file": "src/app/AppShell.tsx",
-        "line": 245
+        "line": 200
       },
       {
         "file": "src/features/cad/CadFeatureTree.tsx",
@@ -60618,7 +60503,7 @@
   "excludedCategories": [
     {
       "root": "docs",
-      "fileCount": 275,
+      "fileCount": 276,
       "mediaFileCount": 2,
       "mediaPaths": [
         "docs/images/spur-gear-editor.png",
@@ -60657,7 +60542,7 @@
     },
     {
       "root": "dist",
-      "fileCount": 937,
+      "fileCount": 960,
       "mediaFileCount": 1,
       "mediaPaths": [
         "dist/assets/wire-edm-onboarding-poster-6gX79SPy.png"
@@ -60690,12 +60575,12 @@
   ],
   "coverageChecks": {
     "importBindings": {
-      "independent": 221,
-      "ast": 221
+      "independent": 220,
+      "ast": 220
     },
     "directJsxIcons": {
-      "independent": 249,
-      "ast": 249
+      "independent": 248,
+      "ast": 248
     },
     "svgRoots": {
       "independent": 6,

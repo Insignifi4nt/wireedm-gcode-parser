@@ -53,7 +53,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '1. Workbench And Storage',
         steps: [
           {
-            text: 'The app opens a local workbench automatically. The header identifies Browser cache, Folder, or Temporary storage. Export portable projects to keep a separate copy; clearing browser data removes the cached library.'
+            text: 'The app opens a local workbench automatically. Settings > Storage identifies Browser cache, Folder, or Temporary storage. Export portable projects to keep a separate copy; clearing browser data removes the cached library.'
           },
           {
             text: 'Settings can connect a workbench folder or return to Browser cache. They are separate libraries; switching storage does not copy projects.'
@@ -223,7 +223,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '1. Workbench si stocare',
         steps: [
           {
-            text: 'Aplicatia deschide automat un workbench local. Bara de sus identifica Browser cache, Folder sau Temporary storage. Exporta proiectele portabile pentru o copie separata; stergerea datelor browserului elimina biblioteca din cache.'
+            text: 'Aplicatia deschide automat un workbench local. Settings > Storage identifica Browser cache, Folder sau Temporary storage. Exporta proiectele portabile pentru o copie separata; stergerea datelor browserului elimina biblioteca din cache.'
           },
           {
             text: 'Settings poate conecta un folder workbench sau reveni la Browser cache. Sunt biblioteci separate; schimbarea stocarii nu copiaza proiectele.'

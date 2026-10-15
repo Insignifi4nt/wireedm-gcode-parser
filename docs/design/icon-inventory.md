@@ -1,6 +1,6 @@
 # App icon inventory
 
-Snapshot: 2026-10-15T20:47:43.587Z. Git revision `e62cb882804c0b998b670031a3a4c3d9e17129fd`. The worktree had 57 modified/untracked entries, recorded verbatim in the audit JSON. The scanned source hashes include those local changes. All line/column references identify this snapshot; use the stable canonical ID and occurrence ID to relocate a symbol after edits.
+Snapshot: 2026-10-15T21:16:12.822Z. Git revision `06778dfaec8da3b90463f0f8acdf0a524cda4806`. The worktree had 12 modified/untracked entries, recorded verbatim in the audit JSON. The scanned source hashes include those local changes. All line/column references identify this snapshot; use the stable canonical ID and occurrence ID to relocate a symbol after edits.
 
 This catalogue covers every first-party icon import/reference found in the scanned production roots, and records the non-library channels separately. Counts distinguish source occurrences from runtime instances. A loop, tooltip or imported plugin can produce arbitrarily many instances; its source call, input binding, conditions and render variants are the inventory unit.
 
@@ -14,8 +14,8 @@ Canonical IDs describe pictures, such as `icon.lucide.box`; they do not imply an
 | --- | --- |
 | Canonical library SVG drawings | 89 |
 | Distinct imported library export names | 90 |
-| Import bindings/aliases | 221 |
-| Resolved icon references, including map/call bindings | 291 |
+| Import bindings/aliases | 220 |
+| Resolved icon references, including map/call bindings | 290 |
 | Expanded shared-renderer variant rows, additional to direct bindings | 210 |
 | Dynamic icon/ReactNode slots | 8 |
 | Named renderer calls | 80 |
@@ -290,11 +290,10 @@ Definitions/import aliases: [src/features/editor/EditorGuideDialog.tsx:2:10](../
 
 Export names: `Database`. Picture: Stacked database cylinder. Source definition: [node_modules/lucide-react/dist/esm/icons/database.js:10](../../node_modules/lucide-react/dist/esm/icons/database.js#L10) in lucide-react; definition file SHA-256 `6967c05c7d52d46047310d9f0e94b220274ac788b43d12f6e8a9ff989bbcaa9d`.
 
-Definitions/import aliases: [src/app/AppShell.tsx:11:3](../../src/app/AppShell.tsx#L11) `Database` as `Database`; [src/app/WorkbenchSettingsDialog.tsx:2:15](../../src/app/WorkbenchSettingsDialog.tsx#L2) `Database` as `Database`.
+Definitions/import aliases: [src/app/WorkbenchSettingsDialog.tsx:2:15](../../src/app/WorkbenchSettingsDialog.tsx#L2) `Database` as `Database`.
 
 | Occurrence | Location / component / conditions | Action or state purpose | Accessible name / tooltip | Purpose evidence |
 | --- | --- | --- | --- | --- |
-| `use.78943e173e76` | [src/app/AppShell.tsx:234:14](../../src/app/AppShell.tsx#L234); `AppShell`; `span` | {storageStatusLabel}; `Database` | aria-label: `{storageStatusLabel}` | High: explicit label/action/state in source |
 | `use.93ac6a6b9f50` | [src/app/WorkbenchSettingsDialog.tsx:77:72](../../src/app/WorkbenchSettingsDialog.tsx#L77); `WorkbenchSettingsDialog`; `div` | Open settings section `"Storage"`; `{() => setActiveSection('storage')}` | aria-label: `"Workbench settings"` | High: explicit label/action/state in source |
 
 ### icon.lucide.download
@@ -496,11 +495,11 @@ Definitions/import aliases: [src/features/cad/CadSketchCanvas.tsx:4:17](../../sr
 
 Export names: `HardDrive`. Picture: Drive enclosure with indicator marks. Source definition: [node_modules/lucide-react/dist/esm/icons/hard-drive.js:10](../../node_modules/lucide-react/dist/esm/icons/hard-drive.js#L10) in lucide-react; definition file SHA-256 `a71836ce3334f16194a2c2540d22e87d52a1bf8010ce5562ae07c8fa1aeb08a8`.
 
-Definitions/import aliases: [src/app/AppShell.tsx:12:3](../../src/app/AppShell.tsx#L12) `HardDrive` as `HardDrive`.
+Definitions/import aliases: [src/app/AppShell.tsx:10:3](../../src/app/AppShell.tsx#L10) `HardDrive` as `HardDrive`.
 
 | Occurrence | Location / component / conditions | Action or state purpose | Accessible name / tooltip | Purpose evidence |
 | --- | --- | --- | --- | --- |
-| `use.351faffd1991` | [src/app/AppShell.tsx:215:14](../../src/app/AppShell.tsx#L215); `AppShell`; `div` | State/information in AppShell; `HardDrive` | No explicit name on this occurrence; parent label or renderer supplies context | Inferred from component, drawing shape and adjacent source; no dedicated icon label |
+| `use.351faffd1991` | [src/app/AppShell.tsx:186:14](../../src/app/AppShell.tsx#L186); `AppShell`; `div` | State/information in AppShell; `HardDrive` | No explicit name on this occurrence; parent label or renderer supplies context | Inferred from component, drawing shape and adjacent source; no dedicated icon label |
 
 ### icon.lucide.history
 
@@ -773,21 +772,21 @@ Definitions/import aliases: [src/features/cad/CadFeatureTree.tsx:4:71](../../src
 
 Export names: `PanelLeftClose`. Picture: Split panel with left-pointing close arrow. Source definition: [node_modules/lucide-react/dist/esm/icons/panel-left-close.js:10](../../node_modules/lucide-react/dist/esm/icons/panel-left-close.js#L10) in lucide-react; definition file SHA-256 `5c8815f15bc2c216873698ada5d7df07e179376a531ef680be45835b08801608`.
 
-Definitions/import aliases: [src/app/AppShell.tsx:13:3](../../src/app/AppShell.tsx#L13) `PanelLeftClose` as `PanelLeftClose`.
+Definitions/import aliases: [src/app/AppShell.tsx:11:3](../../src/app/AppShell.tsx#L11) `PanelLeftClose` as `PanelLeftClose`.
 
 | Occurrence | Location / component / conditions | Action or state purpose | Accessible name / tooltip | Purpose evidence |
 | --- | --- | --- | --- | --- |
-| `use.e0fbf85c2057` | [src/app/AppShell.tsx:294:22](../../src/app/AppShell.tsx#L294); `AppShell`; `Button`; `sidebarCollapsed [false branch]`; `!replaceRailChrome`; `railContent`; `state variants: aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}`; `state variants: title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}` | {sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}; `{() => { const nextCollapsed = !sidebarCollapsed; if (railContent.onCollapsedChange) { railContent.onCollapsedChange(nextCollapsed); } else { setShellRailCollapsed(nextCollapsed); } }}` | aria-label: `{sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}`; title: `{sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}` | High: explicit label/action/state in source |
+| `use.e0fbf85c2057` | [src/app/AppShell.tsx:249:22](../../src/app/AppShell.tsx#L249); `AppShell`; `Button`; `sidebarCollapsed [false branch]`; `!replaceRailChrome`; `railContent`; `state variants: aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}`; `state variants: title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}` | {sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}; `{() => { const nextCollapsed = !sidebarCollapsed; if (railContent.onCollapsedChange) { railContent.onCollapsedChange(nextCollapsed); } else { setShellRailCollapsed(nextCollapsed); } }}` | aria-label: `{sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}`; title: `{sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}` | High: explicit label/action/state in source |
 
 ### icon.lucide.panel-left-open
 
 Export names: `PanelLeftOpen`. Picture: Split panel with right-pointing open arrow. Source definition: [node_modules/lucide-react/dist/esm/icons/panel-left-open.js:10](../../node_modules/lucide-react/dist/esm/icons/panel-left-open.js#L10) in lucide-react; definition file SHA-256 `fa4ab14c5d358c6c098d7006ae672315b3b374e6bc224d8db1172b82f9595653`.
 
-Definitions/import aliases: [src/app/AppShell.tsx:14:3](../../src/app/AppShell.tsx#L14) `PanelLeftOpen` as `PanelLeftOpen`.
+Definitions/import aliases: [src/app/AppShell.tsx:12:3](../../src/app/AppShell.tsx#L12) `PanelLeftOpen` as `PanelLeftOpen`.
 
 | Occurrence | Location / component / conditions | Action or state purpose | Accessible name / tooltip | Purpose evidence |
 | --- | --- | --- | --- | --- |
-| `use.71939959dbc4` | [src/app/AppShell.tsx:292:22](../../src/app/AppShell.tsx#L292); `AppShell`; `Button`; `sidebarCollapsed [true branch]`; `!replaceRailChrome`; `railContent`; `state variants: aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}`; `state variants: title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}` | {sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}; `{() => { const nextCollapsed = !sidebarCollapsed; if (railContent.onCollapsedChange) { railContent.onCollapsedChange(nextCollapsed); } else { setShellRailCollapsed(nextCollapsed); } }}` | aria-label: `{sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}`; title: `{sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}` | High: explicit label/action/state in source |
+| `use.71939959dbc4` | [src/app/AppShell.tsx:247:22](../../src/app/AppShell.tsx#L247); `AppShell`; `Button`; `sidebarCollapsed [true branch]`; `!replaceRailChrome`; `railContent`; `state variants: aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}`; `state variants: title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}` | {sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}; `{() => { const nextCollapsed = !sidebarCollapsed; if (railContent.onCollapsedChange) { railContent.onCollapsedChange(nextCollapsed); } else { setShellRailCollapsed(nextCollapsed); } }}` | aria-label: `{sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}`; title: `{sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}` | High: explicit label/action/state in source |
 
 ### icon.lucide.panel-right-close
 
@@ -1037,11 +1036,11 @@ Definitions/import aliases: [src/components/ui/search-field.tsx:2:10](../../src/
 
 Export names: `Settings`. Picture: Cogwheel. Source definition: [node_modules/lucide-react/dist/esm/icons/settings.js:10](../../node_modules/lucide-react/dist/esm/icons/settings.js#L10) in lucide-react; definition file SHA-256 `a0ebcfb7b1e11251c6896023fd2d798d9de7ffcda121bb216da63065d2eb4a42`.
 
-Definitions/import aliases: [src/app/AppShell.tsx:15:15](../../src/app/AppShell.tsx#L15) `Settings` as `SettingsIcon`.
+Definitions/import aliases: [src/app/AppShell.tsx:13:15](../../src/app/AppShell.tsx#L13) `Settings` as `SettingsIcon`.
 
 | Occurrence | Location / component / conditions | Action or state purpose | Accessible name / tooltip | Purpose evidence |
 | --- | --- | --- | --- | --- |
-| `use.c5338283623c` | [src/app/AppShell.tsx:245:14](../../src/app/AppShell.tsx#L245); `AppShell`; `Button` | "Open settings"; `{() => { setSettingsSection('storage'); setSettingsOpen(true); }}` | aria-label: `"Open settings"`; title: `"Settings"` | High: explicit label/action/state in source |
+| `use.c5338283623c` | [src/app/AppShell.tsx:200:14](../../src/app/AppShell.tsx#L200); `AppShell`; `Button` | "Open settings"; `{() => { setSettingsSection('storage'); setSettingsOpen(true); }}` | aria-label: `"Open settings"`; title: `"Settings"` | High: explicit label/action/state in source |
 
 ### icon.lucide.skip-back
 
@@ -2670,8 +2669,8 @@ The audit fails if these separate lexical counts disagree with the symbol/AST in
 
 | Channel | Independent count | Symbol/AST count | Result |
 | --- | --- | --- | --- |
-| importBindings | 221 | 221 | Matched |
-| directJsxIcons | 249 | 249 | Matched |
+| importBindings | 220 | 220 | Matched |
+| directJsxIcons | 248 | 248 | Matched |
 | svgRoots | 6 | 6 | Matched |
 | imageRoots | 1 | 1 | Matched |
 | primitiveTemplates | 86 | 86 | Matched |
@@ -2682,13 +2681,13 @@ File/media counts are recorded separately so excluded categories remain visible.
 
 | Root | Files | Image/vector files | Media paths / scope |
 | --- | --- | --- | --- |
-| `docs` | 275 | 2 | `docs/images/spur-gear-editor.png`; `docs/images/spur-gear-simulation.png` |
+| `docs` | 276 | 2 | `docs/images/spur-gear-editor.png`; `docs/images/spur-gear-simulation.png` |
 | `scripts` | 31 | 0 | No separate image/vector files |
 | `e2e` | 38 | 0 | No separate image/vector files |
 | `tests` | 11 | 0 | No separate image/vector files |
 | `DXF-test-subjects` | 1 | 0 | No separate image/vector files |
 | `vendor` | 6 | 0 | No separate image/vector files |
-| `dist` | 937 | 1 | `dist/assets/wire-edm-onboarding-poster-6gX79SPy.png` |
+| `dist` | 960 | 1 | `dist/assets/wire-edm-onboarding-poster-6gX79SPy.png` |
 | `.cache` | 7 | 0 | No separate image/vector files |
 | `.playwright` | 1 | 0 | No separate image/vector files |
 | `playwright-report` | 1 | 0 | No separate image/vector files |

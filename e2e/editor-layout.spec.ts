@@ -716,7 +716,6 @@ test('compact Workflows launcher owns keyboard focus and popup state at 320px', 
   await confirmPendingDxfImport(page);
   await dismissOnboarding(page);
 
-  await expect(page.getByRole('status', { name: 'Browser cache active' })).toBeVisible();
   const launcher = page.getByRole('button', { name: 'Open Workflows' });
   await launcher.focus();
   await page.keyboard.press('Enter');
