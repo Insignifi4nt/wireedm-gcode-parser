@@ -1,0 +1,4695 @@
+{
+  "renderer": "@resvg/resvg-js 2.6.2",
+  "icons": [
+    {
+      "id": "navigate-back",
+      "bounds": {
+        "x": 3.125,
+        "y": 5.125,
+        "width": 16.75,
+        "height": 13.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 27
+        },
+        {
+          "size": 14,
+          "inkPixels": 40
+        },
+        {
+          "size": 15,
+          "inkPixels": 33
+        },
+        {
+          "size": 16,
+          "inkPixels": 46
+        },
+        {
+          "size": 20,
+          "inkPixels": 64
+        },
+        {
+          "size": 24,
+          "inkPixels": 68
+        }
+      ]
+    },
+    {
+      "id": "navigate-forward",
+      "bounds": {
+        "x": 4.125,
+        "y": 5.125,
+        "width": 16.75,
+        "height": 13.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 26
+        },
+        {
+          "size": 14,
+          "inkPixels": 40
+        },
+        {
+          "size": 15,
+          "inkPixels": 33
+        },
+        {
+          "size": 16,
+          "inkPixels": 46
+        },
+        {
+          "size": 20,
+          "inkPixels": 64
+        },
+        {
+          "size": 24,
+          "inkPixels": 68
+        }
+      ]
+    },
+    {
+      "id": "move-up",
+      "bounds": {
+        "x": 5.125,
+        "y": 3.125,
+        "width": 13.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 29
+        },
+        {
+          "size": 14,
+          "inkPixels": 42
+        },
+        {
+          "size": 15,
+          "inkPixels": 33
+        },
+        {
+          "size": 16,
+          "inkPixels": 46
+        },
+        {
+          "size": 20,
+          "inkPixels": 66
+        },
+        {
+          "size": 24,
+          "inkPixels": 70
+        }
+      ]
+    },
+    {
+      "id": "move-down",
+      "bounds": {
+        "x": 5.125,
+        "y": 3.125,
+        "width": 13.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 28
+        },
+        {
+          "size": 14,
+          "inkPixels": 42
+        },
+        {
+          "size": 15,
+          "inkPixels": 33
+        },
+        {
+          "size": 16,
+          "inkPixels": 46
+        },
+        {
+          "size": 20,
+          "inkPixels": 66
+        },
+        {
+          "size": 24,
+          "inkPixels": 70
+        }
+      ]
+    },
+    {
+      "id": "expand-right",
+      "bounds": {
+        "x": 8.125,
+        "y": 4.125,
+        "width": 8.75,
+        "height": 15.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 11
+        },
+        {
+          "size": 14,
+          "inkPixels": 28
+        },
+        {
+          "size": 15,
+          "inkPixels": 37
+        },
+        {
+          "size": 16,
+          "inkPixels": 34
+        },
+        {
+          "size": 20,
+          "inkPixels": 52
+        },
+        {
+          "size": 24,
+          "inkPixels": 46
+        }
+      ]
+    },
+    {
+      "id": "expand-down",
+      "bounds": {
+        "x": 4.125,
+        "y": 8.125,
+        "width": 15.75,
+        "height": 8.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 11
+        },
+        {
+          "size": 14,
+          "inkPixels": 28
+        },
+        {
+          "size": 15,
+          "inkPixels": 37
+        },
+        {
+          "size": 16,
+          "inkPixels": 34
+        },
+        {
+          "size": 20,
+          "inkPixels": 52
+        },
+        {
+          "size": 24,
+          "inkPixels": 46
+        }
+      ]
+    },
+    {
+      "id": "more",
+      "bounds": {
+        "x": 3.3249998092651367,
+        "y": 10.324999809265137,
+        "width": 17.349998474121094,
+        "height": 3.3500003814697266
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 16
+        },
+        {
+          "size": 14,
+          "inkPixels": 12
+        },
+        {
+          "size": 15,
+          "inkPixels": 23
+        },
+        {
+          "size": 16,
+          "inkPixels": 16
+        },
+        {
+          "size": 20,
+          "inkPixels": 36
+        },
+        {
+          "size": 24,
+          "inkPixels": 48
+        }
+      ]
+    },
+    {
+      "id": "close",
+      "bounds": {
+        "x": 5.125,
+        "y": 5.125,
+        "width": 13.75,
+        "height": 13.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 21
+        },
+        {
+          "size": 14,
+          "inkPixels": 40
+        },
+        {
+          "size": 15,
+          "inkPixels": 45
+        },
+        {
+          "size": 16,
+          "inkPixels": 52
+        },
+        {
+          "size": 20,
+          "inkPixels": 64
+        },
+        {
+          "size": 24,
+          "inkPixels": 76
+        }
+      ]
+    },
+    {
+      "id": "confirm",
+      "bounds": {
+        "x": 3.125,
+        "y": 5.125,
+        "width": 17.75,
+        "height": 12.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 15
+        },
+        {
+          "size": 14,
+          "inkPixels": 32
+        },
+        {
+          "size": 15,
+          "inkPixels": 31
+        },
+        {
+          "size": 16,
+          "inkPixels": 34
+        },
+        {
+          "size": 20,
+          "inkPixels": 57
+        },
+        {
+          "size": 24,
+          "inkPixels": 52
+        }
+      ]
+    },
+    {
+      "id": "add",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 17.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 36
+        },
+        {
+          "size": 14,
+          "inkPixels": 44
+        },
+        {
+          "size": 15,
+          "inkPixels": 21
+        },
+        {
+          "size": 16,
+          "inkPixels": 44
+        },
+        {
+          "size": 20,
+          "inkPixels": 60
+        },
+        {
+          "size": 24,
+          "inkPixels": 68
+        }
+      ]
+    },
+    {
+      "id": "remove",
+      "bounds": {
+        "x": 3.125,
+        "y": 11.125,
+        "width": 17.75,
+        "height": 1.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 20
+        },
+        {
+          "size": 14,
+          "inkPixels": 24
+        },
+        {
+          "size": 15,
+          "inkPixels": 11
+        },
+        {
+          "size": 16,
+          "inkPixels": 24
+        },
+        {
+          "size": 20,
+          "inkPixels": 32
+        },
+        {
+          "size": 24,
+          "inkPixels": 36
+        }
+      ]
+    },
+    {
+      "id": "delete",
+      "bounds": {
+        "x": 3.125,
+        "y": 2.125,
+        "width": 17.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 74
+        },
+        {
+          "size": 14,
+          "inkPixels": 90
+        },
+        {
+          "size": 15,
+          "inkPixels": 104
+        },
+        {
+          "size": 16,
+          "inkPixels": 106
+        },
+        {
+          "size": 20,
+          "inkPixels": 162
+        },
+        {
+          "size": 24,
+          "inkPixels": 186
+        }
+      ]
+    },
+    {
+      "id": "save",
+      "bounds": {
+        "x": 3.125,
+        "y": 2.125,
+        "width": 17.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 81
+        },
+        {
+          "size": 14,
+          "inkPixels": 114
+        },
+        {
+          "size": 15,
+          "inkPixels": 106
+        },
+        {
+          "size": 16,
+          "inkPixels": 135
+        },
+        {
+          "size": 20,
+          "inkPixels": 198
+        },
+        {
+          "size": 24,
+          "inkPixels": 209
+        }
+      ]
+    },
+    {
+      "id": "rename",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 17.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 30
+        },
+        {
+          "size": 14,
+          "inkPixels": 56
+        },
+        {
+          "size": 15,
+          "inkPixels": 73
+        },
+        {
+          "size": 16,
+          "inkPixels": 69
+        },
+        {
+          "size": 20,
+          "inkPixels": 109
+        },
+        {
+          "size": 24,
+          "inkPixels": 111
+        }
+      ]
+    },
+    {
+      "id": "copy",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 58
+        },
+        {
+          "size": 14,
+          "inkPixels": 92
+        },
+        {
+          "size": 15,
+          "inkPixels": 104
+        },
+        {
+          "size": 16,
+          "inkPixels": 115
+        },
+        {
+          "size": 20,
+          "inkPixels": 180
+        },
+        {
+          "size": 24,
+          "inkPixels": 172
+        }
+      ]
+    },
+    {
+      "id": "undo",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 18.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 30
+        },
+        {
+          "size": 14,
+          "inkPixels": 44
+        },
+        {
+          "size": 15,
+          "inkPixels": 49
+        },
+        {
+          "size": 16,
+          "inkPixels": 52
+        },
+        {
+          "size": 20,
+          "inkPixels": 82
+        },
+        {
+          "size": 24,
+          "inkPixels": 90
+        }
+      ]
+    },
+    {
+      "id": "redo",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 18.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 29
+        },
+        {
+          "size": 14,
+          "inkPixels": 44
+        },
+        {
+          "size": 15,
+          "inkPixels": 50
+        },
+        {
+          "size": 16,
+          "inkPixels": 54
+        },
+        {
+          "size": 20,
+          "inkPixels": 82
+        },
+        {
+          "size": 24,
+          "inkPixels": 90
+        }
+      ]
+    },
+    {
+      "id": "refresh",
+      "bounds": {
+        "x": 2.125,
+        "y": 1.2761261463165283,
+        "width": 19.75,
+        "height": 21.44774627685547
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 58
+        },
+        {
+          "size": 14,
+          "inkPixels": 73
+        },
+        {
+          "size": 15,
+          "inkPixels": 80
+        },
+        {
+          "size": 16,
+          "inkPixels": 90
+        },
+        {
+          "size": 20,
+          "inkPixels": 130
+        },
+        {
+          "size": 24,
+          "inkPixels": 160
+        }
+      ]
+    },
+    {
+      "id": "rotate-clockwise",
+      "bounds": {
+        "x": 4.196796894073486,
+        "y": 2.125,
+        "width": 16.678203582763672,
+        "height": 18.75072479248047
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 51
+        },
+        {
+          "size": 14,
+          "inkPixels": 65
+        },
+        {
+          "size": 15,
+          "inkPixels": 65
+        },
+        {
+          "size": 16,
+          "inkPixels": 70
+        },
+        {
+          "size": 20,
+          "inkPixels": 113
+        },
+        {
+          "size": 24,
+          "inkPixels": 132
+        }
+      ]
+    },
+    {
+      "id": "rotate-counterclockwise",
+      "bounds": {
+        "x": 3.125,
+        "y": 2.125,
+        "width": 16.678203582763672,
+        "height": 18.75072479248047
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 51
+        },
+        {
+          "size": 14,
+          "inkPixels": 64
+        },
+        {
+          "size": 15,
+          "inkPixels": 65
+        },
+        {
+          "size": 16,
+          "inkPixels": 70
+        },
+        {
+          "size": 20,
+          "inkPixels": 113
+        },
+        {
+          "size": 24,
+          "inkPixels": 132
+        }
+      ]
+    },
+    {
+      "id": "download",
+      "bounds": {
+        "x": 3.125,
+        "y": 2.125,
+        "width": 17.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 43
+        },
+        {
+          "size": 14,
+          "inkPixels": 62
+        },
+        {
+          "size": 15,
+          "inkPixels": 56
+        },
+        {
+          "size": 16,
+          "inkPixels": 74
+        },
+        {
+          "size": 20,
+          "inkPixels": 110
+        },
+        {
+          "size": 24,
+          "inkPixels": 108
+        }
+      ]
+    },
+    {
+      "id": "upload",
+      "bounds": {
+        "x": 3.125,
+        "y": 2.125,
+        "width": 17.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 45
+        },
+        {
+          "size": 14,
+          "inkPixels": 62
+        },
+        {
+          "size": 15,
+          "inkPixels": 54
+        },
+        {
+          "size": 16,
+          "inkPixels": 72
+        },
+        {
+          "size": 20,
+          "inkPixels": 110
+        },
+        {
+          "size": 24,
+          "inkPixels": 108
+        }
+      ]
+    },
+    {
+      "id": "file-new",
+      "bounds": {
+        "x": 4.125,
+        "y": 2.125,
+        "width": 16.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 49
+        },
+        {
+          "size": 14,
+          "inkPixels": 78
+        },
+        {
+          "size": 15,
+          "inkPixels": 83
+        },
+        {
+          "size": 16,
+          "inkPixels": 92
+        },
+        {
+          "size": 20,
+          "inkPixels": 129
+        },
+        {
+          "size": 24,
+          "inkPixels": 139
+        }
+      ]
+    },
+    {
+      "id": "folder-open",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 18.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 60
+        },
+        {
+          "size": 14,
+          "inkPixels": 88
+        },
+        {
+          "size": 15,
+          "inkPixels": 93
+        },
+        {
+          "size": 16,
+          "inkPixels": 105
+        },
+        {
+          "size": 20,
+          "inkPixels": 165
+        },
+        {
+          "size": 24,
+          "inkPixels": 174
+        }
+      ]
+    },
+    {
+      "id": "file-import",
+      "bounds": {
+        "x": 4.125,
+        "y": 2.125,
+        "width": 17.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 47
+        },
+        {
+          "size": 14,
+          "inkPixels": 81
+        },
+        {
+          "size": 15,
+          "inkPixels": 91
+        },
+        {
+          "size": 16,
+          "inkPixels": 98
+        },
+        {
+          "size": 20,
+          "inkPixels": 138
+        },
+        {
+          "size": 24,
+          "inkPixels": 147
+        }
+      ]
+    },
+    {
+      "id": "file-export",
+      "bounds": {
+        "x": 4.125,
+        "y": 2.125,
+        "width": 17.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 48
+        },
+        {
+          "size": 14,
+          "inkPixels": 82
+        },
+        {
+          "size": 15,
+          "inkPixels": 86
+        },
+        {
+          "size": 16,
+          "inkPixels": 98
+        },
+        {
+          "size": 20,
+          "inkPixels": 135
+        },
+        {
+          "size": 24,
+          "inkPixels": 147
+        }
+      ]
+    },
+    {
+      "id": "file-inspect",
+      "bounds": {
+        "x": 4.125,
+        "y": 2.125,
+        "width": 18.75,
+        "height": 20.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 51
+        },
+        {
+          "size": 14,
+          "inkPixels": 90
+        },
+        {
+          "size": 15,
+          "inkPixels": 99
+        },
+        {
+          "size": 16,
+          "inkPixels": 109
+        },
+        {
+          "size": 20,
+          "inkPixels": 158
+        },
+        {
+          "size": 24,
+          "inkPixels": 175
+        }
+      ]
+    },
+    {
+      "id": "file-code",
+      "bounds": {
+        "x": 4.125,
+        "y": 2.125,
+        "width": 15.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 66
+        },
+        {
+          "size": 14,
+          "inkPixels": 96
+        },
+        {
+          "size": 15,
+          "inkPixels": 107
+        },
+        {
+          "size": 16,
+          "inkPixels": 122
+        },
+        {
+          "size": 20,
+          "inkPixels": 167
+        },
+        {
+          "size": 24,
+          "inkPixels": 185
+        }
+      ]
+    },
+    {
+      "id": "file-json",
+      "bounds": {
+        "x": 4.125,
+        "y": 2.125,
+        "width": 15.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 66
+        },
+        {
+          "size": 14,
+          "inkPixels": 100
+        },
+        {
+          "size": 15,
+          "inkPixels": 107
+        },
+        {
+          "size": 16,
+          "inkPixels": 126
+        },
+        {
+          "size": 20,
+          "inkPixels": 173
+        },
+        {
+          "size": 24,
+          "inkPixels": 181
+        }
+      ]
+    },
+    {
+      "id": "file-body",
+      "bounds": {
+        "x": 4.125,
+        "y": 2.125,
+        "width": 17.75,
+        "height": 20.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 65
+        },
+        {
+          "size": 14,
+          "inkPixels": 96
+        },
+        {
+          "size": 15,
+          "inkPixels": 111
+        },
+        {
+          "size": 16,
+          "inkPixels": 123
+        },
+        {
+          "size": 20,
+          "inkPixels": 178
+        },
+        {
+          "size": 24,
+          "inkPixels": 206
+        }
+      ]
+    },
+    {
+      "id": "history",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.6241071224212646,
+        "width": 19.041561126708984,
+        "height": 19.751785278320312
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 60
+        },
+        {
+          "size": 14,
+          "inkPixels": 84
+        },
+        {
+          "size": 15,
+          "inkPixels": 89
+        },
+        {
+          "size": 16,
+          "inkPixels": 102
+        },
+        {
+          "size": 20,
+          "inkPixels": 143
+        },
+        {
+          "size": 24,
+          "inkPixels": 181
+        }
+      ]
+    },
+    {
+      "id": "browser-cache",
+      "bounds": {
+        "x": 3.125,
+        "y": 2.125,
+        "width": 17.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 84
+        },
+        {
+          "size": 14,
+          "inkPixels": 99
+        },
+        {
+          "size": 15,
+          "inkPixels": 100
+        },
+        {
+          "size": 16,
+          "inkPixels": 115
+        },
+        {
+          "size": 20,
+          "inkPixels": 172
+        },
+        {
+          "size": 24,
+          "inkPixels": 212
+        }
+      ]
+    },
+    {
+      "id": "folder-storage",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 18.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 71
+        },
+        {
+          "size": 14,
+          "inkPixels": 108
+        },
+        {
+          "size": 15,
+          "inkPixels": 115
+        },
+        {
+          "size": 16,
+          "inkPixels": 128
+        },
+        {
+          "size": 20,
+          "inkPixels": 199
+        },
+        {
+          "size": 24,
+          "inkPixels": 193
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "bounds": {
+        "x": 3.125,
+        "y": 2.125,
+        "width": 17.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 67
+        },
+        {
+          "size": 14,
+          "inkPixels": 93
+        },
+        {
+          "size": 15,
+          "inkPixels": 90
+        },
+        {
+          "size": 16,
+          "inkPixels": 108
+        },
+        {
+          "size": 20,
+          "inkPixels": 164
+        },
+        {
+          "size": 24,
+          "inkPixels": 186
+        }
+      ]
+    },
+    {
+      "id": "adjust",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 78
+        },
+        {
+          "size": 14,
+          "inkPixels": 74
+        },
+        {
+          "size": 15,
+          "inkPixels": 91
+        },
+        {
+          "size": 16,
+          "inkPixels": 108
+        },
+        {
+          "size": 20,
+          "inkPixels": 150
+        },
+        {
+          "size": 24,
+          "inkPixels": 191
+        }
+      ]
+    },
+    {
+      "id": "help",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 71
+        },
+        {
+          "size": 14,
+          "inkPixels": 93
+        },
+        {
+          "size": 15,
+          "inkPixels": 97
+        },
+        {
+          "size": 16,
+          "inkPixels": 111
+        },
+        {
+          "size": 20,
+          "inkPixels": 155
+        },
+        {
+          "size": 24,
+          "inkPixels": 211
+        }
+      ]
+    },
+    {
+      "id": "info",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 64
+        },
+        {
+          "size": 14,
+          "inkPixels": 82
+        },
+        {
+          "size": 15,
+          "inkPixels": 81
+        },
+        {
+          "size": 16,
+          "inkPixels": 98
+        },
+        {
+          "size": 20,
+          "inkPixels": 136
+        },
+        {
+          "size": 24,
+          "inkPixels": 181
+        }
+      ]
+    },
+    {
+      "id": "warning",
+      "bounds": {
+        "x": 1.125,
+        "y": 2.125,
+        "width": 21.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 58
+        },
+        {
+          "size": 14,
+          "inkPixels": 82
+        },
+        {
+          "size": 15,
+          "inkPixels": 88
+        },
+        {
+          "size": 16,
+          "inkPixels": 102
+        },
+        {
+          "size": 20,
+          "inkPixels": 156
+        },
+        {
+          "size": 24,
+          "inkPixels": 180
+        }
+      ]
+    },
+    {
+      "id": "success",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 66
+        },
+        {
+          "size": 14,
+          "inkPixels": 89
+        },
+        {
+          "size": 15,
+          "inkPixels": 89
+        },
+        {
+          "size": 16,
+          "inkPixels": 102
+        },
+        {
+          "size": 20,
+          "inkPixels": 140
+        },
+        {
+          "size": 24,
+          "inkPixels": 186
+        }
+      ]
+    },
+    {
+      "id": "error",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 69
+        },
+        {
+          "size": 14,
+          "inkPixels": 96
+        },
+        {
+          "size": 15,
+          "inkPixels": 101
+        },
+        {
+          "size": 16,
+          "inkPixels": 116
+        },
+        {
+          "size": 20,
+          "inkPixels": 152
+        },
+        {
+          "size": 24,
+          "inkPixels": 204
+        }
+      ]
+    },
+    {
+      "id": "notifications",
+      "bounds": {
+        "x": 4.125,
+        "y": 1.125,
+        "width": 15.75,
+        "height": 20.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 37
+        },
+        {
+          "size": 14,
+          "inkPixels": 66
+        },
+        {
+          "size": 15,
+          "inkPixels": 69
+        },
+        {
+          "size": 16,
+          "inkPixels": 74
+        },
+        {
+          "size": 20,
+          "inkPixels": 102
+        },
+        {
+          "size": 24,
+          "inkPixels": 122
+        }
+      ]
+    },
+    {
+      "id": "busy",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 43
+        },
+        {
+          "size": 14,
+          "inkPixels": 55
+        },
+        {
+          "size": 15,
+          "inkPixels": 53
+        },
+        {
+          "size": 16,
+          "inkPixels": 64
+        },
+        {
+          "size": 20,
+          "inkPixels": 90
+        },
+        {
+          "size": 24,
+          "inkPixels": 118
+        }
+      ]
+    },
+    {
+      "id": "play",
+      "bounds": {
+        "x": 6.125,
+        "y": 3.125,
+        "width": 14.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 41
+        },
+        {
+          "size": 14,
+          "inkPixels": 55
+        },
+        {
+          "size": 15,
+          "inkPixels": 57
+        },
+        {
+          "size": 16,
+          "inkPixels": 60
+        },
+        {
+          "size": 20,
+          "inkPixels": 88
+        },
+        {
+          "size": 24,
+          "inkPixels": 112
+        }
+      ]
+    },
+    {
+      "id": "pause",
+      "bounds": {
+        "x": 5.125,
+        "y": 3.125,
+        "width": 13.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 66
+        },
+        {
+          "size": 14,
+          "inkPixels": 72
+        },
+        {
+          "size": 15,
+          "inkPixels": 88
+        },
+        {
+          "size": 16,
+          "inkPixels": 96
+        },
+        {
+          "size": 20,
+          "inkPixels": 156
+        },
+        {
+          "size": 24,
+          "inkPixels": 152
+        }
+      ]
+    },
+    {
+      "id": "step-back",
+      "bounds": {
+        "x": 4.125,
+        "y": 3.125,
+        "width": 15.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 47
+        },
+        {
+          "size": 14,
+          "inkPixels": 73
+        },
+        {
+          "size": 15,
+          "inkPixels": 75
+        },
+        {
+          "size": 16,
+          "inkPixels": 84
+        },
+        {
+          "size": 20,
+          "inkPixels": 114
+        },
+        {
+          "size": 24,
+          "inkPixels": 140
+        }
+      ]
+    },
+    {
+      "id": "step-forward",
+      "bounds": {
+        "x": 4.125,
+        "y": 3.125,
+        "width": 15.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 47
+        },
+        {
+          "size": 14,
+          "inkPixels": 73
+        },
+        {
+          "size": 15,
+          "inkPixels": 75
+        },
+        {
+          "size": 16,
+          "inkPixels": 84
+        },
+        {
+          "size": 20,
+          "inkPixels": 114
+        },
+        {
+          "size": 24,
+          "inkPixels": 140
+        }
+      ]
+    },
+    {
+      "id": "visible",
+      "bounds": {
+        "x": 1.125,
+        "y": 3.625,
+        "width": 21.75,
+        "height": 16.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 62
+        },
+        {
+          "size": 14,
+          "inkPixels": 81
+        },
+        {
+          "size": 15,
+          "inkPixels": 89
+        },
+        {
+          "size": 16,
+          "inkPixels": 112
+        },
+        {
+          "size": 20,
+          "inkPixels": 148
+        },
+        {
+          "size": 24,
+          "inkPixels": 194
+        }
+      ]
+    },
+    {
+      "id": "hidden",
+      "bounds": {
+        "x": 1.125,
+        "y": 2.125,
+        "width": 21.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 59
+        },
+        {
+          "size": 14,
+          "inkPixels": 95
+        },
+        {
+          "size": 15,
+          "inkPixels": 104
+        },
+        {
+          "size": 16,
+          "inkPixels": 115
+        },
+        {
+          "size": 20,
+          "inkPixels": 159
+        },
+        {
+          "size": 24,
+          "inkPixels": 202
+        }
+      ]
+    },
+    {
+      "id": "fit-view",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 28
+        },
+        {
+          "size": 14,
+          "inkPixels": 64
+        },
+        {
+          "size": 15,
+          "inkPixels": 72
+        },
+        {
+          "size": 16,
+          "inkPixels": 80
+        },
+        {
+          "size": 20,
+          "inkPixels": 136
+        },
+        {
+          "size": 24,
+          "inkPixels": 112
+        }
+      ]
+    },
+    {
+      "id": "zoom-in",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 53
+        },
+        {
+          "size": 14,
+          "inkPixels": 79
+        },
+        {
+          "size": 15,
+          "inkPixels": 87
+        },
+        {
+          "size": 16,
+          "inkPixels": 95
+        },
+        {
+          "size": 20,
+          "inkPixels": 130
+        },
+        {
+          "size": 24,
+          "inkPixels": 174
+        }
+      ]
+    },
+    {
+      "id": "zoom-out",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 49
+        },
+        {
+          "size": 14,
+          "inkPixels": 71
+        },
+        {
+          "size": 15,
+          "inkPixels": 77
+        },
+        {
+          "size": 16,
+          "inkPixels": 85
+        },
+        {
+          "size": 20,
+          "inkPixels": 116
+        },
+        {
+          "size": 24,
+          "inkPixels": 158
+        }
+      ]
+    },
+    {
+      "id": "select",
+      "bounds": {
+        "x": 4.125,
+        "y": 2.125,
+        "width": 15.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 47
+        },
+        {
+          "size": 14,
+          "inkPixels": 62
+        },
+        {
+          "size": 15,
+          "inkPixels": 67
+        },
+        {
+          "size": 16,
+          "inkPixels": 78
+        },
+        {
+          "size": 20,
+          "inkPixels": 108
+        },
+        {
+          "size": 24,
+          "inkPixels": 145
+        }
+      ]
+    },
+    {
+      "id": "snap",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 17.75,
+        "height": 18.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 72
+        },
+        {
+          "size": 14,
+          "inkPixels": 96
+        },
+        {
+          "size": 15,
+          "inkPixels": 92
+        },
+        {
+          "size": 16,
+          "inkPixels": 112
+        },
+        {
+          "size": 20,
+          "inkPixels": 172
+        },
+        {
+          "size": 24,
+          "inkPixels": 198
+        }
+      ]
+    },
+    {
+      "id": "grid",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 73
+        },
+        {
+          "size": 14,
+          "inkPixels": 128
+        },
+        {
+          "size": 15,
+          "inkPixels": 144
+        },
+        {
+          "size": 16,
+          "inkPixels": 160
+        },
+        {
+          "size": 20,
+          "inkPixels": 284
+        },
+        {
+          "size": 24,
+          "inkPixels": 256
+        }
+      ]
+    },
+    {
+      "id": "origin",
+      "bounds": {
+        "x": 1.125,
+        "y": 1.125,
+        "width": 21.75,
+        "height": 21.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 52
+        },
+        {
+          "size": 14,
+          "inkPixels": 64
+        },
+        {
+          "size": 15,
+          "inkPixels": 50
+        },
+        {
+          "size": 16,
+          "inkPixels": 76
+        },
+        {
+          "size": 20,
+          "inkPixels": 92
+        },
+        {
+          "size": 24,
+          "inkPixels": 120
+        }
+      ]
+    },
+    {
+      "id": "circle",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 17.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 44
+        },
+        {
+          "size": 14,
+          "inkPixels": 52
+        },
+        {
+          "size": 15,
+          "inkPixels": 60
+        },
+        {
+          "size": 16,
+          "inkPixels": 72
+        },
+        {
+          "size": 20,
+          "inkPixels": 104
+        },
+        {
+          "size": 24,
+          "inkPixels": 136
+        }
+      ]
+    },
+    {
+      "id": "circle-center",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 17.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 48
+        },
+        {
+          "size": 14,
+          "inkPixels": 56
+        },
+        {
+          "size": 15,
+          "inkPixels": 69
+        },
+        {
+          "size": 16,
+          "inkPixels": 76
+        },
+        {
+          "size": 20,
+          "inkPixels": 116
+        },
+        {
+          "size": 24,
+          "inkPixels": 148
+        }
+      ]
+    },
+    {
+      "id": "rectangle",
+      "bounds": {
+        "x": 3.125,
+        "y": 4.125,
+        "width": 17.75,
+        "height": 15.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 44
+        },
+        {
+          "size": 14,
+          "inkPixels": 72
+        },
+        {
+          "size": 15,
+          "inkPixels": 58
+        },
+        {
+          "size": 16,
+          "inkPixels": 80
+        },
+        {
+          "size": 20,
+          "inkPixels": 104
+        },
+        {
+          "size": 24,
+          "inkPixels": 120
+        }
+      ]
+    },
+    {
+      "id": "curve",
+      "bounds": {
+        "x": 1.4749999046325684,
+        "y": 5.125,
+        "width": 21.049999237060547,
+        "height": 14.399999618530273
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 35
+        },
+        {
+          "size": 14,
+          "inkPixels": 46
+        },
+        {
+          "size": 15,
+          "inkPixels": 49
+        },
+        {
+          "size": 16,
+          "inkPixels": 50
+        },
+        {
+          "size": 20,
+          "inkPixels": 71
+        },
+        {
+          "size": 24,
+          "inkPixels": 102
+        }
+      ]
+    },
+    {
+      "id": "sketch",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 42
+        },
+        {
+          "size": 14,
+          "inkPixels": 91
+        },
+        {
+          "size": 15,
+          "inkPixels": 98
+        },
+        {
+          "size": 16,
+          "inkPixels": 104
+        },
+        {
+          "size": 20,
+          "inkPixels": 162
+        },
+        {
+          "size": 24,
+          "inkPixels": 162
+        }
+      ]
+    },
+    {
+      "id": "cam-editor",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 54
+        },
+        {
+          "size": 14,
+          "inkPixels": 107
+        },
+        {
+          "size": 15,
+          "inkPixels": 118
+        },
+        {
+          "size": 16,
+          "inkPixels": 126
+        },
+        {
+          "size": 20,
+          "inkPixels": 212
+        },
+        {
+          "size": 24,
+          "inkPixels": 201
+        }
+      ]
+    },
+    {
+      "id": "body",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 17.75,
+        "height": 18.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 66
+        },
+        {
+          "size": 14,
+          "inkPixels": 89
+        },
+        {
+          "size": 15,
+          "inkPixels": 82
+        },
+        {
+          "size": 16,
+          "inkPixels": 92
+        },
+        {
+          "size": 20,
+          "inkPixels": 148
+        },
+        {
+          "size": 24,
+          "inkPixels": 182
+        }
+      ]
+    },
+    {
+      "id": "layers",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 73
+        },
+        {
+          "size": 14,
+          "inkPixels": 94
+        },
+        {
+          "size": 15,
+          "inkPixels": 100
+        },
+        {
+          "size": 16,
+          "inkPixels": 124
+        },
+        {
+          "size": 20,
+          "inkPixels": 174
+        },
+        {
+          "size": 24,
+          "inkPixels": 216
+        }
+      ]
+    },
+    {
+      "id": "move",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 55
+        },
+        {
+          "size": 14,
+          "inkPixels": 68
+        },
+        {
+          "size": 15,
+          "inkPixels": 73
+        },
+        {
+          "size": 16,
+          "inkPixels": 92
+        },
+        {
+          "size": 20,
+          "inkPixels": 140
+        },
+        {
+          "size": 24,
+          "inkPixels": 140
+        }
+      ]
+    },
+    {
+      "id": "move-3d",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 35
+        },
+        {
+          "size": 14,
+          "inkPixels": 56
+        },
+        {
+          "size": 15,
+          "inkPixels": 66
+        },
+        {
+          "size": 16,
+          "inkPixels": 75
+        },
+        {
+          "size": 20,
+          "inkPixels": 106
+        },
+        {
+          "size": 24,
+          "inkPixels": 121
+        }
+      ]
+    },
+    {
+      "id": "flip-horizontal",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 71
+        },
+        {
+          "size": 14,
+          "inkPixels": 80
+        },
+        {
+          "size": 15,
+          "inkPixels": 79
+        },
+        {
+          "size": 16,
+          "inkPixels": 104
+        },
+        {
+          "size": 20,
+          "inkPixels": 164
+        },
+        {
+          "size": 24,
+          "inkPixels": 152
+        }
+      ]
+    },
+    {
+      "id": "flip-vertical",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 70
+        },
+        {
+          "size": 14,
+          "inkPixels": 80
+        },
+        {
+          "size": 15,
+          "inkPixels": 79
+        },
+        {
+          "size": 16,
+          "inkPixels": 104
+        },
+        {
+          "size": 20,
+          "inkPixels": 164
+        },
+        {
+          "size": 24,
+          "inkPixels": 152
+        }
+      ]
+    },
+    {
+      "id": "start-point",
+      "bounds": {
+        "x": 4.125,
+        "y": 2.125,
+        "width": 14.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 29
+        },
+        {
+          "size": 14,
+          "inkPixels": 51
+        },
+        {
+          "size": 15,
+          "inkPixels": 66
+        },
+        {
+          "size": 16,
+          "inkPixels": 73
+        },
+        {
+          "size": 20,
+          "inkPixels": 104
+        },
+        {
+          "size": 24,
+          "inkPixels": 114
+        }
+      ]
+    },
+    {
+      "id": "insert-points",
+      "bounds": {
+        "x": 1.9249999523162842,
+        "y": 3.9250001907348633,
+        "width": 19.950000762939453,
+        "height": 16.150001525878906
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 55
+        },
+        {
+          "size": 14,
+          "inkPixels": 65
+        },
+        {
+          "size": 15,
+          "inkPixels": 69
+        },
+        {
+          "size": 16,
+          "inkPixels": 83
+        },
+        {
+          "size": 20,
+          "inkPixels": 110
+        },
+        {
+          "size": 24,
+          "inkPixels": 120
+        }
+      ]
+    },
+    {
+      "id": "locate",
+      "bounds": {
+        "x": 1.125,
+        "y": 1.125,
+        "width": 21.75,
+        "height": 21.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 52
+        },
+        {
+          "size": 14,
+          "inkPixels": 64
+        },
+        {
+          "size": 15,
+          "inkPixels": 50
+        },
+        {
+          "size": 16,
+          "inkPixels": 76
+        },
+        {
+          "size": 20,
+          "inkPixels": 92
+        },
+        {
+          "size": 24,
+          "inkPixels": 120
+        }
+      ]
+    },
+    {
+      "id": "pin",
+      "bounds": {
+        "x": 5.125,
+        "y": 2.125,
+        "width": 13.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 40
+        },
+        {
+          "size": 14,
+          "inkPixels": 60
+        },
+        {
+          "size": 15,
+          "inkPixels": 61
+        },
+        {
+          "size": 16,
+          "inkPixels": 76
+        },
+        {
+          "size": 20,
+          "inkPixels": 120
+        },
+        {
+          "size": 24,
+          "inkPixels": 124
+        }
+      ]
+    },
+    {
+      "id": "departure",
+      "bounds": {
+        "x": 4.125,
+        "y": 2.125,
+        "width": 17.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 35
+        },
+        {
+          "size": 14,
+          "inkPixels": 58
+        },
+        {
+          "size": 15,
+          "inkPixels": 58
+        },
+        {
+          "size": 16,
+          "inkPixels": 66
+        },
+        {
+          "size": 20,
+          "inkPixels": 92
+        },
+        {
+          "size": 24,
+          "inkPixels": 98
+        }
+      ]
+    },
+    {
+      "id": "turn",
+      "bounds": {
+        "x": 4.125,
+        "y": 2.125,
+        "width": 16.75,
+        "height": 16.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 25
+        },
+        {
+          "size": 14,
+          "inkPixels": 39
+        },
+        {
+          "size": 15,
+          "inkPixels": 51
+        },
+        {
+          "size": 16,
+          "inkPixels": 56
+        },
+        {
+          "size": 20,
+          "inkPixels": 75
+        },
+        {
+          "size": 24,
+          "inkPixels": 82
+        }
+      ]
+    },
+    {
+      "id": "trim",
+      "bounds": {
+        "x": 1.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 52
+        },
+        {
+          "size": 14,
+          "inkPixels": 84
+        },
+        {
+          "size": 15,
+          "inkPixels": 91
+        },
+        {
+          "size": 16,
+          "inkPixels": 101
+        },
+        {
+          "size": 20,
+          "inkPixels": 140
+        },
+        {
+          "size": 24,
+          "inkPixels": 180
+        }
+      ]
+    },
+    {
+      "id": "scan",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 44
+        },
+        {
+          "size": 14,
+          "inkPixels": 72
+        },
+        {
+          "size": 15,
+          "inkPixels": 73
+        },
+        {
+          "size": 16,
+          "inkPixels": 84
+        },
+        {
+          "size": 20,
+          "inkPixels": 136
+        },
+        {
+          "size": 24,
+          "inkPixels": 124
+        }
+      ]
+    },
+    {
+      "id": "section-view",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 17.75,
+        "height": 18.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 71
+        },
+        {
+          "size": 14,
+          "inkPixels": 98
+        },
+        {
+          "size": 15,
+          "inkPixels": 94
+        },
+        {
+          "size": 16,
+          "inkPixels": 103
+        },
+        {
+          "size": 20,
+          "inkPixels": 166
+        },
+        {
+          "size": 24,
+          "inkPixels": 209
+        }
+      ]
+    },
+    {
+      "id": "view",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 17.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 82
+        },
+        {
+          "size": 14,
+          "inkPixels": 98
+        },
+        {
+          "size": 15,
+          "inkPixels": 60
+        },
+        {
+          "size": 16,
+          "inkPixels": 109
+        },
+        {
+          "size": 20,
+          "inkPixels": 145
+        },
+        {
+          "size": 24,
+          "inkPixels": 172
+        }
+      ]
+    },
+    {
+      "id": "view-top",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 61
+        },
+        {
+          "size": 14,
+          "inkPixels": 92
+        },
+        {
+          "size": 15,
+          "inkPixels": 89
+        },
+        {
+          "size": 16,
+          "inkPixels": 112
+        },
+        {
+          "size": 20,
+          "inkPixels": 148
+        },
+        {
+          "size": 24,
+          "inkPixels": 172
+        }
+      ]
+    },
+    {
+      "id": "geometry",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 59
+        },
+        {
+          "size": 14,
+          "inkPixels": 78
+        },
+        {
+          "size": 15,
+          "inkPixels": 76
+        },
+        {
+          "size": 16,
+          "inkPixels": 90
+        },
+        {
+          "size": 20,
+          "inkPixels": 127
+        },
+        {
+          "size": 24,
+          "inkPixels": 167
+        }
+      ]
+    },
+    {
+      "id": "panel-left-close",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 72
+        },
+        {
+          "size": 14,
+          "inkPixels": 112
+        },
+        {
+          "size": 15,
+          "inkPixels": 94
+        },
+        {
+          "size": 16,
+          "inkPixels": 120
+        },
+        {
+          "size": 20,
+          "inkPixels": 200
+        },
+        {
+          "size": 24,
+          "inkPixels": 186
+        }
+      ]
+    },
+    {
+      "id": "panel-left-open",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 75
+        },
+        {
+          "size": 14,
+          "inkPixels": 112
+        },
+        {
+          "size": 15,
+          "inkPixels": 93
+        },
+        {
+          "size": 16,
+          "inkPixels": 120
+        },
+        {
+          "size": 20,
+          "inkPixels": 194
+        },
+        {
+          "size": 24,
+          "inkPixels": 186
+        }
+      ]
+    },
+    {
+      "id": "panel-right-close",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 71
+        },
+        {
+          "size": 14,
+          "inkPixels": 112
+        },
+        {
+          "size": 15,
+          "inkPixels": 94
+        },
+        {
+          "size": 16,
+          "inkPixels": 120
+        },
+        {
+          "size": 20,
+          "inkPixels": 200
+        },
+        {
+          "size": 24,
+          "inkPixels": 186
+        }
+      ]
+    },
+    {
+      "id": "panel-right-open",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 74
+        },
+        {
+          "size": 14,
+          "inkPixels": 112
+        },
+        {
+          "size": 15,
+          "inkPixels": 93
+        },
+        {
+          "size": 16,
+          "inkPixels": 120
+        },
+        {
+          "size": 20,
+          "inkPixels": 194
+        },
+        {
+          "size": 24,
+          "inkPixels": 186
+        }
+      ]
+    },
+    {
+      "id": "datum-plane",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 17.75,
+        "height": 9.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 31
+        },
+        {
+          "size": 14,
+          "inkPixels": 42
+        },
+        {
+          "size": 15,
+          "inkPixels": 44
+        },
+        {
+          "size": 16,
+          "inkPixels": 44
+        },
+        {
+          "size": 20,
+          "inkPixels": 72
+        },
+        {
+          "size": 24,
+          "inkPixels": 92
+        }
+      ]
+    },
+    {
+      "id": "pad",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 52
+        },
+        {
+          "size": 14,
+          "inkPixels": 80
+        },
+        {
+          "size": 15,
+          "inkPixels": 88
+        },
+        {
+          "size": 16,
+          "inkPixels": 98
+        },
+        {
+          "size": 20,
+          "inkPixels": 158
+        },
+        {
+          "size": 24,
+          "inkPixels": 148
+        }
+      ]
+    },
+    {
+      "id": "pocket",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 65
+        },
+        {
+          "size": 14,
+          "inkPixels": 94
+        },
+        {
+          "size": 15,
+          "inkPixels": 106
+        },
+        {
+          "size": 16,
+          "inkPixels": 116
+        },
+        {
+          "size": 20,
+          "inkPixels": 180
+        },
+        {
+          "size": 24,
+          "inkPixels": 180
+        }
+      ]
+    },
+    {
+      "id": "pad-pocket",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 20.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 45
+        },
+        {
+          "size": 14,
+          "inkPixels": 86
+        },
+        {
+          "size": 15,
+          "inkPixels": 94
+        },
+        {
+          "size": 16,
+          "inkPixels": 103
+        },
+        {
+          "size": 20,
+          "inkPixels": 172
+        },
+        {
+          "size": 24,
+          "inkPixels": 152
+        }
+      ]
+    },
+    {
+      "id": "fillet",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 17.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 67
+        },
+        {
+          "size": 14,
+          "inkPixels": 86
+        },
+        {
+          "size": 15,
+          "inkPixels": 63
+        },
+        {
+          "size": 16,
+          "inkPixels": 93
+        },
+        {
+          "size": 20,
+          "inkPixels": 134
+        },
+        {
+          "size": 24,
+          "inkPixels": 168
+        }
+      ]
+    },
+    {
+      "id": "chamfer",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 17.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 61
+        },
+        {
+          "size": 14,
+          "inkPixels": 88
+        },
+        {
+          "size": 15,
+          "inkPixels": 62
+        },
+        {
+          "size": 16,
+          "inkPixels": 92
+        },
+        {
+          "size": 20,
+          "inkPixels": 135
+        },
+        {
+          "size": 24,
+          "inkPixels": 148
+        }
+      ]
+    },
+    {
+      "id": "shell",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 18.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 72
+        },
+        {
+          "size": 14,
+          "inkPixels": 106
+        },
+        {
+          "size": 15,
+          "inkPixels": 110
+        },
+        {
+          "size": 16,
+          "inkPixels": 122
+        },
+        {
+          "size": 20,
+          "inkPixels": 198
+        },
+        {
+          "size": 24,
+          "inkPixels": 188
+        }
+      ]
+    },
+    {
+      "id": "revolve",
+      "bounds": {
+        "x": 6.125,
+        "y": 1.125,
+        "width": 16,
+        "height": 21.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 70
+        },
+        {
+          "size": 14,
+          "inkPixels": 108
+        },
+        {
+          "size": 15,
+          "inkPixels": 113
+        },
+        {
+          "size": 16,
+          "inkPixels": 127
+        },
+        {
+          "size": 20,
+          "inkPixels": 194
+        },
+        {
+          "size": 24,
+          "inkPixels": 202
+        }
+      ]
+    },
+    {
+      "id": "loft",
+      "bounds": {
+        "x": 3.125,
+        "y": 2.125,
+        "width": 17.75,
+        "height": 20.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 73
+        },
+        {
+          "size": 14,
+          "inkPixels": 90
+        },
+        {
+          "size": 15,
+          "inkPixels": 88
+        },
+        {
+          "size": 16,
+          "inkPixels": 110
+        },
+        {
+          "size": 20,
+          "inkPixels": 156
+        },
+        {
+          "size": 24,
+          "inkPixels": 210
+        }
+      ]
+    },
+    {
+      "id": "sweep",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 42
+        },
+        {
+          "size": 14,
+          "inkPixels": 62
+        },
+        {
+          "size": 15,
+          "inkPixels": 67
+        },
+        {
+          "size": 16,
+          "inkPixels": 78
+        },
+        {
+          "size": 20,
+          "inkPixels": 106
+        },
+        {
+          "size": 24,
+          "inkPixels": 146
+        }
+      ]
+    },
+    {
+      "id": "boolean",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 66
+        },
+        {
+          "size": 14,
+          "inkPixels": 96
+        },
+        {
+          "size": 15,
+          "inkPixels": 86
+        },
+        {
+          "size": 16,
+          "inkPixels": 104
+        },
+        {
+          "size": 20,
+          "inkPixels": 172
+        },
+        {
+          "size": 24,
+          "inkPixels": 168
+        }
+      ]
+    },
+    {
+      "id": "boolean-union",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 18.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 57
+        },
+        {
+          "size": 14,
+          "inkPixels": 88
+        },
+        {
+          "size": 15,
+          "inkPixels": 80
+        },
+        {
+          "size": 16,
+          "inkPixels": 99
+        },
+        {
+          "size": 20,
+          "inkPixels": 156
+        },
+        {
+          "size": 24,
+          "inkPixels": 154
+        }
+      ]
+    },
+    {
+      "id": "boolean-subtract",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 59
+        },
+        {
+          "size": 14,
+          "inkPixels": 80
+        },
+        {
+          "size": 15,
+          "inkPixels": 72
+        },
+        {
+          "size": 16,
+          "inkPixels": 86
+        },
+        {
+          "size": 20,
+          "inkPixels": 138
+        },
+        {
+          "size": 24,
+          "inkPixels": 138
+        }
+      ]
+    },
+    {
+      "id": "boolean-intersect",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 54
+        },
+        {
+          "size": 14,
+          "inkPixels": 82
+        },
+        {
+          "size": 15,
+          "inkPixels": 68
+        },
+        {
+          "size": 16,
+          "inkPixels": 88
+        },
+        {
+          "size": 20,
+          "inkPixels": 139
+        },
+        {
+          "size": 24,
+          "inkPixels": 134
+        }
+      ]
+    },
+    {
+      "id": "linear-pattern",
+      "bounds": {
+        "x": 2.125,
+        "y": 8.125,
+        "width": 19.75,
+        "height": 14.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 63
+        },
+        {
+          "size": 14,
+          "inkPixels": 100
+        },
+        {
+          "size": 15,
+          "inkPixels": 89
+        },
+        {
+          "size": 16,
+          "inkPixels": 116
+        },
+        {
+          "size": 20,
+          "inkPixels": 171
+        },
+        {
+          "size": 24,
+          "inkPixels": 175
+        }
+      ]
+    },
+    {
+      "id": "circular-pattern",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 18.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 64
+        },
+        {
+          "size": 14,
+          "inkPixels": 90
+        },
+        {
+          "size": 15,
+          "inkPixels": 83
+        },
+        {
+          "size": 16,
+          "inkPixels": 98
+        },
+        {
+          "size": 20,
+          "inkPixels": 150
+        },
+        {
+          "size": 24,
+          "inkPixels": 165
+        }
+      ]
+    },
+    {
+      "id": "mirror",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 69
+        },
+        {
+          "size": 14,
+          "inkPixels": 92
+        },
+        {
+          "size": 15,
+          "inkPixels": 91
+        },
+        {
+          "size": 16,
+          "inkPixels": 108
+        },
+        {
+          "size": 20,
+          "inkPixels": 172
+        },
+        {
+          "size": 24,
+          "inkPixels": 176
+        }
+      ]
+    },
+    {
+      "id": "imported-body",
+      "bounds": {
+        "x": 3.125,
+        "y": 1.125,
+        "width": 17.75,
+        "height": 20.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 72
+        },
+        {
+          "size": 14,
+          "inkPixels": 97
+        },
+        {
+          "size": 15,
+          "inkPixels": 90
+        },
+        {
+          "size": 16,
+          "inkPixels": 104
+        },
+        {
+          "size": 20,
+          "inkPixels": 164
+        },
+        {
+          "size": 24,
+          "inkPixels": 202
+        }
+      ]
+    },
+    {
+      "id": "slot",
+      "bounds": {
+        "x": 1.125,
+        "y": 5.125,
+        "width": 21.75,
+        "height": 13.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 52
+        },
+        {
+          "size": 14,
+          "inkPixels": 55
+        },
+        {
+          "size": 15,
+          "inkPixels": 68
+        },
+        {
+          "size": 16,
+          "inkPixels": 72
+        },
+        {
+          "size": 20,
+          "inkPixels": 96
+        },
+        {
+          "size": 24,
+          "inkPixels": 128
+        }
+      ]
+    },
+    {
+      "id": "polyline",
+      "bounds": {
+        "x": 1.4749999046325684,
+        "y": 3.4749999046325684,
+        "width": 21.049999237060547,
+        "height": 16.049999237060547
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 38
+        },
+        {
+          "size": 14,
+          "inkPixels": 48
+        },
+        {
+          "size": 15,
+          "inkPixels": 54
+        },
+        {
+          "size": 16,
+          "inkPixels": 58
+        },
+        {
+          "size": 20,
+          "inkPixels": 83
+        },
+        {
+          "size": 24,
+          "inkPixels": 129
+        }
+      ]
+    },
+    {
+      "id": "closed-path",
+      "bounds": {
+        "x": 3.125,
+        "y": 4.125,
+        "width": 17.75,
+        "height": 15.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 53
+        },
+        {
+          "size": 14,
+          "inkPixels": 66
+        },
+        {
+          "size": 15,
+          "inkPixels": 58
+        },
+        {
+          "size": 16,
+          "inkPixels": 76
+        },
+        {
+          "size": 20,
+          "inkPixels": 103
+        },
+        {
+          "size": 24,
+          "inkPixels": 122
+        }
+      ]
+    },
+    {
+      "id": "arc",
+      "bounds": {
+        "x": 1.4749999046325684,
+        "y": 7.475000381469727,
+        "width": 21.049999237060547,
+        "height": 12.049999237060547
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 33
+        },
+        {
+          "size": 14,
+          "inkPixels": 38
+        },
+        {
+          "size": 15,
+          "inkPixels": 44
+        },
+        {
+          "size": 16,
+          "inkPixels": 44
+        },
+        {
+          "size": 20,
+          "inkPixels": 64
+        },
+        {
+          "size": 24,
+          "inkPixels": 101
+        }
+      ]
+    },
+    {
+      "id": "line",
+      "bounds": {
+        "x": 2.4749999046325684,
+        "y": 3.4749999046325684,
+        "width": 19.049999237060547,
+        "height": 17.049999237060547
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 22
+        },
+        {
+          "size": 14,
+          "inkPixels": 32
+        },
+        {
+          "size": 15,
+          "inkPixels": 37
+        },
+        {
+          "size": 16,
+          "inkPixels": 42
+        },
+        {
+          "size": 20,
+          "inkPixels": 54
+        },
+        {
+          "size": 24,
+          "inkPixels": 78
+        }
+      ]
+    },
+    {
+      "id": "construction",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 16.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 34
+        },
+        {
+          "size": 14,
+          "inkPixels": 34
+        },
+        {
+          "size": 15,
+          "inkPixels": 46
+        },
+        {
+          "size": 16,
+          "inkPixels": 53
+        },
+        {
+          "size": 20,
+          "inkPixels": 77
+        },
+        {
+          "size": 24,
+          "inkPixels": 70
+        }
+      ]
+    },
+    {
+      "id": "measure",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 15.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 56
+        },
+        {
+          "size": 14,
+          "inkPixels": 94
+        },
+        {
+          "size": 15,
+          "inkPixels": 94
+        },
+        {
+          "size": 16,
+          "inkPixels": 108
+        },
+        {
+          "size": 20,
+          "inkPixels": 162
+        },
+        {
+          "size": 24,
+          "inkPixels": 178
+        }
+      ]
+    },
+    {
+      "id": "select-face",
+      "bounds": {
+        "x": 3.125,
+        "y": 5.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 46
+        },
+        {
+          "size": 14,
+          "inkPixels": 57
+        },
+        {
+          "size": 15,
+          "inkPixels": 59
+        },
+        {
+          "size": 16,
+          "inkPixels": 66
+        },
+        {
+          "size": 20,
+          "inkPixels": 101
+        },
+        {
+          "size": 24,
+          "inkPixels": 132
+        }
+      ]
+    },
+    {
+      "id": "select-edge",
+      "bounds": {
+        "x": 2.125,
+        "y": 7.125,
+        "width": 17.75,
+        "height": 12.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 33
+        },
+        {
+          "size": 14,
+          "inkPixels": 41
+        },
+        {
+          "size": 15,
+          "inkPixels": 48
+        },
+        {
+          "size": 16,
+          "inkPixels": 51
+        },
+        {
+          "size": 20,
+          "inkPixels": 75
+        },
+        {
+          "size": 24,
+          "inkPixels": 95
+        }
+      ]
+    },
+    {
+      "id": "select-body",
+      "bounds": {
+        "x": 3.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 18.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 71
+        },
+        {
+          "size": 14,
+          "inkPixels": 97
+        },
+        {
+          "size": 15,
+          "inkPixels": 93
+        },
+        {
+          "size": 16,
+          "inkPixels": 104
+        },
+        {
+          "size": 20,
+          "inkPixels": 164
+        },
+        {
+          "size": 24,
+          "inkPixels": 204
+        }
+      ]
+    },
+    {
+      "id": "camera-orbit",
+      "bounds": {
+        "x": 0.9666163921356201,
+        "y": 1.125,
+        "width": 22.066768646240234,
+        "height": 21.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 73
+        },
+        {
+          "size": 14,
+          "inkPixels": 98
+        },
+        {
+          "size": 15,
+          "inkPixels": 98
+        },
+        {
+          "size": 16,
+          "inkPixels": 114
+        },
+        {
+          "size": 20,
+          "inkPixels": 149
+        },
+        {
+          "size": 24,
+          "inkPixels": 185
+        }
+      ]
+    },
+    {
+      "id": "camera-pan",
+      "bounds": {
+        "x": 2.105332612991333,
+        "y": 1.125,
+        "width": 18.76966667175293,
+        "height": 20.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 70
+        },
+        {
+          "size": 14,
+          "inkPixels": 91
+        },
+        {
+          "size": 15,
+          "inkPixels": 92
+        },
+        {
+          "size": 16,
+          "inkPixels": 104
+        },
+        {
+          "size": 20,
+          "inkPixels": 152
+        },
+        {
+          "size": 24,
+          "inkPixels": 187
+        }
+      ]
+    },
+    {
+      "id": "camera-capture",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 76
+        },
+        {
+          "size": 14,
+          "inkPixels": 108
+        },
+        {
+          "size": 15,
+          "inkPixels": 100
+        },
+        {
+          "size": 16,
+          "inkPixels": 123
+        },
+        {
+          "size": 20,
+          "inkPixels": 182
+        },
+        {
+          "size": 24,
+          "inkPixels": 200
+        }
+      ]
+    },
+    {
+      "id": "send-cam",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 20.75,
+        "height": 16.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 62
+        },
+        {
+          "size": 14,
+          "inkPixels": 96
+        },
+        {
+          "size": 15,
+          "inkPixels": 93
+        },
+        {
+          "size": 16,
+          "inkPixels": 111
+        },
+        {
+          "size": 20,
+          "inkPixels": 163
+        },
+        {
+          "size": 24,
+          "inkPixels": 179
+        }
+      ]
+    },
+    {
+      "id": "section-cam",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 20.75,
+        "height": 16.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 62
+        },
+        {
+          "size": 14,
+          "inkPixels": 93
+        },
+        {
+          "size": 15,
+          "inkPixels": 89
+        },
+        {
+          "size": 16,
+          "inkPixels": 112
+        },
+        {
+          "size": 20,
+          "inkPixels": 173
+        },
+        {
+          "size": 24,
+          "inkPixels": 192
+        }
+      ]
+    },
+    {
+      "id": "suppressed",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 70
+        },
+        {
+          "size": 14,
+          "inkPixels": 105
+        },
+        {
+          "size": 15,
+          "inkPixels": 100
+        },
+        {
+          "size": 16,
+          "inkPixels": 115
+        },
+        {
+          "size": 20,
+          "inkPixels": 175
+        },
+        {
+          "size": 24,
+          "inkPixels": 215
+        }
+      ]
+    },
+    {
+      "id": "dirty",
+      "bounds": {
+        "x": 4.125,
+        "y": 2.125,
+        "width": 18.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 46
+        },
+        {
+          "size": 14,
+          "inkPixels": 85
+        },
+        {
+          "size": 15,
+          "inkPixels": 99
+        },
+        {
+          "size": 16,
+          "inkPixels": 103
+        },
+        {
+          "size": 20,
+          "inkPixels": 150
+        },
+        {
+          "size": 24,
+          "inkPixels": 168
+        }
+      ]
+    },
+    {
+      "id": "locked",
+      "bounds": {
+        "x": 3.125,
+        "y": 1.125,
+        "width": 17.75,
+        "height": 20.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 65
+        },
+        {
+          "size": 14,
+          "inkPixels": 96
+        },
+        {
+          "size": 15,
+          "inkPixels": 81
+        },
+        {
+          "size": 16,
+          "inkPixels": 102
+        },
+        {
+          "size": 20,
+          "inkPixels": 146
+        },
+        {
+          "size": 24,
+          "inkPixels": 166
+        }
+      ]
+    },
+    {
+      "id": "offset",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 68
+        },
+        {
+          "size": 14,
+          "inkPixels": 100
+        },
+        {
+          "size": 15,
+          "inkPixels": 132
+        },
+        {
+          "size": 16,
+          "inkPixels": 140
+        },
+        {
+          "size": 20,
+          "inkPixels": 224
+        },
+        {
+          "size": 24,
+          "inkPixels": 224
+        }
+      ]
+    },
+    {
+      "id": "lead-in",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 48
+        },
+        {
+          "size": 14,
+          "inkPixels": 94
+        },
+        {
+          "size": 15,
+          "inkPixels": 101
+        },
+        {
+          "size": 16,
+          "inkPixels": 114
+        },
+        {
+          "size": 20,
+          "inkPixels": 190
+        },
+        {
+          "size": 24,
+          "inkPixels": 172
+        }
+      ]
+    },
+    {
+      "id": "lead-out",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 49
+        },
+        {
+          "size": 14,
+          "inkPixels": 94
+        },
+        {
+          "size": 15,
+          "inkPixels": 101
+        },
+        {
+          "size": 16,
+          "inkPixels": 114
+        },
+        {
+          "size": 20,
+          "inkPixels": 190
+        },
+        {
+          "size": 24,
+          "inkPixels": 172
+        }
+      ]
+    },
+    {
+      "id": "wire",
+      "bounds": {
+        "x": 5.125,
+        "y": 2.125,
+        "width": 13.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 48
+        },
+        {
+          "size": 14,
+          "inkPixels": 72
+        },
+        {
+          "size": 15,
+          "inkPixels": 77
+        },
+        {
+          "size": 16,
+          "inkPixels": 96
+        },
+        {
+          "size": 20,
+          "inkPixels": 140
+        },
+        {
+          "size": 24,
+          "inkPixels": 144
+        }
+      ]
+    },
+    {
+      "id": "simulation",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 94
+        },
+        {
+          "size": 14,
+          "inkPixels": 120
+        },
+        {
+          "size": 15,
+          "inkPixels": 114
+        },
+        {
+          "size": 16,
+          "inkPixels": 148
+        },
+        {
+          "size": 20,
+          "inkPixels": 218
+        },
+        {
+          "size": 24,
+          "inkPixels": 232
+        }
+      ]
+    },
+    {
+      "id": "machine-setup",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 17.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 85
+        },
+        {
+          "size": 14,
+          "inkPixels": 114
+        },
+        {
+          "size": 15,
+          "inkPixels": 102
+        },
+        {
+          "size": 16,
+          "inkPixels": 130
+        },
+        {
+          "size": 20,
+          "inkPixels": 189
+        },
+        {
+          "size": 24,
+          "inkPixels": 201
+        }
+      ]
+    },
+    {
+      "id": "toolpath",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 41
+        },
+        {
+          "size": 14,
+          "inkPixels": 87
+        },
+        {
+          "size": 15,
+          "inkPixels": 98
+        },
+        {
+          "size": 16,
+          "inkPixels": 106
+        },
+        {
+          "size": 20,
+          "inkPixels": 181
+        },
+        {
+          "size": 24,
+          "inkPixels": 160
+        }
+      ]
+    },
+    {
+      "id": "folder-plus",
+      "bounds": {
+        "x": 2.125,
+        "y": 3.125,
+        "width": 19.75,
+        "height": 18.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 73
+        },
+        {
+          "size": 14,
+          "inkPixels": 106
+        },
+        {
+          "size": 15,
+          "inkPixels": 114
+        },
+        {
+          "size": 16,
+          "inkPixels": 126
+        },
+        {
+          "size": 20,
+          "inkPixels": 203
+        },
+        {
+          "size": 24,
+          "inkPixels": 197
+        }
+      ]
+    },
+    {
+      "id": "link",
+      "bounds": {
+        "x": 4.832021713256836,
+        "y": 3.089466094970703,
+        "width": 16.07851219177246,
+        "height": 17.07851219177246
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 38
+        },
+        {
+          "size": 14,
+          "inkPixels": 57
+        },
+        {
+          "size": 15,
+          "inkPixels": 63
+        },
+        {
+          "size": 16,
+          "inkPixels": 67
+        },
+        {
+          "size": 20,
+          "inkPixels": 95
+        },
+        {
+          "size": 24,
+          "inkPixels": 110
+        }
+      ]
+    },
+    {
+      "id": "search",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 19.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 41
+        },
+        {
+          "size": 14,
+          "inkPixels": 59
+        },
+        {
+          "size": 15,
+          "inkPixels": 63
+        },
+        {
+          "size": 16,
+          "inkPixels": 71
+        },
+        {
+          "size": 20,
+          "inkPixels": 98
+        },
+        {
+          "size": 24,
+          "inkPixels": 138
+        }
+      ]
+    },
+    {
+      "id": "plugin",
+      "bounds": {
+        "x": 2.125,
+        "y": 1.125,
+        "width": 19.75,
+        "height": 20.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 49
+        },
+        {
+          "size": 14,
+          "inkPixels": 82
+        },
+        {
+          "size": 15,
+          "inkPixels": 98
+        },
+        {
+          "size": 16,
+          "inkPixels": 108
+        },
+        {
+          "size": 20,
+          "inkPixels": 169
+        },
+        {
+          "size": 24,
+          "inkPixels": 180
+        }
+      ]
+    },
+    {
+      "id": "pattern",
+      "bounds": {
+        "x": 2.125,
+        "y": 2.125,
+        "width": 20.75,
+        "height": 20.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 65
+        },
+        {
+          "size": 14,
+          "inkPixels": 85
+        },
+        {
+          "size": 15,
+          "inkPixels": 117
+        },
+        {
+          "size": 16,
+          "inkPixels": 124
+        },
+        {
+          "size": 20,
+          "inkPixels": 196
+        },
+        {
+          "size": 24,
+          "inkPixels": 180
+        }
+      ]
+    },
+    {
+      "id": "wire-edm-mark",
+      "bounds": {
+        "x": 2.125,
+        "y": 1.125,
+        "width": 19.75,
+        "height": 21.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 72
+        },
+        {
+          "size": 14,
+          "inkPixels": 108
+        },
+        {
+          "size": 15,
+          "inkPixels": 103
+        },
+        {
+          "size": 16,
+          "inkPixels": 128
+        },
+        {
+          "size": 20,
+          "inkPixels": 194
+        },
+        {
+          "size": 24,
+          "inkPixels": 188
+        }
+      ]
+    },
+    {
+      "id": "navigation-mouse",
+      "bounds": {
+        "x": 5.125,
+        "y": 2.125,
+        "width": 13.75,
+        "height": 19.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 54
+        },
+        {
+          "size": 14,
+          "inkPixels": 68
+        },
+        {
+          "size": 15,
+          "inkPixels": 76
+        },
+        {
+          "size": 16,
+          "inkPixels": 82
+        },
+        {
+          "size": 20,
+          "inkPixels": 118
+        },
+        {
+          "size": 24,
+          "inkPixels": 150
+        }
+      ]
+    },
+    {
+      "id": "navigation-trackpad",
+      "bounds": {
+        "x": 2.125,
+        "y": 1.125,
+        "width": 19.75,
+        "height": 20.75
+      },
+      "sizes": [
+        {
+          "size": 12,
+          "inkPixels": 70
+        },
+        {
+          "size": 14,
+          "inkPixels": 104
+        },
+        {
+          "size": 15,
+          "inkPixels": 128
+        },
+        {
+          "size": 16,
+          "inkPixels": 138
+        },
+        {
+          "size": 20,
+          "inkPixels": 213
+        },
+        {
+          "size": 24,
+          "inkPixels": 232
+        }
+      ]
+    }
+  ]
+}

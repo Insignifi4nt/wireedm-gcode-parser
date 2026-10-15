@@ -1,7 +1,7 @@
 import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { Trash2, X } from 'lucide-react';
+import { Trash2, X } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import { useModalFocus } from '@/components/ui/useModalFocus';

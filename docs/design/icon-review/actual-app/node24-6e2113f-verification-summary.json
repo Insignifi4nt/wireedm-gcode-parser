@@ -1,0 +1,15 @@
+{
+  "runtime": "Node 24.22.0",
+  "maxWorkers": 2,
+  "testFiles": 115,
+  "totalTests": 1161,
+  "passedTests": 1161,
+  "failedTests": 0,
+  "success": true,
+  "publishedCadBase": "6e2113fa0151ef7d0b378ad3de7635664b2fab82",
+  "catalogEntries": 134,
+  "originalUsages": 286,
+  "dynamicSlots": 8,
+  "variants": 208,
+  "parentContracts": 96
+}

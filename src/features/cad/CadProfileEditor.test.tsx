@@ -65,6 +65,8 @@ describe('imported analytic profile editing', () => {
   it('navigates one bounded line/arc editor without starting a geometry workflow', async () => {
     await mount(); const before = session.getSnapshot();
     expect(field('Start X').value).toBe('0'); expect(field('End X').value).toBe('20'); expect(container.querySelectorAll('input')).toHaveLength(7);
+    expect(container.querySelector('[aria-label="Previous path segment"] [data-workbench-icon="navigate-back"]')?.getAttribute('aria-hidden')).toBe('true');
+    expect(container.querySelector('[aria-label="Next path segment"] [data-workbench-icon="navigate-forward"]')?.getAttribute('aria-hidden')).toBe('true');
     await click('Next path segment');
     expect(field('Center X').value).toBe('10'); expect(field('Radius').value).toBe('10'); expect(field('Start angle').value).toBe('0'); expect(field('Sweep').value).toBe('180');
     expect(container.querySelectorAll('input')).toHaveLength(8); expect(container.querySelector<HTMLButtonElement>('[aria-label="Next path segment"]')?.disabled).toBe(true);

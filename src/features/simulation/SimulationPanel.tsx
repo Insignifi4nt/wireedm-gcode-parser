@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { AlertTriangle, ArrowLeft, Box, Check, ChevronRight, FileBox, Info, LoaderCircle, Pause, Play, RotateCcw, SkipBack, SkipForward, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, BodyIcon, Check, ChevronRight, MachineSetupIcon, Info, LoaderCircle, Pause, Play, RotateCcw, SkipBack, SkipForward, X } from '@wire-edm/icons-react';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import { sampleSimulation, resolveSimulationSettings, type SimulationSettings } from '@/domain/simulation';
 import type { MachineModel } from '@/domain/simulation/machine-import';
@@ -150,8 +150,8 @@ export default function SimulationPanel({ document, projectName, savedAt, dirty,
           if (operation) { setPlaying(false); setElapsed(operation.time); }
         }}><option value="" disabled>Jump to operation</option>{operationStarts.map((operation, index) => <option key={operation.id} value={operation.id ?? ''}>{index + 1}. {operation.name}</option>)}</Select>}
         <div className="sim-tools" ref={setupTools}>
-          {setupButton('stock', 'Stock settings', <><Box size={14} /><span>Stock</span><small>{[settings.stock.width, settings.stock.depth, settings.stock.thickness].map(value => Number(value.toFixed(3))).join(' × ')}</small></>)}
-          {setupButton('machine', 'Machine model settings', <><FileBox size={14} /><span>Machine</span>{machine && <i aria-label="Model loaded" />}</>)}
+          {setupButton('stock', 'Stock settings', <><BodyIcon size={14} /><span>Stock</span><small>{[settings.stock.width, settings.stock.depth, settings.stock.thickness].map(value => Number(value.toFixed(3))).join(' × ')}</small></>)}
+          {setupButton('machine', 'Machine model settings', <><MachineSetupIcon size={14} /><span>Machine</span>{machine && <i aria-label="Model loaded" />}</>)}
           {setupButton('checks', 'Simulation checks', <><AlertTriangle size={14} /><span>Checks</span><b>{findingCount}</b></>)}
           <span id={checksDescriptionId} className="sr-only" aria-live="polite">{checksDescription}</span>
           {setupButton('info', 'Simulation information', <Info size={15} />)}

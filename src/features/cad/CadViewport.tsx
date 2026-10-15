@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Box, Grid2X2, Maximize2 } from 'lucide-react';
+import { FitViewIcon, GridIcon, ViewIcon } from '@wire-edm/icons-react';
 import { CadContextHelp } from './CadContextHelp';
 import { CadViewTools } from './CadCommandDock';
 import * as THREE from 'three';
@@ -799,14 +799,14 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         disabled={depthDragging || interactionLocked || unavailable || pickMode !== 'body' || !onSelectPlane} onClick={() => { if (reference.plane) onSelectPlane?.(reference.plane); }}>{reference.name}</Button>)}
     </div>
     <CadViewTools label="Viewport controls">
-      <Box size={14} />
+      <ViewIcon size={14} />
       <Select density="compact" aria-label="Named view" value={viewName} disabled={depthDragging || navigationLocked || unavailable} onChange={(event) => {
         const name = (['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).find((entry) => entry === event.target.value);
         if (name) controller.current?.setView?.(name);
       }}>{viewName === 'Custom' && <option value="Custom" disabled>Custom</option>}{(['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).map((name) => <option key={name} value={name}>{name}</option>)}</Select>
       <span className="cad-divider" />
-      <Button title="Fit model" aria-label="Fit model" disabled={depthDragging || navigationLocked || unavailable} onClick={() => controller.current?.fit()}><Maximize2 size={14} /></Button>
-      <Button title="Toggle grid" aria-label="Toggle grid" disabled={navigationLocked || unavailable} aria-pressed={gridVisible} onClick={() => controller.current?.setGrid(!gridVisible)}><Grid2X2 size={14} /></Button>
+      <Button title="Fit model" aria-label="Fit model" disabled={depthDragging || navigationLocked || unavailable} onClick={() => controller.current?.fit()}><FitViewIcon size={14} /></Button>
+      <Button title="Toggle grid" aria-label="Toggle grid" disabled={navigationLocked || unavailable} aria-pressed={gridVisible} onClick={() => controller.current?.setGrid(!gridVisible)}><GridIcon size={14} /></Button>
       {onPickMode && <><span className="cad-divider" />
         {(['body', 'face', 'edge'] satisfies CadPickMode[]).map((mode) => <Button key={mode} disabled={interactionLocked || unavailable || !pickingEnabled} aria-pressed={pickMode === mode} title={`Pick ${mode === 'body' ? 'bodies' : `${mode}s`}`} onClick={() => onPickMode(mode)}>{mode === 'body' ? 'Body' : mode === 'face' ? 'Face' : 'Edge'}</Button>)}
       </>}

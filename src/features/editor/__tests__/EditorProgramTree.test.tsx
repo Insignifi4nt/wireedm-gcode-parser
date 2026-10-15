@@ -44,9 +44,14 @@ describe('EditorProgramTree', () => {
     const row = container.querySelector<HTMLElement>(`[data-tree-key="${operation.treeKey}"]`);
     if (!row) throw new Error('Missing operation row');
     expect(row.getAttribute('aria-expanded')).toBe('false');
+    const disclosure = row.querySelector<HTMLButtonElement>('button');
+    expect(disclosure?.getAttribute('aria-label')).toBe(`Expand ${operation.label}`);
+    expect(disclosure?.querySelector('[data-workbench-icon="expand-right"]')?.getAttribute('aria-hidden')).toBe('true');
     await act(async () => row.querySelector('div')?.click());
     expect(row.getAttribute('aria-expanded')).toBe('false');
     await act(async () => row.querySelector('button')?.click());
+    expect(disclosure?.getAttribute('aria-label')).toBe(`Collapse ${operation.label}`);
+    expect(disclosure?.querySelector('[data-workbench-icon="expand-down"]')?.getAttribute('aria-hidden')).toBe('true');
     const eventRow = row.querySelector<HTMLElement>('[role="group"] [role="treeitem"]');
     if (!eventRow) throw new Error('Missing execution event');
     await act(async () => eventRow.querySelector('div')?.click());

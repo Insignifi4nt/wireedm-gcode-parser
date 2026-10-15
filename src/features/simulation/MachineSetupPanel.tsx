@@ -2,7 +2,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Check, LoaderCircle, Upload, X } from 'lucide-react';
+import { Check, LoaderCircle, Upload, X } from '@wire-edm/icons-react';
 import { MACHINE_IMPORT_LIMITS, validMachinePlacement, type MachineImportProgress, type MachineModel } from '@/domain/simulation/machine-import';
 import { importMachineModel } from './machine-import/importMachineModel';
 import { MACHINE_IMPORT_THIRD_PARTY } from './machine-import/thirdPartyNotices';

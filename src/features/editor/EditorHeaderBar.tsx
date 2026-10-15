@@ -2,7 +2,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useRef, type ChangeEvent, type ReactNode } from 'react';
-import { ArrowLeft, CircleHelp, FileOutput, FileSearch, FileUp, Redo2, Save, Undo2 } from 'lucide-react';
+import { ArrowLeft, CircleHelp, FileOutput, FileSearch, FileUp, Redo2, Save, Undo2 } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import type { GCodeInterpreterState } from '@/domain/editor/gcodeBlockInterpreter';

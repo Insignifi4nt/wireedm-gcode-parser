@@ -1,0 +1,26 @@
+{
+  "version": "0.0.698",
+  "previousVersion": "0.0.697",
+  "postCompatibility": "preserved-original-icon-system",
+  "summary": "Integrates the original SVG family throughout the app as a reusable typed React package, with independent icon imports and a searchable catalog.",
+  "warning": "Installed post packages, saved revisions, controller output and local storage remain compatible. This release changes control pictures and the app favicon; existing labels and machining operations retain their meaning.",
+  "checklist": {
+    "schema": "App release 0.0.698 follows merged CAD 0.0.697. The new @wire-edm/icons-react package is independently versioned at 0.1.0. UPID, post schema, engine API, installed machine/post packages and saved-document versions remain unchanged.",
+    "events": "No post execution events, simulation events or WebMCP operation events change. Icon replacement retains the existing control handlers and accessibility state.",
+    "capabilities": "No machine/post capability changes. The original SVG family includes distinct CAD operations, geometry, navigation, files, storage and status symbols. The standalone searchable catalog previews assets; it does not invoke machining operations.",
+    "auditAndOutput": "No output generation, audit, numbering, encoding, line ending, controller file or feed behavior changes. Output still requires the existing saved revision and complete active machine package.",
+    "installationAndStorage": "No package installation, saved revision, browser cache or folder adapter changes. No migration or cleanup is performed. The icon catalog does not read or write workbench storage.",
+    "verification": "Integrated with merged main bfac856 after PR12 was merged and deployed. All 395 existing unit files / 4,161 cases pass; final focused editor/tree repairs pass 23/18 cases and all 55 selected Chromium journeys pass. The 134-drawing package exposes 227 named exports. All 285 surviving old imported uses resolve; the removed header storage badge is explicitly retired and 24 later/text-glyph uses complete 309 current references. Packed-consumer ESM/type checks pass; one named drawing bundles 775 bytes with React external and no dynamic catalog. Two package behavior cases, asset/geometry/generation parity, UI ownership, CAD control-text preservation, release compatibility, final TypeScript/Vite, 95 documentation checks and pinned native sources pass. Independent app review finds no unintended behavior, geometry or source-output change. Actual production verifies dashboard/CAD icons and opens the saved module3 gear with unchanged fingerprint and native volume 21,344.063921829482 mm³. Detailed evidence is in docs/reviews/2026-10-16-icon-package-integration.md. PR13 remains unmerged."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Recognize workbench actions through a consistent original icon family.",
+    "changes": [
+      "CAD feature icons distinguish material addition and removal, rounded and beveled edges, sketches, solids, patterns and mirroring.",
+      "File, editing, simulation, storage, navigation and status controls use matching SVG metrics and inherit their control colors.",
+      "The icon catalog provides searchable previews at toolbar and tree sizes on light and dark backgrounds."
+    ],
+    "compatibility": "Installed posts, saved revisions, machine packages, storage and controller output remain compatible.",
+    "action": "Use the existing control labels and tooltips to identify actions. Icon pictures have changed; their operations retain the same checks."
+  }
+}

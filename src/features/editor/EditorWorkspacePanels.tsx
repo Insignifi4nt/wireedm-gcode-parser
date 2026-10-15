@@ -16,7 +16,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   X
-} from 'lucide-react';
+} from '@wire-edm/icons-react';
 
 export type EditorDockSide = 'left' | 'right';
 export type EditorPanelPlacement = 'floating' | 'hidden' | `docked-${EditorDockSide}`;

@@ -1,0 +1,182 @@
+// CAD iteration 3 review candidates. This file is an isolated visual study;
+// it does not alter the shared source or generated catalog assets.
+const body = [
+  'M4 8l8-4 8 4v9l-8 4-8-4Z',
+  'M4 8l8 4 8-4',
+  'M12 12v9',
+];
+const bodyPointer = 'M18 12l4 3-2 1-1 4Z';
+
+export const cadV3 = [
+  {
+    id: 'revolve', variant: 'closed-profile',
+    paths: [
+      'M11 3v18',
+      'M9 7H5v10h4Z',
+      'M15 5c5 2 7 5 7 7s-2 5-7 7',
+      'M16 16l-1 3 4-1',
+    ],
+    reason: 'Show an explicitly closed source profile beside its axis, then a separate circular-motion cue. This tests the conventional feature diagram without making the shape itself look like an unexplained bracket.',
+  },
+  {
+    id: 'revolve', variant: 'turned-result',
+    paths: [
+      'M6 6c0-3 12-3 12 0v12c0 3-12 3-12 0Z',
+      'M6 6c0 3 12 3 12 0',
+      'M12 3v18',
+      'M19 8c3 3 3 7 0 10',
+      'M17 16l2 2 2-2',
+    ],
+    reason: 'Show a closed turned volume around a center axis with a separate rotation cue. This tests an explicit result metaphor against the profile-and-axis drawing.',
+  },
+  {
+    id: 'loft', variant: 'wire-sections',
+    paths: [
+      'M8 4h8v4H8Z',
+      'M4 18h16v3H4Z',
+      'M8 4L4 18',
+      'M16 4L20 18',
+      'M16 8L20 21',
+      'M8 8L4 21',
+    ],
+    reason: 'Use two visibly closed, different section loops and four connecting generators. The wireframe avoids a solid cup silhouette and directly shows the transition between profiles.',
+  },
+  {
+    id: 'sweep', variant: 'closed-tube-result',
+    paths: [
+      'M3 17C7 8 12 3 19 3L21 7C15 8 11 13 8 21Z',
+      'M5.5 19C9 10 14 5 20 5',
+    ],
+    reason: 'Show a closed, constant-width curved tube body, its starting profile edge, and a center trajectory. This tests the swept-result metaphor instead of an isolated path arrow.',
+  },
+  {
+    id: 'sweep', variant: 'profile-and-trajectory',
+    paths: [
+      'M3 16h5v5H3Z',
+      'M8 18C11 13 15 9 21 7',
+      'M17 5l4 2-2 4',
+    ],
+    reason: 'Keep a closed source section, attach the trajectory to it, and show direction. This is the operation-input metaphor for comparison with the closed swept-result drawing.',
+  },
+  {
+    id: 'pad-pocket', variant: 'orthographic-plus-minus',
+    paths: [
+      'M3 15h6V9h6v6h6v6H3Z',
+      'M6 3v4M4 5h4',
+      'M18 5h4',
+    ],
+    reason: 'Pair one additive and one subtractive orthographic profile cue with plus/minus marks. The marks identify both operations without stacking two tiny arrowheads over the same centerline.',
+  },
+  {
+    id: 'imported-body', variant: 'closed-body-arrow',
+    paths: [
+      ...body,
+      'M12 2v7',
+      'M9 6l3 3 3-3',
+    ],
+    reason: 'Use the exact closed body silhouette and place the import arrow into its top face. Compare with the external-badge version for clutter and import recognition.',
+  },
+  {
+    id: 'imported-body', variant: 'closed-body-badge',
+    paths: [
+      ...body,
+      'M4 1v5',
+      'M1.5 3.5L4 6l2.5-2.5',
+    ],
+    reason: 'Keep the exact closed body silhouette and move the import arrow outside its top-left corner as a small status badge, avoiding lines through the solid’s facets.',
+  },
+  {
+    id: 'select-face', variant: 'isolated-face-shared-cursor',
+    paths: [
+      'M3 12l9-5 9 5-9 5Z',
+      bodyPointer,
+    ],
+    reason: 'Retain the isolated face target, align its rhombus to the body’s exact ±8/±4 isometric axes, and reuse the same pointer path as select-body.',
+  },
+  {
+    id: 'select-edge', variant: 'isolated-edge-shared-cursor',
+    paths: [
+      'M10 16L18 12',
+      'M9.2 16a.8.8 0 1 0 1.6 0a.8.8 0 1 0-1.6 0Z',
+      'M17.2 12a.8.8 0 1 0 1.6 0a.8.8 0 1 0-1.6 0Z',
+      bodyPointer,
+    ],
+    reason: 'Retain the isolated edge target, use the body’s exact ±8/±4 isometric direction, and reuse select-body’s pointer path with its tip placed on the target edge.',
+  },
+  {
+    id: 'datum-plane', variant: 'body-aligned-plane',
+    paths: [
+      'M4 8l8-4 8 4-8 4Z',
+    ],
+    reason: 'Use the exact top-face projection slopes of the isometric body and remove the detached support ticks. The plane remains a planar outline rather than a solid face.',
+  },
+];
+
+export const cadV3Coverage = [
+  ['body', 'retain', 'Reference isometric solid; source primitive remains unchanged.'],
+  ['imported-body', 'compare', 'Compare closed body with central import arrow and external arrow badge.'],
+  ['datum-plane', 'compare', 'Align the plane to the body’s exact projection; omit free-floating support strokes.'],
+  ['pad', 'retain', 'Current closed orthographic extrusion profile and upward arrow read clearly.'],
+  ['pocket', 'retain', 'Current closed orthographic cut profile and downward arrow read clearly.'],
+  ['pad-pocket', 'compare', 'Current is too close to pad; compare one stepped profile with +/- cues.'],
+  ['fillet', 'retain', 'Rounded corner treatment remains distinct from chamfer.'],
+  ['chamfer', 'retain', 'Beveled corner treatment remains distinct from fillet.'],
+  ['shell', 'retain', 'Reject v2: its full top bar closes the opening and reads as a double square.'],
+  ['revolve', 'compare', 'Compare closed profile plus axis/circular motion against an explicit turned result.'],
+  ['loft', 'compare', 'Compare current and v2 against closed section loops plus generators.'],
+  ['sweep', 'compare', 'Compare operation inputs against a closed curved-tube result with visible section.'],
+  ['boolean', 'retain', 'Reject v2 decorative ticks; current overlap cue is sufficiently direct.'],
+  ['boolean-union', 'retain', 'Current union silhouette is distinct.'],
+  ['boolean-subtract', 'retain', 'Current subtraction silhouette is distinct.'],
+  ['boolean-intersect', 'retain', 'Current intersection silhouette is distinct.'],
+  ['linear-pattern', 'retain', 'Current instances and direction baseline already use closed box paths.'],
+  ['circular-pattern', 'retain', 'Current radial instances and rotation cue are recognizable.'],
+  ['pattern', 'retain', 'Current generic pattern command remains distinct from linear/circular modes.'],
+  ['mirror', 'retain', 'Current instance contours are already explicitly closed.'],
+  ['select', 'retain', 'Generic selection cursor remains unchanged.'],
+  ['select-face', 'compare', 'Keep isolated target; align its projection and pointer with select-body.'],
+  ['select-edge', 'compare', 'Keep isolated target; align edge slope and pointer with select-body.'],
+  ['select-body', 'retain', 'Reference object-plus-pointer modifier.'],
+  ['sketch', 'retain', 'Current sketch axes and closed profile remain recognizable.'],
+  ['curve', 'retain', 'Current reference curve remains distinct from a polyline.'],
+  ['circle', 'retain', 'Current circle profile is clear.'],
+  ['circle-center', 'retain', 'Current center marker adds the required distinction.'],
+  ['rectangle', 'retain', 'Current rectangle profile is clear.'],
+  ['slot', 'retain', 'Current closed slot outline is clear.'],
+  ['polyline', 'retain', 'Open connected segments and vertices are intentional.'],
+  ['closed-path', 'retain', 'Current closed contour is distinct from polyline.'],
+  ['arc', 'retain', 'Open arc and three-point markers are intentional.'],
+  ['line', 'retain', 'Current endpoint-marked line is clear.'],
+  ['construction', 'retain', 'Current construction strokes use intentional separated dashes.'],
+  ['measure', 'retain', 'Current dimension ticks are intentional.'],
+  ['origin', 'retain', 'Current crosshair origin is clear.'],
+  ['move', 'retain', 'Current planar transform arrows remain distinct.'],
+  ['move-3d', 'retain', 'Current three-axis transform cue remains recognizable.'],
+  ['rotate-clockwise', 'retain', 'Current clockwise direction arc is clear.'],
+  ['rotate-counterclockwise', 'retain', 'Current counterclockwise direction arc is clear.'],
+  ['flip-horizontal', 'retain', 'Current mirrored shapes and axis remain clear.'],
+  ['flip-vertical', 'retain', 'Current mirrored shapes and axis remain clear.'],
+  ['snap', 'retain', 'Current magnet metaphor is distinct from geometry selection.'],
+  ['turn', 'retain', 'Current corner-direction cue remains distinct from camera rotation.'],
+  ['trim', 'retain', 'Current scissors metaphor is appropriate for trim.'],
+  ['link', 'retain', 'Current linked-expression chain symbol remains clear.'],
+  ['plugin', 'retain', 'Current parametric plugin puzzle-piece metaphor remains clear.'],
+  ['fit-view', 'retain', 'Current viewport-corner glyph remains clear.'],
+  ['zoom-in', 'retain', 'Current magnifier-plus glyph remains clear.'],
+  ['zoom-out', 'retain', 'Current magnifier-minus glyph remains clear.'],
+  ['grid', 'retain', 'Current construction grid is clear.'],
+  ['view', 'retain', 'Current orientation cube uses an orthographic view cue.'],
+  ['view-top', 'retain', 'Current top-view square remains distinct from generic orientation.'],
+  ['camera-orbit', 'retain', 'Current orbit arrows remain distinct from pan.'],
+  ['camera-pan', 'retain', 'Current hand/pan metaphor remains recognizable.'],
+  ['camera-capture', 'retain', 'Current camera capture glyph remains clear.'],
+  ['visible', 'retain', 'Current visibility eye is clear.'],
+  ['hidden', 'retain', 'Current crossed visibility eye is clear.'],
+  ['scan', 'retain', 'Current bounds scan brackets remain clear.'],
+  ['section-view', 'retain', 'Current viewport section cue is separate from the CAM section command.'],
+  ['layers', 'retain', 'Current stacked-layer symbol remains clear.'],
+  ['navigation-mouse', 'retain', 'Current mouse navigation shape is clear.'],
+  ['navigation-trackpad', 'retain', 'Current trackpad navigation shape is clear.'],
+];
+
+export default cadV3;

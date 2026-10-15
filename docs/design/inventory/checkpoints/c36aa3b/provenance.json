@@ -1,0 +1,18 @@
+{
+  "publishedCheckpoint": "c36aa3b50a30f82ded3508652d9e7917c69b6b59",
+  "snapshotGeneratedAt": "2026-10-14T15:49:20.282Z",
+  "snapshotBaseRevision": "09795ec5e0e404f5ce69ff2173dea119a69f66ce",
+  "sourceDirectory": "C:\\Users\\cristian\\.codex\\worktrees\\cad-workbench\\Wire_EDM\\docs\\design",
+  "files": [
+    {
+      "name": "icon-inventory.audit.json",
+      "bytes": 4078324,
+      "sha256": "1f7cf96e5d9963b049eedfa014ed7e941da0bb4ea1d0a09bead3665f83f3d11e"
+    },
+    {
+      "name": "icon-inventory.md",
+      "bytes": 775874,
+      "sha256": "e16d2dffa35310ada98b3b20cfa25dbb7a18e0dc72d45d28f8f3aa03bc2b35e4"
+    }
+  ]
+}

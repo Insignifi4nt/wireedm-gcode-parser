@@ -1,0 +1,47 @@
+{
+  "reviewedCount": 32,
+  "sizes": [
+    12,
+    14,
+    16,
+    24
+  ],
+  "themes": [
+    "dark",
+    "light"
+  ],
+  "ids": [
+    "file-new",
+    "file-import",
+    "file-export",
+    "file-inspect",
+    "file-body",
+    "copy",
+    "folder-plus",
+    "folder-storage",
+    "busy",
+    "visible",
+    "hidden",
+    "dirty",
+    "wire-edm-mark",
+    "play",
+    "pause",
+    "step-back",
+    "step-forward",
+    "insert-points",
+    "locate",
+    "start-point",
+    "cam-editor",
+    "offset",
+    "toolpath",
+    "lead-in",
+    "lead-out",
+    "departure",
+    "send-cam",
+    "section-cam",
+    "wire",
+    "simulation",
+    "machine-setup",
+    "section-view"
+  ]
+}

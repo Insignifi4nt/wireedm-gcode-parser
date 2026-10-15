@@ -3,7 +3,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { MenuSurface, MenuItem } from '@/components/ui/menu';
 import { Select } from '@/components/ui/select';
 import { useState } from 'react';
-import { ChevronDown, FileCode, History, Pencil, Save, Trash2, Waypoints } from 'lucide-react';
+import { ChevronDown, FileCode, History, Pencil, Save, Trash2, Waypoints } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';

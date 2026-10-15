@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
+import { iconSource } from './icon-source.mjs';
 
 // Source-only inventory. It never changes app files or requires a running app.
 const root = process.cwd();
@@ -21,12 +22,8 @@ const checker = program.getTypeChecker();
 const imports = [], occurrences = [], dynamicSlots = [], glyphCandidates = [], graphics = [], nativeControls = [], cssVisuals = [], assets = [], renderCalls = [], primitives = [], sharedGraphicCalls = [], programmaticGraphics = [], cursorLocations = [];
 const sourceHashes = {};
 const packageExports = new Map(), packageDefinitions = new Map();
-const packageIndexPath = path.join(root, 'node_modules/lucide-react/dist/esm/lucide-react.js');
-const packageIndex = ts.createSourceFile(packageIndexPath, readFileSync(packageIndexPath, 'utf8'), ts.ScriptTarget.Latest, true);
-for (const statement of packageIndex.statements) if (ts.isExportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier) && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
-  for (const item of statement.exportClause.elements) packageExports.set(item.name.text, statement.moduleSpecifier.text);
-}
-const canonical = name => `icon.lucide.${path.basename(packageExports.get(name) ?? name, '.js')}`;
+for (const entry of iconSource) for (const name of [...entry.aliases, entry.id.split('-').map(word=>word[0].toUpperCase()+word.slice(1)).join('')+'Icon']) packageExports.set(name, `${entry.id}.svg`);
+const canonical = name => `icon.wireedm.${path.basename(packageExports.get(name) ?? name, '.svg')}`;
 const compact = value => value.replace(/\s+/g, ' ').trim();
 // All non-ASCII text is a candidate, including uncommon pause/arrow glyphs.
 const symbolGlyph = /[^\x00-\x7f]/u;
@@ -118,15 +115,12 @@ for (const file of codeFiles) {
       const imported = (item.propertyName ?? item.name).text;
       if (item.isTypeOnly || statement.importClause?.isTypeOnly) continue;
       const modulePath = packageExports.get(imported);
-      if (packageName === 'lucide-react' && !modulePath) throw new Error(`Unresolved Lucide export ${imported}`);
+      if (packageName === '@wire-edm/icons-react' && !modulePath) throw new Error(`Unresolved icon package export ${imported}`);
       if (modulePath && !packageDefinitions.has(modulePath)) {
-        const iconPath = path.resolve(path.dirname(packageIndexPath), modulePath), text = readFileSync(iconPath, 'utf8');
-        const source = ts.createSourceFile(iconPath, text, ts.ScriptTarget.Latest, true);
-        let nodeDefinition;
-        const findDefinition = p => { if (ts.isVariableDeclaration(p) && p.name.getText(source) === '__iconNode') nodeDefinition = p; ts.forEachChild(p, findDefinition); }; findDefinition(source);
-        if (!nodeDefinition) throw new Error(`Missing SVG node definition ${modulePath}`);
-        packageDefinitions.set(modulePath, { canonical: canonical(imported), file: slash(path.relative(root, iconPath)), line: source.getLineAndCharacterOfPosition(nodeDefinition.getStart(source)).line + 1,
-          node: nodeDefinition.initializer.getText(source), sha256: hash(text) });
+        const iconPath = path.join(root, 'src/assets/icons', modulePath), text = readFileSync(iconPath, 'utf8');
+        const entry = iconSource.find(entry=>`${entry.id}.svg`===modulePath);
+        packageDefinitions.set(modulePath, { canonical: canonical(imported), file: slash(path.relative(root, iconPath)), line:1,
+          label:entry.label, node:JSON.stringify(entry.paths), sha256:hash(text) });
       }
       const entry = record(item.name, sf, { canonical: canonical(imported), imported, alias: item.name.text, source: packageName });
       imports.push(entry); names.set(item.name.text, entry); const symbol = checker.getSymbolAtLocation(item.name); if (symbol) symbols.set(symbol, entry);
@@ -173,10 +167,10 @@ for (const file of codeFiles) {
   visit(sf);
 }
 // Independently count lexical opening tags and imports, separate from symbol resolution.
-const lexical = { lucideImports: [], svgOpenings: [], imageOpenings: [], iconSlots: [] };
+const lexical = { iconImports: [], svgOpenings: [], imageOpenings: [], iconSlots: [] };
 for (const file of codeFiles) {
   const text = readFileSync(file, 'utf8'), rel = slash(path.relative(root, file));
-  for (const match of text.matchAll(/from\s*['"]lucide-react['"]/g)) lexical.lucideImports.push({ file: rel, line: text.slice(0, match.index).split('\n').length });
+  for (const match of text.matchAll(/from\s*['"]@wire-edm\/icons-react['"]/g)) lexical.iconImports.push({ file: rel, line: text.slice(0, match.index).split('\n').length });
   for (const [key, pattern] of [['svgOpenings', /<svg(?:\s|>)/g], ['imageOpenings', /<(?:img|image)(?:\s|>)/g], ['iconSlots', /<[\w.]*Icon(?:\s|>)/g]]) for (const match of text.matchAll(pattern)) lexical[key].push({ file: rel, line: text.slice(0, match.index).split('\n').length });
 }
 for (const category of [occurrences, dynamicSlots, glyphCandidates, graphics, nativeControls, cssVisuals, renderCalls, primitives, sharedGraphicCalls, programmaticGraphics, cursorLocations]) {
@@ -192,6 +186,7 @@ const report = {
   dirtyState: execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim().split('\n').filter(Boolean),
   scannedRoots: ['src/', 'package-tools/', 'index.html'], productionFileCount: production.length, parsedCodeFileCount: codeFiles.length,
   fixtureFileCount: sourceFiles.length - production.length, sourceHashes,
+  iconPackage:{name:'@wire-edm/icons-react',version:JSON.parse(readFileSync(path.join(root,'packages/icons-react/package.json'),'utf8')).version,original:true},
   packageDefinitions: [...packageDefinitions.values()], imports, occurrences, dynamicSlots, renderCalls, sharedGraphicCalls, primitives, programmaticGraphics, cursorLocations, graphics, nativeControls, glyphCandidates, cssVisuals, assets, lexical
 };
 report.excludedCategories = ['docs', 'scripts', 'e2e', 'tests', 'DXF-test-subjects', 'vendor', 'dist', '.cache', '.playwright', 'playwright-report', 'test-results'].filter(directory => {
@@ -204,7 +199,7 @@ report.excludedCategories = ['docs', 'scripts', 'e2e', 'tests', 'DXF-test-subjec
 let lexicalImportBindings = 0, lexicalJsxIcons = 0, lexicalPrimitives = 0;
 for (const file of codeFiles) {
   const text = readFileSync(file, 'utf8'), relative = slash(path.relative(root, file));
-  for (const match of text.matchAll(/import\s+(type\s+)?\{([^}]+)\}\s+from\s+['"]lucide-react['"]/g)) if (!match[1]) lexicalImportBindings += match[2].split(',').filter(item => item.trim() && !/^type\s/.test(item.trim())).length;
+  for (const match of text.matchAll(/import\s+(type\s+)?\{([^}]+)\}\s+from\s+['"]@wire-edm\/icons-react['"]/g)) if (!match[1]) lexicalImportBindings += match[2].split(',').filter(item => item.trim() && !/^type\s/.test(item.trim())).length;
   for (const entry of imports.filter(entry => entry.file === relative)) lexicalJsxIcons += [...text.matchAll(new RegExp('<' + entry.alias + '(?:\\s|/?>)', 'g'))].length;
   lexicalPrimitives += [...text.matchAll(/<(?:path|circle|ellipse|line|polyline|polygon|rect|text)(?:\s|>)/g)].length;
 }

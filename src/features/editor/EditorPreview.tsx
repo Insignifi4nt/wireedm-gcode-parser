@@ -9,7 +9,7 @@ import {
   type MouseEvent,
   type TouchEvent
 } from 'react';
-import { Magnet, Maximize2, MousePointer2, ZoomIn, ZoomOut } from 'lucide-react';
+import { CircleCenterIcon, Maximize2, MousePointer2, ZoomIn, ZoomOut } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
@@ -962,7 +962,7 @@ export function EditorPreview({
                 title="Place measurement points"
                 type="button"
               >
-                <Magnet className="size-3" />
+                <CircleCenterIcon className="size-3" />
               </Button>
             </div>
           )}

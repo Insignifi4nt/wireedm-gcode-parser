@@ -1,7 +1,7 @@
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useRef, useState } from 'react';
-import { FileUp } from 'lucide-react';
+import { FileUp } from '@wire-edm/icons-react';
 import { Button } from '@/components/ui/button';
 import { readGCodeInspectionFile, validateGCodeInspectionSource } from '@/domain/editor/gcodeInspectionSource';
 

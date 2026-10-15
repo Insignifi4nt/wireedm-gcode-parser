@@ -2,7 +2,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { Select as NativeSelect } from '@/components/ui/select';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Check, ChevronRight, Trash2, Upload } from 'lucide-react';
+import { Check, ChevronRight, Trash2, Upload } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import type {

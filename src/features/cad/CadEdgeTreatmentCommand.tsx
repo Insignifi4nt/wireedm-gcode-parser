@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { MenuItem, MenuSurface } from '@/components/ui/menu';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, CircleDot, Scissors } from 'lucide-react';
+import { ChamferIcon, ExpandDownIcon, FilletIcon } from '@wire-edm/icons-react';
 import type { CadFeature } from '@/domain/cad/cadDocument';
 import { cadToolbarPopupPosition } from './cadToolbarPopupPosition';
 
@@ -45,7 +45,7 @@ export function CadEdgeTreatmentCommand({ disabled, onChoose, context = 'model' 
       onClick={() => { if (open) close(true); else { initialFocus.current = 'first'; setOpen(true); } }}
       onKeyDown={event => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); initialFocus.current = event.key === 'ArrowUp' ? 'last' : 'first'; setOpen(true); }
-      }}><CircleDot size={15} strokeWidth={1.5} /><span>Fillet / Chamfer</span><ChevronDown size={11} /></Button>
+      }}><FilletIcon size={15} strokeWidth={1.5} /><span>Fillet / Chamfer</span><ExpandDownIcon size={11} /></Button>
     {open && !disabled && createPortal(<MenuSurface ref={popup} id={id} aria-label="Edge treatment commands" className="cad-pattern-menu" style={position}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) close(); }}
       onKeyDown={event => {
@@ -65,8 +65,8 @@ export function CadEdgeTreatmentCommand({ disabled, onChoose, context = 'model' 
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? commands.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + commands.length) % commands.length;
         commands[next]?.focus();
       }}>
-      <MenuItem onClick={() => { close(); onChoose('fillet'); }}><CircleDot size={14} /> Fillet</MenuItem>
-      {context === 'model' && <MenuItem onClick={() => { close(); onChoose('chamfer'); }}><Scissors size={14} /> Chamfer</MenuItem>}
+      <MenuItem onClick={() => { close(); onChoose('fillet'); }}><FilletIcon size={14} /> Fillet</MenuItem>
+      {context === 'model' && <MenuItem onClick={() => { close(); onChoose('chamfer'); }}><ChamferIcon size={14} /> Chamfer</MenuItem>}
     </MenuSurface>, window.document.body)}
   </>;
 }

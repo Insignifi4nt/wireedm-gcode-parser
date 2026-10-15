@@ -1,7 +1,7 @@
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useEffect, useRef, type FormEvent } from 'react';
-import { X } from 'lucide-react';
+import { X } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import type {

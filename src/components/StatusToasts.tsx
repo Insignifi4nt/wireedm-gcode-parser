@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Bell, CheckCircle2, Info, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Bell, CheckCircle2, Info, X, XCircle } from '@wire-edm/icons-react';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
 
 export type StatusToastType = 'success' | 'error' | 'warning' | 'info';

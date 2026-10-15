@@ -1,7 +1,7 @@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ContextType } from 'react';
-import { Check, X } from 'lucide-react';
+import { CloseIcon, ConfirmIcon } from '@wire-edm/icons-react';
 import type { CadDocument, CadFeature, CadPlane, CadProfile, CadScalar, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
 import { resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
@@ -315,7 +315,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
     <div className="cad-property-title">{isNew ? 'Create' : 'Edit'} {featureLabels[draft.kind]}<CadContextHelp label={featureLabels[draft.kind]}>{cadFeatureHelp[draft.kind]}</CadContextHelp></div>
     <fieldset className="cad-feature-fields" disabled={Boolean(pickCurrent) || staleDraft || depthGestureActive}>
     <CadFeatureReferencePickingContext.Provider value={pickingContext}>{fields}</CadFeatureReferencePickingContext.Provider></fieldset>
-    {pickCurrent?.kind === 'pick' && <div className="cad-reference-pick-status" role="status">Pick {pickCurrent.label.toLowerCase()} in the model or history<Button type="button" aria-label="Cancel source selection" onClick={() => endPick()}><X size={13} /></Button></div>}
+    {pickCurrent?.kind === 'pick' && <div className="cad-reference-pick-status" role="status">Pick {pickCurrent.label.toLowerCase()} in the model or history<Button type="button" aria-label="Cancel source selection" onClick={() => endPick()}><CloseIcon size={13} /></Button></div>}
     {preview && <div className={`cad-feature-preview-status${preview.kind === 'error' ? ' is-error' : ''}`} role={preview.kind === 'error' ? 'alert' : 'status'}>
       {preview.kind === 'error' ? preview.message : preview.kind === 'ready' && currentPreviewReady
         ? `Preview${previewSolidCount !== undefined && previewSolidCount > 1 ? ` · ${previewSolidCount} solids` : ''} · Apply to keep`
@@ -323,7 +323,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
     </div>}
     {error && <p className="cad-error" role="alert">{error}</p>}
     {staleDraft && <p className="cad-error" role="alert">The part changed. Cancel this edit and reopen the current feature.</p>}
-    {(isNew || changed || scalarPending || staleDraft || depthGestureActive) && <div className="cad-form-actions"><Button type="button" onClick={onCancel}><X size={13} /> Cancel</Button><Button variant="primary" type="submit" className="cad-primary" disabled={!isNew && !changed || scalarPending || waitingForPreview || Boolean(pickCurrent) || staleDraft || depthGestureActive}><Check size={13} /> Apply</Button></div>}
+    {(isNew || changed || scalarPending || staleDraft || depthGestureActive) && <div className="cad-form-actions"><Button type="button" onClick={onCancel}><CloseIcon size={13} /> Cancel</Button><Button variant="primary" type="submit" className="cad-primary" disabled={!isNew && !changed || scalarPending || waitingForPreview || Boolean(pickCurrent) || staleDraft || depthGestureActive}><ConfirmIcon size={13} /> Apply</Button></div>}
   </form>;
 }
 
@@ -385,6 +385,6 @@ export function CadProfileEditor({ profile, document, onApply, onCancel, onPendi
     {geometry.kind === 'plugin' && <details className="cad-plugin-disclosure cad-plugin-profile-options"><summary>Profile options</summary>{profileOptions}</details>}
     {pluginIssues.length > 0 && <div role="alert" className="cad-error">{pluginIssues.map((issue, index) => <p key={index}>{issue}</p>)}</div>}
     {error && <p role="alert" className="cad-error">{error}</p>}
-    {changed && <div className="cad-form-actions"><Button type="button" onClick={onCancel}><X size={13} /> Cancel</Button><Button variant="primary" type="submit" className="cad-primary" disabled={!changed || bindingPending || pluginIssues.length > 0}><Check size={13} /> Apply</Button></div>}
+    {changed && <div className="cad-form-actions"><Button type="button" onClick={onCancel}><CloseIcon size={13} /> Cancel</Button><Button variant="primary" type="submit" className="cad-primary" disabled={!changed || bindingPending || pluginIssues.length > 0}><ConfirmIcon size={13} /> Apply</Button></div>}
   </form>;
 }

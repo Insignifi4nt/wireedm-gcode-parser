@@ -3,3 +3,7 @@ artifacts/robofil-v2/**/*.iso binary
 # Rebuild patches retain verbatim upstream context and recorded source hashes.
 vendor/cad-kernel/replicad-indexed-topology.patch -text -whitespace
 vendor/cad-kernel/replicad-ownership-backport.patch -text -whitespace
+docs/design/inventory/source-icon-inventory.* -text
+docs/design/inventory/source-icon-inventory.md -whitespace
+docs/design/inventory/checkpoints/*/icon-inventory.* -text
+docs/design/inventory/checkpoints/*/icon-inventory.md -whitespace

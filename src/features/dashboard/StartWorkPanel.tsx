@@ -1,7 +1,7 @@
 import { Input } from '@/components/ui/input';
 import { MenuSurface, MenuItem } from '@/components/ui/menu';
 import { useRef, type ChangeEvent } from 'react';
-import { ChevronDown, FileCode, FileJson2, FilePlus2, FileSearch, FileUp } from 'lucide-react';
+import { ChevronDown, FileCode, FileJson2, FilePlus2, FileSearch, FileUp } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import { InfoTip } from '@/components/ui/info-tip';

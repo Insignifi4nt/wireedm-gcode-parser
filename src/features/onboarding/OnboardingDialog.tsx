@@ -1,5 +1,5 @@
 import { useRef, type MouseEvent } from 'react';
-import { X } from 'lucide-react';
+import { X } from '@wire-edm/icons-react';
 
 import onboardingPoster from '@/assets/wire-edm-onboarding-poster.png';
 import { Button } from '@/components/ui/button';

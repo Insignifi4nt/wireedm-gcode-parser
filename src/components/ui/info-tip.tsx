@@ -1,4 +1,4 @@
-import { Info } from 'lucide-react';
+import { Info } from '@wire-edm/icons-react';
 import { Button } from './button';
 
 /** Optional explanation beside a heading, without adding another text block. */

@@ -6,12 +6,7 @@ import {
   type CSSProperties,
   type ReactNode
 } from 'react';
-import {
-  HardDrive,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Settings as SettingsIcon
-} from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, WireEdmMarkIcon } from '@wire-edm/icons-react';
 
 import { StatusNotificationMenu, type StatusToast } from '@/components/StatusToasts';
 import { Button } from '@/components/ui/button';
@@ -183,7 +178,7 @@ export function AppShell({
       >
         {headerContent ?? (
           <div className="mr-4 flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground">
-            <HardDrive className="size-4 text-primary" />
+            <WireEdmMarkIcon className="size-4 text-primary" />
             <span className="truncate">Wire EDM Workbench</span>
           </div>
         )}

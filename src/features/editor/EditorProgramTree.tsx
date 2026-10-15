@@ -1,6 +1,7 @@
 import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { ExpandDownIcon, ExpandRightIcon } from '@wire-edm/icons-react';
 
 import type {
   UpidEditorDiagnosticNode,
@@ -124,7 +125,7 @@ export function EditorProgramTree(props: EditorProgramTreeProps) {
           {item.children.length > 0 ? (
             <Button aria-label={`${expanded ? 'Collapse' : 'Expand'} ${item.label}`} className="size-4 shrink-0"
               onClick={(event) => { event.stopPropagation(); setExpanded(item, !expanded); }} tabIndex={-1} type="button">
-              {expanded ? '−' : '+'}
+              {expanded ? <ExpandDownIcon size={12} /> : <ExpandRightIcon size={12} />}
             </Button>
           ) : <span className="w-4 shrink-0" />}
           <StatusDot status={item.status} />

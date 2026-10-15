@@ -39,6 +39,8 @@ Use weight, spacing and grouping to distinguish headings. Keep secondary metadat
 
 ## Supported components and states
 
+Icons come from `@wire-edm/icons-react`. Use semantic named exports such as `PadIcon` and `PocketIcon`, or the individual `icons/pad` entry. Normal imports retain only used drawings; the full dynamic renderer/catalog is a separate subpath. SVGs inherit the control's color and state. Keep the standard 24-unit grid, 1.75 stroke, theme sizes and control's accessible name. Glyphs are decorative by default; a standalone image requires an accessible label. Change geometry in `scripts/icon-source.mjs` and regenerate package modules and SVGs together. Do not add another inline action glyph or icon library. `npm run icons:check` checks generation, purpose mapping, behavior and isolated packed consumers.
+
 | Component or pattern | Contract |
 | --- | --- |
 | `Button` | Native props/ref and omitted-type behavior. Default `ghost` / `compact` is quiet and 24px. `primary` and its `default` alias identify the main action; `secondary`, `outline`, `danger`, `menu` and `scrim` express existing intent. Sizes are `compact`, its `sm` alias, `md` at 28px, `icon` and `menu`. Use explicit `type="button"` for commands inside forms. `asChild` retains child semantics. |

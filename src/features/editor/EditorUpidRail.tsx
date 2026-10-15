@@ -1,6 +1,7 @@
 import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { FileCode, GeometryIcon, PanelLeftClose, PanelLeftOpen } from '@wire-edm/icons-react';
 
 import type { UpidEditorTree } from '@/domain/upid/upidEditorTree';
 
@@ -78,7 +79,7 @@ export function EditorUpidRail({
           title="Expand UPID rail"
           type="button"
         >
-          <span aria-hidden="true">›</span>
+          <PanelLeftOpen size={14} />
         </Button>
         <Button variant="outline" size="icon"
           aria-label={`Switch to ${nextMode === 'geometry' ? 'Geometry' : 'Program'} lens`}
@@ -87,7 +88,7 @@ export function EditorUpidRail({
           title={`${formatMode(mode)} lens`}
           type="button"
         >
-          {mode === 'program' ? 'P' : 'G'}
+          {mode === 'program' ? <FileCode size={14} /> : <GeometryIcon size={14} />}
         </Button>
         <Tooltip content={`Program status: ${formatStatus(status)}`}><span tabIndex={0}
           aria-label={`Program status: ${formatStatus(status)}`}
@@ -154,7 +155,7 @@ export function EditorUpidRail({
           title="Collapse UPID rail"
           type="button"
         >
-          <span aria-hidden="true">‹</span>
+          <PanelLeftClose size={14} />
         </Button>
       </div>
       <div

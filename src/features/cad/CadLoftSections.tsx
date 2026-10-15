@@ -2,7 +2,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Plus, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Plus, X } from '@wire-edm/icons-react';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { inspectCadLoftSectionPair, resolveCadLoftSectionPlacements, MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS } from '@/domain/cad/cadLoft';
 import { CadError } from '@/domain/cad/cadError';

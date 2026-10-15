@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
-import { MousePointer2, RefreshCw } from 'lucide-react';
+import { MousePointer2, RefreshCw } from '@wire-edm/icons-react';
 
 import { suggestCompensationIntent, type ManualCompensationSelection } from '@/domain/compensation/intent';
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';

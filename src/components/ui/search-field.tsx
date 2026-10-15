@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search } from '@wire-edm/icons-react';
 import { Button } from './button';
 import { Input } from './input';
 import './search-field.css';

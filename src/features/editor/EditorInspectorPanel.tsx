@@ -1,12 +1,13 @@
 import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import {
-  ArrowRightFromLine,
+  InsertPointsIcon,
+  CircleCenterIcon,
   Download,
   Magnet,
   MousePointer2,
   Trash2
-} from 'lucide-react';
+} from '@wire-edm/icons-react';
 import { Fragment, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -1136,7 +1137,7 @@ export function EditorInspectorPanel({
             onClick={() => onSetCanvasMouseMode('point')}
             type="button"
           >
-            <Magnet className="size-3" />
+            <CircleCenterIcon className="size-3" />
             Point
           </Button>
         </div>
@@ -1288,7 +1289,7 @@ export function EditorInspectorPanel({
             type="button"
             variant="outline"
           >
-            <ArrowRightFromLine />
+            <InsertPointsIcon />
             Insert Points
           </Button>}
           <Button

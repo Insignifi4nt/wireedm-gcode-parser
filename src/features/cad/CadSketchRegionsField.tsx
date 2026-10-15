@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { useContext, useMemo, useRef } from 'react';
-import { MousePointer2, X } from 'lucide-react';
+import { CloseIcon, SelectIcon } from '@wire-edm/icons-react';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { prepareCadDatumFrames, resolveCadSketchPlacement } from '@/domain/cad/cadDatumPlanes';
 import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
@@ -52,9 +52,9 @@ export function CadSketchRegionsField({ document, sketchId, selection, onChange 
       <Button type="button" className="cad-area-choice" aria-label="Pick closed areas from model"
         aria-description={prepared.kind === 'unavailable' ? prepared.reason : 'Click an area; hold Shift to add or remove areas.'}
         disabled={!picking?.beginRegions || !picking.precedingIds.has(sketchId) || prepared.kind !== 'ready'} onClick={begin}>
-        <MousePointer2 size={13} /><span>{selection === undefined ? 'Whole sketch' : selection.length ? `${selection.length} ${selection.length === 1 ? 'area' : 'areas'}` : 'No areas'}</span>
+        <SelectIcon size={13} /><span>{selection === undefined ? 'Whole sketch' : selection.length ? `${selection.length} ${selection.length === 1 ? 'area' : 'areas'}` : 'No areas'}</span>
       </Button>
-      {selection !== undefined && <Button type="button" className="cad-area-reset" aria-label="Restore whole sketch" title="Restore whole sketch" onClick={() => onChange(undefined)}><X size={12} /></Button>}
+      {selection !== undefined && <Button type="button" className="cad-area-reset" aria-label="Restore whole sketch" title="Restore whole sketch" onClick={() => onChange(undefined)}><CloseIcon size={12} /></Button>}
     </div>
   </div>;
 }

@@ -3,20 +3,7 @@ import { MenuSurface, MenuItem, MenuCheckboxItem } from '@/components/ui/menu';
 import { Input } from '@/components/ui/input';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Select } from '@/components/ui/select';
-import {
-  ArrowDown,
-  ArrowUp,
-  ChevronDown,
-  ChevronRight,
-  Ellipsis,
-  FlipHorizontal,
-  FlipVertical,
-  Flag,
-  Info,
-  Move,
-  RotateCcw,
-  RotateCw
-} from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, CircleHelp, Ellipsis, LeadInIcon, LeadOutIcon, FlipHorizontal, FlipVertical, Move, RotateCcw, RotateCw } from '@wire-edm/icons-react';
 import {
   Fragment,
   useEffect,
@@ -531,7 +518,7 @@ export function EditorPathNavigatorPanel({
               className="flex size-6 items-center justify-center transition"
               type="button"
             >
-              <Info aria-hidden="true" className="size-3.5" />
+              <CircleHelp aria-hidden="true" className="size-3.5" />
             </Button>
           </Tooltip>
         </div>
@@ -2497,7 +2484,7 @@ function renderLeadRow(
       title={`${label}: ${formatPoint(lead.from)} → ${formatPoint(lead.to)}`}
       type="button"
     >
-      <Flag className="size-3 shrink-0" aria-hidden="true" />
+      {travelRole === 'lead-in' ? <LeadInIcon className="size-3 shrink-0" aria-hidden="true" /> : <LeadOutIcon className="size-3 shrink-0" aria-hidden="true" />}
       <span className="font-medium text-foreground">{label}</span>
       <span className="truncate">{strategy}</span>
       {reviewRequired && <span className="text-amber-200">Review required</span>}

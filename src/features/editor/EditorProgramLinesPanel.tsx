@@ -2,14 +2,14 @@ import { Input } from '@/components/ui/input';
 import type { MouseEvent } from 'react';
 import {
   ArrowDown,
-  ArrowRightFromLine,
+  StartPointIcon,
   ArrowUp,
   ChevronDown,
   ChevronRight,
   Pin,
   RefreshCw,
   Trash2
-} from 'lucide-react';
+} from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import type {
@@ -342,7 +342,7 @@ export function EditorProgramLinesPanel({
                 onClick={onSetStartHere}
                 type="button"
               >
-                <ArrowRightFromLine className="size-3" />
+                <StartPointIcon className="size-3" />
                 Start Here
               </Button>
               <Button

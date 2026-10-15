@@ -294,6 +294,9 @@ describe('unified feature history and dependency tree', () => {
     await act(async () => root.render(<CadFeatureTree {...props({ document, highlightedFeatureIds: ['pad'], diagnostics: [{ code: 'example', featureId: 'pad', message: 'Cannot build this body.' }] })} />));
     expect(button('Select Pad in history').getAttribute('aria-description')).toBe('Pad / Pocket · Pad · Cannot build this body.');
     expect(button('Select Pad in history').classList.contains('has-error')).toBe(true);
+    const diagnostic = button('Select Pad in history').querySelector('.cad-tree-error');
+    expect(diagnostic?.getAttribute('aria-label')).toBe('Cannot build this body.');
+    expect(diagnostic?.querySelector('svg[data-workbench-icon="warning"][aria-hidden="true"]')).not.toBeNull();
     expect(container.querySelector('[data-cad-feature-id="pad"]')?.classList.contains('is-parameter-related')).toBe(true);
     expect(JSON.stringify(document)).toBe(source);
     const suppressed = parseCadDocument({ ...document, features: document.features.map(feature => feature.id === 'move' ? { ...feature, suppressed: true } : feature) });

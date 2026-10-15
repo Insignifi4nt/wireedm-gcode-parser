@@ -1,4 +1,5 @@
 import { MenuSurface, MenuItem } from '@/components/ui/menu';
+import { NavigateBackIcon } from '@wire-edm/icons-react';
 import { Button } from '@/components/ui/button';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
@@ -203,7 +204,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
               role="menuitem"
               type="button"
             >
-              ‹ Categories
+              <NavigateBackIcon size={12} /> Categories
             </MenuItem>
             <span className="truncate text-[11px] font-semibold">{group.title}</span>
           </div>

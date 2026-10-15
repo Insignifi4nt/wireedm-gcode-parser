@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, Link2, LockKeyhole, X } from 'lucide-react';
+import { CloseIcon, ConfirmIcon, LinkIcon, LockedIcon } from '@wire-edm/icons-react';
 import type { CadDocument, CadProfile, CadScalar, CadSketchFeature, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
@@ -117,18 +117,18 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
         if (interactionLocked || editor) return;
         editorDocument.current = cadDocument; previous.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         setEditor({ name: dimension.name, value: String(resolved), error: '' }); onInspectInput?.(dimension.name);
-      }}><span>{dimension.symbol}</span><strong>{valueText(resolved)}</strong>{dimension.unit && <small>{dimension.unit}</small>}{dimensionBinding.kind === 'parameter' ? <Link2 size={10} /> : dimensionBinding.kind === 'expression' || !dimension.enabled ? <LockKeyhole size={10} /> : null}</Button>;
+      }}><span>{dimension.symbol}</span><strong>{valueText(resolved)}</strong>{dimension.unit && <small>{dimension.unit}</small>}{dimensionBinding.kind === 'parameter' ? <LinkIcon size={10} /> : dimensionBinding.kind === 'expression' || !dimension.enabled ? <LockedIcon size={10} /> : null}</Button>;
     })}</div>
     {editor && active && binding && <form className="cad-dimension-edit" style={annotated ? { left: placement.x, top: placement.y } : undefined} role="dialog" aria-label={`${active.label} dimension`} onSubmit={event => {
       event.preventDefault(); if (interactionLocked || !candidate.edits) return;
       try { if (candidate.edits.length) onEditMany(candidate.edits); close(); } catch (error) { setEditor({ ...editor, error: error instanceof Error ? error.message : 'Unable to change this dimension.' }); }
     }}>
-      <header><strong>{active.label}</strong><Button type="button" aria-label="Close dimension editor" onClick={close}><X size={12} /></Button></header>
-      {binding.kind === 'expression' || !active.enabled ? <><p className="cad-dimension-link"><LockKeyhole size={11} /> {binding.kind === 'expression' ? binding.expression : 'Controlled by the profile'}</p><p>This dimension follows its linked configuration. Edit the referenced parameters or profile to change it.</p>{onConfigure && <Button type="button" className="cad-dimension-configure" onClick={() => { close(); onConfigure(active.name); }}>Profile configuration</Button>}</> : <>
+      <header><strong>{active.label}</strong><Button type="button" aria-label="Close dimension editor" onClick={close}><CloseIcon size={12} /></Button></header>
+      {binding.kind === 'expression' || !active.enabled ? <><p className="cad-dimension-link"><LockedIcon size={11} /> {binding.kind === 'expression' ? binding.expression : 'Controlled by the profile'}</p><p>This dimension follows its linked configuration. Edit the referenced parameters or profile to change it.</p>{onConfigure && <Button type="button" className="cad-dimension-configure" onClick={() => { close(); onConfigure(active.name); }}>Profile configuration</Button>}</> : <>
         <label><span>{active.label}</span><Input aria-label={`${active.label} value`} inputMode={active.integer ? 'numeric' : 'decimal'} value={editor.value} disabled={interactionLocked} spellCheck={false} aria-invalid={Boolean(candidate.issue) || undefined} onChange={event => setEditor({ ...editor, value: event.target.value, error: '' })} /><small>{active.unit}</small></label>
-        {binding.kind === 'parameter' && <p className="cad-dimension-link"><Link2 size={11} /> Updates {binding.name}{active.scale !== 1 ? ` (${active.label.toLowerCase()} ÷ ${active.scale})` : ''}</p>}
+        {binding.kind === 'parameter' && <p className="cad-dimension-link"><LinkIcon size={11} /> Updates {binding.name}{active.scale !== 1 ? ` (${active.label.toLowerCase()} ÷ ${active.scale})` : ''}</p>}
         {(editor.error || candidate.issue) && <p className="cad-dimension-error" role="alert">{editor.error || candidate.issue}</p>}
-        <footer>{active.constraintId && <Button type="button" title="Release this dimension without changing the contour" disabled={interactionLocked} onClick={() => { try { if (editorDocument.current !== cadDocument) throw new Error('The part changed. Cancel and reopen this dimension.'); onEditMany([{ kind: 'remove-sketch-dimension', sketchId: sketch.id, profileId: profile.id, dimensionId: active.constraintId! }]); close(); } catch (error) { setEditor({ ...editor, error: error instanceof Error ? error.message : 'Unable to release this dimension.' }); } }}>Remove dimension</Button>}<Button type="button" onClick={close}>Cancel</Button><Button variant="primary" type="submit" className="cad-dimension-apply" disabled={interactionLocked || !candidate.edits}><Check size={11} /> Apply</Button></footer>
+        <footer>{active.constraintId && <Button type="button" title="Release this dimension without changing the contour" disabled={interactionLocked} onClick={() => { try { if (editorDocument.current !== cadDocument) throw new Error('The part changed. Cancel and reopen this dimension.'); onEditMany([{ kind: 'remove-sketch-dimension', sketchId: sketch.id, profileId: profile.id, dimensionId: active.constraintId! }]); close(); } catch (error) { setEditor({ ...editor, error: error instanceof Error ? error.message : 'Unable to release this dimension.' }); } }}>Remove dimension</Button>}<Button type="button" onClick={close}>Cancel</Button><Button variant="primary" type="submit" className="cad-dimension-apply" disabled={interactionLocked || !candidate.edits}><ConfirmIcon size={11} /> Apply</Button></footer>
       </>}
     </form>}
   </div>;

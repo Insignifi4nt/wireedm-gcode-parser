@@ -1,0 +1,1688 @@
+{
+  "phase": "Integrated critical iteration, awaiting final cross-family review",
+  "reviewedCount": 134,
+  "evidence": [
+    "iteration-3-general.md",
+    "iteration-3-cam.md",
+    "iteration-4-cad.md",
+    "general-icon-decisions.md"
+  ],
+  "entries": [
+    {
+      "id": "navigate-back",
+      "label": "Back",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "navigate-forward",
+      "label": "Forward",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "move-up",
+      "label": "Move up",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "move-down",
+      "label": "Move down",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "expand-right",
+      "label": "Expand",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "expand-down",
+      "label": "Expand menu",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "more",
+      "label": "More actions",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "close",
+      "label": "Close or cancel",
+      "category": "actions",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "confirm",
+      "label": "Apply or confirm",
+      "category": "actions",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "add",
+      "label": "Add",
+      "category": "actions",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "remove",
+      "label": "Remove",
+      "category": "actions",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "delete",
+      "label": "Delete",
+      "category": "actions",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "save",
+      "label": "Save",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "rename",
+      "label": "Rename or edit",
+      "category": "actions",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "copy",
+      "label": "Copy",
+      "category": "actions",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "refine-iteration-2"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "undo",
+      "label": "Undo",
+      "category": "actions",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "redo",
+      "label": "Redo",
+      "category": "actions",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "refresh",
+      "label": "Refresh or rebuild",
+      "category": "actions",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "rotate-clockwise",
+      "label": "Rotate clockwise",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current clockwise direction arc is clear."
+        },
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Used in `EditorPathNavigatorPanel.tsx`. Retain the directional rotation arrow."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "rotate-counterclockwise",
+      "label": "Rotate counterclockwise",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current counterclockwise direction arc is clear."
+        },
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Used in `EditorPathNavigatorPanel.tsx`. Retain the reverse directional rotation arrow."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "download",
+      "label": "Download or export",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "upload",
+      "label": "Upload or install",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "file-new",
+      "label": "New document",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "refine-iteration-2"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "folder-open",
+      "label": "Open folder",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "file-import",
+      "label": "Import file",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "refine-iteration-2"
+        }
+      ],
+      "integratedDecision": "Shared page outline with an intentionally occluded modifier field; import/export arrows mirror each other."
+    },
+    {
+      "id": "file-export",
+      "label": "Generate controller file",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "refine-iteration-2"
+        }
+      ],
+      "integratedDecision": "Shared page outline with an intentionally occluded modifier field; import/export arrows mirror each other."
+    },
+    {
+      "id": "file-inspect",
+      "label": "Inspect file",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "refine-iteration-2"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "file-code",
+      "label": "Controller program",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "file-json",
+      "label": "Structured interchange",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "file-body",
+      "label": "Solid model file",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "refine-iteration-2"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "history",
+      "label": "Revision history",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "browser-cache",
+      "label": "Browser cache",
+      "category": "storage",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "folder-storage",
+      "label": "Folder storage",
+      "category": "storage",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "evaluate-candidate"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "settings",
+      "label": "Workbench settings",
+      "category": "actions",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "adjust",
+      "label": "Adjust parameters",
+      "category": "actions",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "help",
+      "label": "Help",
+      "category": "status",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "info",
+      "label": "Information",
+      "category": "status",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "warning",
+      "label": "Warning",
+      "category": "status",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "success",
+      "label": "Completed successfully",
+      "category": "status",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "error",
+      "label": "Error",
+      "category": "status",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "notifications",
+      "label": "Notifications",
+      "category": "status",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "busy",
+      "label": "Operation in progress",
+      "category": "status",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "refine-iteration-2"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "play",
+      "label": "Play simulation",
+      "category": "simulation",
+      "reviews": [
+        {
+          "group": "Simulation transport",
+          "reason": "Closed playback triangles and paired pause bars. Previous/next steps mirror the same triangle and stop bar. Retained after review at toolbar size."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "pause",
+      "label": "Pause simulation",
+      "category": "simulation",
+      "reviews": [
+        {
+          "group": "Simulation transport",
+          "reason": "Closed playback triangles and paired pause bars. Previous/next steps mirror the same triangle and stop bar. Retained after review at toolbar size."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "step-back",
+      "label": "Previous simulation step",
+      "category": "simulation",
+      "reviews": [
+        {
+          "group": "Simulation transport",
+          "reason": "Closed playback triangles and paired pause bars. Previous/next steps mirror the same triangle and stop bar. Retained after review at toolbar size."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "step-forward",
+      "label": "Next simulation step",
+      "category": "simulation",
+      "reviews": [
+        {
+          "group": "Simulation transport",
+          "reason": "Closed playback triangles and paired pause bars. Previous/next steps mirror the same triangle and stop bar. Retained after review at toolbar size."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "visible",
+      "label": "Show geometry",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        },
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current visibility eye is clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "hidden",
+      "label": "Hide geometry",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "evaluate-candidate"
+        },
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current crossed visibility eye is clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "fit-view",
+      "label": "Fit geometry to view",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current viewport-corner glyph remains clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "zoom-in",
+      "label": "Zoom in",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current magnifier-plus glyph remains clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "zoom-out",
+      "label": "Zoom out",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current magnifier-minus glyph remains clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "select",
+      "label": "Select geometry",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Generic selection cursor remains unchanged."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "snap",
+      "label": "Snap to geometry",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current magnet metaphor is distinct from geometry selection."
+        },
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Used for “Toggle grid snapping” in `CadSketchCanvas.tsx`. Retain the magnet."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "grid",
+      "label": "Construction grid",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current construction grid is clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "origin",
+      "label": "Origin or crosshair",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current crosshair origin is clear."
+        },
+        {
+          "group": "CAM and machine simulation",
+          "reason": "The `Crosshair` alias is used by `EditorGuideDialog.tsx:133` for the “Show me” target-highlighting action, not a coordinate datum. Treat the current alias mapping as a separate semantic collision; do not copy this usage into machine setup."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "circle",
+      "label": "Circle profile",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current circle profile is clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "circle-center",
+      "label": "Circle center",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current center marker adds the required distinction."
+        },
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Catalog/export only, with matching center-pierce domain behavior. Retain circle plus center point."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "rectangle",
+      "label": "Rectangle profile",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current rectangle profile is clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "curve",
+      "label": "Reference curve",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current reference curve remains distinct from a polyline."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "sketch",
+      "label": "Sketch",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current sketch axes and closed profile remain recognizable."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "cam-editor",
+      "label": "CAM editor",
+      "category": "cam",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Catalog/export only. Revise to a closed profile plus pencil modifier; keep separate from the generic `geometry` lens mark."
+        }
+      ],
+      "integratedDecision": "Closed contour and pencil; no nested offset or lead direction cue."
+    },
+    {
+      "id": "body",
+      "label": "Solid body",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Reference isometric solid; source primitive remains unchanged."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "layers",
+      "label": "Layer stack",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current stacked-layer symbol remains clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "move",
+      "label": "Move geometry",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current planar transform arrows remain distinct."
+        },
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Used by `EditorPathNavigatorPanel.tsx:886` for Apply Translation. Retain the shared translation glyph rather than inventing a CAM-specific move action."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "move-3d",
+      "label": "Transform body",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current three-axis transform cue remains recognizable."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "flip-horizontal",
+      "label": "Mirror horizontally",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current mirrored shapes and axis remain clear."
+        },
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Used in `EditorPathNavigatorPanel.tsx`. Retain the mirror-about-axis glyph."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "flip-vertical",
+      "label": "Mirror vertically",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current mirrored shapes and axis remain clear."
+        },
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Used in `EditorPathNavigatorPanel.tsx`. Retain the mirror-about-axis glyph."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "start-point",
+      "label": "Program start",
+      "category": "cam",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "The `Flag` alias is used in `EditorPathNavigatorPanel.tsx:2517` on lead-in/lead-out tree rows. Retain this contour-transition marker. It must not be reused for G-code “Start Here.”"
+        }
+      ],
+      "integratedDecision": "Program start flag. Lead tree rows now use the matching lead-in or lead-out icon."
+    },
+    {
+      "id": "insert-points",
+      "label": "Insert measured points",
+      "category": "cam",
+      "reviews": [
+        {
+          "group": "Control semantics",
+          "reason": "Measured point markers enter program rows. Replaces an unrelated contour-departure arrow beside Insert Points."
+        }
+      ],
+      "integratedDecision": "Measured point markers and program rows; dedicated insertion cue."
+    },
+    {
+      "id": "locate",
+      "label": "Locate highlighted control",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "Control semantics",
+          "reason": "Crosshair locates a highlighted guide control. Reuses the target geometry with a label separate from the coordinate origin."
+        }
+      ],
+      "integratedDecision": "Explicit locating action rather than a coordinate datum."
+    },
+    {
+      "id": "pin",
+      "label": "Pin line",
+      "category": "cam",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Used to clear pinned line highlights in `EditorProgramLinesPanel.tsx`. Retain the thumbtack."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "departure",
+      "label": "Depart from contour",
+      "category": "cam",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "**Do not use for CAM departure.** Its `ArrowRightFromLine` alias currently appears beside “Insert Points” in `EditorInspectorPanel.tsx:1289` and “Start Here” in `EditorProgramLinesPanel.tsx:344`. These are two different meanings and neither means “depart from contour.” Parent integration is adding dedicated Insert Points and Start Here IDs."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "turn",
+      "label": "Turn direction",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current corner-direction cue remains distinct from camera rotation."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "trim",
+      "label": "Trim geometry",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current scissors metaphor is appropriate for trim."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "scan",
+      "label": "Inspect bounds",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current bounds scan brackets remain clear."
+        },
+        {
+          "group": "CAM and machine simulation",
+          "reason": "“Inspect bounds” catalog entry; no current JSX use found. Retain a scan/bounds frame and do not map it to the simulation collision scan without an actual control."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "section-view",
+      "label": "Section view",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current viewport section cue is separate from the CAM section command."
+        },
+        {
+          "group": "CAM and machine simulation",
+          "reason": "No current JSX use found. `ScanLine` in the old inventory referred to “Fit machine and stock”; current `SimulationViewport.tsx` uses `FitViewIcon`. Retain a sectioned model/view meaning, separate from CAM transfer."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "view",
+      "label": "View orientation",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current orientation cube uses an orthographic view cue."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "view-top",
+      "label": "Top view",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current top-view square remains distinct from generic orientation."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "geometry",
+      "label": "Planning geometry",
+      "category": "cam",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Used in `EditorUpidRail.tsx` as the Geometry lens. Retain the flat planning-geometry mark; this is not a solid-body symbol."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "panel-left-close",
+      "label": "Hide left panel",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "panel-left-open",
+      "label": "Show left panel",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "panel-right-close",
+      "label": "Hide right panel",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "panel-right-open",
+      "label": "Show right panel",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "datum-plane",
+      "label": "Datum plane",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Align the plane to the body’s exact projection; omit free-floating support strokes."
+        }
+      ],
+      "integratedDecision": "Closed planar rhombus follows the exact body projection."
+    },
+    {
+      "id": "pad",
+      "label": "Pad",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current closed orthographic extrusion profile and upward arrow read clearly."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "pocket",
+      "label": "Pocket",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current closed orthographic cut profile and downward arrow read clearly."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "pad-pocket",
+      "label": "Pad and Pocket command",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current is too close to pad; compare one stepped profile with +/- cues."
+        }
+      ],
+      "integratedDecision": "Closed stepped profile with additive and subtractive cues."
+    },
+    {
+      "id": "fillet",
+      "label": "Fillet",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Rounded corner treatment remains distinct from chamfer."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "chamfer",
+      "label": "Chamfer",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Beveled corner treatment remains distinct from fillet."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "shell",
+      "label": "Shell",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Reject v2: its full top bar closes the opening and reads as a double square."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "revolve",
+      "label": "Revolve",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Compare closed profile plus axis/circular motion against an explicit turned result."
+        }
+      ],
+      "integratedDecision": "Closed stepped turned result, axis and circular motion cue."
+    },
+    {
+      "id": "loft",
+      "label": "Loft",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Compare current and v2 against closed section loops plus generators."
+        }
+      ],
+      "integratedDecision": "Two closed oblique sections and corresponding nonduplicated generators."
+    },
+    {
+      "id": "sweep",
+      "label": "Sweep",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Compare operation inputs against a closed curved-tube result with visible section."
+        }
+      ],
+      "integratedDecision": "Closed curved result with an end section; no crowded internal trajectory."
+    },
+    {
+      "id": "boolean",
+      "label": "Boolean operation",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Reject v2 decorative ticks; current overlap cue is sufficiently direct."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "boolean-union",
+      "label": "Boolean union",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current union silhouette is distinct."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "boolean-subtract",
+      "label": "Boolean subtract",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current subtraction silhouette is distinct."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "boolean-intersect",
+      "label": "Boolean intersect",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current intersection silhouette is distinct."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "linear-pattern",
+      "label": "Linear pattern",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current instances and direction baseline already use closed box paths."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "circular-pattern",
+      "label": "Circular pattern",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current radial instances and rotation cue are recognizable."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "mirror",
+      "label": "Mirror body",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current instance contours are already explicitly closed."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "imported-body",
+      "label": "Imported body",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Compare closed body with central import arrow and external arrow badge."
+        }
+      ],
+      "integratedDecision": "Closed body silhouette with an incoming arrow."
+    },
+    {
+      "id": "slot",
+      "label": "Slot profile",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current closed slot outline is clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "polyline",
+      "label": "Polyline",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Open connected segments and vertices are intentional."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "closed-path",
+      "label": "Closed path",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current closed contour is distinct from polyline."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "arc",
+      "label": "Three-point arc",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Open arc and three-point markers are intentional."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "line",
+      "label": "Line",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current endpoint-marked line is clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "construction",
+      "label": "Construction geometry",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current construction strokes use intentional separated dashes."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "measure",
+      "label": "Measure",
+      "category": "geometry",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current dimension ticks are intentional."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "select-face",
+      "label": "Select face",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Keep isolated target; align its projection and pointer with select-body."
+        }
+      ],
+      "integratedDecision": "Closed isolated planar face and shared pointer; distinct from body and edge selection."
+    },
+    {
+      "id": "select-edge",
+      "label": "Select edge",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Keep isolated target; align edge slope and pointer with select-body."
+        }
+      ],
+      "integratedDecision": "Intentionally open isolated edge with endpoint markers and shared pointer."
+    },
+    {
+      "id": "select-body",
+      "label": "Select body",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Reference object-plus-pointer modifier."
+        }
+      ],
+      "integratedDecision": "Exact body projection and shared pointer."
+    },
+    {
+      "id": "camera-orbit",
+      "label": "Orbit view",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current orbit arrows remain distinct from pan."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "camera-pan",
+      "label": "Pan view",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current hand/pan metaphor remains recognizable."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "camera-capture",
+      "label": "Capture view",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        },
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current camera capture glyph remains clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "send-cam",
+      "label": "Send to CAM",
+      "category": "cam",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Used in the CAD file menu as “Send sketch to CAM.” Revise to a planar closed source profile plus transfer arrow, unlike the shallow solid in `section-cam`."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "section-cam",
+      "label": "Section for CAM",
+      "category": "cam",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Used in the CAD file menu as “Section for CAM” with title “Create CAM geometry from a planar section.” Revise to section plane plus transfer arrow."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "suppressed",
+      "label": "Suppressed feature",
+      "category": "status",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "dirty",
+      "label": "Unsaved changes",
+      "category": "status",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "evaluate-candidate"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "locked",
+      "label": "Locked",
+      "category": "status",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "offset",
+      "label": "Contour offset",
+      "category": "cam",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Catalog/export only. Revise to exact parallel nested contours."
+        }
+      ],
+      "integratedDecision": "Closed nested contours. All eight matching sides have a verified three-unit perpendicular inset."
+    },
+    {
+      "id": "lead-in",
+      "label": "Lead in",
+      "category": "cam",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Catalog/export only; the Entry panel supports circle-center and coordinate-based leads. Revise to the interior-to-boundary cue and document the coordinate-mode limitation."
+        }
+      ],
+      "integratedDecision": "Closed shared contour with an interior radial entry arrow."
+    },
+    {
+      "id": "lead-out",
+      "label": "Lead out",
+      "category": "cam",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Catalog/export only; the Exit panel allows coordinate-based endpoints. Revise as the reverse of the lead-in illustration, not as a universal outside exit rule."
+        }
+      ],
+      "integratedDecision": "Same closed contour and reversed interior radial arrow."
+    },
+    {
+      "id": "wire",
+      "label": "Wire electrode",
+      "category": "simulation",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Catalog/export only. Revise to upper/lower guide bars and the vertical electrode inside the shared machine frame."
+        }
+      ],
+      "integratedDecision": "Upper and lower closed wire guides joined by a suspended electrode. Rejected the shared viewport frame because it read as a window."
+    },
+    {
+      "id": "simulation",
+      "label": "Machine simulation",
+      "category": "simulation",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Used for the Simulation workspace tab and 3D loading status in `EditorPage.tsx` and `SimulationViewport.tsx`. Revise to a viewport with stock and active wire."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "machine-setup",
+      "label": "Machine setup",
+      "category": "simulation",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Used beside “Machine” / “Machine model settings” in `SimulationPanel.tsx`. Revise to the shared frame with XY alignment interior."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "toolpath",
+      "label": "Cutting path",
+      "category": "cam",
+      "reviews": [
+        {
+          "group": "CAM and machine simulation",
+          "reason": "Catalog/export only. Revise to closed contour plus tangent travel direction."
+        }
+      ],
+      "integratedDecision": "Closed contour with tangential travel, with verified clearance from the contour."
+    },
+    {
+      "id": "folder-plus",
+      "label": "New parameter group",
+      "category": "files",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "refine-iteration-2"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "link",
+      "label": "Linked expression",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        },
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current linked-expression chain symbol remains clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "search",
+      "label": "Search",
+      "category": "navigation",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "plugin",
+      "label": "Parametric plugin",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        },
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current parametric plugin puzzle-piece metaphor remains clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "pattern",
+      "label": "Pattern command",
+      "category": "cad",
+      "reviews": [
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current generic pattern command remains distinct from linear/circular modes."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "wire-edm-mark",
+      "label": "Wire EDM Workbench",
+      "category": "brand",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "evaluate-candidate"
+        }
+      ],
+      "integratedDecision": "Two closed stock/offcut contours separated by a straight wire. Shared by the app heading and favicon."
+    },
+    {
+      "id": "navigation-mouse",
+      "label": "Mouse navigation",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "retain-after-review"
+        },
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current mouse navigation shape is clear."
+        }
+      ],
+      "integratedDecision": "Retained or locally refined under the owning group review. See linked iteration comparisons and general decision record."
+    },
+    {
+      "id": "navigation-trackpad",
+      "label": "Trackpad navigation",
+      "category": "view",
+      "reviews": [
+        {
+          "group": "General controls and documents",
+          "reason": "evaluate-candidate"
+        },
+        {
+          "group": "CAD, geometry and view",
+          "reason": "Current trackpad navigation shape is clear."
+        }
+      ],
+      "integratedDecision": "Two fingers operating a touch surface. Replaces a laptop silhouette and stays distinct from mouse navigation and the full-hand pan icon."
+    }
+  ]
+}

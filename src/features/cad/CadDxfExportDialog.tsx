@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Download, X } from 'lucide-react';
+import { CloseIcon, DownloadIcon } from '@wire-edm/icons-react';
 import type { CadDocument, CadMesh, CadPlane } from '@/domain/cad/cadDocument';
 import type { CadSectionRequest, CadSectionResult } from '@/domain/cad/cadSection';
 import type { DxfEntity } from '@/domain/dxf/types';
@@ -96,7 +96,7 @@ export function CadDxfExportDialog({ document: cadDocument, bodies, version, cur
     } finally { if (pending.current === controller) { pending.current = null; setBusy(null); } }
   }
   return <dialog ref={dialog} aria-label="Export DXF" className="cad-dxf-export" onCancel={event => { event.preventDefault(); close(); }}>
-    <header><div><h2>Export DXF</h2><span>{cadDocument.name} · millimetres</span></div><Button type="button" className="cad-dxf-close" aria-label="Close DXF export" onClick={close}><X size={15} /></Button></header>
+    <header><div><h2>Export DXF</h2><span>{cadDocument.name} · millimetres</span></div><Button type="button" className="cad-dxf-close" aria-label="Close DXF export" onClick={close}><CloseIcon size={15} /></Button></header>
     <div className="cad-dxf-content">
       <div className="cad-dxf-source-heading"><span>Geometry source</span><CadContextHelp label="DXF geometry source"><p>Sketch exports its local 2D contours, excluding construction geometry. Reference curve exports one open chain with its traversal preserved.</p><p>Section cuts a current final solid at the chosen plane and height, including downstream pockets and Boolean changes. It exports exact lines, circular arcs and circles. A solid silhouette or arbitrary projection is currently unavailable.</p><p>DXF is independent of CAD saving and CAM. Existing generated gear chords retain their declared approximation; export adds no tessellation.</p></CadContextHelp></div>
       <fieldset className="cad-dxf-source-types" disabled={busy !== null || stale}><legend className="sr-only">Geometry source</legend>
@@ -117,6 +117,6 @@ export function CadDxfExportDialog({ document: cadDocument, bodies, version, cur
       <div className="cad-dxf-status" role="status">{busy === 'export' ? 'Preparing DXF download…' : busy === 'preview' ? 'Computing exact section…' : reviewed ? `${reviewed.contourCount} closed contours · ${reviewed.entities.length} analytic curves` : kind !== 'section' && previewEntities.length ? `${previewEntities.length} analytic curves${kind === 'curve' ? ' · open chain' : ''}` : ' '}</div>
       {(stale || error || source.error) && <p role="alert" className="cad-dxf-error">{stale ? 'The CAD draft changed. Close this export and reopen it to review the current geometry.' : error ?? source.error}</p>}
     </div>
-    <footer><span>Standalone 2D DXF · no CAD save required</span><div><Button type="button" className="cad-dxf-secondary" onClick={busy ? () => pending.current?.abort() : close}>{busy ? 'Cancel operation' : 'Cancel'}</Button><Button variant="primary" type="button" className="cad-dxf-primary" disabled={busy !== null || stale || !hasSource || Boolean(source.error) || kind === 'section' && !reviewed} onClick={() => { void execute('export'); }}><Download size={13} />Download DXF</Button></div></footer>
+    <footer><span>Standalone 2D DXF · no CAD save required</span><div><Button type="button" className="cad-dxf-secondary" onClick={busy ? () => pending.current?.abort() : close}>{busy ? 'Cancel operation' : 'Cancel'}</Button><Button variant="primary" type="button" className="cad-dxf-primary" disabled={busy !== null || stale || !hasSource || Boolean(source.error) || kind === 'section' && !reviewed} onClick={() => { void execute('export'); }}><DownloadIcon size={13} />Download DXF</Button></div></footer>
   </dialog>;
 }

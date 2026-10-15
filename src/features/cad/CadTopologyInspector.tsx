@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { ExpandDownIcon, ExpandRightIcon } from '@wire-edm/icons-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { CadTopologyDescriptor, CadTopologyInspectRequest, CadTopologyInspectResult, CadTopologyPick, CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import type { CadPickMode } from './cadTopologyPicking';
@@ -68,7 +69,7 @@ export function CadTopologyInspector({ bodyId, buildId, documentVersion, pickMod
   const selectedDescriptor = !browse && current?.kind === 'ready' ? current.result.descriptors[0] : null;
   return <section className="cad-topology-inspector" aria-label="Exact topology inspector">
     <div className="cad-topology-heading"><Button type="button" className="cad-topology-disclosure" aria-label="Inspect topology" aria-expanded={expanded} aria-controls={contentId}
-      onClick={() => setDisclosure({ identity: disclosureIdentity, expanded: !expanded })}><span aria-hidden="true">{expanded ? '▾' : '▸'}</span> Inspect topology</Button>{selection?.picks.length ? <Button disabled={locked} onClick={onClear}>Clear selection</Button> : null}</div>
+      onClick={() => setDisclosure({ identity: disclosureIdentity, expanded: !expanded })}>{expanded ? <ExpandDownIcon size={12} /> : <ExpandRightIcon size={12} />} Inspect topology</Button>{selection?.picks.length ? <Button disabled={locked} onClick={onClear}>Clear selection</Button> : null}</div>
     <div id={contentId} className="cad-topology-content" hidden={!expanded}>{expanded && <>
     <div className="cad-topology-actions"><span>{selection?.picks.length ? `${selection.picks.length} ${selection.picks[0].kind}${selection.picks.length === 1 ? '' : 's'}` : 'Selection'}<CadContextHelp label="Topology selection"><dl><dt>On the model</dt><dd>Pick a face or edge. Ctrl or Command adds to the selection.</dd><dt>Exact list</dt><dd>Browse geometry when a face or edge is difficult to reach.</dd><dt>Changes</dt><dd>Selections belong to the current build. Rebuilding requires a new selection.</dd></dl></CadContextHelp></span><Button disabled={locked} aria-pressed={browse} onClick={() => { setBrowse(!browse); setOffset(0); }}>{browse ? 'Show selected' : `Browse ${topology === 'edge' ? 'edge' : 'face'}s`}</Button></div>
     {current?.kind === 'loading' && <p role="status" className="cad-inspector-note">Inspecting exact geometry…</p>}

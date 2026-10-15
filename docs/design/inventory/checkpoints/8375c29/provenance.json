@@ -1,0 +1,18 @@
+{
+  "publishedCheckpoint": "8375c294d09e0a43b48b7c37d977cc59fd9a4065",
+  "snapshotGeneratedAt": "2026-10-14T17:17:33.459Z",
+  "snapshotBaseRevision": "c36aa3b50a30f82ded3508652d9e7917c69b6b59",
+  "sourceDirectory": "C:\\Users\\cristian\\.codex\\worktrees\\665a\\Wire_EDM\\docs\\design",
+  "files": [
+    {
+      "name": "icon-inventory.audit.json",
+      "bytes": 4077082,
+      "sha256": "938c390a3c96ff05747e4ef422fcf10d7960978504721dd0419a88aaa3a981dc"
+    },
+    {
+      "name": "icon-inventory.md",
+      "bytes": 775874,
+      "sha256": "e05856683f424e2b5f34bf7e5cbfc366a55d1fec782bd90d57a61c5166346b84"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+# Published CAD checkpoint follow-up
+
+The `8375c29` snapshot preserves all 282 occurrence IDs and eight dynamic slots from `c36aa3b`. The published checkpoint changes capacity, storage and runtime code; actual UI icon call sites are unchanged. The current reconciliation covers all 1,962 crosswalk rows with zero gaps, including 206 expanded variants and 155 renderer relations. All 134 assets, 17 feature kinds, 20 tool calls and 35 exact semantic expectations pass. Source inventory covers 454 production files / 421 parsed files. Frozen snapshot bytes were verified against the exact published Git blobs.

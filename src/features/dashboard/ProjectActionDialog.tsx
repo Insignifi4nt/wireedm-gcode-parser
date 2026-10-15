@@ -1,6 +1,6 @@
 import { Input } from '@/components/ui/input';
 import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
-import { X } from 'lucide-react';
+import { X } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import { useModalFocus } from '@/components/ui/useModalFocus';

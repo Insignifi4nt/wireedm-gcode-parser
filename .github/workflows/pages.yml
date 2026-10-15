@@ -36,6 +36,7 @@ jobs:
       - name: Build
         run: |
           npm run ui:check
+          npm run icons:check
           npm run release:check
           npm run post:docs:check
           npm test -- --run

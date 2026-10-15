@@ -42,6 +42,7 @@ describe('EditorUpidRail', () => {
 
     expect(container.querySelectorAll<HTMLElement>('[role="tabpanel"]')[0]?.hidden).toBe(false);
     expect(container.querySelectorAll<HTMLElement>('[role="tabpanel"]')[1]?.hidden).toBe(true);
+    expect(container.querySelector('[aria-label="Collapse UPID rail"] [data-workbench-icon="panel-left-close"]')?.getAttribute('aria-hidden')).toBe('true');
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Geometry lens"]')?.click();
     });
@@ -174,6 +175,8 @@ describe('EditorUpidRail', () => {
     expect(rail?.className).toContain('w-9');
     expect(expand).not.toBeNull();
     expect(lens).not.toBeNull();
+    expect(expand?.querySelector('[data-workbench-icon="panel-left-open"]')?.getAttribute('aria-hidden')).toBe('true');
+    expect(lens?.querySelector('[data-workbench-icon="file-code"]')?.getAttribute('aria-hidden')).toBe('true');
     expect(container.querySelector('[aria-label="Program status: Unresolved"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Selected operation 2"]')?.textContent).toBe('02');
 
@@ -183,6 +186,13 @@ describe('EditorUpidRail', () => {
     });
     expect(onCollapseChange).toHaveBeenCalledWith(false);
     expect(onModeChange).toHaveBeenCalledWith('geometry');
+
+    await act(async () => root.render(
+      <EditorUpidRail collapsed geometryContent={<div>Geometry hierarchy</div>} mode="geometry"
+        onCollapseChange={onCollapseChange} onModeChange={onModeChange} programContent={<div>Program sequence</div>}
+        selectedOperationOrdinal={null} status="ready" />
+    ));
+    expect(container.querySelector('[aria-label="Switch to Program lens"] [data-workbench-icon="geometry"]')?.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('keeps compact UPID and workflow drawers mutually exclusive and returns Escape focus to the launcher', async () => {
