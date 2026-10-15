@@ -1,12 +1,12 @@
 # App icon inventory
 
-Snapshot: 2026-10-15T00:58:40.315Z. Git revision `ab1944a25f5897b5a0ec2943be7fc4adcd5c724e`. The worktree had 7 modified/untracked entries, recorded verbatim in the audit JSON. The scanned source hashes include those local changes. All line/column references identify this snapshot; use the stable canonical ID and occurrence ID to relocate a symbol after edits.
+Snapshot: 2026-10-15T01:25:57.931Z. Git revision `8aef0c5026983b5e3a80bd4b68fc2780e3f34b14`. The worktree had 5 modified/untracked entries, recorded verbatim in the audit JSON. The scanned source hashes include those local changes. All line/column references identify this snapshot; use the stable canonical ID and occurrence ID to relocate a symbol after edits.
 
 This catalogue covers every first-party icon import/reference found in the scanned production roots, and records the non-library channels separately. Counts distinguish source occurrences from runtime instances. A loop, tooltip or imported plugin can produce arbitrarily many instances; its source call, input binding, conditions and render variants are the inventory unit.
 
 ## Scope and coverage
 
-Scanned roots: `src/`, `package-tools/`, `index.html`. 465 production files, including 430 parsed TS/JS files. 401 test/helper/fixture source files were excluded from the product catalogue and are an explicit non-product category. No public directory exists in this checkout.
+Scanned roots: `src/`, `package-tools/`, `index.html`. 465 production files, including 430 parsed TS/JS files. 402 test/helper/fixture source files were excluded from the product catalogue and are an explicit non-product category. No public directory exists in this checkout.
 
 Canonical IDs describe pictures, such as `icon.lucide.box`; they do not imply an action. Every separate action/state usage has its own `use.*` ID. IDs hash the code path, component, role and expression, without line numbers. Identical repeated expressions also include their ordinal, so editing an identical earlier occurrence can change that ordinal. Different actions sharing a cube, spline, checkmark or cross remain separate rows.
 
@@ -2705,13 +2705,13 @@ File/media counts are recorded separately so excluded categories remain visible.
 
 | Root | Files | Image/vector files | Media paths / scope |
 | --- | --- | --- | --- |
-| `docs` | 256 | 2 | `docs/images/spur-gear-editor.png`; `docs/images/spur-gear-simulation.png` |
+| `docs` | 258 | 2 | `docs/images/spur-gear-editor.png`; `docs/images/spur-gear-simulation.png` |
 | `scripts` | 30 | 0 | No separate image/vector files |
 | `e2e` | 38 | 0 | No separate image/vector files |
 | `tests` | 11 | 0 | No separate image/vector files |
 | `DXF-test-subjects` | 1 | 0 | No separate image/vector files |
 | `vendor` | 6 | 0 | No separate image/vector files |
-| `dist` | 651 | 1 | `dist/assets/wire-edm-onboarding-poster-6gX79SPy.png` |
+| `dist` | 691 | 1 | `dist/assets/wire-edm-onboarding-poster-6gX79SPy.png` |
 | `.cache` | 7 | 0 | No separate image/vector files |
 | `.playwright` | 1 | 0 | No separate image/vector files |
 | `playwright-report` | 1 | 0 | No separate image/vector files |
