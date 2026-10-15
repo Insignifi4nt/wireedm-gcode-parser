@@ -250,45 +250,58 @@ describe('CAD controller asynchronous guards', () => {
     expect(utf8Bytes(JSON.stringify(reopenedReceipt))).toBeLessThan(32768);
   });
   it.each([CAD_FORMER_DOCUMENT_BYTES - 1, CAD_FORMER_DOCUMENT_BYTES, CAD_FORMER_DOCUMENT_BYTES + 1, CAD_FORMER_DOCUMENT_BYTES + 64 * 1024])('exports, imports and saves a %i-byte document with fixed-length fresh identity and exact payload', async bytes => {
-    const h = await harness();
-    const source = parseCadDocument(cadBudgetFixture(bytes));
-    const originalHashes = await Promise.all(cadBudgetOriginals(source).map(utf8Hash));
-    await act(async () => { await h.cad().importDocumentValue(source); });
-    const imported = h.session.getSnapshot();
-    expect(imported.document.id).toHaveLength(CAD_BUDGET_APP_ID.length);
-    expect(utf8Bytes(JSON.stringify(imported.document))).toBe(bytes);
-    const blobs: Blob[] = [];
-    vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => { if (blob instanceof Blob) blobs.push(blob); return 'blob:cad-budget'; });
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
-    const receipt = h.cad().exportDocument(imported.version);
-    expect(receipt).toMatchObject({ downloadRequested: true, fileName: 'Limită Ω part.cad.json', version: imported.version });
-    expect(click).toHaveBeenCalledOnce(); expect(blobs).toHaveLength(1);
-    expect(blobs[0].size).toBe(bytes);
-    const text = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsText(blobs[0]);
+    // Serialization owns the pending preview's lifetime instead of letting its
+    // debounce race the file and hash reads on slower test runners.
+    const previewStarted = deferred<void>(), preview = deferred<CadBuildResult>();
+    await kernel.build.withImplementation(() => { previewStarted.resolve(); return preview.promise; }, async () => {
+      try {
+        const h = await harness();
+        const source = parseCadDocument(cadBudgetFixture(bytes));
+        const originalHashes = await Promise.all(cadBudgetOriginals(source).map(utf8Hash));
+        await act(async () => { await h.cad().importDocumentValue(source); });
+        await previewStarted.promise;
+        const imported = h.session.getSnapshot();
+        expect(imported.document.id).toHaveLength(CAD_BUDGET_APP_ID.length);
+        expect(utf8Bytes(JSON.stringify(imported.document))).toBe(bytes);
+        const blobs: Blob[] = [];
+        vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => { if (blob instanceof Blob) blobs.push(blob); return 'blob:cad-budget'; });
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+        const receipt = h.cad().exportDocument(imported.version);
+        expect(receipt).toMatchObject({ downloadRequested: true, fileName: 'Limită Ω part.cad.json', version: imported.version });
+        expect(click).toHaveBeenCalledOnce(); expect(blobs).toHaveLength(1);
+        expect(blobs[0].size).toBe(bytes);
+        const text = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsText(blobs[0]);
+        });
+        expect(text).toBe(JSON.stringify(imported.document));
+        expect(JSON.parse(text)).toEqual(imported.document);
+        expect(h.session.getSnapshot()).toBe(imported);
+        let savedReceipt: unknown;
+        await act(async () => { savedReceipt = await h.cad().save(imported.version); });
+        const saved = await loadCadDocument(h.workbench().adapter, imported.document.id);
+        expect(savedReceipt).toMatchObject({ saved: true, draftMarkedSaved: true, documentId: imported.document.id, savedVersion: saved.savedVersion, version: imported.version });
+        const path = cadDocumentPath(imported.document.id), savedOriginal = await h.workbench().adapter.readExactText?.(path);
+        const file = new File([text], 'part.cad.json');
+        await act(async () => { await h.cad().importDocument(file); });
+        const roundTrip = h.session.getSnapshot();
+        expect(roundTrip.document.id).not.toBe(imported.document.id);
+        expect(roundTrip.document.features).toEqual(source.features);
+        expect(roundTrip.document.parameters).toEqual(source.parameters);
+        expect(await Promise.all(cadBudgetOriginals(roundTrip.document).map(utf8Hash))).toEqual(originalHashes);
+        expect(roundTrip).toMatchObject({ dirty: true, savedVersion: null, canUndo: false, canRedo: false });
+        await act(async () => {
+          expect(await h.workbench().adapter.readExactText?.(path)).toBe(savedOriginal);
+          expect((await loadCadDocument(h.workbench().adapter, imported.document.id)).savedVersion).toBe(saved.savedVersion);
+        });
+        await act(async () => { await h.cad().save(roundTrip.version); });
+        expect((await loadCadDocument(h.workbench().adapter, roundTrip.document.id)).document).toEqual(roundTrip.document);
+      } finally {
+        await act(async () => {
+          root?.unmount(); root = undefined;
+          preview.resolve({ buildId: 'serialization-preview', meshes: [], diagnostics: [], durationMs: 0 });
+        });
+      }
     });
-    expect(text).toBe(JSON.stringify(imported.document));
-    expect(JSON.parse(text)).toEqual(imported.document);
-    expect(h.session.getSnapshot()).toBe(imported);
-    let savedReceipt: unknown;
-    await act(async () => { savedReceipt = await h.cad().save(imported.version); });
-    const saved = await loadCadDocument(h.workbench().adapter, imported.document.id);
-    expect(savedReceipt).toMatchObject({ saved: true, draftMarkedSaved: true, documentId: imported.document.id, savedVersion: saved.savedVersion, version: imported.version });
-    const path = cadDocumentPath(imported.document.id), savedOriginal = await h.workbench().adapter.readExactText?.(path);
-    const file = new File([text], 'part.cad.json');
-    await act(async () => { await h.cad().importDocument(file); });
-    const roundTrip = h.session.getSnapshot();
-    expect(roundTrip.document.id).not.toBe(imported.document.id);
-    expect(roundTrip.document.features).toEqual(source.features);
-    expect(roundTrip.document.parameters).toEqual(source.parameters);
-    expect(await Promise.all(cadBudgetOriginals(roundTrip.document).map(utf8Hash))).toEqual(originalHashes);
-    expect(roundTrip).toMatchObject({ dirty: true, savedVersion: null, canUndo: false, canRedo: false });
-    await act(async () => {
-      expect(await h.workbench().adapter.readExactText?.(path)).toBe(savedOriginal);
-      expect((await loadCadDocument(h.workbench().adapter, imported.document.id)).savedVersion).toBe(saved.savedVersion);
-    });
-    await act(async () => { await h.cad().save(roundTrip.version); });
-    expect((await loadCadDocument(h.workbench().adapter, roundTrip.document.id)).document).toEqual(roundTrip.document);
   });
   it.each(['file', 'agent'] as const)('imports a large short-identity %s document as a fresh draft without replacing its earlier saved original', async mode => {
     const h = await harness(true);

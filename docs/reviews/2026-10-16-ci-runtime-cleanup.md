@@ -176,3 +176,36 @@ reported 1.961 and 3.674 seconds respectively, including their fixtures in the
 reporter duration; the fixture and test callbacks keep separate unchanged
 deadlines. The complete log is `tmp/ci-storage-recovery-contention.log`. Temporary
 phase instrumentation was removed, and the final source passes `git diff --check`.
+
+## Slower-runner lifecycle follow-up
+
+The following hosted run,
+[38818908552](https://github.com/Insignifi4nt/wireedm-gcode-parser/actions/runs/38818908552),
+passed all 398 unit files and 4,177 cases, including the revised recovery cases.
+Its raw unit log still emitted 30 unwrapped-act warnings in two existing files,
+although the corresponding local runs had no warnings. The warnings came from
+large controller serialization cases and the dashboard's combined saved-project
+workflow.
+
+The controller cases did not own their unrelated debounced preview result.
+Slower file/hash operations allowed that mocked build to complete between act
+scopes. A controlled reproduction awaited the actual build-start promise and
+completed the preview outside act; it reliably emitted three Harness warnings
+without an arbitrary delay. The final serialization cases keep that build
+pending, then unmount and settle it inside act during cleanup. Their scoped mock
+implementation is restored afterward. Real serialization, import, persistence,
+exact-source comparisons and all existing assertions still execute.
+
+The dashboard helper used short act windows separated by polling intervals.
+Actual storage completions could update the page and its Tooltip/Popper children
+between probes. It now records the real storage promises, awaits the active
+document/archive/restore action inside act, and then awaits the resulting actual
+inventory read inside act. It retains the stale-inventory cancellation behavior
+by awaiting only the current inventory result. No real storage implementation is
+replaced, and the helper uses no sleep or polling interval.
+
+All six directly affected cases pass without either warning pattern in
+`tmp/ci-late-act-fixed.log`. The two complete affected files also pass all 121
+cases in 14.73 seconds with no act-warning matches, recorded in
+`tmp/ci-late-act-files-final.log`. No production code, tests, assertions or console
+warnings were removed for this follow-up.

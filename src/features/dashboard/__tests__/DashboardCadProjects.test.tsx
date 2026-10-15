@@ -1,9 +1,10 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
 import { initializeWorkbenchCatalog, type ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import { cadDocumentPath, loadCadDocument, saveCadDocument } from '@/domain/cad/cadStorage';
+import * as cadStorage from '@/domain/cad/cadStorage';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { DashboardPage } from '../DashboardPage';
@@ -11,7 +12,17 @@ import { DashboardPage } from '../DashboardPage';
 describe('saved CAD projects in the shared dashboard', () => {
   let container: HTMLDivElement;
   let root: Root;
-  beforeEach(() => { localStorage.clear(); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
+  let libraryRead: MockInstance<typeof cadStorage.listCadProjectLibrary>;
+  let documentRead: MockInstance<typeof cadStorage.loadCadDocument>;
+  let archive: MockInstance<typeof cadStorage.archiveCadDocument>;
+  let restore: MockInstance<typeof cadStorage.restoreCadDocument>;
+  beforeEach(() => {
+    localStorage.clear(); container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+    libraryRead = vi.spyOn(cadStorage, 'listCadProjectLibrary');
+    documentRead = vi.spyOn(cadStorage, 'loadCadDocument');
+    archive = vi.spyOn(cadStorage, 'archiveCadDocument');
+    restore = vi.spyOn(cadStorage, 'restoreCadDocument');
+  });
   afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); });
   const props = {
     workbenchStatus: 'ready', importStatus: 'idle', importErrorMessage: null, interactionLocked: false,
@@ -33,7 +44,19 @@ describe('saved CAD projects in the shared dashboard', () => {
     return control;
   }
   async function settle(assertion: () => void) {
-    await vi.waitFor(async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 1)); }); assertion(); });
+    await act(async () => {
+      for (const operation of [documentRead, archive, restore]) {
+        const latest = operation.mock.results.at(-1);
+        if (latest?.type === 'return') await latest.value;
+      }
+    });
+    // An action's committed React update starts its inventory refresh. Await
+    // that actual read too, rather than leave gaps between timed polling probes.
+    await act(async () => {
+      const latest = libraryRead.mock.results.at(-1);
+      if (latest?.type === 'return') await latest.value;
+    });
+    assertion();
   }
   async function selectState(value: string) {
     await act(async () => {
