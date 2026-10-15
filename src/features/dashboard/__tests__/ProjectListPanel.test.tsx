@@ -151,11 +151,18 @@ describe('ProjectListPanel', () => {
     const visible = () => [...container.querySelectorAll('[data-project-row]')].map((row) =>
       row.querySelector('button[aria-label^="Open project"]')?.getAttribute('aria-label'));
     expect(visible()).toEqual(['Open project b in editor', 'Open project c in editor', 'Open project a in editor']);
-    const select = async (label: string, value: string) => act(async () => {
-      const input = container.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;
-      input.value = value;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    const filterTrigger = button('Filter projects');
+    await act(async () => filterTrigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(container.querySelector('[role="menuitemradio"]'));
+    expect(container.querySelectorAll('[role="menuitemradio"][aria-checked="true"]')).toHaveLength(3);
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(filterTrigger);
+    const select = async (label: string, value: string) => {
+      if (filterTrigger.getAttribute('aria-expanded') !== 'true') await act(async () => filterTrigger.click());
+      const option = container.querySelector<HTMLButtonElement>(`[aria-label="${label}"] button[value="${value}"]`);
+      if (!option) throw new Error(`Missing ${label} choice ${value}`);
+      await act(async () => option.click());
+    };
     await select('Project source filter', 'dxf');
     expect(visible()).toEqual(['Open project c in editor', 'Open project a in editor']);
     await select('Project sort', 'name-asc');

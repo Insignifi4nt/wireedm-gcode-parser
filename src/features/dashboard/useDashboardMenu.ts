@@ -7,7 +7,7 @@ export function useDashboardMenu(disabled: boolean) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const firstFocus = useRef<'first' | 'last'>('first');
   const menuId = useId();
-  const items = () => [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])];
+  const items = () => [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? [])];
 
   function close(restoreFocus = false) {
     if (restoreFocus) triggerRef.current?.focus();

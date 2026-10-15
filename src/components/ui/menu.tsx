@@ -51,6 +51,12 @@ export function MenuCheckboxItem({ checked, onCheckedChange, children, ...props 
     <span className="ui-menu-check" aria-hidden="true">{checked && <Check size={13} />}</span>{children}
   </MenuItem>;
 }
+export interface MenuRadioItemProps extends Omit<MenuItemProps, 'onClick'> { checked: boolean; onSelect: () => void }
+export function MenuRadioItem({ checked, onSelect, children, ...props }: MenuRadioItemProps) {
+  return <MenuItem role="menuitemradio" aria-checked={checked} onClick={onSelect} {...props}>
+    <span className="ui-menu-check" aria-hidden="true">{checked && <Check size={13} />}</span>{children}
+  </MenuItem>;
+}
 export function MenuSeparator({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return <div role="separator" className={cn('ui-menu-separator', className)} {...props} />;
 }

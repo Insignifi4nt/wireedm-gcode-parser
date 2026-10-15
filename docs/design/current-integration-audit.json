@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-15T21:34:47.679Z",
+  "generatedAt": "2026-10-15T23:43:15.342Z",
   "baseline": {
     "path": "docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json",
     "publishedCheckpoint": "6e2113fa0151ef7d0b378ad3de7635664b2fab82",
@@ -8,9 +8,9 @@
     "originalContextPreserved": true
   },
   "currentSource": {
-    "scannedProductionTsFiles": 456,
-    "catalogImports": 259,
-    "currentImportedSymbolReferences": 309,
+    "scannedProductionTsFiles": 460,
+    "catalogImports": 262,
+    "currentImportedSymbolReferences": 314,
     "catalogExportsParsed": 227,
     "catalogEntriesParsed": 134,
     "exportsWithoutCatalogEntries": [],
@@ -23,12 +23,12 @@
     "uniquelyClaimedCurrentUses": 285,
     "resolvedOriginOccurrences": 285,
     "unresolvedOriginOccurrences": 0,
-    "unmatchedCurrentReferences": 24
+    "unmatchedCurrentReferences": 29
   },
   "currentUsageByCatalogId": {
     "add": 4,
-    "adjust": 2,
-    "body": 2,
+    "adjust": 3,
+    "body": 3,
     "boolean": 2,
     "browser-cache": 1,
     "busy": 4,
@@ -40,11 +40,11 @@
     "circular-pattern": 2,
     "close": 30,
     "closed-path": 3,
-    "confirm": 15,
+    "confirm": 16,
     "curve": 3,
     "datum-plane": 4,
-    "delete": 9,
-    "download": 7,
+    "delete": 10,
+    "download": 8,
     "error": 1,
     "expand-down": 14,
     "expand-right": 15,
@@ -233,7 +233,7 @@
       "mapPropertyExpression": "{icon}",
       "currentRenderers": [
         {
-          "line": 124,
+          "line": 130,
           "expression": "{icon}"
         }
       ],
@@ -1193,6 +1193,14 @@
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
+      "file": "src/components/ui/menu.tsx",
+      "line": 57,
+      "symbol": "Check",
+      "catalogId": "confirm",
+      "context": "return <MenuItem role=\"menuitemradio\" aria-checked={checked} onClick={onSelect} {...props}> <span className=\"ui-menu-check\" aria-hidden=\"true\">{checked && <Check size={13} />}</span>{children} </MenuItem>;",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
       "file": "src/components/ui/search-field.tsx",
       "line": 34,
       "symbol": "Search",
@@ -1289,19 +1297,51 @@
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
-      "file": "src/features/dashboard/ProjectListPanel.tsx",
-      "line": 120,
-      "symbol": "Waypoints",
-      "catalogId": "polyline",
-      "context": "visibleProjects.map((project) => ( <div className=\"dashboard-project-card\" data-project-row data-project-source={project.sourceKind} key={project.id} role=\"listitem\" > <span className=\"dashboard-project-kind\" aria-hidden=\"true\"> {isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />} </span> <div className=\"dashboard-project-main\"> <div className=\"dashboard-project-name\"> <Tooltip content={`${project.name}\\n${project.path}`}><p className=\"truncate text-foreground\" >{project.name}</p></Tooltip> <Button aria-label={`Rename project ${project.id}`} className=\"size-5 shrink-0\" disabled={interactionLocked} onClick={() => onRenameProject(project)} size=\"icon\" title=\"Rename project\" type=\"button\" variant=\"ghost\" ><Pencil className=\"size-3\" /></Button> </div> <div className=\"dashboard-project-meta\"> <span>{getProjectSourceLabel(project.sourceKind)}</span> <ProjectUpdateTime value={project.updatedAt} /> </div> </div> <div className=\"dashboard-project-actions\"> <Button aria-label={`Open project ${project.id} in editor`} disabled={interactionLocked} onClick={() => onOpenProject(project.id)} size=\"sm\" type=\"button\" variant=\"outline\" > Open </Button> <Button aria-label={`Delete project ${project.id}`} className=\"size-7\" disabled={interactionLocked} onClick={() => onDeleteProject(project)} size=\"icon\" title=\"Delete project\" type=\"button\" variant=\"ghost\" > <Trash2 /> </But",
+      "file": "src/features/dashboard/ProjectFilters.tsx",
+      "line": 34,
+      "symbol": "SlidersHorizontal",
+      "catalogId": "adjust",
+      "context": "<Button ref={menu.triggerRef} aria-label=\"Filter projects\" aria-haspopup=\"menu\" aria-expanded={open} aria-controls={open ? menu.menuId : undefined} disabled={disabled} title={summary} onClick={() => menu.toggle('filters')} onKeyDown={event => menu.onTriggerKeyDown(event, 'filters')} type=\"button\"> <SlidersHorizontal /> Filter{count > 0 && <span className=\"dashboard-filter-count\" aria-hidden=\"true\">{count}</span>} </Button>",
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
       "file": "src/features/dashboard/ProjectListPanel.tsx",
-      "line": 120,
+      "line": 139,
+      "symbol": "Box",
+      "catalogId": "body",
+      "context": "visibleProjects.map((row) => { const { project } = row; const cad = project.sourceKind === 'cad'; const locked = interactionLocked || pending || (cad && cadLoading); return ( <div className=\"dashboard-project-card\" data-project-row data-project-source={project.sourceKind} data-project-state={row.state} key={`${row.state}:${project.sourceKind}:${row.state === 'archived' ? row.archiveKey : project.id}`} role=\"listitem\" > <span className=\"dashboard-project-kind\" aria-hidden=\"true\"> {cad ? <Box /> : isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />} </span> <div className=\"dashboard-project-main\"> <div className=\"dashboard-project-name\"> <Tooltip content={`${project.name}\\n${project.path}`}><p className=\"truncate text-foreground\" >{project.name}</p></Tooltip> {row.state === 'active' && <Button aria-label={`Rename project ${project.id}`} className=\"size-5 shrink-0\" disabled={locked || (cad && !onRenameCadProject)} onClick={() => project.sourceKind === 'cad' ? onRenameCadProject?.(project) : onRenameProject(project)} size=\"icon\" title=\"Rename project\" type=\"button\" variant=\"ghost\" ><Pencil className=\"size-3\" /></Button>} </div> <div className=\"dashboard-project-meta\"> <span>{projectSourceLabel(project.sourceKind)}</span> {row.state === 'archived' && <span>Archived</span>} <ProjectUpdateTime value={row.state === 'archived' ? row.deletedAt : project.updatedAt} ",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/dashboard/ProjectListPanel.tsx",
+      "line": 139,
+      "symbol": "Waypoints",
+      "catalogId": "polyline",
+      "context": "visibleProjects.map((row) => { const { project } = row; const cad = project.sourceKind === 'cad'; const locked = interactionLocked || pending || (cad && cadLoading); return ( <div className=\"dashboard-project-card\" data-project-row data-project-source={project.sourceKind} data-project-state={row.state} key={`${row.state}:${project.sourceKind}:${row.state === 'archived' ? row.archiveKey : project.id}`} role=\"listitem\" > <span className=\"dashboard-project-kind\" aria-hidden=\"true\"> {cad ? <Box /> : isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />} </span> <div className=\"dashboard-project-main\"> <div className=\"dashboard-project-name\"> <Tooltip content={`${project.name}\\n${project.path}`}><p className=\"truncate text-foreground\" >{project.name}</p></Tooltip> {row.state === 'active' && <Button aria-label={`Rename project ${project.id}`} className=\"size-5 shrink-0\" disabled={locked || (cad && !onRenameCadProject)} onClick={() => project.sourceKind === 'cad' ? onRenameCadProject?.(project) : onRenameProject(project)} size=\"icon\" title=\"Rename project\" type=\"button\" variant=\"ghost\" ><Pencil className=\"size-3\" /></Button>} </div> <div className=\"dashboard-project-meta\"> <span>{projectSourceLabel(project.sourceKind)}</span> {row.state === 'archived' && <span>Archived</span>} <ProjectUpdateTime value={row.state === 'archived' ? row.deletedAt : project.updatedAt} ",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/dashboard/ProjectListPanel.tsx",
+      "line": 139,
       "symbol": "FileCode",
       "catalogId": "file-code",
-      "context": "visibleProjects.map((project) => ( <div className=\"dashboard-project-card\" data-project-row data-project-source={project.sourceKind} key={project.id} role=\"listitem\" > <span className=\"dashboard-project-kind\" aria-hidden=\"true\"> {isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />} </span> <div className=\"dashboard-project-main\"> <div className=\"dashboard-project-name\"> <Tooltip content={`${project.name}\\n${project.path}`}><p className=\"truncate text-foreground\" >{project.name}</p></Tooltip> <Button aria-label={`Rename project ${project.id}`} className=\"size-5 shrink-0\" disabled={interactionLocked} onClick={() => onRenameProject(project)} size=\"icon\" title=\"Rename project\" type=\"button\" variant=\"ghost\" ><Pencil className=\"size-3\" /></Button> </div> <div className=\"dashboard-project-meta\"> <span>{getProjectSourceLabel(project.sourceKind)}</span> <ProjectUpdateTime value={project.updatedAt} /> </div> </div> <div className=\"dashboard-project-actions\"> <Button aria-label={`Open project ${project.id} in editor`} disabled={interactionLocked} onClick={() => onOpenProject(project.id)} size=\"sm\" type=\"button\" variant=\"outline\" > Open </Button> <Button aria-label={`Delete project ${project.id}`} className=\"size-7\" disabled={interactionLocked} onClick={() => onDeleteProject(project)} size=\"icon\" title=\"Delete project\" type=\"button\" variant=\"ghost\" > <Trash2 /> </But",
+      "context": "visibleProjects.map((row) => { const { project } = row; const cad = project.sourceKind === 'cad'; const locked = interactionLocked || pending || (cad && cadLoading); return ( <div className=\"dashboard-project-card\" data-project-row data-project-source={project.sourceKind} data-project-state={row.state} key={`${row.state}:${project.sourceKind}:${row.state === 'archived' ? row.archiveKey : project.id}`} role=\"listitem\" > <span className=\"dashboard-project-kind\" aria-hidden=\"true\"> {cad ? <Box /> : isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />} </span> <div className=\"dashboard-project-main\"> <div className=\"dashboard-project-name\"> <Tooltip content={`${project.name}\\n${project.path}`}><p className=\"truncate text-foreground\" >{project.name}</p></Tooltip> {row.state === 'active' && <Button aria-label={`Rename project ${project.id}`} className=\"size-5 shrink-0\" disabled={locked || (cad && !onRenameCadProject)} onClick={() => project.sourceKind === 'cad' ? onRenameCadProject?.(project) : onRenameProject(project)} size=\"icon\" title=\"Rename project\" type=\"button\" variant=\"ghost\" ><Pencil className=\"size-3\" /></Button>} </div> <div className=\"dashboard-project-meta\"> <span>{projectSourceLabel(project.sourceKind)}</span> {row.state === 'archived' && <span>Archived</span>} <ProjectUpdateTime value={row.state === 'archived' ? row.deletedAt : project.updatedAt} ",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/dashboard/ProjectListPanel.tsx",
+      "line": 166,
+      "symbol": "Trash2",
+      "catalogId": "delete",
+      "context": "<Button aria-label={`Permanently delete ${project.name}`} title=\"Delete permanently\" disabled={locked} onClick={() => onPurgeArchivedProject(project)} size=\"icon\" type=\"button\" variant=\"ghost\"><Trash2 /></Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/dashboard/ProjectListPanel.tsx",
+      "line": 191,
+      "symbol": "Download",
+      "catalogId": "download",
+      "context": "<Button aria-label={`Download CAD project ${project.id}`} title=\"Download CAD project\" disabled={locked} onClick={() => void runAction(() => onExportCadProject(project))} size=\"icon\" type=\"button\" variant=\"ghost\"><Download /></Button>",
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
@@ -1380,13 +1420,13 @@
       "scoutActualSymbol": "WireEdmMarkIcon",
       "matchedCurrent": {
         "file": "src/app/AppShell.tsx",
-        "line": 181,
+        "line": 191,
         "column": 14,
         "symbol": "WireEdmMarkIcon",
         "exportedSymbol": "WireEdmMarkIcon",
         "catalogId": "wire-edm-mark",
-        "confidenceScore": 283.52,
-        "context": "return ( <div className=\"technical-workbench flex h-dvh flex-col overflow-hidden bg-background text-foreground\" data-app-shell data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'} > <header aria-hidden={compactModalOpen ? true : undefined} className=\"flex h-10 shrink-0 items-center border-b border-border bg-[#11171b] px-2\" data-app-header inert={compactModalOpen ? true : undefined} > {headerContent ?? ( <div className=\"mr-4 flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground\"> <WireEdmMarkIcon className=\"size-4 text-primary\" /> <span className=\"truncate\">Wire EDM Workbench</span> </div> )} <div className=\"ml-auto flex items-center gap-2\" data-app-header-system-controls> <StatusNotificationMenu notifications={statusNotifications} agentContent={agentPanelContent} /> <Button aria-label=\"Open settings\" onClick={() => { setSettingsSection('storage'); setSettingsOpen(true); }} size=\"icon\" title=\"Settings\" type=\"button\" variant=\"outline\" > <SettingsIcon /> </Button> </div> </header> <div aria-hidden={compactModalOpen ? true : undefined} className=\"grid min-h-0 flex-1 transition-[grid-template-columns]\" data-app-workspace-grid data-has-rail={hasRailContent ? 'true' : 'false'} data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'} inert={compactModalOpen ? true : undefined} style={ { '--app-rail-width': `${railWidth}px`, gridTemplateColumns: hasRailConten"
+        "confidenceScore": 283.25,
+        "context": "return ( <div className=\"technical-workbench flex h-dvh flex-col overflow-hidden bg-background text-foreground\" data-app-shell data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'} > <header aria-hidden={compactModalOpen ? true : undefined} className=\"flex h-10 shrink-0 items-center border-b border-border bg-[#11171b] px-2\" data-app-header inert={compactModalOpen ? true : undefined} > {headerContent ?? ( <div className=\"mr-4 flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground\"> <WireEdmMarkIcon className=\"size-4 text-primary\" /> <span className=\"truncate\">Wire EDM Workbench</span> </div> )} <div className=\"ml-auto flex items-center gap-2\" data-app-header-system-controls> <StatusNotificationMenu notifications={statusNotifications} agentContent={agentPanelContent} /> <Button aria-label=\"Open settings\" onClick={() => requestSettings('storage')} size=\"icon\" title=\"Settings\" type=\"button\" variant=\"outline\" > <SettingsIcon /> </Button> </div> </header> <div aria-hidden={compactModalOpen ? true : undefined} className=\"grid min-h-0 flex-1 transition-[grid-template-columns]\" data-app-workspace-grid data-has-rail={hasRailContent ? 'true' : 'false'} data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'} inert={compactModalOpen ? true : undefined} style={ { '--app-rail-width': `${railWidth}px`, gridTemplateColumns: hasRailContent ? undefined : 'minmax(0, 1fr)"
       },
       "resolution": "resolved",
       "actualSymbol": "WireEdmMarkIcon",
@@ -1403,13 +1443,13 @@
       "scoutActualSymbol": "SettingsIcon",
       "matchedCurrent": {
         "file": "src/app/AppShell.tsx",
-        "line": 195,
+        "line": 205,
         "column": 14,
         "symbol": "Settings",
         "exportedSymbol": "SettingsIcon",
         "catalogId": "settings",
-        "confidenceScore": 762,
-        "context": "<Button aria-label=\"Open settings\" onClick={() => { setSettingsSection('storage'); setSettingsOpen(true); }} size=\"icon\" title=\"Settings\" type=\"button\" variant=\"outline\" > <SettingsIcon /> </Button>"
+        "confidenceScore": 742,
+        "context": "<Button aria-label=\"Open settings\" onClick={() => requestSettings('storage')} size=\"icon\" title=\"Settings\" type=\"button\" variant=\"outline\" > <SettingsIcon /> </Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "Settings",
@@ -1426,7 +1466,7 @@
       "scoutActualSymbol": "PanelLeftOpenIcon",
       "matchedCurrent": {
         "file": "src/app/AppShell.tsx",
-        "line": 242,
+        "line": 252,
         "column": 22,
         "symbol": "PanelLeftOpen",
         "exportedSymbol": "PanelLeftOpen",
@@ -1449,7 +1489,7 @@
       "scoutActualSymbol": "PanelLeftCloseIcon",
       "matchedCurrent": {
         "file": "src/app/AppShell.tsx",
-        "line": 244,
+        "line": 254,
         "column": 22,
         "symbol": "PanelLeftClose",
         "exportedSymbol": "PanelLeftClose",
@@ -1610,12 +1650,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/app/WorkbenchSettingsDialog.tsx",
-        "line": 75,
+        "line": 81,
         "column": 214,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 856.52,
+        "confidenceScore": 761.52,
         "context": "<Button variant=\"outline\" size=\"icon\" aria-label=\"Close settings\" className=\"mb-4 flex size-8 shrink-0 items-center justify-center max-[720px]:mb-0\" onClick={onClose} ref={closeButtonRef} type=\"button\"><CloseIcon className=\"size-4\" /></Button>"
       },
       "resolution": "resolved",
@@ -1633,13 +1673,13 @@
       "scoutActualSymbol": "BrowserCacheIcon",
       "matchedCurrent": {
         "file": "src/app/WorkbenchSettingsDialog.tsx",
-        "line": 77,
+        "line": 83,
         "column": 72,
         "symbol": "BrowserCacheIcon",
         "exportedSymbol": "BrowserCacheIcon",
         "catalogId": "browser-cache",
-        "confidenceScore": 470.72,
-        "context": "return ( <div className=\"fixed inset-0 z-50 grid place-items-center bg-black/60 p-4\" data-workbench-settings-overlay onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} ref={overlayRef}> <div aria-label=\"Workbench settings\" aria-modal=\"true\" className=\"grid h-[86dvh] w-full max-w-4xl grid-cols-[224px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1 max-[720px]:grid-rows-[auto_minmax(0,1fr)]\" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role=\"dialog\" tabIndex={-1}> <aside className=\"min-h-0 border-r border-border bg-background/45 p-3 max-[720px]:grid max-[720px]:grid-cols-[auto_minmax(0,1fr)] max-[720px]:items-center max-[720px]:gap-x-3 max-[720px]:gap-y-2 max-[720px]:border-b max-[720px]:border-r-0\"> <Button variant=\"outline\" size=\"icon\" aria-label=\"Close settings\" className=\"mb-4 flex size-8 shrink-0 items-center justify-center max-[720px]:mb-0\" onClick={onClose} ref={closeButtonRef} type=\"button\"><CloseIcon className=\"size-4\" /></Button> <nav aria-label=\"Settings sections\" className=\"grid gap-1 max-[720px]:flex max-[720px]:flex-wrap\"> <SectionButton active={activeSection === 'storage'} icon={<BrowserCacheIcon className=\"size-4\" />} label=\"Storage\" onClick={() => setActiveSection('storage')} /> <SectionButton active={activeSection === 'machine-output'} icon={<AdjustIcon cl"
+        "confidenceScore": 374.66,
+        "context": "return ( <div className=\"fixed inset-0 z-50 grid place-items-center bg-black/60 p-4\" data-workbench-settings-overlay onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} ref={overlayRef}> <div aria-label=\"Workbench settings\" aria-modal=\"true\" className=\"grid h-[86dvh] w-full max-w-4xl grid-cols-[224px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1 max-[720px]:grid-rows-[auto_minmax(0,1fr)]\" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role=\"dialog\" tabIndex={-1}> <aside className=\"min-h-0 border-r border-border bg-background/45 p-3 max-[720px]:grid max-[720px]:grid-cols-[auto_minmax(0,1fr)] max-[720px]:items-center max-[720px]:gap-x-3 max-[720px]:gap-y-2 max-[720px]:border-b max-[720px]:border-r-0\"> <Button variant=\"outline\" size=\"icon\" aria-label=\"Close settings\" className=\"mb-4 flex size-8 shrink-0 items-center justify-center max-[720px]:mb-0\" onClick={onClose} ref={closeButtonRef} type=\"button\"><CloseIcon className=\"size-4\" /></Button> <nav aria-label=\"Settings sections\" className=\"grid gap-1 max-[720px]:flex max-[720px]:flex-wrap\"> <SectionButton active={activeSection === 'storage'} icon={<BrowserCacheIcon className=\"size-4\" />} label=\"Storage\" onClick={() => selectSection('storage')} /> <SectionButton active={activeSection === 'machine-output'} icon={<AdjustIcon class"
       },
       "resolution": "resolved",
       "actualSymbol": "BrowserCacheIcon",
@@ -1656,13 +1696,13 @@
       "scoutActualSymbol": "AdjustIcon",
       "matchedCurrent": {
         "file": "src/app/WorkbenchSettingsDialog.tsx",
-        "line": 78,
+        "line": 84,
         "column": 79,
         "symbol": "AdjustIcon",
         "exportedSymbol": "AdjustIcon",
         "catalogId": "adjust",
-        "confidenceScore": 470.72,
-        "context": "return ( <div className=\"fixed inset-0 z-50 grid place-items-center bg-black/60 p-4\" data-workbench-settings-overlay onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} ref={overlayRef}> <div aria-label=\"Workbench settings\" aria-modal=\"true\" className=\"grid h-[86dvh] w-full max-w-4xl grid-cols-[224px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1 max-[720px]:grid-rows-[auto_minmax(0,1fr)]\" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role=\"dialog\" tabIndex={-1}> <aside className=\"min-h-0 border-r border-border bg-background/45 p-3 max-[720px]:grid max-[720px]:grid-cols-[auto_minmax(0,1fr)] max-[720px]:items-center max-[720px]:gap-x-3 max-[720px]:gap-y-2 max-[720px]:border-b max-[720px]:border-r-0\"> <Button variant=\"outline\" size=\"icon\" aria-label=\"Close settings\" className=\"mb-4 flex size-8 shrink-0 items-center justify-center max-[720px]:mb-0\" onClick={onClose} ref={closeButtonRef} type=\"button\"><CloseIcon className=\"size-4\" /></Button> <nav aria-label=\"Settings sections\" className=\"grid gap-1 max-[720px]:flex max-[720px]:flex-wrap\"> <SectionButton active={activeSection === 'storage'} icon={<BrowserCacheIcon className=\"size-4\" />} label=\"Storage\" onClick={() => setActiveSection('storage')} /> <SectionButton active={activeSection === 'machine-output'} icon={<AdjustIcon cl"
+        "confidenceScore": 374.66,
+        "context": "return ( <div className=\"fixed inset-0 z-50 grid place-items-center bg-black/60 p-4\" data-workbench-settings-overlay onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} ref={overlayRef}> <div aria-label=\"Workbench settings\" aria-modal=\"true\" className=\"grid h-[86dvh] w-full max-w-4xl grid-cols-[224px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1 max-[720px]:grid-rows-[auto_minmax(0,1fr)]\" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role=\"dialog\" tabIndex={-1}> <aside className=\"min-h-0 border-r border-border bg-background/45 p-3 max-[720px]:grid max-[720px]:grid-cols-[auto_minmax(0,1fr)] max-[720px]:items-center max-[720px]:gap-x-3 max-[720px]:gap-y-2 max-[720px]:border-b max-[720px]:border-r-0\"> <Button variant=\"outline\" size=\"icon\" aria-label=\"Close settings\" className=\"mb-4 flex size-8 shrink-0 items-center justify-center max-[720px]:mb-0\" onClick={onClose} ref={closeButtonRef} type=\"button\"><CloseIcon className=\"size-4\" /></Button> <nav aria-label=\"Settings sections\" className=\"grid gap-1 max-[720px]:flex max-[720px]:flex-wrap\"> <SectionButton active={activeSection === 'storage'} icon={<BrowserCacheIcon className=\"size-4\" />} label=\"Storage\" onClick={() => selectSection('storage')} /> <SectionButton active={activeSection === 'machine-output'} icon={<AdjustIcon class"
       },
       "resolution": "resolved",
       "actualSymbol": "AdjustIcon",
@@ -1679,13 +1719,13 @@
       "scoutActualSymbol": "BodyIcon",
       "matchedCurrent": {
         "file": "src/app/WorkbenchSettingsDialog.tsx",
-        "line": 79,
+        "line": 85,
         "column": 68,
         "symbol": "BodyIcon",
         "exportedSymbol": "BodyIcon",
         "catalogId": "body",
-        "confidenceScore": 470.72,
-        "context": "return ( <div className=\"fixed inset-0 z-50 grid place-items-center bg-black/60 p-4\" data-workbench-settings-overlay onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} ref={overlayRef}> <div aria-label=\"Workbench settings\" aria-modal=\"true\" className=\"grid h-[86dvh] w-full max-w-4xl grid-cols-[224px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1 max-[720px]:grid-rows-[auto_minmax(0,1fr)]\" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role=\"dialog\" tabIndex={-1}> <aside className=\"min-h-0 border-r border-border bg-background/45 p-3 max-[720px]:grid max-[720px]:grid-cols-[auto_minmax(0,1fr)] max-[720px]:items-center max-[720px]:gap-x-3 max-[720px]:gap-y-2 max-[720px]:border-b max-[720px]:border-r-0\"> <Button variant=\"outline\" size=\"icon\" aria-label=\"Close settings\" className=\"mb-4 flex size-8 shrink-0 items-center justify-center max-[720px]:mb-0\" onClick={onClose} ref={closeButtonRef} type=\"button\"><CloseIcon className=\"size-4\" /></Button> <nav aria-label=\"Settings sections\" className=\"grid gap-1 max-[720px]:flex max-[720px]:flex-wrap\"> <SectionButton active={activeSection === 'storage'} icon={<BrowserCacheIcon className=\"size-4\" />} label=\"Storage\" onClick={() => setActiveSection('storage')} /> <SectionButton active={activeSection === 'machine-output'} icon={<AdjustIcon cl"
+        "confidenceScore": 374.66,
+        "context": "return ( <div className=\"fixed inset-0 z-50 grid place-items-center bg-black/60 p-4\" data-workbench-settings-overlay onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} ref={overlayRef}> <div aria-label=\"Workbench settings\" aria-modal=\"true\" className=\"grid h-[86dvh] w-full max-w-4xl grid-cols-[224px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1 max-[720px]:grid-rows-[auto_minmax(0,1fr)]\" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role=\"dialog\" tabIndex={-1}> <aside className=\"min-h-0 border-r border-border bg-background/45 p-3 max-[720px]:grid max-[720px]:grid-cols-[auto_minmax(0,1fr)] max-[720px]:items-center max-[720px]:gap-x-3 max-[720px]:gap-y-2 max-[720px]:border-b max-[720px]:border-r-0\"> <Button variant=\"outline\" size=\"icon\" aria-label=\"Close settings\" className=\"mb-4 flex size-8 shrink-0 items-center justify-center max-[720px]:mb-0\" onClick={onClose} ref={closeButtonRef} type=\"button\"><CloseIcon className=\"size-4\" /></Button> <nav aria-label=\"Settings sections\" className=\"grid gap-1 max-[720px]:flex max-[720px]:flex-wrap\"> <SectionButton active={activeSection === 'storage'} icon={<BrowserCacheIcon className=\"size-4\" />} label=\"Storage\" onClick={() => selectSection('storage')} /> <SectionButton active={activeSection === 'machine-output'} icon={<AdjustIcon class"
       },
       "resolution": "resolved",
       "actualSymbol": "BodyIcon",
@@ -1702,12 +1742,12 @@
       "scoutActualSymbol": "RefreshIcon",
       "matchedCurrent": {
         "file": "src/app/WorkbenchSettingsDialog.tsx",
-        "line": 105,
+        "line": 111,
         "column": 164,
         "symbol": "RefreshIcon",
         "exportedSymbol": "RefreshIcon",
         "catalogId": "refresh",
-        "confidenceScore": 470.57,
+        "confidenceScore": 375.57,
         "context": "<Button size=\"md\" className=\"mt-3\" disabled={storageSwitchDisabled} onClick={onConnectWorkbench} type=\"button\" variant=\"outline\"><RefreshIcon />{storageActionLabel}</Button>"
       },
       "resolution": "resolved",
@@ -5290,12 +5330,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/dashboard/ProjectActionDialog.tsx",
-        "line": 130,
+        "line": 135,
         "column": 14,
         "symbol": "X",
         "exportedSymbol": "X",
         "catalogId": "close",
-        "confidenceScore": 778.73,
+        "confidenceScore": 766.23,
         "context": "<Button variant=\"outline\" size=\"icon\" aria-label={`Close ${kind} dialog`} className=\"flex size-7 shrink-0 items-center justify-center\" onClick={dismiss} disabled={busy} type=\"button\" > <X className=\"size-4\" /> </Button>"
       },
       "resolution": "resolved",
@@ -5313,13 +5353,13 @@
       "scoutActualSymbol": "RenameIcon",
       "matchedCurrent": {
         "file": "src/features/dashboard/ProjectListPanel.tsx",
-        "line": 134,
+        "line": 153,
         "column": 27,
         "symbol": "Pencil",
         "exportedSymbol": "Pencil",
         "catalogId": "rename",
-        "confidenceScore": 733.86,
-        "context": "<Button aria-label={`Rename project ${project.id}`} className=\"size-5 shrink-0\" disabled={interactionLocked} onClick={() => onRenameProject(project)} size=\"icon\" title=\"Rename project\" type=\"button\" variant=\"ghost\" ><Pencil className=\"size-3\" /></Button>"
+        "confidenceScore": 686.36,
+        "context": "<Button aria-label={`Rename project ${project.id}`} className=\"size-5 shrink-0\" disabled={locked || (cad && !onRenameCadProject)} onClick={() => project.sourceKind === 'cad' ? onRenameCadProject?.(project) : onRenameProject(project)} size=\"icon\" title=\"Rename project\" type=\"button\" variant=\"ghost\" ><Pencil className=\"size-3\" /></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "Pencil",
@@ -5336,13 +5376,13 @@
       "scoutActualSymbol": "DeleteIcon",
       "matchedCurrent": {
         "file": "src/features/dashboard/ProjectListPanel.tsx",
-        "line": 162,
+        "line": 188,
         "column": 26,
         "symbol": "Trash2",
         "exportedSymbol": "Trash2",
         "catalogId": "delete",
-        "confidenceScore": 730.01,
-        "context": "<Button aria-label={`Delete project ${project.id}`} className=\"size-7\" disabled={interactionLocked} onClick={() => onDeleteProject(project)} size=\"icon\" title=\"Delete project\" type=\"button\" variant=\"ghost\" > <Trash2 /> </Button>"
+        "confidenceScore": 682.51,
+        "context": "<Button aria-label={`Delete project ${project.id}`} className=\"size-7\" disabled={locked || (cad && !onArchiveCadProject)} onClick={() => project.sourceKind === 'cad' ? onArchiveCadProject?.(project) : onDeleteProject(project)} size=\"icon\" title=\"Delete project\" type=\"button\" variant=\"ghost\" > <Trash2 /> </Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "Trash2",
@@ -5359,13 +5399,13 @@
       "scoutActualSymbol": "HistoryIcon",
       "matchedCurrent": {
         "file": "src/features/dashboard/ProjectListPanel.tsx",
-        "line": 175,
+        "line": 203,
         "column": 28,
         "symbol": "History",
         "exportedSymbol": "History",
         "catalogId": "history",
-        "confidenceScore": 727.45,
-        "context": "<Button aria-label={`Show revisions for project ${project.id}`} className=\"size-7\" disabled={interactionLocked} onClick={() => onShowRevisions(project)} size=\"icon\" title=\"Saved revisions\" type=\"button\" variant=\"ghost\" > <History /> </Button>"
+        "confidenceScore": 678.67,
+        "context": "<Button aria-label={`Show revisions for project ${project.id}`} className=\"size-7\" disabled={locked} onClick={() => onShowRevisions(project)} size=\"icon\" title=\"Saved revisions\" type=\"button\" variant=\"ghost\" > <History /> </Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "History",
@@ -5382,13 +5422,13 @@
       "scoutActualSymbol": "SaveIcon",
       "matchedCurrent": {
         "file": "src/features/dashboard/ProjectListPanel.tsx",
-        "line": 194,
+        "line": 222,
         "column": 29,
         "symbol": "Save",
         "exportedSymbol": "Save",
         "catalogId": "save",
-        "confidenceScore": 727.45,
-        "context": "<Button aria-expanded={exportMenuProjectId === project.id} aria-controls={exportMenuProjectId === project.id ? menu.menuId : undefined} aria-haspopup=\"menu\" aria-label={`Export UPID project ${project.id}`} className=\"relative size-7\" disabled={interactionLocked} onClick={() => menu.toggle(project.id)} onKeyDown={(event) => menu.onTriggerKeyDown(event, project.id)} ref={exportMenuProjectId === project.id ? menu.triggerRef : undefined} size=\"icon\" title=\"Export UPID\" type=\"button\" variant=\"ghost\" ><Save className=\"size-4\" /><ChevronDown className=\"absolute bottom-0 right-0 size-2.5\" /></Button>"
+        "confidenceScore": 678.67,
+        "context": "<Button aria-expanded={exportMenuProjectId === project.id} aria-controls={exportMenuProjectId === project.id ? menu.menuId : undefined} aria-haspopup=\"menu\" aria-label={`Export UPID project ${project.id}`} className=\"relative size-7\" disabled={locked} onClick={() => menu.toggle(project.id)} onKeyDown={(event) => menu.onTriggerKeyDown(event, project.id)} ref={exportMenuProjectId === project.id ? menu.triggerRef : undefined} size=\"icon\" title=\"Export UPID\" type=\"button\" variant=\"ghost\" ><Save className=\"size-4\" /><ChevronDown className=\"absolute bottom-0 right-0 size-2.5\" /></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "Save",
@@ -5405,13 +5445,13 @@
       "scoutActualSymbol": "ExpandDownIcon",
       "matchedCurrent": {
         "file": "src/features/dashboard/ProjectListPanel.tsx",
-        "line": 194,
+        "line": 222,
         "column": 56,
         "symbol": "ChevronDown",
         "exportedSymbol": "ChevronDown",
         "catalogId": "expand-down",
-        "confidenceScore": 727.45,
-        "context": "<Button aria-expanded={exportMenuProjectId === project.id} aria-controls={exportMenuProjectId === project.id ? menu.menuId : undefined} aria-haspopup=\"menu\" aria-label={`Export UPID project ${project.id}`} className=\"relative size-7\" disabled={interactionLocked} onClick={() => menu.toggle(project.id)} onKeyDown={(event) => menu.onTriggerKeyDown(event, project.id)} ref={exportMenuProjectId === project.id ? menu.triggerRef : undefined} size=\"icon\" title=\"Export UPID\" type=\"button\" variant=\"ghost\" ><Save className=\"size-4\" /><ChevronDown className=\"absolute bottom-0 right-0 size-2.5\" /></Button>"
+        "confidenceScore": 678.67,
+        "context": "<Button aria-expanded={exportMenuProjectId === project.id} aria-controls={exportMenuProjectId === project.id ? menu.menuId : undefined} aria-haspopup=\"menu\" aria-label={`Export UPID project ${project.id}`} className=\"relative size-7\" disabled={locked} onClick={() => menu.toggle(project.id)} onKeyDown={(event) => menu.onTriggerKeyDown(event, project.id)} ref={exportMenuProjectId === project.id ? menu.triggerRef : undefined} size=\"icon\" title=\"Export UPID\" type=\"button\" variant=\"ghost\" ><Save className=\"size-4\" /><ChevronDown className=\"absolute bottom-0 right-0 size-2.5\" /></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "ChevronDown",
@@ -7943,6 +7983,13 @@
       "context": "return <MenuItem role=\"menuitemcheckbox\" aria-checked={checked} onClick={() => onCheckedChange(!checked)} {...props}> <span className=\"ui-menu-check\" aria-hidden=\"true\">{checked && <Check size={13} />}</span>{children} </MenuItem>;"
     },
     {
+      "file": "src/components/ui/menu.tsx",
+      "line": 57,
+      "symbol": "Check",
+      "catalogId": "confirm",
+      "context": "return <MenuItem role=\"menuitemradio\" aria-checked={checked} onClick={onSelect} {...props}> <span className=\"ui-menu-check\" aria-hidden=\"true\">{checked && <Check size={13} />}</span>{children} </MenuItem>;"
+    },
+    {
       "file": "src/components/ui/search-field.tsx",
       "line": 34,
       "symbol": "Search",
@@ -8027,18 +8074,46 @@
       "context": "<Button type=\"button\" className=\"cad-topology-disclosure\" aria-label=\"Inspect topology\" aria-expanded={expanded} aria-controls={contentId} onClick={() => setDisclosure({ identity: disclosureIdentity, expanded: !expanded })}>{expanded ? <ExpandDownIcon size={12} /> : <ExpandRightIcon size={12} />} Inspect topology</Button>"
     },
     {
-      "file": "src/features/dashboard/ProjectListPanel.tsx",
-      "line": 120,
-      "symbol": "Waypoints",
-      "catalogId": "polyline",
-      "context": "visibleProjects.map((project) => ( <div className=\"dashboard-project-card\" data-project-row data-project-source={project.sourceKind} key={project.id} role=\"listitem\" > <span className=\"dashboard-project-kind\" aria-hidden=\"true\"> {isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />} </span> <div className=\"dashboard-project-main\"> <div className=\"dashboard-project-name\"> <Tooltip content={`${project.name}\\n${project.path}`}><p className=\"truncate text-foreground\" >{project.name}</p></Tooltip> <Button aria-label={`Rename project ${project.id}`} className=\"size-5 shrink-0\" disabled={interactionLocked} onClick={() => onRenameProject(project)} size=\"icon\" title=\"Rename project\" type=\"button\" variant=\"ghost\" ><Pencil className=\"size-3\" /></Button> </div> <div className=\"dashboard-project-meta\"> <span>{getProjectSourceLabel(project.sourceKind)}</span> <ProjectUpdateTime value={project.updatedAt} /> </div> </div> <div className=\"dashboard-project-actions\"> <Button aria-label={`Open project ${project.id} in editor`} disabled={interactionLocked} onClick={() => onOpenProject(project.id)} size=\"sm\" type=\"button\" variant=\"outline\" > Open </Button> <Button aria-label={`Delete project ${project.id}`} className=\"size-7\" disabled={interactionLocked} onClick={() => onDeleteProject(project)} size=\"icon\" title=\"Delete project\" type=\"button\" variant=\"ghost\" > <Trash2 /> </But"
+      "file": "src/features/dashboard/ProjectFilters.tsx",
+      "line": 34,
+      "symbol": "SlidersHorizontal",
+      "catalogId": "adjust",
+      "context": "<Button ref={menu.triggerRef} aria-label=\"Filter projects\" aria-haspopup=\"menu\" aria-expanded={open} aria-controls={open ? menu.menuId : undefined} disabled={disabled} title={summary} onClick={() => menu.toggle('filters')} onKeyDown={event => menu.onTriggerKeyDown(event, 'filters')} type=\"button\"> <SlidersHorizontal /> Filter{count > 0 && <span className=\"dashboard-filter-count\" aria-hidden=\"true\">{count}</span>} </Button>"
     },
     {
       "file": "src/features/dashboard/ProjectListPanel.tsx",
-      "line": 120,
+      "line": 139,
+      "symbol": "Box",
+      "catalogId": "body",
+      "context": "visibleProjects.map((row) => { const { project } = row; const cad = project.sourceKind === 'cad'; const locked = interactionLocked || pending || (cad && cadLoading); return ( <div className=\"dashboard-project-card\" data-project-row data-project-source={project.sourceKind} data-project-state={row.state} key={`${row.state}:${project.sourceKind}:${row.state === 'archived' ? row.archiveKey : project.id}`} role=\"listitem\" > <span className=\"dashboard-project-kind\" aria-hidden=\"true\"> {cad ? <Box /> : isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />} </span> <div className=\"dashboard-project-main\"> <div className=\"dashboard-project-name\"> <Tooltip content={`${project.name}\\n${project.path}`}><p className=\"truncate text-foreground\" >{project.name}</p></Tooltip> {row.state === 'active' && <Button aria-label={`Rename project ${project.id}`} className=\"size-5 shrink-0\" disabled={locked || (cad && !onRenameCadProject)} onClick={() => project.sourceKind === 'cad' ? onRenameCadProject?.(project) : onRenameProject(project)} size=\"icon\" title=\"Rename project\" type=\"button\" variant=\"ghost\" ><Pencil className=\"size-3\" /></Button>} </div> <div className=\"dashboard-project-meta\"> <span>{projectSourceLabel(project.sourceKind)}</span> {row.state === 'archived' && <span>Archived</span>} <ProjectUpdateTime value={row.state === 'archived' ? row.deletedAt : project.updatedAt} "
+    },
+    {
+      "file": "src/features/dashboard/ProjectListPanel.tsx",
+      "line": 139,
+      "symbol": "Waypoints",
+      "catalogId": "polyline",
+      "context": "visibleProjects.map((row) => { const { project } = row; const cad = project.sourceKind === 'cad'; const locked = interactionLocked || pending || (cad && cadLoading); return ( <div className=\"dashboard-project-card\" data-project-row data-project-source={project.sourceKind} data-project-state={row.state} key={`${row.state}:${project.sourceKind}:${row.state === 'archived' ? row.archiveKey : project.id}`} role=\"listitem\" > <span className=\"dashboard-project-kind\" aria-hidden=\"true\"> {cad ? <Box /> : isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />} </span> <div className=\"dashboard-project-main\"> <div className=\"dashboard-project-name\"> <Tooltip content={`${project.name}\\n${project.path}`}><p className=\"truncate text-foreground\" >{project.name}</p></Tooltip> {row.state === 'active' && <Button aria-label={`Rename project ${project.id}`} className=\"size-5 shrink-0\" disabled={locked || (cad && !onRenameCadProject)} onClick={() => project.sourceKind === 'cad' ? onRenameCadProject?.(project) : onRenameProject(project)} size=\"icon\" title=\"Rename project\" type=\"button\" variant=\"ghost\" ><Pencil className=\"size-3\" /></Button>} </div> <div className=\"dashboard-project-meta\"> <span>{projectSourceLabel(project.sourceKind)}</span> {row.state === 'archived' && <span>Archived</span>} <ProjectUpdateTime value={row.state === 'archived' ? row.deletedAt : project.updatedAt} "
+    },
+    {
+      "file": "src/features/dashboard/ProjectListPanel.tsx",
+      "line": 139,
       "symbol": "FileCode",
       "catalogId": "file-code",
-      "context": "visibleProjects.map((project) => ( <div className=\"dashboard-project-card\" data-project-row data-project-source={project.sourceKind} key={project.id} role=\"listitem\" > <span className=\"dashboard-project-kind\" aria-hidden=\"true\"> {isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />} </span> <div className=\"dashboard-project-main\"> <div className=\"dashboard-project-name\"> <Tooltip content={`${project.name}\\n${project.path}`}><p className=\"truncate text-foreground\" >{project.name}</p></Tooltip> <Button aria-label={`Rename project ${project.id}`} className=\"size-5 shrink-0\" disabled={interactionLocked} onClick={() => onRenameProject(project)} size=\"icon\" title=\"Rename project\" type=\"button\" variant=\"ghost\" ><Pencil className=\"size-3\" /></Button> </div> <div className=\"dashboard-project-meta\"> <span>{getProjectSourceLabel(project.sourceKind)}</span> <ProjectUpdateTime value={project.updatedAt} /> </div> </div> <div className=\"dashboard-project-actions\"> <Button aria-label={`Open project ${project.id} in editor`} disabled={interactionLocked} onClick={() => onOpenProject(project.id)} size=\"sm\" type=\"button\" variant=\"outline\" > Open </Button> <Button aria-label={`Delete project ${project.id}`} className=\"size-7\" disabled={interactionLocked} onClick={() => onDeleteProject(project)} size=\"icon\" title=\"Delete project\" type=\"button\" variant=\"ghost\" > <Trash2 /> </But"
+      "context": "visibleProjects.map((row) => { const { project } = row; const cad = project.sourceKind === 'cad'; const locked = interactionLocked || pending || (cad && cadLoading); return ( <div className=\"dashboard-project-card\" data-project-row data-project-source={project.sourceKind} data-project-state={row.state} key={`${row.state}:${project.sourceKind}:${row.state === 'archived' ? row.archiveKey : project.id}`} role=\"listitem\" > <span className=\"dashboard-project-kind\" aria-hidden=\"true\"> {cad ? <Box /> : isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />} </span> <div className=\"dashboard-project-main\"> <div className=\"dashboard-project-name\"> <Tooltip content={`${project.name}\\n${project.path}`}><p className=\"truncate text-foreground\" >{project.name}</p></Tooltip> {row.state === 'active' && <Button aria-label={`Rename project ${project.id}`} className=\"size-5 shrink-0\" disabled={locked || (cad && !onRenameCadProject)} onClick={() => project.sourceKind === 'cad' ? onRenameCadProject?.(project) : onRenameProject(project)} size=\"icon\" title=\"Rename project\" type=\"button\" variant=\"ghost\" ><Pencil className=\"size-3\" /></Button>} </div> <div className=\"dashboard-project-meta\"> <span>{projectSourceLabel(project.sourceKind)}</span> {row.state === 'archived' && <span>Archived</span>} <ProjectUpdateTime value={row.state === 'archived' ? row.deletedAt : project.updatedAt} "
+    },
+    {
+      "file": "src/features/dashboard/ProjectListPanel.tsx",
+      "line": 166,
+      "symbol": "Trash2",
+      "catalogId": "delete",
+      "context": "<Button aria-label={`Permanently delete ${project.name}`} title=\"Delete permanently\" disabled={locked} onClick={() => onPurgeArchivedProject(project)} size=\"icon\" type=\"button\" variant=\"ghost\"><Trash2 /></Button>"
+    },
+    {
+      "file": "src/features/dashboard/ProjectListPanel.tsx",
+      "line": 191,
+      "symbol": "Download",
+      "catalogId": "download",
+      "context": "<Button aria-label={`Download CAD project ${project.id}`} title=\"Download CAD project\" disabled={locked} onClick={() => void runAction(() => onExportCadProject(project))} size=\"icon\" type=\"button\" variant=\"ghost\"><Download /></Button>"
     },
     {
       "file": "src/features/editor/EditorPathNavigatorPanel.tsx",
