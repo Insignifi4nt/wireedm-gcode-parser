@@ -2,19 +2,18 @@ import { SearchField } from '@/components/ui/search-field';
 import { Tooltip } from '@/components/ui/tooltip';
 import { MenuSurface, MenuItem } from '@/components/ui/menu';
 import { Select } from '@/components/ui/select';
-import { useState } from 'react';
-import { ChevronDown, FileCode, History, Pencil, Save, Trash2, Waypoints } from '@wire-edm/icons-react';
+import { useRef, useState } from 'react';
+import { Box, ChevronDown, Download, FileCode, History, Pencil, Save, Trash2, Waypoints } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
 import { supportsSaveTextFileAs } from '@/domain/post/saveTextFileAs';
+import type { ArchivedCadLibraryEntry, CadLibraryEntry } from '@/domain/cad/cadStorage';
+import { dashboardProjectRows, projectSourceLabel, visibleDashboardProjects, type CadDashboardProject, type DashboardProject, type ProjectSourceFilter, type ProjectSortMode, type ProjectStateFilter } from './dashboardProjects';
 import { useDashboardMenu } from './useDashboardMenu';
 import './dashboard.css';
 
 type WorkbenchProjectIndexEntry = WorkbenchCatalogManifest['projects'][number];
-
-type ProjectSourceFilter = 'all' | 'dxf' | 'external-gcode';
-type ProjectSortMode = 'updated-desc' | 'updated-asc' | 'name-asc' | 'name-desc' | 'type';
 
 interface ProjectListPanelProps {
   availability: 'loading' | 'unavailable' | 'ready';
@@ -26,6 +25,18 @@ interface ProjectListPanelProps {
   onSaveUpidProjectAs: (projectId: string) => void | Promise<void>;
   onShowRevisions: (project: WorkbenchProjectIndexEntry) => void;
   onRenameProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
+  cadProjects?: readonly CadLibraryEntry[];
+  archivedProjects?: NonNullable<WorkbenchCatalogManifest['deletedProjects']>;
+  cadArchivedProjects?: readonly ArchivedCadLibraryEntry[];
+  cadLoading?: boolean;
+  onOpenCadProject?: (projectId: string) => void | Promise<void>;
+  onRenameCadProject?: (project: CadDashboardProject) => void | Promise<void>;
+  onArchiveCadProject?: (project: CadDashboardProject) => void | Promise<void>;
+  onExportCadProject?: (project: CadDashboardProject) => void | Promise<void>;
+  onRestoreProject?: (projectId: string) => Promise<void>;
+  onRestoreCadProject?: (archivePath: string) => Promise<void>;
+  onPurgeArchivedProject?: (project: WorkbenchProjectIndexEntry) => void;
+  onActionError?: (message: string) => void;
 }
 
 export function ProjectListPanel({
@@ -37,10 +48,23 @@ export function ProjectListPanel({
   onSaveUpidProjectAs,
   onShowRevisions,
   onOpenProject,
-  onRenameProject
+  onRenameProject,
+  cadProjects,
+  archivedProjects,
+  cadArchivedProjects,
+  cadLoading,
+  onOpenCadProject,
+  onRenameCadProject,
+  onArchiveCadProject,
+  onExportCadProject,
+  onRestoreProject,
+  onRestoreCadProject,
+  onPurgeArchivedProject,
+  onActionError
 }: ProjectListPanelProps) {
   const [searchText, setSearchText] = useState('');
   const [sourceFilter, setSourceFilter] = useState<ProjectSourceFilter>('all');
+  const [stateFilter, setStateFilter] = useState<ProjectStateFilter>('active');
   const [sortMode, setSortMode] = useState<ProjectSortMode>('updated-desc');
   const menu = useDashboardMenu(interactionLocked || availability !== 'ready');
   const exportMenuProjectId = interactionLocked ? null : menu.openId;
@@ -51,16 +75,28 @@ export function ProjectListPanel({
     if (chooseLocation) void onSaveUpidProjectAs(projectId);
     else void onExportUpidProject(projectId);
   }
-  const visibleProjects = getVisibleProjects(projects, searchText, sourceFilter, sortMode);
+  const rows = dashboardProjectRows({ projects, cadProjects, archivedProjects, cadArchivedProjects });
+  const visibleProjects = visibleDashboardProjects(rows, searchText, stateFilter, sourceFilter, sortMode);
   const projectCountLabel =
-    visibleProjects.length === projects.length
-      ? `${projects.length} ${projects.length === 1 ? 'project' : 'projects'}`
-      : `${visibleProjects.length} / ${projects.length} projects`;
+    `${visibleProjects.length} ${visibleProjects.length === 1 ? 'project' : 'projects'}`;
+  const [pending, setPending] = useState(false);
+  const pendingRef = useRef(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  async function runAction(action: () => void | Promise<void>, restored = false) {
+    if (pendingRef.current || interactionLocked) return;
+    pendingRef.current = true;
+    setPending(true); setActionError(null);
+    try { await action(); if (restored) setStateFilter('active'); }
+    catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update this project.';
+      if (onActionError) onActionError(message); else setActionError(message);
+    } finally { pendingRef.current = false; setPending(false); }
+  }
 
   return (
     <section
       aria-labelledby="project-library-title"
-      aria-busy={availability === 'loading'}
+      aria-busy={availability === 'loading' || cadLoading || pending}
       className="dashboard-library"
       data-project-library
     >
@@ -69,24 +105,37 @@ export function ProjectListPanel({
           <h2 id="project-library-title">Project library</h2>
           {availability === 'ready' && <span className="dashboard-count">{projectCountLabel}</span>}
         </div>
-        {availability === 'ready' && projects.length > 0 && <div className="dashboard-library-controls" data-project-list-controls>
+        {availability === 'ready' && rows.length > 0 && <div className="dashboard-library-controls" data-project-list-controls>
+              <Select aria-label="Project state filter" density="compact" value={stateFilter}
+                onChange={event => {
+                  const value = event.currentTarget.value;
+                  if (value === 'active' || value === 'archived' || value === 'all') setStateFilter(value);
+                }}>
+                <option value="active">Active projects</option>
+                <option value="archived">Archived</option>
+                <option value="all">All projects</option>
+              </Select>
               <SearchField label="Search projects" value={searchText} onValueChange={setSearchText} />
               <Select
                 aria-label="Project source filter"
                 density="compact"
                 onChange={(event) =>
-                  setSourceFilter(event.currentTarget.value as ProjectSourceFilter)
+                  setSourceFilter(event.currentTarget.value === 'cad' ? 'cad' : event.currentTarget.value === 'dxf' ? 'dxf' : event.currentTarget.value === 'external-gcode' ? 'external-gcode' : 'all')
                 }
                 value={sourceFilter}
               >
                 <option value="all">All sources</option>
+                <option value="cad">CAD project</option>
                 <option value="dxf">Path project</option>
                 <option value="external-gcode">Machine program</option>
               </Select>
               <Select
                 aria-label="Project sort"
                 density="compact"
-                onChange={(event) => setSortMode(event.currentTarget.value as ProjectSortMode)}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  if (value === 'updated-desc' || value === 'updated-asc' || value === 'name-asc' || value === 'name-desc' || value === 'type') setSortMode(value);
+                }}
                 value={sortMode}
               >
                 <option value="updated-desc">Newest first</option>
@@ -100,7 +149,7 @@ export function ProjectListPanel({
       <div className="dashboard-library-content">
         {availability !== 'ready' ? <p role="status" className="text-muted-foreground">
           {availability === 'loading' ? 'Loading projects…' : 'Project library unavailable. Open storage settings to reconnect.'}
-        </p> : projects.length > 0 ? (
+        </p> : rows.length > 0 ? (
           <>
             {visibleProjects.length > 0 ? (
               <div
@@ -108,41 +157,53 @@ export function ProjectListPanel({
                 className="dashboard-projects"
                 role="list"
               >
-                {visibleProjects.map((project) => (
+                {visibleProjects.map((row) => {
+                  const { project } = row;
+                  const cad = project.sourceKind === 'cad';
+                  const locked = interactionLocked || pending || (cad && cadLoading);
+                  return (
                   <div
                     className="dashboard-project-card"
                     data-project-row
                     data-project-source={project.sourceKind}
-                    key={project.id}
+                    data-project-state={row.state}
+                    key={`${row.state}:${project.sourceKind}:${row.state === 'archived' ? row.archiveKey : project.id}`}
                     role="listitem"
                   >
                     <span className="dashboard-project-kind" aria-hidden="true">
-                      {isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />}
+                      {cad ? <Box /> : isPathProjectSourceKind(project.sourceKind) ? <Waypoints /> : <FileCode />}
                     </span>
                     <div className="dashboard-project-main">
                       <div className="dashboard-project-name">
                         <Tooltip content={`${project.name}\n${project.path}`}><p className="truncate text-foreground" >{project.name}</p></Tooltip>
-                        <Button
+                        {row.state === 'active' && <Button
                           aria-label={`Rename project ${project.id}`}
                           className="size-5 shrink-0"
-                          disabled={interactionLocked}
-                          onClick={() => onRenameProject(project)}
+                          disabled={locked || (cad && !onRenameCadProject)}
+                          onClick={() => project.sourceKind === 'cad' ? onRenameCadProject?.(project) : onRenameProject(project)}
                           size="icon"
                           title="Rename project"
                           type="button"
                           variant="ghost"
-                        ><Pencil className="size-3" /></Button>
+                        ><Pencil className="size-3" /></Button>}
                       </div>
                       <div className="dashboard-project-meta">
-                        <span>{getProjectSourceLabel(project.sourceKind)}</span>
-                        <ProjectUpdateTime value={project.updatedAt} />
+                        <span>{projectSourceLabel(project.sourceKind)}</span>
+                        {row.state === 'archived' && <span>Archived</span>}
+                        <ProjectUpdateTime value={row.state === 'archived' ? row.deletedAt : project.updatedAt} />
                       </div>
                     </div>
                     <div className="dashboard-project-actions">
+                      {row.state === 'archived' ? <>
+                        <Button aria-label={`Restore ${project.name}`} disabled={locked || (cad ? !onRestoreCadProject : !onRestoreProject)}
+                          onClick={() => void runAction(() => cad ? onRestoreCadProject?.(row.archiveKey) : onRestoreProject?.(project.id), true)} size="sm" type="button" variant="outline">Restore</Button>
+                        {project.sourceKind !== 'cad' && onPurgeArchivedProject && <Button aria-label={`Permanently delete ${project.name}`} title="Delete permanently"
+                          disabled={locked} onClick={() => onPurgeArchivedProject(project)} size="icon" type="button" variant="ghost"><Trash2 /></Button>}
+                      </> : <>
                       <Button
-                        aria-label={`Open project ${project.id} in editor`}
-                        disabled={interactionLocked}
-                        onClick={() => onOpenProject(project.id)}
+                        aria-label={`Open project ${project.id} in ${cad ? 'CAD' : 'editor'}`}
+                        disabled={locked || (cad && !onOpenCadProject)}
+                        onClick={() => void runAction(() => cad ? onOpenCadProject?.(project.id) : onOpenProject(project.id))}
                         size="sm"
                         type="button"
                         variant="outline"
@@ -152,8 +213,8 @@ export function ProjectListPanel({
                       <Button
                         aria-label={`Delete project ${project.id}`}
                         className="size-7"
-                        disabled={interactionLocked}
-                        onClick={() => onDeleteProject(project)}
+                        disabled={locked || (cad && !onArchiveCadProject)}
+                        onClick={() => project.sourceKind === 'cad' ? onArchiveCadProject?.(project) : onDeleteProject(project)}
                         size="icon"
                         title="Delete project"
                         type="button"
@@ -161,11 +222,13 @@ export function ProjectListPanel({
                       >
                         <Trash2 />
                       </Button>
-                      {isPathProjectSourceKind(project.sourceKind) && (
+                      {project.sourceKind === 'cad' && onExportCadProject && <Button aria-label={`Download CAD project ${project.id}`} title="Download CAD project"
+                        disabled={locked} onClick={() => void runAction(() => onExportCadProject(project))} size="icon" type="button" variant="ghost"><Download /></Button>}
+                      {project.sourceKind !== 'cad' && isPathProjectSourceKind(project.sourceKind) && (
                         <Button
                           aria-label={`Show revisions for project ${project.id}`}
                           className="size-7"
-                          disabled={interactionLocked}
+                          disabled={locked}
                           onClick={() => onShowRevisions(project)}
                           size="icon"
                           title="Saved revisions"
@@ -175,7 +238,7 @@ export function ProjectListPanel({
                           <History />
                         </Button>
                       )}
-                      {isPathProjectSourceKind(project.sourceKind) && (
+                      {project.sourceKind !== 'cad' && isPathProjectSourceKind(project.sourceKind) && (
                         <div className="relative">
                           <Button
                             aria-expanded={exportMenuProjectId === project.id}
@@ -183,7 +246,7 @@ export function ProjectListPanel({
                             aria-haspopup="menu"
                             aria-label={`Export UPID project ${project.id}`}
                             className="relative size-7"
-                            disabled={interactionLocked}
+                            disabled={locked}
                             onClick={() => menu.toggle(project.id)}
                             onKeyDown={(event) => menu.onTriggerKeyDown(event, project.id)}
                             ref={exportMenuProjectId === project.id ? menu.triggerRef : undefined}
@@ -209,9 +272,10 @@ export function ProjectListPanel({
                           )}
                         </div>
                       )}
+                      </>}
                     </div>
                   </div>
-                ))}
+                ); })}
               </div>
             ) : (
               <div
@@ -221,7 +285,7 @@ export function ProjectListPanel({
               >
                 No projects match the active filters.
                 <Button className="ml-2 h-7 text-[11px]" variant="outline" type="button"
-                  onClick={() => { setSearchText(''); setSourceFilter('all'); }} size="md">Clear filters</Button>
+                  onClick={() => { setSearchText(''); setSourceFilter('all'); setStateFilter('active'); }} size="md">Clear filters</Button>
               </div>
             )}
           </>
@@ -232,18 +296,15 @@ export function ProjectListPanel({
             role="region"
           >
             <p>
-              No projects yet. Import a DXF as a Path Project or open a Machine Program to add it to
-              the active workbench.
+              {cadLoading ? 'Loading CAD projects…' : 'No projects yet. Save a CAD design, import a DXF or open a machine program to add a project.'}
             </p>
           </div>
         )}
       </div>
+      {cadLoading && rows.length > 0 && <span role="status" className="text-muted-foreground">Loading CAD projects…</span>}
+      {actionError && <p role="alert" className="text-destructive">{actionError}</p>}
     </section>
   );
-}
-
-function getProjectSourceLabel(sourceKind: WorkbenchProjectIndexEntry['sourceKind']) {
-  return isPathProjectSourceKind(sourceKind) ? 'Path project' : 'Machine program';
 }
 
 const projectDateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
@@ -266,47 +327,7 @@ function ProjectUpdateTime({ value }: { value: string }) {
 }
 
 function isPathProjectSourceKind(
-  sourceKind: WorkbenchProjectIndexEntry['sourceKind']
+  sourceKind: DashboardProject['sourceKind']
 ): sourceKind is 'dxf' | 'upid' {
   return sourceKind === 'dxf' || sourceKind === 'upid';
-}
-
-function getVisibleProjects(
-  projects: readonly WorkbenchProjectIndexEntry[],
-  searchText: string,
-  sourceFilter: ProjectSourceFilter,
-  sortMode: ProjectSortMode
-) {
-  const query = searchText.trim().toLowerCase();
-
-  return projects
-    .filter((project) => {
-      const matchesSource =
-        sourceFilter === 'all' ||
-        (sourceFilter === 'dxf'
-          ? isPathProjectSourceKind(project.sourceKind)
-          : project.sourceKind === sourceFilter);
-      const matchesSearch =
-        !query ||
-        project.name.toLowerCase().includes(query) ||
-        project.path.toLowerCase().includes(query) ||
-        getProjectSourceLabel(project.sourceKind).toLowerCase().includes(query) ||
-        project.sourceKind.toLowerCase().includes(query);
-      return matchesSource && matchesSearch;
-    })
-    .sort((left, right) => compareProjects(left, right, sortMode));
-}
-
-function compareProjects(
-  left: WorkbenchProjectIndexEntry,
-  right: WorkbenchProjectIndexEntry,
-  sortMode: ProjectSortMode
-) {
-  if (sortMode === 'updated-desc') return right.updatedAt.localeCompare(left.updatedAt);
-  if (sortMode === 'updated-asc') return left.updatedAt.localeCompare(right.updatedAt);
-  if (sortMode === 'name-desc') return right.name.localeCompare(left.name);
-  if (sortMode === 'type') {
-    return getProjectSourceLabel(left.sourceKind).localeCompare(getProjectSourceLabel(right.sourceKind)) || left.name.localeCompare(right.name);
-  }
-  return left.name.localeCompare(right.name);
 }

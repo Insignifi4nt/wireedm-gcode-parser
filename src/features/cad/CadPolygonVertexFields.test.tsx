@@ -93,11 +93,13 @@ describe('bounded polygon vertex properties', () => {
   });
 
   it('keeps coordinate focus and native text undo, and prevents picker Enter from applying pending geometry', async () => {
-    await mount(); const before = session.getSnapshot(); const coordinate = field('X'); coordinate.focus(); await input(coordinate, '-2');
+    await mount(); const before = session.getSnapshot(); const coordinate = field('X');
+    await act(async () => coordinate.focus()); await input(coordinate, '-2');
     expect(document.activeElement).toBe(coordinate);
     const undo = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true });
     await act(async () => coordinate.dispatchEvent(undo)); expect(undo.defaultPrevented).toBe(false);
-    const next = button('Next polygon vertex'); next.focus(); await click('Next polygon vertex'); expect(document.activeElement).toBe(next);
+    const next = button('Next polygon vertex'); await act(async () => next.focus());
+    await click('Next polygon vertex'); expect(document.activeElement).toBe(next);
     await input(picker(), '4'); const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
     await act(async () => picker().dispatchEvent(enter)); expect(enter.defaultPrevented).toBe(true);
     const composing = new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true });

@@ -14,18 +14,21 @@
 .dashboard-project-card:hover, .dashboard-project-card:focus-within { border-color: var(--control-hover-border); background: var(--surface-raised); }
 .dashboard-project-kind { display: grid; place-items: center; width: var(--space-8); height: var(--space-8); color: var(--primary); background: var(--muted); border-radius: var(--control-radius); }
 .dashboard-project-kind > svg { width: var(--icon-standalone); height: var(--icon-standalone); }
-.dashboard-project-main { min-width: 0; }
+.dashboard-project-main { min-width: 0; overflow: hidden; }
+.dashboard-project-name p { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dashboard-project-name { display: flex; min-width: 0; align-items: center; gap: var(--space-1); font-size: var(--text-body); font-weight: 500; }
 .dashboard-project-meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-3); color: var(--muted-foreground); font-size: var(--text-caption); }
 .dashboard-project-time { display: inline-flex; gap: var(--space-2); font-variant-numeric: tabular-nums; }
 .dashboard-project-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-1); }
 .dashboard-library-empty { padding: var(--space-6) 0; color: var(--muted-foreground); max-width: 440px; line-height: 1.7; }
-.dashboard-start { min-width: 0; }
+.dashboard-start { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.dashboard-start-content > *, .dashboard-start-group, .dashboard-start-group > * { min-width: 0; max-width: 100%; }
+.dashboard-start .ui-button { min-width: 0; }
 .dashboard-start-content { display: grid; gap: var(--space-4); font-size: var(--text-control); }
 .dashboard-start-group { display: grid; gap: var(--space-1); }
 .dashboard-group-heading { display: flex; align-items: center; gap: var(--space-1); min-height: var(--control-height); }
 .dashboard-group-heading h4 { font-size: var(--text-control); font-weight: 500; color: var(--muted-foreground); }
-@media (min-width: 1180px) { .dashboard-layout { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; gap: var(--space-8); } }
+@media (min-width: 1180px) { .dashboard-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 300px); align-items: start; gap: var(--space-8); } }
 @media (max-width: 700px) { .dashboard-layout { padding: var(--space-4); } }
 @media (max-width: 540px) {
   .dashboard-library-header { gap: var(--space-2); }

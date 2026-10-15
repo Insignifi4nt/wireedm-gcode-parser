@@ -67,30 +67,44 @@ describe.each(['browser-cache', 'directory'] as const)('CAD large exact serializ
     expect(await loadCadDocument(adapter, original.id)).toEqual(saved);
     expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
   });
-  it('retains a large original through cancellation, interrupted writes and optimistic retries', async () => {
-    const document = parseCadDocument(cadBudgetFixture(CAD_FORMER_DOCUMENT_BYTES + 64 * 1024));
-    const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
-    const path = cadDocumentPath(document.id), exact = await adapter.readExactText?.(path);
-    const next = { ...document, name: 'Limită Ω edit' };
-    const abort = new AbortController();
-    await expect(saveCadDocument(adapter, next, { expectedSavedVersion: saved.savedVersion, signal: abort.signal,
-      beforeWrite: () => { abort.abort(); abort.signal.throwIfAborted(); } })).rejects.toMatchObject({ reason: { name: 'AbortError' } });
-    expect(await adapter.readExactText?.(path)).toBe(exact);
-    const write = adapter.writeText.bind(adapter); let failed = false;
-    const writes = vi.spyOn(adapter, 'writeText').mockImplementation(async (target, contents) => {
-      if (target === path && !failed) { failed = true; throw new Error('Interrupted large save'); }
-      return write(target, contents);
+  describe('large saved-original recovery', () => {
+    let saved: Awaited<ReturnType<typeof saveCadDocument>>;
+    let path: string, exact: string;
+    beforeEach(async () => {
+      const document = parseCadDocument(cadBudgetFixture(CAD_FORMER_DOCUMENT_BYTES + 64 * 1024));
+      saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+      path = cadDocumentPath(document.id);
+      const raw = await adapter.readExactText?.(path);
+      if (raw === null || raw === undefined) throw new Error('Missing saved original.');
+      exact = raw;
+    }, 5000);
+    it('cancels a large save before writing and retains its exact saved original', async () => {
+      const next = { ...saved.document, name: 'Limită Ω edit' };
+      const abort = new AbortController();
+      await expect(saveCadDocument(adapter, next, { expectedSavedVersion: saved.savedVersion, signal: abort.signal,
+        beforeWrite: () => { abort.abort(); abort.signal.throwIfAborted(); } })).rejects.toMatchObject({ reason: { name: 'AbortError' } });
+      expect(await adapter.readExactText?.(path)).toBe(exact);
+      expect(await loadCadDocument(adapter, saved.document.id)).toEqual(saved);
+      expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
     });
-    await expect(saveCadDocument(adapter, next, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('Interrupted large save');
-    expect(await adapter.readExactText?.(path)).toBe(exact);
-    expect(await loadCadDocument(adapter, document.id)).toEqual(saved);
-    writes.mockRestore();
-    const retry = await saveCadDocument(adapter, next, { expectedSavedVersion: saved.savedVersion });
-    expect(await loadCadDocument(adapter, document.id)).toEqual(retry);
-    await expect(saveCadDocument(adapter, document, { expectedSavedVersion: saved.savedVersion })).rejects.toMatchObject({ code: 'SAVED_DOCUMENT_CHANGED' });
-    expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(retry.savedVersion);
-    expect(cadBudgetOriginals(retry.document)).toEqual(cadBudgetOriginals(document));
-    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+    it('restores a large interrupted write, retries it and rejects its stale saved version', async () => {
+      const document = saved.document, next = { ...document, name: 'Limită Ω edit' };
+      const write = adapter.writeText.bind(adapter); let failed = false;
+      const writes = vi.spyOn(adapter, 'writeText').mockImplementation(async (target, contents) => {
+        if (target === path && !failed) { failed = true; throw new Error('Interrupted large save'); }
+        return write(target, contents);
+      });
+      await expect(saveCadDocument(adapter, next, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('Interrupted large save');
+      expect(await adapter.readExactText?.(path)).toBe(exact);
+      expect(await loadCadDocument(adapter, document.id)).toEqual(saved);
+      writes.mockRestore();
+      const retry = await saveCadDocument(adapter, next, { expectedSavedVersion: saved.savedVersion });
+      expect(await loadCadDocument(adapter, document.id)).toEqual(retry);
+      await expect(saveCadDocument(adapter, document, { expectedSavedVersion: saved.savedVersion })).rejects.toMatchObject({ code: 'SAVED_DOCUMENT_CHANGED' });
+      expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(retry.savedVersion);
+      expect(cadBudgetOriginals(retry.document)).toEqual(cadBudgetOriginals(document));
+      expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+    });
   });
   it.each(['load', 'save', 'list'] as const)('cancels %s during an exact read without publishing or overwriting the original', async operation => {
     const document = parseCadDocument(cadBudgetFixture(CAD_FORMER_DOCUMENT_BYTES + 64 * 1024));

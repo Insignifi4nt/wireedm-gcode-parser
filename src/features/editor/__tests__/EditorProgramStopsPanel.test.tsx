@@ -201,7 +201,7 @@ describe('EditorProgramStopsPanel', () => {
     await act(async () => setInput(
       container.querySelector<HTMLInputElement>('[aria-label="Selected stop remaining cut millimeters"]')!, '2.75'));
     const otherStop = container.querySelector<HTMLInputElement>('[aria-label="Enable stop-2"]')!;
-    otherStop.focus();
+    await act(async () => otherStop.focus());
     await act(async () => otherStop.click());
 
     expect(source.plan.operations[0].programStops![1].enabled).toBe(false);

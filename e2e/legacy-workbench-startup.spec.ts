@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { reloadEditorAndReturnToLibrary } from './fixtures/navigation';
 import { readWorkbenchCacheFile } from './fixtures/workbench-cache';
 
 test('opens a phone browser cache with the former external-program layout and keeps its edited program', async ({ page }) => {
@@ -37,7 +38,7 @@ test('opens a phone browser cache with the former external-program layout and ke
   expect(await readWorkbenchCacheFile(page, oldProjectPath)).toBe(originalProject);
   expect(await readWorkbenchCacheFile(page, `legacy/v1/projects/${id}.json`)).toBe(originalProject);
   expect(await readWorkbenchCacheFile(page, 'legacy/v1/workbench.json')).toBe(originalManifest);
-  await page.reload();
+  await reloadEditorAndReturnToLibrary(page);
   await expect(page.getByRole('button', { name: `Open project ${id} in editor` })).toBeVisible();
   await page.getByRole('button', { name: `Open project ${id} in editor` }).click();
   await expect(page.locator('path[data-preview-source="gcode"][data-type="cut"]').first()).toHaveAttribute('d', 'M 0 0 L 40 20');

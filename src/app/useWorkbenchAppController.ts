@@ -478,18 +478,24 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     openEditorProgram(null);
   }
 
-  async function handleOpenWorkbenchProject(projectId: string) {
+  async function handleOpenWorkbenchProject(projectId: string, signal?: AbortSignal) {
     const workbench = requireWorkbench();
-    if (!workbench) return showStatusToast('Connect a valid workbench before opening a project.', 'error');
-    if (activeMutation.current) return;
+    if (!workbench) { showStatusToast('Connect a valid workbench before opening a project.', 'error'); return false; }
+    if (activeMutation.current) return false;
     activeMutation.current = 'project-open';
     setProjectOpening(true);
     try {
+      signal?.throwIfAborted();
       const opened = await services.openWorkbenchProject(workbench, projectId);
-      if (!opened.ok) return showStatusToast(opened.error.message, 'error');
+      signal?.throwIfAborted();
+      if (workbench !== workbenchRef.current) return false;
+      if (!opened.ok) { showStatusToast(opened.error.message, 'error'); return false; }
       openEditorProgram(opened.editorProgram);
+      return true;
     } catch (error) {
+      if (signal?.aborted) return false;
       showStatusToast(errorText(error), 'error');
+      return false;
     } finally {
       activeMutation.current = null;
       setProjectOpening(false);

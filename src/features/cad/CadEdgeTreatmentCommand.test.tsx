@@ -53,7 +53,7 @@ describe('grouped fillet and chamfer command', () => {
   });
   it('opens from the keyboard, navigates commands and restores focus on Escape', async () => {
     const choose = vi.fn(); await act(async () => root.render(<CadEdgeTreatmentCommand disabled={false} onChoose={choose} />));
-    const trigger = button('Fillet / Chamfer'); trigger.focus();
+    const trigger = button('Fillet / Chamfer'); await act(async () => trigger.focus());
     expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
     expect((await key(trigger, 'ArrowDown')).defaultPrevented).toBe(true);
     expect(document.activeElement).toBe(button('Fillet')); expect(menu()?.parentElement).toBe(document.body);

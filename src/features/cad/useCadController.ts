@@ -2,13 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
 import type { CadBuildResult, CadDocument } from '@/domain/cad/cadDocument';
 import { cadFeatureProducesBody, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
-import { listCadDocuments, loadCadDocument, saveCadDocument, type CadLibraryEntry } from '@/domain/cad/cadStorage';
+import { archiveCadDocument, listCadDocuments, loadCadDocument, renameCadDocument, restoreCadDocument, saveCadDocument, type CadLibraryEntry } from '@/domain/cad/cadStorage';
 import { readExactUtf8Blob } from '@/domain/storage/exactTextStream';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { isCadSectionResult, parseCadSectionRequest, type CadSectionRequest } from '@/domain/cad/cadSection';
 import type { DraftReadSnapshot } from '@/features/webmcp/workbenchSiteTools';
 import { ToolError } from '@/features/webmcp/siteTools';
-import { CadSession, hasCadDraftContent } from './cadSession';
+import { CadSession, hasUnsavedCadDraft } from './cadSession';
 import { useCadUnloadGuard } from './useCadUnloadGuard';
 import { installCadPlugin, listCadPlugins } from '@/domain/cad/plugins/cadPluginStorage';
 import type { CadViewportCommand, CadWorkbenchViewportControls, CadViewportState } from './cadViewportControls';
@@ -215,6 +215,46 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     const workbench = connected();
     return listCadDocuments(workbench.adapter, signal);
   }
+  function reviewProjectMutation(adapter: Parameters<typeof renameCadDocument>[0], documentId?: string) {
+    const workbench = connected(); session.assertWorkflowClosed();
+    if (workbench.adapter !== adapter) throw new ToolError('STALE_STATE', 'Storage changed. Refresh the project library.');
+    const reviewed = session.getSnapshot();
+    if (documentId === reviewed.document.id && hasUnsavedCadDraft(reviewed)) {
+      throw new ToolError('UNSAVED_DRAFT', 'Save the CAD draft before changing its saved project.');
+    }
+    return reviewed;
+  }
+  const projectActions = {
+    rename: async (...args: Parameters<typeof renameCadDocument>) => {
+      const [adapter, id, , options] = args;
+      const reviewed = reviewProjectMutation(adapter, id);
+      return run(async () => {
+        const saved = await renameCadDocument(...args);
+        if (current.current.app.connectedWorkbench?.adapter === adapter && session.getSnapshot().version === reviewed.version && reviewed.document.id === id) {
+          if (reviewed.savedVersion === options.expectedSavedVersion) {
+            session.edit([{ kind: 'rename-document', name: saved.document.name }], reviewed.version);
+            session.markSaved(saved, session.getSnapshot().version);
+          } else session.replace(saved.document, saved);
+        }
+        return saved;
+      });
+    },
+    archive: async (...args: Parameters<typeof archiveCadDocument>) => {
+      const [adapter, id] = args;
+      const reviewed = reviewProjectMutation(adapter, id);
+      return run(async () => {
+        const archived = await archiveCadDocument(...args);
+        if (current.current.app.connectedWorkbench?.adapter === adapter && session.getSnapshot().version === reviewed.version && reviewed.document.id === id) {
+          session.replace(createCadDocument());
+        }
+        return archived;
+      });
+    },
+    restore: async (...args: Parameters<typeof restoreCadDocument>) => {
+      reviewProjectMutation(args[0]);
+      return run(() => restoreCadDocument(...args));
+    }
+  };
   function closeLibrary() {
     libraryAbort.current?.abort(); libraryAbort.current = null;
     setLibrary(null); setLibraryLoading(false); setLibraryDiagnostic(null); session.setWorkflowOpen(false, 'library');
@@ -240,7 +280,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   function requireCleanReplacement(scope?: 'import' | 'library') {
     session.assertWorkflowClosed(scope);
     const state = session.getSnapshot();
-    if (state.dirty && hasCadDraftContent(state.document)) throw new ToolError('UNSAVED_DRAFT', 'Save the current CAD draft before opening another document.');
+    if (hasUnsavedCadDraft(state)) throw new ToolError('UNSAVED_DRAFT', 'Save the current CAD draft before opening another document.');
   }
   async function openDocument(id: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal, scope?: 'library') {
     connected(); assertCanSwitch(); session.assertVersion(expectedVersion); requireCleanReplacement(scope);
@@ -643,7 +683,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   }
   function back() { connected(); session.assertWorkflowClosed(); changeOpen(false); }
   const isBusy = () => busy.current;
-  return { session, snapshot, open, enter, edit, save, list, plugins, installPlugin, showLibrary, library, libraryLoading, libraryDiagnostic, closeLibrary,
+  return { session, snapshot, open, enter, edit, save, list, projectActions, plugins, installPlugin, showLibrary, library, libraryLoading, libraryDiagnostic, closeLibrary,
     openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, measureCurve, inspectSketchRegions, readSketchRegionReference, inspectPlugin, inspectParameters, inspectPlane, inspectLoft, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, exportSectionDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
     setViewportControls, readViewport: (expectedVersion: string) => getViewport(expectedVersion).getState(), changeViewport, captureViewport, previewArtifact,
     inspectTopology: topology.inspect, resolveTopologyPicks: topology.resolve,

@@ -85,7 +85,7 @@ describe('compact pattern command', () => {
   });
   it('supports keyboard opening, command navigation and Escape with focus restoration', async () => {
     const choose = vi.fn(); await act(async () => root.render(<CadPatternCommand disabled={false} onChoose={choose} />));
-    const trigger = button('Pattern'); trigger.focus();
+    const trigger = button('Pattern'); await act(async () => trigger.focus());
     expect((await key(trigger, 'ArrowDown')).defaultPrevented).toBe(true); expect(document.activeElement).toBe(button('Linear pattern'));
     await key(button('Linear pattern'), 'ArrowDown'); expect(document.activeElement).toBe(button('Circular pattern'));
     await key(button('Circular pattern'), 'Home'); expect(document.activeElement).toBe(button('Linear pattern'));

@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
-import { CadSession, hasCadDraftContent } from './cadSession';
+import { CadSession, hasCadDraftContent, hasUnsavedCadDraft } from './cadSession';
 
 describe('shared CAD editing session', () => {
+  it('protects deleting all saved geometry while keeping the new-empty draft disposable', () => {
+    const session = new CadSession();
+    expect(hasUnsavedCadDraft(session.getSnapshot())).toBe(false);
+    session.edit([{ kind: 'set-parameter', name: 'module', value: 3 }]);
+    const before = session.getSnapshot();
+    session.markSaved({ document: before.document, savedVersion: 'saved', updatedAt: '2026-10-16T00:00:00.000Z' }, before.version);
+    session.edit([{ kind: 'remove-parameter', name: 'module' }]);
+    expect(hasCadDraftContent(session.getSnapshot().document)).toBe(false);
+    expect(hasUnsavedCadDraft(session.getSnapshot())).toBe(true);
+    expect(() => session.assertStorageSwitchAllowed()).toThrow('Save the CAD draft');
+    session.undo();
+    expect(hasUnsavedCadDraft(session.getSnapshot())).toBe(false);
+  });
   it('preserves a dirty parameter-group-only draft through storage switching and its saved baseline', () => {
     const session = new CadSession(), initial = session.getSnapshot();
     session.markSaved({ document: initial.document, savedVersion: 'baseline', updatedAt: '2026-10-13T12:00:00.000Z' }, initial.version);

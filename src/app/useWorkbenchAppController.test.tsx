@@ -337,6 +337,23 @@ describe('workbench controller asynchronous operations', () => {
     expect(read().statusToasts.at(-1)).toMatchObject({ type: 'success' });
   });
 
+  it('does not publish a project after navigation cancels its slow read', async () => {
+    const seeded = await seedProgram();
+    const gate = deferred<void>();
+    const read = await mount({ openWorkbenchProject: async (...args) => {
+      await gate.promise;
+      return defaultAppServices.openWorkbenchProject(...args);
+    } });
+    const controller = new AbortController();
+    let opening: ReturnType<ReturnType<typeof useWorkbenchAppController>['handleOpenWorkbenchProject']> | undefined;
+    await act(async () => { opening = read().handleOpenWorkbenchProject(seeded.project.id, controller.signal); });
+    await act(async () => { controller.abort(); gate.resolve(); expect(await opening).toBe(false); });
+    expect(read().activeView).toBe('dashboard');
+    expect(read().loadedEditorProgram).toBeNull();
+    expect(read().workbenchInteractionLocked).toBe(false);
+    expect(read().statusToasts).toEqual([]);
+  });
+
   it('locks competing project opens and imports until a slow project read completes', async () => {
     const seeded = await seedProgram();
     const gate = deferred<void>();
@@ -345,7 +362,7 @@ describe('workbench controller asynchronous operations', () => {
       return defaultAppServices.openWorkbenchProject(...args);
     });
     const read = await mount({ openWorkbenchProject: openProject });
-    let opening: Promise<void> | undefined;
+    let opening: ReturnType<ReturnType<typeof useWorkbenchAppController>['handleOpenWorkbenchProject']> | undefined;
     await act(async () => { opening = read().handleOpenWorkbenchProject(seeded.project.id); });
     expect(read().workbenchInteractionLocked).toBe(true);
     await act(async () => {

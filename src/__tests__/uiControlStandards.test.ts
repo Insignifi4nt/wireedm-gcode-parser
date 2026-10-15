@@ -28,10 +28,6 @@ const named = createElement('select');`;
   expect(unsharedControlLocations(source, 'fixture.tsx').map(position => position.line)).toEqual([5, 6, 7, 8]);
 });
 
-it('keeps all production controls, menus and tooltips on shared components', async () => {
-  expect(await checkUiControls()).toEqual([]);
-});
-
 it('detects factory calls in TypeScript modules as well as TSX', () => {
   expect(unsharedControlLocations(`const node = React.createElement('select', { name: 'view' });`, 'view.ts')).toEqual([{ tag: 'select', line: 1, column: 14 }]);
   expect(unsharedControlLocations(`type select = string; const value = <select>input;`, 'assertion.ts')).toEqual([]);

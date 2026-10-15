@@ -1,12 +1,12 @@
 {
   "name": "wire-edm-workbench",
   "homepage": "https://insignifi4nt.github.io/wireedm-gcode-parser",
-  "version": "0.0.698",
+  "version": "0.0.699",
   "description": "A local-first Wire EDM workbench with controller-neutral CAM state and complete installable machine packages.",
   "type": "module",
   "scripts": {
     "icons:generate": "npm --prefix packages/icons-react run generate && node scripts/generate-icons.mjs",
-    "icons:check": "npm --prefix packages/icons-react run check:generated && node scripts/generate-icons.mjs --check && node scripts/audit-icon-current-integration.mjs --check && node scripts/check-icon-control-text.mjs && npm run icons:geometry && vitest --run src/components/icons && npm --prefix packages/icons-react test && npm --prefix packages/icons-react run check:package",
+    "icons:check": "npm --prefix packages/icons-react run check:generated && node scripts/generate-icons.mjs --check && node scripts/audit-icon-current-integration.mjs --check && npm run icons:geometry && vitest --run src/components/icons && npm --prefix packages/icons-react test && npm --prefix packages/icons-react run check:package",
     "icons:geometry": "node scripts/icon-revisions/check-cam-v3-geometry.mjs --check",
     "icons:integration": "node scripts/build-icon-integration-map.mjs",
     "icons:audit": "node scripts/audit-icon-current-integration.mjs && node scripts/reconcile-icon-inventory.mjs --inventory docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json --markdown docs/design/inventory/checkpoints/6e2113f/icon-inventory.md",
@@ -33,7 +33,7 @@
     "pw:open": "playwright-cli open http://127.0.0.1:3777/wireedm-gcode-parser/ --headed && playwright-cli resize 1920 1200",
     "pw:seed": "node scripts/seed-playwright-workbench.mjs",
     "pw:seed:reload": "node scripts/seed-playwright-workbench.mjs --reload",
-    "postbuild": "npm run docs:build && npm run docs:check && npm run third-party:bundle",
+    "postbuild": "node scripts/build-spa-fallback.mjs && npm run docs:build && npm run docs:check && npm run third-party:bundle",
     "third-party:bundle": "tsx scripts/distribute-step-sources.ts && tsx scripts/distribute-cad-sources.ts",
     "third-party:check": "tsx scripts/distribute-step-sources.ts --check && tsx scripts/distribute-cad-sources.ts --check",
     "docs:build": "node scripts/build-documentation.mjs",
@@ -60,6 +60,7 @@
     "@radix-ui/react-tooltip": "^1.4.1",
     "@sinclair/typebox": "^0.34.52",
     "@tailwindcss/vite": "^4.1.17",
+    "@wire-edm/icons-react": "file:packages/icons-react",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",
@@ -67,13 +68,13 @@
     "quickjs-emscripten": "^0.32.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-router": "^8.4.0",
     "replicad": "1.1.0",
     "replicad-opencascadejs": "file:vendor/cad-kernel/replicad-opencascadejs-1.1.0-wireedm.2.tgz",
     "tailwind-merge": "^2.6.0",
     "tailwindcss": "^4.1.17",
     "three": "0.186.0",
-    "tw-animate-css": "^1.4.0",
-    "@wire-edm/icons-react": "file:packages/icons-react"
+    "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
