@@ -1,5 +1,10 @@
 # Standardized icon set for CAD integration
 
+## Current integration checkpoint — October 16, 2026
+
+PR #12 has merged to main as `bfac856` and deployed. Icon PR #13 now targets main; integration commit `c1deb61` carries the reusable `@wire-edm/icons-react` package and current app migration. See the [current integration record](../reviews/2026-10-16-icon-package-integration.md), [package usage](../../packages/icons-react/README.md) and [refreshed source inventory](icon-inventory.md) for current behavior, evidence and locations. The older checkpoint below preserves the original design handoff and its historical counts.
+
+
 The concrete 134-icon set is integrated on published CAD checkpoint `6e2113fa0151ef7d0b378ad3de7635664b2fab82`. It includes the critical iterations, final cross-family corrections and actual-app review by three Luna subagents. The pull request targets `feature/parametric-cad-workbench`.
 
 ## Assets and mappings
