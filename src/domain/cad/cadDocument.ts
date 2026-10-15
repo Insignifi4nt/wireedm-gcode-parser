@@ -64,7 +64,9 @@ export type CadFeature = CadDatumPlaneFeature | CadSketchFeature | CadCurveFeatu
   | (CadFeatureBase & { readonly kind: 'extrude'; readonly sketchId: string; readonly distance: CadScalar; readonly symmetric: boolean; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null; readonly regionSelection?: readonly CadSketchCellReference[] })
   | (CadFeatureBase & { readonly kind: 'revolve'; readonly sketchId: string; readonly angle: CadScalar; readonly axis: 'x' | 'y'; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })
   | (CadFeatureBase & { readonly kind: 'loft'; readonly sketchIds: readonly string[]; readonly ruled: boolean; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })
-  | (CadFeatureBase & { readonly kind: 'fillet' | 'chamfer'; readonly targetId: string; readonly radius: CadScalar; readonly selection?: CadEdgeSelection | null })
+  | (CadFeatureBase & { readonly kind: 'fillet' | 'chamfer'; readonly targetId: string; readonly radius: CadScalar; readonly selection?: CadEdgeSelection | null;
+    /** Explicitly allow native tangent continuation from selected seed edges. Absent means strict selection. */
+    readonly tangentPropagation?: boolean })
   | (CadFeatureBase & { readonly kind: 'shell'; readonly targetId: string; readonly thickness: CadScalar; readonly opening: CadFaceQuery })
   | (CadFeatureBase & { readonly kind: 'boolean'; readonly targetId: string; readonly toolId: string; readonly operation: 'union' | 'cut' | 'intersect' })
   | (CadFeatureBase & { readonly kind: 'transform'; readonly sourceId: string; readonly translation: CadPoint3; readonly rotation: CadPoint3 })

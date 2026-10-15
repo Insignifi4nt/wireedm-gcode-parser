@@ -183,6 +183,64 @@ describe('exact topology and selected mechanical features', () => {
       } }), model => { expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes[0].featureId).toBe('complete'); });
     }
   });
+  it.each(['fillet', 'chamfer'] as const)('follows explicitly allowed %s tangent chains from one visible plate or split-bore seed only', kind => {
+    const document = parseCadDocument({ ...boxDocument(), parameters: {}, features: [
+      { ...base('profile'), kind: 'sketch', plane: 'XY', offset: 0, profiles: [
+        { id: 'plate', name: 'Plate', construction: false, geometry: { kind: 'rectangle', x: 0, y: 0, width: 80, height: 50, cornerRadius: 3 } },
+        { id: 'bore', name: 'Bore', construction: false, geometry: { kind: 'circle', x: 40, y: 25, radius: 5 } },
+      ] },
+      { ...base('box'), kind: 'extrude', sketchId: 'profile', distance: 10, symmetric: false, operation: 'new', targetId: null },
+    ] });
+    const originalText = JSON.stringify(document), original = buildCadKernelModel(document);
+    try {
+      expect(original.result.diagnostics).toEqual([]);
+      expect(original.result.meshes[0].volume).toBeCloseTo(39640 - 160 * Math.PI, 7);
+      const edges = page(original, 'edge'), onTop = (edge: CadTopologyDescriptor) => edge.bounds.min[2] === 10 && edge.bounds.max[2] === 10;
+      const bore = (edge: CadTopologyDescriptor) => edge.kind === 'edge' && edge.curveType === 'circle' && Math.abs(edge.radius - 5) < 1e-7;
+      const outerTop = edges.filter(edge => onTop(edge) && !bore(edge)), boreTop = edges.filter(edge => onTop(edge) && bore(edge));
+      expect(outerTop).toHaveLength(8); expect(boreTop).toHaveLength(2);
+      const straight = outerTop.find(edge => edge.kind === 'edge' && edge.curveType === 'line' && Math.abs(edge.length - 74) < 1e-7);
+      if (!straight) throw new Error('Missing the physically picked 74 mm straight edge');
+      const geometry = (items: readonly CadTopologyDescriptor[]) => items.map(({ key: _key, ...value }) => JSON.stringify(value)).sort();
+      for (const [seed, complete, unrelated] of [
+        [straight, outerTop, edges.filter(edge => edge.bounds.max[2] === 0 || bore(edge))],
+        [boreTop[0], boreTop, edges.filter(edge => edge.bounds.max[2] === 0 || onTop(edge) && !bore(edge))],
+      ] as const) {
+        const resolve = (items: readonly CadTopologyDescriptor[]) => {
+          const result = original.resolveTopologyPicks({ bodyId: 'box', expectedBuildId: original.result.buildId, purpose: kind,
+            picks: items.map(edge => ({ kind: 'edge' as const, key: edge.key })) });
+          if (result.purpose === 'shell') throw new Error('Unexpected shell selector'); return result.selection;
+        };
+        const selection = resolve([seed]), completeSelection = resolve(complete);
+        expect(selection.expectedCount).toBe(1);
+        for (const policy of [{}, { tangentPropagation: false }]) built(withFeatures(document,
+          { ...base('strict'), kind, targetId: 'box', radius: .5, selection, ...policy }), model => {
+          expect(model.result.diagnostics[0]?.code).toBe('selection-tangent-chain');
+          expect(model.result.meshes[0].volume).toBe(original.result.meshes[0].volume);
+        });
+        let completeVolume = 0;
+        built(withFeatures(document, { ...base('complete'), kind, targetId: 'box', radius: .5, selection: completeSelection }), model => {
+          expect(model.result.diagnostics).toEqual([]); completeVolume = model.result.meshes[0].volume;
+        });
+        built(withFeatures(document, { ...base('followed'), kind, targetId: 'box', radius: .5, selection, tangentPropagation: true }), model => {
+          expect(model.result.diagnostics).toEqual([]);
+          expect(model.result.meshes[0].volume).toBeCloseTo(completeVolume, 7);
+          expect(model.result.meshes[0].volume).toBeLessThan(original.result.meshes[0].volume);
+          const finished = page(model, 'edge', 'followed');
+          expect(geometry(finished.filter(edge => unrelated.some(before => geometry([edge])[0] === geometry([before])[0])))).toEqual(geometry(unrelated));
+          if (seed === boreTop[0] && kind === 'chamfer') expect(model.result.meshes[0].volume)
+            .toBeCloseTo(39640 - 160 * Math.PI - Math.PI * (5 * .5 ** 2 + .5 ** 3 / 3), 7);
+        });
+        built(withFeatures(document, { ...base('stale-count'), kind, targetId: 'box', radius: .5,
+          selection: { ...selection, expectedCount: 2 }, tangentPropagation: true }), model => {
+          expect(model.result.diagnostics[0]?.code).toBe('selection-count-mismatch');
+          expect(model.result.meshes[0].volume).toBe(original.result.meshes[0].volume);
+        });
+      }
+      expect(JSON.stringify(document)).toBe(originalText);
+      expect(page(original, 'edge')).toEqual(edges);
+    } finally { original.dispose(); }
+  });
   it('selects exactly a circular bore rim, deduplicates seam occurrences and rejects cylindrical shell openings', () => {
     const document = withFeatures(boxDocument(),
       { ...base('hole'), kind: 'sketch', plane: 'XY', offset: 0, profiles: [{ id: 'hole-profile', name: 'Hole', construction: false, role: 'outer', geometry: { kind: 'circle', x: 10, y: 5, radius: 3 } }] },

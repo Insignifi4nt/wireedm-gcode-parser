@@ -95,6 +95,23 @@ describe('declarative exact topology selectors', () => {
 });
 
 describe('feature compatibility and inward shell history', () => {
+  it.each(['fillet', 'chamfer'] as const)('preserves explicit %s tangent intent through shared feature edits without changing seed selectors', kind => {
+    const original = part([...baseFeatures, { ...edgeFeature, kind }]);
+    const feature = { ...edgeFeature, kind, tangentPropagation: true };
+    const authored = parseCadDocument({ ...original, features: [...baseFeatures, feature] });
+    expect(authored.features.at(-1)).toEqual(feature);
+    const edited = applyCadEdits(original, [{ kind: 'update-feature', feature: authored.features.at(-1)! }]);
+    expect(edited.features.at(-1)).toEqual(feature);
+    expect(original.features.at(-1)).toEqual({ ...edgeFeature, kind });
+    expect(parseCadDocument({ ...original, features: [...baseFeatures, { ...feature, tangentPropagation: false }] }).features.at(-1))
+      .toEqual({ ...feature, tangentPropagation: false });
+    expect(resolveCadEdgeSelection(edgeSelection, edited.parameters).expectedCount).toBe(4);
+  });
+  it('accepts only an explicit boolean tangent policy on edge operations', () => {
+    for (const tangentPropagation of ['true', 1, null]) expect(() => parseCadDocument({ ...part(),
+      features: [...baseFeatures, { ...edgeFeature, tangentPropagation }] })).toThrow(CadError);
+    expect(() => parseCadDocument({ ...part(), features: baseFeatures.map(feature => ({ ...feature, tangentPropagation: true })) })).toThrow(CadError);
+  });
   it.each(['fillet', 'chamfer'] as const)('keeps absent/null %s selection as legacy all-edge behavior', kind => {
     const legacy = { kind, id: 'round', name: 'Legacy', suppressed: false, targetId: 'pad', radius: 1 };
     expect(part([...baseFeatures, legacy]).features.at(-1)).toEqual(legacy);

@@ -1,6 +1,6 @@
 # Closed areas and direct depth checkpoint
 
-Status: active CAD hardening goal. Reviewed checkpoint 70f45 completed its full CI gate. The subsequent face-scope and quantity-readout repairs are independently reviewed and verified in the current app; their combined publication and complete new-head CI remain required. Current evidence: `2026-10-15-cad-face-quantity-browser-checkpoint.md`. The earlier green checkpoint retains its historical scope.
+Status: active CAD hardening goal. Combined reviewed checkpoint 3f70f4d is published in PR12 and passes complete [CI38656665972](https://github.com/Insignifi4nt/wireedm-gcode-parser/actions/runs/38656665972): 4,103 unit tests, 124 first-attempt Chromium passes and the unchanged optional folder skip. Current evidence: `2026-10-15-cad-face-quantity-browser-checkpoint.md`. The verification below retains its historical stage scope. The experimental native Copy candidate is uninstalled.
 
 ## Verification
 

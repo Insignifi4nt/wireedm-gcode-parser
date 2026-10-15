@@ -212,7 +212,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           instances = instancesOf(feature.targetId);
           const topology = bodies.get(feature.targetId)?.topology;
           if (!topology) throw new CadError('missing-body', 'The selected target body is unavailable.');
-          result = own(feature.selection ? applyCadEdgeOperation(target, topology.selectedEdges(feature.selection, document.parameters), feature.kind, number(feature.radius))
+          result = own(feature.selection ? applyCadEdgeOperation(target, topology.selectedEdges(feature.selection, document.parameters), feature.kind, number(feature.radius), feature.tangentPropagation === true)
             : feature.kind === 'fillet' ? target.fillet(number(feature.radius)) : target.chamfer(number(feature.radius)));
           consumed.push(feature.targetId); break;
         }

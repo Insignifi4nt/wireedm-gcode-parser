@@ -3,7 +3,7 @@ import { CadError } from '../../../domain/cad/cadError';
 import { cadKernelDisposeOwned, cadKernelSolids } from './cadKernelShapes';
 
 /** Explicit native builder lifetimes also cover rejected kernel operations. */
-export function applyCadEdgeOperation(shape: Shape3D, edges: readonly Edge[], kind: 'fillet' | 'chamfer', radius: number): Shape3D {
+export function applyCadEdgeOperation(shape: Shape3D, edges: readonly Edge[], kind: 'fillet' | 'chamfer', radius: number, tangentPropagation = false): Shape3D {
   if (!edges.length) throw new CadError('selection-empty', 'Select at least one exact edge.');
   const oc = getOC();
   const builder = kind === 'fillet'
@@ -11,14 +11,14 @@ export function applyCadEdgeOperation(shape: Shape3D, edges: readonly Edge[], ki
     : new oc.BRepFilletAPI_MakeChamfer(shape.wrapped);
   try {
     for (const edge of edges) builder.Add(radius, edge.wrapped);
-    // OC extends a selected edge through tangent contours. Never silently
-    // modify additional edges that the authored geometric selection omitted.
-    for (let contour = 1; contour <= builder.NbContours(); contour++) {
+    // Native tangent contours expand selected seeds only with explicit intent.
+    // Exact seed queries and their counts have already been resolved upstream.
+    if (tangentPropagation !== true) for (let contour = 1; contour <= builder.NbContours(); contour++) {
       for (let index = 1; index <= builder.NbEdges(contour); index++) {
         const propagated = builder.Edge(contour, index);
         try {
           if (!edges.some(edge => edge.wrapped.IsSame(propagated))) throw new CadError('selection-tangent-chain',
-            `OpenCascade would ${kind} additional tangent edges. Select the complete tangent chain explicitly before applying this operation.`);
+            `OpenCascade would ${kind} additional tangent edges. Enable Follow tangent edges or select the complete tangent chain explicitly.`);
         } finally { cadKernelDisposeOwned(propagated); }
       }
     }
