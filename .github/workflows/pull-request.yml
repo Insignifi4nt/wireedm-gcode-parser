@@ -9,7 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  unit-and-contracts:
+    name: Unit tests and contracts
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -29,9 +30,23 @@ jobs:
       - run: npm test -- --run
       - run: npm run post:conformance -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json
       - run: npm run machine-package:validate -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-package
+
+  build-and-browser:
+    name: Production build and browser journeys
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          check-latest: true
+          cache: npm
+      - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e -- --workers=2
+        env:
+          PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
       - name: Preserve browser failure reports
         if: failure()
         uses: actions/upload-artifact@v7
@@ -42,3 +57,16 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  verify:
+    needs: [unit-and-contracts, build-and-browser]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require both verification jobs to pass
+        env:
+          UNIT_RESULT: ${{ needs.unit-and-contracts.result }}
+          BROWSER_RESULT: ${{ needs.build-and-browser.result }}
+        run: |
+          test "$UNIT_RESULT" = success
+          test "$BROWSER_RESULT" = success

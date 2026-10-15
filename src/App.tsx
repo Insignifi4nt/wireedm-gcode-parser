@@ -1,6 +1,8 @@
+import { createMemoryRouter, RouterProvider, useInRouterContext } from 'react-router';
+import { useWorkbenchRoutes } from '@/app/useWorkbenchRoutes';
 import { Button } from '@/components/ui/button';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { CadSession, hasCadDraftContent } from '@/features/cad/cadSession';
+import { CadSession, hasUnsavedCadDraft } from '@/features/cad/cadSession';
 import { useCadController } from '@/features/cad/useCadController';
 import { cadSiteTools } from '@/features/cad/cadSiteTools';
 import { cadVisibleBodyIds } from '@/domain/cad/cadSchema';
@@ -34,7 +36,14 @@ const CadSectionDialog = lazy(() => import('@/features/cad/CadSectionDialog').th
 const CadDxfExportDialog = lazy(() => import('@/features/cad/CadDxfExportDialog').then(({ CadDxfExportDialog }) => ({ default: CadDxfExportDialog })));
 const CadImportDialog = lazy(() => import('@/features/cad/CadImportDialog').then(({ CadImportDialog }) => ({ default: CadImportDialog })));
 
-export default function App({ services }: AppProps = {}) {
+export default function App(props: AppProps = {}) {
+  return useInRouterContext() ? <WorkbenchApp {...props} /> : <StandaloneWorkbench {...props} />;
+}
+function StandaloneWorkbench(props: AppProps) {
+  const [router] = useState(() => createMemoryRouter([{ path: '*', element: <WorkbenchApp {...props} /> }]));
+  return <RouterProvider router={router} />;
+}
+function WorkbenchApp({ services }: AppProps) {
   const [onboardingOpen, setOnboardingOpen] = useState(() => !hasDismissedOnboarding());
   const draftRead = useRef<DraftReadSnapshot | null>(null);
   const [cadSession] = useState(() => new CadSession());
@@ -47,6 +56,7 @@ export default function App({ services }: AppProps = {}) {
     version: cadSession.getSnapshot().version
   } : draftRead.current);
   const cad = useCadController(app, cadSession, cadOpen, setCadOpen, () => draftRead.current);
+  const navigation = useWorkbenchRoutes(app, cad, () => draftRead.current, () => { draftRead.current = null; });
   const cadRef = useRef(cad); cadRef.current = cad;
   useEffect(() => { if (app.activeView === 'editor') setCadOpen(false); }, [app.activeView, app.editorProgramRevision]);
   const agentActions = useWorkbenchActions(app, draftRead, cad.isBusy);
@@ -77,6 +87,7 @@ export default function App({ services }: AppProps = {}) {
 
   return (
     <AppShell
+      routeSettingsSection={navigation.settingsSection} onRouteSettingsSection={navigation.openSettings} onCloseRouteSettings={navigation.closeSettings}
       recovery={app.recoveryControls}
       agentPanelContent={<><AgentActivity activity={agentActivity} />{agentActions.previewControl && <div className="mt-3 border-t border-border pt-2">{agentActions.previewControl}</div>}{cad.previewArtifact && <a className="mt-3 block text-xs text-primary underline" href={cad.previewArtifact.previewUrl} download={cad.previewArtifact.fileName}>CAD preview PNG</a>}</>}
       connectedWorkbench={app.connectedWorkbench}
@@ -93,7 +104,7 @@ export default function App({ services }: AppProps = {}) {
       settingsStatus={app.settingsStatus}
       statusNotifications={app.statusNotifications}
       storageActionLabel={app.storageActionLabel}
-      storageSwitchDisabled={cadOpen || app.activeView === 'editor' || app.workbenchInteractionLocked || cad.storageBusy || (cad.snapshot.dirty && hasCadDraftContent(cad.snapshot.document))}
+      storageSwitchDisabled={cadOpen || app.activeView === 'editor' || app.workbenchInteractionLocked || cad.storageBusy || (hasUnsavedCadDraft(cad.snapshot))}
       storageWarningMessage={app.storageWarningMessage}
       workbenchStatus={app.workbenchStatus}
     >
@@ -111,6 +122,11 @@ export default function App({ services }: AppProps = {}) {
             <p>{app.errorMessage ?? 'The workbench failed without a diagnostic.'}</p>
             <div className="mt-4 text-foreground"><RecoveryExportPanel recovery={app.recoveryControls} disabled={app.workbenchInteractionLocked} /></div>
           </div>
+        </section>
+      ) : navigation.error ? (
+        <section className="m-auto grid max-w-lg gap-3 p-6 text-sm" aria-label="Page unavailable">
+          <h1 className="font-semibold">Unable to open this page</h1><p role="alert">{navigation.error}</p>
+          <Button variant="outline" onClick={() => { void navigation.home(); }}>Back to projects</Button>
         </section>
       ) : cadOpen && app.connectedWorkbench ? (
         <CadWorkspaceBoundary documentName={cad.snapshot.document.name} busy={cad.storageBusy || app.workbenchInteractionLocked}
@@ -213,7 +229,11 @@ export default function App({ services }: AppProps = {}) {
           onOpenEditor={app.handleOpenEditor}
           onOpenCad={() => { try { cad.enter(); } catch (error) { app.showStatusToast(String(error), 'error'); } }}
           onOpenLatestImportInEditor={app.handleOpenLatestImportInEditor}
-          onOpenProject={app.handleOpenWorkbenchProject}
+          onOpenProject={async id => { await app.handleOpenWorkbenchProject(id); }}
+          onOpenCadProject={navigation.openCadProject}
+          cadLibraryVersion={cad.snapshot.savedVersion ?? cad.snapshot.version}
+          cadProjectActions={cad.projectActions}
+          onStatusMessage={app.showStatusToast}
           onRenameProject={app.handleRenameWorkbenchProject}
           pendingDxfImport={app.pendingDxfImport}
           programImportErrorMessage={app.editorImportErrorMessage}
@@ -221,6 +241,7 @@ export default function App({ services }: AppProps = {}) {
           workbenchStatus={app.workbenchStatus}
         />
       )}
+      {navigation.loading && <div role="status" className="pointer-events-none absolute bottom-3 left-3 rounded border border-border bg-card px-3 py-2 text-xs">Opening project…</div>}
       {cad.library && <CadLibraryDialog entries={cad.library} diagnostic={cad.libraryDiagnostic} busy={cad.storageBusy} loading={cad.libraryLoading}
         onClose={cad.closeLibrary} onOpen={async id => { await cad.openDocument(id, cad.snapshot.version, undefined, 'library'); }} />}
       {app.pendingDxfReimport && (

@@ -111,6 +111,37 @@ function completeViewport(h: Awaited<ReturnType<typeof harness>>) {
 }
 
 describe('CAD controller asynchronous guards', () => {
+  it('synchronizes a canonical saved rename, retains Undo, and rejects archiving an unsaved retained draft', async () => {
+    const h = await harness();
+    await act(async () => { await h.cad().save(); h.cad().back(); });
+    const saved = h.session.getSnapshot();
+    const savedVersion = saved.savedVersion;
+    if (!savedVersion) throw new Error('Missing save receipt');
+    await act(async () => {
+      await h.cad().projectActions.rename(h.workbench().adapter, saved.document.id, ' Renamed part ', { expectedSavedVersion: savedVersion });
+    });
+    expect(h.session.getSnapshot()).toMatchObject({ document: { name: 'Renamed part' }, dirty: false, canUndo: true });
+    await act(async () => { h.session.undo(); });
+    const draft = h.session.getSnapshot();
+    expect(draft).toMatchObject({ document: { name: saved.document.name }, dirty: true });
+    await act(async () => {
+      await expect(h.cad().projectActions.archive(h.workbench().adapter, saved.document.id, { expectedSavedVersion: savedVersion })).rejects.toMatchObject({ code: 'UNSAVED_DRAFT' });
+    });
+    expect(h.session.getSnapshot()).toBe(draft);
+    expect((await loadCadDocument(h.workbench().adapter, saved.document.id)).document.name).toBe('Renamed part');
+  });
+
+  it('clears an archived clean retained identity so resuming CAD cannot resurrect it', async () => {
+    const h = await harness();
+    await act(async () => { await h.cad().save(); h.cad().back(); });
+    const saved = h.session.getSnapshot();
+    const savedVersion = saved.savedVersion;
+    if (!savedVersion) throw new Error('Missing save receipt');
+    await act(async () => { await h.cad().projectActions.archive(h.workbench().adapter, saved.document.id, { expectedSavedVersion: savedVersion }); });
+    expect(h.session.getSnapshot().document.id).not.toBe(saved.document.id);
+    await expect(loadCadDocument(h.workbench().adapter, saved.document.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
   it('returns truthful bounded context for 1001 parameters and full member groups while every exact value remains readable', async () => {
     const h = await harness(), source = largeGroupedParameterDocument();
     await act(async () => { await h.cad().importDocumentValue(source.document); });
@@ -252,8 +283,10 @@ describe('CAD controller asynchronous guards', () => {
     expect(roundTrip.document.parameters).toEqual(source.parameters);
     expect(await Promise.all(cadBudgetOriginals(roundTrip.document).map(utf8Hash))).toEqual(originalHashes);
     expect(roundTrip).toMatchObject({ dirty: true, savedVersion: null, canUndo: false, canRedo: false });
-    expect(await h.workbench().adapter.readExactText?.(path)).toBe(savedOriginal);
-    expect((await loadCadDocument(h.workbench().adapter, imported.document.id)).savedVersion).toBe(saved.savedVersion);
+    await act(async () => {
+      expect(await h.workbench().adapter.readExactText?.(path)).toBe(savedOriginal);
+      expect((await loadCadDocument(h.workbench().adapter, imported.document.id)).savedVersion).toBe(saved.savedVersion);
+    });
     await act(async () => { await h.cad().save(roundTrip.version); });
     expect((await loadCadDocument(h.workbench().adapter, roundTrip.document.id)).document).toEqual(roundTrip.document);
   });

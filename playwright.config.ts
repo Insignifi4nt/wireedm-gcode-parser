@@ -1,5 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// CI has just verified this production build. Local runs keep their own snapshot
+// so development cannot replace the files under an active browser test.
+const useExistingBuild = process.env.PLAYWRIGHT_USE_EXISTING_BUILD === 'true';
+const previewCommand = 'npx vite preview --host 127.0.0.1 --port 3107 --strictPort';
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -13,7 +18,8 @@ export default defineConfig({
   },
   webServer: {
     // Keep each run on one built version while development continues in parallel.
-    command: 'npx vite build --outDir tmp/playwright-dist && npx vite preview --outDir tmp/playwright-dist --host 127.0.0.1 --port 3107 --strictPort',
+    command: useExistingBuild ? `${previewCommand} --outDir dist`
+      : `npx vite build --outDir tmp/playwright-dist && ${previewCommand} --outDir tmp/playwright-dist`,
     reuseExistingServer: false,
     url: 'http://127.0.0.1:3107'
   },

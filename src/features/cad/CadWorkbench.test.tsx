@@ -660,7 +660,7 @@ describe('CAD sketch interaction', () => {
     await mount(initial, { buildState: 'ready', build: { ...topologyBuild, meshes: ['move', 'pad-b', 'later'].map(featureId => ({ ...topologyBuild.meshes[0], featureId })) } });
     await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'move' }));
     await input(field('X'), '9');
-    button('Pick body from model').focus();
+    await act(async () => button('Pick body from model').focus());
     await click('Pick body from model');
     expect(currentSession.getSnapshot().workflowOpen).toBe(true);
     expect(currentDocument).toBe(initial);
@@ -825,7 +825,7 @@ describe('CAD sketch interaction', () => {
     });
     const before = currentSession.getSnapshot(); expect(before.canUndo).toBe(true); expect(before.canRedo).toBe(true);
     const name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]'); if (!name) throw new Error('Part name missing');
-    name.focus(); await input(name, 'Discard this rename'); expect(currentSession.getSnapshot().workflowOpen).toBe(true);
+    await act(async () => name.focus()); await input(name, 'Discard this rename'); expect(currentSession.getSnapshot().workflowOpen).toBe(true);
     await act(async () => name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     expect(name.value).toBe('Reviewed part'); expect(document.activeElement).toBe(name);
     expect(currentSession.getSnapshot()).toEqual(before); expect(currentDocument).toBe(before.document);
@@ -835,7 +835,7 @@ describe('CAD sketch interaction', () => {
   it('leaves composing Enter and Escape to the part-name input method', async () => {
     await mount(solidDocument()); const before = currentSession.getSnapshot();
     const name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]'); if (!name) throw new Error('Part name missing');
-    name.focus(); await input(name, '部品');
+    await act(async () => name.focus()); await input(name, '部品');
     for (const key of ['Enter', 'Escape']) {
       const composing = new KeyboardEvent('keydown', { key, isComposing: true, bubbles: true, cancelable: true });
       await act(async () => name.dispatchEvent(composing));
@@ -859,7 +859,7 @@ describe('CAD sketch interaction', () => {
   it('retains pending edits and blocks tree branch changes until cancellation', async () => {
     await mount(solidDocument()); await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
     const before = currentSession.getSnapshot(); const length = field('Length');
-    length.focus(); await input(length, '25');
+    await act(async () => length.focus()); await input(length, '25');
     expect(button('Collapse Model').disabled).toBe(true); expect(button('Expand Parameters').disabled).toBe(true);
     expect(field('Length')).toBe(length); expect(length.value).toBe('25');
     await click('Cancel'); expect(field('Length').value).toBe('10');
@@ -1143,7 +1143,7 @@ describe('CAD sketch interaction', () => {
   it('focuses the safe delete action, traps keyboard focus and restores focus on Escape', async () => {
     await mount(); await startSketch(); await click('Finish sketch');
     const trigger = button('Delete selected feature or profile');
-    trigger.focus(); await click('Delete selected feature or profile');
+    await act(async () => trigger.focus()); await click('Delete selected feature or profile');
     const dialog = container.querySelector<HTMLDivElement>('[role="dialog"]');
     if (!dialog) throw new Error('Delete dialog missing.');
     const buttons = dialog.querySelectorAll('button');

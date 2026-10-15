@@ -1,9 +1,19 @@
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
-import { DeletedProjectsPanel } from '../DeletedProjectsPanel';
+import { ProjectListPanel } from '../ProjectListPanel';
+import { ProjectActionDialog, type ProjectAction } from '../ProjectActionDialog';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+const callbacks = { onOpenProject: vi.fn(), onDeleteProject: vi.fn(), onExportUpidProject: vi.fn(), onSaveUpidProjectAs: vi.fn(), onShowRevisions: vi.fn(), onRenameProject: vi.fn() };
+async function showArchive(container: HTMLElement) {
+  await act(async () => {
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="Project state filter"]');
+    if (!select) throw new Error('Project state filter missing');
+    select.value = 'archived'; select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
 
 it('prevents duplicate restores, displays failures, and allows retry', async () => {
   const container = document.createElement('div');
@@ -15,8 +25,9 @@ it('prevents duplicate restores, displays failures, and allows retry', async () 
   const entries = [{ project: { id: 'plate', name: 'Plate', path: 'projects/plate.json',
     sourceKind: 'upid' as const, updatedAt: '2026-09-07T00:00:00.000Z' }, deletedAt: '2026-09-07T01:00:00.000Z' }];
   try {
-    await act(async () => root.render(<DeletedProjectsPanel entries={entries} interactionLocked={false} onRestoreProject={restore} onPurgeProject={vi.fn()} />));
-    const button = container.querySelector('button');
+    await act(async () => root.render(<ProjectListPanel {...callbacks} availability="ready" projects={[]} archivedProjects={entries} interactionLocked={false} onRestoreProject={restore} />));
+    await showArchive(container);
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="Restore Plate"]');
     if (!button) throw new Error('Restore action missing');
     await act(async () => { button.click(); button.click(); });
     expect(restore).toHaveBeenCalledExactlyOnceWith('plate');
@@ -42,16 +53,22 @@ it('requires confirmation before permanently deleting an archived project', asyn
     if (!button) throw new Error(`Missing ${label}`);
     await act(async () => button.click());
   };
+  function Archive() {
+    const [action, setAction] = useState<ProjectAction | null>(null);
+    return <><ProjectListPanel {...callbacks} availability="ready" projects={[]} archivedProjects={entries} interactionLocked={false}
+      onRestoreProject={vi.fn()} onPurgeArchivedProject={project => setAction({ kind: 'purge', project })} />
+      <ProjectActionDialog action={action} interactionLocked={false} onClose={() => setAction(null)}
+        onDeleteProject={vi.fn()} onRenameProject={vi.fn()} onPurgeProject={purge} /></>;
+  }
   try {
-    await act(async () => root.render(<DeletedProjectsPanel entries={entries} interactionLocked={false}
-      onRestoreProject={vi.fn()} onPurgeProject={purge} />));
-    expect(container.querySelector('summary')?.textContent).toBe('Archive (1)');
+    await act(async () => root.render(<Archive />));
+    await showArchive(container);
     await click('Permanently delete Plate');
     expect(purge).not.toHaveBeenCalled();
     await click('Cancel');
     expect(container.textContent).not.toContain('This cannot be undone.');
     await click('Permanently delete Plate');
-    await click('Delete permanently');
+    await click('Delete');
     expect(purge).toHaveBeenCalledExactlyOnceWith('plate');
     expect(container.textContent).not.toContain('This cannot be undone.');
   } finally { act(() => root.unmount()); container.remove(); }

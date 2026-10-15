@@ -1,0 +1,27 @@
+{
+  "version": "0.0.699",
+  "previousVersion": "0.0.698",
+  "postCompatibility": "preserved-project-navigation",
+  "summary": "Unifies saved CAD and CAM projects in the dashboard, adds browser routes and archive filtering, and removes duplicated CI work.",
+  "warning": "Installed machine/post packages, saved revisions and controller output remain compatible. Existing CAD files keep their canonical format and paths. Archived CAD originals remain recoverable.",
+  "checklist": {
+    "schema": "No existing saved-document, CAM manifest, UPID, post schema or engine API changes. CAD archive receipts preserve exact originals under cad/trash and do not rewrite active files.",
+    "events": "Post execution, simulation and WebMCP operations retain their validation and events. Browser navigation uses the existing guarded project-open operations.",
+    "capabilities": "No machine or post capability changes. CAD projects join the library with recoverable archive and restore; CAM saved revisions and permanent-deletion checks remain unchanged.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line endings, feed or controller-file behavior changes.",
+    "installationAndStorage": "No installed package or revision migration. Cache and folder storage share exact file transactions and conflict checks. Restore refuses an existing active CAD identity. No unreferenced file cleanup or permanent CAD deletion.",
+    "verification": "The complete local suite passes 4,175 cases across 398 files without React act warnings. Production build, shared UI and icon gates, release checks, post conformance and machine-package validation pass. Chromium and Firefox journeys cover save/reopen/history, STEP export, settings, static-host recovery and responsive archives. Evidence is recorded in docs/reviews/2026-10-16-project-navigation-checklist.md. CI keeps functional coverage, runs unit and browser jobs concurrently and reuses the production build."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Find saved CAD parts and archived projects in one library, and reopen projects with direct browser links.",
+    "changes": [
+      "CAD parts now appear beside path projects and machine programs.",
+      "Active, archived and all-project filters share the same responsive project list.",
+      "CAD, editor and settings pages have browser URLs that support refresh and history.",
+      "Test lifecycle warnings and repeated verification work are corrected."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD originals and controller output remain compatible.",
+    "action": "A project URL opens local data in the selected browser cache or folder. Export a portable CAD document to move the part to another device."
+  }
+}

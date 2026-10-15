@@ -55,7 +55,7 @@ describe('document parameter editing', () => {
     const state = session.getSnapshot(); expect(state.document.parameters).toEqual({ shaftRadius: 5, freeValue: 9 });
     const sketch = state.document.features[0]; expect(sketch.kind === 'sketch' && sketch.profiles[0].geometry.kind === 'circle' && sketch.profiles[0].geometry.radius).toBe('shaftRadius');
     expect(edits).toHaveBeenCalledTimes(1); expect(document.querySelector('.cad-parameter-editor')).toBeNull(); expect(pending).toHaveBeenLastCalledWith(false);
-    session.undo(); expect(session.getSnapshot().document.parameters.radius).toBe(3);
+    await act(async () => session.undo()); expect(session.getSnapshot().document.parameters.radius).toBe(3);
   });
   it('keeps invalid edits and duplicate additions in the floating form without writes', async () => {
     const { session, edits } = await renderPanel(); const before = session.getSnapshot().document;

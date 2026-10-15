@@ -5,13 +5,12 @@ import { X } from '@wire-edm/icons-react';
 import { Button } from '@/components/ui/button';
 import { useModalFocus } from '@/components/ui/useModalFocus';
 import { MAX_PROJECT_NAME_LENGTH, projectNameError } from '@/domain/workbench-catalog/projectName';
-import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
-
-type WorkbenchProjectIndexEntry = WorkbenchCatalogManifest['projects'][number];
+import type { DashboardProject, WorkbenchProjectEntry } from './dashboardProjects';
 
 export type ProjectAction =
-  | { kind: 'rename'; project: WorkbenchProjectIndexEntry }
-  | { kind: 'delete'; project: WorkbenchProjectIndexEntry };
+  | { kind: 'rename'; project: DashboardProject }
+  | { kind: 'delete'; project: DashboardProject }
+  | { kind: 'purge'; project: WorkbenchProjectEntry };
 
 interface ProjectActionDialogProps {
   action: ProjectAction | null;
@@ -19,6 +18,7 @@ interface ProjectActionDialogProps {
   onClose: () => void;
   onDeleteProject: (projectId: string) => Promise<void>;
   onRenameProject: (projectId: string, name: string) => Promise<void>;
+  onPurgeProject?: (projectId: string) => Promise<void>;
 }
 
 export function ProjectActionDialog({
@@ -26,7 +26,8 @@ export function ProjectActionDialog({
   interactionLocked,
   onClose,
   onDeleteProject,
-  onRenameProject
+  onRenameProject,
+  onPurgeProject
 }: ProjectActionDialogProps) {
   const [name, setName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -55,11 +56,10 @@ export function ProjectActionDialog({
 
   const { kind, project } = action;
   const isRename = kind === 'rename';
+  const isPurge = kind === 'purge';
   const nameError = isRename ? projectNameError(name) : null;
-  const projectTypeLabel = isPathProjectSourceKind(project.sourceKind)
-    ? 'Path Project'
-    : 'Machine Program';
-  const title = isRename ? 'Rename project' : 'Delete project';
+  const projectTypeLabel = project.sourceKind === 'cad' ? 'CAD project' : project.sourceKind === 'external-gcode' ? 'Machine program' : 'Path project';
+  const title = isRename ? 'Rename project' : isPurge ? 'Permanently delete project' : 'Delete project';
   const submitLabel = isRename ? 'Rename' : 'Delete';
   const savingLabel = isRename ? 'Saving...' : 'Deleting...';
   const fallbackError = isRename
@@ -79,6 +79,9 @@ export function ProjectActionDialog({
     try {
       if (isRename) {
         await onRenameProject(project.id, nextName);
+      } else if (isPurge) {
+        if (!onPurgeProject) throw new Error('Permanent deletion is unavailable.');
+        await onPurgeProject(project.id);
       } else {
         await onDeleteProject(project.id);
       }
@@ -117,7 +120,9 @@ export function ProjectActionDialog({
             <p className="mt-1 font-mono text-[11px] text-muted-foreground">
               {isRename
                 ? `Choose a clear project name, up to ${MAX_PROJECT_NAME_LENGTH} characters.`
-                : 'Moves this project to Archive. Its files and saved revisions remain in this workbench and can be restored.'}
+                : isPurge ? 'Permanently deletes this archived project, including its source files and saved revisions. This cannot be undone.'
+                  : project.sourceKind === 'cad' ? 'Moves this CAD project to Archive. Its complete original remains in this workbench and can be restored.'
+                    : 'Moves this project to Archive. Its files and saved revisions remain in this workbench and can be restored.'}
             </p>
           </div>
           <Button variant="outline" size="icon"
@@ -178,10 +183,4 @@ export function ProjectActionDialog({
       </form>
     </div>
   );
-}
-
-function isPathProjectSourceKind(
-  sourceKind: WorkbenchProjectIndexEntry['sourceKind']
-): sourceKind is 'dxf' | 'upid' {
-  return sourceKind === 'dxf' || sourceKind === 'upid';
 }

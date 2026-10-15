@@ -1,6 +1,7 @@
 import { commitWorkbenchFileTransaction, WorkbenchFileConflictError } from '@/domain/storage/workbenchFileTransaction';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
+import { projectNameError } from '@/domain/workbench-catalog/projectName';
 import type { CadDocument } from './cadDocument';
 import { parseCadDocument } from './cadSchema';
 
@@ -14,6 +15,11 @@ export interface CadLibraryEntry {
   readonly id: string; readonly name: string; readonly savedVersion: string;
   readonly updatedAt: string; readonly featureCount: number;
 }
+export interface ArchivedCadLibraryEntry extends CadLibraryEntry {
+  readonly archivePath: string;
+  readonly archivedAt: string;
+}
+type SavedCadChangeOptions = { expectedSavedVersion: string; signal?: AbortSignal };
 export class CadStorageError extends Error {
   constructor(readonly code: string, message: string) { super(message); }
 }
@@ -58,6 +64,69 @@ export async function loadCadDocument(adapter: WorkbenchStorageAdapter, id: stri
   });
 }
 
+export async function renameCadDocument(adapter: WorkbenchStorageAdapter, id: string, name: string, options: SavedCadChangeOptions) {
+  const error = projectNameError(name);
+  if (error) throw new CadStorageError('INVALID_NAME', error);
+  const saved = await loadCadDocument(adapter, id, options.signal);
+  requireSavedVersion(saved, options.expectedSavedVersion);
+  return saveCadDocument(adapter, { ...saved.document, name: name.trim() }, options);
+}
+
+function requireSavedVersion(saved: SavedCadDocument, expectedSavedVersion: string) {
+  if (saved.savedVersion !== expectedSavedVersion) {
+    throw new CadStorageError('SAVED_DOCUMENT_CHANGED', 'This CAD project changed in storage. Refresh the project library before trying again.');
+  }
+}
+
+function archiveIdentity(path: string) {
+  const match = /^cad\/trash\/([a-z0-9][a-z0-9_-]{0,95})\/(\d{13})-([a-f0-9]{64})\.cad\.json$/.exec(path);
+  if (!match) throw new CadStorageError('INVALID_ARCHIVE', 'Unsupported CAD archive path. Preserve the original.');
+  cadDocumentPath(match[1]);
+  return { id: match[1], archivedAt: new Date(Number(match[2])).toISOString(), savedVersion: match[3] };
+}
+
+function libraryEntry(saved: SavedCadDocument): CadLibraryEntry {
+  return { id: saved.document.id, name: saved.document.name, savedVersion: saved.savedVersion,
+    updatedAt: saved.updatedAt, featureCount: saved.document.features.length };
+}
+
+/** Exact original moves through the same recoverable transaction used by saves. No catalog rewrite. */
+export async function archiveCadDocument(adapter: WorkbenchStorageAdapter, id: string, options: SavedCadChangeOptions): Promise<ArchivedCadLibraryEntry> {
+  return withWorkbenchMutationLock(adapter, async () => {
+    const path = cadDocumentPath(id);
+    const raw = await readRaw(adapter, path, options.signal);
+    if (raw === null) throw new CadStorageError('NOT_FOUND', 'The CAD project no longer exists in this workbench.');
+    const saved = await parseSaved(raw, id);
+    requireSavedVersion(saved, options.expectedSavedVersion);
+    const archivedAt = new Date().toISOString();
+    const archivePath = `cad/trash/${id}/${Date.parse(archivedAt)}-${saved.savedVersion}.cad.json`;
+    await commitWorkbenchFileTransaction(adapter, [
+      { path: archivePath, contents: raw, expectedPrevious: null },
+      { path, contents: null, expectedPrevious: raw }
+    ], () => options.signal?.throwIfAborted());
+    return { ...libraryEntry(saved), archivePath, archivedAt };
+  });
+}
+
+export async function restoreCadDocument(adapter: WorkbenchStorageAdapter, archivePath: string, signal?: AbortSignal) {
+  const identity = archiveIdentity(archivePath);
+  return withWorkbenchMutationLock(adapter, async () => {
+    const raw = await readRaw(adapter, archivePath, signal);
+    if (raw === null) throw new CadStorageError('NOT_FOUND', 'The archived CAD project no longer exists.');
+    const saved = await parseSaved(raw, identity.id);
+    requireSavedVersion(saved, identity.savedVersion);
+    const path = cadDocumentPath(identity.id);
+    if (await readRaw(adapter, path, signal) !== null) {
+      throw new CadStorageError('RESTORE_CONFLICT', 'A CAD project with this identity already exists. Export it before restoring the archived project.');
+    }
+    await commitWorkbenchFileTransaction(adapter, [
+      { path, contents: raw, expectedPrevious: null },
+      { path: archivePath, contents: null, expectedPrevious: raw }
+    ], () => signal?.throwIfAborted());
+    return saved;
+  });
+}
+
 /** Same transaction and cross-tab lock for cache and folders. No index or catalog migration. */
 export async function saveCadDocument(adapter: WorkbenchStorageAdapter, document: CadDocument, options: {
   expectedSavedVersion: string | null; signal?: AbortSignal; beforeWrite?: () => void;
@@ -91,26 +160,40 @@ export async function saveCadDocument(adapter: WorkbenchStorageAdapter, document
 export async function listCadDocuments(adapter: WorkbenchStorageAdapter, signal?: AbortSignal): Promise<{
   entries: CadLibraryEntry[]; diagnostics: { path: string; message: string }[]; truncated: boolean;
 }> {
+  const { entries, diagnostics, truncated } = await readCadLibrary(adapter, false, signal);
+  return { entries, diagnostics, truncated };
+}
+
+export function listCadProjectLibrary(adapter: WorkbenchStorageAdapter, signal?: AbortSignal) {
+  return readCadLibrary(adapter, true, signal);
+}
+
+async function readCadLibrary(adapter: WorkbenchStorageAdapter, includeArchives: boolean, signal?: AbortSignal) {
   return withWorkbenchMutationLock(adapter, async () => {
     if (!adapter.listFiles) throw new CadStorageError('INVENTORY_UNAVAILABLE', 'This storage connection cannot list CAD documents.');
     const inventory = await adapter.listFiles(signal);
     const entries: CadLibraryEntry[] = [];
+    const archivedEntries: ArchivedCadLibraryEntry[] = [];
     const diagnostics: { path: string; message: string }[] = [];
-    for (const path of inventory.paths.filter(path => path.startsWith(prefix) && path.endsWith('.cad.json')).slice(0, 500)) {
+    for (const path of inventory.paths.filter(path => (path.startsWith(prefix) || (includeArchives && path.startsWith('cad/trash/'))) && path.endsWith('.cad.json'))) {
       signal?.throwIfAborted();
       try {
-        const id = path.slice(prefix.length, -'.cad.json'.length);
-        if (cadDocumentPath(id) !== path) throw new Error('Unexpected CAD document path.');
+        const archived = path.startsWith('cad/trash/') ? archiveIdentity(path) : null;
+        const id = archived?.id ?? path.slice(prefix.length, -'.cad.json'.length);
+        if (!archived && cadDocumentPath(id) !== path) throw new Error('Unexpected CAD document path.');
         const raw = await readRaw(adapter, path, signal);
         if (raw === null) throw new Error('File disappeared during reading.');
         const saved = await parseSaved(raw, id);
-        entries.push({ id, name: saved.document.name, savedVersion: saved.savedVersion, updatedAt: saved.updatedAt, featureCount: saved.document.features.length });
+        if (archived) {
+          requireSavedVersion(saved, archived.savedVersion);
+          archivedEntries.push({ ...libraryEntry(saved), archivePath: path, archivedAt: archived.archivedAt });
+        } else entries.push(libraryEntry(saved));
       } catch (error) {
         signal?.throwIfAborted();
         diagnostics.push({ path, message: error instanceof Error ? error.message : 'Cannot read CAD document.' });
       }
     }
-    return { entries: entries.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)), diagnostics,
-      truncated: inventory.truncated || inventory.paths.filter(path => path.startsWith(prefix) && path.endsWith('.cad.json')).length > 500 };
+    return { entries: entries.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
+      archivedEntries: archivedEntries.sort((a, b) => Date.parse(b.archivedAt) - Date.parse(a.archivedAt)), diagnostics, truncated: inventory.truncated };
   });
 }

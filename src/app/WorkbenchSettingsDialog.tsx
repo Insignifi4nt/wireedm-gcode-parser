@@ -21,6 +21,7 @@ export type WorkbenchSettingsSection = 'storage' | 'machine-output' | 'cad';
 interface WorkbenchSettingsDialogProps extends MachinePostSettingsActions {
   readonly recovery?: RecoveryExportControls | null;
   readonly initialSection?: WorkbenchSettingsSection;
+  readonly onSectionChange?: (section: WorkbenchSettingsSection) => void;
   readonly connectedWorkbench: ConnectedWorkbenchCatalog | null;
   readonly errorMessage: string | null;
   readonly interactionLocked: boolean;
@@ -39,6 +40,7 @@ interface WorkbenchSettingsDialogProps extends MachinePostSettingsActions {
 export function WorkbenchSettingsDialog({
   recovery,
   initialSection = 'storage',
+  onSectionChange,
   connectedWorkbench,
   errorMessage,
   interactionLocked,
@@ -65,6 +67,10 @@ export function WorkbenchSettingsDialog({
   }, [open, initialSection]);
 
   if (!open) return null;
+  function selectSection(section: WorkbenchSettingsSection) {
+    setActiveSection(section);
+    onSectionChange?.(section);
+  }
   const connecting = workbenchStatus === 'initializing' || workbenchStatus === 'connecting-storage';
   const canConnect = Boolean(storageActionLabel) && !connecting;
 
@@ -74,9 +80,9 @@ export function WorkbenchSettingsDialog({
         <aside className="min-h-0 border-r border-border bg-background/45 p-3 max-[720px]:grid max-[720px]:grid-cols-[auto_minmax(0,1fr)] max-[720px]:items-center max-[720px]:gap-x-3 max-[720px]:gap-y-2 max-[720px]:border-b max-[720px]:border-r-0">
           <Button variant="outline" size="icon" aria-label="Close settings" className="mb-4 flex size-8 shrink-0 items-center justify-center max-[720px]:mb-0" onClick={onClose} ref={closeButtonRef} type="button"><CloseIcon className="size-4" /></Button>
           <nav aria-label="Settings sections" className="grid gap-1 max-[720px]:flex max-[720px]:flex-wrap">
-            <SectionButton active={activeSection === 'storage'} icon={<BrowserCacheIcon className="size-4" />} label="Storage" onClick={() => setActiveSection('storage')} />
-            <SectionButton active={activeSection === 'machine-output'} icon={<AdjustIcon className="size-4" />} label="Machines & setups" onClick={() => setActiveSection('machine-output')} />
-            <SectionButton active={activeSection === 'cad'} icon={<BodyIcon className="size-4" />} label="CAD" onClick={() => setActiveSection('cad')} />
+            <SectionButton active={activeSection === 'storage'} icon={<BrowserCacheIcon className="size-4" />} label="Storage" onClick={() => selectSection('storage')} />
+            <SectionButton active={activeSection === 'machine-output'} icon={<AdjustIcon className="size-4" />} label="Machines & setups" onClick={() => selectSection('machine-output')} />
+            <SectionButton active={activeSection === 'cad'} icon={<BodyIcon className="size-4" />} label="CAD" onClick={() => selectSection('cad')} />
           </nav>
           <div className="mt-4 grid gap-2 text-[11px] max-[720px]:col-span-2 max-[720px]:mt-0 max-[720px]:flex max-[720px]:flex-wrap max-[720px]:gap-x-4">
             <p className="text-muted-foreground">Wire EDM Workbench {APP_VERSION}</p>

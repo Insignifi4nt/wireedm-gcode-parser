@@ -59,7 +59,7 @@ describe('unified feature history and dependency tree', () => {
     expect(container.querySelector('[aria-label="Edit parameter width"]')).toBeNull();
     await click('Expand Parameters');
     expect(button('Collapse Parameters').getAttribute('aria-expanded')).toBe('true');
-    button('Edit parameter width').focus();
+    await act(async () => button('Edit parameter width').focus());
     await click('Edit parameter width');
     expect(document.querySelector('[role="dialog"][aria-label="Edit width"]')).not.toBeNull();
     expect(button('Collapse Parameters').disabled).toBe(true);
@@ -224,7 +224,7 @@ describe('unified feature history and dependency tree', () => {
   it('supports keyboard context menus and cancels stale targets or locked workflows without an action', async () => {
     const callbacks = props();
     await act(async () => root.render(<CadFeatureTree {...callbacks} />));
-    button('Select Guide in history').focus();
+    await act(async () => button('Select Guide in history').focus());
     await act(async () => button('Select Guide in history').dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'F10', shiftKey: true })));
     expect(document.querySelector('[role="menu"]')).not.toBeNull();
     expect(document.activeElement?.getAttribute('role')).toBe('menuitem');

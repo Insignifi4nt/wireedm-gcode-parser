@@ -18,6 +18,9 @@ export class CadSessionError extends Error {
 export function hasCadDraftContent(document: CadDocument): boolean {
   return document.features.length > 0 || Object.keys(document.parameters).length > 0 || Boolean(document.parameterGroups?.length) || document.name !== 'Untitled part';
 }
+export function hasUnsavedCadDraft(snapshot: Pick<CadSessionSnapshot, 'dirty' | 'savedVersion' | 'document'>): boolean {
+  return snapshot.dirty && (snapshot.savedVersion !== null || hasCadDraftContent(snapshot.document));
+}
 interface HistoryEntry { readonly document: CadDocument; readonly textLength: number }
 type CadWorkflowScope = 'editor' | 'section' | 'import' | 'dxf-export' | 'library';
 const MAX_HISTORY_STEPS = 50;
@@ -48,7 +51,7 @@ export class CadSession {
   }
   assertStorageSwitchAllowed() {
     this.assertWorkflowClosed();
-    if (this.snapshot.dirty && hasCadDraftContent(this.snapshot.document)) throw new CadSessionError('UNSAVED_DRAFT', 'Save the CAD draft before switching workbench storage.');
+    if (hasUnsavedCadDraft(this.snapshot)) throw new CadSessionError('UNSAVED_DRAFT', 'Save the CAD draft before switching workbench storage.');
   }
   setWorkflowOpen = (open: boolean, scope: CadWorkflowScope = 'editor') => {
     if (open) this.workflows.add(scope); else this.workflows.delete(scope);

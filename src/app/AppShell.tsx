@@ -35,6 +35,9 @@ interface AppShellProps extends MachinePostSettingsActions {
   storageWarningMessage: string | null;
   children: ReactNode;
   agentPanelContent?: ReactNode;
+  routeSettingsSection?: WorkbenchSettingsSection | null;
+  onRouteSettingsSection?: (section: WorkbenchSettingsSection) => void;
+  onCloseRouteSettings?: () => void;
 }
 
 export function AppShell({
@@ -57,7 +60,10 @@ export function AppShell({
   statusNotifications,
   storageWarningMessage,
   children,
-  agentPanelContent
+  agentPanelContent,
+  routeSettingsSection,
+  onRouteSettingsSection,
+  onCloseRouteSettings
 }: AppShellProps) {
   const [headerContent, setHeaderContent] = useState<ReactNode | null>(null);
   const [shellRailCollapsed, setShellRailCollapsed] = useState(false);
@@ -73,12 +79,16 @@ export function AppShell({
   const [isMiddleViewport, setIsMiddleViewport] = useState(
     () => window.innerWidth >= 768 && window.innerWidth < 1024
   );
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [localSettingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<WorkbenchSettingsSection>('storage');
+  const settingsOpen = routeSettingsSection === undefined ? localSettingsOpen : routeSettingsSection !== null;
+  const requestSettings = useCallback((section: WorkbenchSettingsSection) => {
+    if (onRouteSettingsSection) onRouteSettingsSection(section);
+    else { setSettingsSection(section); setSettingsOpen(true); }
+  }, [onRouteSettingsSection]);
   const openMachineSettings = useCallback(() => {
-    setSettingsSection('machine-output');
-    setSettingsOpen(true);
-  }, []);
+    requestSettings('machine-output');
+  }, [requestSettings]);
   const hasRailContent = railContent !== null;
   const replaceRailChrome = Boolean(railContent?.replaceRailChrome);
   const requestedSidebarCollapsed = railContent?.isCollapsed ?? shellRailCollapsed;
@@ -186,7 +196,7 @@ export function AppShell({
           <StatusNotificationMenu notifications={statusNotifications} agentContent={agentPanelContent} />
           <Button
             aria-label="Open settings"
-            onClick={() => { setSettingsSection('storage'); setSettingsOpen(true); }}
+            onClick={() => requestSettings('storage')}
             size="icon"
             title="Settings"
             type="button"
@@ -296,11 +306,12 @@ export function AppShell({
       </div>
       <WorkbenchSettingsDialog
         recovery={recovery}
-        initialSection={settingsSection}
+        initialSection={routeSettingsSection ?? settingsSection}
+        onSectionChange={onRouteSettingsSection}
         connectedWorkbench={connectedWorkbench}
         errorMessage={errorMessage}
         interactionLocked={interactionLocked}
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => { if (onCloseRouteSettings) onCloseRouteSettings(); else setSettingsOpen(false); }}
         onConnectWorkbench={onConnectWorkbench}
         onUseBrowserCache={onUseBrowserCache}
         onActivateMachineSetup={onActivateMachineSetup}
