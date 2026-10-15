@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { reloadEditorAndReturnToLibrary } from './fixtures/navigation';
 
 import { confirmPendingDxfImport } from './dxf-import';
 
@@ -290,7 +291,7 @@ test('restored 360px rails keep the active right dock inside the workbench at 12
     localStorage.setItem(key, JSON.stringify(layout));
   });
 
-  await page.reload();
+  await reloadEditorAndReturnToLibrary(page);
   await expect(page.locator('[data-project-row]')).toHaveCount(1);
   await page.setViewportSize({ width: 1200, height: 800 });
   await page.locator('[data-project-row]')
@@ -393,7 +394,7 @@ test('path editor persists a collapsed UPID rail across reload and project reope
     return raw ? JSON.parse(raw).upidRailCollapsed : null;
   })).toBe(true);
 
-  await page.reload();
+  await reloadEditorAndReturnToLibrary(page);
   await expect(page.locator('[data-project-row]')).toHaveCount(1);
   await page.locator('[data-project-row]')
     .getByRole('button', { name: /Open project .* in editor/ })
@@ -605,7 +606,7 @@ test('persisted expanded rail uses the middle overlay and restores focus on desk
     return raw ? JSON.parse(raw).upidRailCollapsed : null;
   })).toBe(false);
 
-  await page.reload();
+  await reloadEditorAndReturnToLibrary(page);
   await expect(page.locator('[data-project-row]')).toHaveCount(1);
   await page.setViewportSize({ width: 800, height: 800 });
   await page.locator('[data-project-row]')

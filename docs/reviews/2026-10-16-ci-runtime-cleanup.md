@@ -136,3 +136,43 @@ with no React act-warning matches. Its log is
 CI's overall time savings come from concurrent verification jobs and eliminating
 duplicate deployment tests and browser rebuilds. No cancellation, recovery or
 large-original capacity assertion was removed or given a longer timeout.
+
+## Hosted recovery-case follow-up
+
+The bounded local run did not settle the hosted timing issue. PR run
+[38817135988](https://github.com/Insignifi4nt/wireedm-gcode-parser/actions/runs/38817135988)
+passed 4,174 cases but the combined browser-cache recovery case still timed out
+at 5.081 seconds. Its unit phase took 307.47 seconds. This is a real remaining
+failure, not a green hosted verification result.
+
+A temporary phase probe of the existing case measured these local costs:
+
+| Phase | Browser cache | Folder adapter |
+| --- | ---: | ---: |
+| Initial save and exact read | 316 ms | 76 ms |
+| Pre-write cancellation and original check | 232 ms | 98 ms |
+| Interrupted write, rollback and exact reopen | 558 ms | 189 ms |
+| Retry and exact reopen | 440 ms | 154 ms |
+| Stale retry and original/journal checks | 147 ms | 74 ms |
+
+The original case combined two independent behavioral boundaries. Pre-write
+cancellation deliberately stops before any transaction is written. Interrupted
+write recovery must retain the complete failure, rollback, successful retry and
+stale-version rejection sequence. That sequence remains together.
+
+The recovery group now prepares a real saved 4 MiB original in a scoped fixture
+hook. Cancellation and interrupted-write recovery have separate cases starting
+from that known saved state. The fixture hook and both cases each retain a
+5-second deadline. Both real adapters and every original recovery assertion
+remain covered; no production storage code, global deadline or worker setting
+changed for this follow-up. The focused suite passes all 26 cases in
+`tmp/ci-storage-recovery-focused.log`. Host load still affects the timings; the
+next hosted run must confirm the changed test boundaries there.
+
+A targeted contention run then executed that storage suite beside the existing
+native topology and native allocation suites. All three files and 47 cases
+passed in 59.83 seconds. Browser-cache cancellation and interrupted-write recovery
+reported 1.961 and 3.674 seconds respectively, including their fixtures in the
+reporter duration; the fixture and test callbacks keep separate unchanged
+deadlines. The complete log is `tmp/ci-storage-recovery-contention.log`. Temporary
+phase instrumentation was removed, and the final source passes `git diff --check`.

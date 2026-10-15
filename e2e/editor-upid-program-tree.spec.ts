@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { reloadEditorAndReturnToLibrary } from './fixtures/navigation';
 
 import { clearWorkbenchCache } from './fixtures/workbench-cache';
 import { confirmPendingDxfImport } from './dxf-import';
@@ -83,7 +84,7 @@ test('keeps imported NC programs in the machine-program editor through edit, sav
   await programEditor.fill('%\nG90\nG0 X0 Y0\nG1 X24 Y0\nM02\n%');
   await page.getByRole('button', { name: 'Save active document' }).click();
   await expect(page.locator('[data-editor-document-state]')).toHaveText('Saved');
-  await page.reload();
+  await reloadEditorAndReturnToLibrary(page);
   await openOnlyProject(page);
   await expect(page.locator('[data-editor-context="machine-program"]')).toBeVisible();
   await expect(page.getByRole('complementary', { name: /UPID rail/i })).toHaveCount(0);

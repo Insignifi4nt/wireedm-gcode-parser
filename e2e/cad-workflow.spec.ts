@@ -4,6 +4,12 @@ import type { CadTopologyDescriptor } from '../src/domain/cad/cadTopology';
 import type { CadFeature, CadSketchFeature } from '../src/domain/cad/cadDocument';
 import { prepareCadTools as prepare, rawCadToolCall as rawCall, callCadTool as call, cadContext as context, captureCadPreview } from './cad-tool-helpers';
 
+async function expectSavedCadReopened(page: Page, documentId: string) {
+  await expect(page).toHaveURL(url => url.pathname.endsWith(`/cad/${encodeURIComponent(documentId)}`));
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible();
+  expect(await context(page)).toMatchObject({ documentId, dirty: false, savedVersion: expect.any(String) });
+}
+
 async function openViewControls(page: Page) {
   const toggle = page.getByRole('button', { name: 'View controls', exact: true });
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
@@ -547,7 +553,7 @@ test('human and agent share a parametric circular bolt-hole pattern through exac
   await page.screenshot({ path: 'tmp/cad-circular-flange.png' });
   await call(page, 'cad_save_document', { expectedVersion: drilled.version });
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+  await expectSavedCadReopened(page, drilled.documentId);
   const reloaded = await context(page);
   await call(page, 'cad_open_document', { expectedVersion: reloaded.version, documentId: drilled.documentId });
   const reopened = await context(page);
@@ -667,7 +673,7 @@ test('STEP and STL exports import as standalone solids with preserved originals'
     expect(features).toMatchObject({ items: [{ kind: 'imported', source }] });
     await call(page, 'cad_save_document', { expectedVersion: imported.version });
     await page.reload();
-    await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+    await expectSavedCadReopened(page, imported.documentId);
     const reloaded = await context(page);
     await call(page, 'cad_open_document', { expectedVersion: reloaded.version, documentId: imported.documentId });
     const opened = await context(page);
@@ -727,7 +733,7 @@ test('DXF exchange preserves exact rounded contours and reconstructs a standalon
   expect(await call(page, 'cad_build', { expectedVersion: solid.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(expectedVolume, 5) }] });
   await call(page, 'cad_save_document', { expectedVersion: solid.version });
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+  await expectSavedCadReopened(page, solid.documentId);
   const reloaded = await context(page);
   await call(page, 'cad_open_document', { expectedVersion: reloaded.version, documentId: solid.documentId });
   const opened = await context(page);
@@ -860,7 +866,7 @@ test('agent builds, checks exact volume, exports, reopens and hands analytic geo
   expect(await readFile(downloaded, 'utf8')).toContain('MANIFOLD_SOLID_BREP');
   await call(page, 'cad_save_document', { expectedVersion: current.version });
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+  await expectSavedCadReopened(page, current.documentId);
   const reloaded = await context(page);
   const library = await call(page, 'cad_list_documents');
   expect(library).toMatchObject({ items: [{ id: current.documentId, name: 'Precision plate', featureCount: 2 }] });
@@ -935,7 +941,7 @@ test('agent path construction remains read-only before exact solid, DXF and save
   expect(dxf).toMatch(/\bARC\b/); expect(dxf).toMatch(/\bLINE\b/);
   await call(page, 'cad_save_document', { expectedVersion: draft.version });
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+  await expectSavedCadReopened(page, draft.documentId);
   const reloaded = await context(page);
   await call(page, 'cad_open_document', { expectedVersion: reloaded.version, documentId: draft.documentId });
   const reopened = await context(page);
@@ -992,7 +998,7 @@ test('agent open curves stay exact through reference rendering, DXF exchange and
   expect(await call(page, 'cad_measure_curve', { expectedVersion: imported.version, curveId: curve.id })).toMatchObject({ lengthMm: expect.closeTo(20 + 10 * Math.PI, 8), startMm: [0, 0], endMm: [expect.closeTo(20, 12), 20] });
   await call(page, 'cad_save_document', { expectedVersion: imported.version });
   expect(wasmRequests, 'Reference authoring, measurement and DXF import must not request either solid WASM engine').toEqual([]);
-  await page.reload(); await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+  await page.reload(); await expectSavedCadReopened(page, imported.documentId);
   const reloaded = await context(page);
   await call(page, 'cad_open_document', { expectedVersion: reloaded.version, documentId: imported.documentId });
   expect(await call(page, 'cad_get_feature', { expectedVersion: (await context(page)).version, featureId: curve.id })).toMatchObject({ feature: curve });
@@ -1425,7 +1431,7 @@ test('a missing CAD view module retains the accepted draft and live agent tools 
   await expect(page.getByRole('status').filter({ hasText: 'Document saved.' })).toBeVisible();
   expect(await context(page)).toMatchObject({ version: retained.version, dirty: false, savedVersion: expect.any(String) });
   await page.unroute(modulePattern); await page.reload();
-  await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
+  await expectSavedCadReopened(page, retained.documentId);
   await call(page, 'cad_open_document', { expectedVersion: (await context(page)).version, documentId: retained.documentId });
   await expect(page.getByLabel('3D model viewport')).toBeVisible();
   expect(await call(page, 'cad_get_feature', { expectedVersion: (await context(page)).version, featureId: feature.id })).toMatchObject({ feature });
