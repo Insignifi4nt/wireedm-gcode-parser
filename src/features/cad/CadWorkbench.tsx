@@ -542,10 +542,6 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   };
   const inspectParameter = (name: string | null) => {
     setInspectedParameter(name); setInspectedInput(null);
-    if (!name) return;
-    const usages = parameterInspection.parameters.find(parameter => parameter.name === name)?.usages.filter(usage => usage.active) ?? [];
-    const usage = usages.find(usage => usage.featureId === sketchId) ?? usages[0];
-    if (usage) inspectParameterUsage(usage);
   };
   const removeSelected = () => run(() => {
     if (sketch && profile) { props.onEdit({ kind: 'update-feature', feature: { ...sketch, profiles: sketch.profiles.filter((entry) => entry.id !== profile.id) } }); setProfileId(null); return; }

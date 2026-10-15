@@ -191,6 +191,47 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it.each(['solid', 'sketch'] as const)('keeps the %s context while editing a shared value and navigates only through explicit Inspect', async context => {
+    const initial = parseCadDocument({ ...createCadDocument('Tapered outlet', 'parameter_context'), parameters: { height: 20, baseRadius: 10 }, features: [
+      { id: 'base', name: 'Base section', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+        profiles: [{ id: 'base_circle', name: 'Base circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 'baseRadius' } }] },
+      { id: 'outlet', name: 'Outlet section', kind: 'sketch', suppressed: false, plane: 'XY', offset: 'height',
+        profiles: [{ id: 'outlet_circle', name: 'Outlet circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 5 } }] },
+      { id: 'loft', name: 'Loft', kind: 'loft', suppressed: false, sketchIds: ['base', 'outlet'], ruled: false, operation: 'new', targetId: null },
+    ] });
+    const build = { ...topologyBuild, meshes: topologyBuild.meshes.map(mesh => ({ ...mesh, featureId: 'loft', name: 'Loft' })) };
+    await mount(initial, { build, buildState: 'ready' });
+    if (context === 'solid') await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'loft' }));
+    else {
+      await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'base' }));
+      await act(async () => viewport().apply({ kind: 'select-profile', profileId: 'base_circle' }));
+    }
+    const expectedContext = context === 'solid' ? { selectedFeatureId: 'loft', sketchId: null, selectedProfileId: null, view: { mode: 'solid' } }
+      : { selectedFeatureId: 'base', sketchId: 'base', selectedProfileId: 'base_circle', view: { mode: 'sketch' } };
+    expect(viewport().getState()).toMatchObject(expectedContext);
+    const canvas = container.querySelector(context === 'solid' ? '[aria-label="3D model viewport"]' : '.cad-sketch-viewport');
+    const cancelParameter = async () => {
+      const dialog = document.querySelector('.cad-parameter-editor');
+      const cancel = [...dialog?.querySelectorAll('button') ?? []].find(button => button.textContent?.trim() === 'Cancel');
+      if (!cancel) throw new Error('Missing floating parameter Cancel.'); await act(async () => cancel.click());
+    };
+    await click('Expand Parameters'); const before = currentSession.getSnapshot();
+    await click('Edit parameter height');
+    expect(viewport().getState()).toMatchObject(expectedContext);
+    expect(container.contains(canvas)).toBe(true);
+    expect(document.querySelector('.cad-parameter-editor')?.textContent).toContain('Outlet section');
+    await input(field('Value'), '25');
+    expect(viewport().getState()).toMatchObject(expectedContext); expect(container.contains(canvas)).toBe(true);
+    expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: true, canUndo: before.canUndo });
+    await cancelParameter();
+    expect(currentSession.getSnapshot()).toEqual(before); expect(viewport().getState()).toMatchObject(expectedContext); expect(container.contains(canvas)).toBe(true);
+    await click('Edit parameter height'); await click('Inspect Outlet section');
+    expect(viewport().getState()).toMatchObject({ selectedFeatureId: 'outlet', sketchId: 'outlet', selectedProfileId: null, view: { mode: 'sketch' } });
+    expect(field('Value').value).toBe('20');
+    await cancelParameter();
+    expect(currentSession.getSnapshot()).toEqual(before); expect(viewport().getState()).toMatchObject({ selectedFeatureId: 'outlet', sketchId: 'outlet', view: { mode: 'sketch' } });
+  });
+
   it('keeps an accepted thin Pad volume visibly positive without changing its exact source or history', async () => {
     const document = parseCadDocument({ ...createCadDocument(), parameters: { width: 4e-7 }, features: [
       { id: 'sketch', name: 'Thin outline', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [{ id: 'rectangle', name: 'Thin plate', construction: false,
