@@ -26,7 +26,7 @@ Editing a feature previews the candidate part before Apply. Read-only camera nav
 
 Expand **Parameters** in the tree to see grouped document values and their active uses. Plugin-created values have an origin icon and automatically belong to a named group. Create or rename groups to organize the design. Ungrouping keeps every value. Renaming a parameter updates dimension expressions without changing embedded plugin definitions.
 
-Select a value or local profile input to inspect affected geometry. Unused values and dormant automatic inputs are marked separately. A profile can have a local override even when the document has a similarly named parameter; the panel shows both sources explicitly. **Add parameter** and row editing open a small floating editor beside the tree.
+Opening a document value keeps your current solid or sketch view and selection. Choose a usage under **Used by** to inspect its geometry; local profile-input rows open their profile configuration. Unused values and dormant automatic inputs are marked separately. A profile can have a local override even when the document has a similarly named parameter; the panel shows both sources explicitly. **Add parameter** and row editing open a small floating editor beside the tree.
 
 Info buttons explain fields when needed. Gear help illustrates the current part's pitch/base/root circles and generated tooth roots. The parameter editor and configuration retain typed expressions through validation errors.
 
