@@ -1,3 +1,4 @@
+import { MenuItem, MenuLabel, MenuSeparator, MenuSurface } from '@/components/ui/menu';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import './cad-context-menu.css';
@@ -33,7 +34,7 @@ export function CadContextMenu({ anchor, title, items, onClose }: {
       if (previousFocus?.isConnected && (element.contains(document.activeElement) || document.activeElement === document.body)) previousFocus.focus({ preventScroll: true });
     };
   }, [anchor.x, anchor.y]);
-  return createPortal(<div ref={menu} className="cad-context-menu" role="menu" tabIndex={-1} aria-label={`${title} actions`}
+  return createPortal(<MenuSurface ref={menu} className="cad-context-menu" tabIndex={-1} aria-label={`${title} actions`}
     style={{ left: position.x, top: position.y }} onContextMenu={event => event.preventDefault()} onKeyDown={event => {
       if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
       if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -45,9 +46,9 @@ export function CadContextMenu({ anchor, title, items, onClose }: {
         : (current + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
       buttons[index].focus();
     }}>
-    <div className="cad-context-menu-title">{title}</div>
-    {items.map((item, index) => 'kind' in item ? <div role="separator" key={index} className="cad-context-menu-separator" />
-      : <button type="button" role="menuitem" key={index} disabled={item.disabled} className={item.danger ? 'is-danger' : undefined}
-        onClick={() => { flushSync(onClose); item.onSelect(); }}>{item.label}</button>)}
-  </div>, document.body);
+    <MenuLabel>{title}</MenuLabel>
+    {items.map((item, index) => 'kind' in item ? <MenuSeparator key={index} />
+      : <MenuItem type="button" key={index} disabled={item.disabled} danger={item.danger}
+        onClick={() => { flushSync(onClose); item.onSelect(); }}>{item.label}</MenuItem>)}
+  </MenuSurface>, document.body);
 }

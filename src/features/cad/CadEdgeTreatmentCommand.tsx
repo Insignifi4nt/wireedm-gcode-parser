@@ -1,6 +1,8 @@
+import { Button } from '@/components/ui/button';
+import { MenuItem, MenuSurface } from '@/components/ui/menu';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChamferIcon, ExpandDownIcon, FilletIcon } from '@/components/icons';
+import { ChamferIcon, ExpandDownIcon, FilletIcon } from '@wire-edm/icons-react';
 import type { CadFeature } from '@/domain/cad/cadDocument';
 import { cadToolbarPopupPosition } from './cadToolbarPopupPosition';
 
@@ -38,13 +40,13 @@ export function CadEdgeTreatmentCommand({ disabled, onChoose, context = 'model' 
     };
   }, [open, disabled]);
   return <>
-    <button ref={trigger} className="cad-tool" aria-label={context === 'sketch' ? 'Sketch corner tools' : 'Fillet / Chamfer'} title={context === 'sketch' ? 'Round supported sketch corners' : 'Round or bevel solid edges'} disabled={disabled} aria-haspopup="menu" aria-expanded={open && !disabled} aria-controls={open && !disabled ? id : undefined}
+    <Button ref={trigger} className="cad-tool" aria-label={context === 'sketch' ? 'Sketch corner tools' : 'Fillet / Chamfer'} title={context === 'sketch' ? 'Round supported sketch corners' : 'Round or bevel solid edges'} disabled={disabled} aria-haspopup="menu" aria-expanded={open && !disabled} aria-controls={open && !disabled ? id : undefined}
       onPointerDown={event => { if (open) event.preventDefault(); }}
       onClick={() => { if (open) close(true); else { initialFocus.current = 'first'; setOpen(true); } }}
       onKeyDown={event => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); initialFocus.current = event.key === 'ArrowUp' ? 'last' : 'first'; setOpen(true); }
-      }}><FilletIcon size={15} /><span>Fillet / Chamfer</span><ExpandDownIcon size={11} /></button>
-    {open && !disabled && createPortal(<div ref={popup} id={id} role="menu" aria-label="Edge treatment commands" className="cad-pattern-menu" style={position}
+      }}><FilletIcon size={15} strokeWidth={1.5} /><span>Fillet / Chamfer</span><ExpandDownIcon size={11} /></Button>
+    {open && !disabled && createPortal(<MenuSurface ref={popup} id={id} aria-label="Edge treatment commands" className="cad-pattern-menu" style={position}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) close(); }}
       onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); return; }
@@ -63,8 +65,8 @@ export function CadEdgeTreatmentCommand({ disabled, onChoose, context = 'model' 
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? commands.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + commands.length) % commands.length;
         commands[next]?.focus();
       }}>
-      <button role="menuitem" onClick={() => { close(); onChoose('fillet'); }}><FilletIcon size={14} /> Fillet</button>
-      {context === 'model' && <button role="menuitem" onClick={() => { close(); onChoose('chamfer'); }}><ChamferIcon size={14} /> Chamfer</button>}
-    </div>, window.document.body)}
+      <MenuItem onClick={() => { close(); onChoose('fillet'); }}><FilletIcon size={14} /> Fillet</MenuItem>
+      {context === 'model' && <MenuItem onClick={() => { close(); onChoose('chamfer'); }}><ChamferIcon size={14} /> Chamfer</MenuItem>}
+    </MenuSurface>, window.document.body)}
   </>;
 }

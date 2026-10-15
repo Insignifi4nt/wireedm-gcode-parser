@@ -1,5 +1,7 @@
+import { Tooltip } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ChevronDown, ChevronRight } from '@/components/icons';
+import { ExpandDownIcon, ExpandRightIcon } from '@wire-edm/icons-react';
 
 import type {
   UpidEditorDiagnosticNode,
@@ -112,6 +114,7 @@ export function EditorProgramTree(props: EditorProgramTreeProps) {
     const selected = selectedTreeKey === item.key;
     return (
       <li aria-expanded={item.children.length > 0 ? expanded : undefined} aria-level={item.level}
+        aria-description={item.node?.kind === 'event' ? item.node.spatialAction?.detail ?? item.label : item.label}
         aria-selected={selected} className="outline-none" data-tree-key={item.key} key={item.key}
         onKeyDown={(event) => handleKeyDown(event, item)} ref={(element) => {
           if (element) refs.current.set(item.key, element); else refs.current.delete(item.key);
@@ -120,13 +123,13 @@ export function EditorProgramTree(props: EditorProgramTreeProps) {
           onClick={() => select(item)} onDoubleClick={() => activate(item)}
           style={{ paddingLeft: `${(item.level - 1) * 12 + 6}px` }}>
           {item.children.length > 0 ? (
-            <button aria-label={`${expanded ? 'Collapse' : 'Expand'} ${item.label}`} className="size-4 shrink-0"
+            <Button aria-label={`${expanded ? 'Collapse' : 'Expand'} ${item.label}`} className="size-4 shrink-0"
               onClick={(event) => { event.stopPropagation(); setExpanded(item, !expanded); }} tabIndex={-1} type="button">
-              {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            </button>
+              {expanded ? <ExpandDownIcon size={12} /> : <ExpandRightIcon size={12} />}
+            </Button>
           ) : <span className="w-4 shrink-0" />}
           <StatusDot status={item.status} />
-          <span className={`truncate ${item.node?.kind === 'event' && item.node.spatialAction?.pause === 'generated-manual-thread' ? 'text-rose-300' : item.node?.kind === 'event' && item.node.spatialAction?.pause === 'authored' ? 'text-amber-300' : item.node?.kind === 'event' && item.node.spatialAction?.pause === 'emitted-post' ? 'text-violet-300' : ''}`} title={item.node?.kind === 'event' ? item.node.spatialAction?.detail ?? item.label : item.label}>{item.label}</span>
+          <Tooltip content={item.node?.kind === 'event' ? item.node.spatialAction?.detail ?? item.label : item.label}><span className={`truncate ${item.node?.kind === 'event' && item.node.spatialAction?.pause === 'generated-manual-thread' ? 'text-rose-300' : item.node?.kind === 'event' && item.node.spatialAction?.pause === 'authored' ? 'text-amber-300' : item.node?.kind === 'event' && item.node.spatialAction?.pause === 'emitted-post' ? 'text-violet-300' : ''}`}>{item.label}</span></Tooltip>
         </div>
         {selected && item.node?.kind === 'event' && item.node.spatialAction?.pause &&
           <div className="border-b border-border/40 bg-accent/40 py-1 pr-2 text-[10px] text-muted-foreground"

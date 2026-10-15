@@ -1,3 +1,6 @@
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { useEffect, useRef, useState } from 'react';
 import type { CadMesh, CadPlane } from '@/domain/cad/cadDocument';
 import type { CadSectionRequest, CadSectionResult } from '@/domain/cad/cadSection';
@@ -73,19 +76,19 @@ export function CadSectionDialog({ bodies, initialBodyId, version, onClose, onIn
   const input = 'mt-1 w-full border border-border bg-background px-2 py-1.5 text-xs';
   return <dialog ref={dialog} aria-label="Section for CAM" className="m-auto w-[720px] max-h-[85vh] overflow-auto border border-border bg-card p-0 text-foreground backdrop:bg-black/60"
     onCancel={event => { event.preventDefault(); if (!busy) onClose(); else if (busy === 'inspect') pending.current?.abort(); }}>
-    <div className="flex items-center justify-between border-b border-border px-4 py-3"><h2 className="text-sm font-semibold">Section for CAM</h2><button className={button} disabled={busy !== null} onClick={onClose}>Close</button></div>
+    <div className="flex items-center justify-between border-b border-border px-4 py-3"><h2 className="text-sm font-semibold">Section for CAM</h2><Button className={button} disabled={busy !== null} onClick={onClose}>Close</Button></div>
     <div className="space-y-3 p-4 text-xs">
       <p className="text-muted-foreground">Cut the final solid with a plane and transfer its exact closed contours. The preview includes downstream cuts and Boolean operations.</p>
       <div className="grid grid-cols-[2fr_1fr_1fr] gap-3">
-        <label>Solid body<select className={input} value={bodyId} disabled={busy !== null} onChange={event => setBodyId(event.target.value)}>{bodies.map(body => <option key={body.featureId} value={body.featureId}>{body.name}</option>)}</select></label>
-        <label>Section plane<select className={input} value={plane} disabled={busy !== null} onChange={event => { if (event.target.value === 'XY' || event.target.value === 'XZ' || event.target.value === 'YZ') setPlane(event.target.value); }}><option>XY</option><option>XZ</option><option>YZ</option></select></label>
-        <label>Plane offset (mm)<input className={input} value={offset} disabled={busy !== null} onChange={event => setOffset(event.target.value)} /></label>
+        <label>Solid body<Select className="mt-1 w-full px-2 py-1.5 text-xs" value={bodyId} disabled={busy !== null} onChange={event => setBodyId(event.target.value)}>{bodies.map(body => <option key={body.featureId} value={body.featureId}>{body.name}</option>)}</Select></label>
+        <label>Section plane<Select className="mt-1 w-full px-2 py-1.5 text-xs" value={plane} disabled={busy !== null} onChange={event => { if (event.target.value === 'XY' || event.target.value === 'XZ' || event.target.value === 'YZ') setPlane(event.target.value); }}><option>XY</option><option>XZ</option><option>YZ</option></Select></label>
+        <label>Plane offset (mm)<Input className={input} value={offset} disabled={busy !== null} onChange={event => setOffset(event.target.value)} /></label>
       </div>
       <p className="text-muted-foreground">Offset follows {plane === 'XY' ? '+Z' : plane === 'XZ' ? '−Y' : '+X'}. Use a plane inside the material. Ellipse and spline sections are reported as unsupported.</p>
-      <div className="flex items-center gap-3"><button className={button} disabled={busy !== null || !bodies.length} onClick={() => { void execute('inspect'); }}>Preview section</button>{busy === 'inspect' && <button className={button} onClick={() => pending.current?.abort()}>Cancel section</button>}<span role="status">{busy === 'inspect' ? 'Computing exact section…' : busy === 'send' ? 'Saving CAD and creating CAM project…' : reviewed === requestKey && result ? `${result.contourCount} closed contours · ${result.entities.length} analytic curves` : 'Preview the current plane before sending.'}</span></div>
+      <div className="flex items-center gap-3"><Button className={button} disabled={busy !== null || !bodies.length} onClick={() => { void execute('inspect'); }}>Preview section</Button>{busy === 'inspect' && <Button className={button} onClick={() => pending.current?.abort()}>Cancel section</Button>}<span role="status">{busy === 'inspect' ? 'Computing exact section…' : busy === 'send' ? 'Saving CAD and creating CAM project…' : reviewed === requestKey && result ? `${result.contourCount} closed contours · ${result.entities.length} analytic curves` : 'Preview the current plane before sending.'}</span></div>
       {error && <p role="alert" className="text-destructive">{error}</p>}
       {reviewed === requestKey && result && <CadSectionPreview entities={result.entities} />}
-      <div className="flex items-center justify-between gap-6 border-t border-border pt-3"><p className="text-muted-foreground">Saves CAD, then opens a new detached CAM project in local plane coordinates. Review stock, wire and machining settings in CAM.</p><button className={`${button} shrink-0 bg-primary text-primary-foreground`} disabled={busy !== null || reviewed !== requestKey} onClick={() => { void execute('send'); }}>Send section to CAM</button></div>
+      <div className="flex items-center justify-between gap-6 border-t border-border pt-3"><p className="text-muted-foreground">Saves CAD, then opens a new detached CAM project in local plane coordinates. Review stock, wire and machining settings in CAM.</p><Button className={`${button} shrink-0 bg-primary text-primary-foreground`} disabled={busy !== null || reviewed !== requestKey} onClick={() => { void execute('send'); }}>Send section to CAM</Button></div>
     </div>
   </dialog>;
 }

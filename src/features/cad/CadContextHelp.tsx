@@ -1,6 +1,7 @@
+import { Button } from '@/components/ui/button';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { HelpIcon, CloseIcon } from '@/components/icons';
+import { CloseIcon, HelpIcon } from '@wire-edm/icons-react';
 import { useCadViewToolsVisible } from './CadCommandDock';
 import './cad-context-help.css';
 
@@ -65,13 +66,13 @@ export function CadContextHelp({ label, children, onOpenChange, className = '', 
   }, [shown, pinned]);
   useEffect(() => () => { clearTimer(); if (opened.current) callback.current?.(false); }, []);
   return <span className={`cad-context-help ${className}`}>
-    <button ref={trigger} type="button" className="cad-context-help-trigger" aria-label={buttonLabel ?? `${label} help`} aria-haspopup="dialog" aria-expanded={shown} aria-controls={shown ? id : undefined}
+    <Button ref={trigger} type="button" className="cad-context-help-trigger" aria-label={buttonLabel ?? `${label} help`} aria-haspopup="dialog" aria-expanded={shown} aria-controls={shown ? id : undefined}
       onMouseEnter={() => { clearTimer(); if (activation === 'preview' && !suppressed.current) show(true); }} onMouseLeave={() => { suppressed.current = false; leave(); }}
       onFocus={() => { if (activation === 'preview' && !suppressed.current) show(true); }} onBlur={event => { suppressed.current = false; if (!panel.current?.contains(event.relatedTarget)) leave(); }}
-      onClick={event => { if (!ownerVisible) return; if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}>{triggerContent ?? <HelpIcon size={12} aria-hidden="true" />}</button>
+      onClick={event => { if (!ownerVisible) return; if (pinned) dismiss(); else { keyboardActivation.current = event.detail === 0; suppressed.current = false; setPinned(true); show(true); } }}>{triggerContent ?? <HelpIcon size={12} aria-hidden="true" />}</Button>
     {shown && createPortal(<div ref={panel} id={id} className="cad-context-help-popover" role="dialog" aria-label={`${label} help`} style={position}
       onMouseEnter={clearTimer} onMouseLeave={leave} onBlur={event => { if (!panel.current?.contains(event.relatedTarget) && event.relatedTarget !== trigger.current) leave(); }}>
-      <header><strong>{label}</strong><button type="button" aria-label={`Close ${label} help`} onClick={() => dismiss(true)}><CloseIcon size={12} aria-hidden="true" /></button></header>
+      <header><strong>{label}</strong><Button type="button" aria-label={`Close ${label} help`} onClick={() => dismiss(true)}><CloseIcon size={12} aria-hidden="true" /></Button></header>
       <div className="cad-context-help-content">{children}</div>
     </div>, trigger.current?.closest('dialog') ?? document.body)}
   </span>;

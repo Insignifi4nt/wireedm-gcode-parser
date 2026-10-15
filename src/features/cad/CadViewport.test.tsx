@@ -8,6 +8,10 @@ import { CadViewport } from './CadViewport';
 import type { CadRenderedViewControls } from './cadViewportControls';
 import { prepareCadCurveReferences } from './cadCurveRendering';
 import { CAD_PRINCIPAL_PLANE_REFERENCES, prepareCadViewportReferences, type CadViewportReference } from './cadViewportReferences';
+import { createCadDocument } from '@/domain/cad/cadSchema';
+import { CadSession } from './cadSession';
+import { createCadWorkbenchViewportControls, type CadViewportBindings } from './cadWorkbenchViewport';
+import { cadViewportMetadataToken } from './cadViewportToolReplies';
 
 interface MockRenderer {
   readonly domElement: HTMLCanvasElement;
@@ -61,6 +65,71 @@ async function flushFrame() {
   });
 }
 async function loseContext() { await act(async () => { renderer().lost = true; renderer().domElement.dispatchEvent(new Event('webglcontextlost')); }); }
+
+it('draws clean near-smooth boundaries, retains exact face order and exposes every native edge only in Edge mode without moving the camera', async () => {
+  const a = 8 * Math.PI / 180, s = Math.sin(a), c = Math.cos(a);
+  const source: CadMesh = { ...mesh, featureId: 'fold',
+    positions: [-1,0,0, 0,0,0, 0,1,0, -1,1,0, 0,0,0, c,0,-s, c,1,-s, 0,1,0],
+    normals: [0,0,1, 0,0,1, 0,0,1, 0,0,1, s,0,c, s,0,c, s,0,c, s,0,c],
+    indices: [0,1,2, 0,2,3, 4,5,6, 4,6,7], edges: [0,0,0, 0,1,0, -1,0,0, -1,1,0],
+    faceGroups: [{key:'left',start:0,count:6},{key:'right',start:6,count:6}],
+    edgeGroups: [{key:'seam',start:0,count:2},{key:'boundary',start:2,count:2}], bounds: {min:[-1,0,-s],max:[c,1,0]} };
+  const original = structuredClone(source);
+  const show = async (pickMode: 'body' | 'edge') => act(async () => root.render(<CadViewport meshes={[source]} selectedId="fold" onSelect={vi.fn()} pickMode={pickMode} onControlsReady={value => { controls = value; }} />));
+  const drawnLines = () => {
+    const scene = renderer().render.mock.calls.at(-1)![0], counts: number[] = [];
+    scene.traverse(child => { if (child instanceof LineSegments && child.userData.featureId === 'fold' && child.visible && !Array.isArray(child.material) && child.material.visible) counts.push(child.geometry.getAttribute('position').count); });
+    return counts;
+  };
+  await show('body'); await flushFrame();
+  expect(drawnLines()).toEqual([2]);
+  const before = solidViewState();
+  const scene = renderer().render.mock.calls.at(-1)![0];
+  scene.traverse(child => { if (child instanceof Mesh && child.userData.featureId === 'fold') {
+    expect(Array.from(child.geometry.index!.array)).toEqual(source.indices);
+    expect(child.geometry.getAttribute('normal').getX(1)).toBeCloseTo(Math.sin(4 * Math.PI / 180), 6);
+  } });
+  await show('edge'); await flushFrame(); expect(drawnLines()).toEqual([4]);
+  expect(solidViewState()).toMatchObject({view:before.view,zoom:before.zoom});
+  await show('body'); await flushFrame(); expect(drawnLines()).toEqual([2]);
+  expect(source).toEqual(original);
+});
+
+it('keeps a settled ordinary viewport revision stable through repeated real-Orbit capture without owned depth or areas', async () => {
+  await mount(); await flushFrame();
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const before = currentControls().getState();
+    await act(async () => { await currentControls().capture(new AbortController().signal); });
+    expect(currentControls().getState()).toEqual(before);
+  }
+});
+
+it('publishes actual viewport resizing once, keeps same-size notifications quiet, and rejects capture/token identity after a real midcapture resize', async () => {
+  let resized: ResizeObserverCallback | undefined;
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: ResizeObserverCallback) { resized = callback; } observe() {} disconnect() {} });
+  const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
+  const notify = () => resized?.([], {} as ResizeObserver);
+  await mount(); await flushFrame();
+  const session = new CadSession(createCadDocument('Rendered part', 'rendered_part')), snapshot = session.getSnapshot();
+  const bindings: CadViewportBindings = {
+    document: snapshot.document, documentVersion: snapshot.version, dirty: false, selectedFeatureId: null, selectedProfileId: null,
+    selectedReferencePlane: null, awaitingSketchPlane: false, sketchId: null, curveId: null, workflowOpen: false, busy: false,
+    buildVersion: snapshot.version, buildId: 'build', buildState: 'ready', visibleBodyIds: [], visibleReferenceIds: [], visibleReferencePlanes: [],
+    pickMode: 'body', topologySelection: null, meshes: [mesh], rendered: currentControls(),
+    selectFeature: vi.fn(), selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(),
+    selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: action => action()
+  };
+  const boundary = createCadWorkbenchViewportControls(() => bindings), before = boundary.getState(), token = cadViewportMetadataToken(session, before);
+  await act(async () => notify()); await flushFrame(); expect(boundary.getState()).toEqual(before);
+  await act(async () => { width.mockReturnValue(900); notify(); }); await flushFrame();
+  expect(boundary.getState().view?.revision).toBe((before.view?.revision ?? 0) + 1);
+  expect(cadViewportMetadataToken(session, boundary.getState())).not.toBe(token);
+  const afterResize = boundary.getState(); await act(async () => notify()); await flushFrame(); expect(boundary.getState()).toEqual(afterResize);
+  await act(async () => { await expect(boundary.capture(new AbortController().signal)).resolves.toMatchObject({ viewState: afterResize }); });
+  rasterize.mockImplementationOnce(() => { width.mockReturnValue(1000); notify(); return { dataUrl: 'data:image/png;base64,AA==', width: 900, height: 600, source: '3d' }; });
+  await act(async () => { await expect(boundary.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' }); });
+  expect(boundary.getState().view?.revision).toBe((afterResize.view?.revision ?? 0) + 1); expect(session.getSnapshot()).toEqual(snapshot);
+});
 
 it('fits 3D geometry within current unobscured pixels without reframing when an inspector changes', async () => {
   let area = { left: 0, top: 0, width: 350, height: 600 };

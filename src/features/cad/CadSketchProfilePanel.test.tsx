@@ -33,6 +33,16 @@ async function input(label: string, value: string) {
 }
 function profile(session: CadSession) { const sketch = session.getSnapshot().document.features[0]; if (sketch.kind !== 'sketch') throw new Error('Missing sketch'); return sketch.profiles[0]; }
 describe('explicit sketch intent panel', () => {
+  it('keeps an accepted tiny named width visible in its constraint list and exact through unchanged Apply and Cancel', async () => {
+    const profile: CadSketchProfile = { ...rectangle, constraints: [{ id: 'tiny', kind: 'dimension', quantity: 'width' }],
+      geometry: { kind: 'rectangle', x: 0, y: 0, width: ' size ', height: 20, cornerRadius: 0 } };
+    const { session } = await mount(profile, { size: 4e-7 }), before = session.getSnapshot();
+    expect(container.querySelector('[aria-label="Configure Width dimension"] span')?.textContent).toBe('4e-7 mm');
+    await click('Configure Width dimension'); expect(container.querySelector<HTMLInputElement>('[aria-label="Dimension value"]')?.value).toBe('4e-7');
+    await click('Apply'); expect(session.getSnapshot()).toBe(before);
+    await click('Configure Width dimension'); await click('Cancel'); expect(session.getSnapshot()).toBe(before);
+  });
+
   it('adds an explicit width as one atomic edit, preserving placement and shape metadata', async () => {
     const { session, pending } = await mount(); const before = session.getSnapshot();
     await click('Add dimension'); expect(pending).toHaveBeenLastCalledWith(true);

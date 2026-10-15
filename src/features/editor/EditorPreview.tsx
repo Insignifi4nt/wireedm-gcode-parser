@@ -1,3 +1,5 @@
+import { Tooltip } from '@/components/ui/tooltip';
+import { Select } from '@/components/ui/select';
 import {
   useCallback,
   useEffect,
@@ -7,7 +9,7 @@ import {
   type MouseEvent,
   type TouchEvent
 } from 'react';
-import { CircleCenterIcon, Maximize2, MousePointer2, ZoomIn, ZoomOut } from '@/components/icons';
+import { CircleCenterIcon, Maximize2, MousePointer2, ZoomIn, ZoomOut } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
@@ -932,10 +934,10 @@ export function EditorPreview({
               className="mr-1 flex items-center gap-0.5 border-r border-border pr-1"
               data-editor-preview-mouse-mode-toolbar
             >
-              <button
+              <Button
                 aria-label="Select geometry on canvas"
                 aria-pressed={canvasMouseMode === 'select'}
-                className={`flex size-5 items-center justify-center border text-muted-foreground outline-none transition hover:bg-accent ${
+                className={`flex size-5 items-center justify-center border ${
                   canvasMouseMode === 'select'
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border'
@@ -946,11 +948,11 @@ export function EditorPreview({
                 type="button"
               >
                 <MousePointer2 className="size-3" />
-              </button>
-              <button
+              </Button>
+              <Button
                 aria-label="Place measurement points on canvas"
                 aria-pressed={canvasMouseMode === 'point'}
-                className={`flex size-5 items-center justify-center border text-muted-foreground outline-none transition hover:bg-accent ${
+                className={`flex size-5 items-center justify-center border ${
                   canvasMouseMode === 'point'
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border'
@@ -961,7 +963,7 @@ export function EditorPreview({
                 type="button"
               >
                 <CircleCenterIcon className="size-3" />
-              </button>
+              </Button>
             </div>
           )}
           <Button
@@ -975,9 +977,9 @@ export function EditorPreview({
           >
             <ZoomOut />
           </Button>
-          <span className="min-w-10 text-center" title="Preview zoom">
+          <Tooltip content="Preview zoom"><span tabIndex={0} className="min-w-10 text-center" >
             {zoomPercent}%
-          </span>
+          </span></Tooltip>
           <Button
             aria-label="Zoom preview in"
             disabled={zoom >= MAX_PREVIEW_ZOOM}
@@ -1005,15 +1007,15 @@ export function EditorPreview({
       {pathDocument && <div className="flex h-7 min-w-0 items-center gap-3 overflow-hidden border-b border-border px-2 text-[10px] text-muted-foreground" data-preview-selection-tools>
         {selectionEnabled ? <>
         <label className="flex items-center gap-1">Pick
-          <select aria-label="Canvas selection filter" className="h-5 border border-border bg-background px-1 text-foreground" value={selectionFilter}
+          <Select density="compact" aria-label="Canvas selection filter" className="h-5 px-1" value={selectionFilter}
             onChange={(event) => {
               const filter = PREVIEW_SELECTION_FILTERS.find((candidate) => candidate.value === event.target.value);
               if (filter) { setSelectionFilter(filter.value); setOverlapCandidates([]); }
             }}>
             {PREVIEW_SELECTION_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
-          </select>
+          </Select>
         </label>
-        <span className="truncate" title="Alt-click cycles overlaps. Drag selects one contour or segment. Use Geometry for exact selection.">Alt-click cycles overlaps. Drag selects one contour or segment. Use Geometry for exact selection.</span>
+        <Tooltip content="Alt-click cycles overlaps. Drag selects one contour or segment. Use Geometry for exact selection."><span tabIndex={0} className="truncate" >Alt-click cycles overlaps. Drag selects one contour or segment. Use Geometry for exact selection.</span></Tooltip>
         </> : <span className="truncate">{measurement ? 'Measure source points and the gap between picked edges.' : 'Follow the active tool instructions. Shift-drag pans the canvas.'}</span>}
       </div>}
       {selectionEnabled && overlapCandidates.length > 1 && <div className="pointer-events-none absolute bottom-2 left-2 z-10 border border-border bg-background/90 px-2 py-1 text-[10px] text-cyan-200" role="status" data-preview-overlap-selection>
@@ -1406,7 +1408,7 @@ export function EditorPreview({
                   x={handle.center.x}
                   y={svgY}
                 >
-                  CENTER
+                  Center
                 </text>
               </g>
             );
@@ -1548,7 +1550,7 @@ export function EditorPreview({
                 x={constructionPreview.targetPoint.x}
                 y={flipY - constructionPreview.targetPoint.y}
               >
-                {constructionPreview.mode === 'perpendicular' ? 'PERP' : 'TAN'}
+                {constructionPreview.mode === 'perpendicular' ? 'Perp.' : 'Tangent'}
               </text>
             </g>
           )}
@@ -1626,7 +1628,7 @@ export function EditorPreview({
                 x={startPreview.point.x}
                 y={flipY - startPreview.point.y}
               >
-                {startPreview.inferenceRelation.replace('-', ' ').toUpperCase()}
+                {startPreview.inferenceRelation.charAt(0).toUpperCase() + startPreview.inferenceRelation.slice(1).replaceAll('-', ' ')}
               </text>
             </g>
           )}
@@ -1671,7 +1673,7 @@ export function EditorPreview({
                 fill="#fbbf24" fontSize={measurementDisplayScale * 9} fontWeight="bold">Ⅱ</text>
               <text x={stop.point.x + measurementDisplayScale * 9} y={flipY - stop.point.y + measurementDisplayScale * 14}
                 fill="#fde68a" fontSize={measurementTextSize} paintOrder="stroke" stroke="#020617"
-                strokeWidth={measurementTextSize * 0.25}>STOP</text>
+                strokeWidth={measurementTextSize * 0.25}>Stop</text>
             </g>)}
           </g>
           <g data-preview-spatial-actions pointerEvents={actionSelectionEnabled ? undefined : 'none'}>
@@ -1721,7 +1723,7 @@ export function EditorPreview({
                     y={flipY - point.y + measurementDisplayScale * 14}
                     fill={color} fontSize={measurementDisplayScale * 10}
                     paintOrder="stroke" stroke="#020617" strokeWidth={measurementDisplayScale * 2}
-                    pointerEvents="none">{group.length > 1 ? `${group.length} pauses` : generated ? 'RETHREAD' : emitted ? 'PAUSE' : 'STOP'}</text>
+                    pointerEvents="none">{group.length > 1 ? `${group.length} pauses` : generated ? 'Rethread' : emitted ? 'Pause' : 'Stop'}</text>
                 </g>
                 {expanded && group.map((action, index) => <g key={action.key}
                   className="cursor-pointer" onClick={(event) => {

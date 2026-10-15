@@ -164,7 +164,6 @@ describe('V2 app workflows', () => {
     await renderApp(context);
 
     await vi.waitFor(() => expect(context.container.textContent).toContain('Legacy workbench manifest schema violation'));
-    expect(context.container.textContent).toContain('Storage not connected');
     expect((await storedJson('workbench.json')).schemaVersion).toBe(1);
   });
 

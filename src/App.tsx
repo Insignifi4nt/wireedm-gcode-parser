@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CadSession, hasCadDraftContent } from '@/features/cad/cadSession';
 import { useCadController } from '@/features/cad/useCadController';
@@ -100,7 +101,7 @@ export default function App({ services }: AppProps = {}) {
       {app.dxfReimportStatus === 'importing' && !app.pendingDxfReimport && (
         <div className="fixed left-1/2 top-14 z-50 flex -translate-x-1/2 items-center gap-3 border border-border bg-background p-3 text-xs" role="status">
           Preparing DXF unit review…
-          <button className="border border-border px-2 py-1" onClick={app.handleCancelDxfReimport} type="button">Cancel DXF preparation</button>
+          <Button variant="outline" className="px-2 py-1" onClick={app.handleCancelDxfReimport} type="button">Cancel DXF preparation</Button>
         </div>
       )}
       {app.workbenchStatus === 'error' && !app.connectedWorkbench ? (

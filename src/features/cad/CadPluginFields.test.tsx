@@ -290,7 +290,7 @@ describe('correlated plugin configuration', () => {
     const profile = createCadPluginProfile(plugin);
     await act(async () => root.render(<CadPluginFields profile={profile} parameters={{}} onChange={vi.fn()} />));
     expect(field('Inner radius').disabled).toBe(true); expect(field('Inner radius').value).toBe('20');
-    expect(field('Inner radius').title).toContain('Editing locked by a plugin condition');
+    expect(field('Inner radius').getAttribute('aria-description')).toContain('Editing locked by a plugin condition');
     expect(inspectCadPluginProfile(profile, {}).values.innerRadius).toBe(20);
   });
 });

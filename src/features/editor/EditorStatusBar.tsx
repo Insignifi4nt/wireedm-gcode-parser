@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import type { PhysicalMachineFitResult } from '@/domain/machine-definition/machineFit';
 
 interface EditorStatusBarProps {
@@ -49,15 +50,15 @@ export function EditorStatusBar({
         {coordinateUnits && <> <span data-editor-status-units>{coordinateUnits}</span></>}
       </span>
       {diagnosticCount > 0 && (
-        <button
-          className="text-amber-200 underline decoration-amber-200/40 underline-offset-2 hover:decoration-amber-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring"
+        <Button
+          className="text-amber-200 underline decoration-amber-200/40 underline-offset-2 hover:decoration-amber-200"
           data-editor-status-diagnostics
           onClick={onOpenDiagnostics}
           title="Open diagnostics"
           type="button"
         >
           Diagnostics {diagnosticCount}
-        </button>
+        </Button>
       )}
       {fitWarning && (
         <span className="min-w-0 break-words text-amber-200" data-editor-status-machine-fit role="status">

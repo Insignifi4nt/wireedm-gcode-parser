@@ -1,6 +1,6 @@
 # Wire EDM icon standard
 
-Status: the 134-icon set is integrated against CAD checkpoint `6e2113f` and reviewed in the actual app by Luna subagents. The PR targets `feature/parametric-cad-workbench`. The [final handoff](icon-final-handoff.md) records the concrete assets, source-purpose mapping and validation. App release 0.0.698 follows CAD 0.0.697.
+Status: the 134-icon set is integrated with merged main `bfac856` as the workspace package `@wire-edm/icons-react`, independently versioned at 0.1.0. App release 0.0.698 follows merged CAD 0.0.697. Earlier drawing and source-purpose reviews remain in the [handoff](icon-final-handoff.md); package exports and usage are in [its README](../../packages/icons-react/README.md). PR #13 now follows main.
 
 ## Target
 
@@ -50,7 +50,7 @@ The favicon is the one color-policy exception. It wraps the same `wire-edm-mark`
 
 ## Usage
 
-Use a semantic named export such as `PadIcon`, `PocketIcon` or `GeometryIcon` from `@/components/icons`. Dynamic renderers accept `WorkbenchIconComponent`; persisted feature-kind maps remain exhaustive. Alternatively use `WorkbenchIcon` with the typed `name` union. An existing component-name alias is useful for generic actions, but overloaded names such as `Box`, `Spline`, `Copy` and `Scan` need a semantic decision at their call site.
+Use semantic named exports such as `PadIcon`, `PocketIcon` and `GeometryIcon` from `@wire-edm/icons-react`. Individual drawings are available from `@wire-edm/icons-react/icons/pad` and corresponding entries. Dynamic renderers accept `WorkbenchIconComponent`; feature-kind maps remain exhaustive. The explicit `/dynamic` entry supplies `WorkbenchIcon` with a typed `name` union, and `/catalog` exposes full metadata. Named imports do not retain that catalog. Compatibility aliases remain available for generic actions; overloaded names such as `Box`, `Spline`, `Copy` and `Scan` still need a semantic decision at their call site.
 
 The owning button supplies size, color, hover, selection, disabled state, labels and tooltip. Normal glyphs use the standard 1.75 stroke; do not thin individual toolbars. SVG assets are available in `src/assets/icons/`, and the generated manifest supplies ID, label, category, aliases and file name. Paths are shared exactly with the TypeScript catalog.
 

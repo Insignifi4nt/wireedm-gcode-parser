@@ -364,7 +364,7 @@ describe('EditorPage UPID draft boundary', () => {
       'button[aria-label="Save active document"]'
     ) as HTMLButtonElement | null;
     expect(projectSave?.disabled).toBe(true);
-    expect(projectSave?.title).toBe(
+    expect(projectSave?.getAttribute('aria-description')).toBe(
       'Apply or discard Transform Geometry before saving the project.'
     );
     await act(async () => projectSave?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
@@ -1698,7 +1698,9 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     expect(container.querySelector('[data-upid-start-inference="midpoint"]')).not.toBeNull();
-    expect(container.querySelector('[data-upid-start-preview-label]')?.textContent).toBe('MIDPOINT');
+    const candidate = container.querySelector('[data-upid-start-preview-point]');
+    expect(Number(candidate?.getAttribute('cx'))).toBe(5);
+    expect(Number(candidate?.getAttribute('cy'))).toBe(0);
     const midpointGuide = container.querySelector('[data-upid-start-inference-guide]');
     expect(midpointGuide).not.toBeNull();
     expect(midpointGuide?.getAttribute('stroke-width')).toBe('2.5');
@@ -2113,7 +2115,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(exportCommand.getAttribute('aria-disabled')).toBe('true');
     await act(async () => exportCommand.click());
     expect(container.querySelector('[data-editor-export-preview]')).toBeNull();
-    expect(exportCommand.title).toContain('Wait for the current file action');
+    expect(exportCommand.getAttribute('aria-description')).toContain('Wait for the current file action');
   });
 
   it('guards Back only after the active path draft is modified', async () => {
@@ -2721,17 +2723,23 @@ describe('EditorPage UPID draft boundary', () => {
     const endpointSelect = endpointRow?.querySelector(
       'button[data-upid-point-select]'
     ) as HTMLButtonElement | null;
-    const helpId = endpointSelect?.getAttribute('aria-describedby');
+    await act(async () => endpointSelect?.focus());
+    const helpIds = endpointSelect?.getAttribute('aria-describedby')?.split(/\s+/) ?? [];
+    const helpId = helpIds.find(id => id.startsWith('upid-endpoint-help-'));
 
-    expect(helpId).not.toBeNull();
-    expect(helpId ?? '').toMatch(/^upid-endpoint-help-/);
+    expect(helpId).toBeTruthy();
     expect(endpointRow?.querySelectorAll('button')).toHaveLength(1);
-    expect(endpointSelect?.getAttribute('title')).toContain('start endpoint of segment 1');
+    expect(endpointSelect?.getAttribute('aria-description')).toContain('start endpoint of segment 1');
 
-    const help = helpId ? container.querySelector(`#${helpId}`) : null;
+    const help = helpId ? document.getElementById(helpId) : null;
     expect(help?.getAttribute('data-upid-point-help')).toBe('start');
     expect(help?.textContent).toContain('Endpoint cluster');
     expect(help?.textContent).toContain('0.000, 0.000');
+    const tooltip = helpIds.map(id => document.getElementById(id))
+      .find(element => element?.getAttribute('role') === 'tooltip');
+    expect(tooltip?.textContent).toContain('start endpoint of segment 1');
+    expect(tooltip?.textContent).toContain('Endpoint cluster');
+    expect(tooltip?.textContent).toContain('0.000, 0.000');
 
   });
 
@@ -3674,7 +3682,10 @@ describe('EditorPage UPID draft boundary', () => {
     const segmentId = firstSegmentRow?.getAttribute('data-upid-segment-id');
     expect(segmentId).toBeTruthy();
 
-    await clickElement('input[aria-label="Toggle canvas hover assist"]');
+    const hoverAssist = container.querySelector('[role="menuitemcheckbox"][data-upid-hover-assist-toggle]');
+    expect(hoverAssist?.getAttribute('aria-checked')).toBe('false');
+    await clickElement('button[role="menuitemcheckbox"][data-upid-hover-assist-toggle]');
+    expect(hoverAssist?.getAttribute('aria-checked')).toBe('true');
     await clickElement('button[aria-label="Collapse Exterior 1"]');
     const contourGroup = container.querySelector('[data-upid-contour-group="contour_0001"]');
     expect(contourGroup?.getAttribute('data-upid-expanded')).toBe('false');

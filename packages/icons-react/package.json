@@ -1,0 +1,37 @@
+{
+  "name": "@wire-edm/icons-react",
+  "version": "0.1.0",
+  "description": "Original Wire EDM icons for React, with independent tree-shakeable icon modules.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./icons/*": { "types": "./dist/icons/*.d.ts", "import": "./dist/icons/*.js" },
+    "./dynamic": { "types": "./dist/dynamic.d.ts", "import": "./dist/dynamic.js" },
+    "./catalog": { "types": "./dist/catalog.d.ts", "import": "./dist/catalog.js" },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "check:generated": "node scripts/generate.mjs --check",
+    "build": "node scripts/build.mjs",
+    "test": "npm run build && node --test test/runtime.test.mjs",
+    "check:package": "npm run build && node scripts/check-package.mjs",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": { "react": "^18.2.0 || ^19.0.0" },
+  "devDependencies": {
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "esbuild": "^0.28.2",
+    "jsdom": "^29.1.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "typescript": "^5.7.2"
+  }
+}

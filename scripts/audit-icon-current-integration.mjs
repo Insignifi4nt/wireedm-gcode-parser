@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
+import { iconSource } from './icon-source.mjs';
+import * as iconComponents from '@wire-edm/icons-react';
 
 const root = process.cwd();
 const baselinePath = path.join(root, 'docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json');
@@ -11,7 +13,7 @@ const integration = JSON.parse(readFileSync(path.join(root, 'docs/design/icon-in
 const intendedByUse = new Map(integration.directUsages.map(row=>[row.usageId,row.replacements]));
 const normalizeAttribute = value => value.startsWith('{') && value.endsWith('}') ? compact(value.slice(1,-1)) : value.startsWith('"') ? JSON.parse(value) : value;
 const baseline = { imports:JSON.parse(readFileSync(path.join(root,'docs/design/icon-usage-scout.json'),'utf8')).imports,
-  occurrences:published.occurrences.map(row=>({
+  occurrences:published.occurrences.filter(row=>row.id!=='use.78943e173e76').map(row=>({
     ...row, importedAlias:row.alias, objectProperty:row.mapProperty,
     usageForm:row.kind==='jsx-icon'?'jsx-component':row.kind==='map-binding'?'object-property-value':row.callName?'call-argument':'reference',
     context:row.call || row.containerText || row.expression,
@@ -22,11 +24,9 @@ const baseline = { imports:JSON.parse(readFileSync(path.join(root,'docs/design/i
   })),
   dynamicSlots:published.dynamicSlots.map(row=>({...row, renderer:row.tag, mapName:row.variable, mapPropertyExpression:row.expression})),
 };
-const iconIndexPath = path.join(root, 'src/components/icons/index.ts');
-const iconIndex = readFileSync(iconIndexPath, 'utf8');
-const iconCatalogSource = readFileSync(path.join(root, 'src/components/icons/iconCatalog.ts'), 'utf8');
-const catalogIds = new Set([...iconCatalogSource.matchAll(/^  "([^"]+)": \{/gm)].map(match => match[1]));
-const exportedIds = new Map([...iconIndex.matchAll(/export const (\w+) = makeIcon\('([^']+)'\);/g)].map(match => [match[1], match[2]]));
+// The former header storage badge was explicitly removed in main bfac856.
+const catalogIds = new Set(iconSource.map(entry=>entry.id));
+const exportedIds = new Map(iconSource.flatMap(entry=>[...entry.aliases,entry.id.split('-').map(word=>word[0].toUpperCase()+word.slice(1)).join('')+'Icon'].filter(name=>name in iconComponents).map(name=>[name,entry.id])));
 const walk = dir => readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
   const file = path.join(dir, entry.name);
   return entry.isDirectory() ? walk(file) : [file];
@@ -77,14 +77,14 @@ for (const file of files) {
   for (const statement of sf.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
     const source = statement.moduleSpecifier.text;
-    if (!['@/components/icons', 'lucide-react'].includes(source)) continue;
+    if (!['@wire-edm/icons-react', '@/components/icons', 'lucide-react'].includes(source)) continue;
     const bindings = statement.importClause?.namedBindings;
     if (!bindings || !ts.isNamedImports(bindings)) continue;
     for (const item of bindings.elements) {
       if (item.isTypeOnly || statement.importClause?.isTypeOnly) continue;
       const imported = (item.propertyName ?? item.name).text;
       const localName = item.name.text;
-      const id = source === '@/components/icons' ? exportedIds.get(imported) ?? null : (baseline.imports.find(entry => entry.importedAlias === imported)?.candidateCatalogIds?.length === 1 ? baseline.imports.find(entry => entry.importedAlias === imported).candidateCatalogIds[0] : null);
+      const id = source !== 'lucide-react' ? exportedIds.get(imported) ?? null : (baseline.imports.find(entry => entry.importedAlias === imported)?.candidateCatalogIds?.length === 1 ? baseline.imports.find(entry => entry.importedAlias === imported).candidateCatalogIds[0] : null);
       locals.set(localName, { source, imported, localName, id });
       currentImports.push({ file: slash(file), source, imported, localName, id });
     }
@@ -204,7 +204,8 @@ const report = {
   currentUsageByCatalogId: Object.fromEntries([...new Set(currentUses.map(use => use.catalogId))].sort().map(id => [id, currentUses.filter(use => use.catalogId === id).length])),
   cadFeatureKindMap: cadMap,
   dynamicSlots: dynamicSlotAudit,
-  newlyAddedCurrentReferences: unmatchedCurrent.map(use => ({ file: use.file, line: use.line, symbol: use.importedSymbol, catalogId: use.catalogId, context: use.context, note: 'Additional current icon reference with no original Lucide component occurrence; currently replaces the two Unicode topology disclosure arrows.' })),
+  retiredSourceReferences: [{id:'use.78943e173e76',reason:'The shared header storage badge was removed by the user in main bfac856; storage remains in settings.'}],
+  newlyAddedCurrentReferences: unmatchedCurrent.map(use => ({ file: use.file, line: use.line, symbol: use.importedSymbol, catalogId: use.catalogId, context: use.context, note: 'Current package reference added after the frozen checkpoint or replacing a recorded text glyph.' })),
   occurrences: occurrenceAudit,
   unresolved,
   unmatchedCurrent: unmatchedCurrent.map(use => ({ file: use.file, line: use.line, symbol: use.importedSymbol, catalogId: use.catalogId, context: use.context })),

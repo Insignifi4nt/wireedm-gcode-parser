@@ -27,9 +27,10 @@ describe('App front-end redesign', () => {
     await renderApp(context);
 
     expect(container.textContent).toContain('Workbench');
-    expect(container.textContent).toContain('Import DXF as Path Project');
-    expect(container.textContent).toContain('Open Machine Program');
-    expect(container.textContent).toContain('.gcode, .nc, .iso, .txt');
+    expect(container.querySelector('button[aria-label="Import DXF as Path Project"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Open Machine Program"]')).not.toBeNull();
+    const programInput = container.querySelector<HTMLInputElement>('input[aria-label="Machine program file"]');
+    expect(programInput?.accept.split(',')).toEqual(expect.arrayContaining(['.gcode', '.nc', '.iso', '.txt']));
     expect(container.textContent).toContain('Program workspace');
     expect(container.textContent).not.toContain('Export preview only');
   });
@@ -62,13 +63,12 @@ describe('App front-end redesign', () => {
     expect(dialog?.querySelector('textarea[aria-label="Header template"]')).toBeNull();
   });
 
-  it('shows active browser storage in the application header', async () => {
+  it('shows active browser storage in settings', async () => {
     window.showDirectoryPicker = undefined;
     await renderApp(context);
 
-    const status = container.querySelector('[data-app-header] [data-storage-status]');
-    expect(status?.textContent).toBe('Browser cache active');
-    expect(status?.getAttribute('role')).toBe('status');
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Open settings"]')?.click(); });
+    expect(container.querySelector('[role="dialog"][aria-label="Workbench settings"]')?.textContent).toContain('Browser cache active');
   });
 
   it('does not report temporary storage before a workbench adapter is active', async () => {
@@ -76,8 +76,9 @@ describe('App front-end redesign', () => {
       connectRememberedWorkbenchDirectory: () => new Promise<never>(() => undefined)
     });
 
-    const status = container.querySelector('[data-app-header] [data-storage-status]');
-    expect(status?.textContent).toContain('Connecting Workbench Folder');
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Open settings"]')?.click(); });
+    const status = container.querySelector('[role="dialog"][aria-label="Workbench settings"]');
+    expect(status?.textContent).toContain('Connecting');
     expect(status?.textContent).not.toContain('Temporary storage');
   });
 
@@ -190,12 +191,12 @@ describe('App front-end redesign', () => {
     ) as HTMLInputElement | null;
     const buttons = [...container.querySelectorAll('button')];
     const dxfButton = buttons.find((button) =>
-      button.textContent?.includes('Import DXF as Path Project')
+      button.getAttribute('aria-label') === 'Import DXF as Path Project'
     );
     const programButton = buttons.find((button) =>
-      button.textContent?.includes('Open Machine Program')
+      button.getAttribute('aria-label') === 'Open Machine Program'
     );
-    const editorButton = buttons.find((button) => button.textContent?.includes('Open Editor'));
+    const editorButton = buttons.find((button) => button.getAttribute('aria-label') === 'Open Editor');
 
     expect(input).not.toBeNull();
     expect(dxfButton).toBeDefined();

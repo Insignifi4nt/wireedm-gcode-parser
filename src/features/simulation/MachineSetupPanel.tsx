@@ -1,5 +1,8 @@
+import { Tooltip } from '@/components/ui/tooltip';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Check, LoaderCircle, Upload, X } from '@/components/icons';
+import { Check, LoaderCircle, Upload, X } from '@wire-edm/icons-react';
 import { MACHINE_IMPORT_LIMITS, validMachinePlacement, type MachineImportProgress, type MachineModel } from '@/domain/simulation/machine-import';
 import { importMachineModel } from './machine-import/importMachineModel';
 import { MACHINE_IMPORT_THIRD_PARTY } from './machine-import/thirdPartyNotices';
@@ -95,33 +98,33 @@ export function MachineSetupPanel({ machine, placement, onMachineChange, onPlace
   }
 
   return <section className="sim-section" aria-label="Machine model setup">
-    <input ref={fileInput} type="file" accept=".step,.stp" hidden aria-label="Machine STEP file" onChange={event => {
+    <Input ref={fileInput} type="file" accept=".step,.stp" hidden aria-label="Machine STEP file" onChange={event => {
       const file = event.target.files?.[0];
       event.target.value = '';
       if (file) void loadMachine(file);
     }} />
     {importProgress
-      ? <div className="sim-import-progress" role="status"><LoaderCircle className="animate-spin" size={14} /><span>{importProgress}</span><button type="button" aria-label="Cancel STEP import" onClick={cancelImport}><X size={13} /></button></div>
-      : <button className="sim-import" type="button" onClick={() => fileInput.current?.click()}><Upload size={14} />{machine ? 'Replace STEP model' : 'Import STEP model'}<span>≤{MACHINE_IMPORT_LIMITS.fileBytes / (1024 * 1024)} MB</span></button>}
+      ? <div className="sim-import-progress" role="status"><LoaderCircle className="animate-spin" size={14} /><span>{importProgress}</span><Button type="button" aria-label="Cancel STEP import" onClick={cancelImport}><X size={13} /></Button></div>
+      : <Button variant="outline" size="md" className="sim-import" type="button" onClick={() => fileInput.current?.click()}><Upload size={14} />{machine ? 'Replace STEP model' : 'Import STEP model'}<span>≤{MACHINE_IMPORT_LIMITS.fileBytes / (1024 * 1024)} MB</span></Button>}
     {importError && <p className="sim-error" role="alert">{importError}</p>}
     {machine && <div className="sim-machine">
-      <div><strong title={machine.name}>{machine.name}</strong><button type="button" aria-label="Remove machine model" onClick={() => {
+      <div><Tooltip content={machine.name}><strong tabIndex={0} >{machine.name}</strong></Tooltip><Button type="button" aria-label="Remove machine model" onClick={() => {
         cancelImport();
         setImportError('');
         onMachineChange(null);
-      }}><X size={13} /></button></div>
+      }}><X size={13} /></Button></div>
       <span>{machine.meshes.length} meshes · {machine.triangleCount.toLocaleString()} triangles · mm</span>
       <details className="sim-details"><summary>Align machine model</summary>
         <form onSubmit={applyAlignment}>
           <div className="sim-fields-grid">{placementKeys.map(key => <label key={key}>
             <span>{key === 'rotation' ? 'Rotate Z · °' : `Offset ${key.toUpperCase()}`}</span>
-            <input aria-label={`Machine ${key}`} name={key} type="text" inputMode="decimal" value={draft[key]} onChange={event => {
+            <Input aria-label={`Machine ${key}`} name={key} type="text" inputMode="decimal" value={draft[key]} onChange={event => {
               const value = event.target.value;
               setDraft(current => ({ ...current, [key]: value }));
             }} />
           </label>)}</div>
           {alignmentError && <p className="sim-error" role="alert">{alignmentError}</p>}
-          <button className="sim-apply" type="submit"><Check size={13} />Apply alignment</button>
+          <Button variant="primary" size="md" className="sim-apply" type="submit"><Check size={13} />Apply alignment</Button>
         </form>
       </details>
     </div>}

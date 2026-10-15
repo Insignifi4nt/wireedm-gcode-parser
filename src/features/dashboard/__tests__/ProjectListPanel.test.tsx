@@ -160,7 +160,9 @@ describe('ProjectListPanel', () => {
     expect(visible()).toEqual(['Open project c in editor', 'Open project a in editor']);
     await select('Project sort', 'name-asc');
     expect(visible()).toEqual(['Open project a in editor', 'Open project c in editor']);
+    await act(async () => button('Search projects').click());
     const search = container.querySelector<HTMLInputElement>('[aria-label="Search projects"]')!;
+    expect(document.activeElement).toBe(search);
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, ' BETA ');
       search.dispatchEvent(new Event('input', { bubbles: true }));
@@ -168,6 +170,15 @@ describe('ProjectListPanel', () => {
     expect(visible()).toEqual([]);
     await select('Project source filter', 'all');
     expect(visible()).toEqual(['Open project b in editor']);
+    await act(async () => search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(button('Search projects'));
+    expect(search.value).toBe('');
+    expect(visible()).toHaveLength(3);
+    await act(async () => {
+      button('Search projects').click();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, ' BETA ');
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     await select('Project source filter', 'dxf');
     await act(async () => [...container.querySelectorAll('button')].find((item) => item.textContent === 'Clear filters')!.click());
     expect(visible()).toEqual(['Open project a in editor', 'Open project b in editor', 'Open project c in editor']);

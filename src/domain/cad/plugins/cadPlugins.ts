@@ -221,7 +221,7 @@ function inspectAndGenerateProfile(profile: CadPluginProfile, parameters: Readon
         const enabled = !rule.enabledWhen || pluginCondition(rule.enabledWhen, values);
         fields[index] = { ...fields[index], minimum, maximum, enabled };
         if (enabled && minimum > maximum) issues.push(`No valid range for ${rule.name} with these parameters.`);
-        if (enabled && (values[rule.name] < minimum || values[rule.name] > maximum)) issues.push(`${plugin.inputs.find(input => input.name === rule.name)?.label ?? rule.name} must be between ${Number(minimum.toFixed(6))} and ${Number(maximum.toFixed(6))}.`);
+        if (enabled && (values[rule.name] < minimum || values[rule.name] > maximum)) issues.push(`${plugin.inputs.find(input => input.name === rule.name)?.label ?? rule.name} must be between ${minimum} and ${maximum}.`);
         if (enabled && rule.choices && !rule.choices.some(choice => choice.value === values[rule.name])) issues.push(`${rule.name} must use one of its declared choices.`);
       }
       for (const constraint of plugin.rules.constraints) if (!pluginCondition(constraint, values)) issues.push(constraint.message);

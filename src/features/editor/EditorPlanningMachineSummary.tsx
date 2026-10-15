@@ -1,3 +1,4 @@
+import { Tooltip } from '@/components/ui/tooltip';
 import type { MachineDefinition } from '@/domain/machine-definition/machineDefinition';
 import type { PhysicalMachineFitResult } from '@/domain/machine-definition/machineFit';
 
@@ -10,9 +11,9 @@ export function EditorPlanningMachineSummary({ machine, result }: {
     <div className="grid gap-2">
       <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
         <dt className="text-muted-foreground">Planning ref.</dt>
-        <dd className="truncate" data-editor-machine="definition" title={machine?.name}>
+        <Tooltip content={machine?.name}><dd tabIndex={0} className="truncate" data-editor-machine="definition" >
           {machine?.name ?? 'Not selected'}
-        </dd>
+        </dd></Tooltip>
         {result?.ok && <>
           <dt className="text-muted-foreground">Source span</dt>
           <dd>{result.fit.bounds.xSpanMm.toFixed(3)} × {result.fit.bounds.ySpanMm.toFixed(3)} mm</dd>

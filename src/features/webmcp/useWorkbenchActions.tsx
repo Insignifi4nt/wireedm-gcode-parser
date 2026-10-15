@@ -1,3 +1,4 @@
+import { Tooltip } from '@/components/ui/tooltip';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Type, type Static, type TSchema } from '@sinclair/typebox';
 import type { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
@@ -326,7 +327,7 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     if (!current || current.revisionId !== id) throw new ToolError('NOT_FOUND', 'This page has no generated artifact with that ID. Read edm_workflow_context.');
     return current;
   }
-  const previewControl = capture && <a className="px-2 text-xs text-muted-foreground underline" href={capture.previewUrl} download={capture.fileName} title={`Download captured ${capture.source.toUpperCase()} preview (${capture.contentSource === 'saved-project' ? 'saved project' : capture.dirty ? 'unsaved draft' : 'saved draft'})`}>Preview PNG</a>;
+  const previewControl = capture && <Tooltip content={`Download captured ${capture.source.toUpperCase()} preview (${capture.contentSource === 'saved-project' ? 'saved project' : capture.dirty ? 'unsaved draft' : 'saved draft'})`}><a className="px-2 text-xs text-muted-foreground underline" href={capture.previewUrl} download={capture.fileName} >Preview PNG</a></Tooltip>;
   return { tools, previewControl, isBusy };
 }
 

@@ -1,3 +1,4 @@
+import { Tooltip } from '@/components/ui/tooltip';
 import { useCallback, useLayoutEffect, useRef, type HTMLAttributes, type KeyboardEvent, type PointerEvent } from 'react';
 
 interface RailResizeHandleProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'onKeyDown' | 'onPointerDown' | 'role'> {
@@ -68,7 +69,7 @@ export function RailResizeHandle({ label, side, width, minWidth, maxWidth, onWid
     try { element.setPointerCapture?.(pointerId); } catch { /* Capture may be unavailable for this input device. */ }
   }
 
-  return <div
+  return <Tooltip content={`${label}: arrow keys move the divider; Shift moves one pixel; Home/End set width limits`}><div
     {...attributes}
     aria-label={label}
     aria-orientation="vertical"
@@ -81,6 +82,6 @@ export function RailResizeHandle({ label, side, width, minWidth, maxWidth, onWid
     onPointerDown={handlePointerDown}
     role="separator"
     tabIndex={0}
-    title={`${label}: arrow keys move the divider; Shift moves one pixel; Home/End set width limits`}
-  />;
+
+  /></Tooltip>;
 }

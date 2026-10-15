@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import type { EditorMutatingWorkflowSession } from './workflows/editorWorkflowSession';
 
 interface EditorWorkflowActionsProps {
@@ -7,22 +8,20 @@ interface EditorWorkflowActionsProps {
   onClose: () => void;
 }
 
-const secondaryButton = 'h-7 border border-border px-2 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring';
-
 /** Applying commits an undo step to the editor draft; only the header Save persists it. */
 export function EditorWorkflowActions({ workflow, readOnly, onApply, onClose }: EditorWorkflowActionsProps) {
   const availability = workflow.saveAvailability;
   return (
     <div className="mt-3 border-t border-border pt-2" data-editor-workflow-actions={workflow.commandId}>
       {readOnly && !workflow.dirty ? (
-        <button
+        <Button variant="outline" size="md"
           aria-label={`Close ${workflow.label} workflow`}
-          className={`${secondaryButton} w-full`}
+          className="w-full"
           onClick={onClose}
           type="button"
         >
           Close
-        </button>
+        </Button>
       ) : (
         <>
           {!availability.enabled && (
@@ -34,19 +33,19 @@ export function EditorWorkflowActions({ workflow, readOnly, onApply, onClose }: 
             Apply updates the draft. Save the project to keep it.
           </p>
           <div className="grid grid-cols-2 gap-1">
-            <button aria-label={`Cancel ${workflow.label} workflow`} className={secondaryButton} onClick={onClose} type="button">
+            <Button variant="outline" size="md" aria-label={`Cancel ${workflow.label} workflow`} onClick={onClose} type="button">
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button variant="primary" size="md"
               aria-label={`Apply ${workflow.label} workflow`}
-              className="h-7 border border-primary bg-primary px-2 text-[10px] text-primary-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-45"
+              className="px-2"
               disabled={!availability.enabled}
               onClick={onApply}
               title={availability.enabled ? `Apply ${workflow.label} to the editor draft` : availability.reason}
               type="button"
             >
               Apply
-            </button>
+            </Button>
           </div>
         </>
       )}

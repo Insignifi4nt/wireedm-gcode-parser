@@ -1,5 +1,6 @@
+import { Input } from '@/components/ui/input';
 import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
-import { X } from '@/components/icons';
+import { X } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import { useModalFocus } from '@/components/ui/useModalFocus';
@@ -119,27 +120,27 @@ export function ProjectActionDialog({
                 : 'Moves this project to Archive. Its files and saved revisions remain in this workbench and can be restored.'}
             </p>
           </div>
-          <button
+          <Button variant="outline" size="icon"
             aria-label={`Close ${kind} dialog`}
-            className="flex size-7 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+            className="flex size-7 shrink-0 items-center justify-center"
             onClick={dismiss}
             disabled={busy}
             type="button"
           >
             <X className="size-4" />
-          </button>
+          </Button>
         </div>
 
         <div className="grid gap-2">
           {isRename ? (
             <label className="grid gap-1 font-mono text-[11px] text-muted-foreground">
               Project name
-              <input
+              <Input
                 ref={nameRef}
                 aria-label="Project name"
                 aria-invalid={Boolean(nameError)}
                 aria-describedby={nameError ? 'project-name-error' : undefined}
-                className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+                className="h-8 px-2 font-mono text-[11px]"
                 disabled={isSaving || interactionLocked}
                 onChange={(event) => setName(event.currentTarget.value)}
                 value={name}
@@ -163,10 +164,10 @@ export function ProjectActionDialog({
         )}
 
         <div className="flex items-center justify-end gap-2">
-          <Button ref={cancelRef} disabled={busy} onClick={dismiss} type="button" variant="outline">
+          <Button size="md" ref={cancelRef} disabled={busy} onClick={dismiss} type="button" variant="outline">
             Cancel
           </Button>
-          <Button
+          <Button size="md"
             disabled={interactionLocked || isSaving || Boolean(nameError)}
             type="submit"
             variant={isRename ? 'default' : 'danger'}

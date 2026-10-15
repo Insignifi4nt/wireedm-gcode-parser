@@ -1,3 +1,7 @@
+import { Tooltip } from '@/components/ui/tooltip';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import { useMemo, useState } from 'react';
 import { measurePointPair, measureSegment, measureProfile, type MeasurementPick } from '@/domain/editor/geometryMeasurement';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
@@ -43,24 +47,24 @@ export function EditorMeasurePanel({ measurement, document }: {
         <p className="text-muted-foreground">Geometry dimensions and snap points refer to the complete source geometry, including inactive ranges.</p>
       )}
       <div className="flex items-center justify-between gap-2"><label className="flex items-center gap-2">
-        <input checked={measurement.snapEnabled} onChange={(event) => measurement.setSnapEnabled(event.target.checked)} type="checkbox" />
+        <Input checked={measurement.snapEnabled} onChange={(event) => measurement.setSnapEnabled(event.target.checked)} type="checkbox" />
         Snap to geometry
       </label>
-      <button className="h-7 border border-border px-2 hover:bg-accent disabled:opacity-40" disabled={!first} onClick={measurement.clear} type="button">Clear measurement</button>
+      <Button variant="outline" size="md" className="px-2" disabled={!first} onClick={measurement.clear} type="button">Clear measurement</Button>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <label className="space-y-1">Repeat
-          <select aria-label="Measurement repeat mode" className="h-7 w-full border border-border bg-background px-1" value={measurement.repeatMode} onChange={(event) => {
+          <Select aria-label="Measurement repeat mode" className="h-7 w-full px-1" value={measurement.repeatMode} onChange={(event) => {
             const value = event.target.value;
             if (value === 'pair' || value === 'chain' || value === 'fixed') measurement.setRepeatMode(value);
           }}>
             <option value="pair">New pair</option><option value="chain">Chain</option><option value="fixed">Keep first point</option>
-          </select>
+          </Select>
         </label>
         <label className="space-y-1">Decimals
-          <select aria-label="Measurement precision" className="h-7 w-full border border-border bg-background px-1" value={precision} onChange={(event) => measurement.setPrecision(Number(event.target.value))}>
+          <Select aria-label="Measurement precision" className="h-7 w-full px-1" value={precision} onChange={(event) => measurement.setPrecision(Number(event.target.value))}>
             {[2, 3, 4, 5, 6].map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
       <dl className="technical-value space-y-1">
@@ -79,10 +83,10 @@ export function EditorMeasurePanel({ measurement, document }: {
         <div><dd className="text-muted-foreground">Between complete source edges. Cyan marks the closest pair.</dd></div>
       </dl>}
       {canSwitchGeometry && <div className="flex gap-1" aria-label="Inspect measured geometry">
-        {(['A', 'B'] as const).map((label, index) => <button key={label} type="button"
-          className="h-7 flex-1 border border-border px-2 aria-pressed:bg-accent disabled:opacity-40"
+        {(['A', 'B'] as const).map((label, index) => <Button variant="outline" size="md" key={label} type="button"
+          className="flex-1 px-2 aria-pressed:bg-accent"
           aria-pressed={inspectedPoint === label} disabled={picks[index]?.kind !== 'geometry'}
-          onClick={() => setInspectedPoint(label)}>Inspect {label}</button>)}
+          onClick={() => setInspectedPoint(label)}>Inspect {label}</Button>)}
       </div>}
       {dimensions && <dl className="technical-value space-y-1 border-t border-border pt-2" aria-label="Selected geometry measurements">
         <div><dt className="sr-only">Geometry</dt><dd className="text-muted-foreground" data-measurement-reference>{target && measurementReference(document, target)}</dd></div>
@@ -96,7 +100,7 @@ export function EditorMeasurePanel({ measurement, document }: {
       </dl>}
       {boundary && <details className="border-t border-border pt-2">
         <summary className="cursor-pointer text-muted-foreground">Contour dimensions</summary>
-        <p className="my-1 truncate text-muted-foreground" title={boundary.label}>{boundary.label}</p>
+        <Tooltip content={boundary.label}><p tabIndex={0} className="my-1 truncate text-muted-foreground" >{boundary.label}</p></Tooltip>
         <dl className="technical-value space-y-1" aria-label="Contour measurements">
           <Result label="Boundary length" value={`${format(boundary.length)} mm`} />
           <Result label="Width" value={`${format(boundary.width)} mm`} />

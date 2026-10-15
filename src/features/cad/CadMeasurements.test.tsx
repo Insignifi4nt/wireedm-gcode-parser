@@ -2,7 +2,9 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CadCurveFeature, CadDocument } from '@/domain/cad/cadDocument';
-import { createCadDocument } from '@/domain/cad/cadSchema';
+import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import { measureCadSketch } from '@/domain/cad/cadMeasurements';
+import { CadSession } from './cadSession';
 import { CadSketchMeasurements } from './CadSketchMeasurements';
 import { CadCurveMeasurements } from './CadCurveMeasurements';
 
@@ -17,6 +19,28 @@ async function expand(label: string) {
   const summary = [...container.querySelectorAll('summary')].find(summary => summary.textContent === label);
   if (!summary) throw new Error(`Missing ${label}`); await act(async () => summary.click());
 }
+it('keeps accepted tiny sketch area and bounds nonzero while preserving ordinary localized perimeter display', async () => {
+  const part = parseCadDocument({ ...createCadDocument(), parameters: { width: 4e-7 }, features: [{ id: 'sketch', name: 'Tiny sketch', kind: 'sketch', suppressed: false,
+    plane: 'XY', offset: 0, profiles: [{ id: 'profile', name: 'Rectangle', construction: false, geometry: { kind: 'rectangle', x: 0, y: 0, width: ' width ', height: 20, cornerRadius: 0 } }] }] });
+  const session = new CadSession(part), before = session.getSnapshot(), measurement = measureCadSketch(part, 'sketch');
+  expect(measurement.materialAreaMm2).toBeCloseTo(8e-6, 15);
+  const scientific = (number: number) => number.toLocaleString(undefined, { notation: 'scientific', maximumSignificantDigits: 6, useGrouping: false });
+  await act(async () => root.render(<CadSketchMeasurements document={part} sketchId="sketch" profileId="profile" />));
+  expect(value('Area')).toBe(`${scientific(8e-6)} mm²`); expect(value('Width × height')).toBe(`${scientific(4e-7)} × 20 mm`);
+  expect(value('Perimeter')).toBe(`${measurement.boundaryLengthMm.toLocaleString(undefined, { maximumFractionDigits: 3 })} mm`);
+  expect(session.getSnapshot()).toBe(before);
+});
+it('keeps tiny curve length and placement nonzero without using coordinate indices as display precision', async () => {
+  const x = 1.23456789, y = -2.34567891;
+  const part = parseCadDocument({ ...createCadDocument(), features: [{ id: 'rail', name: 'Rail', kind: 'curve', suppressed: false, plane: 'XY', offset: 4e-7,
+    segments: [{ kind: 'line', start: [x, y], end: [x + 4e-7, y] }] }] }), session = new CadSession(part), before = session.getSnapshot(), curve = part.features[0];
+  if (curve.kind !== 'curve') throw new Error('Missing curve');
+  const scientific = (number: number) => number.toLocaleString(undefined, { notation: 'scientific', maximumSignificantDigits: 6, useGrouping: false });
+  await act(async () => root.render(<CadCurveMeasurements document={part} curve={curve} />));
+  expect(value('Length')).toBe(`${scientific(4e-7)} mm`);
+  expect(value('Start (world)')).toBe(`${x.toLocaleString(undefined, { maximumFractionDigits: 4 })}, ${y.toLocaleString(undefined, { maximumFractionDigits: 4 })}, ${scientific(4e-7)} mm`);
+  expect(session.getSnapshot()).toBe(before);
+});
 it('separates a selected profile area and bounds from the aggregate sketch contour count', async () => {
   const part: CadDocument = { ...createCadDocument(), features: [{ id: 'section', name: 'Ring', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [
     { id: 'outer', name: 'Stock', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 3 } },

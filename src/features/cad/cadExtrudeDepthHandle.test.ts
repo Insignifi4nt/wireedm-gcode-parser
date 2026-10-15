@@ -213,6 +213,57 @@ it('does not schedule an idle render loop when the viewport republishes an uncha
   } finally { handle.dispose(); }
 });
 
+it('does not publish helper renders for camera updates while no depth control or visual exists', () => {
+  const camera = cameraAt(), render = vi.fn(), handle = createCadExtrudeDepthHandle({ requestRender: render, onInteractionChange() {} });
+  try {
+    handle.setView(camera, 800, 600); handle.update(null); render.mockClear();
+    for (let i = 0; i < 4; i++) {
+      camera.position.x += 1; camera.lookAt(40, 15, 10); camera.updateMatrixWorld(true);
+      handle.setView(camera, 800, 600); handle.update(null);
+      expect(handle.getState()).toBeNull(); expect(handle.group.visible).toBe(false); expect(render).not.toHaveBeenCalled();
+    }
+    handle.update(control().value); expect(handle.getState()?.visible).toBe(true); expect(render).toHaveBeenCalledTimes(1);
+    handle.update(null); expect(handle.getState()).toBeNull(); expect(handle.group.visible).toBe(false); expect(render).toHaveBeenCalledTimes(2);
+    camera.position.x += 1; handle.setView(camera, 800, 600); expect(render).toHaveBeenCalledTimes(2);
+  } finally { handle.dispose(); }
+});
+
+it('synchronizes visible camera geometry without a duplicate helper publication, while owned hover and quantity still publish', () => {
+  const h = control(), camera = cameraAt(), render = vi.fn(), handle = createCadExtrudeDepthHandle({ requestRender: render, onInteractionChange() {} });
+  try {
+    handle.setView(camera, 800, 600); handle.update(h.value); render.mockClear();
+    const before = handle.getState()!.screenPoint;
+    camera.position.x += 10; camera.updateMatrixWorld(true); handle.setView(camera, 800, 600);
+    const moved = handle.getState()!.screenPoint;
+    expect(Math.hypot(moved.x - before.x, moved.y - before.y)).toBeGreaterThan(1); expect(render).not.toHaveBeenCalled();
+    const point = handle.getState()!.screenPoint; handle.hover(point); expect(render).toHaveBeenCalledTimes(1);
+    const tip = new THREE.Vector3(40, 15, 10); expect(handle.begin(1, rayFor(camera, tip), point)).toBe(true);
+    render.mockClear(); handle.move(1, rayFor(camera, tip.clone().add(new THREE.Vector3(0, 0, 3))));
+    expect(handle.getState()?.quantityMm).toBeCloseTo(13, 10); expect(render).toHaveBeenCalled();
+  } finally { handle.dispose(); }
+});
+
+it('locks idle input without changing its exact visual, then updates real model and owner loss instead of freezing stale geometry', () => {
+  const h = control(), render = vi.fn(); let blocked = false;
+  const ownedControl: CadExtrudeDepthControl = { ...h.value, getState() {
+    const current = h.value.getState();
+    return current && blocked ? { ...current, capability: { kind: 'locked', reason: 'Operation in progress' } } : current;
+  } };
+  const handle = createCadExtrudeDepthHandle({ requestRender: render, onInteractionChange() {} });
+  try {
+    const camera = cameraAt(), tip = new THREE.Vector3(40, 15, 10);
+    handle.setView(camera, 800, 600); handle.update(ownedControl); const original = handle.getState(); render.mockClear();
+    blocked = true; handle.update(ownedControl, true); h.listeners.forEach(listener => listener());
+    expect(handle.getState()).toEqual(original); expect(render).not.toHaveBeenCalled();
+    expect(handle.hover(original!.screenPoint)).toBe(false); expect(handle.begin(1, rayFor(camera, tip), original!.screenPoint)).toBe(false);
+    expect(handle.move(1, rayFor(camera, tip.clone().add(new THREE.Vector3(0, 0, 10))))).toBe(false); expect(h.change).not.toHaveBeenCalled();
+    blocked = false; handle.update(ownedControl); expect(handle.getState()).toEqual(original); expect(render).not.toHaveBeenCalled();
+    blocked = true; handle.update(ownedControl, true); h.change(20);
+    expect(handle.getState()?.quantityMm).toBe(20); expect(handle.getState()?.endpointMm[2]).toBe(20); expect(render).toHaveBeenCalled();
+    h.lose(); expect(handle.getState()).toBeNull(); expect(handle.group.visible).toBe(false);
+  } finally { handle.dispose(); }
+});
+
 it('exposes a contextual end-on or formula lock without starting a gesture or amplifying a ray', () => {
   const h = control(), tip = new THREE.Vector3(40, 15, 10), camera = cameraAt(tip, true), interactions = vi.fn();
   const handle = createCadExtrudeDepthHandle({ requestRender() {}, onInteractionChange: interactions });

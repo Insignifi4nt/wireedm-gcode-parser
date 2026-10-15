@@ -1,3 +1,5 @@
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import type { CadScalar } from '@/domain/cad/cadDocument';
@@ -19,11 +21,11 @@ export function CadExpressionBinding({ label, expression, parameters, resolved, 
   const aliases = Object.keys(parameters);
   return <div className="cad-expression-binding">
     <p>{description ?? 'A number is independent. A document parameter or expression keeps this value linked. The profile and any parameter drafts are saved together when you Apply.'}</p>
-    <label><span>Expression</span><input aria-label={`${label} expression`} value={draft} spellCheck={false} onChange={event => { setDraft(event.target.value); setReceipt(''); }} /></label>
+    <label><span>Expression</span><Input aria-label={`${label} expression`} value={draft} spellCheck={false} onChange={event => { setDraft(event.target.value); setReceipt(''); }} /></label>
     {aliases.length > 0 && <p className="cad-expression-available">Document parameters: <code>{aliases.slice(0, 16).join(', ')}</code>{aliases.length > 16 && ` and ${aliases.length - 16} more.`}</p>}
     {issue ? <p role="alert">{issue}</p> : <div className="cad-context-help-value"><span>Evaluates to</span><output>{result}</output></div>}
-    <div className="cad-expression-actions"><button type="button" disabled={Boolean(issue)} onClick={() => { const changed = draft !== String(expression); if (changed) onChange(draft); setReceipt(changed ? 'Relation updated in this draft.' : 'Relation unchanged.'); }}>Keep relation</button>
-      <button type="button" disabled={resolved === undefined || !Number.isFinite(resolved)} onClick={() => { if (resolved !== undefined && Number.isFinite(resolved)) { const changed = expression !== resolved; if (changed) onChange(resolved); setReceipt(changed ? 'Independent value set in this draft.' : 'Independent value unchanged.'); } }}>Use current value</button></div>
+    <div className="cad-expression-actions"><Button type="button" disabled={Boolean(issue)} onClick={() => { const changed = draft !== String(expression); if (changed) onChange(draft); setReceipt(changed ? 'Relation updated in this draft.' : 'Relation unchanged.'); }}>Keep relation</Button>
+      <Button type="button" disabled={resolved === undefined || !Number.isFinite(resolved)} onClick={() => { if (resolved !== undefined && Number.isFinite(resolved)) { const changed = expression !== resolved; if (changed) onChange(resolved); setReceipt(changed ? 'Independent value set in this draft.' : 'Independent value unchanged.'); } }}>Use current value</Button></div>
     {receipt && <p role="status">{receipt}</p>}
   </div>;
 }

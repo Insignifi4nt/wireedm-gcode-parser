@@ -162,11 +162,14 @@ describe('EditorWorkflowMenuBar', () => {
     const blocked = container.querySelector<HTMLButtonElement>(
       '[data-editor-workflow-command="geometry.blocked"]'
     );
-    const describedBy = blocked?.getAttribute('aria-describedby');
+    await act(async () => blocked?.focus());
+    const descriptionIds = blocked?.getAttribute('aria-describedby')?.split(/\s+/) ?? [];
     expect(blocked?.getAttribute('aria-disabled')).toBe('true');
-    expect(blocked?.title).toBe('Select a contour first.');
-    expect(describedBy).toBeTruthy();
-    expect(document.getElementById(describedBy ?? '')?.textContent).toBe('Select a contour first.');
+    expect(blocked?.getAttribute('aria-description')).toBe('Select a contour first.');
+    const descriptions = descriptionIds.map(id => document.getElementById(id));
+    expect(descriptions.some(element => element?.textContent === 'Select a contour first.')).toBe(true);
+    const tooltip = descriptions.find(element => element?.getAttribute('role') === 'tooltip');
+    expect(tooltip?.textContent).toBe('Select a contour first.');
   });
 
   it('makes every workflow category reachable through the compact launcher', async () => {

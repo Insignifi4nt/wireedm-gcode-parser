@@ -1,5 +1,8 @@
+import { Tooltip } from '@/components/ui/tooltip';
+import { Input } from '@/components/ui/input';
+import { Select as NativeSelect } from '@/components/ui/select';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Check, ChevronRight, Trash2, Upload } from '@/components/icons';
+import { Check, ChevronRight, Trash2, Upload } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import type {
@@ -138,7 +141,7 @@ export function MachinePostSettingsPanel({
                         <summary className="flex cursor-pointer list-none items-center gap-1.5 text-foreground [&::-webkit-details-marker]:hidden">
                           <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
                           {active && <Check className="size-3 shrink-0" />}
-                          <span className="truncate" title={setup.name}>{setup.name}</span>
+                          <Tooltip content={setup.name}><span tabIndex={0} className="truncate" >{setup.name}</span></Tooltip>
                         </summary>
                         <div className="grid gap-1 pl-[18px] pt-2 text-muted-foreground">
                           <div>Post: {setup.post.packageId} {setup.post.version} · {post ? `SHA-256 ${setup.post.contentHash.slice(0, 12)}…` : 'unavailable'}</div>
@@ -201,13 +204,13 @@ function PackagePreview({ disabled, onCommit, prepared }: {
       <div className="text-muted-foreground">Evidence payloads: {evidenceCount}</div>
       <div className="text-muted-foreground">Posts: {postSummary}</div>
       {preview.machine.kind === 'new' && (
-        <PreviewActions><Button disabled={disabled} onClick={() => onCommit({ kind: 'install-new' })} size="sm" type="button">Install machine package</Button></PreviewActions>
+        <PreviewActions><Button variant="default" disabled={disabled} onClick={() => onCommit({ kind: 'install-new' })} size="sm" type="button">Install machine package</Button></PreviewActions>
       )}
       {exactMachine && (
         <>
           <p>Existing machine detected: <strong>{exactMachine.existing.name}</strong>. The physical definition is identical.</p>
           <PreviewActions>
-            <Button disabled={disabled} onClick={() => onCommit({ kind: 'reuse-existing', machineId: exactMachine.existing.id, activate: 'package' })} size="sm" type="button">Add and use new setup</Button>
+            <Button variant="default" disabled={disabled} onClick={() => onCommit({ kind: 'reuse-existing', machineId: exactMachine.existing.id, activate: 'package' })} size="sm" type="button">Add and use new setup</Button>
             <Button disabled={disabled} onClick={() => onCommit({ kind: 'reuse-existing', machineId: exactMachine.existing.id, activate: 'keep-current' })} size="sm" type="button" variant="outline">Add without switching</Button>
           </PreviewActions>
         </>
@@ -221,7 +224,7 @@ function PackagePreview({ disabled, onCommit, prepared }: {
             </span>
           ))}</div>
           <PreviewActions>
-            <Button disabled={disabled} onClick={() => onCommit({ kind: 'replace-existing', machineId: changedMachine.existing.id, activate: 'package' })} size="sm" type="button">Update machine and use setup</Button>
+            <Button variant="default" disabled={disabled} onClick={() => onCommit({ kind: 'replace-existing', machineId: changedMachine.existing.id, activate: 'package' })} size="sm" type="button">Update machine and use setup</Button>
             <Button disabled={disabled} onClick={() => onCommit({ kind: 'replace-existing', machineId: changedMachine.existing.id, activate: 'keep-current' })} size="sm" type="button" variant="outline">Update without switching</Button>
           </PreviewActions>
         </>
@@ -233,7 +236,7 @@ function PackagePreview({ disabled, onCommit, prepared }: {
             <div className="grid gap-1" key={candidate.id}>
               <p className="text-muted-foreground">{candidate.name}: currently {candidate.bindings.find(({ id }) => id === candidate.activeBindingId)?.name ?? 'no active setup'}</p>
               <PreviewActions>
-                <Button disabled={disabled} onClick={() => onCommit({ kind: 'reuse-existing', machineId: candidate.id, activate: 'package' })} size="sm" type="button">Add setup to {candidate.name}</Button>
+                <Button variant="default" disabled={disabled} onClick={() => onCommit({ kind: 'reuse-existing', machineId: candidate.id, activate: 'package' })} size="sm" type="button">Add setup to {candidate.name}</Button>
                 <Button disabled={disabled} onClick={() => onCommit({ kind: 'reuse-existing', machineId: candidate.id, activate: 'keep-current' })} size="sm" type="button" variant="outline">Add to {candidate.name} without switching</Button>
               </PreviewActions>
             </div>
@@ -338,7 +341,7 @@ function FileButton({ disabled, onFile, onReject }: {
       void onFile(files[0]);
     }}>
     <span className="text-muted-foreground">Drop a .wireedm-package here, or choose a file.</span>
-    <label className={`inline-flex h-8 w-fit items-center gap-2 rounded-[2px] border border-border px-3 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-accent'}`}><Upload className="size-3.5" />Install machine package<input accept=".wireedm-package,application/zip" aria-label="Machine package file" className="sr-only" disabled={disabled} onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void onFile(file); event.currentTarget.value = ''; }} type="file" /></label>
+    <label className={`inline-flex h-8 w-fit items-center gap-2 rounded-[2px] border border-border px-3 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-accent'}`}><Upload className="size-3.5" />Install machine package<Input accept=".wireedm-package,application/zip" aria-label="Machine package file" className="sr-only" disabled={disabled} onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void onFile(file); event.currentTarget.value = ''; }} type="file" /></label>
   </div>;
 }
 
@@ -356,5 +359,5 @@ function Select<Value extends string>({ disabled, label, onChange, options, valu
     if (!selected) throw new Error(`Select ${label} received an undeclared option: ${rawValue}.`);
     onChange(selected[0]);
   }
-  return <label className="grid gap-1 text-[10px] text-muted-foreground">{label}<select aria-label={label} className="technical-input h-8 px-2 text-[10px] text-foreground" disabled={disabled} onChange={(event) => handleChange(event.currentTarget.value)} value={value}>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select></label>;
+  return <label className="grid gap-1 text-[10px] text-muted-foreground">{label}<NativeSelect aria-label={label} className="h-8 px-2 text-[10px]" disabled={disabled} onChange={(event) => handleChange(event.currentTarget.value)} value={value}>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</NativeSelect></label>;
 }

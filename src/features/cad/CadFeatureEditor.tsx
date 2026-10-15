@@ -1,5 +1,7 @@
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ContextType } from 'react';
-import { ConfirmIcon, CloseIcon } from '@/components/icons';
+import { CloseIcon, ConfirmIcon } from '@wire-edm/icons-react';
 import type { CadDocument, CadFeature, CadPlane, CadProfile, CadScalar, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
 import { resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
@@ -257,12 +259,30 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
     }
     case 'loft': fields = <><CadLoftSections document={effectiveDocument} featureId={feature.id} sketchIds={draft.sketchIds} applyError={error} onChange={sketchIds => update({ ...draft, sketchIds })} /><SelectField label="Transition" value={draft.ruled ? 'ruled' : 'smooth'} options={[{ value: 'smooth', label: 'Smooth' }, { value: 'ruled', label: 'Ruled' }]} onChange={transition => update({ ...draft, ruled: transition === 'ruled' })} /><SelectField label="Operation" value={draft.operation} options={operationOptions} onChange={operation => update({ ...draft, operation, targetId: operation === 'new' ? null : draft.targetId ?? bodies.at(-1)?.value ?? null })} />{draft.operation !== 'new' && body('Target body', draft.targetId ?? '', targetId => update({ ...draft, targetId }))}</>; break;
     case 'fillet':
-    case 'chamfer': fields = <>{body('Body', draft.targetId, (targetId) => update({ ...draft, targetId }))}<SelectField label="Scope" value={draft.selection ? 'selected' : 'all'} options={[{ value: 'all', label: 'All edges of the body' }, { value: 'selected', label: capturedEdges ? `Selected edges (${capturedEdges.expectedCount})` : 'Selected edges, pick before starting', disabled: !capturedEdges }]} onChange={(scope) => update({ ...draft, selection: scope === 'selected' ? capturedEdges : null })} />{scalar('radius', draft.kind === 'fillet' ? 'Radius' : 'Distance', draft.radius, (radius) => update({ ...draft, radius }))}{draft.selection ? <CadTopologyQuerySummary selection={draft.selection} /> : null}</>; break;
+    case 'chamfer': {
+      const { tangentPropagation: _tangent, ...strict } = draft;
+      const tangentId = `${previewOwner}-tangent`;
+      fields = <>{body('Body', draft.targetId, (targetId) => update({ ...draft, targetId }))}
+        <SelectField label="Scope" value={draft.selection ? 'selected' : 'all'} options={[
+          { value: 'all', label: 'All edges of the body' },
+          { value: 'selected', label: capturedEdges ? draft.tangentPropagation
+            ? `${capturedEdges.expectedCount} ${capturedEdges.expectedCount === 1 ? 'edge' : 'edges'} + tangents` : `Selected edges (${capturedEdges.expectedCount})`
+            : 'Selected edges, pick before starting', disabled: !capturedEdges },
+        ]} onChange={scope => update(scope === 'selected' ? { ...draft, selection: capturedEdges } : { ...strict, selection: null })} />
+        {scalar('radius', draft.kind === 'fillet' ? 'Radius' : 'Distance', draft.radius, radius => update({ ...draft, radius }))}
+        {draft.selection && <><div className="cad-check"><Input id={tangentId} type="checkbox" aria-label="Follow tangent edges" checked={draft.tangentPropagation === true}
+          onChange={event => update(event.target.checked ? { ...draft, tangentPropagation: true }
+            : (feature.kind === 'fillet' || feature.kind === 'chamfer') && typeof feature.tangentPropagation === 'boolean' ? { ...draft, tangentPropagation: false } : strict)} />
+          <label htmlFor={tangentId}>Follow tangent edges</label><CadContextHelp label="Follow tangent edges">
+            Continue along smoothly connected edges using the native tangent chain. The selected count is your picked seeds; the operation also follows their chains, including split circular rims. Disconnected rims stay separate.
+          </CadContextHelp></div><CadTopologyQuerySummary selection={draft.selection} /></>}
+      </>; break;
+    }
     case 'shell': fields = <>{body('Body', draft.targetId, (targetId) => update({ ...draft, targetId }))}{scalar('thickness', 'Wall thickness', draft.thickness, (thickness) => update({ ...draft, thickness }))}<CadTopologyQuerySummary selection={draft.opening} /></>; break;
     case 'boolean': fields = <>{body('Target body', draft.targetId, (targetId) => update({ ...draft, targetId }))}{body('Tool body', draft.toolId, (toolId) => update({ ...draft, toolId }))}<SelectField label="Operation" value={draft.operation} options={[{ value: 'union', label: 'Union' }, { value: 'cut', label: 'Subtract tool' }, { value: 'intersect', label: 'Intersection' }]} onChange={(operation) => update({ ...draft, operation })} /></>; break;
     case 'transform': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<VectorFields label="Translation" unit="mm">{scalar('translation.0', 'X', draft.translation[0], (value) => update({ ...draft, translation: [value, draft.translation[1], draft.translation[2]] }), undefined, 'Translation X')}{scalar('translation.1', 'Y', draft.translation[1], (value) => update({ ...draft, translation: [draft.translation[0], value, draft.translation[2]] }), undefined, 'Translation Y')}{scalar('translation.2', 'Z', draft.translation[2], (value) => update({ ...draft, translation: [draft.translation[0], draft.translation[1], value] }), undefined, 'Translation Z')}</VectorFields><VectorFields label="Rotation about world origin" unit="deg">{scalar('rotation.0', 'Around X', draft.rotation[0], (value) => update({ ...draft, rotation: [value, draft.rotation[1], draft.rotation[2]] }), 'deg')}{scalar('rotation.1', 'Around Y', draft.rotation[1], (value) => update({ ...draft, rotation: [draft.rotation[0], value, draft.rotation[2]] }), 'deg')}{scalar('rotation.2', 'Around Z', draft.rotation[2], (value) => update({ ...draft, rotation: [draft.rotation[0], draft.rotation[1], value] }), 'deg')}</VectorFields></>; break;
-    case 'linear-pattern': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<label className="cad-field"><span>Instances, including original</span><input type="number" min="2" max="100" value={draft.count} onChange={(event) => update({ ...draft, count: Number(event.target.value) })} /></label><VectorFields label="Spacing between instances" unit="mm">{scalar('spacing.0', 'X', draft.spacing[0], (value) => update({ ...draft, spacing: [value, draft.spacing[1], draft.spacing[2]] }), undefined, 'Spacing X')}{scalar('spacing.1', 'Y', draft.spacing[1], (value) => update({ ...draft, spacing: [draft.spacing[0], value, draft.spacing[2]] }), undefined, 'Spacing Y')}{scalar('spacing.2', 'Z', draft.spacing[2], (value) => update({ ...draft, spacing: [draft.spacing[0], draft.spacing[1], value] }), undefined, 'Spacing Z')}</VectorFields></>; break;
-    case 'circular-pattern': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<label className="cad-field"><span>Instances, including original</span><input type="number" min="2" max="100" value={draft.count} onChange={(event) => update({ ...draft, count: Number(event.target.value) })} /></label><SelectField label="Axis" value={draft.axis} options={[{ value: 'x', label: 'World X' }, { value: 'y', label: 'World Y' }, { value: 'z', label: 'World Z' }]} onChange={axis => update({ ...draft, axis })} />{scalar('angle', 'Angular extent', draft.angle, angle => update({ ...draft, angle }), 'deg')}<VectorFields label="Axis center" unit="mm">{scalar('center.0', 'Center X', draft.center[0], value => update({ ...draft, center: [value, draft.center[1], draft.center[2]] }))}{scalar('center.1', 'Center Y', draft.center[1], value => update({ ...draft, center: [draft.center[0], value, draft.center[2]] }))}{scalar('center.2', 'Center Z', draft.center[2], value => update({ ...draft, center: [draft.center[0], draft.center[1], value] }))}</VectorFields></>; break;
+    case 'linear-pattern': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<label className="cad-field"><span>Instances, including original</span><Input type="number" min="2" max="100" value={draft.count} onChange={(event) => update({ ...draft, count: Number(event.target.value) })} /></label><VectorFields label="Spacing between instances" unit="mm">{scalar('spacing.0', 'X', draft.spacing[0], (value) => update({ ...draft, spacing: [value, draft.spacing[1], draft.spacing[2]] }), undefined, 'Spacing X')}{scalar('spacing.1', 'Y', draft.spacing[1], (value) => update({ ...draft, spacing: [draft.spacing[0], value, draft.spacing[2]] }), undefined, 'Spacing Y')}{scalar('spacing.2', 'Z', draft.spacing[2], (value) => update({ ...draft, spacing: [draft.spacing[0], draft.spacing[1], value] }), undefined, 'Spacing Z')}</VectorFields></>; break;
+    case 'circular-pattern': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<label className="cad-field"><span>Instances, including original</span><Input type="number" min="2" max="100" value={draft.count} onChange={(event) => update({ ...draft, count: Number(event.target.value) })} /></label><SelectField label="Axis" value={draft.axis} options={[{ value: 'x', label: 'World X' }, { value: 'y', label: 'World Y' }, { value: 'z', label: 'World Z' }]} onChange={axis => update({ ...draft, axis })} />{scalar('angle', 'Angular extent', draft.angle, angle => update({ ...draft, angle }), 'deg')}<VectorFields label="Axis center" unit="mm">{scalar('center.0', 'Center X', draft.center[0], value => update({ ...draft, center: [value, draft.center[1], draft.center[2]] }))}{scalar('center.1', 'Center Y', draft.center[1], value => update({ ...draft, center: [draft.center[0], value, draft.center[2]] }))}{scalar('center.2', 'Center Z', draft.center[2], value => update({ ...draft, center: [draft.center[0], draft.center[1], value] }))}</VectorFields></>; break;
     case 'mirror': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<SelectField label="Mirror plane through origin" value={draft.plane} options={planeOptions} onChange={(plane) => update({ ...draft, plane })} /></>; break;
   }
   const pickingContext = useMemo<ContextType<typeof CadFeatureReferencePickingContext>>(() => {
@@ -295,7 +315,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
     <div className="cad-property-title">{isNew ? 'Create' : 'Edit'} {featureLabels[draft.kind]}<CadContextHelp label={featureLabels[draft.kind]}>{cadFeatureHelp[draft.kind]}</CadContextHelp></div>
     <fieldset className="cad-feature-fields" disabled={Boolean(pickCurrent) || staleDraft || depthGestureActive}>
     <CadFeatureReferencePickingContext.Provider value={pickingContext}>{fields}</CadFeatureReferencePickingContext.Provider></fieldset>
-    {pickCurrent?.kind === 'pick' && <div className="cad-reference-pick-status" role="status">Pick {pickCurrent.label.toLowerCase()} in the model or history<button type="button" aria-label="Cancel source selection" onClick={() => endPick()}><CloseIcon size={13} /></button></div>}
+    {pickCurrent?.kind === 'pick' && <div className="cad-reference-pick-status" role="status">Pick {pickCurrent.label.toLowerCase()} in the model or history<Button type="button" aria-label="Cancel source selection" onClick={() => endPick()}><CloseIcon size={13} /></Button></div>}
     {preview && <div className={`cad-feature-preview-status${preview.kind === 'error' ? ' is-error' : ''}`} role={preview.kind === 'error' ? 'alert' : 'status'}>
       {preview.kind === 'error' ? preview.message : preview.kind === 'ready' && currentPreviewReady
         ? `Preview${previewSolidCount !== undefined && previewSolidCount > 1 ? ` · ${previewSolidCount} solids` : ''} · Apply to keep`
@@ -303,7 +323,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
     </div>}
     {error && <p className="cad-error" role="alert">{error}</p>}
     {staleDraft && <p className="cad-error" role="alert">The part changed. Cancel this edit and reopen the current feature.</p>}
-    {(isNew || changed || scalarPending || staleDraft || depthGestureActive) && <div className="cad-form-actions"><button type="button" onClick={onCancel}><CloseIcon size={13} /> Cancel</button><button type="submit" className="cad-primary" disabled={!isNew && !changed || scalarPending || waitingForPreview || Boolean(pickCurrent) || staleDraft || depthGestureActive}><ConfirmIcon size={13} /> Apply</button></div>}
+    {(isNew || changed || scalarPending || staleDraft || depthGestureActive) && <div className="cad-form-actions"><Button type="button" onClick={onCancel}><CloseIcon size={13} /> Cancel</Button><Button variant="primary" type="submit" className="cad-primary" disabled={!isNew && !changed || scalarPending || waitingForPreview || Boolean(pickCurrent) || staleDraft || depthGestureActive}><ConfirmIcon size={13} /> Apply</Button></div>}
   </form>;
 }
 
@@ -338,8 +358,8 @@ export function CadProfileEditor({ profile, document, onApply, onCancel, onPendi
     onPreviewProfile?.(preview ? draft : null); onPreviewParameters?.(preview ? effectiveParameters : null);
     return () => { onPreviewProfile?.(null); onPreviewParameters?.(null); };
   }, [draft, changed, profile.id, pluginIssues.length, previewValid, effectiveParameters, onPreviewProfile, onPreviewParameters]);
-  const profileOptions = <><label className="cad-field"><span>Name</span><input value={draft.name} onChange={(event) => update({ ...draft, name: event.target.value })} /></label>
-    <label className="cad-check"><input type="checkbox" checked={draft.construction} onChange={(event) => update({ ...draft, construction: event.target.checked })} /> Construction geometry</label></>;
+  const profileOptions = <><label className="cad-field"><span>Name</span><Input value={draft.name} onChange={(event) => update({ ...draft, name: event.target.value })} /></label>
+    <label className="cad-check"><Input type="checkbox" checked={draft.construction} onChange={(event) => update({ ...draft, construction: event.target.checked })} /> Construction geometry</label></>;
   let fields: React.ReactNode;
   switch (geometry.kind) {
     case 'plugin': fields = <CadPluginFields profile={geometry} parameters={effectiveParameters} parameterDrafts={parameterDrafts} onBindingPendingChange={setBindingPending} onChangeParameter={(name, value) => { setParameterDrafts(current => ({ ...current, [name]: value })); setChanged(true); setError(null); }} inspection={pluginInspection} onInspectInput={onInspectInput} onChange={geometry => update({ ...draft, geometry })} />; break;
@@ -365,6 +385,6 @@ export function CadProfileEditor({ profile, document, onApply, onCancel, onPendi
     {geometry.kind === 'plugin' && <details className="cad-plugin-disclosure cad-plugin-profile-options"><summary>Profile options</summary>{profileOptions}</details>}
     {pluginIssues.length > 0 && <div role="alert" className="cad-error">{pluginIssues.map((issue, index) => <p key={index}>{issue}</p>)}</div>}
     {error && <p role="alert" className="cad-error">{error}</p>}
-    {changed && <div className="cad-form-actions"><button type="button" onClick={onCancel}><CloseIcon size={13} /> Cancel</button><button type="submit" className="cad-primary" disabled={!changed || bindingPending || pluginIssues.length > 0}><ConfirmIcon size={13} /> Apply</button></div>}
+    {changed && <div className="cad-form-actions"><Button type="button" onClick={onCancel}><CloseIcon size={13} /> Cancel</Button><Button variant="primary" type="submit" className="cad-primary" disabled={!changed || bindingPending || pluginIssues.length > 0}><ConfirmIcon size={13} /> Apply</Button></div>}
   </form>;
 }

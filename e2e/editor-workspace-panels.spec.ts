@@ -167,13 +167,13 @@ test('editor contour tree labels contours, segments, and endpoint handles clearl
 
   const helpButton = page.getByRole('button', { name: 'Contour Tree help' });
   await helpButton.focus();
-  await expect(page.locator('[data-upid-contour-tree-tooltip]')).toContainText(
+  await expect(page.getByRole('tooltip')).toContainText(
     'Hover or select a row to cross-highlight the canvas'
   );
-  await expect(page.locator('[data-upid-contour-tree-tooltip]')).toContainText(
+  await expect(page.getByRole('tooltip')).toContainText(
     'whole cut loop'
   );
-  await expect(page.locator('[data-upid-contour-tree-tooltip]')).toContainText(
+  await expect(page.getByRole('tooltip')).toContainText(
     'start and end endpoint handles'
   );
 
@@ -218,7 +218,7 @@ test('editor contour tree exposes hierarchy rails and endpoint topology from the
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Contour Tree help' }).focus();
-  await expect(page.locator('[data-upid-contour-tree-tooltip]')).toContainText(
+  await expect(page.getByRole('tooltip')).toContainText(
     'Inspect joins in Endpoint Topology from the View menu or Path Diagnostics workflow'
   );
   await expect(page.locator('[data-upid-contour-group]').first()).toHaveAttribute('data-upid-tree-depth', '0');

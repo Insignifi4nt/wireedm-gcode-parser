@@ -21,6 +21,8 @@ jobs:
           check-latest: true
           cache: npm
       - run: npm ci
+      - run: npm run ui:check
+      - run: npm run icons:check
       - run: git fetch origin main
       - run: npm run release:check -- origin/main
       - run: npm run post:docs:check

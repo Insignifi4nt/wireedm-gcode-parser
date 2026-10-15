@@ -1,3 +1,6 @@
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { programStopValidationError } from '@/domain/path-intel/programStops';
 import { resolveSourceAfterContourTravel } from '@/domain/path-intel/afterContourTravel';
@@ -162,7 +165,7 @@ export function EditorProgramStopsPanel({
     <section className="grid gap-2 text-[10px]" data-program-stops-panel>
       {commitError && <p role="alert" className="text-red-300">{commitError}</p>}
       <div>
-        <div className="uppercase text-muted-foreground">{operation.displayName}</div>
+        <div className="text-muted-foreground">{operation.displayName}</div>
         <p className="mt-1 text-muted-foreground">
           Stops belong to {operation.displayName}. Choose a machining phase or an exact distance along the planned path.
         </p>
@@ -171,15 +174,15 @@ export function EditorProgramStopsPanel({
         </p>}
       </div>
 
-      {selectedStop ? onSelectStop && <button
-        className="h-7 border border-border bg-background disabled:opacity-40"
+      {selectedStop ? onSelectStop && <Button variant="outline" size="md"
+        className=""
         disabled={disabled || targetChangeBlocked}
         onClick={() => onSelectStop(operation.id, null)}
         title={targetChangeBlocked ? 'Apply the pending form before creating another stop.' : undefined}
         type="button"
-      >New stop</button> : <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}
+      >New stop</Button> : <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}
         onChange={() => setAddCompleted(false)}>
-        <legend className="px-1 uppercase text-muted-foreground">Add stop</legend>
+        <legend className="px-1 text-muted-foreground">Add stop</legend>
         <ProgramStopFields labelPrefix="Program stop" placement={placement} remaining={remaining}
           reason={reason} note={note} onPlacementChange={setPlacement} onRemainingChange={setRemaining}
           onReasonChange={setReason} onNoteChange={setNote} onDraftChange={onDraftChange} placementRef={addPlacementRef}
@@ -188,14 +191,14 @@ export function EditorProgramStopsPanel({
         {addCompleted
           ? <p role="status" className="text-muted-foreground">Stop added. Change the placement to add another.</p>
           : addError && <p role="alert" className="text-red-300">{addError}</p>}
-        <button
-          className="h-7 border border-border bg-background disabled:opacity-40"
+        <Button variant="outline" size="md"
+          className=""
           disabled={!canAdd}
           onClick={addStop}
           type="button"
         >
           Add program stop
-        </button>
+        </Button>
       </fieldset>}
 
       <div className="grid gap-1">
@@ -212,7 +215,7 @@ export function EditorProgramStopsPanel({
             >
               {isSelected ? (
                 <fieldset className="grid gap-1" disabled={disabled}>
-                  <legend className="px-1 uppercase text-muted-foreground">Edit {stop.id}</legend>
+                  <legend className="px-1 text-muted-foreground">Edit {stop.id}</legend>
                   <ProgramStopFields labelPrefix="Selected stop" placement={selectedPlacement} remaining={selectedRemaining}
                     reason={selectedReason} note={selectedNote} onPlacementChange={setSelectedPlacement}
                     onRemainingChange={setSelectedRemaining} onReasonChange={setSelectedReason}
@@ -220,7 +223,7 @@ export function EditorProgramStopsPanel({
                     hasExit={Boolean(operation.transitions?.exit && operation.transitions.exit.strategy !== 'none')}
                     travelLengthMm={travel?.status === 'ready' ? travel.path.totalLengthMm : null} />
                   <label className="flex items-center gap-2 text-muted-foreground">
-                    <input
+                    <Input
                       aria-label="Selected stop enabled"
                       checked={selectedEnabled}
                       onChange={(event) => {
@@ -233,28 +236,28 @@ export function EditorProgramStopsPanel({
                   </label>
                   {selectedError && <p role="alert" className="text-red-300">{selectedError}</p>}
                   <div className="grid grid-cols-2 gap-1">
-                    <button
+                    <Button variant="outline" size="md"
                       aria-label={`Apply ${stop.id}`}
-                      className="h-7 border border-border bg-background disabled:opacity-40"
+                      className=""
                       disabled={!canApplySelected}
                       onClick={applySelectedStop}
                       type="button"
                     >
                       Apply
-                    </button>
-                    <button
+                    </Button>
+                    <Button variant="danger" size="md"
                       aria-label={`Remove ${stop.id}`}
-                      className="h-7 border border-border px-2 text-red-300"
+                      className="px-2"
                       onClick={removeSelectedStop}
                       type="button"
                     >
                       Remove
-                    </button>
+                    </Button>
                   </div>
                 </fieldset>
               ) : (
                 <div className="grid grid-cols-[auto_1fr] items-center gap-2">
-                  <input
+                  <Input
                     aria-label={`Enable ${stop.id}`}
                     checked={stop.enabled}
                     disabled={disabled}
@@ -271,23 +274,23 @@ export function EditorProgramStopsPanel({
                     <div className="text-muted-foreground">{stopReasonLabels[stop.reason]}{stop.note ? ` · ${stop.note}` : ''}</div>
                   </div>
                   <div className="col-start-2 flex gap-1">
-                  {onSelectStop && <button
+                  {onSelectStop && <Button variant="outline" size="md"
                     aria-label={`Edit ${stop.id}`}
-                    className="h-7 border border-border px-2 disabled:opacity-40"
+                    className="px-2"
                     disabled={disabled || targetChangeBlocked}
                     onClick={() => onSelectStop(operation.id, stop.id)}
                     title={targetChangeBlocked ? 'Apply the pending form before editing another stop.' : undefined}
                     type="button"
-                  >Edit</button>}
-                  <button
+                  >Edit</Button>}
+                  <Button variant="outline" size="md"
                     aria-label={`Remove ${stop.id}`}
-                    className="h-7 border border-border px-2"
+                    className="px-2"
                     disabled={disabled}
                     onClick={() => commit(stops.filter((candidate) => candidate.id !== stop.id))}
                     type="button"
                   >
                     Remove
-                  </button>
+                  </Button>
                   </div>
                 </div>
               )}
@@ -356,11 +359,11 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
   return <>
         <label className="grid gap-0.5 text-muted-foreground">
           Placement
-          <select
+          <Select
             aria-label={`${labelPrefix} placement`}
             aria-describedby={helpId}
             title={placementHelp(placement, hasExit)}
-            className="h-7 border border-border bg-background px-1 text-foreground"
+            className="h-7 px-1"
             onChange={(event) => {
               onPlacementChange(event.currentTarget.value as OperationProgramStopPlacement['kind']);
               onDraftChange?.();
@@ -368,21 +371,21 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
             ref={placementRef}
             value={placement}
           >
-            <option value="before-entry" title={placementHelp('before-entry', hasExit)}>Before positioning</option>
-            <option value="after-positioning" title={placementHelp('after-positioning', hasExit)}>After positioning · before threading or entry</option>
-            <option value="before-operation-end" title={placementHelp('before-operation-end', hasExit)}>On contour · remaining cut distance</option>
-            <option value="after-contour" title={placementHelp('after-contour', hasExit)}>After contour · before exit lead</option>
-            <option value="after-exit" title={placementHelp('after-exit', hasExit)}>After exit lead · before next positioning</option>
-            <option value="after-contour-distance" title={placementHelp('after-contour-distance', hasExit)}>After contour · travel distance</option>
-          </select>
+            <option value="before-entry" data-description={placementHelp('before-entry', hasExit)}>Before positioning</option>
+            <option value="after-positioning" data-description={placementHelp('after-positioning', hasExit)}>After positioning · before threading or entry</option>
+            <option value="before-operation-end" data-description={placementHelp('before-operation-end', hasExit)}>On contour · remaining cut distance</option>
+            <option value="after-contour" data-description={placementHelp('after-contour', hasExit)}>After contour · before exit lead</option>
+            <option value="after-exit" data-description={placementHelp('after-exit', hasExit)}>After exit lead · before next positioning</option>
+            <option value="after-contour-distance" data-description={placementHelp('after-contour-distance', hasExit)}>After contour · travel distance</option>
+          </Select>
         </label>
         <p id={helpId} className="text-muted-foreground">{placementHelp(placement, hasExit)}</p>
         {(placement === 'before-operation-end' || placement === 'after-contour-distance') && (
           <label className="grid gap-0.5 text-muted-foreground">
             {placement === 'after-contour-distance' ? 'Travel from contour end (mm)' : 'Remaining contour cut (mm)'}
-            <input
+            <Input
               aria-label={`${labelPrefix} ${placement === 'after-contour-distance' ? 'travel distance' : 'remaining cut'} millimeters`}
-              className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+              className="px-1.5 font-mono"
               inputMode="decimal"
               onChange={(event) => {
                 onRemainingChange(event.currentTarget.value);
@@ -398,9 +401,9 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
         </>}
         <label className="grid gap-0.5 text-muted-foreground">
           Reason
-          <select
+          <Select
             aria-label={`${labelPrefix} reason`}
-            className="h-7 border border-border bg-background px-1 text-foreground"
+            className="h-7 px-1"
             onChange={(event) => {
               onReasonChange(event.currentTarget.value as OperationProgramStop['reason']);
               onDraftChange?.();
@@ -408,13 +411,13 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
             value={reason}
           >
             {Object.entries(stopReasonLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="grid gap-0.5 text-muted-foreground">
           Note
-          <input
+          <Input
             aria-label={`${labelPrefix} note`}
-            className="h-7 border border-border bg-background px-1.5 text-foreground"
+            className="px-1.5"
             onChange={(event) => {
               onNoteChange(event.currentTarget.value);
               onDraftChange?.();

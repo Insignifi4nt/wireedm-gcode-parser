@@ -35,6 +35,17 @@ async function renderPanel(session = new CadSession(linkedDocument())) {
   await act(async () => root.render(<Harness />)); return { session, inspect, pending, edits };
 }
 describe('document parameter editing', () => {
+  it.each([4e-9, -4e-9])('keeps the nonzero named angle %s visible while its raw editor and Cancel retain exact data', async angle => {
+    const initial = { ...createCadDocument(), parameters: { tilt: angle, ordinary: 1234567.891234567 }, features: [{ id: 'slot', name: 'Slot', kind: 'sketch' as const,
+      suppressed: false, plane: 'XY' as const, offset: 0, profiles: [{ id: 'profile', name: 'Slot', construction: false,
+        geometry: { kind: 'slot' as const, x: 0, y: 0, length: 20, width: 8, angle: ' tilt ' } }] }] };
+    const { session, edits } = await renderPanel(new CadSession(initial)), before = session.getSnapshot();
+    expect(container.querySelector('[aria-label="Edit parameter tilt"] output')?.textContent).toBe(angle.toLocaleString(undefined, { notation: 'scientific', maximumSignificantDigits: 6, useGrouping: false }));
+    expect(container.querySelector('[aria-label="Edit parameter ordinary"] output')?.textContent).toBe(initial.parameters.ordinary.toLocaleString(undefined, { maximumFractionDigits: 8, useGrouping: false }));
+    await click('Edit parameter tilt'); expect(document.querySelector<HTMLInputElement>('input[aria-label="Parameter value"]')?.value).toBe(String(angle));
+    await click('Cancel'); expect(session.getSnapshot()).toBe(before); expect(edits).not.toHaveBeenCalled();
+  });
+
   it('opens beside the sidebar, shows real usage and preserves a linked rename atomically', async () => {
     const { session, inspect, pending, edits } = await renderPanel();
     await click('Edit parameter radius');

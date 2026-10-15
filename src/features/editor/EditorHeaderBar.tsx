@@ -1,5 +1,8 @@
+import { Tooltip } from '@/components/ui/tooltip';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { useRef, type ChangeEvent, type ReactNode } from 'react';
-import { ArrowLeft, CircleHelp, FileOutput, FileSearch, FileUp, Redo2, Save, Undo2 } from '@/components/icons';
+import { ArrowLeft, CircleHelp, FileOutput, FileSearch, FileUp, Redo2, Save, Undo2 } from '@wire-edm/icons-react';
 
 import { Button } from '@/components/ui/button';
 import type { GCodeInterpreterState } from '@/domain/editor/gcodeBlockInterpreter';
@@ -111,10 +114,10 @@ export function EditorHeaderBar({
         className="flex min-w-0 flex-1 items-center gap-1.5"
         data-editor-document-identity
       >
-        <h2 className="technical-value truncate text-[12px] font-semibold" title={titleTooltip ?? filePath}>
+        <Tooltip content={titleTooltip ?? filePath}><h2 tabIndex={0} className="technical-value truncate text-[12px] font-semibold" >
           {heading}
-        </h2>
-        <span className="shrink-0 border border-border bg-background/60 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.04em] text-muted-foreground">
+        </h2></Tooltip>
+        <span className="shrink-0 border border-border bg-background/60 px-1.5 py-0.5 text-[10px] tracking-[0.04em] text-muted-foreground">
           {DOCUMENT_CONTEXT_LABELS[documentContext]}
         </span>
       </div>
@@ -124,12 +127,12 @@ export function EditorHeaderBar({
         data-editor-header-actions
       >
         {documentContext === 'machine-program' && interpreterProfile && onInterpreterProfileChange && (
-          <select aria-label="Source interpreter" className="h-7 max-w-36 border border-border bg-background px-1 text-[10px]"
+          <Select aria-label="Source interpreter" className="h-7 max-w-36 px-1 text-[10px]"
             disabled={interactionLocked} value={interpreterProfile}
             onChange={(event) => onInterpreterProfileChange(event.currentTarget.value as GCodeInterpreterState['profile'])}>
             <option value="neutral">Neutral source</option>
             <option value="legacy-robofil">Legacy Robofil source</option>
-          </select>
+          </Select>
         )}
         {workspaceControls && (
           <div
@@ -140,13 +143,13 @@ export function EditorHeaderBar({
           </div>
         )}
         <div className="flex shrink-0 items-center gap-1" data-editor-header-document-commands>
-        {onInspectGCode && <Button aria-label="Inspect G-code draft" className="h-7 px-2 text-[11px]"
+        {onInspectGCode && <Button aria-label="Inspect G-code draft" className="px-2 text-[11px]"
           data-editor-header-command disabled={interactionLocked} onClick={onInspectGCode} size="sm" variant="outline">
           <FileSearch /><span data-editor-header-command-label>Inspect</span>
         </Button>}
         <Button
           aria-label="Undo active document change"
-          className="h-7 px-2 text-[11px]"
+          className="px-2 text-[11px]"
           data-editor-header-command
           disabled={!undoAvailable || interactionLocked}
           onClick={onUndo}
@@ -159,7 +162,7 @@ export function EditorHeaderBar({
         </Button>
         <Button
           aria-label="Redo active document change"
-          className="h-7 px-2 text-[11px]"
+          className="px-2 text-[11px]"
           data-editor-header-command
           disabled={!redoAvailable || interactionLocked}
           onClick={onRedo}
@@ -172,7 +175,7 @@ export function EditorHeaderBar({
         </Button>
         <Button
           aria-label="Save active document"
-          className="h-7 px-2 text-[11px]"
+          className="px-2 text-[11px]"
           data-editor-header-command
           disabled={!hasUnsavedChanges || interactionLocked || Boolean(saveDisabledReason)}
           onClick={onSave}
@@ -186,7 +189,7 @@ export function EditorHeaderBar({
         {documentContext !== 'path-project' && onExport && exportLabel && (
           <Button
             aria-label={exportLabel}
-            className="h-7 px-2 text-[11px]"
+            className="px-2 text-[11px]"
             data-editor-header-command
             disabled={!exportAvailable || interactionLocked}
             onClick={onExport}
@@ -200,7 +203,7 @@ export function EditorHeaderBar({
         )}
         {canImportProgram && (
           <>
-            <input
+            <Input
               ref={fileInputRef}
               accept=".gcode,.nc,.iso,.txt,text/plain"
               aria-label="G-code program file"
@@ -212,7 +215,7 @@ export function EditorHeaderBar({
             <Button
               {...guideTargetProps('import-program', guideHighlightTarget)}
               aria-label={isImporting ? 'Importing program' : 'Import Program'}
-              className={`h-7 px-2 text-[11px] ${guideHighlightClass(
+              className={`px-2 text-[11px] ${guideHighlightClass(
                 'import-program',
                 guideHighlightTarget
               )}`}

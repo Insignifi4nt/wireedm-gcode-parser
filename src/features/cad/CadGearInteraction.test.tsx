@@ -85,6 +85,7 @@ describe('gear configuration and canvas integration', () => {
   it('highlights the actual pressure-angle geometry when inspecting its named parameter', async () => {
     const { session } = await mount(); await click('Parameters'); await click('Edit parameter pressureAngle');
     expect(session.getSnapshot().workflowOpen).toBe(true);
+    expect(container.querySelector('.cad-sketch-viewport')).toBeNull(); await click('Inspect Gear sketch pressureAngle');
     expect(container.querySelector('[data-cad-gear-inspection="pressureAngle"]')).not.toBeNull();
     expect(circleRadius('Base circle')).toBeCloseTo(27 * Math.cos(20 * Math.PI / 180), 10);
     await click('Close parameter editor'); expect(session.getSnapshot().workflowOpen).toBe(false);

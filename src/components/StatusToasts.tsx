@@ -1,6 +1,7 @@
+import { Button } from '@/components/ui/button';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Bell, CheckCircle2, Info, X, XCircle } from '@/components/icons';
+import { AlertTriangle, Bell, CheckCircle2, Info, X, XCircle } from '@wire-edm/icons-react';
 import { SlidingTabs } from '@/components/ui/SlidingTabs';
 
 export type StatusToastType = 'success' | 'error' | 'warning' | 'info';
@@ -50,8 +51,8 @@ function StatusToastItem({
   }, [onDismiss, toast.durationMs, toast.id]);
 
   return (
-    <button
-      className={`pointer-events-auto grid min-h-9 grid-cols-[16px_minmax(0,1fr)_14px] items-center gap-1.5 border px-2 py-1.5 text-left font-mono text-[10px] leading-4 shadow-lg outline-none backdrop-blur transition hover:brightness-110 ${toneClass(
+    <Button
+      className={`pointer-events-auto grid h-auto min-h-9 grid-cols-[16px_minmax(0,1fr)_14px] items-center gap-1.5 whitespace-normal border px-2 py-1.5 text-left font-mono leading-4 shadow-lg backdrop-blur ${toneClass(
         toast.type
       )}`}
       data-status-toast={toast.type}
@@ -62,7 +63,7 @@ function StatusToastItem({
       {toastIcon(toast.type)}
       <span className="min-w-0 break-words">{toast.message}</span>
       <X className="size-3 opacity-70" />
-    </button>
+    </Button>
   );
 }
 
@@ -124,12 +125,12 @@ export function StatusNotificationMenu({ notifications, agentContent }: { notifi
 
   return (
     <div className="relative font-mono text-[10px]" data-status-notification-root>
-      <button
+      <Button variant="outline" size="md"
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-controls={open ? `${id}-popover` : undefined}
         aria-label="Open notifications"
-        className="flex h-7 items-center gap-1 border border-border bg-background/60 px-2 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex items-center gap-1 px-2"
         onClick={() => { if (!open) setTab('notifications'); setOpen(!open); }}
         ref={triggerRef}
         title="Notifications"
@@ -144,7 +145,7 @@ export function StatusNotificationMenu({ notifications, agentContent }: { notifi
             {countLabel}
           </span>
         )}
-      </button>
+      </Button>
       {open && createPortal(
         <div
           className="fixed z-50 flex min-h-0 flex-col overflow-hidden border border-border bg-card/98 p-1.5 font-mono text-[10px] shadow-2xl"

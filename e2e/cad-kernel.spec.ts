@@ -20,7 +20,7 @@ async function importDocument(page: Page, features: readonly CadFeature[]) {
   const sourceDocument = cadDocument(features);
   await page.getByRole('button', { name: 'File', exact: true }).click();
   const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Import file', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Import file', exact: true }).click();
   await (await chooser).setFiles({ name: 'kernel.cad.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(sourceDocument)) });
   await expect.poll(async () => {
     const accepted = await cadContext(page);
@@ -60,7 +60,7 @@ test('lazy production WASM worker constructs exact Boolean solids and exports ST
   for (const format of ['STEP', 'STL']) {
     await page.getByRole('button', { name: 'File', exact: true }).click();
     const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: `Export ${format}`, exact: true }).click();
+    await page.getByRole('menuitem', { name: `Export ${format}`, exact: true }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toBe(`Kernel verification.${format.toLowerCase()}`);
     const saved = await download.path();
@@ -103,12 +103,12 @@ test('an impossible edge operation retains the exact preceding body and reports 
   await expect(page.getByRole('dialog', { name: 'Notifications and agent activity' }).locator('[data-status-notification-type="error"]').filter({ hasText: 'Impossible_fillet' })).toHaveText(message);
   await page.keyboard.press('Escape');
   const failedFeature = page.getByRole('button', { name: 'Select Impossible_fillet in history', exact: true });
-  await expect(failedFeature).toHaveAttribute('title', /Fillet · Impossible_fillet · .+/);
+  await expect(failedFeature).toHaveAttribute('aria-description', /Fillet · Impossible_fillet · .+/);
   await expect(page.getByRole('status').filter({ hasText: 'Feature needs attention' })).toBeVisible();
   await page.getByRole('button', { name: 'Select Box_A in history', exact: true }).click();
   await expect(page.getByRole('complementary', { name: 'Feature properties' })).toContainText('1,000 mm³');
   await page.getByRole('button', { name: 'File', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Export STEP', exact: true })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Export STL', exact: true })).toBeDisabled();
+  await expect(page.getByRole('menuitem', { name: 'Export STEP', exact: true })).toBeDisabled();
+  await expect(page.getByRole('menuitem', { name: 'Export STL', exact: true })).toBeDisabled();
   expect(errors).toEqual([]);
 });

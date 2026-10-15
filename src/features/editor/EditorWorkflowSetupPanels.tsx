@@ -1,4 +1,6 @@
-import { MousePointer2, RefreshCw } from '@/components/icons';
+import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
+import { MousePointer2, RefreshCw } from '@wire-edm/icons-react';
 
 import { suggestCompensationIntent, type ManualCompensationSelection } from '@/domain/compensation/intent';
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
@@ -7,9 +9,6 @@ import type {
   ContourClassification,
   PathPlanningDocument
 } from '@/domain/path-intel/types';
-
-const buttonClass =
-  'flex h-7 items-center justify-center gap-1 border border-border px-1.5 text-[10px] text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40';
 
 const CONTOUR_ROLE_OPTIONS: ContourClassification[] = [
   'exterior',
@@ -33,11 +32,11 @@ export function EditorGeometrySetupPanel({
         Wire centre follows the drawn path without controller compensation. Finished contour uses
         the kept material and travel direction to resolve the controller side.
       </p>
-      <label className="grid gap-1 uppercase text-muted-foreground">
+      <label className="grid gap-1 text-muted-foreground">
         Geometry Basis
-        <select
+        <Select
           aria-label="Geometry basis"
-          className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+          className="h-7 px-1.5 font-mono"
           disabled={disabled}
           onChange={(event) => {
             const basis = event.currentTarget.value;
@@ -47,7 +46,7 @@ export function EditorGeometrySetupPanel({
         >
           <option value="finished-contour">Finished contour</option>
           <option value="wire-centre">Wire centre</option>
-        </select>
+        </Select>
       </label>
       <p className="text-muted-foreground">
         Changing the basis keeps the geometry and saved compensation choices. Controller choices
@@ -108,11 +107,11 @@ export function EditorContourSetupPanel({
       <p className="text-muted-foreground">
         Set direction, contour role, and compensation.
       </p>
-      <label className="grid gap-1 uppercase text-muted-foreground">
+      <label className="grid gap-1 text-muted-foreground">
         Target contour
-        <select
+        <Select
           aria-label="Contour setup operation"
-          className="h-7 border border-border bg-background px-1.5 text-foreground"
+          className="h-7 px-1.5"
           disabled={!selected || disabled}
           onChange={(event) => onSelectOperation(event.currentTarget.value)}
           value={selected?.id ?? ''}
@@ -122,23 +121,23 @@ export function EditorContourSetupPanel({
               {String(executionIndex + 1).padStart(2, '0')}. {operation.displayName}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
-      <button
+      <Button
         aria-label="Reverse path operation"
-        className={buttonClass}
+        variant="outline" size="md" className="gap-1 px-1.5"
         disabled={!selected || disabled}
         onClick={() => selected && onReverse(selected.id)}
         type="button"
       >
         <RefreshCw className="size-3" />
         Reverse direction
-      </button>
-      <label className="grid gap-1 uppercase text-muted-foreground">
+      </Button>
+      <label className="grid gap-1 text-muted-foreground">
         Contour Role
-        <select
+        <Select
           aria-label="Contour role"
-          className="h-7 border border-border bg-background px-1.5 text-foreground"
+          className="h-7 px-1.5"
           disabled={!selected?.closed || disabled}
           onChange={(event) => {
             const classification = CONTOUR_ROLE_OPTIONS.find((option) => option === event.currentTarget.value);
@@ -152,14 +151,14 @@ export function EditorContourSetupPanel({
               {classification}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       <section className="grid gap-1" data-upid-compensation-review>
-        <label className="grid gap-0.5 uppercase text-muted-foreground">
+        <label className="grid gap-0.5 text-muted-foreground">
           Compensation
-          <select
+          <Select
             aria-label="Compensation kept material"
-            className="h-7 border border-border bg-background px-1.5 text-foreground"
+            className="h-7 px-1.5"
             disabled={!selected || disabled || document.geometryBasis === 'wire-centre'}
             onChange={(event) => {
               if (!selected) return;
@@ -187,7 +186,7 @@ export function EditorContourSetupPanel({
               </>
             ) : null}
             <option value="centerline">Centreline · no compensation</option>
-          </select>
+          </Select>
         </label>
         <details className="text-muted-foreground" data-upid-compensation-details>
           <summary className="cursor-pointer select-none">
@@ -282,11 +281,11 @@ export function EditorSetStartPanel({
         Every operation has an automatic contour start. Pick a closed contour to set an exact override.
         Picking inside a segment splits it at that point; manual leads then need review.
       </p>
-      <label className="grid gap-1 uppercase text-muted-foreground">
+      <label className="grid gap-1 text-muted-foreground">
         Target contour
-        <select
+        <Select
           aria-label="Set start operation"
-          className="h-7 border border-border bg-background px-1.5 text-foreground"
+          className="h-7 px-1.5"
           disabled={!selected || disabled}
           onChange={(event) => onSelectOperation(event.currentTarget.value)}
           value={selected?.id ?? ''}
@@ -296,13 +295,13 @@ export function EditorSetStartPanel({
               {String(executionIndex + 1).padStart(2, '0')}. {operation.displayName}
             </option>
           ) : null)}
-        </select>
+        </Select>
       </label>
-      <label className="grid gap-1 uppercase text-muted-foreground">
+      <label className="grid gap-1 text-muted-foreground">
         Point inference
-        <select
+        <Select
           aria-label="Set start point inference"
-          className="h-7 border border-border bg-background px-1.5 text-foreground"
+          className="h-7 px-1.5"
           disabled={!selected || disabled}
           onChange={(event) => onInferenceModeChange(
             event.currentTarget.value as 'endpoint' | 'nearest' | 'midpoint' | 'perpendicular'
@@ -313,7 +312,7 @@ export function EditorSetStartPanel({
           <option value="nearest">Nearest point to cursor</option>
           <option value="midpoint">Hovered side midpoint</option>
           <option value="perpendicular">Perpendicular from approach</option>
-        </select>
+        </Select>
       </label>
       <div className="flex items-start gap-2 border border-sky-500/40 bg-sky-500/5 p-2 text-sky-100">
         <MousePointer2 className="mt-0.5 size-3 shrink-0" />
@@ -323,16 +322,16 @@ export function EditorSetStartPanel({
             : 'No closed contour is available.'}
         </span>
       </div>
-      <button
+      <Button
         aria-label="Pick explicit contour start"
-        className={buttonClass}
+        variant="outline" size="md" className="gap-1 px-1.5"
         disabled={!selected || disabled}
         onClick={() => selected && onPickStart(selected.id)}
         type="button"
       >
         <MousePointer2 className="size-3" />
         Pick explicit start
-      </button>
+      </Button>
     </section>
   );
 }

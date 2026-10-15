@@ -1,10 +1,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { iconSource } from './icon-source.mjs';
+import * as iconComponents from '@wire-edm/icons-react';
 
 const crosswalk = JSON.parse(readFileSync('docs/design/final-inventory-crosswalk.json', 'utf8'));
 const provenance = JSON.parse(readFileSync('docs/design/inventory/checkpoints/6e2113f/provenance.json', 'utf8'));
-const exports = readFileSync('src/components/icons/index.ts', 'utf8');
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const component = id => id.split('-').map(word=>word[0].toUpperCase()+word.slice(1)).join('')+'Icon';
 const byId = new Map(iconSource.map(entry=>[entry.id, entry]));
@@ -12,7 +12,7 @@ if (!crosswalk.summary.completenessChecks.complete || crosswalk.summary.actualGa
 if (crosswalk.externalInventory.auditSha256 !== provenance.files.find(file=>file.name==='icon-inventory.audit.json')?.sha256) throw new Error('Crosswalk does not describe the stamped published checkpoint.');
 function replacements(ids) {
   return ids.map(id => {
-    if (!byId.has(id) || !exports.includes(`export const ${component(id)} = makeIcon('${id}');`)) throw new Error(`Missing generated semantic component for ${id}`);
+    if (!byId.has(id) || !(component(id) in iconComponents)) throw new Error(`Missing package semantic component for ${id}`);
     return { catalogId:id, component:component(id), asset:`src/assets/icons/${id}.svg` };
   });
 }
@@ -56,7 +56,8 @@ const assets = iconSource.map(entry=>({ id:entry.id, label:entry.label, category
 const output = { schemaVersion:1, publishedCadCheckpoint:provenance.publishedCheckpoint,
   externalSnapshot:{ generatedAt:crosswalk.externalInventory.generatedAt, revision:crosswalk.externalInventory.revision,
     auditSha256:crosswalk.externalInventory.auditSha256, sourceHashDigest:crosswalk.externalInventory.sourceHashDigest },
-  catalog:{ count:assets.length, source:'scripts/icon-source.mjs', componentModule:'@/components/icons',
+  currentApplicationCheckpoint:'bfac8563ca03be28f1462e8ffbb49b76b39d5e9e',
+  catalog:{ count:assets.length, source:'scripts/icon-source.mjs', componentModule:'@wire-edm/icons-react',
     viewBox:'0 0 24 24', strokeWidth:1.75, color:'currentColor', assets },
   directUsages:direct, dynamicSlots, rendererParents, expandedVariants:variants, textControls,
   applicationRules:[

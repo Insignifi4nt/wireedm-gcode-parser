@@ -191,6 +191,76 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it.each(['solid', 'sketch'] as const)('keeps the %s context while editing a shared value and navigates only through explicit Inspect', async context => {
+    const initial = parseCadDocument({ ...createCadDocument('Tapered outlet', 'parameter_context'), parameters: { height: 20, baseRadius: 10 }, features: [
+      { id: 'base', name: 'Base section', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+        profiles: [{ id: 'base_circle', name: 'Base circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 'baseRadius' } }] },
+      { id: 'outlet', name: 'Outlet section', kind: 'sketch', suppressed: false, plane: 'XY', offset: 'height',
+        profiles: [{ id: 'outlet_circle', name: 'Outlet circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 5 } }] },
+      { id: 'loft', name: 'Loft', kind: 'loft', suppressed: false, sketchIds: ['base', 'outlet'], ruled: false, operation: 'new', targetId: null },
+    ] });
+    const build = { ...topologyBuild, meshes: topologyBuild.meshes.map(mesh => ({ ...mesh, featureId: 'loft', name: 'Loft' })) };
+    await mount(initial, { build, buildState: 'ready' });
+    if (context === 'solid') await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'loft' }));
+    else {
+      await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'base' }));
+      await act(async () => viewport().apply({ kind: 'select-profile', profileId: 'base_circle' }));
+    }
+    const expectedContext = context === 'solid' ? { selectedFeatureId: 'loft', sketchId: null, selectedProfileId: null, view: { mode: 'solid' } }
+      : { selectedFeatureId: 'base', sketchId: 'base', selectedProfileId: 'base_circle', view: { mode: 'sketch' } };
+    expect(viewport().getState()).toMatchObject(expectedContext);
+    const canvas = container.querySelector(context === 'solid' ? '[aria-label="3D model viewport"]' : '.cad-sketch-viewport');
+    const cancelParameter = async () => {
+      const dialog = document.querySelector('.cad-parameter-editor');
+      const cancel = [...dialog?.querySelectorAll('button') ?? []].find(button => button.textContent?.trim() === 'Cancel');
+      if (!cancel) throw new Error('Missing floating parameter Cancel.'); await act(async () => cancel.click());
+    };
+    await click('Expand Parameters'); const before = currentSession.getSnapshot();
+    await click('Edit parameter height');
+    expect(viewport().getState()).toMatchObject(expectedContext);
+    expect(container.contains(canvas)).toBe(true);
+    expect(document.querySelector('.cad-parameter-editor')?.textContent).toContain('Outlet section');
+    await input(field('Value'), '25');
+    expect(viewport().getState()).toMatchObject(expectedContext); expect(container.contains(canvas)).toBe(true);
+    expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: true, canUndo: before.canUndo });
+    await cancelParameter();
+    expect(currentSession.getSnapshot()).toEqual(before); expect(viewport().getState()).toMatchObject(expectedContext); expect(container.contains(canvas)).toBe(true);
+    await click('Edit parameter height'); await click('Inspect Outlet section');
+    expect(viewport().getState()).toMatchObject({ selectedFeatureId: 'outlet', sketchId: 'outlet', selectedProfileId: null, view: { mode: 'sketch' } });
+    expect(field('Value').value).toBe('20');
+    await cancelParameter();
+    expect(currentSession.getSnapshot()).toEqual(before); expect(viewport().getState()).toMatchObject({ selectedFeatureId: 'outlet', sketchId: 'outlet', view: { mode: 'sketch' } });
+  });
+
+  it('keeps an accepted thin Pad volume visibly positive without changing its exact source or history', async () => {
+    const document = parseCadDocument({ ...createCadDocument(), parameters: { width: 4e-7 }, features: [
+      { id: 'sketch', name: 'Thin outline', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [{ id: 'rectangle', name: 'Thin plate', construction: false,
+        geometry: { kind: 'rectangle', x: 0, y: 0, width: ' width ', height: 20, cornerRadius: 0 } }] },
+      { id: 'pad', name: 'Thin Pad', kind: 'extrude', suppressed: false, sketchId: 'sketch', distance: 10, symmetric: false, operation: 'new', targetId: null }
+    ] }), volume = measureCadSketch(document, 'sketch').materialAreaMm2 * 10;
+    const build: CadBuildResult = { ...topologyBuild, meshes: [{ ...topologyBuild.meshes[0], name: 'Thin Pad', positions: [0, 0, 10, 4e-7, 0, 10, 4e-7, 20, 10],
+      edges: [], faceGroups: [], edgeGroups: [], volume, bounds: { min: [0, 0, 0], max: [4e-7, 20, 10] } }] };
+    await mount(document, { build, buildState: 'ready' }); const before = currentSession.getSnapshot();
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    expect(container.querySelector('.cad-solid-info strong')?.textContent).toBe(`${volume.toLocaleString(undefined, { notation: 'scientific', maximumSignificantDigits: 6, useGrouping: false })} mm³`);
+    expect(currentSession.getSnapshot()).toBe(before); expect(viewport().getState().selectedFeatureId).toBe('pad'); expect(build.meshes[0].volume).toBe(volume);
+  });
+
+  it.each(['Fillet', 'Chamfer'] as const)('refuses an explicit face for %s without broadening its scope, while deliberate body selection still permits all edges', async command => {
+    const resolve = vi.fn(resolveTopology), preview = vi.fn();
+    await mount(solidDocument(), { build: topologyBuild, buildState: 'ready', onInspectTopology: inspectTopology, onResolveSelection: resolve, onFeaturePreview: preview });
+    await selectTopology('face');
+    const before = currentSession.getSnapshot(), selection = viewport().getState().topologySelection;
+    preview.mockClear(); await click(command);
+    expect(currentSession.getSnapshot()).toBe(before); expect(viewport().getState().topologySelection).toEqual(selection);
+    expect(resolve).not.toHaveBeenCalled(); expect(preview.mock.calls.some(([request]) => request.kind === 'candidate')).toBe(false);
+    expect(container.querySelector('select[aria-label="Scope"]')).toBeNull();
+    expect(statusMessage).toHaveBeenCalledWith(expect.stringContaining('Pick edges'), 'error');
+    await click('Select Pad 1 in history'); await click(command);
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Scope"]')?.value).toBe('all');
+    expect(resolve).not.toHaveBeenCalled(); await click('Cancel'); expect(currentSession.getSnapshot()).toEqual(before);
+  });
+
   it('opens and selects the last of 257 accepted datum references without changing the document or history', async () => {
     const document = parseCadDocument({ ...createCadDocument('Station references', 'station_references'),
       features: Array.from({ length: 257 }, (_, index) => ({ id: `station_${index}`, name: `Station ${index}`, kind: 'datum-plane', suppressed: false,
@@ -819,6 +889,23 @@ describe('CAD sketch interaction', () => {
     expect(container.querySelector('[aria-label="Feature properties"]')).not.toBeNull(); expect(dimensionValue().value).toBe('60');
     await click('Cancel'); await click('Add dimension'); expect(dimensionValue().value).toBe('50'); await click('Cancel');
   });
+  it('navigates File commands by keyboard and restores toolbar focus without changing the draft', async () => {
+    await mount();
+    const before = currentSession.getSnapshot(), trigger = button('File');
+    await act(async () => trigger.focus());
+    await click('File');
+    expect(document.activeElement).toBe(button('New part'));
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(button('Open saved part'));
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(document.querySelector('[role="menu"][aria-label="CAD document commands"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    await click('File');
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })));
+    expect(document.querySelector('[role="menu"][aria-label="CAD document commands"]')).toBeNull();
+    expect(document.activeElement).toBe(button('Undo'));
+    expect(currentSession.getSnapshot()).toBe(before);
+  });
   it('offers model rebuild recovery from File without editing the draft', async () => {
     const rebuild = vi.fn(async () => undefined);
     await mount(solidDocument(), { build: null, buildState: 'error', onRebuild: rebuild });
@@ -963,6 +1050,8 @@ describe('CAD sketch interaction', () => {
     await click('Select Pad 1 in history');
     const before = currentSession.getSnapshot();
     await input(field('Length'), 'invalid + 2');
+    await act(async () => field('Length').focus());
+    expect(document.querySelector('[role="tooltip"]')).not.toBeNull();
     const nativeUndo = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true });
     await act(async () => field('Length').dispatchEvent(nativeUndo));
     expect(nativeUndo.defaultPrevented).toBe(false); expect(undo).not.toHaveBeenCalled();
@@ -982,6 +1071,20 @@ describe('CAD sketch interaction', () => {
     const saveKey = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true });
     await act(async () => field('Length').dispatchEvent(saveKey));
     expect(saveKey.defaultPrevented).toBe(true); expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels the scalar draft on the first Escape while focused contextual help is open', async () => {
+    await mount(solidDocument(), { build: topologyBuild, buildState: 'ready' });
+    await click('Select Pad 1 in history');
+    const before = currentSession.getSnapshot();
+    await input(field('Length'), 'invalid + 2');
+    await act(async () => field('Length').focus());
+    expect(document.querySelector('[role="tooltip"]')).not.toBeNull();
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    await act(async () => field('Length').dispatchEvent(escape));
+    expect(escape.defaultPrevented).toBe(true);
+    expect(field('Length').value).toBe('10');
+    expect(currentSession.getSnapshot()).toEqual(before);
   });
 
   it('cancels pending parameter fields from the focused input without changing geometry or history', async () => {

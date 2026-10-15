@@ -1,6 +1,6 @@
 import type { CadDocument, CadFeature, CadSketchFeature } from '@/domain/cad/cadDocument';
 import { cadFramePointToWorld, prepareCadDatumFrames, resolveCadSketchPlacement, type CadResolvedPlacement } from '@/domain/cad/cadDatumPlanes';
-import { cadScalarParameterNames, mapCadFeatureScalars } from '@/domain/cad/cadParameters';
+import { cadScalarParameterNames } from '@/domain/cad/cadParameters';
 import type { CadNumericPoint3 } from '@/domain/cad/cadPlanes';
 import { inspectCadScalarValue, type CadScalarValueBinding } from '@/domain/cad/cadScalarValueIntent';
 import { cadSketchSourceIssue } from '@/domain/cad/cadSketchSources';
@@ -42,32 +42,21 @@ export interface CadExtrudeDepthControl {
   cancel(token: string): boolean;
 }
 
-// Immutable source identity and only its geometric dependencies own this cache.
-// Each source retains one preparation and its latest selected material bounds.
-const sourceCache = new WeakMap<CadSketchFeature, { names: readonly string[]; values: readonly (number | undefined)[];
-  cells: CadPreparedSketchCells; selectionKey?: string; bounds?: CadBounds2 }>();
+// The domain owns source preparation. Each prepared result keeps only its latest
+// selected material bounds, so a changed source/driver cannot reuse old bounds.
+const selectedBounds = new WeakMap<CadPreparedSketchCells, { selectionKey: string; bounds: CadBounds2 | null }>();
 function materialBounds(sketch: CadSketchFeature, parameters: CadDocument['parameters'], selection?: readonly CadSketchCellReference[]): CadBounds2 | null {
-  let entry = sourceCache.get(sketch);
-  let names = entry?.names;
-  if (!names) {
-    const used = new Set<string>();
-    mapCadFeatureScalars(sketch, (value, path) => { if (path.startsWith('profiles.')) for (const name of cadScalarParameterNames(value)) used.add(name); return value; });
-    names = [...used];
-  }
-  const values = names.map(name => parameters[name]);
-  if (!entry || values.some((value, index) => !Object.is(value, entry?.values[index]))) {
-    entry = { names, values, cells: prepareCadSketchCells(sketch, parameters) }; sourceCache.set(sketch, entry);
-  }
+  const cells = prepareCadSketchCells(sketch, parameters), entry = selectedBounds.get(cells);
   const selectionKey = JSON.stringify(selection ?? null);
-  if (selectionKey === entry.selectionKey && entry.bounds) return entry.bounds;
+  if (entry && selectionKey === entry.selectionKey) return entry.bounds;
   let bounds: CadBounds2 | null = null;
-  for (const region of entry.cells.resolve(selection)) {
+  for (const region of cells.resolve(selection)) {
     const next = measureCadResolvedProfile(region.boundary.geometry).boundsMm;
     bounds = bounds ? { minX: Math.min(bounds.minX, next.minX), minY: Math.min(bounds.minY, next.minY),
       maxX: Math.max(bounds.maxX, next.maxX), maxY: Math.max(bounds.maxY, next.maxY) } : next;
   }
-  entry.selectionKey = selectionKey; entry.bounds = bounds ? Object.freeze(bounds) : undefined;
-  return entry.bounds ?? null;
+  selectedBounds.set(cells, { selectionKey, bounds: bounds ? Object.freeze(bounds) : null });
+  return bounds;
 }
 
 /** Resolve the real candidate frame even when its driver cannot safely be dragged. */

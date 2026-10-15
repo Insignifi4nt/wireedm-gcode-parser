@@ -1,13 +1,14 @@
 import { useMemo } from 'react';
 import type { CadCurveFeature, CadDocument } from '@/domain/cad/cadDocument';
 import { measureCadCurve } from '@/domain/cad/cadCurveMeasurements';
+import { formatCadLocalizedQuantity } from './cadDisplayQuantity';
 
 export function CadCurveMeasurements({ curve, document }: { curve: CadCurveFeature; document: CadDocument }) {
   const measurement = useMemo(() => {
     try { return measureCadCurve(document, curve.id); } catch { return null; }
   }, [curve, document]);
   if (!measurement) return null;
-  const n = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  const n = (value: number) => formatCadLocalizedQuantity(value, 4);
   const point = (value: readonly number[]) => value.map(n).join(', ');
   return <section className="cad-curve-measurements" aria-label="Curve measurements">
     <dl className="cad-topology-details"><dt>Length</dt><dd>{n(measurement.lengthMm)} mm</dd></dl>

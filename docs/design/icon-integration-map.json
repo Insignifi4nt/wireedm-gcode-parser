@@ -7,10 +7,11 @@
     "auditSha256": "a182ac12730f50490ff5f262aa60ceb8338af7ea647531ab22c0179e1f0074d3",
     "sourceHashDigest": "7e53c11c1f269181d7f803c061b947765964e7627f90b4d756ef5fd248daa922"
   },
+  "currentApplicationCheckpoint": "bfac8563ca03be28f1462e8ffbb49b76b39d5e9e",
   "catalog": {
     "count": 134,
     "source": "scripts/icon-source.mjs",
-    "componentModule": "@/components/icons",
+    "componentModule": "@wire-edm/icons-react",
     "viewBox": "0 0 24 24",
     "strokeWidth": 1.75,
     "color": "currentColor",
