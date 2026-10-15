@@ -10,10 +10,43 @@ import { cadEntitiesToCam } from '../../../domain/cad/cadCam';
 import { CAD_GEAR_V2_PLUGIN, CAD_GEAR_V3_PLUGIN, createCadPluginProfile, inspectCadPluginProfile } from '../../../domain/cad/plugins/cadPlugins';
 import { parsePortableUpid } from '../../../domain/upid/portableUpidProject';
 import { buildCadKernelModel } from './cadKernelModel';
+import { prepareCadMeshDisplay } from '../cadMeshDisplay';
 
 beforeAll(async () => {
   const wasmBinary = await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));
   setOC(await initOpenCascade({ wasmBinary, print: () => undefined, printErr: () => undefined }));
+}, 60_000);
+
+it('cleans the module 3 gear display while preserving all native teeth, bore, exact section and material', () => {
+  const profile = createCadPluginProfile(CAD_GEAR_V3_PLUGIN);
+  profile.inputs.cutterTipMode = 1; profile.inputs.cutterTipRadius = 1;
+  const doc = parseCadDocument({ ...createCadDocument('Module 3 gear', 'display_gear'), features: [
+    { id: 'outline', kind: 'sketch', name: 'Outline', suppressed: false, plane: 'XY', offset: 0, profiles: [
+      { id: 'gear', name: 'Gear', construction: false, geometry: profile },
+      { id: 'bore', name: 'Bore', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 6 } },
+    ] },
+    { id: 'solid', kind: 'extrude', name: 'Solid', suppressed: false, sketchId: 'outline', distance: 10, symmetric: false, operation: 'new', targetId: null },
+  ] });
+  const model = buildCadKernelModel(doc);
+  const verticalCount = (edges: readonly number[]) => {
+    let count = 0;
+    for (let i = 0; i < edges.length; i += 6) if (Math.abs(edges[i] - edges[i + 3]) < 1e-7 && Math.abs(edges[i + 1] - edges[i + 4]) < 1e-7 && Math.abs(edges[i + 2] - edges[i + 5]) > 9) count++;
+    return count;
+  };
+  try {
+    expect(model.result.diagnostics).toEqual([]);
+    const mesh = model.result.meshes[0], original = structuredClone(mesh);
+    const section = model.section({ bodyId: 'solid', plane: 'XY', offset: 5 });
+    const display = prepareCadMeshDisplay(mesh);
+    // Two true tooth-tip corners per tooth remain. Hundreds of approximation
+    // joins and the two half-cylinder bore seams no longer stripe the sidewalls.
+    expect(verticalCount(mesh.edges)).toBe(830);
+    expect(verticalCount(display.edges)).toBe(36);
+    expect(mesh).toEqual(original);
+    expect(mesh.volume).toBeCloseTo(21344.063921829482, 7);
+    expect(section.contourCount).toBe(2);
+    expect(model.section({ bodyId: 'solid', plane: 'XY', offset: 5 })).toEqual(section);
+  } finally { model.dispose(); }
 }, 60_000);
 
 it.each([{ teeth: 18, symmetric: false }, { teeth: 50, symmetric: true }])('constructs the generated $teeth-tooth boundary as native material, retaining bore and exact circle edges in a CAM section', ({ teeth, symmetric }) => {

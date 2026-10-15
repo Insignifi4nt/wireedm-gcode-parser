@@ -66,6 +66,35 @@ async function flushFrame() {
 }
 async function loseContext() { await act(async () => { renderer().lost = true; renderer().domElement.dispatchEvent(new Event('webglcontextlost')); }); }
 
+it('draws clean near-smooth boundaries, retains exact face order and exposes every native edge only in Edge mode without moving the camera', async () => {
+  const a = 8 * Math.PI / 180, s = Math.sin(a), c = Math.cos(a);
+  const source: CadMesh = { ...mesh, featureId: 'fold',
+    positions: [-1,0,0, 0,0,0, 0,1,0, -1,1,0, 0,0,0, c,0,-s, c,1,-s, 0,1,0],
+    normals: [0,0,1, 0,0,1, 0,0,1, 0,0,1, s,0,c, s,0,c, s,0,c, s,0,c],
+    indices: [0,1,2, 0,2,3, 4,5,6, 4,6,7], edges: [0,0,0, 0,1,0, -1,0,0, -1,1,0],
+    faceGroups: [{key:'left',start:0,count:6},{key:'right',start:6,count:6}],
+    edgeGroups: [{key:'seam',start:0,count:2},{key:'boundary',start:2,count:2}], bounds: {min:[-1,0,-s],max:[c,1,0]} };
+  const original = structuredClone(source);
+  const show = async (pickMode: 'body' | 'edge') => act(async () => root.render(<CadViewport meshes={[source]} selectedId="fold" onSelect={vi.fn()} pickMode={pickMode} onControlsReady={value => { controls = value; }} />));
+  const drawnLines = () => {
+    const scene = renderer().render.mock.calls.at(-1)![0], counts: number[] = [];
+    scene.traverse(child => { if (child instanceof LineSegments && child.userData.featureId === 'fold' && child.visible && !Array.isArray(child.material) && child.material.visible) counts.push(child.geometry.getAttribute('position').count); });
+    return counts;
+  };
+  await show('body'); await flushFrame();
+  expect(drawnLines()).toEqual([2]);
+  const before = solidViewState();
+  const scene = renderer().render.mock.calls.at(-1)![0];
+  scene.traverse(child => { if (child instanceof Mesh && child.userData.featureId === 'fold') {
+    expect(Array.from(child.geometry.index!.array)).toEqual(source.indices);
+    expect(child.geometry.getAttribute('normal').getX(1)).toBeCloseTo(Math.sin(4 * Math.PI / 180), 6);
+  } });
+  await show('edge'); await flushFrame(); expect(drawnLines()).toEqual([4]);
+  expect(solidViewState()).toMatchObject({view:before.view,zoom:before.zoom});
+  await show('body'); await flushFrame(); expect(drawnLines()).toEqual([2]);
+  expect(source).toEqual(original);
+});
+
 it('keeps a settled ordinary viewport revision stable through repeated real-Orbit capture without owned depth or areas', async () => {
   await mount(); await flushFrame();
   for (let attempt = 0; attempt < 4; attempt++) {

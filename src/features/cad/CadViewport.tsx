@@ -14,6 +14,7 @@ import { createCadTopologyHighlights } from './cadTopologyHighlights';
 import { pickCadCurveReference } from './cadCurveRendering';
 import { cadReferenceFeatureIds, cadReferencePlanes, cadSameReferencePlane, type CadViewportReference } from './cadViewportReferences';
 import { cadLocalRenderPositions, cadRenderOrigin } from './cadRenderCoordinates';
+import { prepareCadMeshDisplay } from './cadMeshDisplay';
 import { createCadRegionSelectionOverlay } from './cadRegionSelectionOverlay';
 import type { CadFeatureRegionPickCommand } from './cadFeatureReferencePicking';
 import type { CadExtrudeDepthControl } from './cadExtrudeDepthInteraction';
@@ -358,9 +359,10 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       disposeSolids();
       for (const mesh of data.current.meshes) {
         const origin = cadRenderOrigin(mesh.bounds);
+        const display = prepareCadMeshDisplay(mesh);
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(mesh.positions, origin), 3));
-        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(mesh.normals, 3));
+        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(display.normals, 3));
         geometry.setIndex([...mesh.indices]);
         const selected = mesh.featureId === data.current.selectedId;
         const material = new THREE.MeshStandardMaterial({ color: selected ? 0x79c8e6 : 0xa3b0bf, roughness: 0.55, metalness: 0.18, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
@@ -373,11 +375,19 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         const edges = new THREE.BufferGeometry();
         edges.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(mesh.edges, origin), 3));
         const lines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: selected ? 0xb5eafd : 0x344452 }));
+        lines.material.visible = data.current.pickMode === 'edge';
         lines.position.set(...origin);
         lines.userData.featureId = mesh.featureId;
+        lines.userData.nativeEdges = true;
         solids.add(lines);
         pickableEdges.push(lines);
         meshByObject.set(lines, mesh);
+        const displayEdges = new THREE.BufferGeometry();
+        displayEdges.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(display.edges, origin), 3));
+        const outline = new THREE.LineSegments(displayEdges, new THREE.LineBasicMaterial({ color: selected ? 0xb5eafd : 0x344452 }));
+        outline.material.visible = data.current.pickMode !== 'edge';
+        outline.position.set(...origin); outline.userData.featureId = mesh.featureId; outline.userData.displayEdges = true;
+        solids.add(outline);
       }
       if (!fittedSolid && data.current.meshes.length) {
         fittedSolid = true;
@@ -404,7 +414,11 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         const selected = child.userData.featureId === data.current.selectedId;
         const hovered = child.userData.featureId === hoveredFeatureId;
         if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) child.material.color.setHex(selected ? 0x79c8e6 : hovered ? 0xb2d2df : 0xa3b0bf);
-        else if (child instanceof THREE.LineSegments && child.material instanceof THREE.LineBasicMaterial) child.material.color.setHex(selected ? 0xb5eafd : hovered ? 0x91edff : 0x344452);
+        else if (child instanceof THREE.LineSegments && child.material instanceof THREE.LineBasicMaterial) {
+          child.material.color.setHex(selected ? 0xb5eafd : hovered ? 0x91edff : 0x344452);
+          if (child.userData.nativeEdges) child.material.visible = data.current.pickMode === 'edge';
+          if (child.userData.displayEdges) child.material.visible = data.current.pickMode !== 'edge';
+        }
       }
       updateReferenceStyles();
       render();

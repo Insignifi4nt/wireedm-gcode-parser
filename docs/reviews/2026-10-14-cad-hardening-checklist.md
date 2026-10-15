@@ -2,6 +2,12 @@
 
 Status: reviewed CAD delivery candidate; current publication checks are tracked in PR12. Worktree: `feature/parametric-cad-workbench`. App: `0.0.697`.
 
+## Gear display follow-up, 15 October
+
+- [x] Reproduce the user's actual moved module3/z18 gear without changing its saved source. Its832 native faces /2490 edges include792 near-smooth approximation joins and36 sharp tooth-tip corners. Back up its complete three-feature source, current saved fingerprint and build. Native generator, tolerance, tooth roots and exports remain unchanged.
+- [x] Add a separate display preparation with10° crease lighting and conservative seam suppression. Keep native buffers/triangle order exact, every edge in Edge mode and original picking/highlights. Three red display cases and the mounted viewport red precede the repair. Focused display/pick/viewport56 cases and native/Depth/Highlights/document-frame25 cases pass; the actual unrotated gear retains36 displayed axial tooth corners instead of830 full-topology seams, with exact native section and unchanged21344.063921829482mm³ material.
+- [x] Finish independent review, current production build and actual smooth/Edge-mode browser verification. Independent62-case gate and extra real-Three picking/analytic-normal/far-tiny probes pass. Build/92 docs/native sources pass. A new updated tab opens the exact saved three-feature gear through WebMCP, verifies2490 inspectable edges and exact native-edge selection, stable mode-switch zoom and public capture, then returns to the clean view. Complete saved source/fingerprint match; the original tab's version and Undo/Redo remain intact. Record: `2026-10-15-cad-clean-gear-display.md`. Publish this bounded reviewed repair through existing PR12; no new modeling or native work is required.
+
 ## Current continuation: complete part workflows
 
 The user's latest direction takes priority: finish concrete usability repairs and call them done. The historical evidence below is retained; its earlier pending statements do not reopen checkpoints subsequently closed. Native Copy, retained-source caching and further transport experiments are parked. Document framing and unwanted parameter-navigation repairs pass independent review and actual saved-part workflows, and are published through PR12. No further feature or optimization work is planned unless the delivery checks identify a defect.
