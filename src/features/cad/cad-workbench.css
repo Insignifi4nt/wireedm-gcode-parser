@@ -2,10 +2,10 @@
 .cad-workbench button, .cad-header button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; border-radius: 3px; padding: 5px 8px; color: #becbd3; background: transparent; cursor: pointer; font: inherit; white-space: nowrap; transition: background 100ms; }
 .cad-workbench button:hover:not(:disabled), .cad-header button:hover:not(:disabled) { background: #27323b; color: #eef5f8; }
 .cad-workbench button:disabled, .cad-header button:disabled { opacity: .35; cursor: default; }
-.cad-workbench button:focus-visible, .cad-workbench input:focus-visible, .cad-workbench select:focus-visible, .cad-header button:focus-visible, .cad-header input:focus-visible { outline: 1px solid var(--cad-accent); outline-offset: 2px; }
+.cad-workbench button:focus-visible, .cad-workbench input:focus-visible, .cad-header button:focus-visible, .cad-header input:focus-visible { outline: 1px solid var(--cad-accent); outline-offset: 2px; }
 .cad-workbench button.cad-primary { background: #2c6875; color: #e0f6fb; border-color: #3b7c89; }
 .cad-workbench button.cad-primary:hover:not(:disabled) { background: #347d8b; }
-.cad-workbench input, .cad-workbench select, .cad-header input, .cad-header select { min-width: 0; color: #d8e3e9; background: #111920; border: 1px solid #35434e; border-radius: 3px; padding: 5px 7px; font: inherit; outline: none; }
+.cad-workbench input, .cad-header input { min-width: 0; color: #d8e3e9; background: #111920; border: 1px solid #35434e; border-radius: 3px; padding: 5px 7px; font: inherit; outline: none; }
 .cad-workbench input[type=checkbox] { accent-color: var(--cad-accent); width: 12px; height: 12px; padding: 0; margin: 0; flex-shrink: 0; }
 .cad-shell-header { flex: 1; min-width: 0; align-self: stretch; margin-right: 8px; }
 .cad-header { --cad-accent: #67c8da; height: 100%; min-height: 38px; display: flex; align-items: center; gap: 6px; padding: 0; color: #cbd5dc; font: 12px/1.4 Inter, "Segoe UI", sans-serif; }
@@ -82,7 +82,7 @@
 .cad-webgl { position: absolute; inset: 0; }
 .cad-webgl canvas { display: block; width: 100%; height: 100%; }
 .cad-view-tools { position: absolute; z-index: 2; bottom: 66px; right: 12px; display: flex; align-items: center; gap: 2px; padding: 3px 5px; background: #142029e8; border: 1px solid #3a4d5b; border-radius: 4px; box-shadow: 0 3px 8px #0002; color: #9db8c8; }
-.cad-view-tools select { padding: 3px 5px; font-size: 12px; width: 98px; border: none; background: transparent; }
+.cad-view-tools select { padding: 3px 5px; font-size: 12px; width: 98px; }
 .cad-view-tools button { padding: 3px 6px; font-size: 12px; color: #9fb3bf; }
 .cad-view-tools button[aria-pressed=true] { color: #b7e9f4; background: #29414d; }
 .cad-topology-inspector { padding: 11px 13px; border-bottom: 1px solid #35444f; }

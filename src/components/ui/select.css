@@ -1,0 +1,34 @@
+/* Keep utility sizing above component defaults even when this CSS loads first. */
+@layer theme, base, components, utilities;
+@layer components {
+.ui-select {
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--input);
+  border-radius: 2px;
+  background: var(--surface-inset);
+  color: var(--foreground);
+  padding: 3px 6px;
+  font: inherit;
+  color-scheme: inherit;
+}
+
+.ui-select[data-density="compact"] { padding: 2px 4px; }
+.ui-select:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.ui-select[aria-invalid="true"] { border-color: var(--destructive); }
+.ui-select[aria-invalid="true"]:focus-visible { outline-color: var(--destructive); }
+.ui-select:disabled { background: var(--muted); color: var(--muted-foreground); cursor: default; opacity: .6; }
+
+/* Native popups can use an OS surface, so never inherit a transparent trigger. */
+.ui-select option,
+.ui-select optgroup { background: var(--popover); color: var(--popover-foreground); }
+.ui-select option:checked { background: var(--accent); color: var(--accent-foreground); }
+.ui-select option:disabled,
+.ui-select optgroup:disabled { color: var(--muted-foreground); }
+
+@media (forced-colors: active) {
+  .ui-select,
+  .ui-select option,
+  .ui-select optgroup { forced-color-adjust: auto; }
+}
+}

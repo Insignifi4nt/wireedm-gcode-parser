@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useEffect, useMemo, useState } from 'react';
 
 import { canSetCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
@@ -141,9 +142,9 @@ export function EditorEntryExitPanel({
     <section className="grid gap-2 text-[10px]" data-entry-exit-panel>
       <label className="grid gap-1 uppercase text-muted-foreground">
         Operation
-        <select
+        <Select
           aria-label="Entry and exit operation"
-          className="h-7 border border-border bg-background px-1.5 text-foreground"
+          className="h-7 px-1.5"
           disabled={disabled || targetChangeBlocked || canvasPickMode !== null}
           onChange={(event) => onSelectOperation(event.currentTarget.value)}
           value={selected.id}
@@ -160,7 +161,7 @@ export function EditorEntryExitPanel({
               {String(executionIndex + 1).padStart(2, '0')}. {operation.displayName}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
 
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
@@ -212,12 +213,12 @@ export function EditorEntryExitPanel({
         {transitions.entry?.strategy === 'circle-center' && <p className="text-muted-foreground">This lead cuts from the circle center to its boundary. Confirm that the center is in removable material.</p>}
         {transitions.entry && 'review' in transitions.entry && transitions.entry.review === 'required' &&
           <p role="status" className="text-amber-300">Geometry changed. Confirm the entry coordinates with Set straight entry, or choose no entry.</p>}
-        <select aria-label="Entry input mode" className="h-7 border border-border bg-background px-1.5 text-foreground"
+        <Select aria-label="Entry input mode" className="h-7 px-1.5"
           onChange={(event) => setEntryMode(event.currentTarget.value as typeof entryMode)} value={entryMode}>
           <option value="coordinates">Coordinates</option>
           <option value="lead-length">Lead-in length (mm)</option>
           {rapidStart && <option value="rapid-length">Rapid from initial wire (mm)</option>}
-        </select>
+        </Select>
         {entryMode === 'coordinates' ? <CoordinateInputs
           label="Entry"
           onXChange={(value) => { setEntryX(value); onDraftChange?.('entry'); }}
@@ -280,11 +281,11 @@ export function EditorEntryExitPanel({
         </div>
         {transitions.exit?.review === 'required' &&
           <p role="status" className="text-amber-300">Geometry changed. Confirm the exit coordinates with Set straight exit, or choose no exit.</p>}
-        <select aria-label="Exit input mode" className="h-7 border border-border bg-background px-1.5 text-foreground"
+        <Select aria-label="Exit input mode" className="h-7 px-1.5"
           onChange={(event) => setExitMode(event.currentTarget.value as typeof exitMode)} value={exitMode}>
           <option value="coordinates">Coordinates</option>
           <option value="lead-length">Lead-out length (mm)</option>
-        </select>
+        </Select>
         {exitMode === 'coordinates' ? <CoordinateInputs
           label="Exit"
           onXChange={(value) => { setExitX(value); onDraftChange?.('exit'); }}

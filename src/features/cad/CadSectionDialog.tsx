@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useEffect, useRef, useState } from 'react';
 import type { CadMesh, CadPlane } from '@/domain/cad/cadDocument';
 import type { CadSectionRequest, CadSectionResult } from '@/domain/cad/cadSection';
@@ -77,8 +78,8 @@ export function CadSectionDialog({ bodies, initialBodyId, version, onClose, onIn
     <div className="space-y-3 p-4 text-xs">
       <p className="text-muted-foreground">Cut the final solid with a plane and transfer its exact closed contours. The preview includes downstream cuts and Boolean operations.</p>
       <div className="grid grid-cols-[2fr_1fr_1fr] gap-3">
-        <label>Solid body<select className={input} value={bodyId} disabled={busy !== null} onChange={event => setBodyId(event.target.value)}>{bodies.map(body => <option key={body.featureId} value={body.featureId}>{body.name}</option>)}</select></label>
-        <label>Section plane<select className={input} value={plane} disabled={busy !== null} onChange={event => { if (event.target.value === 'XY' || event.target.value === 'XZ' || event.target.value === 'YZ') setPlane(event.target.value); }}><option>XY</option><option>XZ</option><option>YZ</option></select></label>
+        <label>Solid body<Select className="mt-1 w-full px-2 py-1.5 text-xs" value={bodyId} disabled={busy !== null} onChange={event => setBodyId(event.target.value)}>{bodies.map(body => <option key={body.featureId} value={body.featureId}>{body.name}</option>)}</Select></label>
+        <label>Section plane<Select className="mt-1 w-full px-2 py-1.5 text-xs" value={plane} disabled={busy !== null} onChange={event => { if (event.target.value === 'XY' || event.target.value === 'XZ' || event.target.value === 'YZ') setPlane(event.target.value); }}><option>XY</option><option>XZ</option><option>YZ</option></Select></label>
         <label>Plane offset (mm)<input className={input} value={offset} disabled={busy !== null} onChange={event => setOffset(event.target.value)} /></label>
       </div>
       <p className="text-muted-foreground">Offset follows {plane === 'XY' ? '+Z' : plane === 'XZ' ? '−Y' : '+X'}. Use a plane inside the material. Ellipse and spline sections are reported as unsupported.</p>

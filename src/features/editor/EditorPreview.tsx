@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import {
   useCallback,
   useEffect,
@@ -1005,13 +1006,13 @@ export function EditorPreview({
       {pathDocument && <div className="flex h-7 min-w-0 items-center gap-3 overflow-hidden border-b border-border px-2 text-[10px] text-muted-foreground" data-preview-selection-tools>
         {selectionEnabled ? <>
         <label className="flex items-center gap-1">Pick
-          <select aria-label="Canvas selection filter" className="h-5 border border-border bg-background px-1 text-foreground" value={selectionFilter}
+          <Select density="compact" aria-label="Canvas selection filter" className="h-5 px-1" value={selectionFilter}
             onChange={(event) => {
               const filter = PREVIEW_SELECTION_FILTERS.find((candidate) => candidate.value === event.target.value);
               if (filter) { setSelectionFilter(filter.value); setOverlapCandidates([]); }
             }}>
             {PREVIEW_SELECTION_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
-          </select>
+          </Select>
         </label>
         <span className="truncate" title="Alt-click cycles overlaps. Drag selects one contour or segment. Use Geometry for exact selection.">Alt-click cycles overlaps. Drag selects one contour or segment. Use Geometry for exact selection.</span>
         </> : <span className="truncate">{measurement ? 'Measure source points and the gap between picked edges.' : 'Follow the active tool instructions. Shift-drag pans the canvas.'}</span>}

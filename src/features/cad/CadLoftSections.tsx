@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Plus, X } from 'lucide-react';
 import type { CadDocument } from '@/domain/cad/cadDocument';
@@ -77,7 +78,7 @@ export function CadLoftSections({ document, featureId, sketchIds, onChange, appl
           ? `Station from first placed section (${first?.sketch.name ?? ''}). Authored offset: ${number(placed.offset)} mm; in-plane shift: ${placed.tangentialOffsetMm.map(number).join(', ')} mm.` : problem ?? undefined;
         return <li key={id} className="cad-loft-section-row">
           <span className="cad-loft-section-number">{index + 1}</span>
-          <select aria-label={`Section ${index + 1}`} data-sketch-id={id} value={id} aria-invalid={problem ? true : undefined}
+          <Select aria-label={`Section ${index + 1}`} data-sketch-id={id} value={id} aria-invalid={problem ? true : undefined}
             onChange={event => { const nextId = event.target.value; if (!candidateDisabled(nextId, id)) { focusAfterChange.current = nextId; onChange(sketchIds.map((entry, position) => position === index ? nextId : entry)); } }}>
             {!candidate && <option value={id} disabled>{document.features.find(feature => feature.id === id)?.name ?? 'Sketch'} (unavailable)</option>}
             {candidates.map(entry => {
@@ -89,7 +90,7 @@ export function CadLoftSections({ document, featureId, sketchIds, onChange, appl
                 {entry.sketch.name}{reason ? ` — ${reason}` : ''}
               </option>;
             })}
-          </select>
+          </Select>
           <CadReferencePickButton label={`Section ${index + 1}`} options={candidates.map(candidate => ({ value: candidate.sketch.id, disabled: candidateDisabled(candidate.sketch.id, id) }))} onSelect={nextId => {
             if (!candidateDisabled(nextId, id)) { focusAfterChange.current = nextId; onChange(sketchIds.map((entry, position) => position === index ? nextId : entry)); }
           }} />
@@ -103,10 +104,10 @@ export function CadLoftSections({ document, featureId, sketchIds, onChange, appl
       })}
     </ol>
     {available.length > 0 && <div className="cad-loft-section-add">
-      <select aria-label="Sketch to add" value={selectedAddId} disabled={!selectedAddId || sketchIds.length >= MAX_CAD_LOFT_SECTIONS} onChange={event => setAddId(event.target.value)}>
+      <Select aria-label="Sketch to add" value={selectedAddId} disabled={!selectedAddId || sketchIds.length >= MAX_CAD_LOFT_SECTIONS} onChange={event => setAddId(event.target.value)}>
         {!selectedAddId && <option value="">No compatible sketch</option>}
         {available.map(candidate => <option key={candidate.sketch.id} value={candidate.sketch.id}>{candidate.sketch.name}</option>)}
-      </select>
+      </Select>
       <CadReferencePickButton label="New section" disabled={sketchIds.length >= MAX_CAD_LOFT_SECTIONS} options={available.map(candidate => ({ value: candidate.sketch.id }))} onSelect={nextId => {
         if (sketchIds.length < MAX_CAD_LOFT_SECTIONS && !candidateDisabled(nextId)) { focusAfterChange.current = nextId; onChange([...sketchIds, nextId]); }
       }} />

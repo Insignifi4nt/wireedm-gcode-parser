@@ -93,7 +93,6 @@ body {
 
 button,
 input,
-select,
 textarea {
   font: inherit;
 }
@@ -112,7 +111,6 @@ textarea {
 
 button:focus-visible,
 input:focus-visible,
-select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible {
   outline: 2px solid var(--ring);

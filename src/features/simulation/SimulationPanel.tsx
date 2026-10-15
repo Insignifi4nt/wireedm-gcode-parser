@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { AlertTriangle, ArrowLeft, Box, Check, ChevronRight, FileBox, Info, LoaderCircle, Pause, Play, RotateCcw, SkipBack, SkipForward, X } from 'lucide-react';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
@@ -141,10 +142,10 @@ export default function SimulationPanel({ document, projectName, savedAt, dirty,
           <button type="button" aria-pressed={!finalPartOnly} onClick={() => setFinalPartOnly(false)}>Process</button>
           <button type="button" aria-pressed={finalPartOnly} onClick={() => { setPlaying(false); setFinalPartOnly(true); closeSetup(); }}>Final part</button>
         </div>}
-        {plan && !finalPartOnly && <select className="sim-operation-select" aria-label="Simulation operation" value={activeOperation?.id ?? ''} onChange={event => {
+        {plan && !finalPartOnly && <Select className="sim-operation-select" aria-label="Simulation operation" value={activeOperation?.id ?? ''} onChange={event => {
           const operation = operationStarts.find(item => item.id === event.target.value);
           if (operation) { setPlaying(false); setElapsed(operation.time); }
-        }}><option value="" disabled>Jump to operation</option>{operationStarts.map((operation, index) => <option key={operation.id} value={operation.id ?? ''}>{index + 1}. {operation.name}</option>)}</select>}
+        }}><option value="" disabled>Jump to operation</option>{operationStarts.map((operation, index) => <option key={operation.id} value={operation.id ?? ''}>{index + 1}. {operation.name}</option>)}</Select>}
         <div className="sim-tools" ref={setupTools}>
           {setupButton('stock', 'Stock settings', <><Box size={14} /><span>Stock</span><small>{[settings.stock.width, settings.stock.depth, settings.stock.thickness].map(value => Number(value.toFixed(3))).join(' × ')}</small></>)}
           {setupButton('machine', 'Machine model settings', <><FileBox size={14} /><span>Machine</span>{machine && <i aria-label="Model loaded" />}</>)}
@@ -181,7 +182,7 @@ export default function SimulationPanel({ document, projectName, savedAt, dirty,
             <button className="sim-play" type="button" aria-label={playing ? 'Pause simulation' : 'Play simulation'} onClick={() => { if (elapsed >= plan.durationSeconds) setElapsed(0); setPlaying(value => !value); }}>{playing ? <Pause size={16} /> : <Play size={16} />}</button>
             <button type="button" aria-label="Next simulation event" onClick={() => step(1)}><SkipForward size={14} /></button>
             <span className="sim-time">{timeLabel(elapsed)}<span> / {timeLabel(plan.durationSeconds)}</span></span>
-          </div><div className="sim-rate"><select aria-label="Simulation playback speed" value={speed} onChange={event => setSpeed(Number(event.target.value))}>{[0.25, 0.5, 1, 2, 5, 10].map(rate => <option key={rate} value={rate}>{rate}×</option>)}</select></div></div>
+          </div><div className="sim-rate"><Select aria-label="Simulation playback speed" value={speed} onChange={event => setSpeed(Number(event.target.value))}>{[0.25, 0.5, 1, 2, 5, 10].map(rate => <option key={rate} value={rate}>{rate}×</option>)}</Select></div></div>
         </div>}
       </> : <div className="sim-unavailable"><AlertTriangle size={28} /><h2>{workerFailed ? 'Simulation preparation stopped' : 'Finish the machining setup'}</h2><p>{workerFailed ? 'The saved project is unchanged.' : 'The saved process needs explicit machining intent before it can be simulated.'}</p><ul>{diagnostics.map((diagnostic, index) => <li key={`${diagnostic.code}-${index}`}>{diagnostic.message}</li>)}</ul>{workerFailed && <button type="button" onClick={retry}>Retry simulation</button>}<button type="button" onClick={onEdit}><ArrowLeft size={14} />Review in editor</button></div>}
     </div>
@@ -190,8 +191,8 @@ export default function SimulationPanel({ document, projectName, savedAt, dirty,
       <div data-sim-panel="stock" hidden={openPanel !== 'stock'}>
       <form onSubmit={applyStock} className="sim-section"><div className="sim-section-title"><span>Dimensions</span><span>mm</span></div>
         <div className="sim-dimensions">{(['width', 'depth', 'thickness'] as const).map(key => <label key={key}><span>{key === 'width' ? 'Width · X' : key === 'depth' ? 'Depth · Y' : 'Height · Z'}</span><input aria-label={`Stock ${key}`} name={key} type="number" step="any" min="0.001" required defaultValue={settings.stock[key]} /></label>)}</div>
-        <label className="sim-select-row"><span>Released pieces</span><select aria-label="Released piece behavior" name="retention" defaultValue={settings.retention}><option value="fall">Fall under gravity</option><option value="retain">Retained in place</option></select></label>
-        <label className="sim-select-row"><span>Waste handling</span><select aria-label="Waste handling" name="wasteHandling" defaultValue={settings.wasteHandling ?? 'remove-before-next-operation'}><option value="remove-before-next-operation">Remove between cuts</option><option value="keep">Keep for interference</option></select></label>
+        <label className="sim-select-row"><span>Released pieces</span><Select aria-label="Released piece behavior" name="retention" defaultValue={settings.retention}><option value="fall">Fall under gravity</option><option value="retain">Retained in place</option></Select></label>
+        <label className="sim-select-row"><span>Waste handling</span><Select aria-label="Waste handling" name="wasteHandling" defaultValue={settings.wasteHandling ?? 'remove-before-next-operation'}><option value="remove-before-next-operation">Remove between cuts</option><option value="keep">Keep for interference</option></Select></label>
         <details className="sim-details"><summary>Placement & wire</summary><div className="sim-fields-grid">{(['originX', 'originY', 'bottomZ'] as const).map(key => <label key={key}><span>{key === 'originX' ? 'Origin X' : key === 'originY' ? 'Origin Y' : 'Bottom Z'}</span><input aria-label={`Stock ${key}`} name={key} type="number" step="any" required defaultValue={settings.stock[key]} /></label>)}<label><span>Wire Ø</span><input aria-label="Wire diameter" name="wireDiameter" type="number" step="any" min="0.001" required defaultValue={settings.wireDiameter} /></label><label><span>Support Z</span><input aria-label="Support floor Z" name="supportFloorZ" type="number" step="any" required defaultValue={settings.supportFloorZ ?? settings.stock.bottomZ - (settings.guideClearanceMm ?? 20)} /></label></div></details>
         {formError && <p className="sim-error" role="alert">{formError}</p>}<button className="sim-apply" type="submit"><Check size={13} />Apply stock</button>
       </form>

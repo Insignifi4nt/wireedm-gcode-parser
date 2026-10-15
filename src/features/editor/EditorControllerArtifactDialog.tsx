@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { lazy, Suspense, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useModalFocus } from '@/components/ui/useModalFocus';
 import { AgentRepairPrompt } from '@/components/AgentRepairPrompt';
@@ -204,9 +205,9 @@ export function EditorControllerArtifactDialog({
 
         <label className="grid gap-1 uppercase text-muted-foreground">
           Physical machine
-          <select
+          <Select
             aria-label="Controller export machine"
-            className="h-8 border border-border bg-background px-2 text-foreground"
+            className="h-8 px-2"
             disabled={generating}
             onChange={(event) => {
               setMachineId(event.currentTarget.value);
@@ -215,7 +216,7 @@ export function EditorControllerArtifactDialog({
           >
             <option value="">Select a machine</option>
             {machines.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}
-          </select>
+          </Select>
         </label>
 
         {machines.length === 0 && (

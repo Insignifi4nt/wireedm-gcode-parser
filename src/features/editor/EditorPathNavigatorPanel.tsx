@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import {
   ArrowDown,
   ArrowUp,
@@ -707,9 +708,9 @@ export function EditorPathNavigatorPanel({
             <div className="mb-3 border border-border bg-background/35 p-2" data-upid-transform-document-placement>
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="text-[10px] uppercase text-muted-foreground">Reference</span>
-              <select
+              <Select
                 aria-label="Document reference point"
-                className="h-6 max-w-[132px] border border-border bg-background px-1 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-6 max-w-[132px] px-1 font-mono text-[10px]"
                 data-upid-transform-document-reference
                 disabled={!documentBounds || isSaving || transformTargetChangeBlocked}
                 onChange={(event) => {
@@ -731,7 +732,7 @@ export function EditorPathNavigatorPanel({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
               <p
                 className="mb-2 text-[10px] leading-4 text-muted-foreground"
@@ -1370,9 +1371,9 @@ export function EditorPathNavigatorPanel({
               data-upid-order-strategy
             >
               Planning Mode
-              <select
+              <Select
                 aria-label="Planning order strategy"
-                className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+                className="h-7 px-1.5 font-mono"
                 disabled={isSaving}
                 onChange={(event) =>
                   onSetPathOperationOrderStrategy(event.currentTarget.value as OperationOrderStrategy)
@@ -1384,7 +1385,7 @@ export function EditorPathNavigatorPanel({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <span className="text-muted-foreground" data-upid-order-strategy-status>
               {manualOrderActive ? 'Manual order overrides active' : 'Automatic order active'}

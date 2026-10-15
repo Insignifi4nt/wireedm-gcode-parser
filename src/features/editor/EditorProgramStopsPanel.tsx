@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { programStopValidationError } from '@/domain/path-intel/programStops';
 import { resolveSourceAfterContourTravel } from '@/domain/path-intel/afterContourTravel';
@@ -356,11 +357,11 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
   return <>
         <label className="grid gap-0.5 text-muted-foreground">
           Placement
-          <select
+          <Select
             aria-label={`${labelPrefix} placement`}
             aria-describedby={helpId}
             title={placementHelp(placement, hasExit)}
-            className="h-7 border border-border bg-background px-1 text-foreground"
+            className="h-7 px-1"
             onChange={(event) => {
               onPlacementChange(event.currentTarget.value as OperationProgramStopPlacement['kind']);
               onDraftChange?.();
@@ -374,7 +375,7 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
             <option value="after-contour" title={placementHelp('after-contour', hasExit)}>After contour · before exit lead</option>
             <option value="after-exit" title={placementHelp('after-exit', hasExit)}>After exit lead · before next positioning</option>
             <option value="after-contour-distance" title={placementHelp('after-contour-distance', hasExit)}>After contour · travel distance</option>
-          </select>
+          </Select>
         </label>
         <p id={helpId} className="text-muted-foreground">{placementHelp(placement, hasExit)}</p>
         {(placement === 'before-operation-end' || placement === 'after-contour-distance') && (
@@ -398,9 +399,9 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
         </>}
         <label className="grid gap-0.5 text-muted-foreground">
           Reason
-          <select
+          <Select
             aria-label={`${labelPrefix} reason`}
-            className="h-7 border border-border bg-background px-1 text-foreground"
+            className="h-7 px-1"
             onChange={(event) => {
               onReasonChange(event.currentTarget.value as OperationProgramStop['reason']);
               onDraftChange?.();
@@ -408,7 +409,7 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
             value={reason}
           >
             {Object.entries(stopReasonLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="grid gap-0.5 text-muted-foreground">
           Note

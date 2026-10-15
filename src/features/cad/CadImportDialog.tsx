@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useEffect, useRef, useState } from 'react';
 import type { CadDxfUnits } from '@/domain/cad/cadDxfSource';
 
@@ -26,12 +27,12 @@ export function CadImportDialog({ file, onImport, onCancel }: {
     <form onSubmit={event => { event.preventDefault(); void confirm(); }}>
       <h2 className="truncate text-sm font-medium" title={file.name}>{file.name}</h2>
       <p className="mt-1 text-xs text-muted-foreground">{stl ? 'STL · Faceted solid' : dxf ? 'DXF' : 'STEP · Exact solid'} · {(file.size / 1024).toFixed(1)} KiB</p>
-      {dxf && <label className="mt-4 block text-xs">Import as<select className="ml-4 border border-border bg-background px-2 py-1" value={dxfKind} disabled={busy}
+      {dxf && <label className="mt-4 block text-xs">Import as<Select className="ml-4 px-2 py-1" value={dxfKind} disabled={busy}
         onChange={event => setDxfKind(event.target.value === 'curve' ? 'curve' : 'sketch')}>
-        <option value="sketch">Sketch · Closed contours</option><option value="curve">Curve · Open chain</option></select></label>}
-      {stl || dxf ? <label className="mt-4 block text-xs">Source units<select autoFocus className="ml-4 border border-border bg-background px-2 py-1" value={units} disabled={busy}
+        <option value="sketch">Sketch · Closed contours</option><option value="curve">Curve · Open chain</option></Select></label>}
+      {stl || dxf ? <label className="mt-4 block text-xs">Source units<Select autoFocus className="ml-4 px-2 py-1" value={units} disabled={busy}
         onChange={event => { const next = event.target.value; if (next === 'mm' || next === 'inch' || next === 'cm' || next === 'm' || next === 'file') setUnits(next); }}>
-        {dxf && <option value="file">Use file declaration</option>}<option value="mm">Millimeters</option><option value="inch">Inches</option>{dxf && <><option value="cm">Centimeters</option><option value="m">Meters</option></>}</select></label>
+        {dxf && <option value="file">Use file declaration</option>}<option value="mm">Millimeters</option><option value="inch">Inches</option>{dxf && <><option value="cm">Centimeters</option><option value="m">Meters</option></>}</Select></label>
         : <p className="mt-4 text-xs text-muted-foreground">Uses the file’s units.</p>}
       {error && <p role="alert" className="mt-3 text-xs text-destructive">{error}</p>}
       <div className="mt-5 flex justify-end gap-2"><button type="button" className={button} onClick={onCancel}>Cancel</button>

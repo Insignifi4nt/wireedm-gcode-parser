@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useRef, type ChangeEvent, type ReactNode } from 'react';
 import { ArrowLeft, CircleHelp, FileOutput, FileSearch, FileUp, Redo2, Save, Undo2 } from 'lucide-react';
 
@@ -124,12 +125,12 @@ export function EditorHeaderBar({
         data-editor-header-actions
       >
         {documentContext === 'machine-program' && interpreterProfile && onInterpreterProfileChange && (
-          <select aria-label="Source interpreter" className="h-7 max-w-36 border border-border bg-background px-1 text-[10px]"
+          <Select aria-label="Source interpreter" className="h-7 max-w-36 px-1 text-[10px]"
             disabled={interactionLocked} value={interpreterProfile}
             onChange={(event) => onInterpreterProfileChange(event.currentTarget.value as GCodeInterpreterState['profile'])}>
             <option value="neutral">Neutral source</option>
             <option value="legacy-robofil">Legacy Robofil source</option>
-          </select>
+          </Select>
         )}
         {workspaceControls && (
           <div

@@ -8,8 +8,8 @@
   background: #141f28; border-bottom: 1px solid #293a46;
 }
 .sim-operation-select {
-  min-width: 100px; max-width: 240px; background: transparent; color: #c4d6e2;
-  border: 0; padding: 4px 18px 4px 0; font-size: 11px; text-overflow: ellipsis;
+  min-width: 100px; max-width: 240px;
+  padding: 4px 18px 4px 0; font-size: 11px; text-overflow: ellipsis;
 }
 .sim-presentation-switch { display: flex; flex-shrink: 0; padding: 2px; border: 1px solid #344854; border-radius: 5px; background: #0f1a23; }
 .sim-presentation-switch button { padding: 3px 8px; border-radius: 3px; color: #91a9b8; font-size: 10px; }
@@ -69,7 +69,6 @@
 .sim-transport .sim-play:hover { background: #d4f5e9; }
 .sim-time { font-family: monospace; font-size: 11px; color: #d9e9f3; margin-left: 9px; }
 .sim-time > span { color: #708b9f; }
-.sim-rate select { padding: 3px 6px; background: #1c2e3c; border: 1px solid #395165; border-radius: 3px; color: #d9e6ee; }
 .sim-section { padding: 14px; }
 .sim-section-title { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 500; color: #b1c4d1; margin-bottom: 10px; }
 .sim-section-title > span + span { color: #738c9e; font-variant-numeric: tabular-nums; }
@@ -89,7 +88,7 @@
 }
 .sim-workspace input[type=number]:focus, .sim-workspace input[inputmode=decimal]:focus { border-color: #73bca9; box-shadow: 0 0 0 1px #73bca94d; }
 .sim-select-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; color: #9cb3c3; margin-top: 14px; }
-.sim-select-row select { min-width: 0; max-width: 150px; background: #101c27; border: 1px solid #354959; border-radius: 3px; padding: 5px; color: #c6d7e4; }
+.sim-select-row select { min-width: 0; max-width: 150px; padding: 5px; }
 .sim-details { margin-top: 12px; color: #819bae; font-size: 10px; }
 .sim-details summary { cursor: pointer; color: #a3b9c8; user-select: none; }
 .sim-fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
@@ -126,7 +125,7 @@
 .sim-unavailable li { margin: 6px 0; }
 .sim-unavailable button { display: flex; gap: 6px; align-items: center; padding: 7px 12px; background: #263d4d; border: 1px solid #486174; color: #d0e3ee; border-radius: 4px; margin-top: 8px; }
 .sim-workspace button { cursor: pointer; }
-.sim-workspace button:focus-visible, .sim-workspace select:focus-visible, .sim-workspace summary:focus-visible, .sim-workspace input[type=range]:focus-visible { outline: 2px solid #89d3be; outline-offset: 2px; }
+.sim-workspace button:focus-visible, .sim-workspace summary:focus-visible, .sim-workspace input[type=range]:focus-visible { outline: 2px solid #89d3be; outline-offset: 2px; }
 @media(max-width:720px) {
   .sim-context-bar { padding: 5px 8px; gap: 4px; }
   .sim-tool { padding: 5px 6px; gap: 5px; }

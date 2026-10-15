@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useState } from 'react';
 import { ChevronDown, History, Pencil, Save, Trash2 } from 'lucide-react';
 
@@ -78,9 +79,9 @@ export function ProjectListPanel({
                 placeholder="Search projects"
                 value={searchText}
               />
-              <select
+              <Select
                 aria-label="Project source filter"
-                className="technical-input px-2 text-[11px] outline-none"
+                className="min-h-[30px] px-2 text-[11px]"
                 onChange={(event) =>
                   setSourceFilter(event.currentTarget.value as ProjectSourceFilter)
                 }
@@ -89,10 +90,10 @@ export function ProjectListPanel({
                 <option value="all">All sources</option>
                 <option value="dxf">Path Project</option>
                 <option value="external-gcode">Machine Program</option>
-              </select>
-              <select
+              </Select>
+              <Select
                 aria-label="Project sort"
-                className="technical-input px-2 text-[11px] outline-none"
+                className="min-h-[30px] px-2 text-[11px]"
                 onChange={(event) => setSortMode(event.currentTarget.value as ProjectSortMode)}
                 value={sortMode}
               >
@@ -101,7 +102,7 @@ export function ProjectListPanel({
                 <option value="name-asc">Name A-Z</option>
                 <option value="name-desc">Name Z-A</option>
                 <option value="type">Type</option>
-              </select>
+              </Select>
             </div>
 
             {visibleProjects.length > 0 ? (

@@ -30,8 +30,9 @@
 .cad-parameter-editor button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; background: transparent; color: #b6ccd9; border: 1px solid transparent; border-radius: 3px; padding: 4px 7px; font: inherit; cursor: pointer; }
 .cad-parameter-editor button:hover:not(:disabled) { background: #2b424f; }
 .cad-parameter-editor button:disabled { opacity: .4; cursor: default; }
-.cad-parameter-editor input, .cad-parameter-editor select { width: 100%; min-width: 0; box-sizing: border-box; color: #cee0eb; background: #111a22; border: 1px solid #3c5260; border-radius: 3px; padding: 5px 7px; font: inherit; }
-.cad-parameter-editor button:focus-visible, .cad-parameter-editor input:focus-visible, .cad-parameter-editor select:focus-visible { outline: 1px solid var(--cad-accent); outline-offset: 1px; }
+.cad-parameter-editor input { width: 100%; min-width: 0; box-sizing: border-box; color: #cee0eb; background: #111a22; border: 1px solid #3c5260; border-radius: 3px; padding: 5px 7px; font: inherit; }
+.cad-parameter-editor select { width: 100%; padding: 5px 7px; }
+.cad-parameter-editor button:focus-visible, .cad-parameter-editor input:focus-visible { outline: 1px solid var(--cad-accent); outline-offset: 1px; }
 .cad-parameter-editor fieldset { margin: 0; padding: 10px; border: 0; min-width: 0; }
 .cad-parameter-editor fieldset:disabled { opacity: .6; }
 .cad-parameter-editor label { display: grid; grid-template-columns: 66px minmax(0, 1fr); align-items: center; gap: 7px; margin: 0 0 8px; }

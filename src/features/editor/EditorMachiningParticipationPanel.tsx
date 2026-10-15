@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { deriveSourceMachiningOperations } from '@/domain/path-intel/machiningParticipation';
@@ -109,9 +110,9 @@ export function EditorMachiningParticipationPanel({
         <legend className="px-1 uppercase text-muted-foreground">Exclude a range from cutting</legend>
         <label className="grid gap-0.5 text-muted-foreground">
           Source segment
-          <select
+          <Select
             aria-label="Machining source segment"
-            className="h-7 border border-border bg-background px-1 font-mono text-foreground"
+            className="h-7 px-1 font-mono"
             disabled={targetChangeBlocked}
             onChange={(event) => {
               if (targetChangeBlocked) return;
@@ -126,7 +127,7 @@ export function EditorMachiningParticipationPanel({
             {segmentIds.map((segmentId, index) => (
               <option key={segmentId} value={segmentId}>Segment {index + 1}</option>
             ))}
-          </select>
+          </Select>
         </label>
         <div className="grid grid-cols-2 gap-1">
           <label className="grid gap-0.5 text-muted-foreground">
@@ -180,9 +181,9 @@ export function EditorMachiningParticipationPanel({
 
       {partialOperation && <label className="grid gap-1 border border-border p-2 uppercase text-muted-foreground">
         Partial-path wire offset
-        <select
+        <Select
           aria-label="Partial contour wire side"
-          className="h-7 border border-border bg-background px-1 text-foreground"
+          className="h-7 px-1"
           disabled={disabled || document.geometryBasis === 'wire-centre'}
           onChange={(event) => onSetWireSide(
             operation.id,
@@ -196,7 +197,7 @@ export function EditorMachiningParticipationPanel({
             ? 'Wire centreline · source setting' : 'Choose wire side relative to travel'}</option>
           <option value="left">Wire left of travel</option>
           <option value="right">Wire right of travel</option>
-        </select>
+        </Select>
         <span className="normal-case text-muted-foreground">
           {document.geometryBasis === 'wire-centre'
             ? 'Controller compensation is off for wire-centre geometry. Choose Finished contour in Geometry setup to use this side.'

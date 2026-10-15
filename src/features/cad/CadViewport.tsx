@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Box, Grid2X2, Maximize2 } from 'lucide-react';
 import { CadContextHelp } from './CadContextHelp';
@@ -798,10 +799,10 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     </div>
     <CadViewTools label="Viewport controls">
       <Box size={14} />
-      <select aria-label="Named view" value={viewName} disabled={depthDragging || navigationLocked || unavailable} onChange={(event) => {
+      <Select aria-label="Named view" value={viewName} disabled={depthDragging || navigationLocked || unavailable} onChange={(event) => {
         const name = (['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).find((entry) => entry === event.target.value);
         if (name) controller.current?.setView?.(name);
-      }}>{viewName === 'Custom' && <option value="Custom" disabled>Custom</option>}{(['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).map((name) => <option key={name} value={name}>{name}</option>)}</select>
+      }}>{viewName === 'Custom' && <option value="Custom" disabled>Custom</option>}{(['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).map((name) => <option key={name} value={name}>{name}</option>)}</Select>
       <span className="cad-divider" />
       <button title="Fit model" aria-label="Fit model" disabled={depthDragging || navigationLocked || unavailable} onClick={() => controller.current?.fit()}><Maximize2 size={14} /></button>
       <button title="Toggle grid" aria-label="Toggle grid" disabled={navigationLocked || unavailable} aria-pressed={gridVisible} onClick={() => controller.current?.setGrid(!gridVisible)}><Grid2X2 size={14} /></button>

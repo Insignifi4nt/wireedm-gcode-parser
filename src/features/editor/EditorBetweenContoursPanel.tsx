@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useMemo } from 'react';
 
 import { derivePlannedRapidRoutes } from '@/domain/path-editor/pathDocumentOperations';
@@ -73,9 +74,9 @@ export function EditorBetweenContoursPanel({
 
       <label className="grid gap-1 uppercase text-muted-foreground">
         Destination operation
-        <select
+        <Select
           aria-label="Between contours destination operation"
-          className="h-7 border border-border bg-background px-1.5 text-foreground"
+          className="h-7 px-1.5"
           disabled={disabled || targetChangeBlocked}
           onChange={(event) => onSelectOperation(event.currentTarget.value)}
           value={selected.id}
@@ -85,7 +86,7 @@ export function EditorBetweenContoursPanel({
               {String(executionIndex + 1).padStart(2, '0')}. {operation.displayName}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
 
       {!route ? (
@@ -116,9 +117,9 @@ export function EditorBetweenContoursPanel({
             <legend className="px-1 uppercase text-muted-foreground">Rethreading</legend>
             <label className="grid grid-cols-[1fr_120px] items-center gap-2 text-muted-foreground">
               Project default
-              <select
+              <Select
                 aria-label="Project threading default"
-                className="h-7 border border-border bg-background px-1 text-foreground"
+                className="h-7 px-1"
                 onChange={(event) =>
                   onSetProjectThreading(threadingForMode(event.currentTarget.value))
                 }
@@ -128,14 +129,14 @@ export function EditorBetweenContoursPanel({
                 <option value="manual">Manual</option>
                 <option value="automatic">Automatic</option>
                 <option value="continuous">Continuous</option>
-              </select>
+              </Select>
             </label>
             {projectThreading?.mode === 'manual' && (
               <label className="grid grid-cols-[1fr_180px] items-center gap-2 text-muted-foreground">
                 Default separation
-                <select
+                <Select
                   aria-label="Project manual wire separation"
-                  className="h-7 border border-border bg-background px-1 text-foreground"
+                  className="h-7 px-1"
                   value={projectThreading.wireSeparation}
                   onChange={(event) => onSetProjectThreading({
                     mode: 'manual',
@@ -146,14 +147,14 @@ export function EditorBetweenContoursPanel({
                   <option value="already-separated">Wire already separated</option>
                   <option value="manual-before-positioning">Stop to separate wire</option>
                   <option value="automatic-during-positioning">Rapid separates wire</option>
-                </select>
+                </Select>
               </label>
             )}
             <label className="grid grid-cols-[1fr_120px] items-center gap-2 text-muted-foreground">
               This transition
-              <select
+              <Select
                 aria-label="Operation threading mode"
-                className="h-7 border border-border bg-background px-1 text-foreground"
+                className="h-7 px-1"
                 onChange={(event) => {
                   const mode = event.currentTarget.value;
                   onSetOperationThreading(
@@ -167,14 +168,14 @@ export function EditorBetweenContoursPanel({
                 <option value="manual">Manual</option>
                 <option value="automatic">Automatic</option>
                 <option value="continuous">Continuous</option>
-              </select>
+              </Select>
             </label>
             {selected.threadingTransition?.mode === 'manual' && (
               <label className="grid grid-cols-[1fr_180px] items-center gap-2 text-muted-foreground">
                 Before positioning
-                <select
+                <Select
                   aria-label="Manual wire separation"
-                  className="h-7 border border-border bg-background px-1 text-foreground"
+                  className="h-7 px-1"
                   onChange={(event) => onSetOperationThreading(selected.id, {
                     mode: 'manual',
                     wireSeparation: event.currentTarget.value as
@@ -187,7 +188,7 @@ export function EditorBetweenContoursPanel({
                   <option value="already-separated">Wire already separated</option>
                   <option value="manual-before-positioning">Stop to separate wire</option>
                   <option value="automatic-during-positioning">Rapid separates wire</option>
-                </select>
+                </Select>
               </label>
             )}
             <p className={threading ? 'text-foreground' : 'text-amber-300'}>

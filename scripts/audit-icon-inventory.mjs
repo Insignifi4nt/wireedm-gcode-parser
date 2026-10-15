@@ -102,12 +102,15 @@ for (const file of production) {
 for (const file of codeFiles) {
   const sf = program.getSourceFile(file);
   if (!sf) throw new Error(`Unparsed source ${file}`);
-  const symbols = new Map(), names = new Map(), namespaceNames = new Set();
+  const symbols = new Map(), names = new Map(), namespaceNames = new Set(), sharedSelectNames = new Set();
   for (const statement of sf.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
     const packageName = statement.moduleSpecifier.text;
-    if (!/(?:lucide|icons?|\.svg$)/i.test(packageName)) continue;
     const bindings = statement.importClause?.namedBindings;
+    if (packageName === '@/components/ui/select' && bindings && ts.isNamedImports(bindings)) {
+      for (const item of bindings.elements) if (!item.isTypeOnly && !statement.importClause.isTypeOnly && (item.propertyName ?? item.name).text === 'Select') sharedSelectNames.add(item.name.text);
+    }
+    if (!/(?:lucide|icons?|\.svg$)/i.test(packageName)) continue;
     if (bindings && ts.isNamedImports(bindings)) for (const item of bindings.elements) {
       const imported = (item.propertyName ?? item.name).text;
       if (item.isTypeOnly || statement.importClause?.isTypeOnly) continue;
@@ -148,6 +151,7 @@ for (const file of codeFiles) {
       if (['path', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'rect', 'text'].includes(tag)) primitives.push(record(node, sf, { kind: 'svg-primitive', tag, attributes: attrs(node, sf) }));
       if (['CadContextHelp', 'StatusDot', 'SlidingTabs', 'SectionButton', 'SelectField', 'ScalarField', 'CadReferencePickButton', 'CadEdgeTreatmentCommand', 'CadPatternCommand', 'CadFeatureTree', 'CadTreeRename', 'CadParametersPanel', 'CadPluginsPanel', 'CadSketchDimensionControls', 'CadSketchProfilePanel', 'CadGearHelp'].includes(tag)) sharedGraphicCalls.push(record(node, sf, { kind: 'shared-component-call', tag, attributes: attrs(node, sf) }));
       if (['select', 'summary'].includes(tag) || tag === 'input' && /checkbox|radio/.test(attrs(node, sf).type ?? '')) nativeControls.push(record(node, sf, { kind: 'native-control', tag, attributes: attrs(node, sf) }));
+      if (sharedSelectNames.has(tag)) nativeControls.push(record(node, sf, { kind: 'native-control', tag: 'select', sharedComponent: tag, attributes: attrs(node, sf) }));
       const values = attrs(node, sf);
       if (/cursor-/.test(values.className ?? '')) cursorLocations.push(record(node, sf, { kind: 'browser-cursor-class', tag, attributes: values }));
       if (/rounded-full/.test(values.className ?? '') && /bg-|border|h-|size-/.test(values.className ?? '')) graphics.push(record(node, sf, { kind: 'css-status-shape', tag, attributes: values }));

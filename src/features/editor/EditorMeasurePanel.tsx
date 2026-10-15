@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useMemo, useState } from 'react';
 import { measurePointPair, measureSegment, measureProfile, type MeasurementPick } from '@/domain/editor/geometryMeasurement';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
@@ -50,17 +51,17 @@ export function EditorMeasurePanel({ measurement, document }: {
       </div>
       <div className="grid grid-cols-2 gap-2">
         <label className="space-y-1">Repeat
-          <select aria-label="Measurement repeat mode" className="h-7 w-full border border-border bg-background px-1" value={measurement.repeatMode} onChange={(event) => {
+          <Select aria-label="Measurement repeat mode" className="h-7 w-full px-1" value={measurement.repeatMode} onChange={(event) => {
             const value = event.target.value;
             if (value === 'pair' || value === 'chain' || value === 'fixed') measurement.setRepeatMode(value);
           }}>
             <option value="pair">New pair</option><option value="chain">Chain</option><option value="fixed">Keep first point</option>
-          </select>
+          </Select>
         </label>
         <label className="space-y-1">Decimals
-          <select aria-label="Measurement precision" className="h-7 w-full border border-border bg-background px-1" value={precision} onChange={(event) => measurement.setPrecision(Number(event.target.value))}>
+          <Select aria-label="Measurement precision" className="h-7 w-full px-1" value={precision} onChange={(event) => measurement.setPrecision(Number(event.target.value))}>
             {[2, 3, 4, 5, 6].map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
       <dl className="technical-value space-y-1">

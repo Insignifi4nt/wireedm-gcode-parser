@@ -1,3 +1,4 @@
+import { Select as NativeSelect } from '@/components/ui/select';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Check, ChevronRight, Trash2, Upload } from 'lucide-react';
 
@@ -356,5 +357,5 @@ function Select<Value extends string>({ disabled, label, onChange, options, valu
     if (!selected) throw new Error(`Select ${label} received an undeclared option: ${rawValue}.`);
     onChange(selected[0]);
   }
-  return <label className="grid gap-1 text-[10px] text-muted-foreground">{label}<select aria-label={label} className="technical-input h-8 px-2 text-[10px] text-foreground" disabled={disabled} onChange={(event) => handleChange(event.currentTarget.value)} value={value}>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select></label>;
+  return <label className="grid gap-1 text-[10px] text-muted-foreground">{label}<NativeSelect aria-label={label} className="h-8 px-2 text-[10px]" disabled={disabled} onChange={(event) => handleChange(event.currentTarget.value)} value={value}>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</NativeSelect></label>;
 }

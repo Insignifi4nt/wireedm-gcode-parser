@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useEffect, useRef, type FormEvent } from 'react';
 import { X } from 'lucide-react';
 
@@ -210,9 +211,9 @@ export function DxfImportConfirmationDialog({
                 </div>
                 <label className="grid gap-1 text-muted-foreground">
                   DXF units
-                  <select
+                  <Select
                     aria-label="DXF units"
-                    className="h-8 border border-border bg-background px-2 text-foreground outline-none focus:border-ring"
+                    className="h-8 px-2"
                     disabled={submitting}
                     onChange={(event) => onUnitCandidateChange(event.currentTarget.value)}
                     ref={unitSelectRef}
@@ -224,7 +225,7 @@ export function DxfImportConfirmationDialog({
                         {candidate.label} (×{formatScale(candidate.scaleToMillimeters)})
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 {overridesDeclaration && (
                   <label className="flex items-start gap-2 border border-amber-500/50 bg-amber-500/10 p-2 text-amber-200">

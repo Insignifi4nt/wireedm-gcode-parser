@@ -38,7 +38,7 @@
 .cad-plugin-unit, .cad-plugin-expression { position: absolute; right: 7px; top: 6px; font-size: 10px; color: #738d9d; pointer-events: none; }
 .cad-plugin-expression { right: 28px; color: #75bacb; font-style: italic; }
 .cad-plugin-field.is-invalid input { border-color: #a97354; }
-.cad-plugin-field.is-disabled input, .cad-plugin-field.is-disabled select { color: #859eac; background: #202d36; border-color: #2c3c47; }
+.cad-plugin-field.is-disabled input { color: #859eac; background: #202d36; border-color: #2c3c47; }
 .cad-plugin-field.is-disabled > span { color: #8095a2; }
 .cad-plugin-placement { display: flex; flex-wrap: wrap; gap: 7px; margin: 11px 0; padding-top: 10px; border-top: 1px solid #334650; }
 .cad-plugin-field.is-placement { display: flex; gap: 4px; flex: 1; min-width: 78px; margin: 0; }

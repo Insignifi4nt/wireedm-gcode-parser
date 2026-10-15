@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { inspectGCodeProgram } from '@/domain/editor/gcodeInspection';
@@ -80,31 +81,31 @@ export function GCodeInspectionWorkspace({ text, options, provenance }: {
         <p className="mt-1 text-muted-foreground">{pinnedContext ? 'Pinned post context; these saved assumptions cannot be changed here.' : 'Program declarations take precedence. These assumptions only affect this read-only view.'}</p></div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       <label className="flex items-center gap-1">Source
-        <select aria-label="Inspection source interpreter" value={profile} disabled={pinnedContext}
-          className="h-7 border border-border bg-background px-1" onChange={(event) => setProfile(event.currentTarget.value as typeof profile)}>
+        <Select aria-label="Inspection source interpreter" value={profile} disabled={pinnedContext}
+          className="h-7 px-1" onChange={(event) => setProfile(event.currentTarget.value as typeof profile)}>
           <option value="neutral">Generic G-code</option><option value="legacy-robofil">Legacy Robofil</option>
-        </select>
+        </Select>
       </label>
       <label className="flex items-center gap-1">Initial units
-        <select aria-label="Inspection initial units" value={defaults?.units ?? ''} disabled={pinnedContext}
-          className="h-7 border border-border bg-background px-1"
+        <Select aria-label="Inspection initial units" value={defaults?.units ?? ''} disabled={pinnedContext}
+          className="h-7 px-1"
           onChange={(event) => setDefaults({ ...defaults, units: event.currentTarget.value as 'mm' | 'in' || undefined })}>
           <option value="">Undeclared</option><option value="mm">mm</option><option value="in">inch</option>
-        </select>
+        </Select>
       </label>
       <label className="flex items-center gap-1">Initial X/Y
-        <select aria-label="Inspection initial XY mode" value={defaults?.xyMode ?? 'absolute'} disabled={pinnedContext}
-          className="h-7 border border-border bg-background px-1"
+        <Select aria-label="Inspection initial XY mode" value={defaults?.xyMode ?? 'absolute'} disabled={pinnedContext}
+          className="h-7 px-1"
           onChange={(event) => setDefaults({ ...defaults, xyMode: event.currentTarget.value as 'absolute' | 'incremental' })}>
           <option value="absolute">Absolute</option><option value="incremental">Incremental</option>
-        </select>
+        </Select>
       </label>
       <label className="flex items-center gap-1">Initial I/J
-        <select aria-label="Inspection initial IJ mode" value={defaults?.ijMode ?? 'incremental'} disabled={pinnedContext}
-          className="h-7 border border-border bg-background px-1"
+        <Select aria-label="Inspection initial IJ mode" value={defaults?.ijMode ?? 'incremental'} disabled={pinnedContext}
+          className="h-7 px-1"
           onChange={(event) => setDefaults({ ...defaults, ijMode: event.currentTarget.value as 'absolute' | 'incremental' })}>
           <option value="incremental">Incremental</option><option value="absolute">Absolute</option>
-        </select>
+        </Select>
       </label>
       </div>
     </div>;

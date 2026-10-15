@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select';
 import type { CadDocument, CadScalar } from '@/domain/cad/cadDocument';
 import { createContext, useContext, useLayoutEffect } from 'react';
 import { MousePointer2 } from 'lucide-react';
@@ -70,7 +71,7 @@ export function CadReferencePickButton({ label, options, onSelect, disabled = fa
 }
 
 export function SelectField<T extends string>({ label, value, options, onChange, description, reference = false }: { label: string; description?: string; value: T; options: readonly { value: T; label: string; disabled?: boolean }[]; onChange(value: T): void; reference?: boolean }) {
-  return <div className="cad-reference-field"><label className="cad-field"><span>{label}{description && <CadContextHelp label={label}>{description}</CadContextHelp>}</span><select value={value} title={description} aria-label={label} aria-description={description} onChange={(event) => { const option = options.find((entry) => entry.value === event.target.value); if (option && !option.disabled) onChange(option.value); }}>{options.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}</select></label>{reference && <CadReferencePickButton label={label} options={options} onSelect={id => { const option = options.find(option => option.value === id); if (option && !option.disabled) onChange(option.value); }} />}</div>;
+  return <div className="cad-reference-field"><label className="cad-field"><span>{label}{description && <CadContextHelp label={label}>{description}</CadContextHelp>}</span><Select value={value} title={description} aria-label={label} aria-description={description} onChange={(event) => { const option = options.find((entry) => entry.value === event.target.value); if (option && !option.disabled) onChange(option.value); }}>{options.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}</Select></label>{reference && <CadReferencePickButton label={label} options={options} onSelect={id => { const option = options.find(option => option.value === id); if (option && !option.disabled) onChange(option.value); }} />}</div>;
 }
 
 export function ScalarField(props: ScalarFieldProps) {
