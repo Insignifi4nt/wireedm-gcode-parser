@@ -1,3 +1,4 @@
+import { Tooltip } from '@/components/ui/tooltip';
 import { Select } from '@/components/ui/select';
 import {
   useCallback,
@@ -933,10 +934,10 @@ export function EditorPreview({
               className="mr-1 flex items-center gap-0.5 border-r border-border pr-1"
               data-editor-preview-mouse-mode-toolbar
             >
-              <button
+              <Button
                 aria-label="Select geometry on canvas"
                 aria-pressed={canvasMouseMode === 'select'}
-                className={`flex size-5 items-center justify-center border text-muted-foreground outline-none transition hover:bg-accent ${
+                className={`flex size-5 items-center justify-center border ${
                   canvasMouseMode === 'select'
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border'
@@ -947,11 +948,11 @@ export function EditorPreview({
                 type="button"
               >
                 <MousePointer2 className="size-3" />
-              </button>
-              <button
+              </Button>
+              <Button
                 aria-label="Place measurement points on canvas"
                 aria-pressed={canvasMouseMode === 'point'}
-                className={`flex size-5 items-center justify-center border text-muted-foreground outline-none transition hover:bg-accent ${
+                className={`flex size-5 items-center justify-center border ${
                   canvasMouseMode === 'point'
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border'
@@ -962,7 +963,7 @@ export function EditorPreview({
                 type="button"
               >
                 <Magnet className="size-3" />
-              </button>
+              </Button>
             </div>
           )}
           <Button
@@ -976,9 +977,9 @@ export function EditorPreview({
           >
             <ZoomOut />
           </Button>
-          <span className="min-w-10 text-center" title="Preview zoom">
+          <Tooltip content="Preview zoom"><span tabIndex={0} className="min-w-10 text-center" >
             {zoomPercent}%
-          </span>
+          </span></Tooltip>
           <Button
             aria-label="Zoom preview in"
             disabled={zoom >= MAX_PREVIEW_ZOOM}
@@ -1014,7 +1015,7 @@ export function EditorPreview({
             {PREVIEW_SELECTION_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
           </Select>
         </label>
-        <span className="truncate" title="Alt-click cycles overlaps. Drag selects one contour or segment. Use Geometry for exact selection.">Alt-click cycles overlaps. Drag selects one contour or segment. Use Geometry for exact selection.</span>
+        <Tooltip content="Alt-click cycles overlaps. Drag selects one contour or segment. Use Geometry for exact selection."><span tabIndex={0} className="truncate" >Alt-click cycles overlaps. Drag selects one contour or segment. Use Geometry for exact selection.</span></Tooltip>
         </> : <span className="truncate">{measurement ? 'Measure source points and the gap between picked edges.' : 'Follow the active tool instructions. Shift-drag pans the canvas.'}</span>}
       </div>}
       {selectionEnabled && overlapCandidates.length > 1 && <div className="pointer-events-none absolute bottom-2 left-2 z-10 border border-border bg-background/90 px-2 py-1 text-[10px] text-cyan-200" role="status" data-preview-overlap-selection>

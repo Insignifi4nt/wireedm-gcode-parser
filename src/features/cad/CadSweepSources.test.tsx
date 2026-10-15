@@ -91,7 +91,7 @@ describe('authored datum Sweep sources', () => {
     await act(async () => root.render(<CadSweepSources document={doc} featureId="draft" sketchId="section" curveId="rail" onChange={onChange} />));
     expect(field('Profile sketch').selectedOptions[0].disabled).toBe(false);
     expect(field('Profile sketch').getAttribute('aria-description')).toBe('Section mount; offset 0 mm; normal (1, 0, 0)');
-    expect(field('Curve').getAttribute('title')).toBe('Rail mount; offset 0 mm; start (10, 20, 30) mm; tangent (1, 0, 0)');
+    expect(field('Curve').getAttribute('aria-description')).toBe('Rail mount; offset 0 mm; start (10, 20, 30) mm; tangent (1, 0, 0)');
     expect(container.querySelector('[role="status"]')).toBeNull(); expect(onChange).not.toHaveBeenCalled();
     expect(JSON.stringify(doc)).toBe(before);
   });
@@ -103,7 +103,7 @@ describe('authored datum Sweep sources', () => {
     await act(async () => root.render(<Draft />));
     expect(field('Profile sketch').selectedOptions[0].disabled).toBe(false);
     expect(container.querySelector('[role="status"]')?.textContent).toContain('Curve starts at (10, 20, 30) mm');
-    expect(field('Profile sketch').getAttribute('title')).toContain('offset 3 mm');
+    expect(field('Profile sketch').getAttribute('aria-description')).toContain('offset 3 mm');
     await choose('Profile sketch', 'section'); expect(container.querySelector('[role="status"]')).toBeNull();
     expect(doc.features.at(-1)).toMatchObject({ id: 'wrong', offset: 3 });
   });

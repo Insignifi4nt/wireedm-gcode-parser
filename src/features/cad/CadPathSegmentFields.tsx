@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useState } from 'react';
 import type { CadDocument, CadPathSegment, CadScalar } from '@/domain/cad/cadDocument';
 import { ScalarField } from './CadFields';
@@ -16,11 +18,11 @@ export function CadPathSegmentFields({ segments, parameters, onChange, label = '
   const scalar = (label: string, value: CadScalar, onChangeScalar: (value: CadScalar) => void, unit?: string) => <ScalarField label={label} value={value} parameters={parameters} onChange={onChangeScalar} unit={unit} />;
   return <>
     <div className="cad-path-segment-picker">
-      <button type="button" aria-label={`Previous ${label.toLowerCase()} segment`} disabled={index === 0} onClick={() => setSelectedIndex(index - 1)}>‹</button>
-      <label className="cad-field"><span>Segment <small>{segment.kind === 'line' ? 'Line' : 'Arc'} / {segments.length}</small></span><input aria-label={`${label} segment`} type="number" min={1} max={segments.length} step={1} value={index + 1}
+      <Button type="button" aria-label={`Previous ${label.toLowerCase()} segment`} disabled={index === 0} onClick={() => setSelectedIndex(index - 1)}>‹</Button>
+      <label className="cad-field"><span>Segment <small>{segment.kind === 'line' ? 'Line' : 'Arc'} / {segments.length}</small></span><Input aria-label={`${label} segment`} type="number" min={1} max={segments.length} step={1} value={index + 1}
         onKeyDown={event => { if (event.key === 'Enter') event.preventDefault(); }}
         onChange={event => { const value = Number(event.target.value); if (Number.isInteger(value) && value >= 1 && value <= segments.length) setSelectedIndex(value - 1); }} /></label>
-      <button type="button" aria-label={`Next ${label.toLowerCase()} segment`} disabled={index === segments.length - 1} onClick={() => setSelectedIndex(index + 1)}>›</button>
+      <Button type="button" aria-label={`Next ${label.toLowerCase()} segment`} disabled={index === segments.length - 1} onClick={() => setSelectedIndex(index + 1)}>›</Button>
     </div>
     {segment.kind === 'line' ? <>
       {scalar('Start X', segment.start[0], x => update({ ...segment, start: [x, segment.start[1]] }))}

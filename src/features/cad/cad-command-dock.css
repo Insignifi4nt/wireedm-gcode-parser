@@ -5,8 +5,6 @@
 .cad-command-dock.is-view-open .cad-command-view-drawer { grid-template-rows: 1fr; opacity: 1; }
 .cad-command-dock .cad-view-tools { position: relative; inset: auto; box-sizing: border-box; justify-content: center; width: max-content; max-width: 100%; margin: 4px auto 0; min-height: 31px; overflow-x: auto; }
 .cad-command-dock .cad-view-tools > * { flex-shrink: 0; }
-.cad-workbench .cad-command-view-tab { display: inline-flex; justify-content: center; gap: 4px; min-height: 15px; padding: 1px 12px; border: 1px solid #425763; border-top: 0; border-radius: 0 0 4px 4px; background: #19262ff5; font-size: 10px; line-height: 13px; color: #91adbd; pointer-events: auto; }
-.cad-command-view-tab svg { transition: transform 180ms ease; }
+.cad-workbench .cad-command-view-tab { display: inline-flex; justify-content: center; gap: 4px; min-height: 15px; padding: 1px 12px; font-size: 10px; line-height: 13px; pointer-events: auto; }
 .cad-command-dock.is-view-open .cad-command-view-tab svg { transform: rotate(180deg); }
-.cad-command-view-tab:focus-visible { outline: 1px solid #67c8da; outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .cad-command-view-drawer, .cad-command-view-tab svg { transition: none; } }
+@media (prefers-reduced-motion: reduce) { }

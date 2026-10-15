@@ -1,3 +1,4 @@
+import { Input } from '@/components/ui/input';
 import { useEffect, useRef } from 'react';
 import type { CadDocument, CadFeature, CadScalar } from '@/domain/cad/cadDocument';
 import type { CadPocketDirection, CadPocketFeature } from '@/domain/cad/cadPocket';
@@ -94,7 +95,7 @@ export function CadExtrudeFields({ feature, initialFeature, document, sketches, 
         { value: 'positive', label: `${normal[0]} from sketch` }, { value: 'negative', label: `${normal[1]} from sketch` }, { value: 'both', label: 'Both directions' },
       ]} onChange={direction => onChange({ ...feature, extent: { kind: 'through-all', direction } })} />
       : <><ScalarField fieldKey="distance" label="Length" value={feature.distance} parameters={document.parameters} onChange={(distance: CadScalar) => updateDistance({ distance })} />
-        <label className="cad-check"><input type="checkbox" checked={feature.symmetric} onChange={event => updateDistance({ symmetric: event.target.checked })} /> Symmetric about sketch plane</label></>}
+        <label className="cad-check"><Input type="checkbox" checked={feature.symmetric} onChange={event => updateDistance({ symmetric: event.target.checked })} /> Symmetric about sketch plane</label></>}
     {sketch?.kind === 'sketch' && <CadPlacementNormal plane={sketch.plane} document={document} />}
     {operation !== 'new' && <SelectField reference label="Target body" value={targetId} options={availableOptions(bodies, targetId, 'Body')} onChange={value => onChange({ ...feature, targetId: value })} />}
   </>;

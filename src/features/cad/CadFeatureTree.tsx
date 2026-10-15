@@ -1,3 +1,5 @@
+import { Tooltip } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { Box, ChevronRight, Circle, CircleDot, Copy, FileBox, Layers, Move3D, PencilRuler, RotateCw, Scissors, SlidersHorizontal, Spline, Square, type LucideIcon } from 'lucide-react';
 import type { CadBuildResult, CadCurveFeature, CadDocument, CadFeature, CadPlane, CadSketchFeature, CadSketchProfile } from '@/domain/cad/cadDocument';
@@ -147,36 +149,36 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
       if (onDelete) menuItems.push({ label: 'Delete feature', danger: true, onSelect: () => onDelete(feature) });
     }
   }
-  const dependency = (feature: CadFeature, direction: 'input' | 'usage') => <button type="button" key={feature.id} className={`cad-feature-reference${feature.suppressed ? ' is-suppressed' : ''}`}
+  const dependency = (feature: CadFeature, direction: 'input' | 'usage') => <Button type="button" key={feature.id} className={`cad-feature-reference${feature.suppressed ? ' is-suppressed' : ''}`}
     disabled={selectionDisabled(feature.id)} aria-label={`Select ${direction === 'input' ? 'input' : 'dependent feature'} ${feature.name}`} title={`${featureLabels[feature.kind]} · ${feature.name}${feature.suppressed ? ' · suppressed' : ''}`} onClick={() => onSelect(feature.id)}>
     <span>{feature.name}</span>{feature.suppressed && <small>off</small>}
-  </button>;
+  </Button>;
   return <><div className="cad-specification-tree" aria-label="Part specification tree">
-    <button type="button" className="cad-tree-document" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('part') ? 'Collapse' : 'Expand'} part ${document.name}`}
+    <Button type="button" className="cad-tree-document" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('part') ? 'Collapse' : 'Expand'} part ${document.name}`}
       aria-expanded={branches.has('part')} aria-controls={branches.has('part') ? `${treeId}-part` : undefined} onClick={() => toggleBranch('part')}>
       <ChevronRight size={12} className="cad-tree-hierarchy-toggle" /><FileBox size={15} /><span>{document.name}</span>
-    </button>
+    </Button>
     {branches.has('part') && <div id={`${treeId}-part`} className="cad-tree-document-children">
-      <button type="button" className="cad-tree-branch" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('reference') ? 'Collapse' : 'Expand'} Reference`}
+      <Button type="button" className="cad-tree-branch" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('reference') ? 'Collapse' : 'Expand'} Reference`}
         aria-expanded={branches.has('reference')} aria-controls={branches.has('reference') ? `${treeId}-reference` : undefined} onClick={() => toggleBranch('reference')}>
         <ChevronRight size={12} className="cad-tree-hierarchy-toggle" /><Square size={13} /><span>Reference</span>
-      </button>
+      </Button>
       {branches.has('reference') && <ul id={`${treeId}-reference`} className="cad-reference-plane-list" aria-label="Reference planes">
-        {(['XY', 'XZ', 'YZ'] satisfies CadPlane[]).map(plane => <li key={plane}><button type="button" className={`cad-tree-row${selectedReferencePlane === plane ? ' is-selected' : ''}`} aria-label={`Select ${plane} plane`} aria-pressed={selectedReferencePlane === plane}
-          disabled={locked || selectionOnly && !allowPrincipalPlaneSelection || Boolean(renameCurrent) || !onSelectReferencePlane} onClick={() => onSelectReferencePlane?.(plane)}><Square size={12} /><span>{plane} plane</span></button>{onCreateSketch && <button type="button" disabled={locked || selectionOnly || Boolean(renameCurrent)}
-          aria-label={`Create sketch on ${plane} plane`} title={`Create sketch on ${plane} plane`} onClick={() => onCreateSketch(plane)}><PencilRuler size={12} /></button>}</li>)}
+        {(['XY', 'XZ', 'YZ'] satisfies CadPlane[]).map(plane => <li key={plane}><Button type="button" className={`cad-tree-row${selectedReferencePlane === plane ? ' is-selected' : ''}`} aria-label={`Select ${plane} plane`} aria-pressed={selectedReferencePlane === plane}
+          disabled={locked || selectionOnly && !allowPrincipalPlaneSelection || Boolean(renameCurrent) || !onSelectReferencePlane} onClick={() => onSelectReferencePlane?.(plane)}><Square size={12} /><span>{plane} plane</span></Button>{onCreateSketch && <Button type="button" disabled={locked || selectionOnly || Boolean(renameCurrent)}
+          aria-label={`Create sketch on ${plane} plane`} title={`Create sketch on ${plane} plane`} onClick={() => onCreateSketch(plane)}><PencilRuler size={12} /></Button>}</li>)}
       </ul>}
       {parameterContent !== undefined && parameterContent !== null && parameterContent !== false && <>
-        <button type="button" className="cad-tree-branch" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('parameters') ? 'Collapse' : 'Expand'} Parameters`}
+        <Button type="button" className="cad-tree-branch" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('parameters') ? 'Collapse' : 'Expand'} Parameters`}
           aria-expanded={branches.has('parameters')} aria-controls={branches.has('parameters') ? `${treeId}-parameters` : undefined} onClick={() => toggleBranch('parameters')}>
           <ChevronRight size={12} className="cad-tree-hierarchy-toggle" /><SlidersHorizontal size={13} /><span>Parameters</span>
-        </button>
+        </Button>
         {branches.has('parameters') && <div id={`${treeId}-parameters`} className="cad-tree-parameters">{parameterContent}</div>}
       </>}
-      <button type="button" className="cad-tree-branch" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('model') ? 'Collapse' : 'Expand'} Model`}
+      <Button type="button" className="cad-tree-branch" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('model') ? 'Collapse' : 'Expand'} Model`}
         aria-expanded={branches.has('model')} aria-controls={branches.has('model') ? `${treeId}-model` : undefined} onClick={() => toggleBranch('model')}>
         <ChevronRight size={12} className="cad-tree-hierarchy-toggle" /><Layers size={13} /><span>Model</span><small aria-label={`${document.features.length} features`}>{document.features.length}</small>
-      </button>
+      </Button>
       {branches.has('model') && <ol ref={tree} id={`${treeId}-model`} className="cad-feature-list cad-feature-history" aria-label="Feature history and dependencies">
     {document.features.map((feature, index) => {
       const Icon = icons[feature.kind], selected = selectedId === feature.id;
@@ -188,25 +190,25 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
       const diagnostic = diagnostics.find(diagnostic => diagnostic.featureId === feature.id);
       return <li key={feature.id} className={`cad-feature-node${highlightedFeatureIds.includes(feature.id) ? ' is-parameter-related' : ''}`} data-cad-feature-id={feature.id} data-cad-history-position={index + 1}>
         <div className="cad-feature-history-row">
-          {expandable ? <button type="button" className="cad-feature-disclosure" disabled={locked || Boolean(renameCurrent)} aria-label={`${open ? 'Collapse' : 'Expand'} ${feature.name}`} aria-expanded={open} aria-controls={open ? detailsId : undefined} onClick={() => toggle(feature.id)}><ChevronRight size={12} /></button>
+          {expandable ? <Button type="button" className="cad-feature-disclosure" disabled={locked || Boolean(renameCurrent)} aria-label={`${open ? 'Collapse' : 'Expand'} ${feature.name}`} aria-expanded={open} aria-controls={open ? detailsId : undefined} onClick={() => toggle(feature.id)}><ChevronRight size={12} /></Button>
             : <span className="cad-feature-disclosure-placeholder" aria-hidden="true" />}
-          {renameCurrent?.target.kind === 'feature' && renameCurrent.target.featureId === feature.id ? renameEditor(feature) : <button type="button" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)}
+          {renameCurrent?.target.kind === 'feature' && renameCurrent.target.featureId === feature.id ? renameEditor(feature) : <Button type="button" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)}
             aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${diagnostic.message}` : ''}`}
             onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)}
             onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); }}>
             <Icon size={14} /><span className="cad-feature-name">{feature.name}</span>
             {diagnostic && <span className="cad-tree-error" aria-label={diagnostic.message}>!</span>}{feature.suppressed && <span className="cad-tree-muted">off</span>}
-          </button>}
+          </Button>}
         </div>
         {expandable && open && <div id={detailsId} className="cad-feature-details">
-          {feature.kind === 'sketch' && feature.profiles.map(profile => renameCurrent?.target.kind === 'profile' && renameCurrent.target.featureId === feature.id && renameCurrent.target.profileId === profile.id ? <div key={profile.id}>{renameEditor(feature, profile)}</div> : <button type="button" key={profile.id} data-cad-profile-id={profile.id} className={`cad-tree-row cad-tree-profile${selected && selectedProfileId === profile.id ? ' is-selected' : ''}`} disabled={locked || selectionOnly || Boolean(renameCurrent)}
+          {feature.kind === 'sketch' && feature.profiles.map(profile => renameCurrent?.target.kind === 'profile' && renameCurrent.target.featureId === feature.id && renameCurrent.target.profileId === profile.id ? <div key={profile.id}>{renameEditor(feature, profile)}</div> : <Button type="button" key={profile.id} data-cad-profile-id={profile.id} className={`cad-tree-row cad-tree-profile${selected && selectedProfileId === profile.id ? ' is-selected' : ''}`} disabled={locked || selectionOnly || Boolean(renameCurrent)}
             aria-label={`${profile.name} profile`} aria-pressed={selected && selectedProfileId === profile.id} title={`${profile.construction ? 'Construction profile' : 'Closed profile'} · ${profile.name}`} onClick={() => onSelectProfile(feature, profile.id)}
             onContextMenu={event => openMenu(event, feature.id, profile.id)} onKeyDown={event => openMenu(event, feature.id, profile.id)}>
             {profile.geometry.kind === 'circle' ? <Circle size={11} /> : <Square size={11} />}<span>{profile.name}</span>{profile.construction && <small>ref</small>}
-          </button>)}
+          </Button>)}
           {inputs.length > 0 && <div className="cad-feature-relations"><span className="cad-feature-relation-label">Inputs</span><div>{inputs.map(id => {
             const source = relationships.byId.get(id);
-            return source ? dependency(source, 'input') : <span key={id} className="cad-feature-missing-reference" title={`Missing feature ${id}`}>{id} (missing)</span>;
+            return source ? dependency(source, 'input') : <Tooltip content={`Missing feature ${id}`} key={id}><span key={id} className="cad-feature-missing-reference" >{id} (missing)</span></Tooltip>;
           })}</div></div>}
           {usages.length > 0 && <div className="cad-feature-relations"><span className="cad-feature-relation-label">Used by</span><div>{usages.map(feature => dependency(feature, 'usage'))}</div></div>}
         </div>}

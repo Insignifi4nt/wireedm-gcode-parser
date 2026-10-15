@@ -31,7 +31,7 @@ const compact = value => value.replace(/\s+/g, ' ').trim();
 // All non-ASCII text is a candidate, including uncommon pause/arrow glyphs.
 const symbolGlyph = /[^\x00-\x7f]/u;
 const tinyGlyph = /^(?:[+\-!?>*]|fx|f\(x\)|[A-Z]|XY|XZ|YZ)$/;
-const containerTags = new Set(['button', 'Button', 'a', 'label', 'summary', 'output', 'span', 'div', 'li', 'header']);
+const containerTags = new Set(['button', 'Button', 'MenuItem', 'MenuCheckboxItem', 'a', 'label', 'summary', 'output', 'span', 'div', 'li', 'header']);
 function ancestors(node) { const values = []; for (let p = node.parent; p; p = p.parent) values.push(p); return values; }
 function jsxOpening(node) { return ts.isJsxElement(node) ? node.openingElement : ts.isJsxSelfClosingElement(node) ? node : null; }
 function attrs(opening, sf) {
@@ -48,7 +48,7 @@ function component(node, sf) {
 function context(node, sf) {
   const enclosing = ancestors(node);
   const containers = enclosing.map(p => ({ node: p, opening: jsxOpening(p) })).filter(p => p.opening && containerTags.has(p.opening.tagName.getText(sf)));
-  const interactive = containers.find(p => /^(button|Button|a|label|summary)$/.test(p.opening.tagName.getText(sf))) ?? containers[0];
+  const interactive = containers.find(p => /^(button|Button|MenuItem|MenuCheckboxItem|a|label|summary)$/.test(p.opening.tagName.getText(sf))) ?? containers[0];
   const attributes = attrs(interactive?.opening, sf);
   const conditional = enclosing.filter(p => ts.isConditionalExpression(p) || ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken || ts.isIfStatement(p)).slice(0, 4).map(p => {
     if (ts.isConditionalExpression(p)) return `${compact(p.condition.getText(sf))} [${node.pos >= p.whenTrue.pos && node.end <= p.whenTrue.end ? 'true' : 'false'} branch]`;
@@ -102,13 +102,16 @@ for (const file of production) {
 for (const file of codeFiles) {
   const sf = program.getSourceFile(file);
   if (!sf) throw new Error(`Unparsed source ${file}`);
-  const symbols = new Map(), names = new Map(), namespaceNames = new Set(), sharedSelectNames = new Set();
+  const symbols = new Map(), names = new Map(), namespaceNames = new Set(), sharedSelectNames = new Set(), sharedInputNames = new Set();
   for (const statement of sf.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
     const packageName = statement.moduleSpecifier.text;
     const bindings = statement.importClause?.namedBindings;
     if (packageName === '@/components/ui/select' && bindings && ts.isNamedImports(bindings)) {
       for (const item of bindings.elements) if (!item.isTypeOnly && !statement.importClause.isTypeOnly && (item.propertyName ?? item.name).text === 'Select') sharedSelectNames.add(item.name.text);
+    }
+    if (packageName === '@/components/ui/input' && bindings && ts.isNamedImports(bindings)) {
+      for (const item of bindings.elements) if (!item.isTypeOnly && !statement.importClause.isTypeOnly && (item.propertyName ?? item.name).text === 'Input') sharedInputNames.add(item.name.text);
     }
     if (!/(?:lucide|icons?|\.svg$)/i.test(packageName)) continue;
     if (bindings && ts.isNamedImports(bindings)) for (const item of bindings.elements) {
@@ -152,6 +155,7 @@ for (const file of codeFiles) {
       if (['CadContextHelp', 'StatusDot', 'SlidingTabs', 'SectionButton', 'SelectField', 'ScalarField', 'CadReferencePickButton', 'CadEdgeTreatmentCommand', 'CadPatternCommand', 'CadFeatureTree', 'CadTreeRename', 'CadParametersPanel', 'CadPluginsPanel', 'CadSketchDimensionControls', 'CadSketchProfilePanel', 'CadGearHelp'].includes(tag)) sharedGraphicCalls.push(record(node, sf, { kind: 'shared-component-call', tag, attributes: attrs(node, sf) }));
       if (['select', 'summary'].includes(tag) || tag === 'input' && /checkbox|radio/.test(attrs(node, sf).type ?? '')) nativeControls.push(record(node, sf, { kind: 'native-control', tag, attributes: attrs(node, sf) }));
       if (sharedSelectNames.has(tag)) nativeControls.push(record(node, sf, { kind: 'native-control', tag: 'select', sharedComponent: tag, attributes: attrs(node, sf) }));
+      if (sharedInputNames.has(tag) && /checkbox|radio/.test(attrs(node, sf).type ?? '')) nativeControls.push(record(node, sf, { kind: 'native-control', tag: 'input', sharedComponent: tag, attributes: attrs(node, sf) }));
       const values = attrs(node, sf);
       if (/cursor-/.test(values.className ?? '')) cursorLocations.push(record(node, sf, { kind: 'browser-cursor-class', tag, attributes: values }));
       if (/rounded-full/.test(values.className ?? '') && /bg-|border|h-|size-/.test(values.className ?? '')) graphics.push(record(node, sf, { kind: 'css-status-shape', tag, attributes: values }));

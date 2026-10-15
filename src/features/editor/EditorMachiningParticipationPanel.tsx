@@ -1,3 +1,5 @@
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -132,11 +134,11 @@ export function EditorMachiningParticipationPanel({
         <div className="grid grid-cols-2 gap-1">
           <label className="grid gap-0.5 text-muted-foreground">
             Start (%)
-            <input
+            <Input
               aria-label="Machining span start"
               inputMode="decimal"
               aria-describedby="machining-range-help"
-              className="h-7 border border-border bg-background px-1 font-mono text-foreground"
+              className="px-1 font-mono"
               onChange={(event) => {
                 setRangeStart(event.currentTarget.value);
                 onDraftChange?.();
@@ -146,11 +148,11 @@ export function EditorMachiningParticipationPanel({
           </label>
           <label className="grid gap-0.5 text-muted-foreground">
             End (%)
-            <input
+            <Input
               aria-label="Machining span end"
               inputMode="decimal"
               aria-describedby="machining-range-help"
-              className="h-7 border border-border bg-background px-1 font-mono text-foreground"
+              className="px-1 font-mono"
               onChange={(event) => {
                 setRangeEnd(event.currentTarget.value);
                 onDraftChange?.();
@@ -165,8 +167,8 @@ export function EditorMachiningParticipationPanel({
             ? `${((end - start) * sourceSegment.length).toFixed(3)} mm will be excluded from cutting.`
             : 'Enter a start and end between 0% and 100%, with start before end.'}
         </p>
-        <button
-          className="h-7 border border-border bg-background disabled:opacity-40"
+        <Button variant="outline" size="md"
+          className=""
           disabled={!sourceSegmentId || !validRange}
           onClick={() => onSetSpan({
             sourceSegmentId,
@@ -176,7 +178,7 @@ export function EditorMachiningParticipationPanel({
           type="button"
         >
           Mark inactive reference
-        </button>
+        </Button>
       </fieldset>
 
       {partialOperation && <label className="grid gap-1 border border-border p-2 uppercase text-muted-foreground">
@@ -212,15 +214,15 @@ export function EditorMachiningParticipationPanel({
             ? 'Confirm starting directly at the active contour endpoint without an entry lead.'
             : 'Partial machining changes the contour endpoint. Review its retargeted manual entry before export.'}
         </p>
-        <button
+        <Button variant="outline" size="md"
           aria-label="Review derived partial entry"
-          className="h-7 border border-border bg-background disabled:opacity-40"
+          className=""
           disabled={disabled}
           onClick={() => onSetEntryReview(operation.id, !entryReviewed)}
           type="button"
         >
           {entryReviewed ? 'Entry reviewed · revoke' : 'Review derived entry'}
-        </button>
+        </Button>
       </div>}
 
       {partialExit?.strategy === 'manual-straight' && <div className="grid gap-1 border border-border p-2">
@@ -228,15 +230,15 @@ export function EditorMachiningParticipationPanel({
         <p className="text-muted-foreground">
           Confirm the exit from ({partialExit.from.x.toFixed(3)}, {partialExit.from.y.toFixed(3)}) to ({partialExit.to.x.toFixed(3)}, {partialExit.to.y.toFixed(3)}) mm.
         </p>
-        <button
+        <Button variant="outline" size="md"
           aria-label="Review derived partial exit"
-          className="h-7 border border-border bg-background disabled:opacity-40"
+          className=""
           disabled={disabled}
           onClick={() => onSetExitReview(operation.id, partialExit.review !== 'reviewed')}
           type="button"
         >
           {partialExit.review === 'reviewed' ? 'Exit reviewed · revoke' : 'Review partial exit'}
-        </button>
+        </Button>
       </div>}
 
       <div className="grid gap-1" data-machining-span-list ref={spanListRef}>
@@ -288,9 +290,9 @@ export function EditorMachiningParticipationPanel({
                 {Number((span.range.start * 100).toFixed(3))}%–{Number((span.range.end * 100).toFixed(3))}% · {span.participation === 'active-cut' ? 'Active cut' : 'Inactive reference'}
               </div>
             </div>
-            <button
+            <Button variant="outline" size="md"
               aria-label={`Restore ${span.id} to active cut`}
-              className="h-7 border border-border px-2"
+              className="px-2"
               disabled={disabled}
               onClick={() => onSetSpan({
                 sourceSegmentId: span.sourceSegmentId,
@@ -300,7 +302,7 @@ export function EditorMachiningParticipationPanel({
               type="button"
             >
               Restore
-            </button>
+            </Button>
           </div>
         ))}
       </div>

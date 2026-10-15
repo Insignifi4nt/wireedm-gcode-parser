@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import { useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -25,7 +26,7 @@ export function SlidingTabs<T extends string>({ label, value, onValueChange, tab
   const selectedIndex = tabs.findIndex(tab => tab.value === value);
   return (
     <div role="tablist" aria-label={label}
-      className={cn('relative isolate inline-grid shrink-0 rounded-full border border-border bg-background/70 p-0.5 text-[11px]', className)}
+      className={cn('relative isolate inline-grid shrink-0 rounded-[4px] border border-border bg-background/70 p-0.5 text-[11px]', className)}
       style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
       onKeyDown={event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -39,17 +40,17 @@ export function SlidingTabs<T extends string>({ label, value, onValueChange, tab
         onValueChange(enabled[index].value);
       }}>
       {selectedIndex >= 0 && <span aria-hidden="true"
-        className="pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 rounded-full border border-primary/30 bg-primary/15 shadow-sm transition-transform duration-200 ease-out motion-reduce:transition-none"
+        className="pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 rounded-[4px] border border-primary/30 bg-primary/15 shadow-sm transition-transform duration-200 ease-out motion-reduce:transition-none"
         style={{ width: `calc((100% - 4px) / ${tabs.length})`, transform: `translateX(${selectedIndex * 100}%)` }} />}
-      {tabs.map(tab => <button key={tab.value} id={tab.id} role="tab" type="button"
+      {tabs.map(tab => <Button key={tab.value} id={tab.id} role="tab" type="button"
         ref={element => { if (element) buttons.current.set(tab.value, element); else buttons.current.delete(tab.value); }}
         aria-controls={tab.controls} aria-selected={tab.value === value} disabled={tab.disabled}
         tabIndex={tab.value === value ? 0 : -1} title={tab.title}
-        className={cn('relative z-10 flex h-6 min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-2.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:size-3 [&_svg]:shrink-0',
+        className={cn("relative z-10 min-w-0 px-2.5 [&_svg]:size-3",
           tab.value === value ? 'text-primary' : 'text-muted-foreground hover:text-foreground')}
         onClick={() => onValueChange(tab.value)}>
         {tab.icon}<span>{tab.label}</span>
-      </button>)}
+      </Button>)}
     </div>
   );
 }

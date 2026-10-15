@@ -249,7 +249,7 @@ describe('unified feature history and dependency tree', () => {
     expect(button('Boundary profile')).toBeTruthy();
     await click('Collapse Outline'); expect(container.querySelector('[aria-label="Boundary profile"]')).toBeNull();
     await click('Select Outline in history'); expect(callbacks.onSelect).toHaveBeenCalledExactlyOnceWith('sketch');
-    expect(button('Select Outline in history').title).toBe('Sketch · Outline');
+    expect(button('Select Outline in history').getAttribute('aria-description')).toBe('Sketch · Outline');
   });
   it('navigates actual upstream and downstream inputs and respects workflow locks', async () => {
     const onSelect = vi.fn(), callbacks = props({ selectedId: 'pad', onSelect });
@@ -292,7 +292,7 @@ describe('unified feature history and dependency tree', () => {
   it('presents real diagnostics, suppression and parameter highlights without changing model data', async () => {
     const document = sample(), source = JSON.stringify(document);
     await act(async () => root.render(<CadFeatureTree {...props({ document, highlightedFeatureIds: ['pad'], diagnostics: [{ code: 'example', featureId: 'pad', message: 'Cannot build this body.' }] })} />));
-    expect(button('Select Pad in history').title).toBe('Pad / Pocket · Pad · Cannot build this body.');
+    expect(button('Select Pad in history').getAttribute('aria-description')).toBe('Pad / Pocket · Pad · Cannot build this body.');
     expect(button('Select Pad in history').classList.contains('has-error')).toBe(true);
     expect(container.querySelector('[data-cad-feature-id="pad"]')?.classList.contains('is-parameter-related')).toBe(true);
     expect(JSON.stringify(document)).toBe(source);

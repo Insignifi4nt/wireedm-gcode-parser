@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import { applyProjectEdits } from '@/features/webmcp/projectEdits';
 import { ToolError } from '@/features/webmcp/siteTools';
 import { flushSync } from 'react-dom';
@@ -3722,11 +3723,11 @@ export function EditorPage({
               className="hidden min-h-0 border border-border bg-card/95 lg:flex lg:flex-col lg:items-center lg:gap-3 lg:py-2"
               data-editor-inspector-collapsed
             >
-              <button aria-label="Expand Inspector Rail" title="Show code panels" type="button"
-                className="flex size-7 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+              <Button variant="outline" size="icon" aria-label="Expand Inspector Rail" title="Show code panels" type="button"
+                className="flex size-7 items-center justify-center"
                 onClick={() => setInspectorRailCollapsed(false)}>
                 <PanelRightOpen className="size-3.5" />
-              </button>
+              </Button>
               <span className="rotate-180 font-mono text-[10px] uppercase tracking-wider [writing-mode:vertical-rl]">Code</span>
             </div>}
             {!inspectorRailCollapsed && <RailResizeHandle
@@ -3739,9 +3740,9 @@ export function EditorPage({
               data-editor-inspector-panel data-editor-inspector-rail>
               <EditorMachineProgramPanel activeTab={machineProgramTab} onTabChange={setMachineProgramTab}
                 lines={renderProgramLinesPanel()} text={renderProgramTextPanel()} inspector={renderInspectorPanelContent()}
-                collapse={<button aria-label="Collapse Inspector Rail" title="Focus preview" type="button"
-                  className="hidden size-7 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring lg:flex"
-                  onClick={() => setInspectorRailCollapsed(true)}><PanelRightClose className="size-3.5" /></button>} />
+                collapse={<Button variant="outline" size="icon" aria-label="Collapse Inspector Rail" title="Focus preview" type="button"
+                  className="hidden size-7 shrink-0 items-center justify-center lg:flex"
+                  onClick={() => setInspectorRailCollapsed(true)}><PanelRightClose className="size-3.5" /></Button>} />
             </aside>
           </>
         )}

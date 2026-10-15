@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { MousePointer2, RefreshCw } from 'lucide-react';
 
@@ -8,9 +9,6 @@ import type {
   ContourClassification,
   PathPlanningDocument
 } from '@/domain/path-intel/types';
-
-const buttonClass =
-  'flex h-7 items-center justify-center gap-1 border border-border px-1.5 text-[10px] text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40';
 
 const CONTOUR_ROLE_OPTIONS: ContourClassification[] = [
   'exterior',
@@ -125,16 +123,16 @@ export function EditorContourSetupPanel({
           ))}
         </Select>
       </label>
-      <button
+      <Button
         aria-label="Reverse path operation"
-        className={buttonClass}
+        variant="outline" size="md" className="gap-1 px-1.5"
         disabled={!selected || disabled}
         onClick={() => selected && onReverse(selected.id)}
         type="button"
       >
         <RefreshCw className="size-3" />
         Reverse direction
-      </button>
+      </Button>
       <label className="grid gap-1 uppercase text-muted-foreground">
         Contour Role
         <Select
@@ -324,16 +322,16 @@ export function EditorSetStartPanel({
             : 'No closed contour is available.'}
         </span>
       </div>
-      <button
+      <Button
         aria-label="Pick explicit contour start"
-        className={buttonClass}
+        variant="outline" size="md" className="gap-1 px-1.5"
         disabled={!selected || disabled}
         onClick={() => selected && onPickStart(selected.id)}
         type="button"
       >
         <MousePointer2 className="size-3" />
         Pick explicit start
-      </button>
+      </Button>
     </section>
   );
 }

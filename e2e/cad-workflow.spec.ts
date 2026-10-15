@@ -887,7 +887,7 @@ test('final-solid section preview protects its workflow and creates clean CAM ge
   const section = await call(page, 'cad_inspect_section', { expectedVersion: current.version, section: request, limit: 2 });
   expect(section).toMatchObject({ bodyId: 'pad', plane: 'XY', offset: 5, contourCount: 2, entities: { items: expect.any(Array), total: 10, nextOffset: 2 } });
   await page.getByRole('button', { name: 'File', exact: true }).click();
-  await page.getByRole('button', { name: 'Section for CAM', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Section for CAM', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Section for CAM' });
   await expect(dialog).toBeVisible();
   expect(await rawCall(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'rename-document', name: 'Interruption' }] })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });

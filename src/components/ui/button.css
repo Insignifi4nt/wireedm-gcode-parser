@@ -1,0 +1,38 @@
+@layer theme, base, components, utilities;
+@layer components {
+  .ui-button {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 24px;
+    padding: 2px 7px;
+    border: 1px solid transparent;
+    border-radius: var(--control-radius, 4px);
+    background: transparent;
+    color: var(--muted-foreground);
+    font: 500 11px/1.4 var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 120ms, color 120ms, border-color 120ms;
+  }
+  .ui-button > svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .ui-button:hover:not(:disabled) { background: var(--accent); color: var(--accent-foreground); }
+  .ui-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  .ui-button:disabled { opacity: .45; cursor: not-allowed; }
+  .ui-button[aria-pressed=true], .ui-button[aria-haspopup][aria-expanded=true] { background: var(--accent); color: var(--primary); }
+  .ui-button-primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+  .ui-button-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--primary), white 12%); color: var(--primary-foreground); }
+  .ui-button-secondary { border-color: var(--border); background: var(--secondary); color: var(--secondary-foreground); }
+  .ui-button-outline { border-color: var(--border); background: var(--background); color: var(--foreground); }
+  .ui-button-danger { border-color: var(--destructive); background: var(--destructive); color: var(--destructive-foreground); }
+  .ui-button-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--destructive), white 12%); color: var(--destructive-foreground); }
+  .ui-button-medium { height: 28px; padding: 3px 10px; font-size: 12px; }
+  .ui-button-icon { width: 24px; padding: 0; }
+  .ui-button-menu, .ui-button-menu-size { justify-content: flex-start; width: 100%; height: 28px; padding: 3px 8px; text-align: left; }
+  .ui-button-menu { color: var(--foreground); }
+  .ui-button-scrim, .ui-button-scrim:hover:not(:disabled) { width: auto; height: auto; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+  .ui-button[hidden] { display: none !important; }
+  @media (prefers-reduced-motion: reduce) { .ui-button { transition: none; } }
+}

@@ -109,9 +109,11 @@ describe('Editor density cleanup', () => {
     expect(document.querySelector('[data-upid-contour-tree-legend]')).toBeNull();
 
     const helpButton = document.querySelector('button[aria-label="Contour Tree help"]');
-    const helpTooltip = document.querySelector('[data-upid-contour-tree-tooltip]');
+    await act(async () => { if (helpButton instanceof HTMLElement) helpButton.focus(); });
+    const helpTooltip = document.querySelector('[role="tooltip"]');
     expect(helpButton).not.toBeNull();
-    expect(helpButton?.getAttribute('aria-describedby')).toBe(helpTooltip?.id);
+    const helpDescription = document.getElementById(helpButton?.getAttribute('aria-describedby') ?? '');
+    expect(helpDescription?.textContent).toContain('cross-highlight the canvas');
     expect(helpTooltip?.textContent).toContain('cross-highlight the canvas');
     expect(helpTooltip?.textContent).toContain('whole cut loop');
     expect(helpTooltip?.textContent).toContain('Endpoint Topology');

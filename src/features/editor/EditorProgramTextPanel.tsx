@@ -1,3 +1,4 @@
+import { Textarea } from '@/components/ui/textarea';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 
 interface EditorProgramTextPanelProps {
@@ -27,9 +28,9 @@ export function EditorProgramTextPanel({
         )}
       </div>
       <div className="grid min-h-0 flex-1">
-        <textarea
+        <Textarea
           aria-label="Program editor"
-          className="gcode-text-input work-region-scrollbar min-h-0 resize-none overflow-auto border-0 bg-background/70 p-3 text-foreground outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-70"
+          className="gcode-text-input work-region-scrollbar min-h-0 resize-none overflow-auto border-0 p-3 placeholder:text-muted-foreground"
           disabled={!program || isSaving}
           onChange={(event) => onDraftTextChange(event.currentTarget.value)}
           placeholder="No program loaded."

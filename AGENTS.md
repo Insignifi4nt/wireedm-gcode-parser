@@ -11,7 +11,7 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 - `npm test -- --run --project pure-domain` - run pure geometry/planning suites in Node
 - `npm test -- --run --project browser` - run browser storage, DOM and app suites
 - `npm run build` - type-check and build
-- `npm run ui:check` - enforce shared native select ownership
+- `npm run ui:check` - enforce shared controls, menus and tooltip ownership
 - `npm run preview` - preview production build on port **3778**
 
 ## Dev Server Port
@@ -60,7 +60,7 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 - Keep files focused and typed.
 - Prefer explicit domain models over ad hoc strings for project files, output templates, and export formats.
 - Reuse components from `src/components/ui/` and semantic theme tokens for controls and recurring interaction patterns. Add a missing reusable primitive there before duplicating it in a feature. Feature code owns domain behavior and layout, while shared primitives own appearance, focus, disabled and invalid states. See `docs/maintainers/ui-components.md`.
-- Use the shared `Select` for every native select. `npm run ui:check` enforces this in CI; do not bypass it with factory calls or local replacement controls. Preserve native labels, options, refs, form and keyboard semantics. Feature CSS may size and place controls, but must not redefine their shared colors or interaction states.
+- Use shared `Button`, `Input`, `Textarea`, `Select`, `MenuSurface`/`MenuItem` and `Tooltip` for their corresponding controls. `npm run ui:check` enforces raw element, menu role and native hover-title ownership in CI; do not bypass it with factory calls or local replacements. Preserve native labels, options, refs, forms, edited values and keyboard semantics. Feature CSS may size and place controls, but must not redefine their shared colors or interaction states. Specialized source fields retain their editing contract and typography. Use `density="compact"` for toolbar selects; keep the actual picker styled through the shared component.
 
 ## Context, Subagent, and Testing Discipline
 

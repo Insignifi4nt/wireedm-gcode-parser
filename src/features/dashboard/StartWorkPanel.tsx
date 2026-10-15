@@ -1,3 +1,5 @@
+import { Input } from '@/components/ui/input';
+import { MenuSurface, MenuItem } from '@/components/ui/menu';
 import { useRef, type ChangeEvent } from 'react';
 import { ChevronDown, FileCode, FileJson2, FilePlus2, FileSearch, FileUp } from 'lucide-react';
 
@@ -78,10 +80,10 @@ export function StartWorkPanel({
       <div className="grid gap-3 p-3 text-[11px]">
         {onOpenCad && <div className="grid gap-1 border-b border-border pb-3">
           <span className="technical-label">Design &amp; manufacturing</span>
-          <Button disabled={!connected || isImporting} onClick={onOpenCad} variant="outline" type="button">Design in CAD</Button>
+          <Button disabled={!connected || isImporting} onClick={onOpenCad} variant="outline" type="button" size="md">Design in CAD</Button>
           <p className="text-[10px] text-muted-foreground">Parametric sketches, solid models and exact sketch or section handoff to CAM.</p>
         </div>}
-        <input
+        <Input
           ref={dxfInputRef}
           accept=".dxf,application/dxf"
           aria-label="DXF file"
@@ -90,7 +92,7 @@ export function StartWorkPanel({
           onChange={handleDxfInputChange}
           type="file"
         />
-        <input
+        <Input
           ref={upidInputRef}
           accept=".upid.json,application/json"
           aria-label="UPID path project file"
@@ -99,7 +101,7 @@ export function StartWorkPanel({
           onChange={handleUpidInputChange}
           type="file"
         />
-        <input
+        <Input
           ref={programInputRef}
           accept=".gcode,.nc,.iso,.txt,text/plain"
           aria-label="Machine program file"
@@ -113,10 +115,10 @@ export function StartWorkPanel({
           <span className="technical-label">DXF geometry</span>
           <div className="relative flex">
             <Button
-              className="min-w-0 flex-1 rounded-r-none"
+              className="min-w-0 flex-1"
               disabled={!connected || isImporting}
               onClick={() => dxfInputRef.current?.click()}
-              type="button"
+              type="button" size="md" variant="default"
             >
               <FileUp />
               {dxfImporting ? 'Importing Path Project...' : 'Import DXF as Path Project'}
@@ -126,27 +128,27 @@ export function StartWorkPanel({
               aria-controls={upidMenuOpen ? menu.menuId : undefined}
               aria-haspopup="menu"
               aria-label="More path project import options"
-              className="w-8 shrink-0 rounded-l-none border-l border-primary-foreground/25 px-0"
+              className="w-8 shrink-0 border-l px-0"
               disabled={!connected || isImporting}
               onClick={() => menu.toggle('import')}
               onKeyDown={(event) => menu.onTriggerKeyDown(event, 'import')}
               ref={menu.triggerRef}
-              type="button"
+              type="button" size="md" variant="default"
             >
               <ChevronDown className="size-3.5" />
             </Button>
             {upidMenuOpen && (
-              <div
+              <MenuSurface
                 aria-label="Path project import options"
                 id={menu.menuId}
                 ref={menu.menuRef}
                 onKeyDown={menu.onMenuKeyDown}
-                className="absolute right-0 top-full z-20 mt-1 min-w-56 border border-border bg-popover p-1 shadow-xl"
+                className="absolute right-0 top-full z-20 mt-1 min-w-56 p-1"
                 role="menu"
               >
-                <button
+                <MenuItem
                   aria-label="Import UPID Path Project"
-                  className="flex h-8 w-full items-center gap-2 px-2 text-left text-[10px] text-popover-foreground outline-none hover:bg-accent focus:bg-accent"
+                  className="flex h-8 w-full items-center gap-2 px-2 text-left text-[10px]"
                   onClick={() => {
                     menu.close(true);
                     upidInputRef.current?.click();
@@ -157,8 +159,8 @@ export function StartWorkPanel({
                 >
                   <FileJson2 className="size-3.5" />
                   Import UPID Path Project
-                </button>
-              </div>
+                </MenuItem>
+              </MenuSurface>
             )}
           </div>
         </div>
@@ -169,14 +171,14 @@ export function StartWorkPanel({
             disabled={!connected || isImporting}
             onClick={() => programInputRef.current?.click()}
             type="button"
-            variant="outline"
+            variant="outline" size="md"
           >
             <FileCode />
             {programImporting ? 'Opening Machine Program...' : 'Open Machine Program'}
           </Button>
           <p className="text-[10px] text-muted-foreground">Import an editable copy into the workbench.</p>
           {onInspectGCode && <>
-            <Button disabled={isImporting} onClick={onInspectGCode} type="button" variant="outline">
+            <Button disabled={isImporting} onClick={onInspectGCode} type="button" variant="outline" size="md">
               <FileSearch />Inspect G-code
             </Button>
             <p className="text-[10px] text-muted-foreground">Quick file or paste inspection. No project created.</p>
@@ -189,14 +191,14 @@ export function StartWorkPanel({
             disabled={!connected || isImporting}
             onClick={onOpenEditor}
             type="button"
-            variant="outline"
+            variant="outline" size="md"
           >
             <FilePlus2 />
             Open Editor
           </Button>
         </div>
 
-        {dxfImporting && onCancelDxfImport && <Button onClick={onCancelDxfImport} type="button" variant="outline">Cancel DXF preparation</Button>}
+        {dxfImporting && onCancelDxfImport && <Button onClick={onCancelDxfImport} type="button" variant="outline" size="md">Cancel DXF preparation</Button>}
         {dxfErrorMessage && (
           <p role="alert" className="border border-destructive bg-destructive/10 p-2 text-destructive">
             {dxfErrorMessage}

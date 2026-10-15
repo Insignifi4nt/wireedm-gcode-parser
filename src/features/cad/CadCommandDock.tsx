@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import { createContext, useCallback, useContext, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
@@ -22,12 +23,12 @@ export function CadCommandDock({ toolbar, children }: { toolbar: ReactNode; chil
     <div data-cad-command-dock className={`cad-command-dock${open ? ' is-view-open' : ''}`}>
       {toolbar}
       <div id={drawerId} className="cad-command-view-drawer" inert={!open} aria-hidden={!open}><div className="cad-command-view-content" ref={setHost} /></div>
-      <button ref={toggle} type="button" className="cad-command-view-tab" aria-label="View controls" aria-expanded={open} aria-controls={drawerId}
+      <Button ref={toggle} type="button" className="cad-command-view-tab" aria-label="View controls" aria-expanded={open} aria-controls={drawerId}
         onKeyDown={event => {
           if (!open || event.key !== 'Escape' || event.nativeEvent.isComposing || event.defaultPrevented) return;
           event.preventDefault(); event.stopPropagation(); close();
         }}
-        onClick={() => setOpen(value => !value)}>View <ChevronDown size={10} /></button>
+        onClick={() => setOpen(value => !value)}>View <ChevronDown size={10} /></Button>
     </div>
   </ViewToolsHost.Provider>;
 }

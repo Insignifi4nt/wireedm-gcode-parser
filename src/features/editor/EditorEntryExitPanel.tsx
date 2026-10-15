@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -170,10 +172,10 @@ export function EditorEntryExitPanel({
           Choose Entry or Exit, then hover to preview a point on the endpoint normal and click to apply that exact perpendicular lead. The operation target stays locked until the point is picked or the mode is cancelled.
         </p>
         <div className="grid grid-cols-2 gap-1">
-          <button
+          <Button
             aria-label="Pick entry point on canvas"
             aria-pressed={canvasPickMode === 'entry'}
-            className={`h-7 border px-1.5 ${
+            className={`border px-1.5 ${
               canvasPickMode === 'entry'
                 ? 'border-primary bg-primary text-primary-foreground'
                 : 'border-border bg-background'
@@ -185,11 +187,11 @@ export function EditorEntryExitPanel({
             type="button"
           >
             Pick Entry
-          </button>
-          <button
+          </Button>
+          <Button
             aria-label="Pick exit point on canvas"
             aria-pressed={canvasPickMode === 'exit'}
-            className={`h-7 border px-1.5 ${
+            className={`border px-1.5 ${
               canvasPickMode === 'exit'
                 ? 'border-primary bg-primary text-primary-foreground'
                 : 'border-border bg-background'
@@ -201,7 +203,7 @@ export function EditorEntryExitPanel({
             type="button"
           >
             Pick Exit
-          </button>
+          </Button>
         </div>
       </fieldset>
 
@@ -227,8 +229,8 @@ export function EditorEntryExitPanel({
           y={entryY}
         /> : <label className="grid gap-0.5 text-muted-foreground">
           {entryMode === 'rapid-length' ? 'Rapid travel from initial wire (mm)' : 'Lead-in length (mm)'}
-          <input aria-label={entryMode === 'rapid-length' ? 'Entry rapid distance (mm)' : 'Entry lead-in length (mm)'}
-            className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+          <Input aria-label={entryMode === 'rapid-length' ? 'Entry rapid distance (mm)' : 'Entry lead-in length (mm)'}
+            className="px-1.5 font-mono"
             inputMode="decimal" min={entryMode === 'rapid-length' ? 0 : 0.001} step="any" type="number"
             onChange={(event) => { setEntryDistance(event.currentTarget.value); onDraftChange?.('entry'); }}
             value={entryDistance} />
@@ -239,35 +241,35 @@ export function EditorEntryExitPanel({
         {entryCoincident && <p role="status" className="text-amber-300">Entry is at the source or active contour start. Choose a different point or use no entry.</p>}
         {entryIntersections.length > 0 && <p role="status" className="text-amber-300">Entry touches or overlaps {entryIntersections.length} source segment(s) away from its contour attachment. Check the lead before applying.</p>}
         <div className="grid grid-cols-2 gap-1">
-          <button
+          <Button variant="outline" size="md"
             aria-label="Set straight entry"
-            className="h-7 border border-border bg-background disabled:opacity-40"
+            className=""
             disabled={!entryPoint || entryCoincident}
             onClick={() => entryPoint && onSetManualEntry(selected.id, entryPoint)}
             type="button"
           >
             Set straight entry
-          </button>
-          <button
+          </Button>
+          <Button variant="outline" size="md"
             aria-label="Add center pierce lead-in"
-            className="h-7 border border-border bg-background disabled:opacity-40"
+            className=""
             disabled={!canSetCircleCenterEntry}
             onClick={() => onSetCircleCenterEntry(selected.id)}
             title="Use circle center entry"
             type="button"
           >
             Use circle center
-          </button>
+          </Button>
         </div>
-        <button
+        <Button variant="outline" size="md"
           aria-label="Use reviewed no entry"
-          className="h-7 border border-border bg-background disabled:opacity-40"
+          className=""
           onClick={() => onSetNoEntry(selected.id)}
           title="Review and use direct contour entry with no lead-in move."
           type="button"
         >
           Use no entry (reviewed)
-        </button>
+        </Button>
       </fieldset>
 
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
@@ -294,7 +296,7 @@ export function EditorEntryExitPanel({
           y={exitY}
         /> : <label className="grid gap-0.5 text-muted-foreground">
           Lead-out length (mm)
-          <input aria-label="Exit lead-out length (mm)" className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+          <Input aria-label="Exit lead-out length (mm)" className="px-1.5 font-mono"
             inputMode="decimal" min={0.001} step="any" type="number"
             onChange={(event) => { setExitDistance(event.currentTarget.value); onDraftChange?.('exit'); }}
             value={exitDistance} />
@@ -303,24 +305,24 @@ export function EditorEntryExitPanel({
         {exitPoint && exitAttachment && <p className="text-muted-foreground">Lead-out {formatDistance(distance(exitAttachment, exitPoint))} mm · X{exitPoint.x.toFixed(3)} Y{exitPoint.y.toFixed(3)}</p>}
         {exitCoincident && <p role="status" className="text-amber-300">Exit is at the source or active contour end. Choose a different point or use no exit.</p>}
         {exitIntersections.length > 0 && <p role="status" className="text-amber-300">Exit touches or overlaps {exitIntersections.length} source segment(s) away from its contour attachment. Check the lead before applying.</p>}
-        <button
+        <Button variant="outline" size="md"
           aria-label="Set straight exit"
-          className="h-7 border border-border bg-background disabled:opacity-40"
+          className=""
           disabled={!exitPoint || exitCoincident}
           onClick={() => exitPoint && onSetManualExit(selected.id, exitPoint)}
           type="button"
         >
           Set straight exit
-        </button>
-        <button
+        </Button>
+        <Button variant="outline" size="md"
           aria-label="Use reviewed no exit"
-          className="h-7 border border-border bg-background disabled:opacity-40"
+          className=""
           onClick={() => onSetNoExit(selected.id)}
           title="Review and end at the contour endpoint with no lead-out move."
           type="button"
         >
           Use no exit (reviewed)
-        </button>
+        </Button>
       </fieldset>
 
       <p className="text-muted-foreground">Source-boundary checks only. Stock, fixtures and wire-offset clearance are not modeled.</p>
@@ -345,9 +347,9 @@ function CoordinateInputs({
     <div className="grid grid-cols-2 gap-1">
       <label className="grid gap-0.5 text-muted-foreground">
         X
-        <input
+        <Input
           aria-label={`${label} X`}
-          className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+          className="px-1.5 font-mono"
           inputMode="decimal"
           onChange={(event) => onXChange(event.currentTarget.value)}
           value={x}
@@ -355,9 +357,9 @@ function CoordinateInputs({
       </label>
       <label className="grid gap-0.5 text-muted-foreground">
         Y
-        <input
+        <Input
           aria-label={`${label} Y`}
-          className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+          className="px-1.5 font-mono"
           inputMode="decimal"
           onChange={(event) => onYChange(event.currentTarget.value)}
           value={y}

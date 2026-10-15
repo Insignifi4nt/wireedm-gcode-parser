@@ -1,0 +1,18 @@
+@layer theme, base, components, utilities;
+@layer components {
+  [data-radix-popper-content-wrapper]:has(> .ui-tooltip-content) { pointer-events: none; }
+  .ui-tooltip-content {
+    pointer-events: none;
+    z-index: 1000;
+    max-width: min(320px, calc(100vw - 16px));
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--control-radius, 4px);
+    background: var(--popover);
+    color: var(--popover-foreground);
+    box-shadow: 0 4px 14px #0005;
+    font: 11px/1.5 var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+  }
+}

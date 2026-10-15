@@ -70,7 +70,7 @@ describe('common-frame Loft section authoring', () => {
     expect(ids()).toEqual(['Base', 'Top']);
     const rows = [...container.querySelectorAll('.cad-loft-section-metadata')];
     expect(rows[0].textContent).toBe('Mount · station 0 mm'); expect(rows[1].textContent).toBe('Upper support · station 20 mm');
-    expect(rows[1].getAttribute('title')).toContain('Authored offset: 0 mm'); expect(rows[1].getAttribute('title')).toContain('5, 0 mm');
+    expect(rows[1].getAttribute('aria-description')).toContain('Authored offset: 0 mm'); expect(rows[1].getAttribute('aria-description')).toContain('5, 0 mm');
     expect(select('Section 2').querySelector<HTMLOptionElement>('option[value="Twisted"]')?.disabled).toBe(true);
     expect(select('Section 2').querySelector('option[value="Twisted"]')?.textContent).toContain('Incompatible frame');
     await click('Apply'); expect(loft(session.getSnapshot().document.features.at(-1)).sketchIds).toEqual(['Base', 'Top']);

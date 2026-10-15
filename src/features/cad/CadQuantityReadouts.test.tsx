@@ -28,7 +28,7 @@ it('reports a tiny linked scalar without zeroing it or altering the editable exp
   await render(<ScalarField label="Width" value=" size " parameters={{ size: 4e-7 }} onChange={change} />);
   expect(container.querySelector<HTMLInputElement>('input')?.value).toBe(' size ');
   expect(container.querySelector('.cad-field-hint')?.textContent).toBe('4e-7 mm');
-  expect(container.querySelector('input')?.title).toBe('4e-7 mm'); expect(change).not.toHaveBeenCalled();
+  expect(container.querySelector('input')?.getAttribute('aria-description')).toBe('4e-7 mm'); expect(change).not.toHaveBeenCalled();
 });
 
 it('keeps a tiny plugin placement relation visibly nonzero in its locked field and actual help value', async () => {

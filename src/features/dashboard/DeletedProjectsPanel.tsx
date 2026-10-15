@@ -1,3 +1,4 @@
+import { Tooltip } from '@/components/ui/tooltip';
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
@@ -43,15 +44,15 @@ export function DeletedProjectsPanel({ entries, interactionLocked, onRestoreProj
           <li key={project.id} className="border-t border-border pt-2">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <p className="truncate" title={project.name}>{project.name}</p>
+                <Tooltip content={project.name}><p tabIndex={0} className="truncate" >{project.name}</p></Tooltip>
                 <p className="text-[10px] text-muted-foreground">Archived {new Date(deletedAt).toLocaleDateString()}</p>
               </div>
               <div className="flex items-center gap-1">
-                <Button type="button" variant="outline" disabled={interactionLocked || restoringId !== null || purgingId !== null}
+                <Button size="md" type="button" variant="outline" disabled={interactionLocked || restoringId !== null || purgingId !== null}
                   aria-label={`Restore ${project.name}`} onClick={() => void restore(project.id)}>
                   {restoringId === project.id ? 'Restoring...' : 'Restore'}
                 </Button>
-                <Button type="button" variant="outline" disabled={interactionLocked || restoringId !== null || purgingId !== null}
+                <Button size="md" type="button" variant="outline" disabled={interactionLocked || restoringId !== null || purgingId !== null}
                   aria-label={`Permanently delete ${project.name}`} title={`Permanently delete ${project.name}`}
                   onClick={() => { setConfirmId(project.id); setError(null); }}>
                   Delete
@@ -61,8 +62,8 @@ export function DeletedProjectsPanel({ entries, interactionLocked, onRestoreProj
             {confirmId === project.id && <div className="mt-2 border border-destructive/50 p-2">
               <p>Permanently delete {project.name}, including its source files and saved revisions? This cannot be undone.</p>
               <div className="mt-2 flex justify-end gap-1">
-                <Button type="button" variant="outline" disabled={purgingId !== null} onClick={() => setConfirmId(null)}>Cancel</Button>
-                <Button type="button" variant="danger" disabled={interactionLocked || purgingId !== null}
+                <Button size="md" type="button" variant="outline" disabled={purgingId !== null} onClick={() => setConfirmId(null)}>Cancel</Button>
+                <Button size="md" type="button" variant="danger" disabled={interactionLocked || purgingId !== null}
                   onClick={() => void purge(project.id)}>{purgingId === project.id ? 'Deleting...' : 'Delete permanently'}</Button>
               </div>
             </div>}

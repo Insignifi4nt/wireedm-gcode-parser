@@ -889,6 +889,23 @@ describe('CAD sketch interaction', () => {
     expect(container.querySelector('[aria-label="Feature properties"]')).not.toBeNull(); expect(dimensionValue().value).toBe('60');
     await click('Cancel'); await click('Add dimension'); expect(dimensionValue().value).toBe('50'); await click('Cancel');
   });
+  it('navigates File commands by keyboard and restores toolbar focus without changing the draft', async () => {
+    await mount();
+    const before = currentSession.getSnapshot(), trigger = button('File');
+    await act(async () => trigger.focus());
+    await click('File');
+    expect(document.activeElement).toBe(button('New part'));
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(button('Open saved part'));
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(document.querySelector('[role="menu"][aria-label="CAD document commands"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    await click('File');
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })));
+    expect(document.querySelector('[role="menu"][aria-label="CAD document commands"]')).toBeNull();
+    expect(document.activeElement).toBe(button('Undo'));
+    expect(currentSession.getSnapshot()).toBe(before);
+  });
   it('offers model rebuild recovery from File without editing the draft', async () => {
     const rebuild = vi.fn(async () => undefined);
     await mount(solidDocument(), { build: null, buildState: 'error', onRebuild: rebuild });
@@ -1033,6 +1050,8 @@ describe('CAD sketch interaction', () => {
     await click('Select Pad 1 in history');
     const before = currentSession.getSnapshot();
     await input(field('Length'), 'invalid + 2');
+    await act(async () => field('Length').focus());
+    expect(document.querySelector('[role="tooltip"]')).not.toBeNull();
     const nativeUndo = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true });
     await act(async () => field('Length').dispatchEvent(nativeUndo));
     expect(nativeUndo.defaultPrevented).toBe(false); expect(undo).not.toHaveBeenCalled();
@@ -1052,6 +1071,20 @@ describe('CAD sketch interaction', () => {
     const saveKey = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true });
     await act(async () => field('Length').dispatchEvent(saveKey));
     expect(saveKey.defaultPrevented).toBe(true); expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels the scalar draft on the first Escape while focused contextual help is open', async () => {
+    await mount(solidDocument(), { build: topologyBuild, buildState: 'ready' });
+    await click('Select Pad 1 in history');
+    const before = currentSession.getSnapshot();
+    await input(field('Length'), 'invalid + 2');
+    await act(async () => field('Length').focus());
+    expect(document.querySelector('[role="tooltip"]')).not.toBeNull();
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    await act(async () => field('Length').dispatchEvent(escape));
+    expect(escape.defaultPrevented).toBe(true);
+    expect(field('Length').value).toBe('10');
+    expect(currentSession.getSnapshot()).toEqual(before);
   });
 
   it('cancels pending parameter fields from the focused input without changing geometry or history', async () => {

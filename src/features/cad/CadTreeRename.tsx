@@ -1,3 +1,5 @@
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { Value } from '@sinclair/typebox/value';
@@ -20,10 +22,10 @@ export function CadTreeRename({ kind, initialName, onAccept, onCancel }: {
     if (event.nativeEvent.isComposing) return;
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCancel(); }
   }}>
-    <input ref={input} aria-label={kind === 'feature' ? 'Feature name' : 'Profile name'} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}
+    <Input ref={input} aria-label={kind === 'feature' ? 'Feature name' : 'Profile name'} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}
       maxLength={160} value={draft} spellCheck={false} autoComplete="off" onChange={event => { setDraft(event.target.value); setError(''); }} />
-    <button type="submit" aria-label="Apply name" title="Apply name"><Check size={13} /></button>
-    <button type="button" aria-label="Cancel rename" title="Cancel rename" onClick={onCancel}><X size={13} /></button>
+    <Button variant="primary" type="submit" aria-label="Apply name" title="Apply name"><Check size={13} /></Button>
+    <Button type="button" aria-label="Cancel rename" title="Cancel rename" onClick={onCancel}><X size={13} /></Button>
     {error && <span id={errorId} className="cad-tree-rename-error" role="alert">{error}</span>}
   </form>;
 }

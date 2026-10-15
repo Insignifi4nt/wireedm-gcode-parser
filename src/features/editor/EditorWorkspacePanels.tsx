@@ -1,3 +1,5 @@
+import { Tooltip } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
 import {
   useEffect,
   useId,
@@ -78,26 +80,26 @@ export function EditorCompactDrawerLaunchers({
     <>
       {(hasUpidRail || hasActiveWorkflow) && <div className="hidden items-center gap-1 p-1" data-editor-compact-drawer-launchers>
         {hasUpidRail && (
-          <button
+          <Button variant="outline" size="md"
             aria-label="Open UPID rail"
-            className="h-7 border border-border px-2 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+            className="px-2"
             onClick={() => onDrawerChange('upid')}
             ref={upidLauncherRef}
             type="button"
           >
             Program
-          </button>
+          </Button>
         )}
         {hasActiveWorkflow && (
-          <button
+          <Button variant="outline" size="md"
             aria-label="Open active workflow"
-            className="h-7 border border-border px-2 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+            className="px-2"
             onClick={() => onDrawerChange('workflow')}
             ref={workflowLauncherRef}
             type="button"
           >
             Workflow
-          </button>
+          </Button>
         )}
       </div>}
       {drawer === 'upid' && (() => {
@@ -179,15 +181,15 @@ export function EditorCompactDrawerSheet({
       >
         <div className="flex h-8 items-center justify-between border-b border-border px-2">
           <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{title}</span>
-          <button
+          <Button variant="outline" size="icon"
             aria-label={`Close ${title}`}
-            className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+            className="flex items-center justify-center"
             onClick={onClose}
             ref={closeRef}
             type="button"
           >
             <X aria-hidden="true" className="size-3" />
-          </button>
+          </Button>
         </div>
         <div className="min-h-0 overflow-auto">{children}</div>
       </div>
@@ -296,22 +298,22 @@ export function EditorCollapsedDockZone({
       data-editor-panel-dock-zone-collapsed="true"
     >
       <div className="flex min-h-0 flex-col items-center gap-2 py-1">
-        <button
+        <Button variant="outline" size="icon"
           aria-label={`Expand ${title}`}
-          className="flex size-7 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex size-7 shrink-0 items-center justify-center"
           onClick={onExpand}
           title={`Expand ${title}`}
           type="button"
         >
           <ExpandIcon aria-hidden="true" className="size-3.5" />
-        </button>
+        </Button>
         <span className="technical-value text-[10px] text-muted-foreground">{panelCount}</span>
-        <span
+        <Tooltip content={title}><span tabIndex={0}
           className="rotate-180 truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground [writing-mode:vertical-rl]"
-          title={title}
+
         >
           {title}
-        </span>
+        </span></Tooltip>
       </div>
     </aside>
   );
@@ -364,15 +366,15 @@ export function EditorPanelDockZone({
         <div className="flex items-center gap-1">
           <span className="technical-value px-1 text-[10px] text-muted-foreground">{panelCount}</span>
           {onToggleCollapsed && (
-            <button
+            <Button variant="outline" size="icon"
               aria-label={`Collapse ${title}`}
-              className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+              className="flex items-center justify-center"
               onClick={onToggleCollapsed}
               title={`Collapse ${title}`}
               type="button"
             >
               <PanelRightClose aria-hidden="true" className="size-3" />
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -564,9 +566,9 @@ export function EditorFloatingPanel({
       }
     >
       <div className="flex h-7 items-center gap-1 border-b border-border bg-background/70 px-1">
-        <button
+        <Button
           aria-label={`Move ${title}`}
-          className="flex h-6 min-w-0 flex-1 cursor-move items-center truncate px-1 text-left text-[10px] font-semibold text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex min-w-0 flex-1 cursor-move items-center truncate px-1 text-left font-semibold"
           data-editor-workspace-panel-handle={id}
           onKeyDown={handleMoveKeyDown}
           onPointerDown={handleDragStart}
@@ -574,16 +576,16 @@ export function EditorFloatingPanel({
           type="button"
         >
           <span className="truncate" id={compactDrawerTitleId}>{title}</span>
-        </button>
+        </Button>
         <EditorPanelPlacementControls
           onDock={onDock}
           onFloat={onFloat}
           placement="floating"
           title={title}
         />
-        <button
+        <Button variant="outline" size="icon"
           aria-label={compactDrawerOpen ? `Close ${title} drawer` : `Hide ${title}`}
-          className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+          className="flex items-center justify-center"
           onClick={compactDrawerOpen ? onCloseCompactDrawer : onHide}
           onPointerDown={(event) => event.stopPropagation()}
           ref={compactDrawerCloseRef}
@@ -591,10 +593,10 @@ export function EditorFloatingPanel({
           type="button"
         >
           <X className="size-3" />
-        </button>
+        </Button>
       </div>
       <div className="min-h-0 overflow-hidden">{children}</div>
-      <button
+      <Button
         aria-label={`Resize ${title}`}
         className="absolute bottom-0 right-0 size-4 cursor-nwse-resize border-b border-r border-primary/70"
         data-editor-floating-panel-resizer={id}
@@ -644,9 +646,9 @@ function EditorPanelPlacementControls({
   return (
     <div className="flex shrink-0 items-center gap-0.5" data-editor-panel-placement-controls>
       {commands.map((command) => (
-        <button
+        <Button variant="outline"
           aria-label={command.label}
-          className="flex size-5 items-center justify-center border border-border font-mono text-[9px] text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-35"
+          className="flex size-5 items-center justify-center font-mono text-[9px]"
           disabled={command.disabled}
           key={command.label}
           onClick={command.onClick}
@@ -655,7 +657,7 @@ function EditorPanelPlacementControls({
           type="button"
         >
           <span aria-hidden="true">{command.shortLabel}</span>
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -801,16 +803,16 @@ export function EditorWorkspacePanelFrame({
             placement={placement}
             title={title}
           />
-          <button
+          <Button variant="outline" size="icon"
             aria-label={`Hide ${title}`}
-            className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+            className="flex items-center justify-center"
             onClick={onHide}
             onPointerDown={(event) => event.stopPropagation()}
             title={`Hide ${title}`}
             type="button"
           >
             <X className="size-3" />
-          </button>
+          </Button>
         </div>
       </div>
       <div className="work-region-scrollbar min-h-0 overflow-auto p-2">{children}</div>

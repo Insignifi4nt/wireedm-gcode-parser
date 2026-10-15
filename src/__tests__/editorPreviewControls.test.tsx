@@ -467,7 +467,7 @@ describe('Editor preview controls and guide', () => {
       'button[aria-label="Toggle preview grid snap"]'
     ) as HTMLButtonElement | null;
     expect(snapToggle).not.toBeNull();
-    expect(snapToggle?.title).toBe(declaration
+    expect(snapToggle?.getAttribute('aria-description')).toBe(declaration
       ? 'Snap cursor and measurement clicks to the 5 mm preview grid'
       : 'Snap cursor and measurement clicks to the 5 coordinate-unit preview grid. Units are undeclared.');
     expect(container.querySelector('[data-editor-grid-snap]')?.textContent).toBe('OFF');

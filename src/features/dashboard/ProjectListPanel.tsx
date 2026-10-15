@@ -1,3 +1,6 @@
+import { Input } from '@/components/ui/input';
+import { Tooltip } from '@/components/ui/tooltip';
+import { MenuSurface, MenuItem } from '@/components/ui/menu';
 import { Select } from '@/components/ui/select';
 import { useState } from 'react';
 import { ChevronDown, History, Pencil, Save, Trash2 } from 'lucide-react';
@@ -72,9 +75,9 @@ export function ProjectListPanel({
         </p> : projects.length > 0 ? (
           <div className="grid gap-2">
             <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(120px,150px)_minmax(120px,150px)]" data-project-list-controls>
-              <input
+              <Input
                 aria-label="Search projects"
-                className="technical-input px-2 text-[11px] outline-none"
+                className="technical-input px-2 text-[11px]"
                 onChange={(event) => setSearchText(event.currentTarget.value)}
                 placeholder="Search projects"
                 value={searchText}
@@ -121,10 +124,10 @@ export function ProjectListPanel({
                   >
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-1">
-                        <p className="truncate text-foreground" title={`${project.name}\n${project.path}`}>{project.name}</p>
+                        <Tooltip content={`${project.name}\n${project.path}`}><p className="truncate text-foreground" >{project.name}</p></Tooltip>
                         <Button
                           aria-label={`Rename project ${project.id}`}
-                          className="size-5 shrink-0 text-muted-foreground hover:text-foreground"
+                          className="size-5 shrink-0"
                           disabled={interactionLocked}
                           onClick={() => onRenameProject(project)}
                           size="icon"
@@ -151,7 +154,7 @@ export function ProjectListPanel({
                       </Button>
                       <Button
                         aria-label={`Delete project ${project.id}`}
-                        className="size-7 text-muted-foreground hover:text-destructive"
+                        className="size-7"
                         disabled={interactionLocked}
                         onClick={() => onDeleteProject(project)}
                         size="icon"
@@ -164,7 +167,7 @@ export function ProjectListPanel({
                       {isPathProjectSourceKind(project.sourceKind) && (
                         <Button
                           aria-label={`Show revisions for project ${project.id}`}
-                          className="size-7 text-muted-foreground hover:text-foreground"
+                          className="size-7"
                           disabled={interactionLocked}
                           onClick={() => onShowRevisions(project)}
                           size="icon"
@@ -182,7 +185,7 @@ export function ProjectListPanel({
                             aria-controls={exportMenuProjectId === project.id ? menu.menuId : undefined}
                             aria-haspopup="menu"
                             aria-label={`Export UPID project ${project.id}`}
-                            className="relative size-7 text-muted-foreground hover:text-foreground"
+                            className="relative size-7"
                             disabled={interactionLocked}
                             onClick={() => menu.toggle(project.id)}
                             onKeyDown={(event) => menu.onTriggerKeyDown(event, project.id)}
@@ -193,19 +196,19 @@ export function ProjectListPanel({
                             variant="ghost"
                           ><Save className="size-4" /><ChevronDown className="absolute bottom-0 right-0 size-2.5" /></Button>
                           {exportMenuProjectId === project.id && (
-                            <div aria-label={`Export options for ${project.name}`}
+                            <MenuSurface aria-label={`Export options for ${project.name}`}
                               id={menu.menuId} ref={menu.menuRef} onKeyDown={menu.onMenuKeyDown}
-                              className="absolute right-0 top-full z-30 mt-1 min-w-32 border border-border bg-popover p-1 shadow-xl"
+                              className="absolute right-0 top-full z-30 mt-1 min-w-32 p-1"
                               role="menu">
-                              <button className="flex h-7 w-full items-center px-2 text-left text-[11px] text-popover-foreground outline-none hover:bg-accent focus:bg-accent"
+                              <MenuItem className="flex h-7 w-full items-center px-2 text-left text-[11px]"
                                 onClick={() => runExport(project.id, false)} role="menuitem" tabIndex={-1} type="button">
                                 Export
-                              </button>
-                              {saveAsAvailable && <button className="flex h-7 w-full items-center px-2 text-left text-[11px] text-popover-foreground outline-none hover:bg-accent focus:bg-accent"
+                              </MenuItem>
+                              {saveAsAvailable && <MenuItem className="flex h-7 w-full items-center px-2 text-left text-[11px]"
                                 onClick={() => runExport(project.id, true)} role="menuitem" tabIndex={-1} type="button">
                                 Export as…
-                              </button>}
-                            </div>
+                              </MenuItem>}
+                            </MenuSurface>
                           )}
                         </div>
                       )}
@@ -221,7 +224,7 @@ export function ProjectListPanel({
               >
                 No projects match the active filters.
                 <Button className="ml-2 h-7 text-[11px]" variant="outline" type="button"
-                  onClick={() => { setSearchText(''); setSourceFilter('all'); }}>Clear filters</Button>
+                  onClick={() => { setSearchText(''); setSourceFilter('all'); }} size="md">Clear filters</Button>
               </div>
             )}
           </div>
@@ -253,15 +256,15 @@ function ProjectUpdateTime({ value }: { value: string }) {
   const date = new Date(value);
   const valid = Number.isFinite(date.getTime());
   return (
-    <time
+    <Tooltip content={value}><time
       aria-label={`Updated ${valid ? date.toLocaleString() : value}`}
       className="technical-value flex flex-wrap gap-x-2 text-[10px] text-muted-foreground lg:grid lg:gap-y-0.5"
       dateTime={valid ? value : undefined}
-      title={value}
+
     >
       <span>{valid ? projectDateFormatter.format(date) : value}</span>
       {valid && <span>{projectTimeFormatter.format(date)}</span>}
-    </time>
+    </time></Tooltip>
   );
 }
 

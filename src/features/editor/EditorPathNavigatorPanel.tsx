@@ -1,3 +1,7 @@
+import { Button } from '@/components/ui/button';
+import { MenuSurface, MenuItem, MenuCheckboxItem } from '@/components/ui/menu';
+import { Input } from '@/components/ui/input';
+import { Tooltip } from '@/components/ui/tooltip';
 import { Select } from '@/components/ui/select';
 import {
   ArrowDown,
@@ -77,13 +81,11 @@ import {
 export type EditorPathElementRef = UpidPathElementRef;
 
 const iconButtonClass =
-  'flex size-7 items-center justify-center rounded-[2px] border border-border text-muted-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40';
+  'size-7';
 const textButtonClass =
-  'flex h-7 items-center justify-center gap-1 rounded-[2px] border border-border px-1.5 text-[10px] text-muted-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40';
+  'h-7 gap-1 px-1.5 text-[10px]';
 const modeButtonClass =
-  'flex h-7 items-center justify-center gap-1 rounded-[2px] border border-border px-1 text-[10px] text-muted-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40';
-const activeModeButtonClass =
-  'flex h-7 items-center justify-center gap-1 rounded-[2px] border border-primary bg-primary px-1 text-[10px] text-primary-foreground outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40';
+  'h-7 gap-1 px-1 text-[10px]';
 const ORDER_STRATEGY_OPTIONS: Array<{
   label: string;
   value: OperationOrderStrategy;
@@ -519,50 +521,42 @@ export function EditorPathNavigatorPanel({
           <span className="text-[10px] text-muted-foreground">
             {projectRail.summary.rootCount} {projectRail.summary.rootCount === 1 ? 'contour' : 'contours'}
           </span>
-          <div className="group relative">
-            <button
-              aria-describedby="contour-tree-help-tooltip"
+          <Tooltip content={<span data-upid-contour-tree-tooltip>
+            Hover or select a row to cross-highlight the canvas. A contour is a whole cut loop made from ordered
+            line or arc segments; each segment exposes start and end endpoint handles. Inspect joins in Endpoint
+            Topology from the View menu or Path Diagnostics workflow.
+          </span>}>
+            <Button
               aria-label="Contour Tree help"
-              className="flex size-6 items-center justify-center text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
-              title="Contour Tree help"
+              className="flex size-6 items-center justify-center transition"
               type="button"
             >
               <Info aria-hidden="true" className="size-3.5" />
-            </button>
-            <div
-              className="pointer-events-none invisible absolute left-[-36px] top-7 z-30 w-[170px] border border-border bg-card p-2 text-[10px] normal-case leading-4 text-foreground opacity-0 shadow-xl transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
-              data-upid-contour-tree-tooltip
-              id="contour-tree-help-tooltip"
-              role="tooltip"
-            >
-              Hover or select a row to cross-highlight the canvas. A contour is a whole cut loop made from ordered
-              line or arc segments; each segment exposes start and end endpoint handles. Inspect joins in Endpoint
-              Topology from the View menu or Path Diagnostics workflow.
-            </div>
-          </div>
+            </Button>
+          </Tooltip>
         </div>
           <div className="relative">
-            <button
+            <Button
               aria-expanded={geometryTreeOptionsOpen}
               aria-haspopup="menu"
               aria-label="Geometry tree options"
-              className="flex size-6 items-center justify-center text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex size-6 items-center justify-center"
               onClick={() => setGeometryTreeOptionsOpen((open) => !open)}
               title="Geometry tree options"
               type="button"
             >
               <Ellipsis aria-hidden="true" className="size-4" />
-            </button>
+            </Button>
             {geometryTreeOptionsOpen && (
-              <div
+              <MenuSurface
                 aria-label="Geometry tree options"
-                className="absolute right-0 top-7 z-40 w-48 border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+                className="absolute right-0 top-7 z-40 w-48 p-1"
                 data-upid-geometry-tree-options
                 role="menu"
               >
-                <button
+                <MenuItem
                   aria-label="Expand entire contour tree"
-                  className="flex h-7 w-full items-center px-2 text-left text-[10px] outline-none hover:bg-accent focus-visible:bg-accent"
+                  className="flex h-7 w-full items-center px-2 text-left text-[10px]"
                   disabled={pathTreeElementIds.length === 0 || isSaving}
                   onClick={() => {
                     setPathTreeExpanded(true);
@@ -572,10 +566,10 @@ export function EditorPathNavigatorPanel({
                   type="button"
                 >
                   Expand all
-                </button>
-                <button
+                </MenuItem>
+                <MenuItem
                   aria-label="Collapse entire contour tree"
-                  className="flex h-7 w-full items-center px-2 text-left text-[10px] outline-none hover:bg-accent focus-visible:bg-accent"
+                  className="flex h-7 w-full items-center px-2 text-left text-[10px]"
                   disabled={pathTreeElementIds.length === 0 || isSaving}
                   onClick={() => {
                     setPathTreeExpanded(false);
@@ -585,34 +579,23 @@ export function EditorPathNavigatorPanel({
                   type="button"
                 >
                   Collapse all
-                </button>
-                <label
-                  className="flex h-7 items-center justify-between gap-2 border-t border-border px-2 text-[10px] text-muted-foreground hover:bg-accent"
-                  role="menuitemcheckbox"
-                >
-                  <span>Hover cross-highlight</span>
-                  <input
-                    aria-label="Toggle canvas hover assist"
-                    checked={hoverAssistEnabled}
-                    data-upid-hover-assist-toggle
-                    onChange={onToggleHoverAssist}
-                    type="checkbox"
-                  />
-                </label>
-              </div>
+                </MenuItem>
+                <MenuCheckboxItem aria-label="Toggle canvas hover assist" checked={hoverAssistEnabled}
+                  data-upid-hover-assist-toggle onCheckedChange={onToggleHoverAssist}>Hover cross-highlight</MenuCheckboxItem>
+              </MenuSurface>
             )}
           </div>
       </div>
       {(spatialActionsByOperation.get(null) ?? []).map((action) => (
         <div className="flex items-center border-b border-border/40" key={action.key}>
-          <button type="button" data-upid-machining-action={action.key}
+          <Button type="button" data-upid-machining-action={action.key}
             aria-pressed={selectedSpatialActionKey === action.key}
             className={`min-w-0 flex-1 px-2 py-1.5 text-left hover:bg-accent ${selectedSpatialActionKey === action.key ? 'bg-sky-500/15' : ''}`}
             onClick={() => onSelectSpatialAction?.(action.key)}>
             {action.label} · X {action.point.x.toFixed(3)} Y {action.point.y.toFixed(3)}
-          </button>
-          <button type="button" className="px-2 text-cyan-300 hover:bg-accent"
-            aria-label={`Edit ${action.label.toLowerCase()}`} onClick={() => onActivateSpatialAction?.(action.key)}>Edit</button>
+          </Button>
+          <Button type="button" className="px-2 text-cyan-300"
+            aria-label={`Edit ${action.label.toLowerCase()}`} onClick={() => onActivateSpatialAction?.(action.key)}>Edit</Button>
         </div>
       ))}
       {contourTree.map((node) =>
@@ -678,10 +661,10 @@ export function EditorPathNavigatorPanel({
             </span>
           </div>
           <div className="mb-2 grid grid-cols-2 gap-1" data-upid-transform-target-mode>
-            <button
+            <Button
               aria-label="Target document for transform"
               aria-pressed={activePathTransformTarget === 'document'}
-              className={activePathTransformTarget === 'document' ? activeModeButtonClass : modeButtonClass}
+              className={modeButtonClass}
               disabled={!documentBounds || isSaving || transformTargetChangeBlocked}
               onClick={() => {
                 setPathTransformTarget('document');
@@ -690,11 +673,11 @@ export function EditorPathNavigatorPanel({
               type="button"
             >
               Document
-            </button>
-            <button
+            </Button>
+            <Button
               aria-label="Target selection for transform"
               aria-pressed={activePathTransformTarget === 'selection'}
-              className={activePathTransformTarget === 'selection' ? activeModeButtonClass : modeButtonClass}
+              className={modeButtonClass}
               disabled={!hasTransformSelection || isSaving || transformTargetChangeBlocked}
               onClick={() => {
                 setPathTransformTarget('selection');
@@ -703,7 +686,7 @@ export function EditorPathNavigatorPanel({
               type="button"
             >
               Selection
-            </button>
+            </Button>
           </div>
             <div className="mb-3 border border-border bg-background/35 p-2" data-upid-transform-document-placement>
             <div className="mb-1 flex items-center justify-between gap-2">
@@ -744,13 +727,13 @@ export function EditorPathNavigatorPanel({
             <dl className="grid gap-1 font-mono text-[10px]">
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
                 <dt className="uppercase text-muted-foreground">Bounds</dt>
-                <dd
+                <Tooltip content={documentBounds ? formatBounds(documentBounds) : 'No drawable bounds'}><dd
                   className="truncate text-foreground"
                   data-upid-transform-document-bounds
-                  title={documentBounds ? formatBounds(documentBounds) : 'No drawable bounds'}
+
                 >
                   {documentBounds ? formatBounds(documentBounds) : '-'}
-                </dd>
+                </dd></Tooltip>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
                 <dt className="uppercase text-muted-foreground">Center</dt>
@@ -792,7 +775,7 @@ export function EditorPathNavigatorPanel({
                   </span>
                 </div>
                 <div className="grid max-h-16 grid-cols-4 gap-1 overflow-auto">
-                  <button
+                  <Button
                     aria-label="Use latest measurement point as document reference"
                     className={textButtonClass}
                     data-upid-transform-document-reference-use-latest
@@ -804,13 +787,12 @@ export function EditorPathNavigatorPanel({
                     type="button"
                   >
                     Latest
-                  </button>
+                  </Button>
                   {measurementPoints.map((point, index) => (
-                    <button
+                    <Button
                       aria-label={`Use measurement point P${index + 1} as document reference`}
-                      className={
-                        point.id === pickedDocumentReferencePoint?.id ? activeModeButtonClass : textButtonClass
-                      }
+                      aria-pressed={point.id === pickedDocumentReferencePoint?.id}
+                      className={textButtonClass}
                       data-upid-transform-document-reference-use-point={index + 1}
                       disabled={isSaving || transformTargetChangeBlocked}
                       key={point.id}
@@ -822,7 +804,7 @@ export function EditorPathNavigatorPanel({
                       type="button"
                     >
                       P{index + 1}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -837,9 +819,9 @@ export function EditorPathNavigatorPanel({
           <div className="grid grid-cols-2 gap-2">
             <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
               X
-              <input
+              <Input
                 aria-label="Translate X"
-                className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-7 px-1.5 font-mono text-[10px]"
                 data-upid-transform-delta-x
                   disabled={
                     (activePathTransformTarget === 'document' ? !documentBounds : !selectedOperation) || isSaving
@@ -852,9 +834,9 @@ export function EditorPathNavigatorPanel({
             </label>
             <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
               Y
-              <input
+              <Input
                 aria-label="Translate Y"
-                className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-7 px-1.5 font-mono text-[10px]"
                 data-upid-transform-delta-y
                   disabled={
                     (activePathTransformTarget === 'document' ? !documentBounds : !selectedOperation) || isSaving
@@ -866,7 +848,7 @@ export function EditorPathNavigatorPanel({
               />
             </label>
           </div>
-          <button
+          <Button
             aria-label={
               activePathTransformTarget === 'document'
                 ? 'Apply translation to document geometry'
@@ -886,7 +868,7 @@ export function EditorPathNavigatorPanel({
           >
             <Move className="size-3" />
             Apply Translation
-          </button>
+          </Button>
           {(!Number.isFinite(translateX) || !Number.isFinite(translateY)) && (
             <p className="mt-1 text-[10px] text-destructive" role="status">Enter both move coordinates. Use 0 for an unchanged axis.</p>
           )}
@@ -908,7 +890,7 @@ export function EditorPathNavigatorPanel({
                 {activePathTransformTarget}
               </span>
               <div className="grid grid-cols-5 gap-1">
-                <button
+                <Button
                   aria-label={`Rotate ${activePathTransformTarget} 90 degrees counterclockwise`}
                   className={iconButtonClass}
                   disabled={!canOrientActiveTarget}
@@ -919,8 +901,8 @@ export function EditorPathNavigatorPanel({
                   type="button"
                 >
                   <RotateCcw className="size-3" />
-                </button>
-                <button
+                </Button>
+                <Button
                   aria-label={`Rotate ${activePathTransformTarget} 90 degrees clockwise`}
                   className={iconButtonClass}
                   disabled={!canOrientActiveTarget}
@@ -931,8 +913,8 @@ export function EditorPathNavigatorPanel({
                   type="button"
                 >
                   <RotateCw className="size-3" />
-                </button>
-                <button
+                </Button>
+                <Button
                   aria-label={`Rotate ${activePathTransformTarget} 180 degrees`}
                   className={iconButtonClass}
                   disabled={!canOrientActiveTarget}
@@ -943,8 +925,8 @@ export function EditorPathNavigatorPanel({
                   type="button"
                 >
                   <span className="font-mono text-[10px]">180</span>
-                </button>
-                <button
+                </Button>
+                <Button
                   aria-label={`Mirror ${activePathTransformTarget} across X axis`}
                   className={iconButtonClass}
                   disabled={!canOrientActiveTarget}
@@ -955,8 +937,8 @@ export function EditorPathNavigatorPanel({
                   type="button"
                 >
                   <FlipVertical className="size-3" />
-                </button>
-                <button
+                </Button>
+                <Button
                   aria-label={`Mirror ${activePathTransformTarget} across Y axis`}
                   className={iconButtonClass}
                   disabled={!canOrientActiveTarget}
@@ -967,7 +949,7 @@ export function EditorPathNavigatorPanel({
                   type="button"
                 >
                   <FlipHorizontal className="size-3" />
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -993,9 +975,9 @@ export function EditorPathNavigatorPanel({
             <div className="grid grid-cols-2 gap-2">
               <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
                 X
-                <input
+                <Input
                   aria-label={`${activeTransformTargetLabel} ${activeTargetReferenceName} target X`}
-                  className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-7 px-1.5 font-mono text-[10px]"
                   data-upid-transform-selection-center-x
                   data-upid-transform-target-center-x
                   disabled={!activeTargetReferencePoint || isSaving}
@@ -1007,9 +989,9 @@ export function EditorPathNavigatorPanel({
               </label>
               <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
                 Y
-                <input
+                <Input
                   aria-label={`${activeTransformTargetLabel} ${activeTargetReferenceName} target Y`}
-                  className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-7 px-1.5 font-mono text-[10px]"
                   data-upid-transform-selection-center-y
                   data-upid-transform-target-center-y
                   disabled={!activeTargetReferencePoint || isSaving}
@@ -1021,7 +1003,7 @@ export function EditorPathNavigatorPanel({
               </label>
             </div>
             <div className="mt-2 grid grid-cols-3 gap-1">
-              <button
+              <Button
                 aria-label={`Use origin as ${activePathTransformTargetName} ${activeTargetReferenceName} target`}
                 className={textButtonClass}
                 data-upid-transform-selection-center-use-origin
@@ -1034,8 +1016,8 @@ export function EditorPathNavigatorPanel({
                 type="button"
               >
                 Origin
-              </button>
-              <button
+              </Button>
+              <Button
                 aria-label={`Use latest measurement point as ${activePathTransformTargetName} ${activeTargetReferenceName} target`}
                 className={textButtonClass}
                 data-upid-transform-selection-center-use-latest
@@ -1049,8 +1031,8 @@ export function EditorPathNavigatorPanel({
                 type="button"
               >
                 Latest Point
-              </button>
-              <button
+              </Button>
+              <Button
                 aria-label={`Move ${activePathTransformTargetName} ${activeTargetReferenceName} to target`}
                 className={textButtonClass}
                 data-upid-transform-selection-center-apply
@@ -1070,7 +1052,7 @@ export function EditorPathNavigatorPanel({
                 type="button"
               >
                 {activePathTransformTarget === 'document' ? 'Move Ref' : 'Move Center'}
-              </button>
+              </Button>
             </div>
             {(!Number.isFinite(targetX) || !Number.isFinite(targetY)) && (
               <p className="mt-1 text-[10px] text-destructive" role="status">Enter both target coordinates.</p>
@@ -1084,7 +1066,7 @@ export function EditorPathNavigatorPanel({
                 <span className="mb-1 block text-[10px] uppercase text-muted-foreground">Target Point</span>
                 <div className="grid max-h-16 grid-cols-4 gap-1 overflow-auto">
                   {measurementPoints.map((point, index) => (
-                    <button
+                    <Button
                       aria-label={`Use measurement point P${index + 1} as ${activePathTransformTargetName} ${activeTargetReferenceName} target`}
                       className={textButtonClass}
                       data-upid-transform-selection-center-use-point={index + 1}
@@ -1099,7 +1081,7 @@ export function EditorPathNavigatorPanel({
                       type="button"
                     >
                       P{index + 1}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -1120,9 +1102,9 @@ export function EditorPathNavigatorPanel({
             <div className="grid grid-cols-2 gap-2">
               <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
                 X
-                <input
+                <Input
                   aria-label="Center target X"
-                  className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-7 px-1.5 font-mono text-[10px]"
                   data-upid-transform-center-x
                   disabled={!selectedSegmentCenter || isSaving}
                   inputMode="decimal"
@@ -1133,9 +1115,9 @@ export function EditorPathNavigatorPanel({
               </label>
               <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
                 Y
-                <input
+                <Input
                   aria-label="Center target Y"
-                  className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-7 px-1.5 font-mono text-[10px]"
                   data-upid-transform-center-y
                   disabled={!selectedSegmentCenter || isSaving}
                   inputMode="decimal"
@@ -1146,7 +1128,7 @@ export function EditorPathNavigatorPanel({
               </label>
             </div>
             <div className="mt-2 grid grid-cols-3 gap-1">
-              <button
+              <Button
                 aria-label="Use origin as center target"
                 className={textButtonClass}
                 data-upid-transform-center-use-origin
@@ -1158,8 +1140,8 @@ export function EditorPathNavigatorPanel({
                 type="button"
               >
                 Origin
-              </button>
-              <button
+              </Button>
+              <Button
                 aria-label="Use latest measurement point as center target"
                 className={textButtonClass}
                 data-upid-transform-center-use-latest
@@ -1172,8 +1154,8 @@ export function EditorPathNavigatorPanel({
                 type="button"
               >
                 Latest Point
-              </button>
-              <button
+              </Button>
+              <Button
                 aria-label="Move selected arc center to target"
                 className={textButtonClass}
                 data-upid-transform-center-apply
@@ -1182,14 +1164,14 @@ export function EditorPathNavigatorPanel({
                 type="button"
               >
                 Move Center
-              </button>
+              </Button>
             </div>
             {measurementPoints.length > 0 && (
               <div className="mt-2 border-t border-border pt-2" data-upid-transform-center-points>
                 <span className="mb-1 block text-[10px] uppercase text-muted-foreground">Target Point</span>
                 <div className="grid max-h-16 grid-cols-4 gap-1 overflow-auto">
                   {measurementPoints.map((point, index) => (
-                    <button
+                    <Button
                       aria-label={`Use measurement point P${index + 1} as center target`}
                       className={textButtonClass}
                       data-upid-transform-center-use-point={index + 1}
@@ -1203,7 +1185,7 @@ export function EditorPathNavigatorPanel({
                       type="button"
                     >
                       P{index + 1}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -1249,10 +1231,10 @@ export function EditorPathNavigatorPanel({
               the importer found exact joins, tiny healed gaps, open chain clues, or ambiguous endpoint candidates that
               need review before export.
           </p>
-          <div
+          <Tooltip content="Endpoint topology explains how segment starts and ends are paired into continuous contours."><div
             className="mb-2 grid grid-cols-2 gap-1 text-[10px]"
             data-upid-endpoint-topology-summary
-            title="Endpoint topology explains how segment starts and ends are paired into continuous contours."
+
           >
               <TopologyMetric
                 id="exact-joins"
@@ -1278,7 +1260,7 @@ export function EditorPathNavigatorPanel({
                 value={endpointTopologyPanel.ambiguousCount}
                 tone={endpointTopologyPanel.ambiguousCount > 0 ? 'warn' : 'muted'}
               />
-          </div>
+          </div></Tooltip>
           {endpointTopologyRows.length > 0 ? (
               <div className="border border-border bg-background/35" data-upid-endpoint-topology-list>
               {endpointTopologyRows.map((row) =>
@@ -1310,10 +1292,10 @@ export function EditorPathNavigatorPanel({
               </span>
             </div>
             {pathDiagnostics.length > 0 && (
-              <div
+              <Tooltip content="Repair guidance: identify the broken join, inspect affected geometry, then open one owning workflow at a time."><div
                 className="mb-2 border border-amber-400/35 bg-amber-400/10 px-2 py-1.5 text-[10px] leading-4 text-amber-50"
                 data-upid-diagnostics-repair-workflow
-                title="Repair guidance: identify the broken join, inspect affected geometry, then open one owning workflow at a time."
+
               >
                 <div className="mb-1 flex items-center gap-2">
                   <span className="text-[10px] uppercase text-amber-100">Repair workflow</span>
@@ -1332,7 +1314,7 @@ export function EditorPathNavigatorPanel({
                     repair or re-import before trusting export.
                   </li>
                 </ol>
-              </div>
+              </div></Tooltip>
             )}
             <div
               className="border border-border bg-background/35"
@@ -1393,7 +1375,7 @@ export function EditorPathNavigatorPanel({
             <p className="text-[10px] text-muted-foreground">
               Automatic modes cut nested contours first. Manual moves override that order.
             </p>
-            <button
+            <Button
               aria-label="Reapply planning order strategy"
               className={textButtonClass}
               disabled={!manualOrderActive || isSaving}
@@ -1401,7 +1383,7 @@ export function EditorPathNavigatorPanel({
               type="button"
             >
               Reapply Planning Mode
-            </button>
+            </Button>
           </div>
           <div data-upid-cut-sequence data-upid-cut-sequence-list>
             {unavailableSequenceMetrics?.status === 'unavailable' && (
@@ -1447,8 +1429,8 @@ function renderEndpointTopologyRow({
   const selected = upidPathElementRefsMatch(row.selectRef, selectedPathElement);
 
   return (
-    <button
-      className={`grid w-full grid-cols-[minmax(0,1fr)_66px] items-center border-b border-border px-2 py-1.5 text-left outline-none last:border-b-0 hover:bg-accent disabled:cursor-default ${
+    <Button
+      className={`grid h-auto min-h-6 w-full grid-cols-[minmax(0,1fr)_66px] items-center border-b border-border px-2 py-1.5 text-left last:border-b-0 ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
       data-upid-exact-endpoint-cluster={row.kind === 'exact-endpoint-cluster' ? row.clusterId : undefined}
@@ -1540,7 +1522,7 @@ function renderEndpointTopologyRow({
           <span className="text-right text-[10px] text-muted-foreground">{row.relatedSegmentCount} seg</span>
         </>
       )}
-    </button>
+    </Button>
   );
 }
 
@@ -1719,9 +1701,9 @@ function renderDiagnosticRow({
       {diagnostic.relatedRefs.length > 0 && (
         <span className="flex min-w-0 flex-wrap gap-1 pt-0.5">
           {diagnostic.relatedRefs.map((ref, index) => (
-            <button
+            <Button
               aria-label={`Select diagnostic affected geometry ${index + 1}`}
-              className="border border-border bg-background/60 px-1 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+              className="px-1 text-left text-[10px]"
               data-upid-diagnostic-ref
               data-upid-diagnostic-ref-index={index}
               data-upid-diagnostic-ref-operation={ref.operationId ?? undefined}
@@ -1739,7 +1721,7 @@ function renderDiagnosticRow({
               type="button"
             >
               {index + 1} {ref.segmentId ?? ref.pathElementId ?? ref.operationId ?? 'ref'}
-            </button>
+            </Button>
           ))}
         </span>
       )}
@@ -1755,10 +1737,10 @@ function renderDiagnosticGuidance(
   if (!guidance) return null;
 
   return (
-    <div
+    <Tooltip content={guidance.title}><div
       className="mt-1 border border-border bg-background/45 px-2 py-1 text-[10px] leading-4 text-muted-foreground"
       data-upid-diagnostic-guidance
-      title={guidance.title}
+
     >
       <span className="mr-1 uppercase text-foreground" data-upid-diagnostic-guidance-label>
         Next
@@ -1767,9 +1749,9 @@ function renderDiagnosticGuidance(
       {guidance.actions.length > 0 && (
         <span className="mt-1 flex flex-wrap gap-1" data-upid-diagnostic-guidance-actions>
           {guidance.actions.map((action) => (
-            <button
+            <Button
               aria-label={action.label}
-              className="border border-border bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              className="px-1.5 py-0.5 text-[10px]"
               data-upid-diagnostic-guidance-action={action.panelId}
               disabled={!onOpenWorkspacePanel}
               key={action.panelId}
@@ -1780,11 +1762,11 @@ function renderDiagnosticGuidance(
               type="button"
             >
               {action.label}
-            </button>
+            </Button>
           ))}
         </span>
       )}
-    </div>
+    </div></Tooltip>
   );
 }
 
@@ -1938,9 +1920,9 @@ function renderCutSequenceRow({
       }
       onMouseLeave={() => onHoverPathElement(null)}
     >
-      <button
+      <Button
         aria-pressed={selected}
-        className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent"
+        className="grid h-auto min-h-6 min-w-0 grid-cols-[24px_minmax(0,1fr)] items-center gap-1 px-1.5 py-1.5 text-left"
         data-upid-cut-sequence-select
         onClick={selectOperation}
         type="button"
@@ -1956,8 +1938,8 @@ function renderCutSequenceRow({
           </span>
           {renderManualDecisionBadges(manualDecisions)}
         </span>
-      </button>
-      <button
+      </Button>
+      <Button
         aria-label="Select rapid travel for cut sequence operation"
         disabled={metrics.status !== 'active' || metrics.rapidInLength === null}
         aria-pressed={rapidSelected}
@@ -1982,28 +1964,28 @@ function renderCutSequenceRow({
           <span data-upid-cut-sequence-cut-value={cutLength}>Cut {cutLength}</span>
           <span data-upid-cut-sequence-rapid-value={rapidInLength}>Rapid {rapidInLength ?? 'unavailable'}</span>
         </> : <span>{metrics.status === 'inactive' ? 'Inactive' : 'Unavailable'}</span>}
-      </button>
+      </Button>
       <span className="grid grid-rows-2 self-stretch border-l border-border">
-        <button
+        <Button
           aria-label="Move cut sequence operation up"
-          className="flex items-center justify-center text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex items-center justify-center"
           disabled={pathElement.orderIndex <= 0 || isSaving}
           onClick={(event) => moveOperation(event, -1)}
           title="Move cut operation up"
           type="button"
         >
           <ArrowUp className="size-3" />
-        </button>
-        <button
+        </Button>
+        <Button
           aria-label="Move cut sequence operation down"
-          className="flex items-center justify-center border-t border-border text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex items-center justify-center border-t"
           disabled={pathElement.orderIndex >= operationCount - 1 || isSaving}
           onClick={(event) => moveOperation(event, 1)}
           title="Move cut operation down"
           type="button"
         >
           <ArrowDown className="size-3" />
-        </button>
+        </Button>
       </span>
     </div>
   );
@@ -2134,10 +2116,10 @@ function renderContourTreeNode({
           }`}
           style={{ paddingLeft: `${treeDepth * 10}px` }}
         >
-          <button
+          <Button
             aria-expanded={expanded}
             aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`}
-            className="flex items-center justify-center text-muted-foreground outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring"
+            className="flex items-center justify-center"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -2147,17 +2129,17 @@ function renderContourTreeNode({
             type="button"
           >
             {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-          </button>
+          </Button>
           <span
             className="flex items-center justify-center font-mono text-[10px] font-semibold text-sky-200"
             data-upid-contour-field="order"
           >
             {workbookNumber}
           </span>
-          <button
+          <Button
             aria-label={`Select ${label}`}
             aria-pressed={element.operationId === selectedPathOperationId}
-            className="min-w-0 px-2 py-1.5 text-left outline-none"
+            className="min-w-0 px-2 py-1.5 text-left"
             data-upid-contour-children={element.childIds.length}
             data-upid-contour-depth={element.containmentDepth}
             data-upid-contour-display-name={element.displayName}
@@ -2215,7 +2197,7 @@ function renderContourTreeNode({
                   {diagnosticSummary.count}<span className="sr-only"> issues</span>
                 </span>
               )}
-              <span
+              <Tooltip content={`${element.closed ? 'Closed' : 'Open'} ${diagnosticSummary.count > 0 ? `· ${diagnosticSummary.count} issues` : ''}`}><span
                 className={`size-1.5 shrink-0 rounded-full ${
                   diagnosticSummary.count > 0
                     ? 'bg-amber-400'
@@ -2224,10 +2206,10 @@ function renderContourTreeNode({
                       : 'bg-muted-foreground'
                 }`}
                 data-upid-contour-node-summary
-                title={`${element.closed ? 'Closed' : 'Open'} ${diagnosticSummary.count > 0 ? `· ${diagnosticSummary.count} issues` : ''}`}
+
               >
                 <span className="sr-only">{element.closed ? 'Closed' : 'Open'}</span>
-              </span>
+              </span></Tooltip>
               <span className="sr-only" data-upid-contour-field="cut-length">
                 Cut {element.metrics.cutLength.toFixed(3)}
               </span>
@@ -2238,14 +2220,14 @@ function renderContourTreeNode({
                 Selects whole contour on canvas
               </span>
             </span>
-          </button>
+          </Button>
         </div>
       </summary>
       {expanded && (
         <>
           {(spatialActionsByOperation.get(element.operationId) ?? []).map((action) => (
             <div key={action.key} className="flex items-center border-b border-border/40">
-            <button type="button" data-upid-machining-action={action.key}
+            <Button type="button" data-upid-machining-action={action.key}
               aria-pressed={selectedSpatialActionKey === action.key}
               className={`flex min-w-0 flex-1 items-center gap-2 py-1 text-left text-[10px] hover:bg-accent ${selectedSpatialActionKey === action.key ? 'bg-sky-500/15' : ''}`}
               style={{ paddingLeft: `${32 + (treeDepth + 1) * 10}px` }}
@@ -2257,12 +2239,12 @@ function renderContourTreeNode({
               <span className="ml-auto pr-2 font-mono text-muted-foreground">
                 X {action.point.x.toFixed(3)} Y {action.point.y.toFixed(3)}
               </span>
-            </button>
-            <button type="button" className="px-2 text-cyan-300 hover:bg-accent"
-              aria-label={`Edit ${action.label}`} onClick={() => onActivateSpatialAction?.(action.key)}>Edit</button>
+            </Button>
+            <Button type="button" className="px-2 text-cyan-300"
+              aria-label={`Edit ${action.label}`} onClick={() => onActivateSpatialAction?.(action.key)}>Edit</Button>
             </div>
           ))}
-          <button
+          <Button
             aria-expanded={cutPathExpanded}
             aria-label={`${cutPathExpanded ? 'Collapse' : 'Expand'} cut path in ${label}`}
             className={`flex h-6 w-full min-w-0 items-center gap-1 border-b border-border/40 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring pr-2`}
@@ -2276,7 +2258,7 @@ function renderContourTreeNode({
             <span className="shrink-0">
               · {element.segmentRefs.length} {element.segmentRefs.length === 1 ? 'segment' : 'segments'}
             </span>
-          </button>
+          </Button>
           {cutPathExpanded && (
             <div data-upid-segment-stack>
               {renderLeadRow(element, transitions?.entry, 'lead-in', hoveredPathElement,
@@ -2491,7 +2473,7 @@ function renderLeadRow(
   const reviewRequired = 'review' in lead && lead.review === 'required';
 
   return (
-    <button
+    <Button
       aria-label={`Select ${travelRole} for ${pathElement.displayName}`}
       aria-pressed={selected}
       className={`flex w-full items-center gap-2 border-l border-border/70 px-2 py-1 text-left text-[10px] text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring ${
@@ -2520,7 +2502,7 @@ function renderLeadRow(
       <span className="truncate">{strategy}</span>
       {reviewRequired && <span className="text-amber-200">Review required</span>}
       <span className="ml-auto shrink-0 tabular-nums">{length.toFixed(3)} mm</span>
-    </button>
+    </Button>
   );
 }
 
@@ -2607,7 +2589,7 @@ function renderSegmentRow(
         className="grid grid-cols-[18px_minmax(0,1fr)]"
         style={{ paddingLeft: `${30 + (treeDepth + 1) * 10}px` }}
       >
-      <button
+      <Button
         aria-label={`Select segment ${index + 1} in ${pathElement.displayName}`}
         aria-pressed={selected}
           className={`order-last flex h-6 min-w-0 items-center gap-1 px-1 pr-2 text-left text-[10px] text-muted-foreground outline-none ${
@@ -2670,12 +2652,12 @@ function renderSegmentRow(
               {segmentKindLabel}
             </span>
           </>
-        </button>
-        <button
+        </Button>
+        <Button
           aria-controls={detailsId}
           aria-expanded={detailsExpanded}
           aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} segment ${index + 1} details in ${pathElement.displayName}`}
-          className="order-first flex items-center justify-center text-muted-foreground outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring"
+          className="order-first flex items-center justify-center"
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -2685,7 +2667,7 @@ function renderSegmentRow(
           type="button"
         >
           {detailsExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-        </button>
+        </Button>
       </div>
       {detailsExpanded && (
         <div
@@ -2867,11 +2849,11 @@ function renderPointRow({
       onPointerEnter={() => onHoverPathElement(element)}
       onPointerLeave={() => onHoverPathElement(null)}
     >
-      <button
+      <Button
         aria-describedby={endpointHelpId}
         aria-label={`Select ${accessiblePointLabel} of segment ${index + 1} in ${pathElement.displayName}`}
         aria-pressed={selected}
-        className="grid w-full min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-x-2 px-1.5 py-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+        className="grid h-auto min-h-6 w-full min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-x-2 px-1.5 py-1.5 text-left"
         data-upid-point-select
         onBlur={() => onHoverPathElement(null)}
         onClick={() => onSelectPathElement(element)}
@@ -2906,7 +2888,7 @@ function renderPointRow({
         <span className="sr-only" data-upid-tree-action-hint>
           Selects the {accessiblePointLabel} handle
         </span>
-      </button>
+      </Button>
       <span className="sr-only" data-upid-point-help={role} id={endpointHelpId}>
         {endpointHelp}
       </span>
@@ -2938,13 +2920,13 @@ function renderSegmentSummary(presentation: SegmentGeometryPresentation) {
 
   if (presentation.kind === 'line') {
     return (
-      <span
+      <Tooltip content="Length"><span
         className="ml-auto shrink-0 font-mono text-foreground"
         data-upid-segment-summary="length"
-        title="Length"
+
       >
         L {formatNumber(presentation.summary.length)}
-      </span>
+      </span></Tooltip>
     );
   }
 
@@ -2954,13 +2936,13 @@ function renderSegmentSummary(presentation: SegmentGeometryPresentation) {
         <span className={summaryClass}>
           · <span data-upid-segment-summary="direction">{presentation.summary.direction}</span>
         </span>
-        <span
+        <Tooltip content="Circumference"><span
           className="ml-auto shrink-0 font-mono text-foreground"
           data-upid-segment-summary="circumference"
-          title="Circumference"
+
         >
           Circ {formatNumber(presentation.summary.length)}
-        </span>
+        </span></Tooltip>
       </>
     );
   }
@@ -2970,13 +2952,13 @@ function renderSegmentSummary(presentation: SegmentGeometryPresentation) {
       <span className={summaryClass}>
         · <span data-upid-segment-summary="direction">{presentation.summary.direction}</span>
       </span>
-      <span
+      <Tooltip content="Arc length"><span
         className="ml-auto shrink-0 font-mono text-foreground"
         data-upid-segment-summary="arc-length"
-        title="Arc length"
+
       >
         L {formatNumber(presentation.summary.length)}
-      </span>
+      </span></Tooltip>
     </>
   );
 }

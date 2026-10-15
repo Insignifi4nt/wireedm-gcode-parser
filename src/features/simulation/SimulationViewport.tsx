@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Box, Eye, EyeOff, Maximize, Scan, ScanLine, View } from 'lucide-react';
 import type { SimulationPlan, SimulationSnapshot } from '@/domain/simulation';
@@ -67,15 +68,15 @@ export function SimulationViewport(props: Props) {
   return <div className="sim-viewport" data-renderer={status}>
     <div ref={host} className="sim-render-host" />
     <div className="sim-view-controls" aria-label="Simulation camera">
-      <button type="button" title={props.presentation.finalPartOnly ? 'Fit final part' : 'Isometric view · fit stock'} aria-label={props.presentation.finalPartOnly ? 'Fit final part' : 'Fit simulation stock'} onClick={() => withScene(scene => props.presentation.finalPartOnly ? scene.fitPart() : scene.setView('isometric'))}><Maximize size={14} /></button>
-      <button type="button" title="Top view" aria-label="Simulation top view" onClick={() => withScene(scene => scene.setView('top'))}><Scan size={14} /></button>
-      <button type="button" title="Front view" aria-label="Simulation front view" onClick={() => withScene(scene => scene.setView('front'))}><View size={14} /></button>
+      <Button type="button" title={props.presentation.finalPartOnly ? 'Fit final part' : 'Isometric view · fit stock'} aria-label={props.presentation.finalPartOnly ? 'Fit final part' : 'Fit simulation stock'} onClick={() => withScene(scene => props.presentation.finalPartOnly ? scene.fitPart() : scene.setView('isometric'))}><Maximize size={14} /></Button>
+      <Button type="button" title="Top view" aria-label="Simulation top view" onClick={() => withScene(scene => scene.setView('top'))}><Scan size={14} /></Button>
+      <Button type="button" title="Front view" aria-label="Simulation front view" onClick={() => withScene(scene => scene.setView('front'))}><View size={14} /></Button>
       {props.machine && !props.presentation.finalPartOnly && <>
-        <button type="button" title="Fit machine and stock" aria-label="Fit machine model" onClick={() => withScene(scene => scene.fitMachine())}><ScanLine size={14} /></button>
-        <button type="button" title={machineVisible ? 'Hide machine model · collision checks stay active' : 'Show machine model'} aria-label={machineVisible ? 'Hide machine model' : 'Show machine model'} onClick={() => setMachineVisible(value => !value)}>{machineVisible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
+        <Button type="button" title="Fit machine and stock" aria-label="Fit machine model" onClick={() => withScene(scene => scene.fitMachine())}><ScanLine size={14} /></Button>
+        <Button type="button" title={machineVisible ? 'Hide machine model · collision checks stay active' : 'Show machine model'} aria-label={machineVisible ? 'Hide machine model' : 'Show machine model'} onClick={() => setMachineVisible(value => !value)}>{machineVisible ? <Eye size={14} /> : <EyeOff size={14} />}</Button>
       </>}
     </div>
     {status === 'loading' && <div className="sim-render-message" role="status"><Box size={25} /><strong>Preparing the 3D workspace</strong><span>Loading the renderer locally…</span></div>}
-    {status === 'error' && <div className="sim-render-message" role="alert"><AlertTriangle size={25} /><strong>3D preview unavailable</strong><span>{error}</span><button type="button" onClick={() => setRetry(value => value + 1)}>Retry renderer</button></div>}
+    {status === 'error' && <div className="sim-render-message" role="alert"><AlertTriangle size={25} /><strong>3D preview unavailable</strong><span>{error}</span><Button type="button" onClick={() => setRetry(value => value + 1)}>Retry renderer</Button></div>}
   </div>;
 }

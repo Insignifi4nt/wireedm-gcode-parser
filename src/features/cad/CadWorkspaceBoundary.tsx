@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
 
 export interface CadWorkspaceBoundaryProps {
@@ -33,8 +34,8 @@ function CadWorkspaceRecovery({ documentName, busy, onSave, onDownloadDocument }
       <p role="alert" className="font-semibold">The CAD workspace could not be displayed.</p>
       <p>Your accepted document, <strong>{documentName}</strong>, is still available. Save or download your draft before reloading this page.</p>
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={disabled} onClick={() => { void recover('save'); }} className="rounded border border-slate-600 px-3 py-2 disabled:opacity-40">Save current document</button>
-        <button type="button" disabled={disabled} onClick={() => { void recover('download'); }} className="rounded border border-slate-600 px-3 py-2 disabled:opacity-40">Download CAD document</button>
+        <Button type="button" disabled={disabled} onClick={() => { void recover('save'); }} className="rounded border border-slate-600 px-3 py-2 disabled:opacity-40">Save current document</Button>
+        <Button type="button" disabled={disabled} onClick={() => { void recover('download'); }} className="rounded border border-slate-600 px-3 py-2 disabled:opacity-40">Download CAD document</Button>
       </div>
       {state.kind === 'busy' && <p role="status">{state.action === 'save' ? 'Saving document…' : 'Preparing CAD document download…'}</p>}
       {state.kind === 'success' && <p role="status">{state.action === 'save' ? 'Document saved.' : 'CAD document download requested. Check that the file was downloaded before reloading.'}</p>}

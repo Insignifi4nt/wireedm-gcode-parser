@@ -1,3 +1,4 @@
+import { Input } from '@/components/ui/input';
 import type { MouseEvent } from 'react';
 import {
   ArrowDown,
@@ -91,9 +92,9 @@ export function EditorProgramLinesPanel({
         >
           <span className="text-muted-foreground">{row.num}</span>
           <span className="sr-only">{row.section}</span>
-          <input
+          <Input density="compact"
             aria-label={`Edit line ${row.num}`}
-            className="h-6 min-w-0 border border-border bg-background px-1.5 font-mono text-[11px] text-foreground outline-none focus:border-primary"
+            className="min-w-0 px-1.5 font-mono text-[11px]"
             defaultValue={row.text}
             disabled={isSaving}
             key={`${row.num}-${row.text}`}
@@ -102,9 +103,9 @@ export function EditorProgramLinesPanel({
           />
         </div>
       ) : (
-        <button
+        <Button
           aria-pressed={isSelected}
-          className={`grid min-h-7 grid-cols-[32px_minmax(0,1fr)] items-center gap-2 px-2 text-left outline-none transition-colors hover:bg-accent ${
+          className={`grid h-auto min-h-7 grid-cols-[32px_minmax(0,1fr)] items-center gap-2 whitespace-normal px-2 text-left font-mono ${
             isSelected ? 'bg-sky-500/15 text-sky-100' : 'text-foreground'
           }`}
           data-editor-line={row.num}
@@ -116,7 +117,7 @@ export function EditorProgramLinesPanel({
           <span className="text-muted-foreground">{row.num}</span>
           <span className="sr-only">{row.section}</span>
           <span className="whitespace-pre-wrap break-all">{row.text || ' '}</span>
-        </button>
+        </Button>
       );
 
     return (
@@ -126,10 +127,10 @@ export function EditorProgramLinesPanel({
         key={row.num}
       >
         {lineContent}
-        <button
+        <Button
           aria-label={`Pin line ${row.num}`}
           aria-pressed={isPinned}
-          className={`flex items-center justify-center border-l border-border text-muted-foreground opacity-0 outline-none transition hover:bg-accent hover:text-red-300 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring ${
+          className={`flex items-center justify-center border-l border-border opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 ${
             isPinned ? 'text-red-400 opacity-100' : ''
           }`}
           data-editor-pin-line={row.num}
@@ -141,7 +142,7 @@ export function EditorProgramLinesPanel({
           type="button"
         >
           <Pin className="size-3" />
-        </button>
+        </Button>
       </div>
     );
   }
@@ -159,17 +160,17 @@ export function EditorProgramLinesPanel({
     return (
       <div aria-expanded={expanded} data-editor-group={groupId} key={groupId}>
         <div className="flex h-7 items-center justify-between border-y border-border/70 bg-card/70 px-2">
-          <button
+          <Button
             aria-expanded={expanded}
             aria-label={`${expanded ? 'Collapse' : 'Expand'} group ${groupId}`}
-            className="flex min-w-0 items-center gap-1.5 font-mono text-[10px] uppercase text-muted-foreground outline-none hover:text-foreground"
+            className="flex min-w-0 items-center gap-1.5 font-mono uppercase"
             data-editor-group-toggle={groupId}
             onClick={() => onToggleGroup(groupId)}
             type="button"
           >
             <ToggleIcon className="size-3 shrink-0" />
             <span>{title}</span>
-          </button>
+          </Button>
           <span className="font-mono text-[10px] text-muted-foreground">
             {lines.length} {lines.length === 1 ? 'line' : 'lines'}
           </span>
@@ -187,10 +188,10 @@ export function EditorProgramLinesPanel({
     return (
       <div aria-expanded={expanded} data-editor-group={group.id} key={group.id}>
         <div className="flex h-7 items-center justify-between border-y border-border/70 bg-card/70 px-2">
-          <button
+          <Button
             aria-expanded={expanded}
             aria-label={`${expanded ? 'Collapse' : 'Expand'} group ${group.id}`}
-            className="flex min-w-0 items-center gap-2 font-mono text-[10px] text-muted-foreground outline-none hover:text-foreground"
+            className="flex min-w-0 items-center gap-2 font-mono"
             data-editor-group-toggle={group.id}
             onClick={() => onToggleGroup(group.id)}
             type="button"
@@ -198,38 +199,38 @@ export function EditorProgramLinesPanel({
             <ToggleIcon className="size-3 shrink-0" />
             <span className="uppercase">{group.id}</span>
             <span className="truncate">{title}</span>
-          </button>
+          </Button>
           <div className="flex items-center gap-1">
             <span className="mr-1 font-mono text-[10px] text-muted-foreground">
               {group.lines.length} {group.lines.length === 1 ? 'line' : 'lines'}
             </span>
-            <button
+            <Button variant="outline"
               aria-label={`Move group ${group.id} up`}
-              className="flex size-5 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex size-5 items-center justify-center"
               disabled={index === 0 || isSaving}
               onClick={() => onMoveGroup(group.id, -1)}
               type="button"
             >
               <ArrowUp className="size-3" />
-            </button>
-            <button
+            </Button>
+            <Button variant="outline"
               aria-label={`Move group ${group.id} down`}
-              className="flex size-5 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex size-5 items-center justify-center"
               disabled={index === bodyGroups.length - 1 || isSaving}
               onClick={() => onMoveGroup(group.id, 1)}
               type="button"
             >
               <ArrowDown className="size-3" />
-            </button>
-            <button
+            </Button>
+            <Button variant="danger"
               aria-label={`Delete group ${group.id}`}
-              className="flex size-5 items-center justify-center border border-border text-destructive outline-none hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex size-5 items-center justify-center"
               disabled={isSaving}
               onClick={() => onDeleteGroup(group.id)}
               type="button"
             >
               <Trash2 className="size-3" />
-            </button>
+            </Button>
           </div>
         </div>
         {expanded && group.lines.map((line) => renderLineRow({ ...line, section: 'body' }))}
@@ -263,35 +264,35 @@ export function EditorProgramLinesPanel({
                 )}`}
                 {...guideTargetProps('line-modes', guideHighlightTarget)}
               >
-                <button
+                <Button
                   aria-label="Select line mode"
                   aria-pressed={lineMode === 'select'}
-                  className={`px-2 font-mono text-[10px] outline-none transition hover:bg-accent ${
+                  className={`px-2 font-mono ${
                     lineMode === 'select' ? 'bg-accent text-foreground' : 'text-muted-foreground'
                   }`}
                   onClick={() => onSetLineMode('select')}
                   type="button"
                 >
                   Select
-                </button>
-                <button
+                </Button>
+                <Button
                   aria-label="Edit line mode"
                   aria-pressed={lineMode === 'edit'}
-                  className={`border-l border-border px-2 font-mono text-[10px] outline-none transition hover:bg-accent ${
+                  className={`border-l border-border px-2 font-mono ${
                     lineMode === 'edit' ? 'bg-accent text-foreground' : 'text-muted-foreground'
                   }`}
                   onClick={() => onSetLineMode('edit')}
                   type="button"
                 >
                   Edit
-                </button>
+                </Button>
               </div>
               {selectedLines.length > 0 ? (
-                <button
+                <Button
                   aria-label={`Clear ${selectedLines.length} selected ${
                     selectedLines.length === 1 ? 'line' : 'lines'
                   }`}
-                  className={`h-5 shrink-0 border border-transparent px-1.5 font-mono text-[10px] text-sky-200 outline-none transition hover:border-border hover:bg-accent ${guideHighlightClass(
+                  className={`h-5 shrink-0 border border-transparent px-1.5 font-mono text-sky-200 ${guideHighlightClass(
                     'selection-counter',
                     guideHighlightTarget
                   )}`}
@@ -301,7 +302,7 @@ export function EditorProgramLinesPanel({
                   type="button"
                 >
                   {selectedLines.length} selected
-                </button>
+                </Button>
               ) : (
                 <span
                   className={`shrink-0 font-mono text-[10px] text-muted-foreground ${guideHighlightClass(
@@ -313,19 +314,19 @@ export function EditorProgramLinesPanel({
                   {pinnedLines.length} pinned
                 </span>
               )}
-              <button
+              <Button variant="outline"
                 aria-label="Move selected lines up"
-                className="flex size-5 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex size-5 shrink-0 items-center justify-center"
                 disabled={selectedLines.length === 0 || Math.min(...selectedLines) <= 1 || isSaving}
                 onClick={() => onMoveSelectedLines(-1)}
                 title="Move selected lines up"
                 type="button"
               >
                 <ArrowUp className="size-3" />
-              </button>
-              <button
+              </Button>
+              <Button variant="outline"
                 aria-label="Move selected lines down"
-                className="flex size-5 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex size-5 shrink-0 items-center justify-center"
                 disabled={
                   selectedLines.length === 0 || Math.max(...selectedLines) >= lineRows.length || isSaving
                 }
@@ -334,19 +335,19 @@ export function EditorProgramLinesPanel({
                 type="button"
               >
                 <ArrowDown className="size-3" />
-              </button>
-              <button
-                className="flex h-5 shrink-0 items-center gap-1 border border-border px-1.5 font-mono text-[10px] text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+              </Button>
+              <Button variant="outline"
+                className="flex h-5 shrink-0 items-center gap-1 px-1.5 font-mono"
                 disabled={selectedLines.length !== 1 || isSaving}
                 onClick={onSetStartHere}
                 type="button"
               >
                 <ArrowRightFromLine className="size-3" />
                 Start Here
-              </button>
-              <button
+              </Button>
+              <Button
                 aria-label="Clear pinned line highlights"
-                className={`flex size-5 shrink-0 items-center justify-center border border-border text-red-400 outline-none transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40 ${guideHighlightClass(
+                className={`flex size-5 shrink-0 items-center justify-center border border-border text-red-400 ${guideHighlightClass(
                   'clear-pins',
                   guideHighlightTarget
                 )}`}
@@ -357,16 +358,16 @@ export function EditorProgramLinesPanel({
                 type="button"
               >
                 <Pin className="size-3" />
-              </button>
-              <button
-                className="flex h-5 shrink-0 items-center gap-1 border border-border px-1.5 font-mono text-[10px] text-destructive outline-none transition hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-40"
+              </Button>
+              <Button variant="danger"
+                className="flex h-5 shrink-0 items-center gap-1 px-1.5 font-mono"
                 disabled={selectedLines.length === 0 || isSaving}
                 onClick={onDeleteSelectedLines}
                 type="button"
               >
                 <Trash2 className="size-3" />
                 Delete Selected
-              </button>
+              </Button>
           </>
         </div>
         <div
@@ -375,7 +376,7 @@ export function EditorProgramLinesPanel({
         >
           <Button
             {...guideTargetProps('normalize-draft', guideHighlightTarget)}
-            className={`h-5 px-1.5 text-[10px] ${guideHighlightClass(
+            className={`h-5 px-1.5 ${guideHighlightClass(
               'normalize-draft',
               guideHighlightTarget
             )}`}

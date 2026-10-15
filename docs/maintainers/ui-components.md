@@ -1,23 +1,27 @@
 # Shared UI components
 
-Use `src/components/ui/` for reusable controls and interaction foundations. Features compose these controls with domain labels, validation, commands and layout. They do not create another appearance or keyboard implementation for an existing control.
+Use the focused modules in `src/components/ui/` for all buttons, inputs, textareas, selects, menus and tooltips. Features own domain labels, eligibility, validation, commands and layout. Shared controls own appearance, keyboard focus, disabled/invalid states and reusable interaction. The common semantic palette is `theme.css`, imported by both application entry points.
 
-Existing foundations include `Button`, `Select`, `SlidingTabs`, `RailResizeHandle` and `useModalFocus`. Import the specific module, rather than introducing a barrel. Keep the native element and its props/ref where native behavior serves the task. A new reusable pattern belongs here before its first feature consumer; add behavior coverage appropriate to its contract.
+## Fields and buttons
 
-## Native select
+`Button`, `Input` and `Textarea` forward native props and refs. Preserve controlled and uncontrolled values, labels, form submission/reset, fieldset disability, native file selection, selection ranges and owner keyboard handlers. Button retains the native default type; command menu items explicitly use `type="button"`. Use an explicit primary variant for the main action. Default buttons are compact and quiet. Use the shared scrim variant for real dismissal overlays.
 
-`Select` renders one native `<select>` and forwards its ref and HTML props. Keep ordinary `<option>` and `<optgroup>` children, label association, controlled `value`/`onChange`, uncontrolled `defaultValue`, native numeric `size`, `multiple`, `name`, form reset/submission and disabled fieldsets. Do not translate values or create a second selection state in the primitive. Domain-specific adapters such as CAD's `SelectField` still validate eligible choices.
+Code editors, expression fields, checkboxes, sliders and file inputs keep their native contracts. Multiline source rows can use automatic height and monospace type. Layout classes may adjust size, spacing and alignment; feature classes must not supply another control palette, border or focus implementation. Add a shared variant only for a real recurring need.
 
-The shared component owns trigger and popup colors, border, disabled/invalid states and visible keyboard focus. It uses the semantic tokens in `src/index.css`; popup options and optgroups receive explicit opaque foreground/background colors. Selected and disabled options have shared theme states. Native browser/OS popup behavior remains native, including keyboard selection and forced-colors support.
+## Selects
 
-Feature classes may set width, height, spacing and contextual typography. Use `density="compact"` for a tightly constrained toolbar. They must not override shared background/text colors, borders or interaction states. If another appearance is needed by several consumers, add a shared variant with a real consumer instead of a feature-specific theme.
+`Select` renders one native select with ordinary options/optgroups. Keep native values, refs, names, multiple/size, form behavior and domain adapters. There is no mirrored selection state. Compact toolbar selects have a transparent trigger until interaction.
 
-`npm run ui:check` parses production TS/TSX and rejects raw `<select>` or direct `createElement('select')` calls outside `src/components/ui/select.tsx`. Tests are excluded. Both review and Pages CI run the check. Its scanner tests distinguish code from comments and strings. Do not evade the standard through aliases or generated controls.
+Supporting browsers use the CSS customizable-select picker: a styled top-layer surface, common rows, selected checkmark, scrolling and browser collision positioning. Option explanations use `data-description`. Unsupported browsers retain an accessible native picker with explicit theme colors; identical popup rendering across browsers is not promised. Multiple and expanded listboxes keep native listbox behavior.
 
-## Other controls and migration scope
+## Menus and help
 
-Use the existing shared `Button` for new or changed reusable button patterns. Use semantic foreground/background, surface, border, ring, accent and destructive tokens; do not copy literal feature palettes into controls. Focus must remain visible, disabled state must be truthful, and accessible names/labels stay with the domain composition.
+Use `MenuSurface`, `MenuItem`, `MenuCheckboxItem`, `MenuLabel` and `MenuSeparator` for command surfaces. The shared layer handles row appearance and fallback Arrow/Home/End/typeahead navigation. Existing feature key handlers run first. Domain owners retain anchoring, outside dismissal, workflow locking and focus return. Checkbox menu rows expose `aria-checked` without nesting a second interactive control.
 
-The select migration covers every production select. Existing raw buttons, text inputs and textareas remain separate migration work. `.technical-input` already supplies a shared token-based text-field appearance, but several CAD/simulation fields still have feature styles. Source/code editors, dimension/expression inputs, and native checkbox/range/file inputs have distinct interaction contracts. A future Input/Textarea migration should first identify those contracts and real consumers, then move repeated appearance into shared foundations without changing commit, selection or keyboard behavior. Do not add unused wrappers or mechanically replace specialized controls to satisfy a tag count.
+`Tooltip` uses Radix with portal collision handling, focus/hover and Escape. Button/field `title` props become shared accessible help; native hover-title attributes belong only to the primitive. Keep labels and accessible command names independent of help. Tooltip changes must never replace the underlying field: edits, focus, refs and selected files survive help/disabled changes. Rich CAD diagrams remain explicit click-help disclosures while sharing control styling.
 
-The broader reuse rule is a review requirement. The current automated guard enforces select ownership only; it does not claim all legacy controls have already migrated.
+## Enforcement and verification
+
+`npm run ui:check` parses production TS/TSX and rejects raw button/input/textarea/select elements and factories, raw menu/tooltip roles, and native hover-title attributes outside their specific owner modules. Tests and semantic SVG title elements are not controls. Both review and Pages CI run the guard; do not evade it through aliases or generated elements.
+
+Behavior coverage checks native refs/forms/edited-state preservation, disabled fields, help focus/Escape, selection and menu navigation. Visual acceptance must also inspect actual open popups and ordinary field/button/menu/help combinations in CAD, CAM, the library and settings. A tag migration alone does not establish visual consistency.

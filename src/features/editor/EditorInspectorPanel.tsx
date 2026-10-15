@@ -1,3 +1,5 @@
+import { Tooltip } from '@/components/ui/tooltip';
+import { Input } from '@/components/ui/input';
 import {
   ArrowRightFromLine,
   Download,
@@ -255,9 +257,9 @@ export function EditorInspectorPanel({
                 <dt className="text-muted-foreground">Geometry bounds</dt>
                 <dd data-editor-stat="bounds">{boundsText} mm</dd>
                 <dt className="text-muted-foreground">File</dt>
-                <dd className="truncate" data-editor-stat="file" title={program?.filePath}>
+                <Tooltip content={program?.filePath}><dd tabIndex={0} className="truncate" data-editor-stat="file" >
                   {editorFileName}
-                </dd>
+                </dd></Tooltip>
               </dl>
               <p className="mt-2 text-muted-foreground">Cutting travel includes entry and exit moves. Bounds describe the source geometry.</p>
               <EditorProjectProvenance document={pathDocument} />
@@ -281,9 +283,9 @@ export function EditorInspectorPanel({
               <dt className="text-muted-foreground">Bounds</dt>
               <dd data-editor-stat="bounds">{boundsText}</dd>
               <dt className="text-muted-foreground">File</dt>
-              <dd className="truncate" data-editor-stat="file" title={program?.filePath}>
+              <Tooltip content={program?.filePath}><dd tabIndex={0} className="truncate" data-editor-stat="file" >
                 {editorFileName}
-              </dd>
+              </dd></Tooltip>
               <dt className="text-muted-foreground">Lines</dt>
               <dd>{draftParseResult.stats.totalLines}</dd>
               <dt className="text-muted-foreground">Linear</dt>
@@ -399,9 +401,9 @@ export function EditorInspectorPanel({
                     {selectedPathLineage.map((element, index) => (
                       <span className="inline-flex items-center gap-1" key={element.id}>
                         {index > 0 && <span className="text-muted-foreground"> / </span>}
-                        <button
+                        <Button
                           aria-label={`Select lineage ${element.displayName}`}
-                          className="text-left text-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                          className="text-left underline-offset-2 hover:underline"
                           data-upid-lineage-item={element.id}
                           onClick={() =>
                             onSelectPathElement?.({
@@ -421,7 +423,7 @@ export function EditorInspectorPanel({
                           type="button"
                         >
                           {element.displayName}
-                        </button>
+                        </Button>
                       </span>
                     ))}
                   </dd>
@@ -434,9 +436,9 @@ export function EditorInspectorPanel({
                         data-upid-sequence-current={selectedPathSequenceContext.current.element.id}
                       >
                         {selectedPathSequenceContext.previous ? (
-                          <button
+                          <Button
                             aria-label={`Select previous cut sequence ${selectedPathSequenceContext.previous.element.displayName}`}
-                            className="text-left text-muted-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                            className="text-left underline-offset-2 hover:underline"
                             data-upid-sequence-previous={selectedPathSequenceContext.previous.element.id}
                             onClick={() =>
                               onSelectPathElement?.({
@@ -456,7 +458,7 @@ export function EditorInspectorPanel({
                             type="button"
                           >
                             Prev {selectedPathSequenceContext.previous.index + 1}
-                          </button>
+                          </Button>
                         ) : (
                           <span className="text-muted-foreground" data-upid-sequence-boundary="start">
                             Start
@@ -469,9 +471,9 @@ export function EditorInspectorPanel({
                         </span>
                         <span className="text-muted-foreground">/</span>
                         {selectedPathSequenceContext.next ? (
-                          <button
+                          <Button
                             aria-label={`Select next cut sequence ${selectedPathSequenceContext.next.element.displayName}`}
-                            className="text-left text-muted-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                            className="text-left underline-offset-2 hover:underline"
                             data-upid-sequence-next={selectedPathSequenceContext.next.element.id}
                             onClick={() =>
                               onSelectPathElement?.({
@@ -491,7 +493,7 @@ export function EditorInspectorPanel({
                             type="button"
                           >
                             Next {selectedPathSequenceContext.next.index + 1}
-                          </button>
+                          </Button>
                         ) : (
                           <span className="text-muted-foreground" data-upid-sequence-boundary="end">
                             End
@@ -517,9 +519,9 @@ export function EditorInspectorPanel({
                       <dt className="text-muted-foreground">Child Paths</dt>
                       <dd className="flex min-w-0 flex-wrap gap-1" data-upid-selected="tree-children">
                         {selectedPathTreeNode.children.map((child) => (
-                          <button
+                          <Button
                             aria-label={`Select child ${child.element.displayName}`}
-                            className="text-left text-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                            className="text-left underline-offset-2 hover:underline"
                             data-upid-child-path-element={child.element.id}
                             key={child.element.id}
                             onClick={() =>
@@ -540,7 +542,7 @@ export function EditorInspectorPanel({
                             type="button"
                           >
                             {child.element.displayName}
-                          </button>
+                          </Button>
                         ))}
                       </dd>
                     </>
@@ -550,9 +552,9 @@ export function EditorInspectorPanel({
                       <dt className="text-muted-foreground">Sibling Paths</dt>
                       <dd className="flex min-w-0 flex-wrap gap-1" data-upid-selected="tree-siblings">
                         {selectedPathTreeContext.siblings.map((sibling) => (
-                          <button
+                          <Button
                             aria-label={`Select sibling ${sibling.element.displayName}`}
-                            className="text-left text-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                            className="text-left underline-offset-2 hover:underline"
                             data-upid-sibling-path-element={sibling.element.id}
                             key={sibling.element.id}
                             onClick={() =>
@@ -573,7 +575,7 @@ export function EditorInspectorPanel({
                             type="button"
                           >
                             {sibling.element.displayName}
-                          </button>
+                          </Button>
                         ))}
                       </dd>
                     </>
@@ -734,11 +736,11 @@ export function EditorInspectorPanel({
                     data-upid-segment-current={selectedPathSegmentSequenceContext.current.segment.id}
                   >
                     {selectedPathSegmentSequenceContext.previous ? (
-                      <button
+                      <Button
                         aria-label={`Select previous segment ${
                           selectedPathSegmentSequenceContext.previous.index + 1
                         } in ${selectedPathSegmentSequenceContext.element.displayName}`}
-                        className="text-left text-muted-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                        className="text-left underline-offset-2 hover:underline"
                         data-upid-segment-previous={selectedPathSegmentSequenceContext.previous.segment.id}
                         onClick={() =>
                           onSelectPathElement?.({
@@ -758,7 +760,7 @@ export function EditorInspectorPanel({
                         type="button"
                       >
                         Prev {selectedPathSegmentSequenceContext.previous.index + 1}
-                      </button>
+                      </Button>
                     ) : (
                       <span className="text-muted-foreground" data-upid-segment-boundary="start">
                         Start
@@ -771,11 +773,11 @@ export function EditorInspectorPanel({
                     </span>
                     <span className="text-muted-foreground">/</span>
                     {selectedPathSegmentSequenceContext.next ? (
-                      <button
+                      <Button
                         aria-label={`Select next segment ${
                           selectedPathSegmentSequenceContext.next.index + 1
                         } in ${selectedPathSegmentSequenceContext.element.displayName}`}
-                        className="text-left text-muted-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                        className="text-left underline-offset-2 hover:underline"
                         data-upid-segment-next={selectedPathSegmentSequenceContext.next.segment.id}
                         onClick={() =>
                           onSelectPathElement?.({
@@ -795,7 +797,7 @@ export function EditorInspectorPanel({
                         type="button"
                       >
                         Next {selectedPathSegmentSequenceContext.next.index + 1}
-                      </button>
+                      </Button>
                     ) : (
                       <span className="text-muted-foreground" data-upid-segment-boundary="end">
                         End
@@ -915,9 +917,9 @@ export function EditorInspectorPanel({
                   >
                     {selectedPathPoint.endpointCluster.members.map((member, index) =>
                       member.operationId && member.pointRole ? (
-                        <button
+                        <Button
                           aria-label={`Select cluster member ${index + 1} ${member.pointRole}`}
-                          className="text-left text-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                          className="text-left underline-offset-2 hover:underline"
                           data-upid-cluster-member-index={index}
                           data-upid-cluster-member-operation={member.operationId}
                           data-upid-cluster-member-side={member.rawEndpointSide}
@@ -945,7 +947,7 @@ export function EditorInspectorPanel({
                           type="button"
                         >
                           {index + 1} {member.pointRole} {formatPoint(member.point)}
-                        </button>
+                        </Button>
                       ) : (
                         <span
                           className="text-muted-foreground"
@@ -1057,9 +1059,9 @@ export function EditorInspectorPanel({
                 </p>
               )}
               {onReimportDxfUnits && (
-                <Button
+                <Button size="md"
                   aria-label="Re-import with different units"
-                  className="mt-2 h-7 w-full text-[10px]"
+                  className="mt-2 w-full"
                   disabled={!canReimportDxfUnits}
                   onClick={() => void onReimportDxfUnits()}
                   title={reimportDxfUnitsDisabledReason ?? 'Rebuild from the persisted raw DXF with reviewed units'}
@@ -1087,12 +1089,12 @@ export function EditorInspectorPanel({
           {!pathDocument && <h3 className="text-[11px] font-semibold">Construction points</h3>}
           <div className="flex items-center gap-1">
             <span className="text-[10px] text-muted-foreground">{measurementPoints.length}</span>
-            <button
+            <Button
               aria-label="Toggle preview grid snap"
               aria-pressed={gridSnapEnabled}
-              className={`inline-flex h-6 items-center gap-1 border px-2 font-mono text-[10px] outline-none transition hover:bg-accent ${
+              className={`inline-flex items-center gap-1 border px-2 font-mono ${
                 gridSnapEnabled ? 'border-primary text-primary' : 'border-border text-muted-foreground'
-              } ${guideHighlightClass('grid-snap', guideHighlightTarget)}`}
+              }  ${guideHighlightClass('grid-snap', guideHighlightTarget)}`}
               data-editor-grid-snap
               {...guideTargetProps('grid-snap', guideHighlightTarget)}
               onClick={onToggleGridSnap}
@@ -1103,14 +1105,14 @@ export function EditorInspectorPanel({
             >
               <Magnet className="size-3" />
               {gridSnapEnabled ? 'ON' : 'OFF'}
-            </button>
+            </Button>
           </div>
         </div>
         <div className="mb-2 grid grid-cols-2 gap-1" data-editor-canvas-mouse-mode>
-          <button
+          <Button
             aria-label="Select geometry on canvas"
             aria-pressed={canvasMouseMode === 'select'}
-            className={`flex h-6 items-center justify-center gap-1 border px-1.5 text-[10px] outline-none transition hover:bg-accent ${
+            className={`flex items-center justify-center gap-1 border px-1.5 ${
               canvasMouseMode === 'select'
                 ? 'border-primary bg-primary text-primary-foreground'
                 : 'border-border text-muted-foreground'
@@ -1121,11 +1123,11 @@ export function EditorInspectorPanel({
           >
             <MousePointer2 className="size-3" />
             Select
-          </button>
-          <button
+          </Button>
+          <Button
             aria-label="Place measurement points on canvas"
             aria-pressed={canvasMouseMode === 'point'}
-            className={`flex h-6 items-center justify-center gap-1 border px-1.5 text-[10px] outline-none transition hover:bg-accent ${
+            className={`flex items-center justify-center gap-1 border px-1.5 ${
               canvasMouseMode === 'point'
                 ? 'border-primary bg-primary text-primary-foreground'
                 : 'border-border text-muted-foreground'
@@ -1136,7 +1138,7 @@ export function EditorInspectorPanel({
           >
             <Magnet className="size-3" />
             Point
-          </button>
+          </Button>
         </div>
         {pathDocument && onActivatePathConstructionMode && (
           <div className="mb-2 border border-border bg-background/35 p-1.5" data-path-construction-tools>
@@ -1145,10 +1147,10 @@ export function EditorInspectorPanel({
             </div>
             <div className="grid grid-cols-2 gap-1">
               {(['perpendicular', 'tangent'] as const).map((mode) => (
-                <button
+                <Button
                   aria-label={`Magnetize latest point ${mode}`}
                   aria-pressed={pathConstructionMode === mode}
-                  className={`flex h-6 items-center justify-center gap-1 border px-1.5 text-[10px] outline-none transition hover:bg-accent ${
+                  className={`flex items-center justify-center gap-1 border px-1.5 ${
                     pathConstructionMode === mode
                       ? 'border-primary bg-primary text-primary-foreground'
                       : 'border-border text-muted-foreground'
@@ -1162,7 +1164,7 @@ export function EditorInspectorPanel({
                 >
                   <Magnet className="size-3" />
                   {mode === 'perpendicular' ? 'Perpendicular' : 'Tangent'}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -1170,9 +1172,9 @@ export function EditorInspectorPanel({
         <div className="grid grid-cols-2 gap-1.5">
           <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
             X
-            <input
+            <Input density="compact"
               aria-label="Measurement point X"
-              className="h-6 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary"
+              className="px-1.5 font-mono"
               inputMode="decimal"
               onChange={(event) => onPointXDraftChange(event.currentTarget.value)}
               placeholder="0.000"
@@ -1182,9 +1184,9 @@ export function EditorInspectorPanel({
           </label>
           <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
             Y
-            <input
+            <Input density="compact"
               aria-label="Measurement point Y"
-              className="h-6 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary"
+              className="px-1.5 font-mono"
               inputMode="decimal"
               onChange={(event) => onPointYDraftChange(event.currentTarget.value)}
               placeholder="0.000"
@@ -1195,7 +1197,7 @@ export function EditorInspectorPanel({
         </div>
         <div className="mt-2 grid grid-cols-2 gap-1.5">
           <Button
-            className="h-6 px-2 text-[10px]"
+            className="px-2"
             onClick={onAddMeasurementPoint}
             size="sm"
             type="button"
@@ -1204,7 +1206,7 @@ export function EditorInspectorPanel({
             Add Point
           </Button>
           <Button
-            className="h-6 px-2 text-[10px]"
+            className="px-2"
             disabled={measurementPoints.length === 0}
             onClick={onClearMeasurementPoints}
             size="sm"
@@ -1241,9 +1243,9 @@ export function EditorInspectorPanel({
                 <span className="text-muted-foreground">{point.x.toFixed(3)}</span>
                 <span className="text-muted-foreground">{point.y.toFixed(3)}</span>
                 {point.pathSnap ? (
-                  <button
+                  <Button
                     aria-label={`Select measurement point target P${index + 1}`}
-                    className="text-left text-[10px] uppercase text-muted-foreground outline-none hover:text-foreground"
+                    className="text-left uppercase"
                     data-measurement-point-mode={index + 1}
                     onClick={() =>
                       onSelectPathElement?.({
@@ -1255,7 +1257,7 @@ export function EditorInspectorPanel({
                     type="button"
                   >
                     {measurementPointModeLabel(point)}
-                  </button>
+                  </Button>
                 ) : (
                   <span
                     className="text-[10px] uppercase text-muted-foreground"
@@ -1264,22 +1266,22 @@ export function EditorInspectorPanel({
                     -
                   </span>
                 )}
-                <button
+                <Button variant="outline"
                   aria-label={`Delete measurement point P${index + 1}`}
-                  className="flex size-5 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-destructive/10 hover:text-destructive"
+                  className="flex size-5 items-center justify-center"
                   onClick={() => onDeleteMeasurementPoint(point.id)}
                   title="Delete point"
                   type="button"
                 >
                   <Trash2 className="size-3" />
-                </button>
+                </Button>
               </div>
             ))}
           </div>
         )}
         <div className="mt-2 grid grid-cols-1 gap-1.5">
           {canInsertMeasurementPoints && <Button
-            className="h-6 px-2 text-[10px]"
+            className="px-2"
             disabled={!program || measurementPoints.length === 0 || isSaving}
             onClick={onInsertMeasurementPoints}
             size="sm"
@@ -1290,7 +1292,7 @@ export function EditorInspectorPanel({
             Insert Points
           </Button>}
           <Button
-            className="h-6 px-2 text-[10px]"
+            className="px-2"
             disabled={measurementPoints.length === 0}
             onClick={() => onExportMeasurementPoints('csv')}
             size="sm"
@@ -1404,9 +1406,9 @@ function renderSelectedPathDiagnosticRow({
       {diagnostic.relatedRefs.length > 0 && (
         <span className="flex min-w-0 flex-wrap gap-1 pt-0.5">
           {diagnostic.relatedRefs.map((ref, index) => (
-            <button
+            <Button variant="outline"
               aria-label={`Select diagnostic affected geometry ${index + 1}`}
-              className="border border-border bg-background/60 px-1 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+              className="px-1 text-left"
               data-upid-selected-diagnostic-ref
               data-upid-selected-diagnostic-ref-index={index}
               data-upid-selected-diagnostic-ref-operation={ref.operationId ?? undefined}
@@ -1422,7 +1424,7 @@ function renderSelectedPathDiagnosticRow({
               type="button"
             >
               {index + 1} {ref.segmentId ?? ref.pathElementId ?? ref.operationId ?? 'ref'}
-            </button>
+            </Button>
           ))}
         </span>
       )}

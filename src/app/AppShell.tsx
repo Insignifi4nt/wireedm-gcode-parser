@@ -1,3 +1,4 @@
+import { Tooltip } from '@/components/ui/tooltip';
 import {
   useCallback,
   useEffect,
@@ -217,7 +218,7 @@ export function AppShell({
         )}
         <div className="ml-auto flex items-center gap-2" data-app-header-system-controls>
           <StatusNotificationMenu notifications={statusNotifications} agentContent={agentPanelContent} />
-          <span
+          <Tooltip content={connectedWorkbench?.adapter.persistenceWarning ?? storageStatusLabel}><span tabIndex={0}
             aria-label={storageStatusLabel}
             className={`inline-flex h-7 items-center gap-2 rounded-[2px] border px-2 text-[10px] ${
               storageStatusTone === 'temporary'
@@ -228,11 +229,11 @@ export function AppShell({
             }`}
             data-storage-status
             role="status"
-            title={connectedWorkbench?.adapter.persistenceWarning ?? storageStatusLabel}
+
           >
             <Database className="size-3.5" />
             <span data-storage-status-label>{storageStatusLabel}</span>
-          </span>
+          </span></Tooltip>
           <Button
             aria-label="Open settings"
             onClick={() => { setSettingsSection('storage'); setSettingsOpen(true); }}
@@ -273,9 +274,9 @@ export function AppShell({
           >
             {!replaceRailChrome && (
               <div className="flex h-7 shrink-0 items-center justify-end border-b border-border px-1">
-                <button
+                <Button variant="outline" size="icon"
                   aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}
-                  className="flex size-7 items-center justify-center rounded-[2px] border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex size-7 items-center justify-center"
                   onClick={() => {
                     const nextCollapsed = !sidebarCollapsed;
                     if (railContent.onCollapsedChange) {
@@ -292,7 +293,7 @@ export function AppShell({
                   ) : (
                     <PanelLeftClose className="size-3.5" />
                   )}
-                </button>
+                </Button>
               </div>
             )}
             <div

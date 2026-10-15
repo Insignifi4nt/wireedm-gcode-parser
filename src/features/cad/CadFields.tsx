@@ -1,3 +1,5 @@
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import type { CadDocument, CadScalar } from '@/domain/cad/cadDocument';
 import { createContext, useContext, useLayoutEffect } from 'react';
@@ -48,7 +50,7 @@ function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onC
       <CadExpressionBinding label={label} expression={value} parameters={context.parameters} resolved={resolved} onChange={changeRelation}
         description="A document parameter keeps this value linked. Relation and parameter edits stay in this draft until you Apply."
         onPendingChange={pending => context.setRelationPending(key, pending)} /></CadContextHelp></span>
-    <input value={text} inputMode="decimal" spellCheck={false} readOnly={locked} aria-label={`${inputLabel}${unit ? ` ${unit}` : ''}`} aria-invalid={Boolean(issue) || undefined}
+    <Input value={text} inputMode="decimal" spellCheck={false} readOnly={locked} aria-label={`${inputLabel}${unit ? ` ${unit}` : ''}`} aria-invalid={Boolean(issue) || undefined}
       title={`${inputLabel}: ${issue || (locked ? `${value} = ${resolved} ${unit}. Edit this relation with fx.` : alias ? `${value} = ${resolved} ${unit}. Edits update the shared parameter.` : `${resolved} ${unit}`)}`}
       onChange={event => {
         if (locked) return;
@@ -67,7 +69,7 @@ function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onC
 export function CadReferencePickButton({ label, options, onSelect, disabled = false }: { label: string; options: readonly { value: string; disabled?: boolean }[]; onSelect(value: string): void; disabled?: boolean }) {
   const picking = useContext(CadFeatureReferencePickingContext);
   const eligible = picking ? options.filter(option => !option.disabled && picking.precedingIds.has(option.value)) : [];
-  return picking && eligible.length > 0 ? <button type="button" disabled={disabled} className="cad-pick-reference" title={`Pick ${label.toLowerCase()} from model or history`} aria-label={`Pick ${label.toLowerCase()} from model`} onClick={() => picking.begin(label, eligible.map(option => option.value), id => { if (eligible.some(option => option.value === id)) onSelect(id); })}><MousePointer2 size={13} /></button> : null;
+  return picking && eligible.length > 0 ? <Button type="button" disabled={disabled} className="cad-pick-reference" title={`Pick ${label.toLowerCase()} from model or history`} aria-label={`Pick ${label.toLowerCase()} from model`} onClick={() => picking.begin(label, eligible.map(option => option.value), id => { if (eligible.some(option => option.value === id)) onSelect(id); })}><MousePointer2 size={13} /></Button> : null;
 }
 
 export function SelectField<T extends string>({ label, value, options, onChange, description, reference = false }: { label: string; description?: string; value: T; options: readonly { value: T; label: string; disabled?: boolean }[]; onChange(value: T): void; reference?: boolean }) {
@@ -85,6 +87,6 @@ function ScalarExpressionField({ label, inputLabel = label, value, parameters, o
   try { resolved = `${formatCadQuantity(evaluateCadScalar(value, parameters))} ${unit}`; }
   catch (error) { invalid = true; resolved = error instanceof Error ? error.message : 'Invalid expression'; }
   const showResult = invalid || typeof value === 'string' && !Number.isFinite(Number(value));
-  return <label className={`cad-field ${invalid ? 'is-invalid' : ''}`}><span>{label}<small>{unit}</small><CadContextHelp label={label}><div>{cadScalarHelp(label)}</div><dl><dt>Current value</dt><dd>{resolved}</dd>{showResult && !invalid && <><dt>Linked expression</dt><dd><code>{value}</code></dd></>}</dl><div>Enter a number or a named parameter expression. Editing an expression changes this dimension's link.</div></CadContextHelp></span><input value={value} spellCheck={false} title={resolved} aria-label={`${inputLabel}${unit ? ` ${unit}` : ''}`} aria-invalid={invalid || undefined} onChange={(event) => onChange(event.target.value)} />{showResult && <small className="cad-field-hint">{resolved}</small>}</label>;
+  return <label className={`cad-field ${invalid ? 'is-invalid' : ''}`}><span>{label}<small>{unit}</small><CadContextHelp label={label}><div>{cadScalarHelp(label)}</div><dl><dt>Current value</dt><dd>{resolved}</dd>{showResult && !invalid && <><dt>Linked expression</dt><dd><code>{value}</code></dd></>}</dl><div>Enter a number or a named parameter expression. Editing an expression changes this dimension's link.</div></CadContextHelp></span><Input value={value} spellCheck={false} title={resolved} aria-label={`${inputLabel}${unit ? ` ${unit}` : ''}`} aria-invalid={invalid || undefined} onChange={(event) => onChange(event.target.value)} />{showResult && <small className="cad-field-hint">{resolved}</small>}</label>;
 }
 

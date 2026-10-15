@@ -372,3 +372,22 @@ Verification is still active: first broad browser run exposed stale expectations
 - Actual circle diameter annotation spans its center and reads Ø20mm, with analytic area314.159mm² and perimeter62.832mm. A30×8 slot at35° shows tangent-aligned length and width leaders plus an angle arc, area226.265mm² and perimeter69.133mm. Shapes were created through strict discovered agent schemas in an isolated test copy; circle dimension was added through the human UI. Proof images: tmp/cad-circle-diameter-annotation.png and tmp/cad-rotated-slot-annotations.png. QA copies were closed without saving.
 - Actual1024×640 original-part view uses the full1024px canvas, with tree x10..204.83, configuration x708..1012 and dock y588..628. Explicit Fit keeps the gear/rectangle clear of both overlays. Temporary viewport override was reset; the original unsaved part remains open at localhost3777 with current default framing. Proof: tmp/cad-overlay-compact-laptop-layout.png and tmp/cad-overlay-restored-user-layout.png.
 - This closes the latest tree/sketch/layout priority checkpoint. The overall CAD goal remains active. Continue the product-level audit of existing solid editing, source/region picking and optional direct geometry manipulators against the reference workflows; do not introduce unrelated feature kinds or declare universal constraint solving. Preserve the current live draft with fresh reads before future reloads.
+
+## Whole-app shared controls continuation (15 October)
+
+Current request: make actual dropdowns, buttons, inputs, menus and tooltips visually consistent throughout CAD, CAM, library and settings. A previous select-only checkpoint did not satisfy that scope.
+
+- [x] Shared semantic theme and compact Button/Input/Textarea/Select foundations; native data, refs and form behavior preserved.
+- [x] Styled top-layer dropdown picker in supporting browsers, with quiet toolbar trigger and checked option rows; accessible native fallback remains.
+- [x] Shared command menus and Radix help, including focus/Escape and stable fields when help changes.
+- [x] Production raw-control/menu/hover-title guard applies throughout the app in CI; feature styling owns layout and domain states.
+- [x] Migrated CAD and non-CAD consumers; focused native behavior, CAD workflows and menu checks pass.
+- [x] First production build/typecheck, 92 documentation checks and exact native source distribution pass.
+- [x] Complete integrated tests:393 files/4,152 unit tests pass; all124 supported Chromium journeys have passing evidence across the full run and scoped repairs. Tooltip Escape/click ownership repaired and obsolete native-title observations updated without weakening text or guard checks.
+- [x] Inspect actual popup, configuration fields, menus and tooltips across the app; compact menus and tree clicks pass real Chromium journeys at 320px/767px.
+- [x] Independent integration review, refreshed icon catalogue and final production build. Reviewed PR update follows the final complete unit gate.
+
+The active managed checkout is cad-shared-controls/Wire_EDM. The former checkout disappeared during work; source edits were rescued and recovered on the same branch without changing user browser storage. Existing gear tabs remain untouched. Evidence logs and ownership manifests are in this checkout's tmp directory; permanent review records are in docs/reviews.
+
+
+- Final source/build/browser evidence and fallback limits are recorded in 2026-10-15-whole-app-controls.md. Existing PR12 receives this reviewed checkpoint; no merge/deployment or extra version increment.

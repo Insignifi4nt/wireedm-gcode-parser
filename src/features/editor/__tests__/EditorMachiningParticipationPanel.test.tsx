@@ -153,7 +153,7 @@ describe('EditorMachiningParticipationPanel', () => {
       '[aria-label="Machining source segment"]'
     )!;
     expect(sourceSegmentSelect.disabled).toBe(true);
-    expect(sourceSegmentSelect.title).toBe(
+    expect(sourceSegmentSelect.getAttribute('aria-description')).toBe(
       'Apply or discard the pending machining range before changing its source segment.'
     );
 

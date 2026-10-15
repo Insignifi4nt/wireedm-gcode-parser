@@ -61,15 +61,15 @@ export function EditorGuideDialog({
               {copy.overview}
             </p>
           </div>
-          <button
+          <Button variant="outline" size="icon"
             aria-label={copy.closeLabel}
-            className="flex size-7 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+            className="flex size-7 shrink-0 items-center justify-center"
             onClick={onClose}
             ref={closeRef}
             type="button"
           >
             <X className="size-4" />
-          </button>
+          </Button>
         </div>
 
         <div
@@ -77,9 +77,9 @@ export function EditorGuideDialog({
           className="flex h-9 items-center gap-1 border-b border-border px-4"
         >
           {(Object.keys(EDITOR_GUIDE_LANGUAGES) as EditorGuideLanguage[]).map((key) => (
-            <button
+            <Button
               aria-pressed={language === key}
-              className={`h-6 border px-2 font-mono text-[10px] outline-none transition hover:bg-accent ${
+              className={`border px-2 font-mono ${
                 language === key ? 'border-primary text-primary' : 'border-border text-muted-foreground'
               }`}
               data-editor-guide-language={key}
@@ -88,7 +88,7 @@ export function EditorGuideDialog({
               type="button"
             >
               {EDITOR_GUIDE_LANGUAGES[key]}
-            </button>
+            </Button>
           ))}
         </div>
 
