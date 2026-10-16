@@ -107,6 +107,14 @@ Evidence: 85 focused Canvas/picking/Path cases, scoped types, app TypeScript/bui
 
 Next is [keyboard-owned line Extend](2026-10-16-sketch-keyboard-extend-seams.md). Relative X/Y dimensions, shared legacy/plugin references and the broader relation/topology inventory remain open. This checkpoint does not close sketch mode or the overall goal.
 
+## Checkpoint: keyboard-owned line Extend
+
+Keyboard Extend uses the actual focused line identity and explicit start/end choices, rather than repicking geometry at a projected screen anchor. Both alternatives reuse the existing analytic query, exact witnessed edit, preview, source/frame owner and submission/cancellation path. Split/Trim still require a real pointer location. The existing complete Extend journey now checks keyboard preview, unavailable-end feedback, Escape/focus restoration and keyboard acceptance equal to its pointer result, retaining its original Undo/Redo, agent, native Pad and saved-reopen checks. Two focused regressions and the original frozen production journey were genuinely red before the change.
+
+Evidence: 97 related Canvas/picking/Path cases, scoped types, app TypeScript/build, public docs/discovery/source distributions, shared UI and icon integration pass. Complete Split/Trim/Extend journeys pass in Chromium and Firefox. Native keyboard actions close both gaps in a plate's bottom edge, retain all eight original points and other relations, and yield one 200 mm² cell; normal ` 5e0 ` Pad creates one approximately 1000 mm³ solid with no diagnostics. Four Undo operations restore the empty test draft. [Bounded independent review and acceptance](2026-10-16-sketch-keyboard-extend-review.md). No domain algorithm, new public operation, persistent schema, version bump or remote action.
+
+Next: [relative X/Y driving dimensions](2026-10-16-sketch-axis-dimensions-plan.md), reusing the existing signed native Difference constraint and Dimension editor after focused real-native acceptance. Shared legacy/plugin references and the broader relation/topology inventory remain open; sketch mode and the overall goal remain incomplete.
+
 ## Initial findings
 
 The canvas picker initially returned a profile ID. Selecting/dragging a boundary therefore translated its whole profile. The initial constraint module recorded explicit dimensions for primitive profile sizes and preserved expressions, but had no general point/segment relationship solver. Paths and polygons exposed no dimension quantities. These were model and interaction gaps, not styling issues.

@@ -309,6 +309,13 @@ test('extends the chosen line end to its exact boundary joint, matches the agent
     await expect(page.locator('[data-cad-sketch-extend-point]')).toHaveAttribute('data-cad-sketch-extend-point', 'e');
     return extend;
   };
+  const focusedLine = page.locator('[data-cad-sketch-entity="ab"]');
+  await focusedLine.press('Shift+F10');
+  const keyboardStart = page.getByRole('menuitem', { name: 'Extend start', exact: true });
+  await expect(keyboardStart).toBeEnabled(); await keyboardStart.focus();
+  await expect(page.locator('[data-cad-sketch-extend-point]')).toHaveAttribute('data-cad-sketch-extend-point', 'e');
+  await expect(page.getByRole('menuitem', { name: 'Extend end', exact: true })).toBeDisabled();
+  await page.keyboard.press('Escape'); await expect(focusedLine).toBeFocused();
   await openExtend(); await page.keyboard.press('Escape');
   expect((await context(page)).version).toBe(baseVersion);
   expect((await call(page, 'cad_get_feature', { expectedVersion: baseVersion, featureId: sketch.id })).feature).toEqual(sketch);
@@ -321,6 +328,10 @@ test('extends the chosen line end to its exact boundary joint, matches the agent
   await page.keyboard.press('Control+z'); current = await context(page);
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
   await page.keyboard.press('Control+Shift+z'); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  await page.keyboard.press('Control+z'); current = await context(page);
+  await focusedLine.press('Shift+F10'); await page.getByRole('menuitem', { name: 'Extend start', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await call(page, 'cad_history', { expectedVersion: current.version, direction: 'undo' }); current = await context(page);

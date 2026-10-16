@@ -439,6 +439,59 @@ describe('graph spatial selection', () => {
     }
     expect(h.selected).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
   });
+  async function keyboardExtendFixture() {
+    const h = await spatialFixture(), graph = h.feature.graph!;
+    const feature: CadSketchFeature = { ...h.feature, graph: { ...graph,
+      points: [...graph.points, ...[-5, 0, 15].flatMap((x, index) => [
+        { id: `f${index}a`, position: [x, -5] as const }, { id: `f${index}b`, position: [x, 5] as const }])],
+      entities: [...graph.entities, ...[0, 1, 2].map(index => ({ id: `fence${index}`, kind: 'line' as const,
+        construction: true, startPointId: `f${index}a`, endPointId: `f${index}b` }))] } };
+    await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });
+    const edge = container.querySelector<SVGGElement>('[data-cad-sketch-entity="ab"]'); if (!edge) throw new Error('Focused line missing.');
+    const open = async (key = 'ContextMenu') => act(async () => { edge.focus(); edge.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey: key === 'F10', bubbles: true, cancelable: true })); });
+    const end = (side: 'start' | 'end') => {
+      const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === `Extend ${side}`);
+      if (!item) throw new Error(`Missing Extend ${side}.`); return item;
+    };
+    return { ...h, feature, edge, open, end };
+  }
+  it('extends the focused line by either explicit end without borrowing an overlapping screen hit or cut location', async () => {
+    const h = await keyboardExtendFixture(), original = structuredClone(h.feature); await h.open();
+    expect([...document.querySelectorAll('[role="menuitem"]')].some(item => item.textContent === 'Split here' || item.textContent === 'Trim here')).toBe(false);
+    const preview = async (side: 'start' | 'end') => {
+      expect(h.end(side).disabled).toBe(false); await act(async () => h.end(side).focus());
+      const point = container.querySelector('[data-cad-sketch-extend-point]'), view = currentControls().getState();
+      if (!point || view.mode === 'solid') throw new Error('Extend preview missing.');
+      expect([Number(point.getAttribute('cx')) + view.centerMm[0], Number(point.getAttribute('cy')) + view.centerMm[1]]).toEqual([side === 'start' ? -5 : 15, 0]);
+      return { id: point.getAttribute('data-cad-sketch-extend-point'), revision: view.revision };
+    };
+    const start = await preview('start'), end = await preview('end');
+    expect(end.id).not.toBe(start.id); expect(end.revision).toBeGreaterThan(start.revision);
+    expect((await preview('start')).id).toBe(start.id); expect(h.edited).not.toHaveBeenCalled();
+    expect((await preview('end')).id).toBe(end.id);
+    await act(async () => h.end('end').click());
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'extend-sketch-entity', sketchId: h.feature.id, extend: {
+      kind: 'line', entityId: 'ab', end: 'end', endPointId: end.id,
+      boundary: { entityId: 'fence2', index: 0, parameter: 1.5, position: [15, 0] }
+    } }], expect.any(AbortSignal));
+    expect(h.selected).toHaveBeenCalledExactlyOnceWith({ kind: 'point', id: end.id });
+    expect(h.feature).toEqual(original); expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
+  it('restores keyboard focus on dismissal, invalidates replaced-source menus and cancels a late Extend after a real frame change', async () => {
+    const h = await keyboardExtendFixture(), resize = notifyResize, original = structuredClone(h.feature);
+    const escape = async () => act(async () => document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    await h.open('F10'); await act(async () => h.end('end').focus()); await escape();
+    expect(document.activeElement).toBe(h.edge); expect(h.edited).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+    await h.open('F10'); await h.show({ documentVersion: 'two' });
+    expect(document.querySelector('[aria-label="Sketch edge actions"]')).toBeNull(); expect(h.edited).not.toHaveBeenCalled();
+    const operation = deferred<void>(); h.edited.mockReturnValue(operation.promise);
+    await h.open('F10'); await act(async () => h.end('start').click());
+    const signal: unknown = h.edited.mock.calls[0]?.[1]; if (!(signal instanceof AbortSignal)) throw new Error('Extend signal missing.');
+    expect(signal.aborted).toBe(false); await act(async () => { width = 800; resize(); });
+    expect(signal.aborted).toBe(true); expect(h.pending).toHaveBeenLastCalledWith(false);
+    await act(async () => operation.resolve(undefined));
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.edited).toHaveBeenCalledOnce(); expect(h.error).not.toHaveBeenCalled(); expect(h.feature).toEqual(original);
+  });
   it('blocks end Trim with the actual detached endpoint owner and cancels a late trim receipt on blur', async () => {
     const h = await trimFixture(), feature = { ...h.feature, graph: { ...h.feature.graph!, relations: [{ id: 'anchor', kind: 'fixed-axis' as const, pointId: 'a', axis: 'x' as const, value: 0 }] } };
     await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });
