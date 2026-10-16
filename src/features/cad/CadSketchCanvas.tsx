@@ -583,6 +583,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   return <div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}>
     <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role="application" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio="none"
       onContextMenu={(event) => event.preventDefault()}
+      onPointerDownCapture={event => {
+        // A cancelled graph drag can release over empty canvas; its trailing click still belongs to the handle.
+        if (event.button === 0 && event.target instanceof Element && event.target.closest('.cad-sketch-graph')) suppressProfileClick.current = true;
+      }}
       onPointerDown={(event) => {
         if (boxSelection.active()) { boxSelection.begin(event); return; }
         if (profileDrag.current) return;

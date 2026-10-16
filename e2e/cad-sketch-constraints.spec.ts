@@ -2,6 +2,66 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('resizes a free circle directly, cancels cleanly and preserves explicit size ownership through extrusion and reopen', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const sketch = { id: 'circle', kind: 'sketch', name: 'Round blank', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'center', position: [' centerX ', '0.00'] }],
+    entities: [{ id: 'rim', kind: 'circle', construction: false, centerPointId: 'center', radius: 5 }], relations: []
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'centerX', value: 2.1 }, { kind: 'add-feature', feature: sketch }
+  ] });
+  const initial = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: initial.version })).toMatchObject({ ok: true, data: { view: { available: true } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: initial.version, command: { kind: 'edit-sketch', sketchId: sketch.id } });
+  await call(page, 'cad_set_viewport', { expectedVersion: initial.version, command: { kind: 'select-sketch-geometry-set', selections: [{ kind: 'entity', id: 'rim' }] } });
+  const grip = page.getByRole('button', { name: 'Resize circle radius in Round blank', exact: true });
+  const rim = page.locator('[data-cad-sketch-entity="rim"] > circle');
+  const startDrag = async () => {
+    const box = await grip.boundingBox(), canvas = await page.getByLabel('Sketch drawing canvas').boundingBox();
+    if (!box || !canvas) throw new Error('Circle resize geometry unavailable.');
+    const viewport = await call(page, 'cad_get_viewport', { expectedVersion: initial.version });
+    const x = box.x + box.width / 2, y = box.y + box.height / 2;
+    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 4.8 * canvas.height / viewport.view.heightSpanMm, y);
+    await expect(rim).toHaveAttribute('r', '10');
+  };
+  await startDrag();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: initial.version, featureId: sketch.id })).feature).toEqual(sketch);
+  await page.keyboard.press('Escape'); await page.mouse.up(); await expect(rim).toHaveAttribute('r', '5');
+  expect((await context(page)).version).toBe(initial.version);
+  await startDrag(); await page.mouse.up();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  let current = await context(page);
+  const resized = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(resized.graph.entities).toEqual([{ ...sketch.graph.entities[0], radius: 10 }]); expect(resized.graph.points).toEqual(sketch.graph.points);
+  await call(page, 'cad_history', { expectedVersion: current.version, direction: 'undo' }); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'update-feature', feature: resized }] }); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(resized);
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry-set', selections: [{ kind: 'entity', id: 'rim' }] } });
+  await grip.press('ArrowLeft'); await expect(rim).toHaveAttribute('r', '5');
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Diameter mm', exact: true }).fill('16');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  await expect(grip).toHaveAttribute('aria-disabled', 'true');
+  const locked = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(locked.graph.entities[0].radius).toBe(8); expect(locked.graph.points).toEqual(sketch.graph.points);
+  const lockedBox = await grip.boundingBox(); if (!lockedBox) throw new Error('Driven radius grip unavailable.');
+  await page.mouse.move(lockedBox.x + lockedBox.width / 2, lockedBox.y + lockedBox.height / 2); await page.mouse.down();
+  await page.mouse.move(lockedBox.x + 50, lockedBox.y); await page.mouse.up();
+  expect((await context(page)).version).toBe(current.version);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'pad', kind: 'extrude', name: 'Thickness', suppressed: false, sketchId: sketch.id, distance: ' 5e0 ', symmetric: false, operation: 'new', targetId: null
+  } }] });
+  current = await context(page); const built = await call(page, 'cad_build', { expectedVersion: current.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo(320 * Math.PI, 6);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current.dirty).toBe(false); expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(locked);
+});
+
 test('drives an obtuse corner in degrees through its real annotation, retains its expression and edits the consumed part privately', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const sketch = { id: 'triangle', kind: 'sketch', name: 'Angled plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

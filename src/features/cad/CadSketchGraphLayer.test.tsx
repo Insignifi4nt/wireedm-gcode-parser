@@ -36,10 +36,11 @@ async function fixture(overrides: Partial<Props> = {}) {
   const render = async (next: Partial<Props> = {}) => {
     props = { ...props, ...next };
     await act(async () => root.render(<svg onPointerDown={parentPointer} onClick={parentClick}><CadSketchGraphLayer {...props} /></svg>));
-    for (const point of container.querySelectorAll<SVGGElement>('[data-cad-sketch-point]')) if (!captures.has(point)) {
+    for (const point of container.querySelectorAll<SVGGElement>('[data-cad-sketch-point], [data-cad-sketch-circle-radius]')) if (!captures.has(point)) {
       const owned = new Set<number>(); captures.set(point, owned);
-      Object.assign(point, { focus: vi.fn(), setPointerCapture: (id: number) => { owned.add(id); capture(point.dataset.cadSketchPoint, id); },
-        hasPointerCapture: (id: number) => owned.has(id), releasePointerCapture: (id: number) => { owned.delete(id); release(point.dataset.cadSketchPoint, id); } });
+      const id = point.dataset.cadSketchPoint ?? point.dataset.cadSketchCircleRadius;
+      Object.assign(point, { focus: vi.fn(), setPointerCapture: (pointerId: number) => { owned.add(pointerId); capture(id, pointerId); },
+        hasPointerCapture: (pointerId: number) => owned.has(pointerId), releasePointerCapture: (pointerId: number) => { owned.delete(pointerId); release(id, pointerId); } });
     }
     for (const edge of container.querySelectorAll<SVGGElement>('[data-cad-sketch-entity]')) Object.assign(edge, { focus: vi.fn() });
   };
@@ -58,6 +59,107 @@ async function fixture(overrides: Partial<Props> = {}) {
   };
   return { document, props: () => props, render, source, point, edge, pointer, key, selected, edited, previewed, pending, error, capture, release, parentPointer, parentClick };
 }
+
+async function circleFixture() {
+  const h = await fixture();
+  const sketch = h.document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch fixture missing.');
+  const document = parseCadDocument({ ...h.document, features: [{ ...sketch, graph: { ...sketch.graph,
+    entities: [...sketch.graph.entities, { id: 'bore', kind: 'circle', centerPointId: 'mixed', radius: 5, construction: false }] } }] });
+  await h.source(document);
+  await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'entity', id: 'bore' }] } });
+  const grip = () => { const found = container.querySelector<SVGGElement>('[data-cad-sketch-circle-radius="bore"]'); if (!found) throw new Error('Radius grip missing.'); return found; };
+  return { ...h, document, grip };
+}
+
+describe('graph circle radius interaction ownership', () => {
+  it('resizes around the exact source center with one shared feature edit and retains entity selection', async () => {
+    const h = await circleFixture();
+    await h.pointer(h.grip(), 'pointerdown');
+    await h.pointer(h.grip(), 'pointermove', { clientX: 105, clientY: 100 });
+    expect(h.edited).not.toHaveBeenCalled();
+    await h.pointer(h.grip(), 'pointerup', { clientX: 105, clientY: 100 });
+    const sketch = h.document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch missing.');
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'update-feature', feature: { ...sketch,
+      graph: { ...sketch.graph, entities: sketch.graph.entities.map(entity => entity.id === 'bore' ? { ...entity, radius: 10 } : entity) } } }], expect.any(AbortSignal));
+    expect(h.selected.mock.calls).toEqual([[{ kind: 'entity', id: 'bore' }]]);
+    expect(sketch.graph.entities.at(-1)).toMatchObject({ radius: 5 });
+    expect(h.capture).toHaveBeenCalledExactlyOnceWith('bore', 11); expect(h.release).toHaveBeenCalledExactlyOnceWith('bore', 11);
+  });
+
+  it('cancels radius ownership on Escape, lost buttons and source replacement without submitting a late move', async () => {
+    const h = await circleFixture();
+    await h.pointer(h.grip(), 'pointerdown'); await h.pointer(h.grip(), 'pointermove', { clientX: 110 });
+    await h.key(h.grip(), 'Escape'); await h.pointer(h.grip(), 'pointerup', { clientX: 110 });
+    await h.pointer(h.grip(), 'pointerdown'); await h.pointer(h.grip(), 'pointermove', { clientX: 110, buttons: 0 });
+    await h.pointer(h.grip(), 'pointerup', { clientX: 110 });
+    await h.pointer(h.grip(), 'pointerdown'); await h.pointer(h.grip(), 'pointermove', { clientX: 110 });
+    await h.render({ version: 'external-replacement' }); await h.pointer(h.grip(), 'pointerup', { clientX: 110 });
+    await h.pointer(h.grip(), 'pointerdown'); await h.pointer(h.grip(), 'pointermove', { clientX: 110 });
+    await h.render({ filter: 'points' }); await h.pointer(h.grip(), 'pointerup', { clientX: 110 });
+    await h.render({ filter: 'auto' });
+    await h.pointer(h.grip(), 'pointerdown'); await h.pointer(h.grip(), 'pointermove', { clientX: 110 });
+    await act(async () => window.dispatchEvent(new Event('blur'))); await h.pointer(h.grip(), 'pointerup', { clientX: 110 });
+    expect(h.edited).not.toHaveBeenCalled(); expect(h.pending.mock.calls.at(-1)).toEqual([false]);
+  });
+
+  it('publishes only prepared size previews and clears them on cancel without changing source geometry', async () => {
+    const h = await circleFixture(); vi.useFakeTimers();
+    const prepared = deferred<CadDocument>(), prepare = vi.fn().mockReturnValue(prepared.promise);
+    await h.render({ controls: { ...h.props().controls, onPrepareEdits: prepare } });
+    await h.pointer(h.grip(), 'pointerdown'); await h.pointer(h.grip(), 'pointermove', { clientX: 105 });
+    expect(h.previewed).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(20); });
+    const edit = prepare.mock.calls[0][0][0] as CadEdit;
+    if (edit.kind !== 'update-feature') throw new Error('Expected the shared feature update.');
+    const candidate = parseCadDocument({ ...h.document, features: [edit.feature] });
+    await act(async () => prepared.resolve(candidate));
+    expect(container.querySelector('[data-cad-sketch-entity="bore"] > circle')?.getAttribute('r')).toBe('10');
+    expect(h.previewed).toHaveBeenLastCalledWith(candidate); expect(h.edited).not.toHaveBeenCalled();
+    await h.pointer(h.grip(), 'pointermove', { clientX: 100 });
+    expect(container.querySelector('[data-cad-sketch-entity="bore"] > circle')?.getAttribute('r')).toBe('5');
+    expect(h.previewed).toHaveBeenLastCalledWith(null);
+    expect(h.pending).toHaveBeenLastCalledWith(true);
+    await h.key(h.grip(), 'Escape');
+    expect(h.previewed).toHaveBeenLastCalledWith(null);
+    expect(container.querySelector('[data-cad-sketch-entity="bore"] > circle')?.getAttribute('r')).toBe('5');
+    expect(h.document.features[0]).toMatchObject({ graph: { points: expect.arrayContaining([{ id: 'mixed', position: [' x ', 7] }]) } });
+  });
+
+  it('keeps small-circle center and radius hit areas separate without moving the captured radius origin', async () => {
+    const h = await circleFixture(), sketch = h.document.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch missing.');
+    await h.source(parseCadDocument({ ...h.document, features: [{ ...sketch, graph: { ...sketch.graph,
+      entities: sketch.graph.entities.map(entity => entity.id === 'bore' && entity.kind === 'circle' ? { ...entity, radius: 1 } : entity) } }] }));
+    const center = h.point('mixed').querySelector('circle'), radius = h.grip().querySelector('circle');
+    if (!center || !radius) throw new Error('Circle hit areas unavailable.');
+    expect(Math.abs(Number(radius.getAttribute('cx')) - Number(center.getAttribute('cx'))))
+      .toBeGreaterThan(Number(radius.getAttribute('r')) + Number(center.getAttribute('r')));
+    await h.pointer(h.point('mixed'), 'pointerdown'); await h.pointer(h.point('mixed'), 'pointerup', { clientY: 95 });
+    expect(h.edited).toHaveBeenLastCalledWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'mixed', translation: [0, 5] }], expect.any(AbortSignal));
+    h.edited.mockClear();
+    await h.pointer(h.grip(), 'pointerdown'); await h.pointer(h.grip(), 'pointerup', { clientX: 105 });
+    expect(h.edited).toHaveBeenCalledTimes(1);
+    expect(h.edited.mock.calls[0][0][0]).toMatchObject({ kind: 'update-feature', feature: { graph: { entities: expect.arrayContaining([{ id: 'bore',
+      kind: 'circle', centerPointId: 'mixed', radius: 6, construction: false }]) } } });
+  });
+
+  it('keeps size drivers and point filters authoritative and never turns a multiple selection into a radius drag', async () => {
+    const h = await circleFixture();
+    await h.render({ filter: 'points' });
+    expect(h.grip().getAttribute('aria-disabled')).toBe('true');
+    await h.pointer(h.grip(), 'pointerdown'); await h.pointer(h.grip(), 'pointerup', { clientX: 110 });
+    await h.render({ filter: 'auto', controls: { ...h.props().controls, selection: [{ kind: 'entity', id: 'bore' }, { kind: 'entity', id: 'edge' }] } });
+    expect(container.querySelector('[data-cad-sketch-circle-radius]')).toBeNull();
+    const sketch = h.document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch missing.');
+    await h.source(parseCadDocument({ ...h.document, features: [{ ...sketch, graph: { ...sketch.graph,
+      relations: [{ id: 'diameter', kind: 'radial-size', entityId: 'bore', quantity: 'diameter', value: ' 10 ' }] } }] }));
+    await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'entity', id: 'bore' }] } });
+    expect(h.grip().getAttribute('aria-disabled')).toBe('true');
+    await h.pointer(h.grip(), 'pointerdown'); await h.pointer(h.grip(), 'pointermove', { clientX: 110 }); await h.pointer(h.grip(), 'pointerup', { clientX: 110 });
+    await h.key(h.grip(), 'ArrowRight');
+    expect(h.edited).not.toHaveBeenCalled();
+  });
+});
 
 describe('graph point interaction ownership', () => {
   it('keeps an orphan snap reference visible while drawing without taking pointer or keyboard ownership', async () => {

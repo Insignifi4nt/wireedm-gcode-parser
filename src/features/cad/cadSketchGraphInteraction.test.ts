@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { cadSketchGraphPointTranslation, prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
+import type { CadSketchFeature } from '@/domain/cad/cadDocument';
+import { applyCadEdits } from '@/domain/cad/cadOperations';
+import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import { cadSketchGraphCircleControl, cadSketchGraphCircleRadiusEdit, cadSketchGraphPointTranslation, prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
 
 const source: CadSketchGraph = parseCadSketchGraph({ points: [
   { id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }, { id: 'd', position: [0, 10] }
@@ -10,6 +13,74 @@ const source: CadSketchGraph = parseCadSketchGraph({ points: [
   { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
   { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' }
 ], relations: [] });
+
+function circleSketch(): CadSketchFeature & { readonly graph: CadSketchGraph } {
+  return { id: 'sketch', kind: 'sketch', name: 'Bores', plane: 'XY', offset: ' 0 ', suppressed: false,
+    source: { format: 'dxf', fileName: 'Bores.dxf', text: '0\r\nSECTION\r\n2\r\nENTITIES\r\n0\r\nENDSEC\r\n0\r\nEOF\r\n' },
+    profiles: [{ id: 'reference', name: 'Reference', construction: true, geometry: { kind: 'circle', x: '60', y: '7', radius: '2' } }],
+    graph: parseCadSketchGraph({ points: [{ id: 'center', position: [' cx ', '7'] }, { id: 'other-center', position: [30, 7] }],
+      entities: [{ id: 'bore', kind: 'circle', construction: false, centerPointId: 'center', radius: 5 },
+        { id: 'other', kind: 'circle', construction: true, centerPointId: 'other-center', radius: ' otherRadius ' }],
+      relations: [{ id: 'fixed-center', kind: 'fixed-point', pointId: 'center', position: [' cx ', '7'] }] }) };
+}
+
+describe('owned graph circle radius control', () => {
+  it('resizes only a free numeric circle radius while keeping its fixed center and all other source exact', () => {
+    const sketch = circleSketch(), parameters = { cx: 3, otherRadius: 2 }, before = JSON.stringify(sketch);
+    const control = cadSketchGraphCircleControl(sketch.graph, parameters, 'bore');
+    expect(control).toEqual({ entityId: 'bore', center: [3, 7], radius: 5, lockedReason: null });
+    expect(Object.isFrozen(control)).toBe(true); expect(Object.isFrozen(control.center)).toBe(true);
+    const edit = cadSketchGraphCircleRadiusEdit(sketch, parameters, 'bore', 8);
+    expect(edit.kind).toBe('update-feature');
+    if (edit.feature.kind !== 'sketch' || !edit.feature.graph) throw new Error('Expected complete sketch update.');
+    expect(edit.feature).toEqual({ ...sketch, graph: { ...sketch.graph, entities: [
+      { id: 'bore', kind: 'circle', construction: false, centerPointId: 'center', radius: 8 }, sketch.graph.entities[1]
+    ] } });
+    expect(edit.feature.graph.points).toBe(sketch.graph.points); expect(edit.feature.graph.relations).toBe(sketch.graph.relations);
+    expect(edit.feature.profiles).toBe(sketch.profiles); expect(edit.feature.source).toBe(sketch.source);
+    const document = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters, features: [sketch] });
+    expect(applyCadEdits(document, [edit]).features[0]).toEqual(edit.feature);
+    expect(JSON.stringify(sketch)).toBe(before);
+  });
+
+  it('reports expression, radial-dimension and equal-radius ownership and refuses each radius edit without replacing its driver', () => {
+    const source = circleSketch(), parameters = { cx: 3, otherRadius: 5, radius: 5 };
+    const graphs = [
+      parseCadSketchGraph({ ...source.graph, entities: source.graph.entities.map(entity => entity.id === 'bore' && entity.kind === 'circle' ? { ...entity, radius: ' radius ' } : entity) }),
+      parseCadSketchGraph({ ...source.graph, entities: source.graph.entities.map(entity => entity.id === 'bore' && entity.kind === 'circle' ? { ...entity, radius: '5' } : entity) }),
+      parseCadSketchGraph({ ...source.graph, relations: [...source.graph.relations, { id: 'size', kind: 'radial-size', entityId: 'bore', quantity: 'diameter', value: ' radius * 2 ' }] }),
+      parseCadSketchGraph({ ...source.graph, relations: [...source.graph.relations, { id: 'equal', kind: 'equal-radius', curveIds: ['other', 'bore'] }] })
+    ];
+    for (const graph of graphs) {
+      const sketch = { ...source, graph }, before = JSON.stringify(sketch), control = cadSketchGraphCircleControl(graph, parameters, 'bore');
+      expect(control).toMatchObject({ entityId: 'bore', center: [3, 7], radius: 5 });
+      expect(control.lockedReason).toBeTruthy();
+      expect(() => cadSketchGraphCircleRadiusEdit(sketch, parameters, 'bore', 8)).toThrowError(expect.objectContaining({ code: 'locked-sketch-radius' }));
+      expect(() => cadSketchGraphCircleRadiusEdit(sketch, parameters, 'bore', 5)).toThrowError(expect.objectContaining({ code: 'locked-sketch-radius' }));
+      expect(JSON.stringify(sketch)).toBe(before);
+    }
+    const unrelated = parseCadSketchGraph({ ...source.graph, entities: source.graph.entities.map(entity => entity.id === 'other' && entity.kind === 'circle' ? { ...entity, radius: 5 } : entity),
+      relations: [...source.graph.relations, { id: 'other-size', kind: 'radial-size', entityId: 'other', quantity: 'radius', value: 5 }] });
+    expect(cadSketchGraphCircleControl(unrelated, parameters, 'bore').lockedReason).toBeNull();
+  });
+
+  it('uses existing radius and center limits without inventing a circle-extent cap or accepting missing targets', () => {
+    const sketch = circleSketch(), parameters = { cx: 3, otherRadius: 2 }, before = JSON.stringify(sketch);
+    for (const radius of [0, 1e-7, -1, 1e6 + 1, NaN, Infinity])
+      expect(() => cadSketchGraphCircleRadiusEdit(sketch, parameters, 'bore', radius)).toThrowError(expect.objectContaining({ code: 'invalid-sketch-graph-geometry' }));
+    for (const radius of [2e-7, 5, 1e6]) {
+      const edit = cadSketchGraphCircleRadiusEdit(sketch, parameters, 'bore', radius);
+      expect(edit.kind).toBe('update-feature');
+      expect(() => applyCadEdits(parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters, features: [sketch] }), [edit])).not.toThrow();
+    }
+    const farParameters = { ...parameters, cx: 1e9 }, far = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters: farParameters, features: [sketch] });
+    expect(() => applyCadEdits(far, [cadSketchGraphCircleRadiusEdit(sketch, farParameters, 'bore', 1e6)])).not.toThrow();
+    expect(() => cadSketchGraphCircleControl(source, {}, 'ab')).toThrowError(expect.objectContaining({ code: 'missing-sketch-circle' }));
+    expect(() => cadSketchGraphCircleRadiusEdit(sketch, parameters, 'missing', 8)).toThrowError(expect.objectContaining({ code: 'missing-sketch-circle' }));
+    expect(() => cadSketchGraphCircleRadiusEdit({ ...sketch, graph: undefined }, parameters, 'bore', 8)).toThrowError(expect.objectContaining({ code: 'missing-sketch-graph' }));
+    expect(JSON.stringify(sketch)).toBe(before);
+  });
+});
 
 describe('stable sketch point and entity interaction', () => {
   it('prioritizes the point over its closed boundary and retains all overlap candidates independent of source order', () => {

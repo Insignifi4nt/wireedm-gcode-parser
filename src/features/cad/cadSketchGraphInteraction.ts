@@ -1,4 +1,7 @@
-import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { checkCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import type { CadSketchFeature } from '@/domain/cad/cadDocument';
+import type { CadEdit } from '@/domain/cad/cadOperations';
+import { CadError } from '@/domain/cad/cadError';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
 import { cadPathClosureTolerance } from '@/domain/cad/cadAnalyticSegments';
@@ -23,6 +26,37 @@ export interface CadSketchGraphPointControl {
   readonly position: SketchPoint;
   /** Explicit coordinate drivers only. Remaining geometric freedom is determined by the solver. */
   readonly freeAxes: readonly [boolean, boolean];
+}
+export interface CadSketchGraphCircleControl {
+  readonly entityId: string;
+  readonly center: SketchPoint;
+  readonly radius: number;
+  readonly lockedReason: string | null;
+}
+
+/** Radius ownership is local to this exact circle, independent of whole-sketch freedom. */
+export function cadSketchGraphCircleControl(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, entityId: string): CadSketchGraphCircleControl {
+  const circle = graph.entities.find(entity => entity.id === entityId);
+  if (circle?.kind !== 'circle') throw new CadError('missing-sketch-circle', 'Choose an existing sketch circle.');
+  const center = graph.points.find(point => point.id === circle.centerPointId);
+  if (!center) throw new CadError('missing-sketch-point', 'The circle center no longer exists.');
+  const lockedReason = typeof circle.radius === 'string' ? 'Radius follows an expression. Edit or release it with fx.'
+    : graph.relations.some(relation => relation.kind === 'radial-size' && relation.entityId === entityId) ? 'Radius follows a radial dimension. Edit that dimension instead.'
+      : graph.relations.some(relation => relation.kind === 'equal-radius' && relation.curveIds.includes(entityId)) ? 'Radius follows an equal-radius relation. Add or edit a radial dimension to control the shared size.' : null;
+  return Object.freeze({ entityId: circle.id, center: Object.freeze([evaluateCadScalar(center.position[0], parameters),
+    evaluateCadScalar(center.position[1], parameters)] satisfies [number, number]), radius: evaluateCadScalar(circle.radius, parameters), lockedReason });
+}
+
+/** Existing complete-feature intent; shared preparation owns solving and whole-part acceptance. */
+export function cadSketchGraphCircleRadiusEdit(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>, entityId: string,
+  radius: number): Extract<CadEdit, { kind: 'update-feature' }> {
+  if (!sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
+  const control = cadSketchGraphCircleControl(sketch.graph, parameters, entityId);
+  if (control.lockedReason) throw new CadError('locked-sketch-radius', control.lockedReason);
+  const graph: CadSketchGraph = { ...sketch.graph, entities: sketch.graph.entities.map(entity => entity.id === entityId && entity.kind === 'circle' ? { ...entity, radius } : entity) };
+  const issues = checkCadSketchGraph(graph, parameters);
+  if (issues.length) throw new CadError('invalid-sketch-graph-geometry', issues[0].message);
+  return { kind: 'update-feature', feature: { ...sketch, graph } };
 }
 
 function inside(point: Point2, bounds: Readonly<Bounds2>, epsilon = 0): boolean {
