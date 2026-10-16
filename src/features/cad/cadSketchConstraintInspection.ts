@@ -67,6 +67,7 @@ const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
   'line-angle': 'Drives the declared clockwise or counterclockwise sector between two explicit line rays in degrees.',
   'radial-size': 'Drives circle or arc size using the declared radius or diameter.',
   'fixed-axis': 'Fixes one point coordinate; the other axis can remain free.', distance: 'Keeps the straight-line distance between two points.',
+  'axis-distance': 'Drives the signed second-minus-first point coordinate along the declared sketch axis.',
   'fillet-corner': 'Keeps a tangent minor arc at the original reference corner, with a driving radius and finite trimmed sides.',
   'chamfer-corner': 'Keeps two driving setbacks along the finite sides of the original reference corner.'
 };
@@ -100,7 +101,7 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
     ...(cadSketchRelationEntityIds(source).length ? { entityIds: cadSketchRelationEntityIds(source) } : {}),
     ...(source.kind === 'line-angle' ? { value: { scalar: source.value, valueDegrees: evaluateCadScalar(source.value, inspection.parameters), unit: 'deg' as const,
       role: typeof source.value === 'string' ? 'expression-driver' as const : 'constant-driver' as const } }
-      : source.kind === 'distance' || source.kind === 'fixed-axis' || source.kind === 'fillet-corner' || source.kind === 'radial-size' ? { value: scalar(source.value, true) }
+      : source.kind === 'distance' || source.kind === 'axis-distance' || source.kind === 'fixed-axis' || source.kind === 'fillet-corner' || source.kind === 'radial-size' ? { value: scalar(source.value, true) }
       : source.kind === 'fixed-point' ? { position: source.position.map(value => scalar(value, true)) }
       : source.kind === 'chamfer-corner' ? { values: source.values.map(value => scalar(value, true)) } : {}) }));
 }

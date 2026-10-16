@@ -330,7 +330,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       const entity = sketch.graph.entities.find(item => item.kind === 'line' && relation.pointIds.includes(item.startPointId) && relation.pointIds.includes(item.endPointId));
       if (entity) selectGraph({ kind: 'entity', id: entity.id });
       else selectGraphSet(relation.pointIds.map(id => ({ kind: 'point', id })));
-    } else if (relation.kind === 'line-angle') selectGraphSet(relation.rays.map(ray => ({ kind: 'entity', id: ray.lineId })));
+    } else if (relation.kind === 'axis-distance') selectGraphSet(relation.pointIds.map(id => ({ kind: 'point', id })));
+    else if (relation.kind === 'line-angle') selectGraphSet(relation.rays.map(ray => ({ kind: 'entity', id: ray.lineId })));
     else selectGraph({ kind: 'entity', id: relation.kind === 'radial-size' ? relation.entityId : relation.kind === 'fillet-corner' ? relation.arcId : relation.chamferId });
     setGraphRelationCommand({ kind: 'inspect', relationId: relation.id, token: crypto.randomUUID() }); setInspectorCollapsed(false);
   }, [sketch, selectGraph, selectGraphSet]);
@@ -763,7 +764,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const graphDimensionAvailable = graphLinePair || Boolean(selectedGraphEntity && !circleSourceDriven);
   const beginSketchDimension = () => {
     if (graphLinePair) { setTool('select'); setGraphRelationCommand({ kind: 'line-angle', token: crypto.randomUUID() }); setInspectorCollapsed(false); return; }
-    if (graphPointPair) { setTool('select'); setGraphRelationCommand({ kind: 'distance', token: crypto.randomUUID() }); setInspectorCollapsed(false); return; }
+    if (graphPointPair) { setTool('select'); setGraphRelationCommand({ kind: 'point-dimensions', token: crypto.randomUUID() }); setInspectorCollapsed(false); return; }
     if (!selectedGraphEntity) { beginProfileCommand('dimension'); return; }
     setTool('select'); setGraphRelationCommand({ kind: selectedGraphEntity.kind === 'line' ? 'length' : 'radial-size', token: crypto.randomUUID() }); setInspectorCollapsed(false);
   };

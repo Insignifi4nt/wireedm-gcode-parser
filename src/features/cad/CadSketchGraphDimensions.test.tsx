@@ -12,6 +12,31 @@ const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id
   relations: [{ id: 'dimension', kind: 'distance', pointIds: ['a', 'b'], value: ' length ' }] });
 
 describe('graph dimension activation', () => {
+  it.each(['x', 'y'] as const)('edits the exact signed or zero %s driver with saved From/To roles and owned keyboard events', async axis => {
+    for (const value of [axis === 'x' ? -30 : 20, 0]) {
+      const source = parseCadSketchGraph({ points: [{ id: 'to', position: axis === 'x' ? [30 + value, 40] : [0, 20 + value] },
+        { id: 'from', position: [30, 20] }], entities: [],
+        relations: [{ id: 'offset', kind: 'axis-distance', pointIds: ['from', 'to'], axis, value: ' offset ' }] });
+      const before = JSON.stringify(source), configure = vi.fn(), parent = vi.fn();
+      const render = (interactive: boolean) => root.render(<svg onClick={parent} onKeyDown={parent}><g transform="scale(1,-1)">
+        <CadSketchGraphDimensions graph={source} parameters={{ offset: value }} center={[7, 2]} mmPerPixel={.1}
+          interactive={interactive} onConfigure={configure} selectedRelationId="offset" />
+      </g></svg>);
+      await act(async () => render(true));
+      const label = container.querySelector<SVGGElement>('[data-cad-sketch-dimension="offset"] [role="button"]');
+      if (!label) throw new Error('Axis dimension label missing.');
+      expect(label.textContent).toBe(`Δ${axis.toUpperCase()} ${value} mm`);
+      expect(label.getAttribute('aria-label')).toMatch(/From Point 2.*To Point 1/);
+      expect(label.getAttribute('transform')).toContain('scale(0.1 -0.1)');
+      await act(async () => label.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })));
+      expect(configure).toHaveBeenCalledExactlyOnceWith(source.relations[0]); expect(parent).not.toHaveBeenCalled();
+      await act(async () => render(false)); configure.mockClear();
+      await act(async () => label.dispatchEvent(new MouseEvent('click', { button: 0, bubbles: true, cancelable: true })));
+      await act(async () => label.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+      expect(configure).not.toHaveBeenCalled(); expect(parent).not.toHaveBeenCalled(); expect(JSON.stringify(source)).toBe(before);
+    }
+  });
+
   it.each(['radius', 'diameter'] as const)('opens an explicit circle %s driver with its exact source identity', async quantity => {
     const source = parseCadSketchGraph({ points: [{ id: 'center', position: ['0', '0'] }],
       entities: [{ id: 'circle', kind: 'circle', centerPointId: 'center', radius: 5, construction: false }],

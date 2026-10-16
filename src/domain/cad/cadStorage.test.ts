@@ -33,6 +33,30 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(next.savedVersion);
     expect((await listCadDocuments(adapter)).entries).toMatchObject([{ id: 'cad_bracket', name: 'Edited' }]);
   });
+  it('round trips ordered signed and zero graph offsets exactly and refuses malformed axes before overwriting the saved revision', async () => {
+    const document = parseCadDocument({ ...createCadDocument('Located bore', 'cad_axis_distances'), schemaVersion: 2,
+      parameters: { spacing: 30, level: 0 }, features: [{ id: 'sketch', kind: 'sketch', name: 'Bore', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'corner', position: [' 0.00 ', '0'] }, { id: 'center', position: [' spacing ', ' level '] }],
+        entities: [{ id: 'bore', kind: 'circle', centerPointId: 'center', radius: 4, construction: false }], relations: [
+          { id: 'left', kind: 'axis-distance', pointIds: ['center', 'corner'], axis: 'x', value: ' -spacing ' },
+          { id: 'level', kind: 'axis-distance', pointIds: ['corner', 'center'], axis: 'y', value: ' level ' }
+        ] } }] });
+    const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(document);
+    const edited = applyCadEdits(document, [{ kind: 'set-parameter', name: 'spacing', value: 35 }]);
+    const next = await saveCadDocument(adapter, edited, { expectedSavedVersion: saved.savedVersion });
+    const reopened = await loadCadDocument(adapter, document.id);
+    expect(reopened).toEqual(next); expect(reopened.document.features).toEqual(document.features);
+    expect(reopened.document.parameters).toEqual({ spacing: 35, level: 0 });
+    const path = cadDocumentPath(document.id), raw = await adapter.readExactText?.(path), writes = vi.spyOn(adapter, 'writeText');
+    const malformed = structuredClone(reopened.document), sketch = malformed.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing offset graph.');
+    Reflect.set(sketch.graph.relations[0], 'axis', 'z');
+    await expect(saveCadDocument(adapter, malformed, { expectedSavedVersion: next.savedVersion })).rejects.toThrow();
+    expect(writes).not.toHaveBeenCalled(); expect(await adapter.readExactText?.(path)).toBe(raw);
+    expect(await loadCadDocument(adapter, document.id)).toEqual(reopened);
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+  });
   it('preserves explicit sketch dimensions and rejects invalid constraint revisions before storage writes', async () => {
     const original = parseCadDocument({ ...createCadDocument('Dimensioned section', 'cad_dimensioned'), parameters: { width: 20 }, features: [
       { id: 'sketch', kind: 'sketch', name: 'Section', suppressed: false, plane: 'XY', offset: 0, profiles: [

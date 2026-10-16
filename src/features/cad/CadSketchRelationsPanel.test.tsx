@@ -63,6 +63,44 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it('authors relative X/Y drivers deliberately, cancels privately and restores their exact accepted orientation after reverse selection', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Located bore', 'located-bore'), schemaVersion: 2, parameters: { boreX: 30 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Plate and bore', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'corner', position: [' 0.00 ', '0'] }, { id: 'center', position: [30, 20] }],
+        entities: [{ id: 'bore', kind: 'circle', centerPointId: 'center', radius: 4, construction: false }], relations: []
+      }
+    }] });
+    const h = await mount(source, [{ kind: 'point', id: 'corner' }, { kind: 'point', id: 'center' }], { initialCommand: { kind: 'point-dimensions' } });
+    expect(h.pending).toHaveBeenLastCalledWith(false);
+    const offsets = async () => {
+      await click('Horizontal distance'); expect(field('Horizontal distance mm').value).toBe('30');
+      await click('Edit Horizontal distance relation'); await input('Horizontal distance expression', ' boreX ');
+      await click('Keep relation'); await click('Close Horizontal distance relation help');
+      await click('Vertical distance'); expect(field('Vertical distance mm').value).toBe('20');
+    };
+    await offsets(); expect(h.session.getSnapshot().document).toBe(source); await click('Cancel');
+    expect(h.edit).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+    await offsets(); await click('Apply');
+    expect(h.edit).toHaveBeenCalledExactlyOnceWith([
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: expect.objectContaining({ kind: 'axis-distance', axis: 'x', pointIds: ['corner', 'center'], value: ' boreX ' }) },
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: expect.objectContaining({ kind: 'axis-distance', axis: 'y', pointIds: ['corner', 'center'], value: 20 }) }
+    ], expect.any(AbortSignal));
+    const accepted = h.session.getSnapshot().document.features[0];
+    if (accepted.kind !== 'sketch' || !accepted.graph) throw new Error('Located bore missing.');
+    const original = source.features[0]; if (original.kind !== 'sketch') throw new Error('Source sketch missing.');
+    expect(accepted.graph.points).toEqual(original.graph?.points); expect(accepted.graph.entities).toEqual(original.graph?.entities);
+    await h.render([{ kind: 'point', id: 'center' }, { kind: 'point', id: 'corner' }]);
+    await click('Horizontal distance'); expect(h.inspect).toHaveBeenLastCalledWith(accepted.graph.relations[0]);
+    expect(h.pending).toHaveBeenLastCalledWith(false);
+    await clickRelation('Remove', 'Horizontal distance', 1); await click('Horizontal distance');
+    expect(h.inspect).toHaveBeenLastCalledWith(accepted.graph.relations[0]); expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect(h.edit).toHaveBeenCalledOnce(); await act(async () => h.session.undo());
+    expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+    await click('Horizontal distance'); expect(field('Horizontal distance mm').value).toBe('-30');
+    await click('Vertical distance'); expect(field('Vertical distance mm').value).toBe('-20');
+    await click('Cancel'); expect(h.session.getSnapshot().document).toBe(source);
+  });
+
   it('dimensions the conventional obtuse corner despite incoming source order, cancels privately and accepts one undoable relation', async () => {
     const source = parseCadDocument({ ...createCadDocument('Corner angle', 'corner-angle'), schemaVersion: 2, features: [{
       id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
@@ -370,7 +408,7 @@ describe('selected sketch entity relations', () => {
     expect(h.session.getSnapshot().document).toBe(source);
     await click('Cancel'); expect(h.pending).toHaveBeenLastCalledWith(false);
     expect(h.edit).not.toHaveBeenCalled();
-    await click('Add distance'); await click('Edit Distance relation'); await input('Distance expression', ' span ');
+    await click('Aligned distance'); await click('Edit Distance relation'); await input('Distance expression', ' span ');
     await click('Keep relation'); await click('Close Distance relation help');
     await input('Distance mm', '12.5000'); await click('Apply');
     const edits = h.edit.mock.calls[0]?.[0];
@@ -383,7 +421,7 @@ describe('selected sketch entity relations', () => {
     const relation = sketch.graph.relations[0];
     expect(sketch.graph.points).toEqual([{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: ['span', '0'] }]);
     await h.render([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }]);
-    await clickRelation('Remove', 'Distance', 1); await click('Add distance');
+    await clickRelation('Remove', 'Distance', 1); await click('Aligned distance');
     expect(h.inspect).toHaveBeenLastCalledWith(relation);
     expect(h.pending).toHaveBeenLastCalledWith(false);
     expect(h.edit).toHaveBeenCalledTimes(1);

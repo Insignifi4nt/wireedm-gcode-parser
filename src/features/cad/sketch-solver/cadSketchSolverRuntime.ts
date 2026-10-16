@@ -79,6 +79,8 @@ function compile(input: CadSketchSolveInput) {
         break;
       }
       case 'distance': constraint({ id, type: 'p2p_distance', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1], distance: scalar(relation.value) }, id); break;
+      case 'axis-distance': constraint({ id, type: 'difference', param1: { o_id: relation.pointIds[0], prop: relation.axis },
+        param2: { o_id: relation.pointIds[1], prop: relation.axis }, difference: scalar(relation.value) }, id); break;
       case 'radial-size': {
         const entity = resolveCadSketchRadialEntity(graph, relation.entityId), radius = cadSketchRadialTarget(relation, input.parameters);
         constraint(entity.kind === 'arc' ? { id, type: 'p2p_distance', p1_id: entity.centerPointId, p2_id: entity.startPointId, distance: radius }

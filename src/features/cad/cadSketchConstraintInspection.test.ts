@@ -20,6 +20,26 @@ const source = () => parseCadDocument({ ...createCadDocument('Line', 'line'), sc
 }] });
 
 describe('accepted sketch constraint inspection', () => {
+  it('reports signed axis values and exact ordered center/reference operands without modifying accepted source', async () => {
+    const document = parseCadDocument({ ...createCadDocument('Bore', 'axis-bore'), schemaVersion: 2,
+      parameters: { left: -30, rise: 20 }, features: [{ id: 'sketch', name: 'Bore', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'reference', position: [' 10 ', '7'] }, { id: 'center', position: [-20, 27] }],
+        entities: [{ id: 'bore', kind: 'circle', construction: true, centerPointId: 'center', radius: ' 2 ' }], relations: [
+          { id: 'left', kind: 'axis-distance', pointIds: ['reference', 'center'], axis: 'x', value: ' left ' },
+          { id: 'height', kind: 'axis-distance', pointIds: ['center', 'reference'], axis: 'y', value: ' -rise ' }
+        ]
+      } }] }), before = JSON.stringify(document);
+    const inspection = await inspectCadSketchConstraints(document, 'sketch', async () => solver);
+    expect(inspection.analysis).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 0, issues: [] } });
+    expect(pageCadSketchConstraints(inspection, { section: 'relations' }).items).toMatchObject([
+      { source: { id: 'left', kind: 'axis-distance', axis: 'x', pointIds: ['reference', 'center'], value: ' left ' },
+        value: { scalar: ' left ', valueMm: -30, role: 'expression-driver' }, points: [{ id: 'reference' }, { id: 'center' }] },
+      { source: { id: 'height', kind: 'axis-distance', axis: 'y', pointIds: ['center', 'reference'], value: ' -rise ' },
+        value: { scalar: ' -rise ', valueMm: -20, role: 'expression-driver' }, points: [{ id: 'center' }, { id: 'reference' }] }
+    ]);
+    expect(JSON.stringify(document)).toBe(before);
+  });
+
   it('reports exact angle ray intent and degree drivers without a misleading millimeter value', async () => {
     const document = parseCadDocument({ ...createCadDocument('Angle', 'angle'), schemaVersion: 2, parameters: { angle: 90 }, features: [{
       id: 'sketch', kind: 'sketch', name: 'Corner', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

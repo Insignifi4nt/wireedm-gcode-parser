@@ -115,6 +115,14 @@ Evidence: 97 related Canvas/picking/Path cases, scoped types, app TypeScript/bui
 
 Next: [relative X/Y driving dimensions](2026-10-16-sketch-axis-dimensions-plan.md), reusing the existing signed native Difference constraint and Dimension editor after focused real-native acceptance. Shared legacy/plugin references and the broader relation/topology inventory remain open; sketch mode and the overall goal remain incomplete.
 
+## Checkpoint: relative X/Y driving dimensions
+
+One signed `axis-distance` graph relation now uses the existing set-relation/solve/inspection path. Ordered operands and expression text remain exact; existing native Difference and independent physical residual checks enforce the value without fixing either point implicitly. Point-pair Dimension offers Aligned/Horizontal/Vertical deliberately; annotations use actual orthogonal guides and editable zero spans. Real native tests establish DOF, anchoring, parameter changes, signed/zero values and atomic rejection, with no solver/tolerance tuning. Native fixed-parameter redundancy remains underreported; mismatched fixed offsets still reject through independent residual checks.
+
+Evidence: 54 domain/native/feedback/inspection cases, 119 editor/workbench cases, 27 layout/activation cases, two shared-adapter rows and scoped types pass. Full app TypeScript/build, public docs/discovery/schema/source distributions, UI standard and icon integration pass. The new complete plate/bore journey is red on the prior build and passes on the final build in Chromium and Firefox; the existing aligned-distance/conflict/recovery journey also passes in both. Native human and WebMCP results match exactly, retain corner/radius source strings, show proper ΔX/ΔY guides and zero DOF, and build one approximately 11748.6726 mm³ plate with no diagnostics. Two Undo operations restore the empty test draft; no user record was saved. [Independent review, final acceptance and pending-release compatibility record](2026-10-16-sketch-axis-dimensions-review.md).
+
+This is additive CAD schema 2; older readers reject the new relation. Existing documents have no migration. No native rebuild, installed post/machine change, app version bump or remote action. Next: [position-only drawing snaps from legacy profiles](2026-10-16-sketch-legacy-profile-position-snaps-plan.md). Broader associative references, relation/topology tools and the complete sketch audit remain open; the overall goal is active and incomplete.
+
 ## Initial findings
 
 The canvas picker initially returned a profile ID. Selecting/dragging a boundary therefore translated its whole profile. The initial constraint module recorded explicit dimensions for primitive profile sizes and preserved expressions, but had no general point/segment relationship solver. Paths and polygons exposed no dimension quantities. These were model and interaction gaps, not styling issues.

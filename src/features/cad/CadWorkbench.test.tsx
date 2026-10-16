@@ -1329,6 +1329,28 @@ describe('CAD sketch interaction', () => {
     expect(currentDocument.features[0]).toBe(sketch);
   });
 
+  it('chooses an axis dimension without adding an aligned driver and reopens its annotation as the same ordered point pair', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Point offsets',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [30, 20] }],
+        entities: [{ id: 'reference', kind: 'line', startPointId: 'a', endPointId: 'b', construction: true }], relations: [] } }] });
+    setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const pair = [{ kind: 'point' as const, id: 'b' }, { kind: 'point' as const, id: 'a' }];
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: pair }));
+    await click('Dimension'); expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    expect(currentDocument).toBe(source); await click('Horizontal distance');
+    expect(field('Horizontal distance').value).toBe('-30'); await click('Apply');
+    const sketch = currentDocument.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Offset sketch missing.');
+    expect(sketch.graph.relations).toEqual([expect.objectContaining({ kind: 'axis-distance', axis: 'x', pointIds: ['b', 'a'], value: -30 })]);
+    const annotation = container.querySelector(`[data-cad-sketch-dimension="${sketch.graph.relations[0].id}"] [role="button"]`);
+    if (!annotation) throw new Error('Axis annotation missing.');
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'reference' } }));
+    await act(async () => annotation.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual(pair);
+    expect(field('Horizontal distance').value).toBe('-30'); expect(currentDocument.features[0]).toBe(sketch);
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
   it('opens a fresh edge dimension from the toolbar, cancels it and applies a linked length without losing structural relations', async () => {
     await mount({ ...createCadDocument(), parameters: { plateWidth: 50 } }); await startSketch();
     await canvasClick(300, 200); await canvasClick(450, 100); await click('Select');

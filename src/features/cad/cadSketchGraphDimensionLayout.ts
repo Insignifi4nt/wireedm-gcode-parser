@@ -10,7 +10,7 @@ import type { SketchPoint } from './cadSketchInteraction';
 import { formatCadQuantity } from './cadDisplayQuantity';
 
 export type CadSketchDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'distance' }>;
-export type CadSketchDimensionRelation = Extract<CadSketchGraphRelation, { kind: 'distance' | 'radial-size' | 'fillet-corner' | 'chamfer-corner' | 'line-angle' }>;
+export type CadSketchDimensionRelation = Extract<CadSketchGraphRelation, { kind: 'distance' | 'axis-distance' | 'radial-size' | 'fillet-corner' | 'chamfer-corner' | 'line-angle' }>;
 type Pair = readonly [SketchPoint, SketchPoint];
 type Arrow = readonly [SketchPoint, SketchPoint, SketchPoint];
 interface DimensionGeometry {
@@ -21,6 +21,7 @@ interface DimensionGeometry {
 interface LinearDimensionGeometry extends DimensionGeometry { readonly valueMm: number; readonly line: Pair }
 export type CadSketchGraphDimensionLayout = LinearDimensionGeometry & (
   { readonly kind: 'distance'; readonly relation: CadSketchDistanceRelation }
+  | { readonly kind: 'distance-x' | 'distance-y'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'axis-distance' }> }
   | { readonly kind: 'radius'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'fillet-corner' | 'radial-size' }> }
   | { readonly kind: 'diameter'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'radial-size' }> }
   | { readonly kind: 'setback'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'chamfer-corner' }>; readonly side: 0 | 1; readonly lineId: string }
@@ -29,20 +30,21 @@ export type CadSketchGraphDimensionLayout = LinearDimensionGeometry & (
 
 /** The layout and rendered label share one screen-pixel box. */
 export function cadSketchGraphDimensionLabel(value: number, kind: CadSketchGraphDimensionLayout['kind']) {
-  const quantity = `${formatCadQuantity(value)}${kind === 'angle' ? '°' : ' mm'}`, text = kind === 'radius' ? `R ${quantity}` : kind === 'diameter' ? `Ø ${quantity}` : quantity;
+  const quantity = `${formatCadQuantity(value)}${kind === 'angle' ? '°' : ' mm'}`, text = kind === 'radius' ? `R ${quantity}` : kind === 'diameter' ? `Ø ${quantity}`
+    : kind === 'distance-x' ? `ΔX ${quantity}` : kind === 'distance-y' ? `ΔY ${quantity}` : quantity;
   return { quantity, text, width: Math.max(42, text.length * 7 + 12), height: 18 };
 }
 
 /** Shared aligned dimension geometry; the caller chooses its geometric outward side. */
 function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixel: number): Omit<LinearDimensionGeometry, 'valueMm'> {
-  const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), ux = dx / length, uy = dy / length;
+  const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), ux = length === 0 ? 0 : dx / length, uy = length === 0 ? 0 : dy / length;
   const offset = (point: Point2, pixels: number): SketchPoint => [point.x + nx * pixels * mmPerPixel, point.y + ny * pixels * mmPerPixel];
   const line: Pair = [offset(a, 20), offset(b, 20)];
   const headLength = Math.min(6 * mmPerPixel, length / 4), headWidth = Math.min(2.5 * mmPerPixel, length / 8);
   const arrow = (point: SketchPoint, sign: number): Arrow => [point,
     [point[0] + ux * headLength * sign + nx * headWidth, point[1] + uy * headLength * sign + ny * headWidth],
     [point[0] + ux * headLength * sign - nx * headWidth, point[1] + uy * headLength * sign - ny * headWidth]];
-  return { line, extensions: [[offset(a, 3), offset(a, 22)], [offset(b, 3), offset(b, 22)]], arrows: [arrow(line[0], 1), arrow(line[1], -1)],
+  return { line, extensions: [[offset(a, 3), offset(a, 22)], [offset(b, 3), offset(b, 22)]], arrows: length === 0 ? [] : [arrow(line[0], 1), arrow(line[1], -1)],
     label: [a.x / 2 + b.x / 2 + nx * 20 * mmPerPixel, a.y / 2 + b.y / 2 + ny * 20 * mmPerPixel] };
 }
 
@@ -125,7 +127,7 @@ function cornerDimensions(graph: CadSketchGraph, relation: Extract<CadSketchDime
 
 /** Display-only declared dimensions. Scalar drivers and source IDs remain authoritative. */
 export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, mmPerPixel: number): readonly CadSketchGraphDimensionLayout[] {
-  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(relation => relation.kind === 'distance' || relation.kind === 'radial-size' || relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner' || relation.kind === 'line-angle')) return [];
+  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(relation => relation.kind === 'distance' || relation.kind === 'axis-distance' || relation.kind === 'radial-size' || relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner' || relation.kind === 'line-angle')) return [];
   const points = new Map(graph.points.map(point => [point.id, {
     x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters)
   }]));
@@ -151,10 +153,24 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
     if (relation.kind === 'line-angle') return [...angularDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind === 'radial-size') return [...radialDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') return [...cornerDimensions(graph, relation, points, parameters, mmPerPixel)];
-    if (relation.kind !== 'distance') return [];
+    if (relation.kind !== 'distance' && relation.kind !== 'axis-distance') return [];
     const a = points.get(relation.pointIds[0]), b = points.get(relation.pointIds[1]);
     if (!a || !b) return [];
     const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), valueMm = evaluateCadScalar(relation.value, parameters);
+    if (relation.kind === 'axis-distance') {
+      if (!Number.isFinite(valueMm)) return [];
+      const horizontal = relation.axis === 'x', outward = horizontal ? a.y / 2 + b.y / 2 - center[1] : a.x / 2 + b.x / 2 - center[0];
+      const tie = Math.abs(outward) <= cadPathClosureTolerance([a, b, { x: center[0], y: center[1] }]);
+      const side = tie ? horizontal ? -1 : 1 : outward < 0 ? -1 : 1;
+      const nx = horizontal ? 0 : side, ny = horizontal ? side : 0;
+      const base = horizontal ? side < 0 ? Math.min(a.y, b.y) : Math.max(a.y, b.y) : side < 0 ? Math.min(a.x, b.x) : Math.max(a.x, b.x);
+      const projectedA = horizontal ? { x: a.x, y: base } : { x: base, y: a.y };
+      const projectedB = horizontal ? { x: b.x, y: base } : { x: base, y: b.y };
+      const geometry = alignedGeometry(projectedA, projectedB, nx, ny, mmPerPixel);
+      return [{ kind: horizontal ? 'distance-x' : 'distance-y', relation, valueMm, ...geometry,
+        extensions: [a, b].map((point, index): Pair => [[point.x + nx * 3 * mmPerPixel, point.y + ny * 3 * mmPerPixel],
+          [geometry.line[index][0] + nx * 2 * mmPerPixel, geometry.line[index][1] + ny * 2 * mmPerPixel]]) }];
+    }
     if (!Number.isFinite(length) || length === 0 || !Number.isFinite(valueMm) || valueMm <= 0) return [];
     const ux = dx / length, uy = dy / length;
     const direction = dx < 0 || dx === 0 && dy < 0 ? -1 : 1;

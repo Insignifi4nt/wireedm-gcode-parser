@@ -62,6 +62,80 @@ test('resizes a free circle directly, cancels cleanly and preserves explicit siz
   expect(current.dirty).toBe(false); expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(locked);
 });
 
+test('locates a bore with signed relative X/Y drivers, preserves cancelled edits and reopens the same human and agent solid', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const sketch = { id: 'located', kind: 'sketch', name: 'Located bore', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [' 0.00 ', '0'] }, { id: 'b', position: ['60', '0'] }, { id: 'c', position: ['60', '40'] },
+      { id: 'd', position: ['0', '40'] }, { id: 'hole', position: [30, 20] }],
+    entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+      { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+      { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+      { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' },
+      { id: 'bore', kind: 'circle', construction: false, centerPointId: 'hole', radius: ' 4 ' }], relations: []
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'boreX', value: 30 }, { kind: 'set-parameter', name: 'boreY', value: 20 }, { kind: 'add-feature', feature: sketch }
+  ] }); let current = await context(page); const initialVersion = current.version;
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: sketch.id } });
+  const pair = [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'hole' }];
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry-set', selections: pair } });
+  const bind = async (label: string, expression: string) => {
+    await page.getByRole('button', { name: `Edit ${label} relation`, exact: true }).click();
+    await page.getByRole('textbox', { name: `${label} expression`, exact: true }).fill(expression);
+    await page.getByRole('button', { name: 'Keep relation', exact: true }).click();
+    await page.getByRole('button', { name: `Close ${label} relation help`, exact: true }).click();
+  };
+  const horizontal = async () => {
+    await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+    await page.getByRole('button', { name: 'Horizontal distance', exact: true }).click();
+    await bind('Horizontal distance', ' boreX ');
+    await page.getByRole('textbox', { name: 'Horizontal distance mm', exact: true }).fill('35');
+  };
+  await horizontal();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: initialVersion, featureId: sketch.id })).feature).toEqual(sketch);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(await context(page)).toMatchObject({ version: initialVersion, parameters: { boreX: 30, boreY: 20 }, workflowOpen: false });
+  await horizontal(); await page.getByRole('button', { name: 'Vertical distance', exact: true }).click();
+  await bind('Vertical distance', ' boreY '); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const human = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(human.graph.points).toEqual([...sketch.graph.points.slice(0, 4), { id: 'hole', position: [35, 20] }]);
+  expect(human.graph.entities).toEqual(sketch.graph.entities);
+  expect(human.graph.relations).toEqual([
+    expect.objectContaining({ kind: 'axis-distance', axis: 'x', pointIds: ['a', 'hole'], value: ' boreX ' }),
+    expect.objectContaining({ kind: 'axis-distance', axis: 'y', pointIds: ['a', 'hole'], value: ' boreY ' })
+  ]);
+  await page.keyboard.press('Control+z'); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
+  await page.keyboard.press('Control+Shift+z'); current = await context(page);
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry-set', selections: [...pair].reverse() } });
+  await page.getByRole('button', { name: 'Horizontal distance', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Horizontal distance mm', exact: true })).toHaveValue('35');
+  expect(await context(page)).toMatchObject({ version: current.version, workflowOpen: false });
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await call(page, 'cad_history', { expectedVersion: current.version, direction: 'undo' }); current = await context(page);
+  const regions = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id,
+    proposal: { sketch: human, parameterValues: { boreX: 35 } } });
+  const region = regions.items.find((item: { areaMm2: number }) => item.areaMm2 > 1000);
+  expect(region.areaMm2).toBeCloseTo(2400 - 16 * Math.PI, 7);
+  const pad = { id: 'pad', kind: 'extrude', name: 'Located plate', suppressed: false, sketchId: sketch.id, distance: ' 5e0 ',
+    symmetric: false, operation: 'new', targetId: null, regionSelection: [region.reference] };
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [
+    { kind: 'set-parameter', name: 'boreX', value: 35 },
+    ...human.graph.relations.map((relation: unknown) => ({ kind: 'set-sketch-relation', sketchId: sketch.id, relation })), { kind: 'add-feature', feature: pad }
+  ] }); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  const built = await call(page, 'cad_build', { expectedVersion: current.version }); expect(built.diagnostics).toEqual([]);
+  expect(built.bodies).toHaveLength(1); expect(built.bodies[0].volumeMm3).toBeCloseTo(12000 - 80 * Math.PI, 7);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current.dirty).toBe(false);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: pad.id })).feature).toEqual(pad);
+});
+
 test('drives an obtuse corner in degrees through its real annotation, retains its expression and edits the consumed part privately', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const sketch = { id: 'triangle', kind: 'sketch', name: 'Angled plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
@@ -888,9 +962,11 @@ test('selects point pairs directly for alignment and linked distance without imp
   const aligned = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'pair-sketch' })).feature;
   expect(aligned.graph.points[0].position).toEqual([' 0 ', ' 0 ']); expect(aligned.graph.points[1].position).toEqual([30, 0]);
   await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('button', { name: 'Aligned distance', exact: true }).click();
   await page.getByRole('textbox', { name: 'Distance mm', exact: true }).fill('35'); await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'pair-sketch' })).feature).toEqual(aligned);
   await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('button', { name: 'Aligned distance', exact: true }).click();
   await page.getByRole('button', { name: 'Edit Distance relation', exact: true }).click();
   await page.getByRole('textbox', { name: 'Distance expression', exact: true }).fill(' spacing ');
   await page.getByRole('button', { name: 'Keep relation', exact: true }).click();
@@ -902,6 +978,7 @@ test('selects point pairs directly for alignment and linked distance without imp
   expect(constrained.graph.relations).toContainEqual(expect.objectContaining({ kind: 'horizontal' }));
   expect(constrained.graph.relations).toContainEqual(expect.objectContaining({ kind: 'distance', value: ' spacing ' }));
   await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('button', { name: 'Aligned distance', exact: true }).click();
   await page.getByRole('textbox', { name: 'Distance mm', exact: true }).fill('40.0000');
   await page.getByRole('checkbox', { name: 'Vertical', exact: true }).check();
   const relationForm = page.getByRole('form', { name: 'Sketch relations', exact: true });

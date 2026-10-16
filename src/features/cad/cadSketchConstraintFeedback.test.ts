@@ -10,6 +10,25 @@ const graph = () => parseCadSketchGraph({ points: [{ id: 'a', position: [' 0 ', 
   relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: proposedId, kind: 'distance', pointIds: ['a', 'b'], value: ' 3 * 4 ' }] });
 
 describe('candidate-owned sketch constraint feedback', () => {
+  it('keeps signed axis subjects in their saved from/to order with human direction labels', () => {
+    const candidate = parseCadSketchGraph({ points: [{ id: 'from', position: [10, 7] }, { id: 'to', position: [-20, 27] }], entities: [], relations: [
+      { id: proposedId, kind: 'axis-distance', pointIds: ['to', 'from'], axis: 'y', value: ' -rise ' },
+      { id: 'right', kind: 'axis-distance', pointIds: ['from', 'to'], axis: 'x', value: ' offset ' }
+    ] }), before = JSON.stringify(candidate);
+    const error = new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Bore', graph: candidate, rejection: {
+      kind: 'rejected', reason: 'invalid-solution', message: 'Native success did not satisfy signed offset.', diagnostics: {
+        status: 'success', degreesOfFreedom: 0, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [],
+        issues: [{ source: { kind: 'relation', id: proposedId }, code: 'relation-residual', message: 'Signed offset mismatch.', residualMm: 1 }]
+      }
+    } });
+    expect(error.feedback.subjects).toMatchObject([{ source: { kind: 'relation', id: proposedId }, category: 'issue',
+      label: 'Vertical distance relation 1 · Point 2 → Point 1', pointIds: ['to', 'from'], entityIds: [], residualMm: 1 }]);
+    expect(describeCadSketchConstraintSource(candidate, { kind: 'relation', id: 'right' })).toMatchObject({
+      label: 'Horizontal distance relation 2 · Point 1 → Point 2', pointIds: ['from', 'to'], entityIds: []
+    });
+    expect(JSON.stringify(candidate)).toBe(before);
+  });
+
   it('names exact line and curve operands for scalar-free equal-size subjects', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'center', position: [0, 0] }, { id: 'start', position: [10, 0] }, { id: 'end', position: [0, 10] }], entities: [
       { id: 'line-b', kind: 'line', construction: false, startPointId: 'center', endPointId: 'start' },

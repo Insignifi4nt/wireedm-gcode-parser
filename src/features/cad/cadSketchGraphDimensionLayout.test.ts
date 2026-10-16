@@ -49,6 +49,57 @@ function linearDimensions(...args: Parameters<typeof layoutCadSketchGraphDimensi
   });
 }
 
+describe('signed graph axis dimension layout', () => {
+  it.each(['x', 'y'] as const)('projects %s guides orthogonally outward without changing side or source identity when operands reverse', axis => {
+    for (const outside of [[100, 100], [-100, -100]]) {
+      const graph = parseCadSketchGraph({ points: [{ id: 'from', position: [30, 20] }, { id: 'to', position: [0, 40] },
+        { id: 'extent', position: outside }], entities: [],
+        relations: [{ id: 'offset', kind: 'axis-distance', pointIds: ['from', 'to'], axis, value: ' signed ' }] });
+      const before = JSON.stringify(graph), signed = axis === 'x' ? -30 : 20;
+      const layout = linearDimensions(graph, { signed }, .1)[0];
+      expect(layout?.kind).toBe(axis === 'x' ? 'distance-x' : 'distance-y');
+      const positiveSide = outside[0] < 0;
+      expect(layout.line).toEqual(axis === 'x' ? [[30, positiveSide ? 42 : 18], [0, positiveSide ? 42 : 18]]
+        : [[positiveSide ? 32 : -2, 20], [positiveSide ? 32 : -2, 40]]);
+      expect(layout.extensions).toEqual(axis === 'x'
+        ? [[[30, expect.closeTo(positiveSide ? 20.3 : 19.7, 12)], [30, expect.closeTo(positiveSide ? 42.2 : 17.8, 12)]],
+          [[0, expect.closeTo(positiveSide ? 40.3 : 39.7, 12)], [0, expect.closeTo(positiveSide ? 42.2 : 17.8, 12)]]]
+        : [[[expect.closeTo(positiveSide ? 30.3 : 29.7, 12), 20], [expect.closeTo(positiveSide ? 32.2 : -2.2, 12), 20]],
+          [[expect.closeTo(positiveSide ? .3 : -.3, 12), 40], [expect.closeTo(positiveSide ? 32.2 : -2.2, 12), 40]]]);
+      expect(layout.valueMm).toBe(signed); expect(layout.relation).toBe(graph.relations[0]);
+      expect(layout.arrows.map(arrow => arrow[0])).toEqual(layout.line);
+      for (const [index, extension] of layout.extensions.entries()) {
+        expect(extension[0][axis === 'x' ? 0 : 1]).toBe(extension[1][axis === 'x' ? 0 : 1]);
+        expect(layout.line[index][axis === 'x' ? 0 : 1]).toBe(extension[0][axis === 'x' ? 0 : 1]);
+      }
+      for (const arrow of layout.arrows) for (const base of arrow.slice(1)) {
+        expect(base[axis === 'x' ? 0 : 1]).toBeGreaterThan(axis === 'x' ? 0 : 20);
+        expect(base[axis === 'x' ? 0 : 1]).toBeLessThan(axis === 'x' ? 30 : 40);
+      }
+      const reversed = linearDimensions(parseCadSketchGraph({ ...graph,
+        relations: [{ id: 'offset', kind: 'axis-distance', pointIds: ['to', 'from'], axis, value: ' -signed ' }] }), { signed }, .1)[0];
+      expect(reversed.line).toEqual([...layout.line].reverse()); expect(reversed.label).toEqual(layout.label);
+      expect(reversed.arrows).toEqual([...layout.arrows].reverse()); expect(reversed.valueMm).toBe(-signed);
+      expect(JSON.stringify(graph)).toBe(before);
+    }
+  });
+  it.each(['x', 'y'] as const)('keeps a zero %s driver editable with finite guides and no zero-span arrows while retaining tiny nonzero source values', axis => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'from', position: [0, 0] },
+      { id: 'to', position: axis === 'x' ? [0, 10] : [10, 0] }], entities: [],
+      relations: [{ id: 'zero', kind: 'axis-distance', pointIds: ['from', 'to'], axis, value: ' zero ' }] });
+    const layout = linearDimensions(graph, { zero: 0 }, .1)[0];
+    expect(layout).toBeDefined(); expect(layout.relation).toBe(graph.relations[0]); expect(layout.valueMm).toBe(0);
+    expect(layout.label).toEqual(axis === 'x' ? [0, -2] : [12, 0]);
+    expect(layout.line[0]).toEqual(layout.line[1]); expect(layout.extensions).toHaveLength(2); expect(layout.arrows).toEqual([]);
+    expect([...layout.label, ...layout.line.flat(), ...layout.extensions.flat(2)].every(Number.isFinite)).toBe(true);
+    const tiny = linearDimensions(parseCadSketchGraph({ ...graph,
+      points: [graph.points[0], { id: 'to', position: axis === 'x' ? [1e-9, 10] : [10, 1e-9] }],
+      relations: [{ id: 'tiny', kind: 'axis-distance', pointIds: ['from', 'to'], axis, value: ' small ' }] }), { small: 1e-9 }, .1)[0];
+    expect(tiny.valueMm).toBe(1e-9); expect(tiny.arrows).toHaveLength(2);
+    expect(cadSketchGraphDimensionLabel(tiny.valueMm, tiny.kind).quantity).not.toBe('0 mm');
+  });
+});
+
 describe('explicit graph distance layout', () => {
   it('places bottom, top and vertical dimensions twenty screen pixels outward from graph bounds', () => {
     const graph = rectangle(), before = JSON.stringify(graph);

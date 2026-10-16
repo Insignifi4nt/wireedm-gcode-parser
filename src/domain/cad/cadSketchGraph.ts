@@ -37,6 +37,7 @@ export const CadSketchGraphSchema = Type.Object({
     Type.Object({ id, kind: Type.Literal('fixed-point'), pointId: id, position: CadPoint2Schema }, strict),
     Type.Object({ id, kind: Type.Literal('fixed-axis'), pointId: id, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), value: CadScalarSchema }, strict),
     Type.Object({ id, kind: Type.Literal('distance'), pointIds: pair, value: CadScalarSchema }, strict),
+    Type.Object({ id, kind: Type.Literal('axis-distance'), pointIds: pair, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), value: CadScalarSchema }, strict),
     Type.Object({ id, kind: Type.Literal('fillet-corner'), pointId: id, lineIds: pair, arcId: id, value: CadScalarSchema }, strict),
     Type.Object({ id, kind: Type.Literal('chamfer-corner'), pointId: id, lineIds: pair, chamferId: id, values: Type.Tuple([CadScalarSchema, CadScalarSchema]) }, strict)
   ]))
@@ -51,6 +52,7 @@ export type CadSketchLineRelation = Extract<CadSketchGraphRelation, { kind: 'par
 export type CadSketchRadialRelation = Extract<CadSketchGraphRelation, { kind: 'radial-size' }>;
 export type CadSketchEqualRelation = Extract<CadSketchGraphRelation, { kind: 'equal-length' | 'equal-radius' }>;
 export type CadSketchAngleRelation = Extract<CadSketchGraphRelation, { kind: 'line-angle' }>;
+export type CadSketchAxisDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'axis-distance' }>;
 const issueCodes = ['invalid-expression', 'invalid-coordinate', 'degenerate-entity', 'invalid-radius', 'arc-radius-mismatch', 'invalid-distance', 'relation-residual'] as const;
 export const CadSketchGraphIssueSchema = Type.Object({
   source: Type.Object({ kind: Type.Union([Type.Literal('point'), Type.Literal('entity'), Type.Literal('relation')]), id }, strict),
@@ -155,6 +157,8 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
           case 'coincident': residual = Math.hypot(a.x - b.x, a.y - b.y); break;
           case 'horizontal': residual = Math.abs(a.y - b.y); break;
           case 'vertical': residual = Math.abs(a.x - b.x); break;
+          // The source tuple owns direction, including negative and zero offsets.
+          case 'axis-distance': residual = Math.abs((b[relation.axis] - a[relation.axis]) - scalar(relation.value)); break;
           case 'distance': {
             const value = scalar(relation.value);
             if (value < 0) { report(source, 'invalid-distance', 'Point distance must not be negative.'); continue; }
