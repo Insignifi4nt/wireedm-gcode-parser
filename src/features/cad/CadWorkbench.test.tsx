@@ -157,6 +157,11 @@ async function canvasKey(key: string, shiftKey = false) {
   if (!canvas) throw new Error('Sketch canvas missing.');
   await act(async () => { canvas.focus(); canvas.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true })); });
 }
+async function openLegacyRectangle(parameters: Readonly<Record<string, number>> = {}) {
+  const original = solidDocument();
+  await mount({ ...original, parameters, features: [original.features[0]] });
+  await act(async () => { viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }); viewport().apply({ kind: 'select-profile', profileId: 'rectangle' }); });
+}
 function viewport() {
   if (!currentViewport) throw new Error('Viewport controls unavailable.');
   return currentViewport;
@@ -1000,7 +1005,11 @@ describe('CAD sketch interaction', () => {
     await canvasClick(450, 100);
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch') throw new Error('Expected sketch.');
-    expect(sketch.profiles[0].geometry).toEqual({ kind: 'rectangle', x: 0, y: 0, width: 50, height: 40, cornerRadius: 0 });
+    expect(sketch.profiles).toEqual([]);
+    expect(sketch.graph?.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [50, 40], [0, 40]]);
+    expect(sketch.graph?.entities.map(entity => entity.kind)).toEqual(['line', 'line', 'line', 'line']);
+    expect(sketch.graph?.relations.map(relation => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical']);
+    expect(currentDocument.schemaVersion).toBe(2);
     expect(workflow).toHaveBeenLastCalledWith(false);
     expect(container.querySelector('[aria-label="Sketch measurements"]')?.textContent).toContain('2,000 mm²');
     expect(container.querySelector('[aria-label="Sketch measurements"]')?.textContent).toContain('180 mm');
@@ -1018,6 +1027,41 @@ describe('CAD sketch interaction', () => {
     expect(sketch.kind === 'sketch' && sketch.profiles).toEqual([]);
     expect(button('Finish sketch').disabled).toBe(false);
     expect(workflow).toHaveBeenLastCalledWith(false);
+  });
+
+  it('closes a free polygon into shared point identities and changes only a selected edge to construction', async () => {
+    await mount(); await startSketch(); await click('Polyline');
+    await canvasClick(300, 200); await canvasClick(450, 200); await canvasClick(375, 100); await canvasKey('Enter');
+    const sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
+    expect(sketch.profiles).toEqual([]);
+    expect(sketch.graph.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [25, 40]]);
+    expect(sketch.graph.entities).toHaveLength(3); expect(sketch.graph.relations).toEqual([]);
+    await click('Select');
+    const edge = sketch.graph.entities[1];
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: edge.id } }));
+    const construction = container.querySelector<HTMLInputElement>('.cad-sketch-options input');
+    if (!construction) throw new Error('Construction control missing.');
+    await act(async () => construction.click());
+    expect(currentDocument.features[0]).toMatchObject({ graph: { points: sketch.graph.points, entities: sketch.graph.entities.map(item => ({ ...item, construction: item.id === edge.id })) } });
+    expect(viewport().getState().selectedSketchGeometry).toEqual({ kind: 'entity', id: edge.id });
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
+  it('opens a fresh edge dimension from the toolbar, cancels it and applies a linked length without losing structural relations', async () => {
+    await mount({ ...createCadDocument(), parameters: { plateWidth: 50 } }); await startSketch();
+    await canvasClick(300, 200); await canvasClick(450, 100); await click('Select');
+    await click('Dimension');
+    expect(field('Length').value).toBe('50');
+    expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
+    await click('Cancel');
+    expect(currentDocument.features[0]).toMatchObject({ graph: { relations: Array.from({ length: 4 }, () => expect.any(Object)) } });
+    await click('Dimension'); await relation('Length', 'plateWidth'); await click('Apply');
+    const sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
+    expect(sketch.graph.relations.map(item => item.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical', 'distance']);
+    expect(sketch.graph.relations.at(-1)).toMatchObject({ kind: 'distance', value: 'plateWidth' });
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
   it.each(['name', 'parameter'] as const)('blocks a new path while a %s edit is pending without losing either field or history', async editor => {
@@ -1060,9 +1104,38 @@ describe('CAD sketch interaction', () => {
     expect(button('Finish sketch').disabled).toBe(false); expect(button('Rectangle').disabled).toBe(false);
   });
 
+  it('finishes an open path without inventing material and edits one of its shared joints', async () => {
+    await mount(); await startSketch(); await click('Path');
+    await canvasClick(300, 200); await canvasClick(450, 200); await canvasClick(450, 100);
+    await click('Finish path');
+    const sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph path missing.');
+    expect(sketch.profiles).toEqual([]); expect(sketch.graph.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [50, 40]]);
+    expect(sketch.graph.entities).toHaveLength(2); expect(measureCadSketch(currentDocument, sketch.id).materialAreaMm2).toBe(0);
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    await click('Select');
+    const joint = container.querySelector<SVGGElement>(`[data-cad-sketch-point="${sketch.graph.points[1].id}"]`);
+    if (!joint) throw new Error('Path joint missing.');
+    await act(async () => joint.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
+    expect(currentDocument.features[0]).toMatchObject({ graph: { points: [{ position: [0, 0] }, { position: [55, 0] }, { position: [50, 40] }], entities: sketch.graph.entities } });
+    expect(viewport().getState().selectedSketchGeometry).toEqual({ kind: 'point', id: sketch.graph.points[1].id });
+  });
+
+  it('closes a freshly drawn mixed path with exact shared arc joints and analytic material', async () => {
+    await mount(); await startSketch(); await click('Path');
+    await canvasClick(300, 200); await canvasClick(360, 200); await click('3-point Arc');
+    await canvasClick(360, 150); await canvasClick(390, 175); await click('Line'); await canvasClick(300, 150);
+    await click('Close profile');
+    const sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph path missing.');
+    expect(sketch.profiles).toEqual([]);
+    expect(sketch.graph.entities.map(entity => entity.kind)).toEqual(['line', 'arc', 'line', 'line']);
+    expect(measureCadSketch(currentDocument, sketch.id).materialAreaMm2).toBeCloseTo(400 + 50 * Math.PI, 8);
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
   it('edits a profile with a named expression and leaves Ctrl+Z to focused inputs', async () => {
-    await mount({ ...createCadDocument(), parameters: { plateWidth: 80 } });
-    await startSketch(); await canvasClick(300, 200); await canvasClick(450, 100);
+    await openLegacyRectangle({ plateWidth: 80 });
     await click('Add dimension'); await input(dimensionValue(), 'plateWidth / 2');
     expect(button('Save').disabled).toBe(true);
     expect(workflow).toHaveBeenLastCalledWith(true);
@@ -1078,7 +1151,7 @@ describe('CAD sketch interaction', () => {
   });
 
   it('refreshes selected profile fields when an imported document preserves feature and profile IDs', async () => {
-    await mount(); await startSketch(); await canvasClick(300, 200); await canvasClick(450, 100);
+    await openLegacyRectangle();
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch') throw new Error('Expected sketch.');
     const profile = sketch.profiles[0];
@@ -1093,7 +1166,7 @@ describe('CAD sketch interaction', () => {
   });
 
   it('preserves the document when an expression is invalid and Cancel restores the field', async () => {
-    await mount(); await startSketch(); await canvasClick(300, 200); await canvasClick(450, 100);
+    await openLegacyRectangle();
     await click('Add dimension'); await input(dimensionValue(), 'missingParameter * 2'); await click('Apply');
     expect(container.querySelector('.cad-sketch-intent-editor [role="alert"]')?.textContent).toContain('Unknown parameter');
     const sketch = currentDocument.features[0];
@@ -1181,7 +1254,7 @@ describe('CAD sketch interaction', () => {
     expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
     await canvasKey('ArrowRight', true); await canvasKey('ArrowUp', true); await canvasKey('Enter');
     const sketch = currentDocument.features[0];
-    expect(sketch.kind === 'sketch' && sketch.profiles[0].geometry).toEqual({ kind: 'rectangle', x: 0, y: 0, width: 50, height: 50, cornerRadius: 0 });
+    expect(sketch.kind === 'sketch' && sketch.graph?.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [50, 50], [0, 50]]);
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
@@ -1348,8 +1421,10 @@ describe('CAD sketch interaction', () => {
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch') throw new Error('Sketch missing.');
     expect(sketch.profiles.every((profile) => profile.role === undefined)).toBe(true);
-    const circle = sketch.profiles[1].geometry;
-    if (circle.kind !== 'circle' || typeof circle.radius !== 'number') throw new Error('Numeric circle missing.');
+    expect(sketch.profiles).toEqual([]);
+    expect(sketch.graph?.entities).toHaveLength(5);
+    const circle = sketch.graph?.entities[4];
+    if (!circle || circle.kind !== 'circle' || typeof circle.radius !== 'number') throw new Error('Numeric circle missing.');
     expect(measureCadSketch(currentDocument, sketch.id).materialAreaMm2).toBeCloseTo(2000 - Math.PI * circle.radius * circle.radius, 5);
     await click('Finish sketch'); await click('File'); await click('Send sketch to CAM');
     expect(sendToCam).toHaveBeenCalledWith(sketch.id);

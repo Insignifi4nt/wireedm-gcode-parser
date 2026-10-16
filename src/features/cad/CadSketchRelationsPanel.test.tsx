@@ -129,6 +129,28 @@ describe('selected sketch entity relations', () => {
     expect(h.session.getSnapshot().canUndo).toBe(false);
   });
 
+  it('restores a removed length with its exact source identity and link before accepting any edit', async () => {
+    const base = lineDocument(), sketch = base.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Line fixture missing.');
+    const source = parseCadDocument({ ...base, parameters: { plateWidth: 10 }, features: [{ ...sketch, graph: { ...sketch.graph,
+      points: sketch.graph.points.map(point => point.id === 'b' ? { ...point, position: [0, 'plateWidth'] } : point),
+      relations: [...sketch.graph.relations, { id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: ' plateWidth ' }]
+    } }] });
+    const h = await mount(source, { kind: 'entity', id: 'line' });
+    await click('Remove Length relation length'); await click('Add length');
+    expect(h.inspect).toHaveBeenLastCalledWith({ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: ' plateWidth ' });
+    expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false, workflowOpen: false });
+    expect(h.edit).not.toHaveBeenCalled();
+    await input('Length mm', '12.500'); await click('Apply');
+    expect(h.edit).toHaveBeenLastCalledWith([{ kind: 'set-parameter', name: 'plateWidth', value: 12.5 }], expect.any(AbortSignal));
+    expect(h.session.getSnapshot().document.features[0]).toMatchObject({ graph: { relations: [
+      { id: 'vertical' }, { id: 'length', kind: 'distance', value: ' plateWidth ' }
+    ] } });
+    await act(async () => h.session.undo());
+    expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+  });
+
   it('keeps invalid shared-parameter trials editable when a related expression becomes undefined', async () => {
     const source = circleDocument(), sketch = source.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Circle fixture missing.');

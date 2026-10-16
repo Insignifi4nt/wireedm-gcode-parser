@@ -24,12 +24,24 @@ function relationQuantity(value: CadScalar, parameters: CadDocument['parameters'
   try { return `${formatCadQuantity(evaluateCadScalar(value, parameters))} mm`; }
   catch { return '—'; }
 }
+function lineLengthRelation(graph: CadSketchGraph, line: Extract<CadSketchGraphEntity, { kind: 'line' }>, parameters: CadDocument['parameters']) {
+  const existing = graph.relations.find((relation): relation is Extract<CadSketchGraphRelation, { kind: 'distance' }> => relation.kind === 'distance' && samePair(relation, line));
+  if (existing) return existing;
+  const positions = [line.startPointId, line.endPointId].map(id => {
+    const point = graph.points.find(point => point.id === id);
+    if (!point) throw new Error('The selected line no longer has both endpoints.');
+    return point.position.map(value => evaluateCadScalar(value, parameters));
+  });
+  return { id: crypto.randomUUID(), kind: 'distance' as const, pointIds: [line.startPointId, line.endPointId] as const,
+    value: Math.hypot(positions[0][0] - positions[1][0], positions[0][1] - positions[1][1]) };
+}
+export type CadSketchRelationCommand = { readonly kind: 'inspect'; readonly relationId: string } | { readonly kind: 'length' };
 
 export interface CadSketchRelationsPanelProps {
   document: CadDocument;
   sketch: CadSketchFeature;
   selection: CadSketchGraphSelection;
-  initialRelationId?: string;
+  initialCommand?: CadSketchRelationCommand;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
   onPendingChange(pending: boolean): void;
   onPrepareEdits?: CadPrepareEdits;
@@ -46,17 +58,22 @@ export function CadSketchRelationsPanel(props: CadSketchRelationsPanelProps) {
   return <RelationsForm key={`${props.document.id}/${props.sketch.id}/${props.selection.kind}/${props.selection.id}/${props.cancelSignal}`} {...props} graph={graph} />;
 }
 
-function RelationsForm({ document: cadDocument, sketch, graph, selection, initialRelationId, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, interactionLocked }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
+function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, interactionLocked }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
   const submission = useCadEditSubmission();
   const latest = useRef({ document: cadDocument, sketch, graph }); latest.current = { document: cadDocument, sketch, graph };
-  const [source, setSource] = useState(latest.current), [draft, setDraft] = useState(graph);
+  const [initialDimension] = useState(() => {
+    const entity = selection.kind === 'entity' ? graph.entities.find(entity => entity.id === selection.id) : null;
+    return initialCommand?.kind === 'length' && entity?.kind === 'line' ? lineLengthRelation(graph, entity, cadDocument.parameters) : null;
+  });
+  const [source, setSource] = useState(latest.current), [draft, setDraft] = useState<CadSketchGraph>(() => initialDimension && !graph.relations.some(relation => relation.id === initialDimension.id)
+    ? { ...graph, relations: [...graph.relations, initialDimension] } : graph);
   const [parameterEdits, setParameterEdits] = useState<Readonly<Record<string, number>>>({});
   const [valueDrafts, setValueDrafts] = useState<Readonly<Record<string, CadScalarValueDraft>>>({});
   const [fieldIssues, setFieldIssues] = useState<Readonly<Record<string, string>>>({});
   const [relationPending, setRelationPending] = useState<Readonly<Record<string, boolean>>>({});
   const [relationEdits, setRelationEdits] = useState<Readonly<Record<string, boolean>>>({});
   const [error, setError] = useState<string | null>(null), [resetVersion, setResetVersion] = useState(0);
-  const [activeRelationId, setActiveRelationId] = useState<string | null>(initialRelationId ?? null);
+  const [activeRelationId, setActiveRelationId] = useState<string | null>(initialCommand?.kind === 'inspect' ? initialCommand.relationId : initialDimension?.id ?? null);
   const callbacks = useRef({ onPendingChange, onPreviewDocument, onInspectRelation }); callbacks.current = { onPendingChange, onPreviewDocument, onInspectRelation };
   const reset = useCallback(() => {
     submission.cancel(); setSource(latest.current); setDraft(latest.current.graph);
@@ -125,12 +142,10 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   };
   const addLength = () => {
     if (selectedEntity?.kind !== 'line') return;
-    const start = draft.points.find(point => point.id === selectedEntity.startPointId), end = draft.points.find(point => point.id === selectedEntity.endPointId);
-    if (!start || !end) return;
     try {
-      const relation = source.graph.relations.find(relation => relation.kind === 'distance' && samePair(relation, selectedEntity))
-        ?? { id: crypto.randomUUID(), kind: 'distance' as const, pointIds: [selectedEntity.startPointId, selectedEntity.endPointId] as const,
-          value: Math.hypot(evaluateCadScalar(start.position[0], parameters) - evaluateCadScalar(end.position[0], parameters), evaluateCadScalar(start.position[1], parameters) - evaluateCadScalar(end.position[1], parameters)) };
+      const relation = draft.relations.find(relation => relation.kind === 'distance' && samePair(relation, selectedEntity))
+        ?? source.graph.relations.find(relation => relation.kind === 'distance' && samePair(relation, selectedEntity))
+        ?? lineLengthRelation(draft, selectedEntity, parameters);
       changeRelation(relation); setActiveRelationId(relation.id);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to read this line length.'); }
   };
@@ -168,7 +183,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const changed = Boolean(candidate.edits?.length) || candidate.issue !== null;
   const pending = changed || scalarPending || submission.applying;
   useLayoutEffect(() => { onPendingChange(pending); }, [pending, onPendingChange]);
-  useEffect(() => () => { callbacks.current.onPendingChange(false); callbacks.current.onPreviewDocument?.(null); callbacks.current.onInspectRelation?.(null); }, []);
+  useLayoutEffect(() => () => { callbacks.current.onPendingChange(false); callbacks.current.onPreviewDocument?.(null); callbacks.current.onInspectRelation?.(null); }, []);
   useEffect(() => { if (source.document !== cadDocument && !pending) reset(); }, [source.document, cadDocument, pending, reset]);
   const prepared = useCadPreparedPreview(cadDocument, candidate.edits, onPrepareEdits, Boolean(onPrepareEdits && changed && !scalarPending && !submission.applying && !interactionLocked));
   useLayoutEffect(() => {

@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CloseIcon, ConfirmIcon, FitViewIcon, GridIcon, SnapIcon, UndoIcon } from '@wire-edm/icons-react';
 import { CadContextHelp } from './CadContextHelp';
-import { CadViewTools } from './CadCommandDock';
+import { CadDrawingTools, CadViewTools } from './CadCommandDock';
 import type { CadCurveFeature, CadPathSegment, CadProfile, CadSketchFeature, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { resolveCadCurveGeometry } from '@/domain/cad/cadCurve';
 import { captureSvgPreview } from '@/features/editor/captureEditorPreview';
@@ -12,7 +12,7 @@ import type { CadRenderedViewControls, CadRenderedViewState } from './cadViewpor
 import { closeSketchPolygon, snapSketchPathPoint, snapSketchPoint, twoPointSketchProfile, type SketchPoint, type SketchTool } from './cadSketchInteraction';
 import { CadSketchProfileGeometry } from './CadSketchProfileGeometry';
 import { createCadSketchHandlePicker, createCadSketchProfilePicker, type CadSketchHandlePick } from './cadSketchPicking';
-import { cadPathDraftEndpoint, closeCadPathDraft, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, updateCadPathDraft, type CadPathDrawingAction } from './cadPathDrawing';
+import { cadPathDraftEndpoint, closeCadPathDraft, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, updateCadPathDraft, type CadPathDraft, type CadPathDrawingAction } from './cadPathDrawing';
 import { CadPathDraftGeometry, CadPathSegmentGeometry } from './CadPathDraftGeometry';
 import { cadProfileReferenceGeometry } from './cadViewportReferences';
 import { CadGearInspectionOverlay } from './CadGearInspectionOverlay';
@@ -54,7 +54,7 @@ interface CadSketchProfileDrag {
 }
 type CadSketchDetailSelection = { readonly kind: 'none' | 'profile' } | { readonly kind: 'handle'; readonly target: CadSketchHandlePick };
 
-export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVersion, placementLabel, tool, selectedProfileId, onSelectProfile, onAddProfile, onTranslateProfile, onMoveHandle, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onError, cancelSignal, interactionLocked: externalInteractionLocked = false, onControlsReady, viewLocked = false, navigationMode = 'mouse', onContextMenu, previewProfile, previewSketch, graphControls, inspection, dimensionControls, getFitArea }: {
+export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVersion, placementLabel, tool, selectedProfileId, onSelectProfile, onAddProfile, onAddPath, onTranslateProfile, onMoveHandle, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onError, cancelSignal, interactionLocked: externalInteractionLocked = false, onControlsReady, viewLocked = false, navigationMode = 'mouse', onContextMenu, previewProfile, previewSketch, graphControls, inspection, dimensionControls, getFitArea }: {
   sketch: CadSketchFeature | CadCurveFeature;
   parameters: Readonly<Record<string, number>>;
   documentVersion?: string;
@@ -63,6 +63,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   selectedProfileId: string | null;
   onSelectProfile(id: string | null): void;
   onAddProfile(geometry: CadProfile, signal?: AbortSignal): CadEditCompletion;
+  onAddPath?(draft: CadPathDraft, closed: boolean, signal?: AbortSignal): CadEditCompletion;
   onTranslateProfile?(profileId: string, translation: SketchPoint, signal?: AbortSignal): CadEditCompletion;
   onMoveHandle?(profileId: string, handle: CadSketchHandle, translation: SketchPoint, signal?: AbortSignal): CadEditCompletion;
   onAddCurve?(segments: readonly CadPathSegment[], signal?: AbortSignal): CadEditCompletion;
@@ -311,13 +312,15 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     setDragPreview(null); setPoints([]); setPathDraft(createCadPathDraft());
     if (curveCreation) onCancelCurve?.();
   };
-  const closePath = () => {
+  const finishPath = (closed: boolean) => {
     if (interactionLocked) return;
     try {
       if (sketch.kind === 'curve') {
         if (!onAddCurve || !curveCreation) throw new Error('Edit the existing curve dimensions in Properties.');
         const segments = finishCadCurveDraft(pathDraft);
         submitEdit(signal => onAddCurve(segments, signal), () => setPathDraft(createCadPathDraft()), 'Unable to finish this curve.');
+      } else if (onAddPath) {
+        submitEdit(signal => onAddPath(pathDraft, closed, signal), () => setPathDraft(createCadPathDraft()), 'Unable to finish this path.');
       } else {
         const profile = closeCadPathDraft(pathDraft);
         submitEdit(signal => onAddProfile(profile, signal), () => setPathDraft(createCadPathDraft()), 'Unable to close this path.');
@@ -373,7 +376,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const pathEnd = pathDraft.kind === 'idle' ? null : cadPathDraftEndpoint(pathDraft);
   const pathNeedsClosingLine = pathDraft.kind === 'ready' && pathDraft.segments.length > 0 && pathEnd !== null
     && (pathEnd[0] !== pathDraft.start[0] || pathEnd[1] !== pathDraft.start[1]);
-  const instruction = tool === 'path' ? pathDraft.kind === 'idle' ? sketch.kind === 'curve' ? 'Click the curve start.' : 'Click the path start.' : pathDraft.kind === 'arc-through' ? pathPreview.kind === 'invalid' ? pathPreview.message : 'Click a point on the arc.' : pathMode === 'arc' ? 'Click the arc endpoint.' : sketch.kind === 'curve' ? 'Click the next endpoint; Finish curve to save.' : 'Click the next endpoint; Close profile to finish.' : tool === 'select' ? sketch.kind === 'curve' ? 'Edit curve dimensions in Properties.' : 'Select a profile to edit dimensions' : tool === 'polygon' ? points.length ? 'Click vertices. Click the first point or Close profile to finish.' : 'Click the first vertex of a closed profile' : points.length ? tool === 'circle' ? 'Click to set the radius' : tool === 'slot' ? 'Click an axis endpoint. Edit the slot width in Properties.' : 'Click the opposite corner' : tool === 'circle' ? 'Click the circle center' : tool === 'slot' ? 'Click the slot center' : 'Click the first corner';
+  const instruction = tool === 'path' ? pathDraft.kind === 'idle' ? sketch.kind === 'curve' ? 'Click the curve start.' : 'Click the path start.' : pathDraft.kind === 'arc-through' ? pathPreview.kind === 'invalid' ? pathPreview.message : 'Click a point on the arc.' : pathMode === 'arc' ? 'Click the arc endpoint.' : sketch.kind === 'curve' ? 'Click the next endpoint; Finish curve to save.' : onAddPath ? 'Click the next endpoint; finish open or close the path.' : 'Click the next endpoint; Close profile to finish.' : tool === 'select' ? sketch.kind === 'curve' ? 'Edit curve dimensions in Properties.' : 'Select a profile to edit dimensions' : tool === 'polygon' ? points.length ? 'Click vertices. Click the first point or Close profile to finish.' : 'Click the first vertex of a closed profile' : points.length ? tool === 'circle' ? 'Click to set the radius' : tool === 'slot' ? 'Click an axis endpoint. Edit the slot width in Properties.' : 'Click the opposite corner' : tool === 'circle' ? 'Click the circle center' : tool === 'slot' ? 'Click the slot center' : 'Click the first corner';
   let preview: CadProfile | null = null;
   const first = points[0];
   if (first && (tool === 'rectangle' || tool === 'circle' || tool === 'slot')) {
@@ -508,7 +511,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           setCursor(([x, y]) => snapSketchPoint([x + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0), y + (event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0)], gridStep, snap));
         } else if ((event.key === 'Enter' || event.key === ' ') && tool !== 'select') {
           event.preventDefault();
-          if (event.key === 'Enter' && tool === 'path' && pathDraft.kind === 'ready') closePath();
+          if (event.key === 'Enter' && tool === 'path' && pathDraft.kind === 'ready') finishPath(true);
           else if (event.key === 'Enter' && tool === 'polygon' && points.length >= 3) close();
           else placePoint(cursor);
         } else if (tool === 'path' && pathPending && (event.key === 'Backspace' || event.key === 'Escape')) { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }); }
@@ -594,7 +597,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     {!isPreview && inspection && inspection.profileIds.length > 0 && <div className="cad-sketch-context" role="status">Highlighted geometry · {inspection.profileIds.length} {inspection.profileIds.length === 1 ? 'profile' : 'profiles'}</div>}
     <p id={instructionsId} className="cad-sr-only">{interactionLocked ? 'Drawing is paused while another edit or operation is active.' : instruction} Keyboard: arrow keys move the cursor, Shift moves ten grid steps, Space adds a point, Enter accepts an arc through-point or closes a ready path or polyline, Backspace undoes the last point or segment, Escape cancels drawing, F fits the sketch.</p>
     <CadViewTools label="Sketch controls"><span className="cad-plane-label">{placementLabel ?? (typeof sketch.plane === 'string' ? sketch.plane : 'Datum plane')}</span><Button aria-label={sketch.kind === 'curve' ? 'Fit curve' : 'Fit sketch'} disabled={viewLocked} onClick={fit}><FitViewIcon size={14} /></Button><Button aria-label="Toggle sketch grid" disabled={viewLocked} aria-pressed={grid} onClick={() => setGrid(!grid)}><GridIcon size={14} /></Button><Button aria-label="Toggle grid snapping" disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><SnapIcon size={14} /></Button><label className="cad-grid-step">Grid <Input aria-label="Grid spacing" disabled={viewLocked} type="number" min="0.01" value={gridStep} onChange={(event) => { const value = Number(event.target.value); if (value > 0 && Number.isFinite(value)) setGridStep(value); }} /> mm</label><CadContextHelp label="Sketch navigation">{navigationMode === 'trackpad' ? 'Use two-finger scrolling to pan and pinch to zoom.' : 'Drag with the right mouse button to pan and use the wheel to zoom.'} Press F to fit the sketch and Escape to cancel unfinished drawing.</CadContextHelp></CadViewTools>
-    {!externalInteractionLocked && (tool !== 'select' || points.length > 0) && <div className={`cad-sketch-instruction ${tool === 'path' ? 'cad-path-instruction' : ''}`} onKeyDown={event => {
+    {!externalInteractionLocked && (tool !== 'select' || points.length > 0) && <CadDrawingTools active={points.length > 0 || pathPending}><div className={`cad-sketch-instruction ${tool === 'path' ? 'cad-path-instruction' : ''}`} onKeyDown={event => {
       if (event.nativeEvent.isComposing) return;
       if (event.key === 'Escape' && submission.applying) { event.preventDefault(); event.stopPropagation(); cancelDrawing(); svg.current?.focus(); return; }
       if (tool !== 'path' || !pathPending || interactionLocked || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -602,9 +605,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     }}><span>{instruction}</span>
       {tool === 'path' && <>
         <div className="cad-path-modes" role="group" aria-label="Path segment mode"><Button disabled={interactionLocked || pathDraft.kind === 'arc-through'} aria-pressed={pathMode === 'line'} onClick={() => changePath({ kind: 'mode', mode: 'line' }, true)}>Line</Button><Button disabled={interactionLocked || pathDraft.kind === 'arc-through'} aria-pressed={pathMode === 'arc'} onClick={() => changePath({ kind: 'mode', mode: 'arc' }, true)}>3-point Arc</Button></div>
-        {pathPending && <><Button aria-label={sketch.kind === 'curve' ? 'Finish curve' : 'Close profile'} title={sketch.kind === 'curve' ? 'Validate and save the open curve without a closing edge' : pathNeedsClosingLine ? 'Close the profile by adding a straight line to its start' : 'Validate and save the closed profile'} disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={closePath}><ConfirmIcon size={13} />{sketch.kind === 'curve' ? 'Finish curve' : pathNeedsClosingLine ? 'Close with line' : 'Close profile'}</Button><Button disabled={interactionLocked} onClick={() => changePath({ kind: 'undo-last' }, true)}><UndoIcon size={13} /> Undo last</Button><Button onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button></>}
+        {pathPending && <>{sketch.kind === 'sketch' && onAddPath && <Button aria-label="Finish path" title="Keep this path open without adding a closing edge" disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(false)}><ConfirmIcon size={13} /> Finish path</Button>}<Button aria-label={sketch.kind === 'curve' ? 'Finish curve' : 'Close profile'} title={sketch.kind === 'curve' ? 'Validate and save the open curve without a closing edge' : pathNeedsClosingLine ? 'Close the profile by adding a straight line to its start' : 'Validate and save the closed profile'} disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(true)}><ConfirmIcon size={13} />{sketch.kind === 'curve' ? 'Finish curve' : pathNeedsClosingLine ? 'Close with line' : 'Close profile'}</Button><Button disabled={interactionLocked} onClick={() => changePath({ kind: 'undo-last' }, true)}><UndoIcon size={13} /> Undo last</Button><Button onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button></>}
       </>}
-      {tool === 'polygon' && points.length >= 3 && <Button disabled={interactionLocked} onClick={close}><ConfirmIcon size={13} /> Close profile</Button>}{points.length > 0 && <Button onClick={cancelDrawing}><CloseIcon size={13} /> Cancel drawing</Button>}</div>}
+      {tool === 'polygon' && points.length >= 3 && <Button disabled={interactionLocked} onClick={close}><ConfirmIcon size={13} /> Close profile</Button>}{points.length > 0 && <Button onClick={cancelDrawing}><CloseIcon size={13} /> Cancel drawing</Button>}</div></CadDrawingTools>}
     <div className="cad-view-caption">{formatCadQuantity(cursor[0])}, {formatCadQuantity(cursor[1])} mm</div>
   </div>;
 }

@@ -2,6 +2,79 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('draws and constrains fresh geometry through the UI, then extrudes, exports and reopens the exact sketch', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  let current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-reference-plane', plane: 'XY' } });
+  await page.getByRole('button', { name: 'Sketch', exact: true }).click();
+  const canvas = page.getByLabel('Sketch drawing canvas');
+  const clickPoint = async (x: number, y: number) => {
+    const point = await canvas.evaluate((element, [x, y]) => {
+      const matrix = (element as SVGSVGElement).getScreenCTM();
+      if (!matrix) throw new Error('Sketch projection unavailable.');
+      const point = new DOMPoint(x, -y).matrixTransform(matrix); return { x: point.x, y: point.y };
+    }, [x, y]);
+    await page.mouse.click(point.x, point.y);
+  };
+  await clickPoint(0, 0); await clickPoint(40, 25);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  current = await context(page);
+  const features = await call(page, 'cad_read_features', { expectedVersion: current.version });
+  const sketch = features.items[0];
+  expect(sketch.profiles).toEqual([]); expect(sketch.graph.points).toHaveLength(4);
+  expect(sketch.graph.relations.map((relation: { kind: string }) => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical']);
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('4 degrees of freedom');
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('30');
+  expect(await context(page)).toMatchObject({ version: current.version, workflowOpen: true });
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ version: current.version, workflowOpen: false });
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('30');
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  current = await context(page);
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('3 degrees of freedom');
+  const resized = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(resized.graph.points.map((point: { id: string }) => point.id)).toEqual(sketch.graph.points.map((point: { id: string }) => point.id));
+  expect(resized.graph.relations.at(-1)).toMatchObject({ kind: 'distance', value: 30 });
+  expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: sketch.id })).materialAreaMm2).toBeCloseTo(750, 7);
+  const xs = resized.graph.points.map((point: { position: number[] }) => point.position[0]);
+  const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
+  await page.getByRole('button', { name: 'Circle', exact: true }).click();
+  await clickPoint(centerX, 10); await clickPoint(centerX + 5, 10);
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  current = await context(page);
+  const accepted = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(accepted.graph.entities.at(-1)).toMatchObject({ kind: 'circle', radius: 5 });
+  const area = 750 - Math.PI * 25;
+  expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: sketch.id })).materialAreaMm2).toBeCloseTo(area, 7);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('5');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  current = await context(page);
+  const built = await call(page, 'cad_build', { expectedVersion: current.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo(area * 5, 6);
+  await page.getByRole('button', { name: 'File', exact: true }).click();
+  const downloading = page.waitForEvent('download'); await page.getByRole('menuitem', { name: 'Export STEP', exact: true }).click();
+  const path = await (await downloading).path(); if (!path) throw new Error('STEP download missing.');
+  expect((await readFile(path, 'utf8')).startsWith('ISO-10303-21;')).toBe(true);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ dirty: false }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible();
+  const reopened = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: reopened.version, featureId: sketch.id })).feature).toEqual(accepted);
+});
+
 test('moves one shared graph point over an enclosing profile, with cancel, undo and keyboard editing', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: {
@@ -64,6 +137,61 @@ test('moves one shared graph point over an enclosing profile, with cancel, undo 
   expect(deleted.feature.profiles).toHaveLength(1);
   await page.keyboard.press('Control+z');
   await expect.poll(source).toMatchObject({ feature: { graph: { points: [{ position: ['0', '0'] }, { position: [25, 0] }, { position: [20, 10] }, { position: [0, 10] }] } } });
+});
+
+test('keeps an authored path open, moves one joint and closes a separate analytic line-arc boundary', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  let current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-reference-plane', plane: 'XY' } });
+  await page.getByRole('button', { name: 'Sketch', exact: true }).click();
+  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  const canvas = page.getByLabel('Sketch drawing canvas');
+  const clickPoint = async (x: number, y: number) => {
+    const point = await canvas.evaluate((element, [x, y]) => {
+      const matrix = (element as SVGSVGElement).getScreenCTM();
+      if (!matrix) throw new Error('Sketch projection unavailable.');
+      const point = new DOMPoint(x, -y).matrixTransform(matrix); return { x: point.x, y: point.y };
+    }, [x, y]);
+    await page.mouse.click(point.x, point.y);
+  };
+  await clickPoint(0, 0); await clickPoint(20, 0); await clickPoint(20, 20);
+  await page.getByRole('button', { name: 'Finish path', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const sketch = (await call(page, 'cad_read_features', { expectedVersion: current.version })).items[0];
+  expect(sketch.graph.entities).toHaveLength(2); expect(sketch.graph.points.map((point: { position: number[] }) => point.position)).toEqual([[0, 0], [20, 0], [20, 20]]);
+  expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: sketch.id })).materialAreaMm2).toBe(0);
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.getByRole('button', { name: `Point 2 in ${sketch.name}`, exact: true }).press('ArrowRight');
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('6 degrees of freedom');
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature.graph.points.map((point: { position: number[] }) => point.position))
+    .toEqual([[0, 0], [25, 0], [20, 20]]);
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  current = await context(page);
+  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  await clickPoint(40, 0); await clickPoint(60, 0);
+  await page.getByRole('button', { name: '3-point Arc', exact: true }).click();
+  await clickPoint(60, 20); await clickPoint(70, 10);
+  await page.getByRole('button', { name: 'Line', exact: true }).click(); await clickPoint(40, 20);
+  await page.getByRole('button', { name: 'Close profile', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const accepted = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(accepted.graph.entities.map((entity: { kind: string }) => entity.kind)).toEqual(['line', 'line', 'line', 'arc', 'line', 'line']);
+  expect(accepted.graph.points.slice(0, 3)).toEqual(sketch.graph.points);
+  const area = 400 + 50 * Math.PI;
+  expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: sketch.id })).materialAreaMm2).toBeCloseTo(area, 7);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('5'); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const built = await call(page, 'cad_build', { expectedVersion: current.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo(area * 5, 6);
 });
 
 test('edits graph relations and linked circle radius through the shared inspector with honest freedom and edge-only picking', async ({ page }) => {
