@@ -75,7 +75,7 @@ describe('exact sketch end Trim', () => {
   it('removes only the clicked outer span at its nearest finite intersection, retaining source and cutter identities', () => {
     const graph = fences(), before = JSON.stringify(graph);
     const preview = prepareCadSketchTrim({ graph, parameters: {}, entityId: 'edge', parameter: 0.1 });
-    if ('survivors' in preview) throw new Error('Expected one end survivor.');
+    if ('cuts' in preview) throw new Error('Expected one end survivor.');
     expect(preview.target).toEqual({ kind: 'end', entityId: 'edge', parameter: 0.1, end: 'start',
       boundary: { entityId: 'left', index: 0, parameter: 0.25, position: [5, 0] } });
     expect(preview.removed).toMatchObject({ kind: 'line', start: { x: 0, y: 0 }, end: { x: 5, y: 0 } });
@@ -156,7 +156,7 @@ describe('exact sketch end Trim', () => {
     expect(JSON.stringify(graph)).toBe(before);
   });
 
-  it('uses both finite circle intersections for a middle line span while rejecting source-circle trimming', () => {
+  it('uses both finite circle intersections for a middle line span while retaining a source-circle radius expression', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [-20, 0] }, { id: 'b', position: [20, 0] }, { id: 'o', position: [0, 0] }],
       entities: [{ id: 'edge', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },
         { id: 'ring', kind: 'circle', construction: false, centerPointId: 'o', radius: ' 10 ' }], relations: [] });
@@ -166,7 +166,7 @@ describe('exact sketch end Trim', () => {
       .toMatchObject({ target: { kind: 'middle', boundaries: [{ entityId: 'ring', index: 0 }, { entityId: 'ring', index: 1 }] },
         survivors: [{ length: 10 }, { length: 10 }], removed: { length: 20 } });
     expect(() => prepareCadSketchTrim({ graph, parameters: {}, entityId: 'ring', parameter: 0.1 }))
-      .toThrowError(expect.objectContaining({ code: 'invalid-sketch-trim-target' }));
+      .toThrowError(expect.objectContaining({ code: 'driven-sketch-trim-radius' }));
   });
 
   it('previews whole-edge deletion only when no finite interior intersection exists, preserving points and cutters', () => {

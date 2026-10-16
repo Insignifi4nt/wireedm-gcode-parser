@@ -484,7 +484,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           edgeSubmission.current = null;
           if (projectSelection(owned)?.frame === owned.frame) {
             if (edit.trim.kind === 'end') graphControls.onSelect({ kind: 'point', id: edit.trim.cutPointId });
-            else if (edit.trim.kind === 'middle') graphControls.onSelect({ kind: 'point', id: edit.trim.cutPointIds[0] });
+            else if ('cutPointIds' in edit.trim) graphControls.onSelect({ kind: 'point', id: edit.trim.cutPointIds[0] });
             else graphControls.onSelectSet?.(graphControls.selection.filter(atom => atom.kind !== 'entity' || atom.id !== edit.trim.entityId));
           }
         }, 'Unable to trim this edge.');

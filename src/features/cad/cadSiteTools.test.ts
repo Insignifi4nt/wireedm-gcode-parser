@@ -62,24 +62,32 @@ describe('CAD tool argument boundary and discovery', () => {
     expect(controller).not.toHaveBeenCalled();
   });
 
-  it('exposes strict end/middle/delete trim proposals on the existing reads and refuses mixed or unwitnessed input before controller access', async () => {
+  it('exposes strict end/middle/circle/delete trim proposals on the existing reads and refuses mixed or unwitnessed input before controller access', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed trim reached controller.'); });
     const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
     if (!inspect || !read) throw new Error('Missing region reads.');
     const deletion = { kind: 'delete', entityId: 'edge', parameter: .5 };
+    const circle = { kind: 'circle', entityId: 'disk', parameter: .25, boundaries: [
+      { entityId: 'chord', index: 0, parameter: .1, position: [8, 6], endpointPointId: 'b' },
+      { entityId: 'chord', index: 1, parameter: .4, position: [-8, 6], endpointPointId: 'a' }], cutPointIds: ['b', 'a'] };
+    const trimEdit = CadToolEditDefinitions.find(schema => schema.properties.kind.const === 'trim-sketch-entity');
+    if (!trimEdit) throw new Error('Missing Trim edit discovery.');
+    expect(Value.Check(trimEdit, { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: circle })).toBe(true);
     expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', sketchId: 'regions', trimAt: { entityId: 'ab', parameter: .1 } })).toBe(true);
     for (const input of [{ trimAt: { entityId: 'ab', parameter: .1 }, proposal: { trim: endTrim } },
       { trimAt: { entityId: 'ab', parameter: .1, cutPointId: 'forbidden' } }, { trimAt: { entityId: 'ab', parameter: 2 } }])
       expect(await inspect.execute({ expectedVersion: 'current', sketchId: 'regions', ...input })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
     for (const tool of [inspect, read]) {
       const query = { expectedVersion: 'current', sketchId: 'regions', ...(tool === read ? { boundaryProfileId: 'outer' } : {}) };
-      for (const proposal of [{ trim: endTrim }, { trim: middleTrim }, { trim: deletion, parameterValues: { span: 30 } }])
+      for (const proposal of [{ trim: endTrim }, { trim: middleTrim }, { trim: circle }, { trim: deletion, parameterValues: { span: 30 } }])
         expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(true);
       for (const proposal of [{ trim: endTrim, sketch: regionSketch() }, { trim: endTrim, split: {} },
         { trim: { ...endTrim, boundary: undefined } }, { trim: { ...endTrim, end: 'middle' } },
         { trim: { ...endTrim, boundary: { ...endTrim.boundary, parameter: '0.25' } } },
         { trim: { ...middleTrim, supportRelationId: undefined } }, { trim: { ...middleTrim, boundaries: [middleTrim.boundaries[0]] } },
         { trim: { ...middleTrim, cutPointIds: ['one'] } }, { trim: { ...middleTrim, end: 'start' } },
+        { trim: { ...circle, cutPointIds: ['one'] } }, { trim: { ...circle, boundaries: [circle.boundaries[0]] } },
+        { trim: { ...circle, newEntityId: 'unused' } },
         { trim: { ...deletion, cutPointId: 'unused' } }, { trim: endTrim, parameterValues: { span: '30' } }]) {
         expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(false);
         expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });

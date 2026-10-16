@@ -7,11 +7,11 @@ import { isCadImportData } from './cadImportData';
 import { compileCadSketchGraph } from './cadSketchGraphGeometry';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
-import { resolveCadSketchGraphJoints } from './cadSketchGraphJoints';
+import { resolveCadSketchGraphJoints, resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
 import { evaluateCadScalar } from './cadExpression';
 import { classifyLineRayPathSegmentIntersection, classifyParameterizedPathSegmentIntersection } from '@/domain/path-intel/intersections';
 import { createArcSegment, createLineSegment, pointOnArcAtParameter } from '@/domain/path-intel/segments';
-import type { LinePathSegment, PathSegment, Point2 } from '@/domain/path-intel/types';
+import type { ArcPathSegment, CirclePathSegment, LinePathSegment, PathSegment, Point2 } from '@/domain/path-intel/types';
 
 const strict = { additionalProperties: false }, id = CadIdentifierSchema;
 const parameter = Type.Number({ minimum: 0, maximum: 1 });
@@ -22,12 +22,15 @@ export const CadSketchTrimTargetSchema = Type.Union([
   Type.Object({ kind: Type.Literal('end'), entityId: id, parameter, end: Type.Union([Type.Literal('start'), Type.Literal('end')]),
     boundary, cutPointId: id }, strict),
   Type.Object({ kind: Type.Literal('middle'), entityId: id, parameter, boundaries: Type.Tuple([boundary, boundary]),
-    cutPointIds: Type.Tuple([id, id]), newEntityId: id, supportRelationId: id }, strict)
+    cutPointIds: Type.Tuple([id, id]), newEntityId: id, supportRelationId: id }, strict),
+  Type.Object({ kind: Type.Literal('circle'), entityId: id, parameter, boundaries: Type.Tuple([boundary, boundary]),
+    cutPointIds: Type.Tuple([id, id]) }, strict)
 ]);
 type Immutable<T> = { readonly [K in keyof T]: Immutable<T[K]> };
 export type CadSketchTrimTarget = Immutable<Static<typeof CadSketchTrimTargetSchema>>;
 export type CadSketchEndTrimTarget = Extract<CadSketchTrimTarget, { kind: 'end' }>;
 export type CadSketchMiddleTrimTarget = Extract<CadSketchTrimTarget, { kind: 'middle' }>;
+export type CadSketchCircleTrimTarget = Extract<CadSketchTrimTarget, { kind: 'circle' }>;
 export const CadSketchExtendTargetSchema = Type.Object({ kind: Type.Literal('line'), entityId: id,
   end: Type.Union([Type.Literal('start'), Type.Literal('end')]),
   boundary: Type.Object({ ...boundary.properties, parameter: Type.Number() }, strict), endPointId: id }, strict);
@@ -58,7 +61,13 @@ export interface CadSketchMiddleTrimPreparation {
   readonly cuts: readonly [{ readonly boundary: PathSegment; readonly point: readonly [number, number] },
     { readonly boundary: PathSegment; readonly point: readonly [number, number] }];
 }
-export type CadSketchTrimPreparation = CadSketchEndTrimPreparation | CadSketchMiddleTrimPreparation;
+export interface CadSketchCircleTrimPreparation {
+  readonly target: Omit<CadSketchCircleTrimTarget, 'cutPointIds'>;
+  readonly removed: ArcPathSegment;
+  readonly survivor: ArcPathSegment;
+  readonly cuts: CadSketchMiddleTrimPreparation['cuts'];
+}
+export type CadSketchTrimPreparation = CadSketchEndTrimPreparation | CadSketchMiddleTrimPreparation | CadSketchCircleTrimPreparation;
 export interface CadSketchEndTrimResult {
   readonly graph: CadSketchGraph;
   readonly retainedEntityId: string | null;
@@ -72,7 +81,8 @@ export interface CadSketchMiddleTrimResult {
   readonly cutPointIds: readonly [string, string];
   readonly newEntityId: string;
 }
-export type CadSketchTrimResult = CadSketchEndTrimResult | CadSketchMiddleTrimResult;
+export type CadSketchCircleTrimResult = Omit<CadSketchMiddleTrimResult, 'newEntityId'>;
+export type CadSketchTrimResult = CadSketchEndTrimResult | CadSketchMiddleTrimResult | CadSketchCircleTrimResult;
 export class CadSketchTrimDependencyError extends CadError {
   readonly relationIds: readonly string[];
   readonly pointIds: readonly string[];
@@ -96,9 +106,10 @@ type OpenSegment = Exclude<PathSegment, { kind: 'circle' }>;
 type SourceLine = Extract<CadSketchGraph['entities'][number], { kind: 'line' }>;
 type Witness = CadSketchEndTrimTarget['boundary'];
 interface Event { witness: Witness; boundary: PathSegment; point: Point2 }
-type BoundaryQuery = { kind: 'trim'; segment: OpenSegment } | { kind: 'extend'; segment: LinePathSegment; end: 'start' | 'end' };
+type BoundaryQuery = { kind: 'trim'; segment: PathSegment } | { kind: 'extend'; segment: LinePathSegment; end: 'start' | 'end' };
+const fullTurn = 2 * Math.PI;
 const precision = (operation: 'trim' | 'extend' = 'trim') => new CadError(`sketch-${operation}-precision`,
-  operation === 'trim' ? 'This intersection cannot leave an exact nondegenerate end trim at these coordinates.' : 'This intersection cannot produce an exact nondegenerate line extension at these coordinates.');
+  operation === 'trim' ? 'This intersection cannot leave an exact nondegenerate trim at these coordinates.' : 'This intersection cannot produce an exact nondegenerate line extension at these coordinates.');
 const ambiguous = (operation: 'trim' | 'extend' = 'trim') => new CadError(`ambiguous-sketch-${operation}`,
   `${operation === 'trim' ? 'Trim' : 'Extend'} needs a unique transverse intersection; overlapping, tangent or undeclared coincident boundaries need explicit repair.`);
 function freezeData(value: unknown): void {
@@ -112,6 +123,14 @@ function at(segment: OpenSegment, t: number): Point2 {
     : pointOnArcAtParameter(segment, { segmentId: segment.id, reversed: false }, t);
 }
 function distance(a: Readonly<Point2>, b: Readonly<Point2>): number { return Math.hypot(a.x - b.x, a.y - b.y); }
+/** Circle Trim's fixed +X/CCW phase. A cursor direction is not a support-membership certificate. */
+export function cadSketchCircleTrimParameter(segment: CirclePathSegment, point: Readonly<Point2>): number | null {
+  const x = point.x - segment.center.x, y = point.y - segment.center.y;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x === 0 && y === 0) return null;
+  const signed = Math.atan2(y, x) / fullTurn, phase = signed < 0 ? 1 + signed : signed;
+  if (y !== 0 && phase === 0) return null;
+  return phase < 1 ? phase === 0 ? 0 : phase : null;
+}
 function extent(segment: PathSegment): Point2[] {
   return [{ x: segment.bounds.minX, y: segment.bounds.minY }, { x: segment.bounds.maxX, y: segment.bounds.maxY }];
 }
@@ -148,6 +167,11 @@ function assertMiddleDependencies(graph: CadSketchGraph, entityId: string): void
     && relation.kind !== 'parallel' && relation.kind !== 'perpendicular' && relation.kind !== 'collinear');
   if (owners.length) throw new CadSketchTrimDependencyError(owners.map(relation => relation.id), []);
 }
+function assertCircleDependencies(graph: CadSketchGraph, entity: Extract<CadSketchGraph['entities'][number], { kind: 'circle' }>): void {
+  if (typeof entity.radius === 'string') throw new CadError('driven-sketch-trim-radius', "Edit or release this circle's radius expression before trimming.");
+  const owners = graph.relations.filter(relation => cadSketchRelationEntityIds(relation).includes(entity.id));
+  if (owners.length) throw new CadSketchTrimDependencyError(owners.map(relation => relation.id), []);
+}
 function partition(segment: OpenSegment, point: Point2, t: number): readonly [OpenSegment, OpenSegment] {
   const minimum = Math.max(1e-7, cadPathClosureTolerance([segment.start, point, segment.end]));
   if (distance(segment.start, point) <= minimum || distance(point, segment.end) <= minimum) throw precision();
@@ -166,6 +190,26 @@ function partition(segment: OpenSegment, point: Point2, t: number): readonly [Op
     || Math.abs(first.sweepRadians + second.sweepRadians - segment.sweepRadians) * segment.radius > tolerance) throw precision();
   return [first, second];
 }
+function checkCircleArc(circle: Pick<CirclePathSegment, 'center' | 'radius'>, arc: ArcPathSegment, expected: number, tolerance: number): void {
+  const a = { x: arc.start.x - circle.center.x, y: arc.start.y - circle.center.y }, b = { x: arc.end.x - circle.center.x, y: arc.end.y - circle.center.y };
+  const cross = a.x * b.y - a.y * b.x, dot = a.x * b.x + a.y * b.y;
+  if (!(expected > 0 && expected < fullTurn) || !(arc.sweepRadians > 0 && arc.sweepRadians < fullTurn)
+    || Math.abs(arc.radius - circle.radius) > tolerance || Math.abs(distance(arc.center, arc.start) - circle.radius) > tolerance
+    || Math.abs(distance(arc.center, arc.end) - circle.radius) > tolerance
+    || Math.abs(arc.sweepRadians - expected) >= Math.PI || Math.abs(arc.sweepRadians - expected) * circle.radius > tolerance
+    || cross > 0 && arc.sweepRadians >= Math.PI || cross < 0 && arc.sweepRadians <= Math.PI || cross === 0 && dot >= 0) throw precision();
+}
+function circlePieces(circle: CirclePathSegment, previous: Event, next: Event): readonly [ArcPathSegment, ArcPathSegment] {
+  const span = next.witness.parameter - previous.witness.parameter, sweep = (span > 0 ? span : 1 + span) * fullTurn;
+  const tolerance = cadPathClosureTolerance([circle.center, previous.point, next.point]);
+  if (distance(previous.point, next.point) <= Math.max(1e-7, tolerance)) throw precision();
+  const common = { id: circle.id, source: circle.source, center: circle.center, clockwise: false };
+  const removed = createArcSegment({ ...common, start: previous.point, end: next.point });
+  const survivor = createArcSegment({ ...common, start: next.point, end: previous.point });
+  checkCircleArc(circle, removed, sweep, tolerance); checkCircleArc(circle, survivor, fullTurn - sweep, tolerance);
+  if (Math.abs(removed.sweepRadians + survivor.sweepRadians - fullTurn) * circle.radius > tolerance) throw precision();
+  return [removed, survivor];
+}
 
 function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, segments: readonly PathSegment[], query: BoundaryQuery): Event[] {
   const { segment } = query, operation = query.kind;
@@ -178,20 +222,22 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
       : classifyLineRayPathSegmentIntersection(query.segment, other, query.end, tolerance);
     if (result.kind === 'overlap') throw ambiguous(operation);
     if (result.kind !== 'points') continue;
-    const hits = [...result.points].sort((a, b) => (a.leftParameter ?? -1) - (b.leftParameter ?? -1));
-    for (const [index, hit] of hits.entries()) {
-      const t = hit.leftParameter;
+    const hits = result.points.map(hit => ({ hit, parameter: segment.kind === 'circle' ? cadSketchCircleTrimParameter(segment, hit.point) : hit.leftParameter }))
+      .sort((a, b) => (a.parameter ?? -1) - (b.parameter ?? -1));
+    for (const [index, candidate] of hits.entries()) {
+      const { hit, parameter: t } = candidate;
       if (t === null || !Number.isFinite(t)) throw precision(operation);
       if (query.kind === 'trim' ? t < 0 || t > 1 : query.end === 'start' ? t > 0 : t < 1) throw precision(operation);
-      const point = at(segment, t);
+      const point = segment.kind === 'circle' ? hit.point : at(segment, t);
       if (distance(point, hit.point) > tolerance) throw precision(operation);
+      if (segment.kind === 'circle' && Math.abs(distance(point, segment.center) - segment.radius) > tolerance) throw precision(operation);
       if (other.kind === 'circle') {
         if (Math.abs(distance(point, other.center) - other.radius) > tolerance) throw precision(operation);
       } else if (hit.rightParameter === null || hit.rightParameter < 0 || hit.rightParameter > 1
         || distance(point, at(other, hit.rightParameter)) > tolerance) throw precision(operation);
       const u = tangent(segment, point, operation), v = tangent(other, point, operation);
       if (Math.abs(u.x * v.y - u.y * v.x) <= 64 * Number.EPSILON) throw ambiguous(operation);
-      if (query.kind === 'trim' ? t === 0 || t === 1 : t === (query.end === 'start' ? 0 : 1)) continue;
+      if (query.kind === 'trim' ? segment.kind !== 'circle' && (t === 0 || t === 1) : t === (query.end === 'start' ? 0 : 1)) continue;
       const boundaryEntity = graph.entities.find(item => item.id === other.id);
       const endpointPointId = boundaryEntity && boundaryEntity.kind !== 'circle'
         ? hit.rightParameter === 0 ? boundaryEntity.startPointId : hit.rightParameter === 1 ? boundaryEntity.endPointId : undefined : undefined;
@@ -203,15 +249,18 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
   }
   events.sort((a, b) => a.witness.parameter - b.witness.parameter || (a.boundary.id < b.boundary.id ? -1 : a.boundary.id > b.boundary.id ? 1 : 0));
   const unique: Event[] = [];
+  const sameContact = (a: Event, b: Event): boolean => {
+    if (distance(a.point, b.point) > cadPathClosureTolerance([a.point, b.point])) return false;
+    const left = a.witness.endpointPointId, right = b.witness.endpointPointId;
+    if (!left || !right || joint(left) !== joint(right)) throw ambiguous(operation);
+    return true;
+  };
   for (const event of events) {
     const previous = unique.at(-1);
-    if (previous && distance(previous.point, event.point) <= cadPathClosureTolerance([previous.point, event.point])) {
-      const a = previous.witness.endpointPointId, b = event.witness.endpointPointId;
-      if (!a || !b || joint(a) !== joint(b)) throw ambiguous(operation);
-      continue;
-    }
+    if (previous && sameContact(previous, event)) continue;
     unique.push(event);
   }
+  if (segment.kind === 'circle' && unique.length > 1 && sameContact(unique[0], unique[unique.length - 1])) unique.pop();
   return unique;
 }
 
@@ -240,16 +289,36 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
 }): CadSketchTrimPreparation {
   if (!Number.isFinite(pick) || pick < 0 || pick > 1) throw new CadError('invalid-sketch-trim', 'Choose a finite source parameter from zero to one.');
   const graph = parseCadSketchGraph(input), entity = graph.entities.find(item => item.id === entityId);
-  if (!entity || entity.kind === 'circle') throw new CadError('invalid-sketch-trim-target', 'Trim supports a line or open arc.');
+  if (!entity) throw new CadError('invalid-sketch-trim-target', 'Trim needs an existing graph edge.');
   const geometry = compileCadSketchGraph(graph, parameters), segment = geometry.segments.find(item => item.id === entityId);
-  if (!segment || segment.kind === 'circle') throw new CadError('invalid-sketch-trim-target', 'Trim supports a line or open arc.');
+  if (!segment) throw new CadError('invalid-sketch-trim-target', 'Trim needs an existing graph edge.');
   const unique = boundaryEvents(graph, parameters, geometry.segments, { kind: 'trim', segment });
+  if (entity.kind === 'circle') assertCircleDependencies(graph, entity);
   if (!unique.length) {
-    assertDependencies(graph, entityId, [entity.startPointId, entity.endPointId]);
+    if (entity.kind !== 'circle') assertDependencies(graph, entityId, [entity.startPointId, entity.endPointId]);
     const result: CadSketchEndTrimPreparation = { target: { kind: 'delete', entityId, parameter: pick }, removed: segment,
       survivor: null, boundary: null, point: null };
     freezeData(result); return result;
   }
+  if (segment.kind === 'circle') {
+    if (unique.length < 2) throw ambiguous();
+    const phase = pick === 1 ? 0 : pick, cursor = { x: segment.center.x + segment.radius * Math.cos(phase * fullTurn),
+      y: segment.center.y + segment.radius * Math.sin(phase * fullTurn) };
+    for (const event of unique) {
+      const delta = Math.abs(phase - event.witness.parameter);
+      if (Math.min(delta, 1 - delta) * segment.length <= cadPathClosureTolerance([cursor, event.point]))
+        throw new CadError('ambiguous-sketch-trim', 'Choose the portion to remove, away from its intersection.');
+    }
+    const after = unique.findIndex(event => event.witness.parameter > phase), nextIndex = after < 0 ? 0 : after;
+    const previous = unique[(nextIndex + unique.length - 1) % unique.length], next = unique[nextIndex];
+    assertEndpointRange(previous.point, 'trim'); assertEndpointRange(next.point, 'trim');
+    const [removed, survivor] = circlePieces(segment, previous, next);
+    const result: CadSketchCircleTrimPreparation = { target: { kind: 'circle', entityId, parameter: pick,
+      boundaries: [previous.witness, next.witness] }, removed, survivor,
+      cuts: [{ boundary: previous.boundary, point: [previous.point.x, previous.point.y] }, { boundary: next.boundary, point: [next.point.x, next.point.y] }] };
+    freezeData(result); return result;
+  }
+  if (entity.kind === 'circle') throw precision();
   for (const event of unique) if (Math.abs(pick - event.witness.parameter) * segment.length <= cadPathClosureTolerance([at(segment, pick), event.point]))
     throw new CadError('ambiguous-sketch-trim', 'Choose the portion to remove, away from its intersection.');
   const first = unique[0], last = unique[unique.length - 1];
@@ -288,6 +357,25 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
   if (!Value.Equal(prepared.target, target)) throw new CadError('stale-sketch-trim', 'The trim boundary changed. Choose the portion again.');
   if (trim.kind === 'delete') return Object.freeze({ graph: parseCadSketchGraph({ ...graph, entities: graph.entities.filter(entity => entity.id !== trim.entityId) }),
     retainedEntityId: null, removedEntityId: trim.entityId, cutPointId: null });
+  if (trim.kind === 'circle') {
+    const circle = graph.entities.find(entity => entity.id === trim.entityId);
+    if (!circle || circle.kind !== 'circle' || !('survivor' in prepared) || prepared.survivor?.kind !== 'arc') throw precision();
+    for (const [index, witness] of trim.boundaries.entries()) if (witness.endpointPointId !== undefined && trim.cutPointIds[index] !== witness.endpointPointId)
+      throw new CadError('invalid-sketch-trim-point', 'Use the exact witnessed boundary endpoint identity.');
+    const joint = resolveCadSketchPointIdentities(graph), keys = trim.boundaries.map((witness, index) => witness.endpointPointId === undefined
+      ? trim.cutPointIds[index] : joint(trim.cutPointIds[index]));
+    if (keys[0] === keys[1] || keys.includes(joint(circle.centerPointId))) throw new CadError('invalid-sketch-trim-point', 'The circle cuts and center need distinct point identities.');
+    const candidate = parseCadSketchGraph({ ...graph,
+      points: [...graph.points, ...trim.boundaries.flatMap((witness, index) => witness.endpointPointId === undefined ? [{ id: trim.cutPointIds[index], position: witness.position }] : [])],
+      entities: graph.entities.map(entity => entity.id === circle.id ? { id: circle.id, kind: 'arc', construction: circle.construction,
+        centerPointId: circle.centerPointId, startPointId: trim.cutPointIds[1], endPointId: trim.cutPointIds[0], direction: 'ccw' } : entity) });
+    const actual = compileCadSketchGraph(candidate, parameters).segments.find(segment => segment.id === circle.id);
+    if (actual?.kind !== 'arc') throw precision();
+    const source = { center: prepared.survivor.center, radius: evaluateCadScalar(circle.radius, parameters) };
+    checkCircleArc(source, actual, prepared.survivor.sweepRadians, cadPathClosureTolerance([actual.center, actual.start, actual.end]));
+    return Object.freeze({ graph: candidate, retainedEntityId: circle.id, removedEntityId: null,
+      cutPointIds: Object.freeze([trim.cutPointIds[0], trim.cutPointIds[1]] satisfies [string, string]) });
+  }
   if (trim.kind === 'middle') {
     const line = graph.entities.find(entity => entity.id === trim.entityId);
     if (!line || line.kind !== 'line') throw new CadError('invalid-sketch-trim-target', 'Middle trim supports an existing line.');

@@ -9,12 +9,38 @@ import { prepareCadEdits } from './cadEditPreparation';
 import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
 import { middleTrim, middleTrimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
+import { circleTrimPart } from '@/domain/cad/__tests__/cadSketchCircleTrimFixtures';
+import { CadSession } from './cadSession';
+import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 
 const require = createRequire(import.meta.url);
 const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
   require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
 
 describe('real PlaneGCS exact end-Trim preparation', () => {
+  it('preserves the complete circle-to-major-arc candidate and atomically rejects a later incompatible radius driver', async () => {
+    const document = circleTrimPart(), source = document.features[0];
+    if (source.kind !== 'sketch' || !source.graph) throw new Error('Circle source missing.');
+    const original = JSON.stringify(document), query = prepareCadSketchTrim({ graph: source.graph, parameters: document.parameters, entityId: 'disk', parameter: .25 });
+    if (query.target.kind !== 'circle') throw new Error('Expected circle span.');
+    const trim = { ...query.target, cutPointIds: ['b', 'a'] as const }, expected = trimCadSketchEntity({ graph: source.graph, parameters: document.parameters, trim });
+    const edit = { kind: 'trim-sketch-entity', sketchId: 'sketch', trim } as const;
+    const prepared = await prepareCadEdits(document, [edit], runtime), sketch = prepared.document.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Trimmed sketch missing.');
+    expect(sketch.graph).toEqual(expected.graph); expect(sketch.graph.points).toEqual(source.graph.points);
+    expect(sketch.graph.entities[0]).toEqual({ id: 'disk', kind: 'arc', centerPointId: 'center', startPointId: 'a', endPointId: 'b', direction: 'ccw', construction: false });
+    expect(sketch.graph.entities[1]).toEqual(source.graph.entities[1]); expect(sketch.graph.relations).toEqual([]);
+    expect(prepared.sketchDiagnostics[0].diagnostics).toMatchObject({ status: 'success', conflictingIds: [], redundantIds: [], issues: [] });
+    const session = new CadSession(document), before = session.getSnapshot();
+    const failed = await session.editPrepared(before.version, async accepted => (await prepareCadEdits(accepted, [edit,
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'incompatible-radius', kind: 'radial-size', entityId: 'disk', quantity: 'radius', value: 8 } }
+    ], runtime)).document).catch((error: unknown) => error);
+    expect(failed).toBeInstanceOf(CadSketchPreparationError);
+    if (!(failed instanceof CadSketchPreparationError)) throw new Error('Expected structured radius rejection.');
+    expect(failed.feedback).toMatchObject({ reason: 'invalid-solution', subjects: [expect.objectContaining({ source: { kind: 'relation', id: 'incompatible-radius' } })] });
+    expect(session.getSnapshot()).toBe(before); expect(JSON.stringify(document)).toBe(original);
+  });
+
   it('accepts an exact middle split with original outer drivers then trims a survivor without losing its Collinear support', async () => {
     const base = middleTrimPart(), feature = base.features[0];
     if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Middle source missing.');

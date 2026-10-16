@@ -404,6 +404,33 @@ describe('graph spatial selection', () => {
     await act(async () => document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     expect(h.edited).not.toHaveBeenCalled(); expect(h.selected).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
   });
+  it('previews the clicked circle cap and submits its complementary arc with the exact chord endpoint identities', async () => {
+    const h = await spatialFixture();
+    const feature: CadSketchFeature = { ...h.feature, graph: {
+      points: [{ id: 'center', position: [' 0.00 ', '0'] }, { id: 'a', position: ['-8', '6'] }, { id: 'b', position: ['8', '6'] }],
+      entities: [{ id: 'rim', kind: 'circle', centerPointId: 'center', radius: 10, construction: false },
+        { id: 'chord', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false }], relations: []
+    } };
+    await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });
+    await h.pointer('pointerdown', 0, 10, false, 7, 2); await h.pointer('pointerup', 0, 10, false, 7, 2);
+    const trim = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Trim here');
+    expect(trim?.disabled).toBe(false); await act(async () => trim?.focus());
+    const preview = container.querySelector('[aria-label="Trim preview"]');
+    expect(preview?.querySelector('.is-removed')?.tagName.toLowerCase()).toBe('path');
+    expect(preview?.querySelector('.is-retained')?.tagName.toLowerCase()).toBe('path');
+    expect(new Set([...preview!.querySelectorAll('[data-cad-sketch-trim-point]')].map(point => point.getAttribute('data-cad-sketch-trim-point')))).toEqual(new Set(['a', 'b']));
+    expect(h.edited).not.toHaveBeenCalled(); await act(async () => trim?.click());
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'trim-sketch-entity', sketchId: feature.id, trim: {
+      kind: 'circle', entityId: 'rim', parameter: expect.closeTo(.25, 12), cutPointIds: ['b', 'a'], boundaries: [
+        expect.objectContaining({ entityId: 'chord', endpointPointId: 'b', position: [8, 6] }),
+        expect.objectContaining({ entityId: 'chord', endpointPointId: 'a', position: [-8, 6] })
+      ]
+    } }], expect.any(AbortSignal));
+    const accepted = applyCadEdits(h.props().graphControls!.document, h.edited.mock.calls[0][0]).features[0];
+    expect(accepted).toEqual({ ...feature, graph: { ...feature.graph, entities: [
+      { id: 'rim', kind: 'arc', centerPointId: 'center', startPointId: 'a', endPointId: 'b', direction: 'ccw', construction: false }, feature.graph!.entities[1]
+    ] } });
+  });
   async function middleTrimFixture() {
     const h = await spatialFixture(), graph = h.feature.graph!;
     const feature: CadSketchFeature = { ...h.feature, graph: { ...graph,

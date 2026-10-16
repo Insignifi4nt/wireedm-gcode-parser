@@ -1,5 +1,5 @@
 import type { CadEdit } from '@/domain/cad/cadOperations';
-import { CadSketchExtendDependencyError, CadSketchTrimDependencyError, prepareCadSketchTrim, prepareCadSketchLineExtend,
+import { CadSketchExtendDependencyError, CadSketchTrimDependencyError, cadSketchCircleTrimParameter, prepareCadSketchTrim, prepareCadSketchLineExtend,
   type CadSketchTrimPreparation, type CadSketchLineExtendPreparation } from '@/domain/cad/cadSketchTrimExtend';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { nearestPointOnSegment } from '@/domain/path-editor/pathPointInference';
@@ -35,16 +35,23 @@ function contactHelp(boundary: { readonly endpointPointId?: string }, action: 'T
 export function prepareCadSketchTrimPreview(prepared: ReturnType<typeof prepareCadSketchGraphInteraction>, sketchId: string,
   entityId: string, cursor: SketchPoint): CadSketchTrimPreview {
   const segment = prepared.geometry.segments.find(segment => segment.id === entityId);
-  if (!segment || segment.kind === 'circle') return { kind: 'unavailable', reason: 'Trim supports a line or open arc. Trimming a circle needs two cut locations.' };
-  const parameter = nearestPointOnSegment(segment, { segmentId: entityId, reversed: false }, { x: cursor[0], y: cursor[1] }).t;
+  if (!segment) return { kind: 'unavailable', reason: 'The selected edge no longer exists.' };
+  const parameter = segment.kind === 'circle' ? cadSketchCircleTrimParameter(segment, { x: cursor[0], y: cursor[1] })
+    : nearestPointOnSegment(segment, { segmentId: entityId, reversed: false }, { x: cursor[0], y: cursor[1] }).t;
+  if (parameter === null) return { kind: 'unavailable', reason: 'Right-click the circle span you want to remove.' };
   try {
     const geometry = prepareCadSketchTrim({ graph: prepared.graph, parameters: prepared.parameters, entityId, parameter });
     const target = geometry.target, trim = target.kind === 'delete' ? target : target.kind === 'end'
       ? { ...target, cutPointId: target.boundary.endpointPointId ?? crypto.randomUUID() }
+      : target.kind === 'circle' ? { ...target, cutPointIds: [target.boundaries[0].endpointPointId ?? crypto.randomUUID(), target.boundaries[1].endpointPointId ?? crypto.randomUUID()] as const }
       : { ...target, cutPointIds: [target.boundaries[0].endpointPointId ?? crypto.randomUUID(), target.boundaries[1].endpointPointId ?? crypto.randomUUID()] as const,
         newEntityId: crypto.randomUUID(), supportRelationId: crypto.randomUUID() };
     const help = target.kind === 'delete' ? 'No cutting boundary. Trim removes this whole edge and retains its original points.'
-      : target.kind === 'end' ? contactHelp(target.boundary, 'Trim') : target.boundaries.map((boundary, index) =>
+      : target.kind === 'end' ? contactHelp(target.boundary, 'Trim') : target.kind === 'circle'
+        ? 'Remove the highlighted circle span and keep its complementary arc. ' + (target.boundaries.every(boundary => boundary.endpointPointId)
+          ? 'Both cuts share their boundary endpoints.' : target.boundaries.some(boundary => boundary.endpointPointId)
+            ? 'One cut shares a boundary endpoint; the other is a numeric contact without attachment.' : 'Both cuts are numeric contacts without attachment.') + ' No radius constraint is added.'
+        : target.boundaries.map((boundary, index) =>
         `${index ? 'End-side' : 'Start-side'} cut: ${boundary.endpointPointId ? 'shared boundary endpoint' : 'one-time numeric contact, no attachment'}.`).join(' ')
         + ' Both survivors keep a Collinear relation.';
     return { kind: 'ready', edit: { kind: 'trim-sketch-entity', sketchId, trim }, geometry, help };
@@ -88,7 +95,7 @@ export function CadSketchTrimPreview({ preview, center, mmPerPixel }: {
   const geometry = preview.geometry, trim = preview.edit.trim;
   const survivors = 'survivors' in geometry ? geometry.survivors : geometry.survivor ? [geometry.survivor] : [];
   const cuts = 'cuts' in geometry ? geometry.cuts : geometry.boundary && geometry.point ? [{ boundary: geometry.boundary, point: geometry.point }] : [];
-  const cutPointIds = trim.kind === 'middle' ? trim.cutPointIds : trim.kind === 'end' ? [trim.cutPointId] : [];
+  const cutPointIds = 'cutPointIds' in trim ? trim.cutPointIds : trim.kind === 'end' ? [trim.cutPointId] : [];
   return <g className="cad-sketch-trim-preview" pointerEvents="none" aria-label="Trim preview">
     <title>{preview.help}</title>
     {cuts.map((cut, index) => <Stroke key={index} segment={cut.boundary} center={center} className="is-boundary" />)}

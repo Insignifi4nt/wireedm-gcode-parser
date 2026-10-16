@@ -17,6 +17,16 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: circle span Trim
+
+Midpoint is local checkpoint `bbdefd4`. The [reviewed circle Trim plan](2026-10-16-sketch-circle-trim-plan.md) extends the existing pointer-owned Trim command to a free numeric-radius graph circle. Two real transverse contacts bound the removed span; the complementary analytic arc keeps the original entity and center identities. Drivers remain explicit, ambiguous contacts reject, and consumed selections require deliberate repair. No new standalone tool, sampled geometry, constraint transfer or precision change.
+
+Circle-cap Canvas and production journey regressions reproduce the unavailable command before implementation. The 41 focused domain, 52 related integration and 44 Canvas cases pass, with overlapping bounded native evidence and clean types/build/docs/shared UI/icons. Independent review repaired one rounded-half-turn branch-loss finding under unchanged precision. Five distinct complete selected journeys pass in each of Chromium and Firefox: circle Trim, end Trim, middle Trim/reconnection, Extend and intersecting areas. [Review and root acceptance](2026-10-16-sketch-circle-trim-review.md).
+
+The complete part proof starts with a disk selected as the union of its two chord-divided cells, then trims its cap and explicitly repairs the extrusion to the lower D. Native human and WebMCP definitions match exactly; Cancel and one Undo restore the original sketch and area selection. Volume changes from 1570.7963267948965 to 1347.1487177940903 mm³, with one solid and no diagnostics; a native mid-height section retains one exact circular arc and one line. Proofs: `tmp/sketch-circle-trim-{preview,solid}.png`. The disposable draft is restored empty and closed without saving user records. Browser inspection also removed redundant wording from the new tooltip; no copy-only test was added.
+
+Saved output uses the existing schema-2 arc kind; no migration, installed post/machine change, native/tolerance tuning, release bump or remote action. String/radial-owner transfer, middle-arc Trim, arc Extend, Tangent, source reuse and sketch transforms remain incomplete. The overall local-only goal remains open.
+
 ## Checkpoint: persistent line midpoint
 
 Intersecting areas are local checkpoint `e2915aa`. The [fresh acceptance inventory](2026-10-16-sketch-next-acceptance-after-cells.md) prioritizes a centered bore that follows its construction guide. The [bounded midpoint contract](2026-10-16-sketch-midpoint-seams.md) now uses one existing point and one graph line through the current relation editor, native preparation and ordinary agent set/remove operation. No new tool mode, drawing inference, arc association, topology joint or source rewrite. Native Success on incompatible fixed drivers still requires independent residual rejection under unchanged precision. Split/Trim/Extend protect the real guide owner rather than transferring intent. A proved self-midpoint drag magnet is excluded through existing prepared snap dependencies.
