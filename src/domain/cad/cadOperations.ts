@@ -19,6 +19,7 @@ import { CadSketchSplitTargetSchema, splitCadSketchEntity, type CadSketchSplitTa
 import { CadSketchTrimTargetSchema, trimCadSketchEntity, type CadSketchTrimTarget, CadSketchExtendTargetSchema, extendCadSketchEntity, type CadSketchExtendTarget } from './cadSketchTrimExtend';
 import { CadSketchOffsetRequestSchema, prepareCadSketchOffset, type CadSketchOffsetRequest } from './cadSketchOffset';
 import { CadSketchMirrorRequestSchema, prepareCadSketchMirror, type CadSketchMirrorRequest } from './cadSketchMirror';
+import { CadSketchProfileCopyRequestSchema, prepareCadSketchProfileCopy, type CadSketchProfileCopyRequest } from './cadSketchProfileCopy';
 
 export type CadEdit =
   | { readonly kind: 'add-feature'; readonly feature: CadFeature; readonly beforeId?: string }
@@ -45,6 +46,7 @@ export type CadEdit =
   | { readonly kind: 'extend-sketch-entity'; readonly sketchId: string; readonly extend: CadSketchExtendTarget }
   | ({ readonly kind: 'offset-sketch-loop'; readonly sketchId: string } & CadSketchOffsetRequest)
   | ({ readonly kind: 'mirror-sketch-geometry'; readonly sketchId: string } & CadSketchMirrorRequest)
+  | ({ readonly kind: 'copy-sketch-profile' } & CadSketchProfileCopyRequest)
   | { readonly kind: 'delete-sketch-elements'; readonly sketchId: string; readonly pointIds: readonly string[]; readonly entityIds: readonly string[]; readonly relationIds: readonly string[]; readonly cascade: boolean }
   | { readonly kind: 'set-sketch-construction'; readonly sketchId: string; readonly entityIds: readonly string[]; readonly construction: boolean }
   | { readonly kind: 'move-sketch-point'; readonly sketchId: string; readonly pointId: string; readonly translation: CadPoint2 }
@@ -80,6 +82,7 @@ export const CadEditSchema = Type.Union([
   Type.Object({ kind: Type.Literal('extend-sketch-entity'), sketchId: identifier, extend: CadSketchExtendTargetSchema }, strict),
   Type.Object({ kind: Type.Literal('offset-sketch-loop'), sketchId: identifier, ...CadSketchOffsetRequestSchema.properties }, strict),
   Type.Object({ kind: Type.Literal('mirror-sketch-geometry'), sketchId: identifier, ...CadSketchMirrorRequestSchema.properties }, strict),
+  Type.Object({ kind: Type.Literal('copy-sketch-profile'), ...CadSketchProfileCopyRequestSchema.properties }, strict),
   Type.Object({ kind: Type.Literal('delete-sketch-elements'), sketchId: identifier, pointIds: Type.Array(identifier, { uniqueItems: true }), entityIds: Type.Array(identifier, { uniqueItems: true }), relationIds: Type.Array(identifier, { uniqueItems: true }), cascade: Type.Boolean() }, strict),
   Type.Object({ kind: Type.Literal('set-sketch-construction'), sketchId: identifier, entityIds: Type.Array(identifier, { uniqueItems: true }), construction: Type.Boolean() }, strict),
   Type.Object({ kind: Type.Literal('move-sketch-point'), sketchId: identifier, pointId: identifier, translation: CadPoint2Schema }, strict),
@@ -222,6 +225,14 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
         const index = indexOf(edit.sketchId), sketch = features[index];
         if (sketch.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose an existing sketch to mirror.');
         features[index] = prepareCadSketchMirror({ sketch, parameters, entityIds: edit.entityIds, axisLineId: edit.axisLineId, idPrefix: edit.idPrefix }).sketch;
+        break;
+      }
+      case 'copy-sketch-profile': {
+        if (features.some(feature => feature.id === edit.newSketchId)) throw new CadError('duplicate-id', 'The new sketch identity already belongs to another feature.');
+        const source = features[indexOf(edit.sourceSketchId)];
+        if (source.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose an existing sketch profile to copy.');
+        features.push(prepareCadSketchProfileCopy({ sketch: source, parameters, sourceSketchId: edit.sourceSketchId, profileId: edit.profileId,
+          newSketchId: edit.newSketchId, name: edit.name, idPrefix: edit.idPrefix }).sketch);
         break;
       }
       case 'create-sketch-corner': case 'split-sketch-entity': case 'trim-sketch-entity': case 'extend-sketch-entity': {

@@ -32,6 +32,7 @@ export const CadToolPluginPackageEnvelope = Type.Object({
   description: 'Complete package from cad_describe_plugin_api(apiVersion).' });
 
 const editDescriptions: Partial<Record<CadEdit['kind'], string>> = {
+  'copy-sketch-profile': 'Copy one actual sourceSketchId/profileId outline into a fresh newSketchId with the supplied name and deterministic idPrefix. The new sketch has independent numeric graph geometry, no copied constraints, source package or import provenance, and preserves construction state. Keeps all original source records, scalar expressions and consumers exact. Retains the same principal plane or exact existing datum reference; evaluates its normal offset once into a numeric destination offset. A shared datum remains a placement dependency. Finish or Cancel an active sketch draft before this document-level edit. Native preparation must preserve the complete constructed candidate. No projection, transform, linked copy or automatic nesting/holes. Inspect the resulting sketch through existing feature and region tools.',
   'add-sketch-dimension': 'Driving dimension intent; keeps current size. Radius/diameter share circle size.',
   'set-sketch-dimension': 'Set displayed quantity (mm/deg); diameter halves to radius. Named bindings update parameters; compound drivers reject.',
   'remove-sketch-dimension': 'Remove explicit intent; retains the geometry scalar, including any driving expression.',

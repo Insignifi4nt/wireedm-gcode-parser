@@ -16,6 +16,7 @@ import { cadDocumentPath, listCadDocuments, loadCadDocument, saveCadDocument } f
 import { CAD_FORMER_DOCUMENT_BYTES } from './__tests__/cadBudgetFixture';
 import { graphCellSelectionAt, intersectingCircleSketch } from './__tests__/cadIntersectingCellFixtures';
 import { pairedBoreMirrorPart, mirrorBoreRequest } from './__tests__/cadSketchMirrorFixtures';
+import { profileCopySlotPart, slotProfileCopyRequest } from './__tests__/cadSketchProfileCopyFixtures';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -25,6 +26,20 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     localStorage.clear();
     adapter = kind === 'browser-cache' ? createBrowserCacheAdapter(localStorage)
       : createBrowserDirectoryAdapter(new FakeDirectoryHandle('cad-test') as unknown as FileSystemDirectoryHandle);
+  });
+  it('saves an independent copied outline with its exact schema-1 original and keeps later source size/offset edits detached', async () => {
+    const document = profileCopySlotPart(), first = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const raw = await adapter.readExactText?.(cadDocumentPath(document.id)); expect(raw).toEqual(expect.any(String));
+    const copied = applyCadEdits(document, [{ kind: 'copy-sketch-profile', ...slotProfileCopyRequest }]);
+    const second = await saveCadDocument(adapter, copied, { expectedSavedVersion: first.savedVersion });
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(copied);
+    expect(await adapter.readExactText?.(`cad/originals/${document.id}/schema-1-${first.savedVersion}.cad.json`)).toBe(raw);
+    const changed = applyCadEdits(copied, [{ kind: 'set-parameter', name: 'slotLength', value: 40 }, { kind: 'set-parameter', name: 'sourceOffset', value: 7 }]);
+    const third = await saveCadDocument(adapter, changed, { expectedSavedVersion: second.savedVersion }), reopened = await loadCadDocument(adapter, document.id);
+    expect(reopened).toEqual(third); expect(reopened.document.schemaVersion).toBe(2); expect(reopened.document.features).toEqual(copied.features);
+    expect(reopened.document.features[0]).toEqual(document.features[0]); expect(reopened.document.features[1]).toMatchObject({ plane: 'XZ', offset: 2.5, profiles: [] });
+    expect(reopened.document.parameterMetadata).toEqual(document.parameterMetadata);
+    expect(await adapter.readExactText?.(`cad/originals/${document.id}/schema-1-${first.savedVersion}.cad.json`)).toBe(raw);
   });
   it('saves a detached mirrored bore exactly and preserves its numeric independence on a later source parameter edit', async () => {
     const document = pairedBoreMirrorPart(), first = await saveCadDocument(adapter, document, { expectedSavedVersion: null });

@@ -40,6 +40,7 @@ export interface CadFeatureTreeProps {
   onDelete?(feature: CadFeature): void;
   onUpdateProfile?(sketch: CadSketchFeature, profile: CadSketchProfile): void;
   onDeleteProfile?(sketch: CadSketchFeature, profileId: string): void;
+  onCopyProfile?(sketch: CadSketchFeature, profileId: string): void;
   onContextMenuOpenChange?(open: boolean): void;
   onRename?(feature: CadFeature, name: string, profileId?: string, signal?: AbortSignal): CadEditCompletion;
   onRenamePendingChange?(pending: boolean): void;
@@ -53,7 +54,7 @@ export interface CadFeatureTreeProps {
 
 /** One ordered model history, with links taken from the same reference model as rebuild. */
 export function CadFeatureTree({ document, diagnostics = [], selectedId, selectedProfileId, locked, selectionOnly = false, highlightedFeatureIds = [], onSelect, onEditSketch, onEditCurve, onSelectProfile,
-  selectableFeatureIds, allowPrincipalPlaneSelection = false, onSuppress, onDelete, onUpdateProfile, onDeleteProfile, onContextMenuOpenChange, onRename, onRenamePendingChange, cancelSignal = 0, onCreateSketch, selectedReferencePlane, onSelectReferencePlane, parameterContent }: CadFeatureTreeProps) {
+  selectableFeatureIds, allowPrincipalPlaneSelection = false, onSuppress, onDelete, onUpdateProfile, onDeleteProfile, onCopyProfile, onContextMenuOpenChange, onRename, onRenamePendingChange, cancelSignal = 0, onCreateSketch, selectedReferencePlane, onSelectReferencePlane, parameterContent }: CadFeatureTreeProps) {
   const treeId = useId();
   const tree = useRef<HTMLOListElement>(null), returnFocus = useRef<{ documentId: string; target: TreeTarget } | null>(null);
   const pendingCallback = useRef(onRenamePendingChange); pendingCallback.current = onRenamePendingChange;
@@ -139,6 +140,7 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
       const sketch = menuFeature, profile = menuProfile;
       menuItems.push({ label: 'Configure profile', onSelect: () => onSelectProfile(sketch, profile.id) },
         { label: 'Edit sketch', onSelect: () => onEditSketch(sketch) });
+      if (onCopyProfile && !sketch.suppressed) menuItems.push({ label: 'Copy outline to editable sketch', onSelect: () => onCopyProfile(sketch, profile.id) });
       if (onRename) menuItems.push({ label: 'Rename profile', onSelect: () => beginRename({ kind: 'profile', featureId: sketch.id, profileId: profile.id }) });
       if (onUpdateProfile) menuItems.push({ label: profile.construction ? 'Use as geometry' : 'Use as construction', onSelect: () => onUpdateProfile(sketch, { ...profile, construction: !profile.construction }) });
       if (onDeleteProfile) menuItems.push({ kind: 'separator' }, { label: 'Delete profile', danger: true, onSelect: () => onDeleteProfile(sketch, profile.id) });

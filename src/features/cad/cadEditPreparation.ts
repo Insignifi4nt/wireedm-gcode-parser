@@ -9,7 +9,7 @@ import { Value } from '@sinclair/typebox/value';
 
 export function needsCadSketchPreparation(document: CadDocument, edits: readonly CadEdit[]): boolean {
   return document.features.some(feature => feature.kind === 'sketch' && feature.graph)
-    || edits.some(edit => edit.kind === 'append-sketch-entities' || edit.kind === 'offset-sketch-loop' || (edit.kind === 'add-feature' || edit.kind === 'update-feature') && edit.feature.kind === 'sketch' && edit.feature.graph);
+    || edits.some(edit => edit.kind === 'append-sketch-entities' || edit.kind === 'offset-sketch-loop' || edit.kind === 'copy-sketch-profile' || (edit.kind === 'add-feature' || edit.kind === 'update-feature') && edit.feature.kind === 'sketch' && edit.feature.graph);
 }
 
 /** Reduce intent, solve numeric copies, then validate the whole part before a session can commit it. */
@@ -43,7 +43,7 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
   }
   for (const edit of captured) {
     signal?.throwIfAborted();
-    if (edit.kind === 'translate-sketch-geometry' || edit.kind === 'split-sketch-entity' || edit.kind === 'trim-sketch-entity' || edit.kind === 'extend-sketch-entity' || edit.kind === 'offset-sketch-loop' || edit.kind === 'mirror-sketch-geometry') {
+    if (edit.kind === 'translate-sketch-geometry' || edit.kind === 'split-sketch-entity' || edit.kind === 'trim-sketch-entity' || edit.kind === 'extend-sketch-entity' || edit.kind === 'offset-sketch-loop' || edit.kind === 'mirror-sketch-geometry' || edit.kind === 'copy-sketch-profile') {
       await flush();
       const target = reduceCadEditIntents(candidate, [edit]);
       if (Value.Equal(candidate, target)) continue;
@@ -61,7 +61,9 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
               ? new CadError('sketch-offset-intent', 'The constraints cannot preserve this exact offset without changing geometry. Adjust its source or relations before offsetting.')
               : edit.kind === 'mirror-sketch-geometry'
                 ? new CadError('sketch-mirror-intent', 'The constraints cannot preserve this exact mirrored copy without changing geometry. Adjust its source or relations before mirroring.')
-                : new CadError('sketch-translation-intent', 'The constraints cannot satisfy this exact move without changing other geometry. Adjust the selection or its relations.');
+                : edit.kind === 'copy-sketch-profile'
+                  ? new CadError('sketch-profile-copy-intent', 'The constraints cannot preserve this exact independent outline without changing geometry. Adjust its source before copying.')
+                  : new CadError('sketch-translation-intent', 'The constraints cannot satisfy this exact move without changing other geometry. Adjust the selection or its relations.');
     } else if (edit.kind === 'move-sketch-point') {
       await flush();
       const sketch = candidate.features.find(feature => feature.id === edit.sketchId);

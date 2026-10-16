@@ -384,6 +384,7 @@ describe('owned consumed-sketch draft', () => {
     const invalid: CadEdit[] = [{ kind: 'rename-document', name: 'No' }, { kind: 'delete-feature', featureId: 'pad', cascade: true },
       { kind: 'move-feature', featureId: 'sketch', beforeId: null }, { kind: 'remove-parameter', name: 'span' },
       { kind: 'set-parameter-group', group: { id: 'other', name: 'Other' } },
+      { kind: 'copy-sketch-profile', sourceSketchId: 'sketch', profileId: 'plugin', newSketchId: 'copy', name: 'Copy', idPrefix: 'copy' },
       { kind: 'update-feature', feature: { ...sketchOf(before.document, 'earlier'), name: 'No' } },
       { kind: 'set-sketch-relation', sketchId: 'earlier', relation: { id: 'other', kind: 'fixed-axis', pointId: 'tip', axis: 'y', value: 0 } }];
     for (const edit of invalid) await expect(draft.editPrepared([{ kind: 'set-parameter', name: 'span', value: 30 }, edit], prepared)).rejects.toMatchObject({ code: 'SKETCH_DRAFT_SCOPE' });

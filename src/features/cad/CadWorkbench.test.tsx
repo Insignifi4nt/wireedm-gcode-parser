@@ -80,7 +80,7 @@ function PreviousEditorHeader() {
   return <div>Previous editor content</div>;
 }
 
-async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onEditMany' | 'onWorkflowChange' | 'sketchEdit'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
+async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onEditMany' | 'onWorkflowChange' | 'onBeginSketchEdit' | 'sketchEdit'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
   const session = new CadSession(initial);
   currentSession = session;
   function Harness() {
@@ -199,6 +199,26 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('copies an accepted consumed profile without opening its source, then releases its workflow before editing the new sketch', async () => {
+    const source = solidDocument(), begin = vi.fn((id: string) => { currentSession.assertWorkflowClosed(); return id; });
+    await mount(source, { build: null, buildState: 'idle', onBeginSketchEdit: begin });
+    await click('Expand Outline');
+    const openCopy = async () => {
+      await act(async () => button('Plate profile').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 100, clientY: 100 })));
+      const action = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Copy outline to editable sketch');
+      if (!action) throw new Error('Profile copy action missing.'); await act(async () => action.click());
+    };
+    await openCopy(); expect(currentDocument).toBe(source); expect(begin).not.toHaveBeenCalled();
+    expect(container.querySelector('[aria-label="Sketch drawing canvas"]')).not.toBeNull();
+    expect(button('Apply').disabled).toBe(false); await click('Cancel');
+    expect(currentDocument).toBe(source); expect(viewport().getState().workflowOpen).toBe(false);
+    await openCopy(); await click('Apply');
+    expect(currentDocument.features.slice(0, source.features.length)).toEqual(source.features);
+    const copy = currentDocument.features.at(-1); if (copy?.kind !== 'sketch' || !copy.graph) throw new Error('Copied sketch missing.');
+    expect(copy.profiles).toEqual([]); expect(copy.graph.entities).toHaveLength(4);
+    expect(begin).toHaveBeenCalledExactlyOnceWith(copy.id); expect(viewport().getState().workflowOpen).toBe(false);
+    expect(viewport().getState().sketchId).toBe(copy.id);
+  });
   it('keeps its mirror axis chooser alive through an owned keyboard menu without replacing the copied source selection', async () => {
     const source = pairedBoreMirrorPart(); await mount(source);
     await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));

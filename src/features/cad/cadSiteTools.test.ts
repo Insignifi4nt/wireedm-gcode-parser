@@ -26,6 +26,20 @@ it('offers explicit graph-cell inspection and unique numeric receipt reads witho
 });
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('discovers the document-level profile copy edit and rejects caller geometry before controller access', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed profile copy reached controller.'); });
+    const tools = cadSiteTools(controller), edit = tools.find(tool => tool.name === 'cad_edit_document');
+    const describe = cadSiteTools(() => ({} as CadController)).find(tool => tool.name === 'cad_describe_edits');
+    if (!edit || !describe) throw new Error('Missing edit tools.');
+    const request = { kind: 'copy-sketch-profile', sourceSketchId: 'source', profileId: 'slot', newSketchId: 'copy', name: 'Editable outline', idPrefix: 'copy' };
+    const discovered = await describe.execute({ kind: request.kind });
+    expect(discovered).toMatchObject({ ok: true, data: { schema: { additionalProperties: false, required: expect.arrayContaining(['sourceSketchId', 'profileId', 'newSketchId', 'name', 'idPrefix']) } } });
+    expect(Value.Check(CadEditSchema, request)).toBe(true);
+    for (const invalid of [{ ...request, plane: 'XY' }, { ...request, geometry: {} }, { ...request, targetProfileId: 'other' },
+      { ...request, newSketchId: 'bad/id' }, { ...request, name: ' ' }, { ...request, idPrefix: 'x'.repeat(65) }])
+      expect(await edit.execute({ expectedVersion: 'current', edits: [invalid] })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(controller).not.toHaveBeenCalled();
+  });
   it('shares strict Mirror identities between edit discovery and mutually exclusive read proposals', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed mirror reached controller.'); });
     const tools = cadSiteTools(controller), reads = tools.filter(tool => tool.name === 'cad_inspect_sketch_regions' || tool.name === 'cad_read_sketch_region_reference');
