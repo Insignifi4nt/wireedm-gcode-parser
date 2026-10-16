@@ -1,6 +1,7 @@
 import { prepareCadEdits } from './cadEditPreparation';
 import { symmetricRelation, symmetryPart } from '@/domain/cad/__tests__/cadSketchSymmetryFixtures';
 import { pointOnLineRelation, pointOnLinePart } from '@/domain/cad/__tests__/cadSketchPointOnLineFixtures';
+import { tangentJoint, tangentPart } from '@/domain/cad/__tests__/cadSketchTangentFixtures';
 import { circleRow, circleRowPart } from '@/domain/cad/__tests__/cadSketchLinearPatternFixtures';
 // @vitest-environment node
 import { createRequire } from 'node:module';
@@ -324,4 +325,12 @@ it('inspects actual point-on-line dependencies and sliding freedom without inven
   const inspection=await inspectCadSketchConstraints(prepared.document,'sketch',async()=>solver),row=pageCadSketchConstraints(inspection,{section:'relations'}).items[0];
   expect(inspection.analysis).toMatchObject({kind:'solved',diagnostics:{degreesOfFreedom:1}});
   expect(row).toMatchObject({source:pointOnLineRelation,entityIds:['guide'],points:[{id:'p'},{id:'a'},{id:'b'}]});expect(row).not.toHaveProperty('value');
+});
+
+it('inspects the tangent endpoint tuple and every support without inventing a radius driver',async()=>{
+  const source=tangentPart(),prepared=await prepareCadEdits(source,[{kind:'set-sketch-relation',sketchId:'sketch',relation:tangentJoint}],solver);
+  const inspection=await inspectCadSketchConstraints(prepared.document,'sketch',async()=>solver),row=pageCadSketchConstraints(inspection,{section:'relations'}).items.find(row=>'source'in row&&row.source.id===tangentJoint.id);
+  expect(inspection.analysis).toMatchObject({kind:'solved',diagnostics:{degreesOfFreedom:0}});expect(row).toMatchObject({source:tangentJoint});
+  if(!row||!('points'in row)||!('entityIds'in row))throw Error('Missing tangent dependencies');
+  expect(new Set(row.points.map(point=>point.id))).toEqual(new Set(['a','j','c','e']));expect(new Set(row.entityIds)).toEqual(new Set(['line','arc']));expect(row).not.toHaveProperty('value');
 });

@@ -831,3 +831,27 @@ describe('point incidence on a selected line',()=>{
     await act(async()=>h.session.undo());expect(h.session.getSnapshot().document).toEqual(accepted);
   });
 });
+
+describe('declared smooth line–arc joints',()=>{
+  const rounded=()=>parseCadDocument({...createCadDocument('Rounded detail'),schemaVersion:2,parameters:{bendRadius:5},features:[{
+    id:'sketch',kind:'sketch',name:'Detail',plane:'XY',offset:0,suppressed:false,profiles:[],graph:{
+      points:[{id:'a',position:[' -10 ','0']},{id:'joint',position:[' 0 ','0']},{id:'center',position:[0,5]},{id:'end',position:[5,' bendRadius ']}],
+      entities:[{id:'line',kind:'line',startPointId:'a',endPointId:'joint',construction:false},{id:'arc',kind:'arc',centerPointId:'center',startPointId:'joint',endPointId:'end',direction:'ccw',construction:false}],
+      relations:[{id:'radius',kind:'radial-size',entityId:'arc',quantity:'radius',value:' bendRadius '}]}}]});
+  it('keeps a tangent joint private and restores its exact endpoint tuple across reversed selection',async()=>{
+    const original=rounded(),selection:readonly CadSketchGraphSelection[]=[{kind:'entity',id:'arc'},{kind:'entity',id:'line'}],h=await mount(original,selection);
+    await act(async()=>field('Tangent').click());await click('Cancel');expect(h.session.getSnapshot().document).toBe(original);expect(h.edit).not.toHaveBeenCalled();
+    await act(async()=>field('Tangent').click());await click('Apply');const edit=h.edit.mock.calls[0]?.[0][0];
+    expect(edit).toMatchObject({kind:'set-sketch-relation',sketchId:'sketch',relation:{kind:'tangent-joint',endpoints:[{entityId:'arc',pointId:'joint'},{entityId:'line',pointId:'joint'}]}});
+    if(edit?.kind!=='set-sketch-relation')throw Error('Missing tangent joint');const accepted=h.session.getSnapshot().document;
+    expect(accepted.features[0]).toEqual({...original.features[0],graph:{...(original.features[0].kind==='sketch'?original.features[0].graph:{}),relations:[original.features[0].kind==='sketch'?original.features[0].graph?.relations[0]:null,edit.relation]}});
+    await h.render([...selection].reverse());expect(field('Tangent').checked).toBe(true);await act(async()=>field('Tangent').click());await act(async()=>field('Tangent').click());expect(h.pending).toHaveBeenLastCalledWith(false);expect(h.edit).toHaveBeenCalledTimes(1);
+    await act(async()=>field('Tangent').click());await click('Apply');expect(h.session.getSnapshot().document.features).toEqual(original.features);await act(async()=>h.session.undo());expect(h.session.getSnapshot().document).toEqual(accepted);
+  });
+  it('requires a declared joint even when the separate endpoints have equal coordinates',async()=>{
+    const source=rounded(),first=source.features[0];if(first.kind!=='sketch'||!first.graph)throw Error('Missing sketch');
+    const detached=parseCadDocument({...source,features:[{...first,graph:{...first.graph,points:[...first.graph.points,{id:'separate',position:[0,0]}],
+      entities:first.graph.entities.map(entity=>entity.kind==='arc'?{...entity,startPointId:'separate'}:entity)}}]});
+    const h=await mount(detached,[{kind:'entity',id:'arc'},{kind:'entity',id:'line'}]);expect(field('Tangent').disabled).toBe(true);expect(h.pending).toHaveBeenLastCalledWith(false);expect(h.edit).not.toHaveBeenCalled();
+  });
+});

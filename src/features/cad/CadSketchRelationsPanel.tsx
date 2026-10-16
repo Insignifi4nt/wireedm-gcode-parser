@@ -3,10 +3,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CloseIcon, ConfirmIcon, LinkIcon, MeasureIcon } from '@wire-edm/icons-react';
 import type { CadDocument, CadScalar, CadSketchFeature } from '@/domain/cad/cadDocument';
-import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation, CadSketchReferenceDimension } from '@/domain/cad/cadSketchGraph';
+import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation, CadSketchReferenceDimension, CadSketchTangentJointRelation } from '@/domain/cad/cadSketchGraph';
 import { cadSketchReferenceDimensionToDriving, measureCadSketchReferenceDimension, resolveCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
 import { resolveCadSketchSymmetryOperands } from '@/domain/cad/cadSketchSymmetryRelations';
 import { resolveCadSketchPointOnLineOperands } from '@/domain/cad/cadSketchPointOnLineRelations';
+import { resolveCadSketchTangentJoint } from '@/domain/cad/cadSketchTangentRelations';
 import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 import { cadSketchRelationPointIds, mapCadSketchRelationScalars } from '@/domain/cad/cadSketchGraphReferences';
 import { cadSketchLinearPatternForSelection, cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
@@ -29,7 +30,7 @@ import './cad-sketch-profile.css';
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
 const relationLabels = {
-  'point-on-line': 'Point on line', symmetric: 'Symmetric points', 'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', 'fixed-point': 'Fixed point', distance: 'Length', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', 'external-reference': 'Linked reference',
+  'tangent-joint': 'Tangent', 'point-on-line': 'Point on line', symmetric: 'Symmetric points', 'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', 'fixed-point': 'Fixed point', distance: 'Length', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', 'external-reference': 'Linked reference',
   parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', 'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer'
 } satisfies Record<Exclude<CadSketchGraphRelation['kind'], 'fixed-axis' | 'radial-size' | 'axis-distance'>, string>;
 const relationLabel = (relation: CadSketchGraphRelation): string => relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
@@ -80,6 +81,20 @@ function selectedSymmetry(selection: readonly CadSketchGraphSelection[], graph: 
   const operands = { pointIds: [ids[0],ids[1]] as const, lineId: axes[0].id };
   try { resolveCadSketchSymmetryOperands(graph,operands); return { ...operands, label: targets.every(atom => atom.kind === 'entity') ? 'Symmetric centers' : 'Symmetric points' }; }
   catch { return null; }
+}
+function selectedTangent(selection: readonly CadSketchGraphSelection[], graph: CadSketchGraph) {
+  if (selection.length !== 2 || selection.some(atom => atom.kind !== 'entity')) return null;
+  const [a,b] = selection.map(atom => graph.entities.find(entity => entity.id === atom.id));
+  if (!a || !b || !(a.kind === 'line' && b.kind === 'arc' || a.kind === 'arc' && b.kind === 'line')) return null;
+  const identity = resolveCadSketchPointIdentities(graph);
+  const joints = [a.startPointId,a.endPointId].flatMap(first => [b.startPointId,b.endPointId].filter(second => identity(first) === identity(second))
+    .map(second => [{entityId:a.id,pointId:first},{entityId:b.id,pointId:second}] as const));
+  if (joints.length !== 1) return { endpoints: null, reason: joints.length ? 'Select a line and arc with one unambiguous shared endpoint.' : 'Join these endpoints with Coincident before adding Tangent.' };
+  try { resolveCadSketchTangentJoint(graph,{endpoints:joints[0]}); return {endpoints:joints[0],reason:null}; }
+  catch (cause) { return {endpoints:null,reason:cause instanceof Error ? cause.message : 'This joint is unavailable.'}; }
+}
+function sameTangent(relation: CadSketchGraphRelation, endpoints: CadSketchTangentJointRelation['endpoints'] | null) {
+  return relation.kind === 'tangent-joint' && endpoints !== null && endpoints.every(endpoint => relation.endpoints.some(other => other.entityId === endpoint.entityId && other.pointId === endpoint.pointId));
 }
 const selectedEntityPair = (selection: readonly CadSketchGraphSelection[], graph: CadSketchGraph, kind: 'line' | 'curve'): readonly [string, string] | null => selection.length === 2
   && selection.every(atom => atom.kind === 'entity' && graph.entities.some(entity => entity.id === atom.id && (kind === 'line' ? entity.kind === 'line' : entity.kind !== 'line')))
@@ -165,6 +180,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const pointPair = selectedPointPair(selection);
   const pointLine = selectedPointLine(selection, graph);
   const symmetry = selectedSymmetry(selection, graph);
+  const tangent = selectedTangent(selection, graph);
   const linePair = selectedEntityPair(selection, graph, 'line'), curvePair = selectedEntityPair(selection, graph, 'curve');
   const entityPair = linePair ?? curvePair;
   const [angleId] = useState(() => crypto.randomUUID());
@@ -322,6 +338,12 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
     if (!symmetry || patternLock) return;
     const matches = (relation: CadSketchGraphRelation) => relation.kind === 'symmetric' && relation.lineId === symmetry.lineId && samePair(relation,symmetry.pointIds);
     if (enabled) changeRelation(source.graph.relations.find(matches) ?? {id:crypto.randomUUID(),kind:'symmetric',pointIds:symmetry.pointIds,lineId:symmetry.lineId});
+    else { setError(null); setDraft(current=>({...current,relations:current.relations.filter(relation=>!matches(relation))})); }
+  };
+  const toggleTangent = (enabled: boolean) => {
+    if (!tangent?.endpoints || patternLock) return;
+    const endpoints = tangent.endpoints, matches = (relation: CadSketchGraphRelation) => sameTangent(relation,endpoints);
+    if (enabled) changeRelation(source.graph.relations.find(matches) ?? {id:crypto.randomUUID(),kind:'tangent-joint',endpoints});
     else { setError(null); setDraft(current=>({...current,relations:current.relations.filter(relation=>!matches(relation))})); }
   };
   const togglePointLine = (kind: 'midpoint' | 'point-on-line', enabled: boolean) => {
@@ -486,6 +508,10 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
           disabled={Boolean(selectedReference)} title={referenceLock ?? undefined} checked={draft.relations.some(relation => relation.kind === kind && samePair(relation, dimensionPair))} onChange={event => toggleLineAxis(kind, event.target.checked)} />{kind === 'horizontal' ? 'Horizontal' : 'Vertical'}</label>)}
         <Button type="button" title={referenceLock ?? undefined} disabled={Boolean(selectedReference) || draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, dimensionPair))} onClick={() => addLength()}><MeasureIcon size={13} /> Add length</Button>
       </div>}
+      {tangent && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label="Tangent"
+        disabled={!tangent.endpoints || Boolean(patternLock)} title={patternLock ?? tangent.reason ?? undefined}
+        checked={draft.relations.some(relation=>sameTangent(relation,tangent.endpoints))} onChange={event=>toggleTangent(event.target.checked)} />Tangent</label>
+        <CadContextHelp label="Tangent">Keeps a line and arc smoothly joined at their shared endpoints. Use Coincident to join separate endpoints first. Existing dimensions remain in force. A fillet already controls tangency at its own contacts.</CadContextHelp></div>}
       {symmetry && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label={symmetry.label} disabled={Boolean(patternLock)} title={patternLock ?? undefined}
         checked={draft.relations.some(relation=>relation.kind==='symmetric'&&relation.lineId===symmetry.lineId&&samePair(relation,symmetry.pointIds))}
         onChange={event=>toggleSymmetry(event.target.checked)} />{symmetry.label}</label>

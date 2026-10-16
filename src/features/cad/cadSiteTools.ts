@@ -24,6 +24,7 @@ import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { CadSketchRegionProposalSchema, CadSketchTrimAtSchema, CadSketchExtendAtSchema, CadSketchRegionReadTargetSchema } from '@/domain/cad/cadSketchRegionInspection';
 import { CadSketchSplitDependencyError } from '@/domain/cad/cadSketchSplit';
 import { CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '@/domain/cad/cadSketchTrimExtend';
+import { CadSketchTangentOwnershipError } from '@/domain/cad/cadSketchTangentRelations';
 import { CadSketchGraphSchema } from '@/domain/cad/cadSketchGraph';
 import { CadConstructionPointSchema, CadPathConstructionStepSchema, createCadPathProfile, createCadOpenCurveSegments } from '@/domain/cad/cadPathConstruction';
 import { cadAnalyticPathMetrics, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
@@ -119,6 +120,7 @@ export function cadSiteTools(getController: () => CadController) {
           relationIds: error.relationIds.slice(0, 8), relationCount: error.relationIds.length, omittedRelationCount: Math.max(0, error.relationIds.length - 8),
           pointIds: error.pointIds.slice(0, 8), pointCount: error.pointIds.length, omittedPointCount: Math.max(0, error.pointIds.length - 8)
         });
+        if (error instanceof CadSketchTangentOwnershipError) throw new ToolError(error.code, error.message, { ownerRelationId: error.ownerRelationId });
         if (error instanceof CadError || error instanceof CadSessionError || error instanceof CadStorageError) throw new ToolError(error.code, error.message);
         throw error;
       }

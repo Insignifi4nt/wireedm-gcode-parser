@@ -17,6 +17,16 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: editable smooth line–arc joints
+
+Ordinary Tangent now records one actual line/arc endpoint tuple at a shared or explicitly Coincident joint. Reusing the existing fillet compiler's perpendicular equation passes the bounded six-solve prerequisite, including R5→8. Independent strict contact, smooth branch, angular/physical and structural arc checks remain authoritative; native Success alone never accepts a cusp or fixed wrong joint. No implicit coincidence, radius driver, projection, retry, native option or tolerance change. Complete support visitors retain linked/reference authority, source strings, surgery guards and generated-member ownership. Fillet-owned rejection supplies its actual owner ID to agents.
+
+Foundation35 and root integration129 focused cases pass, plus30 tool cases after independent review repaired the dropped fillet owner ID. Final production types/build/docs/source and shared controls pass, including the narrow boundary repair. The complete rounded-profile journey passes Chromium and Firefox: preview Cancel, invalid radius recovery, R5→8, private Finish, native Pad, exact analytic section/DXF, exact Undo/Redo, equivalent agent intent and save/reload.
+
+Actual native pointer selection adds Tangent, cancels/applies it, then changes the shared radius5→8. Accepted source stays exact until Finish. Pad5 produces one651.3274122871835 mm³ solid, bounds[-10,0,0]→[8.000000000000002,8,5], no diagnostics and zero freedom. Its section retains oneR8 circular arc and three lines. Undo/Redo are exact; disposable draft restored empty and closed without Save. Proof: tmp/sketch-tangent-native-{editor.png,solid.png,proof.json}. First scope is declared line–arc joints; general circle/arc–arc tangency remains an explicit limit. Additive schema2 relation is rejected by older readers; no migration, version or remote change.
+
+Next: bounded precise placement and rotation of reused noncircular sketch geometry. The broader sketch audit remains open.
+
 ## Checkpoint: single-gesture point movement
 
 The guided-bore native walkthrough reproduced a plain drag being discarded solely because the preceding selection contained several items. Updated the existing mounted behavior test first; it fails on missing pointer capture. Removing that old selection-count guard retains Shift-only selection, exact set Move, source/pending ownership and all existing movement constraints. Both interaction suites pass82 cases. The strengthened complete guided-bore journey now drags directly from the point+guide selection and passes Chromium/Firefox, including private Finish, native Pad, exact history, agent parity and save/reload. Production/docs/source packaging passes; this boolean guard changes no types or saved contract.

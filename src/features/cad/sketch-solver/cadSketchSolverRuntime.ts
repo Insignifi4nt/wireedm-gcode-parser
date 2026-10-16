@@ -17,6 +17,7 @@ import { cadSketchAngleTarget, resolveCadSketchAngleRays } from '../../../domain
 import { resolveCadSketchMidpointOperands } from '../../../domain/cad/cadSketchMidpointRelations';
 import { resolveCadSketchSymmetryOperands } from '../../../domain/cad/cadSketchSymmetryRelations';
 import { resolveCadSketchPointOnLineOperands } from '../../../domain/cad/cadSketchPointOnLineRelations';
+import { resolveCadSketchTangentJoint } from '../../../domain/cad/cadSketchTangentRelations';
 import { cadSketchLinearPatternInstances } from '../../../domain/cad/cadSketchLinearPattern';
 
 function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] {
@@ -86,6 +87,14 @@ function compile(input: CadSketchSolveInput) {
         const { line } = resolveCadSketchPointOnLineOperands(graph, relation);
         if (!cadSketchLineDirection(line, numericPoints)) throw new Error('A point-on-line guide has no numeric endpoints.');
         constraint({ id, type: 'point_on_line_pl', p_id: relation.pointId, l_id: line.id }, id); break;
+      }
+      case 'tangent-joint': {
+        const { line, arc, linePointId, arcPointId, otherLineEndId } = resolveCadSketchTangentJoint(graph, relation);
+        for (const support of [{ ...line, startPointId: linePointId, endPointId: otherLineEndId },
+          { ...line, startPointId: arc.centerPointId, endPointId: arcPointId }])
+          if (!cadSketchLineDirection(support, numericPoints)) throw new Error('A tangent support has no numeric endpoints.');
+        constraint({ id, type: 'perpendicular_pppp', l1p1_id: linePointId, l1p2_id: otherLineEndId,
+          l2p1_id: arc.centerPointId, l2p2_id: arcPointId }, id); break;
       }
       case 'line-angle': {
         const [a, b] = resolveCadSketchAngleRays(graph, relation.rays);

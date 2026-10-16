@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Value } from '@sinclair/typebox/value';
-import { CadDocumentSchema, CadFeatureSchema } from '@/domain/cad/cadSchema';
-import { CadEditSchema } from '@/domain/cad/cadOperations';
+import { CadDocumentSchema, CadFeatureSchema, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import { applyCadEdits, CadEditSchema } from '@/domain/cad/cadOperations';
 import { CadToolEditDefinitions, CadToolEditEnvelope } from './cadToolSchemas';
 import { cadSiteTools } from './cadSiteTools';
 import type { CadController } from './useCadController';
@@ -11,6 +11,7 @@ import { CadSketchSplitDependencyError } from '@/domain/cad/cadSketchSplit';
 import { CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '@/domain/cad/cadSketchTrimExtend';
 import { endTrim, middleTrim } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
 import { lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
+import { CadSession } from './cadSession';
 
 it('offers explicit graph-cell inspection and unique numeric receipt reads without accepting mixed legacy targets', async () => {
   const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid graph receipt reached operations'); });
@@ -225,6 +226,30 @@ describe('CAD tool argument boundary and discovery', () => {
     expect(reply).toMatchObject({ ok: false, error: { code: 'dependent-sketch-split', details: { relationIds: ids.slice(0, 8), relationCount: 12, omittedRelationCount: 4 } } });
     expect(JSON.stringify(reply)).not.toContain('whole-edge-11'); expect(failure.message).not.toContain(ids[0]);
     expect(failure.relationIds).toEqual(ids);
+  });
+
+  it('returns the actual fillet owner for a duplicate tangent without changing accepted source or history', async () => {
+    const source = applyCadEdits(parseCadDocument({ ...createCadDocument('Corner'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Corner', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'v', position: [0, 0] }, { id: 'a', position: [20, 0] }, { id: 'b', position: [0, 20] }],
+        entities: [{ id: 'first', kind: 'line', construction: false, startPointId: 'v', endPointId: 'a' },
+          { id: 'second', kind: 'line', construction: false, startPointId: 'v', endPointId: 'b' }], relations: []
+      }
+    }] }), [{ kind: 'create-sketch-corner', sketchId: 'sketch', pointId: 'v', treatment: {
+      kind: 'fillet', radius: 2, trimPointIds: ['trim-a', 'trim-b'], centerPointId: 'center', entityId: 'arc', relationId: 'fillet-owner'
+    } }]);
+    const session = new CadSession(source), before = session.getSnapshot();
+    const duplicate = { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'duplicate', kind: 'tangent-joint', endpoints: [
+      { entityId: 'first', pointId: 'trim-a' }, { entityId: 'arc', pointId: 'trim-a' }
+    ] } } as const;
+    const tool = cadSiteTools(() => {
+      session.edit([duplicate], before.version);
+      throw new Error('The fillet-owned contact should have rejected before controller access.');
+    }).find(entry => entry.name === 'cad_edit_document');
+    if (!tool) throw new Error('Missing edit tool.');
+    expect(await tool.execute({ expectedVersion: before.version, edits: [duplicate] })).toMatchObject({ ok: false,
+      error: { code: 'already-driven-sketch-tangent', details: { ownerRelationId: 'fillet-owner' } } });
+    expect(session.getSnapshot()).toBe(before);
   });
 
   it('advertises the same complete sketch profile capacity that the shared authoring schema accepts', async () => {

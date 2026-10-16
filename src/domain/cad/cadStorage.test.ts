@@ -1,5 +1,6 @@
 import { symmetricRelation, symmetryPart, symmetrySketch } from './__tests__/cadSketchSymmetryFixtures';
 import { pointOnLineRelation, pointOnLinePart, pointOnLineSketch } from './__tests__/cadSketchPointOnLineFixtures';
+import { tangentJoint, tangentPart, tangentSketch } from './__tests__/cadSketchTangentFixtures';
 import { circleRow, circleRowPart, rowSketch } from './__tests__/cadSketchLinearPatternFixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
@@ -31,6 +32,14 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     localStorage.clear();
     adapter = kind === 'browser-cache' ? createBrowserCacheAdapter(localStorage)
       : createBrowserDirectoryAdapter(new FakeDirectoryHandle('cad-test') as unknown as FileSystemDirectoryHandle);
+  });
+  it('preserves declared tangent ownership and radius text, rejecting a non-smooth revision before writes',async()=>{
+    const source=applyCadEdits(tangentPart(),[{kind:'set-sketch-relation',sketchId:'sketch',relation:tangentJoint}]);
+    const saved=await saveCadDocument(adapter,source,{expectedSavedVersion:null});expect((await loadCadDocument(adapter,source.id)).document).toEqual(source);
+    const sketch=tangentSketch(source),raw=await adapter.readExactText?.(cadDocumentPath(source.id)),writes=vi.spyOn(adapter,'writeText');
+    const forged={...source,features:[{...sketch,graph:{...sketch.graph,points:sketch.graph.points.map(point=>point.id==='a'?{...point,position:[' -10 ','2'] as const}:point)}}]};
+    await expect(saveCadDocument(adapter,forged,{expectedSavedVersion:saved.savedVersion})).rejects.toThrow();expect(writes).not.toHaveBeenCalled();expect(await adapter.readExactText?.(cadDocumentPath(source.id))).toBe(raw);
+    const released=applyCadEdits(source,[{kind:'remove-sketch-relation',sketchId:'sketch',relationId:tangentJoint.id}]);await saveCadDocument(adapter,released,{expectedSavedVersion:saved.savedVersion});expect((await loadCadDocument(adapter,source.id)).document).toEqual(released);expect(released.features).toEqual(tangentPart().features);
   });
   it('round trips a sliding point without a cached position or forged off-guide save',async()=>{
     const base=pointOnLinePart(),sketch=pointOnLineSketch(base),source=parseCadDocument({...base,features:[{...sketch,graph:{...sketch.graph,
