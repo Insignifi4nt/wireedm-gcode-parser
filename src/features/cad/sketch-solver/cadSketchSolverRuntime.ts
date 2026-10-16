@@ -11,6 +11,7 @@ import { compileCadSketchCornerConstraints } from './cadSketchCornerConstraints'
 import { cadSketchLineDirection, resolveCadSketchLinePair } from '../../../domain/cad/cadSketchLineRelations';
 import type { Point2 } from '../../../domain/path-intel/types';
 import { cadSketchRadialTarget, resolveCadSketchRadialEntity } from '../../../domain/cad/cadSketchRadialRelations';
+import { resolveCadSketchRadiusPair } from '../../../domain/cad/cadSketchEqualRelations';
 
 function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] {
   switch (status) {
@@ -54,11 +55,22 @@ function compile(input: CadSketchSolveInput) {
       case 'coincident': constraint({ id, type: 'p2p_coincident', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
       case 'horizontal': constraint({ id, type: 'horizontal_pp', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
       case 'vertical': constraint({ id, type: 'vertical_pp', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
-      case 'parallel': case 'perpendicular':
+      case 'parallel': case 'perpendicular': case 'equal-length':
         for (const line of resolveCadSketchLinePair(graph, relation.lineIds)) {
           if (!cadSketchLineDirection(line, numericPoints)) throw new Error('A sketch line has no numeric endpoints.');
         }
-        constraint({ id, type: relation.kind === 'parallel' ? 'parallel' : 'perpendicular_ll', l1_id: relation.lineIds[0], l2_id: relation.lineIds[1] }, id); break;
+        constraint({ id, type: relation.kind === 'parallel' ? 'parallel' : relation.kind === 'perpendicular' ? 'perpendicular_ll' : 'equal_length', l1_id: relation.lineIds[0], l2_id: relation.lineIds[1] }, id); break;
+      case 'equal-radius': {
+        const [a, b] = resolveCadSketchRadiusPair(graph, relation.curveIds);
+        if (a.kind === 'circle') {
+          constraint(b.kind === 'circle' ? { id, type: 'equal_radius_cc', c1_id: a.id, c2_id: b.id }
+            : { id, type: 'p2p_distance', p1_id: b.centerPointId, p2_id: b.startPointId, distance: { o_id: a.id, prop: 'radius' } }, id);
+        } else {
+          constraint(b.kind === 'circle' ? { id, type: 'p2p_distance', p1_id: a.centerPointId, p2_id: a.startPointId, distance: { o_id: b.id, prop: 'radius' } }
+            : { id, type: 'equal_length', l1_id: `$arc-start:${a.id}`, l2_id: `$arc-start:${b.id}` }, id);
+        }
+        break;
+      }
       case 'distance': constraint({ id, type: 'p2p_distance', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1], distance: scalar(relation.value) }, id); break;
       case 'radial-size': {
         const entity = resolveCadSketchRadialEntity(graph, relation.entityId), radius = cadSketchRadialTarget(relation, input.parameters);

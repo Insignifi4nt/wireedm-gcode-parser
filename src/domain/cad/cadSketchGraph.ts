@@ -10,6 +10,7 @@ import { cadSketchEntityPointIds, cadSketchRelationPointIds } from './cadSketchG
 import { checkCadSketchCornerRelation, resolveCadSketchCornerTopology } from './cadSketchCornerGeometry';
 import { checkCadSketchLineRelation, resolveCadSketchLinePair } from './cadSketchLineRelations';
 import { checkCadSketchRadialRelation, resolveCadSketchRadialEntity } from './cadSketchRadialRelations';
+import { checkCadSketchEqualRelation, resolveCadSketchRadiusPair } from './cadSketchEqualRelations';
 
 const strict = { additionalProperties: false };
 const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
@@ -26,6 +27,8 @@ export const CadSketchGraphSchema = Type.Object({
     ...(['coincident', 'horizontal', 'vertical'] as const).map(kind => Type.Object({ id, kind: Type.Literal(kind), pointIds: pair }, strict)),
     Type.Object({ id, kind: Type.Literal('parallel'), lineIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('perpendicular'), lineIds: pair }, strict),
+    Type.Object({ id, kind: Type.Literal('equal-length'), lineIds: pair }, strict),
+    Type.Object({ id, kind: Type.Literal('equal-radius'), curveIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('radial-size'), entityId: id, quantity: Type.Union([Type.Literal('radius'), Type.Literal('diameter')]), value: CadScalarSchema }, strict),
     Type.Object({ id, kind: Type.Literal('fixed-point'), pointId: id, position: CadPoint2Schema }, strict),
     Type.Object({ id, kind: Type.Literal('fixed-axis'), pointId: id, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), value: CadScalarSchema }, strict),
@@ -42,6 +45,7 @@ export type CadSketchGraphRelation = CadSketchGraph['relations'][number];
 export type CadSketchCornerRelation = Extract<CadSketchGraphRelation, { kind: 'fillet-corner' | 'chamfer-corner' }>;
 export type CadSketchLineRelation = Extract<CadSketchGraphRelation, { kind: 'parallel' | 'perpendicular' }>;
 export type CadSketchRadialRelation = Extract<CadSketchGraphRelation, { kind: 'radial-size' }>;
+export type CadSketchEqualRelation = Extract<CadSketchGraphRelation, { kind: 'equal-length' | 'equal-radius' }>;
 const issueCodes = ['invalid-expression', 'invalid-coordinate', 'degenerate-entity', 'invalid-radius', 'arc-radius-mismatch', 'invalid-distance', 'relation-residual'] as const;
 export const CadSketchGraphIssueSchema = Type.Object({
   source: Type.Object({ kind: Type.Union([Type.Literal('point'), Type.Literal('entity'), Type.Literal('relation')]), id }, strict),
@@ -71,7 +75,8 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   for (const item of graph.entities) references(item.id, cadSketchEntityPointIds(item));
   for (const item of graph.relations) {
     if (item.kind === 'fillet-corner' || item.kind === 'chamfer-corner') resolveCadSketchCornerTopology(graph, item);
-    if (item.kind === 'parallel' || item.kind === 'perpendicular') resolveCadSketchLinePair(graph, item.lineIds);
+    if (item.kind === 'parallel' || item.kind === 'perpendicular' || item.kind === 'equal-length') resolveCadSketchLinePair(graph, item.lineIds);
+    if (item.kind === 'equal-radius') resolveCadSketchRadiusPair(graph, item.curveIds);
     if (item.kind === 'radial-size') {
       const entity = resolveCadSketchRadialEntity(graph, item.entityId);
       if (entity.kind === 'circle' && typeof entity.radius === 'string')
@@ -123,6 +128,9 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
   for (const relation of graph.relations) {
     const source = { kind: 'relation', id: relation.id } as const;
     try {
+      if (relation.kind === 'equal-length' || relation.kind === 'equal-radius') {
+        issues.push(...checkCadSketchEqualRelation(graph, relation, points, parameters)); continue;
+      }
       if (relation.kind === 'radial-size') {
         issues.push(...checkCadSketchRadialRelation(graph, relation, points, parameters)); continue;
       }

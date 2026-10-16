@@ -2,6 +2,65 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('keeps plate sides and hole radii equal while editing their drivers, then extrudes and reopens the exact part', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const feature = { id: 'equal', kind: 'sketch', name: 'Equal plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [40, '0'] }, { id: 'c', position: [40, 20] },
+      { id: 'd', position: ['0', 20] }, { id: 'h1', position: ['10', '10'] }, { id: 'h2', position: ['30', '30'] }],
+    entities: [{ id: 'ab', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false },
+      { id: 'bc', kind: 'line', startPointId: 'b', endPointId: 'c', construction: false },
+      { id: 'cd', kind: 'line', startPointId: 'c', endPointId: 'd', construction: false },
+      { id: 'da', kind: 'line', startPointId: 'd', endPointId: 'a', construction: false },
+      { id: 'hole1', kind: 'circle', centerPointId: 'h1', radius: 2, construction: false },
+      { id: 'hole2', kind: 'circle', centerPointId: 'h2', radius: 3, construction: false }],
+    relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['c', 'd'] }, { id: 'vertical', kind: 'vertical', pointIds: ['b', 'c'] },
+      { id: 'width', kind: 'distance', pointIds: ['a', 'b'], value: ' side ' },
+      { id: 'hole-size', kind: 'radial-size', entityId: 'hole1', quantity: 'diameter', value: ' bore ' }]
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'side', value: 40 }, { kind: 'set-parameter', name: 'bore', value: 4 }, { kind: 'add-feature', feature }
+  ] });
+  let current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: feature.id } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry-set', selections: [{ kind: 'entity', id: 'bc' }, { kind: 'entity', id: 'ab' }] } });
+  await page.getByRole('checkbox', { name: 'Equal length', exact: true }).check();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(feature);
+  await page.getByRole('checkbox', { name: 'Equal length', exact: true }).check();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const square = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature;
+  expect(square.graph.points.slice(0, 4)).toEqual([feature.graph.points[0], feature.graph.points[1], { id: 'c', position: [40, 40] }, { id: 'd', position: ['0', 40] }]);
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry-set', selections: [{ kind: 'entity', id: 'hole2' }, { kind: 'entity', id: 'hole1' }] } });
+  await page.getByRole('checkbox', { name: 'Equal radius', exact: true }).check();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  await page.getByRole('button', { name: 'Configure diameter 4 mm', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Diameter mm', exact: true }).fill('8');
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false, parameters: { bore: 8 } }); current = await context(page);
+  const accepted = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature;
+  expect(accepted.graph.entities.filter((entity: { kind: string }) => entity.kind === 'circle')).toEqual([
+    { ...feature.graph.entities[4], radius: 4 }, { ...feature.graph.entities[5], radius: 4 }
+  ]);
+  expect(accepted.graph.relations).toEqual([...feature.graph.relations,
+    expect.objectContaining({ kind: 'equal-length', lineIds: ['bc', 'ab'] }), expect.objectContaining({ kind: 'equal-radius', curveIds: ['hole2', 'hole1'] })]);
+  await page.keyboard.press('Control+z'); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature.graph.entities.filter((entity: { kind: string }) => entity.kind === 'circle').map((entity: { radius: number }) => entity.radius)).toEqual([2, 2]);
+  await page.keyboard.press('Control+Shift+z'); current = await context(page);
+  expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: feature.id })).materialAreaMm2).toBeCloseTo(1600 - 32 * Math.PI, 8);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'pad', kind: 'extrude', name: 'Plate thickness', suppressed: false, sketchId: feature.id, distance: 5, symmetric: false, operation: 'new', targetId: null
+  } }] });
+  current = await context(page); const built = await call(page, 'cad_build', { expectedVersion: current.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo(8000 - 160 * Math.PI, 7);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current.dirty).toBe(false); expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(accepted);
+});
+
 test('drives a circle diameter and major-arc radius through native dimensions, then saves their exact extrusion', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const feature = { id: 'radial', kind: 'sketch', name: 'Radial plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

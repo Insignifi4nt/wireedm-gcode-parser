@@ -24,6 +24,7 @@ interface PreparationFailureInput {
 
 const relationNames: Record<CadSketchGraphRelation['kind'], string> = {
   coincident: 'Coincident', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', distance: 'Distance',
+  'equal-length': 'Equal length', 'equal-radius': 'Equal radius',
   'fixed-point': 'Fixed point', 'fixed-axis': 'Fixed axis', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer', 'radial-size': 'Radial size'
 };
 const rejectionMessages: Record<Rejection['reason'], string> = {
@@ -48,8 +49,9 @@ export function describeCadSketchConstraintSource(graph: CadSketchGraph, source:
     const index = graph.relations.findIndex(relation => relation.id === source.id), relation = graph.relations[index];
     if (relation) {
       pointIds = cadSketchRelationPointIds(graph, relation); entityIds = cadSketchRelationEntityIds(relation);
-      const operands = relation.kind === 'parallel' || relation.kind === 'perpendicular'
+      const operands = relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'equal-length'
         ? relation.lineIds.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label)
+        : relation.kind === 'equal-radius' ? relation.curveIds.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label)
         : relation.kind === 'radial-size' ? [describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.entityId }).label]
         : ('pointIds' in relation ? relation.pointIds : [relation.pointId]).map(pointLabel);
       const name = relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`

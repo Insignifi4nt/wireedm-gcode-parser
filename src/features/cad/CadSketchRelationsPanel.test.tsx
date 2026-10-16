@@ -63,6 +63,41 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it.each(['equal-length', 'equal-radius'] as const)('keeps %s pair edits private and restores their exact symmetric source identity', async kind => {
+    const source = parseCadDocument({ ...createCadDocument('Equal sizes', 'equal-sizes'), schemaVersion: 2, parameters: { size: 10 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [10, 0] }, { id: 'c', position: [0, 10] },
+          { id: 'center', position: ['20', '0'] }, { id: 'start', position: [30, 0] }, { id: 'end', position: [20, 10] }],
+        entities: kind === 'equal-length' ? [
+          { id: 'first', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false },
+          { id: 'second', kind: 'line', startPointId: 'c', endPointId: 'a', construction: true }
+        ] : [
+          { id: 'first', kind: 'circle', centerPointId: 'a', radius: ' size ', construction: false },
+          { id: 'second', kind: 'arc', centerPointId: 'center', startPointId: 'start', endPointId: 'end', direction: 'cw', construction: true }
+        ], relations: kind === 'equal-length' ? [{ id: 'driver', kind: 'distance', pointIds: ['a', 'b'], value: ' size ' }] : []
+      }
+    }] });
+    const label = kind === 'equal-length' ? 'Equal length' : 'Equal radius';
+    const pair = [{ kind: 'entity' as const, id: 'second' }, { kind: 'entity' as const, id: 'first' }];
+    const h = await mount(source, pair);
+    await act(async () => field(label).click()); await click('Cancel');
+    expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false }); expect(h.edit).not.toHaveBeenCalled();
+    await act(async () => field(label).click()); await click('Apply');
+    const accepted = h.session.getSnapshot().document, sketch = accepted.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing equal-size sketch.');
+    const relation = sketch.graph.relations.at(-1);
+    expect(relation).toEqual({ id: expect.any(String), kind, [kind === 'equal-length' ? 'lineIds' : 'curveIds']: ['second', 'first'] });
+    expect(h.edit).toHaveBeenLastCalledWith([{ kind: 'set-sketch-relation', sketchId: 'sketch', relation }], expect.any(AbortSignal));
+    expect(sketch.graph.points).toEqual(source.features[0].kind === 'sketch' ? source.features[0].graph?.points : undefined);
+    await h.render([...pair].reverse()); expect(field(label).checked).toBe(true);
+    await act(async () => field(label).click()); await act(async () => field(label).click());
+    expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.edit).toHaveBeenCalledOnce();
+    await clickRelation('Inspect', label, sketch.graph.relations.length); expect(h.inspect).toHaveBeenLastCalledWith(relation);
+    await act(async () => field(label).click()); await click('Apply');
+    expect(h.session.getSnapshot().document.features[0]).toMatchObject({ graph: { relations: source.features[0].kind === 'sketch' ? source.features[0].graph?.relations : undefined } });
+    await act(async () => { h.session.undo(); h.session.undo(); }); expect(h.session.getSnapshot().document).toBe(source);
+  });
+
   it('authors a radial dimension with an explicit quantity, previews privately and releases it without changing source geometry', async () => {
     const source = parseCadDocument({ ...createCadDocument('Radial size', 'radial-size'), schemaVersion: 2, features: [{
       id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

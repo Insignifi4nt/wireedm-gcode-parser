@@ -7,7 +7,7 @@ import type { Point2 } from '@/domain/path-intel/types';
 /** Source topology only: a changed dimension may have unsolved numeric geometry. */
 export function resolveCadSketchRadialEntity(graph: CadSketchGraph, entityId: string) {
   const entity = graph.entities.find(entity => entity.id === entityId);
-  if (!entity || entity.kind === 'line') throw new CadError('invalid-sketch-radial-entity', 'A radial dimension requires an existing circle or arc.');
+  if (!entity || entity.kind === 'line') throw new CadError('invalid-sketch-radial-entity', 'Radial geometry requires an existing circle or arc.');
   return entity;
 }
 

@@ -20,6 +20,24 @@ const source = () => parseCadDocument({ ...createCadDocument('Line', 'line'), sc
 }] });
 
 describe('accepted sketch constraint inspection', () => {
+  it('exposes equal-radius exact curve identities and deduplicated operands without a driving scalar', async () => {
+    const document = parseCadDocument({ ...createCadDocument('Curves', 'equality'), schemaVersion: 2, parameters: { size: 20 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Curves', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'center', position: ['0', '0'] }, { id: 'start', position: [10, '0'] }, { id: 'end', position: ['0', 10] }],
+        entities: [{ id: 'circle', kind: 'circle', construction: true, centerPointId: 'center', radius: 10 },
+          { id: 'arc', kind: 'arc', construction: false, centerPointId: 'center', startPointId: 'start', endPointId: 'end', direction: 'cw' }],
+        relations: [{ id: 'dimension', kind: 'radial-size', entityId: 'circle', quantity: 'diameter', value: ' size ' },
+          { id: 'same', kind: 'equal-radius', curveIds: ['arc', 'circle'] }]
+      }
+    }] }), before = JSON.stringify(document);
+    const inspection = await inspectCadSketchConstraints(document, 'sketch', async () => solver);
+    expect(inspection.analysis).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 0 } });
+    const row = pageCadSketchConstraints(inspection, { section: 'relations', offset: 1 }).items[0];
+    expect(row).toMatchObject({ source: { id: 'same', kind: 'equal-radius', curveIds: ['arc', 'circle'] },
+      entityIds: ['arc', 'circle'], points: [{ id: 'center' }, { id: 'start' }, { id: 'end' }] });
+    expect(row).not.toHaveProperty('value'); expect(JSON.stringify(document)).toBe(before);
+  });
+
   it.each(['radius', 'diameter'] as const)('exposes a radial %s source in displayed units with the actual curve reference', async quantity => {
     const size = quantity === 'diameter' ? 20 : 10;
     const document = parseCadDocument({ ...createCadDocument('Circle', 'radial'), schemaVersion: 2, parameters: { size }, features: [{

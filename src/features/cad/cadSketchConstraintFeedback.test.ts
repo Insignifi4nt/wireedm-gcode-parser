@@ -10,6 +10,21 @@ const graph = () => parseCadSketchGraph({ points: [{ id: 'a', position: [' 0 ', 
   relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: proposedId, kind: 'distance', pointIds: ['a', 'b'], value: ' 3 * 4 ' }] });
 
 describe('candidate-owned sketch constraint feedback', () => {
+  it('names exact line and curve operands for scalar-free equal-size subjects', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'center', position: [0, 0] }, { id: 'start', position: [10, 0] }, { id: 'end', position: [0, 10] }], entities: [
+      { id: 'line-b', kind: 'line', construction: false, startPointId: 'center', endPointId: 'start' },
+      { id: 'line-a', kind: 'line', construction: true, startPointId: 'end', endPointId: 'center' },
+      { id: 'circle', kind: 'circle', construction: true, centerPointId: 'center', radius: 10 },
+      { id: 'arc', kind: 'arc', construction: false, centerPointId: 'center', startPointId: 'start', endPointId: 'end', direction: 'cw' }
+    ], relations: [{ id: 'length', kind: 'equal-length', lineIds: ['line-b', 'line-a'] }, { id: 'radius', kind: 'equal-radius', curveIds: ['circle', 'arc'] }] });
+    expect(describeCadSketchConstraintSource(graph, { kind: 'relation', id: 'length' })).toMatchObject({
+      label: 'Equal length relation 1 · Line 4 and Line 3', pointIds: ['center', 'start', 'end'], entityIds: ['line-b', 'line-a']
+    });
+    expect(describeCadSketchConstraintSource(graph, { kind: 'relation', id: 'radius' })).toMatchObject({
+      label: 'Equal radius relation 2 · Circle 2 and Arc 1', pointIds: ['center', 'start', 'end'], entityIds: ['circle', 'arc']
+    });
+  });
+
   it.each(['radius', 'diameter'] as const)('names the displayed %s and exact curve operand for radial rejection inspection', quantity => {
     const candidate = parseCadSketchGraph({ points: [{ id: 'center', position: [0, 0] }],
       entities: [{ id: 'circle', kind: 'circle', construction: true, centerPointId: 'center', radius: 6 }],
