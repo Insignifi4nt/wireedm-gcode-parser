@@ -99,11 +99,18 @@ export function prepareCadSketchGeometrySnaps(source?: {
     // A bound start already competes as its exact source point. Stale references
     // never become a fresh closure target with invented identity.
     if (draftStart?.pointId === undefined && draftStart && permitted('draft-start')) add({ kind: 'draft-start' }, draftStart.point, []);
-    hits.sort((a, b) => a.distancePx - b.distancePx || (targetKey(a.target) < targetKey(b.target) ? -1 : targetKey(a.target) > targetKey(b.target) ? 1 : 0));
-    if (!hits.length) return NONE;
-    const closest = hits[0].distancePx;
-    const tied = hits.filter(hit => hit.distancePx - closest <= 8 * Number.EPSILON * Math.max(1, closest, hit.distancePx));
+    const pointPositions = new Map<number, Set<number>>();
+    for (const hit of hits) if ('pointId' in hit.target) {
+      const ys = pointPositions.get(hit.point[0]) ?? new Set<number>();
+      ys.add(hit.point[1]); pointPositions.set(hit.point[0], ys);
+    }
+    // An exact owned point supersedes a position-only midpoint, never another point ID.
+    const ranked = hits.filter(hit => hit.target.kind !== 'midpoint' || !pointPositions.get(hit.point[0])?.has(hit.point[1]));
+    ranked.sort((a, b) => a.distancePx - b.distancePx || (targetKey(a.target) < targetKey(b.target) ? -1 : targetKey(a.target) > targetKey(b.target) ? 1 : 0));
+    if (!ranked.length) return NONE;
+    const closest = ranked[0].distancePx;
+    const tied = ranked.filter(hit => hit.distancePx - closest <= 8 * Number.EPSILON * Math.max(1, closest, hit.distancePx));
     tied.sort((a, b) => targetKey(a.target) < targetKey(b.target) ? -1 : targetKey(a.target) > targetKey(b.target) ? 1 : 0);
-    return tied.length > 1 ? Object.freeze({ kind: 'ambiguous', candidates: Object.freeze(tied) }) : Object.freeze({ kind: 'hit', candidate: hits[0] });
+    return tied.length > 1 ? Object.freeze({ kind: 'ambiguous', candidates: Object.freeze(tied) }) : Object.freeze({ kind: 'hit', candidate: ranked[0] });
   };
 }

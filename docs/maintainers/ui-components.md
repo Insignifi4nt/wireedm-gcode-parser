@@ -69,6 +69,8 @@ Button/field `title` props become shared help. Names identify controls; help des
 
 Shared help has no links or actions. `pointer-events: none` and Radix's nonhoverable-content behavior keep it clear of commands. Rich illustrated CAD help remains `CadContextHelp`, with preview, pinning, dismissal and an interactive close control. Interactive content does not belong in a pointer-transparent tooltip.
 
+Portal context menus use `--layer-context-menu`; shared tooltip portals use the higher `--layer-tooltip`. Keep that order so an open menu cannot obscure its own explanation. `MenuItem` places help to the side, with normal collision handling. `Button.tooltipSide` can select a side when a real layout needs it; ordinary controls retain the default. Help remains pointer-transparent; feature-specific tooltip layering is unnecessary.
+
 ## Layout and responsive patterns
 
 - Headers group a sentence-case title, optional `InfoTip`, and real commands. Give the main task one clear primary action; utilities and metadata use secondary emphasis.

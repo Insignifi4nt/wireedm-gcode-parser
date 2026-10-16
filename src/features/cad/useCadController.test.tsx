@@ -26,6 +26,8 @@ import type { CadEdit } from '@/domain/cad/cadOperations';
 import type { CadSketchSolveInput, CadSketchSolveResult } from './sketch-solver/cadSketchSolverTypes';
 import { inspectCadSketchRegions } from '@/domain/cad/cadSketchRegionInspection';
 import type { CadSketchCellReference } from '@/domain/cad/cadSketchRegionSelection';
+import { endTrim, trimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
+import type { CadSketchEndTrimPreparation } from '@/domain/cad/cadSketchTrimExtend';
 
 const kernel = vi.hoisted(() => ({ build: vi.fn(), section: vi.fn(), export: vi.fn(), importSolid: vi.fn(), importDxf: vi.fn(), importDxfCurve: vi.fn(), inspectTopology: vi.fn(), resolveTopologyPicks: vi.fn(), dispose: vi.fn() }));
 const createClient = vi.hoisted(() => vi.fn());
@@ -1325,6 +1327,56 @@ describe('CAD controller asynchronous guards', () => {
       await act(async () => h.cad().undo(accepted.version)); expect(h.session.getSnapshot().document).toEqual(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
       await act(async () => h.cad().redo(h.session.getSnapshot().version)); expect(h.session.getSnapshot().document).toEqual(accepted.document);
       expect(createClient).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('queries an end trim through guarded public reads, then applies its exact proposal and consumer repair in one undoable edit', async () => {
+    const h = await harness(); vi.useFakeTimers();
+    try {
+      await act(async () => h.session.replace(trimPart(true)));
+      const before = h.session.getSnapshot(), original = JSON.stringify(before.document), tools = cadSiteTools(h.cad);
+      const inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference'), edit = tools.find(tool => tool.name === 'cad_edit_document');
+      if (!inspect || !read || !edit) throw new Error('Missing public trim path.');
+      const trimAt = { entityId: 'ab', parameter: .1 };
+      const queried = await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', trimAt }) as {
+        ok: boolean; data: { trimPreview: CadSketchEndTrimPreparation }
+      };
+      expect(queried).toMatchObject({ ok: true, data: { total: 2, trimPreview: {
+        target: { kind: 'end', entityId: 'ab', parameter: .1, end: 'start', boundary: { entityId: 'cutter', index: 0, parameter: .25, position: [5, 0] } }
+      } } });
+      const target = queried.data.trimPreview.target;
+      if (target.kind !== 'end') throw new Error('Missing witnessed end trim.');
+      const trim = { ...target, cutPointId: target.boundary.endpointPointId ?? 'cut' };
+      expect(trim).toEqual(endTrim);
+      const proposal = { trim };
+      const inspected = await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', proposal }) as {
+        ok: boolean; data: { items: { reference: CadSketchCellReference }[] }
+      };
+      expect(inspected).toMatchObject({ ok: true, data: { proposed: true, total: 1, items: [{ areaMm2: 200 }] } });
+      const reference = inspected.data.items[0].reference;
+      const chunk = await read.execute({ expectedVersion: before.version, sketchId: 'sketch', boundaryProfileId: reference.boundaryProfileId, proposal }) as {
+        ok: boolean; data: { text: string }
+      };
+      expect(chunk.ok).toBe(true); expect(chunk.data.text).toBe(JSON.stringify(reference));
+      expect(h.session.getSnapshot()).toBe(before); expect(JSON.stringify(before.document)).toBe(original); expect(createSketchClient).not.toHaveBeenCalled();
+      await act(async () => h.session.setWorkflowOpen(true));
+      expect(await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', trimAt })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+      await act(async () => h.session.setWorkflowOpen(false));
+      const abort = new AbortController(), pending = inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', trimAt }, { signal: abort.signal });
+      abort.abort(); expect(await pending).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+      sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+      const trimEdit = { kind: 'trim-sketch-entity', sketchId: 'sketch', trim } as const;
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits: [trimEdit] })).toMatchObject({ ok: false, error: { code: 'stale-sketch-region' } }); });
+      expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+      const pad = before.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad.');
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits: [trimEdit,
+        { kind: 'update-feature', feature: { ...pad, regionSelection: [reference] } }
+      ] })).toMatchObject({ ok: true }); });
+      const accepted = h.session.getSnapshot();
+      expect(inspectCadSketchRegions(accepted.document, 'sketch').items.map(cell => cell.reference)).toEqual([reference]);
+      expect(await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', trimAt })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+      await act(async () => h.cad().undo(accepted.version)); expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+      await act(async () => h.cad().redo(h.session.getSnapshot().version)); expect(h.session.getSnapshot().document).toBe(accepted.document);
     } finally { vi.useRealTimers(); }
   });
 

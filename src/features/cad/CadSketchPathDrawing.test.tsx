@@ -54,7 +54,9 @@ describe('mixed line and three-point arc drawing', () => {
   it.each([true, false])('connects deliberate existing-point snaps while honoring disabled snapping (%s)', async enabled => {
     const onAddPath = vi.fn();
     const h = await fixture({ onAddPath, sketch: { id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
-      points: [{ id: 'a', position: ['anchorX', 3.2] }, { id: 'b', position: [22.1, 3.2] }], entities: [], relations: []
+      points: [{ id: 'a', position: ['anchorX', 3.2] }, { id: 'b', position: [22.1, 3.2] },
+        { id: 'bottom', position: ['anchorX', 0] }, { id: 'top', position: ['anchorX', 6.4] }],
+      entities: [{ id: 'fence', kind: 'line', construction: true, startPointId: 'bottom', endPointId: 'top' }], relations: []
     } }, parameters: { anchorX: 2.1 } });
     if (!enabled) await h.click('Toggle snapping');
     await h.point(2.2, 3.3, 'pointermove');

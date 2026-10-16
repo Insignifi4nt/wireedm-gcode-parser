@@ -59,6 +59,20 @@ type DetailedSegmentIntersection =
   | { kind: 'points'; points: ParameterizedIntersectionPoint[] }
   | { kind: 'overlap'; points: [] };
 
+export type ParameterizedSegmentIntersection =
+  | { readonly kind: 'none' | 'overlap'; readonly points: readonly [] }
+  | { readonly kind: 'points'; readonly points: readonly {
+      readonly point: Readonly<Point2>; readonly leftParameter: number | null; readonly rightParameter: number | null;
+    }[] };
+
+/** Finite source parameters; circles have no endpoint parameter. Never borrows mutable caller data. */
+export function classifyParameterizedPathSegmentIntersection(left: PathSegment, right: PathSegment, coincidenceEpsilon: number): ParameterizedSegmentIntersection {
+  const result = classifyDetailedPathSegmentIntersection(left, right, coincidenceEpsilon);
+  return result.kind === 'points' ? Object.freeze({ kind: result.kind, points: Object.freeze(result.points.map(hit =>
+    Object.freeze({ ...hit, point: Object.freeze({ ...hit.point }) }))) })
+    : Object.freeze({ kind: result.kind, points: Object.freeze([]) as readonly [] });
+}
+
 export function classifyPathSegmentIntersection(
   left: PathSegment,
   right: PathSegment,

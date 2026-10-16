@@ -19,7 +19,7 @@ import { parseCadDxfImportSource, type CadDxfUnits } from '@/domain/cad/cadDxfSo
 import type { DxfUnitDeclaration } from '@/domain/dxf/types';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { createCadFeaturePreviewCoordinator, type CadFeaturePreviewState } from './cadFeaturePreview';
-import type { CadSketchRegionProposal } from '@/domain/cad/cadSketchRegionInspection';
+import type { CadSketchRegionInspectionInput, CadSketchRegionProposal } from '@/domain/cad/cadSketchRegionInspection';
 import { needsCadSketchPreparation, prepareCadEdits } from './cadEditPreparation';
 import type { CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
 import type { CadSketchConstraintInspection } from './cadSketchConstraintInspection';
@@ -524,7 +524,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
     return measureCadCurve(session.getSnapshot().document, curveId);
   }
-  async function inspectSketchRegions(sketchId: string, page: { offset?: number; limit?: number; proposal?: CadSketchRegionProposal } = {}, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
+  async function inspectSketchRegions(sketchId: string, page: CadSketchRegionInspectionInput = {}, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
     const { inspectCadSketchRegions } = await import('@/domain/cad/cadSketchRegionInspection');
     signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();

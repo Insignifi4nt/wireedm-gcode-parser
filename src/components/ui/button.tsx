@@ -3,7 +3,7 @@ import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 import { cn } from '@/lib/utils';
-import { Tooltip } from './tooltip';
+import { Tooltip, type TooltipProps } from './tooltip';
 import './button.css';
 
 const buttonVariants = cva(
@@ -39,10 +39,11 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  tooltipSide?: TooltipProps['side'];
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, title, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, title, tooltipSide, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
 
     const control = (
@@ -52,7 +53,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       />
     );
-    return <Tooltip content={title}>{control}</Tooltip>;
+    return <Tooltip content={title} side={tooltipSide}>{control}</Tooltip>;
   }
 );
 Button.displayName = 'Button';

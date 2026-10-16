@@ -14,6 +14,7 @@ import { CadSession } from './cadSession';
 import { CadSketchEditDraft } from './cadSketchEditDraft';
 import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
+import { endTrim, trimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
 
 const require = createRequire(import.meta.url);
 const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
@@ -44,6 +45,34 @@ function source(explicit = false, earlierGraph = false) {
 const removeEdge: CadEdit = { kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: [], entityIds: ['bc'], relationIds: [], cascade: false };
 
 describe('owned consumed-sketch draft', () => {
+  it('trims a consumed boundary privately, restores it locally and requires deliberate remaining-area repair for one global Finish', async () => {
+    const main = new CadSession(trimPart(true)), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    const trim: CadEdit = { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: endTrim };
+    expect(() => draft.validateEdits([{ ...trim, sketchId: 'other' }])).toThrow('sketch');
+    await draft.editPrepared([trim], prepare);
+    const local = draft.getSnapshot();
+    expect(main.getSnapshot()).toBe(base); expect(sketchOf(local.document).source).toEqual(sketchOf(base.document).source);
+    draft.undo(); expect(draft.getSnapshot().document).toEqual(draft.initialDocument); expect(draft.inspectAreaRepairs(base)).toBeNull();
+    draft.redo(); expect(draft.getSnapshot().document).toBe(local.document);
+    await expect(prepare(base.document, draft.finishEdits(base).edits)).rejects.toMatchObject({ code: 'stale-sketch-region' });
+    const repair = draft.inspectAreaRepairs(base); if (!repair) throw new Error('Missing trim repair.');
+    expect(repair.cells.cells).toHaveLength(1); expect(repair.cells.cells[0].areaMm2).toBe(200);
+    const pad = base.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad.');
+    const regionSelection = repair.cells.cells.map(cell => cell.reference);
+    const finish = draft.finishEdits(base, [{ kind: 'update-feature', feature: { ...pad, regionSelection } }]);
+    await main.editPrepared(base.version, document => prepare(document, finish.edits), undefined,
+      () => draft.assertCurrent(main.getSnapshot(), finish.localVersion));
+    const accepted = main.getSnapshot(); expect(accepted.document.features[1]).toEqual({ ...pad, regionSelection });
+    main.undo(); expect(main.getSnapshot().document).toBe(base.document); expect(main.getSnapshot().canUndo).toBe(false);
+    main.redo(); expect(main.getSnapshot().document).toBe(accepted.document);
+    const cancelBase = main.getSnapshot(); main.undo();
+    const cancelled = new CadSketchEditDraft(main.getSnapshot(), 'sketch'); let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const pending = cancelled.editPrepared([trim], async (document, edits, signal) => { await gate; return prepare(document, edits, signal); });
+    cancelled.cancel(); release(); await expect(pending).rejects.toThrow();
+    expect(main.getSnapshot().canRedo).toBe(true); main.redo(); expect(main.getSnapshot().document).toBe(cancelBase.document);
+  });
+
   it('splits a consumed edge privately and requires explicit area repair before one guarded Finish', async () => {
     const main = new CadSession(source(true)), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
     const split = { kind: 'split-sketch-entity', sketchId: 'sketch', split: { kind: 'line', entityId: 'ab', parameter: .25,

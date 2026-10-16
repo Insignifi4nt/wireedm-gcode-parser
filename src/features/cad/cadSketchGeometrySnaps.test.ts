@@ -49,11 +49,33 @@ describe('prepared sketch geometry snaps', () => {
     }
     const coincidentCoordinates = parseCadSketchGraph({ points: [{ id: 'different-a', position: [0, 0] }, { id: 'different-b', position: [0, 0] }], entities: [], relations: [] });
     expect(prepareCadSketchGraphInteraction(coincidentCoordinates, {}).snap(query).kind).toBe('ambiguous');
-    const pointAtMidpoint = parseCadSketchGraph({ points: [{ id: 'a', position: [-10, 0] }, { id: 'b', position: [10, 0] }, { id: 'p', position: [0, 0] }], entities: [
-      { id: 'line', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' }
-    ], relations: [] }), snap = prepareCadSketchGraphInteraction(pointAtMidpoint, {}).snap;
-    expect(snap(query).kind).toBe('ambiguous');
-    expect(snap({ ...query, kinds: ['point'] })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'point', pointId: 'p' } } });
+  });
+
+  it('prefers an eligible exact point identity over a coincident midpoint without merging point IDs or nearby positions', () => {
+    const source = (role: 'endpoint' | 'center' | 'point') => parseCadSketchGraph({ points: [
+      { id: 'cut', position: [10, 0] }, { id: 'far', position: [20, 0] },
+      { id: 'bottom', position: [10, -5] }, { id: 'top', position: [10, 5] }
+    ], entities: [{ id: 'fence', kind: 'line', startPointId: 'bottom', endPointId: 'top', construction: true },
+      ...(role === 'endpoint' ? [{ id: 'edge', kind: 'line', startPointId: 'cut', endPointId: 'far', construction: false }]
+        : role === 'center' ? [{ id: 'circle', kind: 'circle', centerPointId: 'cut', radius: 2, construction: false }] : [])], relations: [] });
+    const query = { cursor: [10.01, .01] as const, mmPerPixel: [.01, .01] as const };
+    for (const role of ['endpoint', 'center', 'point'] as const) {
+      const graph = source(role), before = JSON.stringify(graph), snap = prepareCadSketchGraphInteraction(graph, {}).snap;
+      expect(snap(query)).toMatchObject({ kind: 'hit', candidate: { target: { kind: role, pointId: 'cut' }, point: [10, 0] } });
+      expect(snap({ ...query, excludePointIds: ['cut'] })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'midpoint', entityId: 'fence' } } });
+      expect(snap({ ...query, kinds: ['midpoint'] })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'midpoint', entityId: 'fence' } } });
+      expect(JSON.stringify(graph)).toBe(before);
+    }
+    const graph = source('point');
+    const duplicate = prepareCadSketchGraphInteraction(parseCadSketchGraph({ ...graph, points: [...graph.points, { id: 'other', position: [10, 0] }] }), {}).snap(query);
+    expect(duplicate.kind).toBe('ambiguous');
+    if (duplicate.kind !== 'ambiguous') throw new Error('Distinct point identities must remain ambiguous.');
+    expect(duplicate.candidates.map(candidate => candidate.target)).toEqual([{ kind: 'point', pointId: 'cut' }, { kind: 'point', pointId: 'other' }]);
+    const nearby = parseCadSketchGraph({ ...graph, points: graph.points.map(point => point.id === 'cut' ? { ...point, position: [10, .001] } : point) });
+    expect(prepareCadSketchGraphInteraction(nearby, {}).snap({ cursor: [10, 0], mmPerPixel: [.01, .01] }))
+      .toMatchObject({ kind: 'hit', candidate: { target: { kind: 'midpoint', entityId: 'fence' } } });
+    const roundoff = parseCadSketchGraph({ ...graph, points: graph.points.map(point => point.id === 'cut' ? { ...point, position: [10, Number.EPSILON] } : point) });
+    expect(prepareCadSketchGraphInteraction(roundoff, {}).snap({ cursor: [10, 0], mmPerPixel: [1, 1] }).kind).toBe('ambiguous');
   });
 
   it('follows minor and major signed arc supports, invariant under reversed traversal and without chord midpoint snaps', () => {

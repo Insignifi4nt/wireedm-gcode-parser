@@ -7,6 +7,7 @@ import type { CadSketchFeature } from '../cadDocument';
 import { createCadDocument, parseCadDocument } from '../cadSchema';
 import { reduceCadEditIntents } from '../cadOperations';
 import type { CadSketchRegionProposal } from '../cadSketchRegionInspection';
+import { endTrim, trimPart } from './cadSketchTrimFixtures';
 
 function splitSource() {
   return parseCadDocument({ ...createCadDocument('Split regions', 'split-regions'), schemaVersion: 2, parameters: { span: 20, retained: 7 }, features: [{
@@ -19,6 +20,55 @@ function splitSource() {
 const split = { kind: 'line', entityId: 'edge-a', parameter: .5, splitPointId: 'joint', newEntityId: 'a-new', supportRelationId: 'straight' } as const;
 
 describe('prepared closed-cell inspection and physical selection', () => {
+  it('queries an exact end-trim witness without allocating IDs, changing cells or pretending the trim was applied', () => {
+    const source = trimPart(), original = JSON.stringify(source);
+    const accepted = inspectCadSketchRegions(source, 'sketch');
+    const query = inspectCadSketchRegions(source, 'sketch', { trimAt: { entityId: 'ab', parameter: .1 } });
+    expect(query.items).toEqual(accepted.items); expect(query.total).toBe(2); expect(query).not.toHaveProperty('proposed');
+    const { cutPointId: _cut, ...target } = endTrim;
+    expect(query.trimPreview).toMatchObject({ target, point: [5, 0], removed: { kind: 'line', length: 5 }, survivor: { kind: 'line', length: 15 } });
+    expect(query.trimPreview?.target).not.toHaveProperty('cutPointId');
+    expect(JSON.stringify(source)).toBe(original);
+    expect(() => inspectCadSketchRegions(source, 'sketch', { trimAt: { entityId: 'ab', parameter: .1 }, proposal: { trim: endTrim } } as never))
+      .toThrowError(expect.objectContaining({ code: 'invalid-region-proposal' }));
+    expect(() => inspectCadSketchRegions(source, 'sketch', { trimAt: { entityId: 'ab', parameter: NaN } })).toThrow();
+  });
+
+  it('preflights the actual end-trim result and exact remaining refs before an atomic explicit-consumer repair', () => {
+    const session = new CadSession(trimPart(true)), before = session.getSnapshot(), original = JSON.stringify(before.document);
+    const proposal = { trim: endTrim, parameterValues: { added: 11 } };
+    const inspection = inspectCadSketchRegions(before.document, 'sketch', { proposal });
+    expect(inspection).toMatchObject({ proposed: true, total: 1, items: [{ areaMm2: 200, boundaryLengthMm: 60 }] });
+    const reference = inspection.items[0].reference;
+    expect(readCadSketchRegionReference(before.document, 'sketch', reference.boundaryProfileId, proposal)).toEqual(reference);
+    const edits = [{ kind: 'set-parameter', name: 'added', value: 11 }, { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: endTrim }] as const;
+    const reduced = reduceCadEditIntents(before.document, edits), effective = reduced.features[0];
+    if (effective.kind !== 'sketch') throw new Error('Missing trim sketch.');
+    expect(prepareCadSketchCells(effective, reduced.parameters).cells.map(cell => cell.reference)).toEqual([reference]);
+    expect(() => session.edit(edits, before.version)).toThrowError(expect.objectContaining({ code: 'stale-sketch-region' }));
+    expect(session.getSnapshot()).toBe(before); expect(JSON.stringify(before.document)).toBe(original);
+    const pad = before.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad.');
+    session.edit([...edits, { kind: 'update-feature', feature: { ...pad, regionSelection: [reference] } }], before.version);
+    const accepted = session.getSnapshot(); expect(accepted.document.features[0]).toEqual(effective);
+    expect(effective.source).toEqual(before.document.features[0].kind === 'sketch' ? before.document.features[0].source : undefined);
+    session.undo(); expect(session.getSnapshot().document).toBe(before.document); expect(session.getSnapshot().canUndo).toBe(false);
+    session.redo(); expect(session.getSnapshot().document).toBe(accepted.document);
+  });
+
+  it('refuses mixed or stale trim proposals and reports exact endpoint-driver owners without editing accepted data', () => {
+    const document = trimPart(), feature = document.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Missing trim sketch.');
+    const original = JSON.stringify(document);
+    for (const proposal of [{ trim: endTrim, sketch: feature }, { trim: endTrim, split },
+      { trim: { ...endTrim, boundary: { ...endTrim.boundary, position: [6, 0] } } }])
+      expect(() => inspectCadSketchRegions(document, 'sketch', { proposal: proposal as unknown as CadSketchRegionProposal })).toThrow();
+    const driven = parseCadDocument({ ...document, features: [{ ...feature, graph: { ...feature.graph,
+      points: feature.graph.points.map(point => point.id === 'a' ? { ...point, position: [' 0 ', 0] } : point) } }] });
+    expect(() => inspectCadSketchRegions(driven, 'sketch', { proposal: { trim: endTrim } })).toThrowError(expect.objectContaining({
+      code: 'dependent-sketch-trim', relationIds: [], pointIds: ['a']
+    }));
+    expect(JSON.stringify(document)).toBe(original);
+  });
+
   it('preflights the exact named split and additive parameter values before one atomic explicit-consumer repair', () => {
     const source = splitSource(), oldReference = inspectCadSketchRegions(source, 'graph').items[0].reference;
     const consumer = { ...pad([oldReference]), sketchId: 'graph' };

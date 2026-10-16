@@ -8,8 +8,48 @@ import type { CadController } from './useCadController';
 import type { CadBuildResult } from '@/domain/cad/cadDocument';
 import { refs as regionRefs, pad as regionPad, pocket as regionPocket, sketch as regionSketch } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
 import { CadSketchSplitDependencyError } from '@/domain/cad/cadSketchSplit';
+import { CadSketchTrimDependencyError } from '@/domain/cad/cadSketchTrimExtend';
+import { endTrim } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('exposes strict end-trim/delete proposals on the existing reads and refuses mixed or unwitnessed input before controller access', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed trim reached controller.'); });
+    const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+    if (!inspect || !read) throw new Error('Missing region reads.');
+    const deletion = { kind: 'delete', entityId: 'edge', parameter: .5 };
+    expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', sketchId: 'regions', trimAt: { entityId: 'ab', parameter: .1 } })).toBe(true);
+    for (const input of [{ trimAt: { entityId: 'ab', parameter: .1 }, proposal: { trim: endTrim } },
+      { trimAt: { entityId: 'ab', parameter: .1, cutPointId: 'forbidden' } }, { trimAt: { entityId: 'ab', parameter: 2 } }])
+      expect(await inspect.execute({ expectedVersion: 'current', sketchId: 'regions', ...input })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    for (const tool of [inspect, read]) {
+      const query = { expectedVersion: 'current', sketchId: 'regions', ...(tool === read ? { boundaryProfileId: 'outer' } : {}) };
+      for (const proposal of [{ trim: endTrim }, { trim: deletion, parameterValues: { span: 30 } }])
+        expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(true);
+      for (const proposal of [{ trim: endTrim, sketch: regionSketch() }, { trim: endTrim, split: {} },
+        { trim: { ...endTrim, boundary: undefined } }, { trim: { ...endTrim, end: 'middle' } },
+        { trim: { ...endTrim, boundary: { ...endTrim.boundary, parameter: '0.25' } } },
+        { trim: { ...deletion, cutPointId: 'unused' } }, { trim: endTrim, parameterValues: { span: '30' } }]) {
+        expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(false);
+        expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+      }
+    }
+    expect(controller).not.toHaveBeenCalled();
+  });
+
+  it('bounds exact trim relation and endpoint-driver blocker IDs independently', async () => {
+    const relationIds = Array.from({ length: 12 }, (_, index) => `relation-${index}`), pointIds = Array.from({ length: 10 }, (_, index) => `point-${index}`);
+    const failure = new CadSketchTrimDependencyError(relationIds, pointIds);
+    const tool = cadSiteTools(() => { throw failure; }).find(tool => tool.name === 'cad_inspect_sketch_regions');
+    if (!tool) throw new Error('Missing region inspection.');
+    expect(await tool.execute({ expectedVersion: 'current', sketchId: 'graph', proposal: { trim: endTrim } })).toMatchObject({
+      ok: false, error: { code: 'dependent-sketch-trim', details: {
+        relationIds: relationIds.slice(0, 8), relationCount: 12, omittedRelationCount: 4,
+        pointIds: pointIds.slice(0, 8), pointCount: 10, omittedPointCount: 2
+      } }
+    });
+    expect(failure.relationIds).toEqual(relationIds); expect(failure.pointIds).toEqual(pointIds);
+  });
+
   it.each(['extrude', 'pocket'] as const)('advertises the exact optional closed-cell selection schema for %s without widening other feature kinds', async kind => {
     const describe = cadSiteTools(() => ({} as CadController)).find(tool => tool.name === 'cad_describe_features');
     if (!describe) throw new Error('Missing feature discovery');

@@ -358,6 +358,68 @@ describe('graph spatial selection', () => {
     expect(h.feature).toEqual(original); expect(h.pending).toHaveBeenLastCalledWith(false);
     expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: pointId });
   });
+  async function trimFixture() {
+    const h = await spatialFixture(), graph = h.feature.graph!;
+    const feature: CadSketchFeature = { ...h.feature, graph: { ...graph,
+      points: [...graph.points, { id: 'fence-start', position: [4, -5] }, { id: 'fence-end', position: [4, 5] }],
+      entities: [...graph.entities, { id: 'fence', kind: 'line', construction: true, startPointId: 'fence-start', endPointId: 'fence-end' }] } };
+    await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });
+    const open = async () => { await h.pointer('pointerdown', 2, .1, false, 7, 2); await h.pointer('pointerup', 2, .1, false, 7, 2); };
+    return { ...h, feature, open };
+  }
+  it('previews end Trim separately from Split and commits its pinned intersection once', async () => {
+    const h = await trimFixture(), operation = deferred<void>(); h.edited.mockReturnValue(operation.promise);
+    await h.open();
+    const trim = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Trim here');
+    expect(trim).toBeDefined(); expect(trim?.disabled).toBe(false); expect(h.edited).not.toHaveBeenCalled();
+    await act(async () => trim?.focus());
+    expect(container.querySelector('[data-cad-sketch-split-point]')).toBeNull();
+    const preview = container.querySelector('[aria-label="Trim preview"]'); expect(preview).not.toBeNull();
+    const view = currentControls().getState(); if (view.mode === 'solid') throw new Error('Sketch view missing.');
+    expect(Number(preview?.querySelector('.is-removed')?.getAttribute('x2')) + view.centerMm[0]).toBe(4);
+    expect(Number(preview?.querySelector('.is-retained')?.getAttribute('x1')) + view.centerMm[0]).toBe(4);
+    const pointId = preview?.querySelector('[data-cad-sketch-trim-point]')?.getAttribute('data-cad-sketch-trim-point');
+    expect(trim?.getAttribute('aria-description')).toMatch(/one-time|one time/i);
+    await act(async () => trim?.click());
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'trim-sketch-entity', sketchId: h.feature.id, trim: {
+      kind: 'end', entityId: 'ab', parameter: expect.closeTo(.2, 12), end: 'start', cutPointId: pointId,
+      boundary: { entityId: 'fence', index: 0, parameter: .4, position: [4, 0] }
+    } }], expect.any(AbortSignal));
+    const acceptedDocument = applyCadEdits(h.props().graphControls!.document, h.edited.mock.calls[0][0]), accepted = acceptedDocument.features[0];
+    if (accepted.kind !== 'sketch') throw new Error('Accepted trim missing.');
+    expect(accepted.graph?.entities[0]).toMatchObject({ id: 'ab', startPointId: pointId, endPointId: 'b' });
+    expect(accepted.graph?.points.slice(0, 5)).toEqual(h.feature.graph?.points);
+    await h.show({ sketch: accepted, documentVersion: 'accepted', graphControls: { ...h.props().graphControls!, document: acceptedDocument } });
+    await act(async () => operation.resolve(undefined));
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: pointId }); expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
+  it('previews no-hit Trim as complete edge removal and retains source after dismissal', async () => {
+    const h = await spatialFixture();
+    await h.pointer('pointerdown', 5, .1, false, 7, 2); await h.pointer('pointerup', 5, .1, false, 7, 2);
+    const trim = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Trim here');
+    expect(trim).toBeDefined(); await act(async () => trim?.focus());
+    expect(container.querySelector('[aria-label="Trim preview"] .is-removed')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Trim preview"] .is-retained')).toBeNull();
+    expect(trim?.getAttribute('aria-description')).toMatch(/whole edge/i);
+    await act(async () => document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(h.edited).not.toHaveBeenCalled(); expect(h.selected).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
+  it('blocks end Trim with the actual detached endpoint owner and cancels a late trim receipt on blur', async () => {
+    const h = await trimFixture(), feature = { ...h.feature, graph: { ...h.feature.graph!, relations: [{ id: 'anchor', kind: 'fixed-axis' as const, pointId: 'a', axis: 'x' as const, value: 0 }] } };
+    await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });
+    await h.open();
+    let trim = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Trim here');
+    expect(trim).toBeDefined(); expect(trim?.disabled).toBe(true); expect(trim?.getAttribute('aria-description')).toMatch(/Point 1/);
+    await act(async () => document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    await h.show({ sketch: h.feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [h.feature] } } });
+    const operation = deferred<void>(); h.edited.mockReturnValue(operation.promise); await h.open();
+    trim = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Trim here');
+    await act(async () => trim?.click());
+    const signal: unknown = h.edited.mock.calls[0]?.[1]; expect(signal).toBeInstanceOf(AbortSignal);
+    await act(async () => window.dispatchEvent(new Event('blur')));
+    expect((signal as AbortSignal).aborted).toBe(true); await act(async () => operation.resolve(undefined));
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
   it('does not apply a cut after the actual SVG frame moves while its menu is open', async () => {
     const h = await spatialFixture();
     await h.pointer('pointerdown', 5, .1, false, 7, 2); await h.pointer('pointerup', 5, .1, false, 7, 2);

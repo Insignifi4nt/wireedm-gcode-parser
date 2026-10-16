@@ -181,6 +181,99 @@ test('splits a consumed sketch edge at its cursor, repairs its selected area del
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(changed);
 });
 
+test('trims a consumed edge, reconnects deliberately and matches the same guarded agent batch through save', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const sketch = { id: 'outline', kind: 'sketch', name: 'Trim outline', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: ['40.0000', '20.00'] }, { id: 'd', position: [0, 20] },
+      { id: 'fence-a', position: ['10.00', '-5'] }, { id: 'fence-b', position: ['10.00', '5'] }],
+    entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+      { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+      { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+      { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' },
+      { id: 'fence', kind: 'line', construction: true, startPointId: 'fence-a', endPointId: 'fence-b' }], relations: []
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
+  let current = await context(page);
+  const regions = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id });
+  const pad = { id: 'pad', kind: 'extrude', name: 'Trim plate', suppressed: false, sketchId: sketch.id,
+    regionSelection: [regions.items[0].reference], distance: ' 5e0 ', symmetric: false, operation: 'new', targetId: null };
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: pad }] }); current = await context(page);
+  const base = current;
+  await call(page, 'cad_build', { expectedVersion: base.version });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: base.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: base.version } } });
+  const openTrim = async () => {
+    await page.getByRole('button', { name: 'Select Trim outline in history', exact: true }).dblclick();
+    const a = await page.locator('[data-cad-sketch-point="a"]').boundingBox(), b = await page.locator('[data-cad-sketch-point="b"]').boundingBox();
+    if (!a || !b) throw new Error('Trim endpoints unavailable.');
+    await page.mouse.click(a.x + a.width / 2 + .1 * (b.x + b.width / 2 - a.x - a.width / 2), a.y + a.height / 2 - 1, { button: 'right' });
+    const trim = page.getByRole('menuitem', { name: 'Trim here', exact: true }); await expect(trim).toBeEnabled(); await trim.focus();
+    await expect(page.getByLabel('Trim preview', { exact: true })).toBeVisible();
+    const pointId = await page.locator('[data-cad-sketch-trim-point]').getAttribute('data-cad-sketch-trim-point');
+    if (!pointId) throw new Error('Trim point unavailable.');
+    await trim.click(); await expect(page.locator(`[data-cad-sketch-point="${pointId}"]`)).toHaveAttribute('aria-pressed', 'true');
+    return pointId;
+  };
+  await openTrim();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: sketch.id })).feature).toEqual(sketch);
+  await page.getByRole('button', { name: 'Cancel sketch edits', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ version: base.version, workflowOpen: false });
+  const cutPointId = await openTrim();
+  await page.keyboard.press('Control+z'); await expect(page.locator(`[data-cad-sketch-point="${cutPointId}"]`)).toHaveCount(0);
+  await page.keyboard.press('Control+Shift+z'); await expect(page.locator(`[data-cad-sketch-point="${cutPointId}"]`)).toBeVisible();
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Cancel sketch edits', exact: true })).toBeVisible();
+  expect((await context(page)).version).toBe(base.version);
+  const endpoints = [];
+  for (const id of ['a', cutPointId]) {
+    const box = await page.locator(`[data-cad-sketch-point="${id}"]`).boundingBox(); if (!box) throw new Error('Reconnection endpoint unavailable.');
+    endpoints.push({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+  }
+  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  for (const point of endpoints) await page.mouse.click(point.x, point.y);
+  await page.getByRole('button', { name: 'Finish path', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect(page.getByRole('form', { name: 'Update dependent sketch areas', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Choose areas for Trim plate', exact: true }).click();
+  const area = await page.getByLabel('3D model canvas').boundingBox(); if (!area) throw new Error('Area selection unavailable.');
+  await page.mouse.click(area.x + area.width / 2, area.y + area.height / 2);
+  await page.getByRole('button', { name: 'Finish area selection', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const human = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(human.graph.points.slice(0, sketch.graph.points.length)).toEqual(sketch.graph.points);
+  expect(human.graph.points.find((point: { id: string }) => point.id === cutPointId).position).toEqual([10, 0]);
+  expect(human.graph.entities[0]).toEqual({ ...sketch.graph.entities[0], startPointId: cutPointId });
+  expect(human.graph.relations).toEqual([]);
+  expect((await call(page, 'cad_build', { expectedVersion: current.version })).bodies[0].volumeMm3).toBeCloseTo(4000, 7);
+  await page.keyboard.press('Control+z'); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: pad.id })).feature).toEqual(pad);
+  const query = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id, trimAt: { entityId: 'ab', parameter: .1 } });
+  expect(query.items).toHaveLength(1);
+  expect(query.trimPreview.target).toEqual({ kind: 'end', entityId: 'ab', parameter: .1, end: 'start',
+    boundary: { entityId: 'fence', index: 0, parameter: .25, position: [10, 0] } });
+  const trim = { ...query.trimPreview.target, cutPointId };
+  const openProposal = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id, proposal: { trim } });
+  expect(openProposal.items).toEqual([]);
+  const replacement = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id, proposal: { sketch: human } });
+  const changedPad = { ...pad, regionSelection: [replacement.items[0].reference] };
+  const connector = human.graph.entities.find((entity: { id: string }) => !sketch.graph.entities.some(original => original.id === entity.id));
+  expect(connector).toBeDefined();
+  const edits = [{ kind: 'trim-sketch-entity', sketchId: sketch.id, trim },
+    { kind: 'append-sketch-entities', sketchId: sketch.id, geometry: { points: [], entities: [connector], relations: [] } },
+    { kind: 'update-feature', feature: changedPad }];
+  const failed = await rawCall(page, 'cad_edit_document', { expectedVersion: current.version, edits: edits.slice(0, 1) }); expect(failed.ok).toBe(false);
+  expect((await context(page)).version).toBe(current.version);
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits }); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  const built = await call(page, 'cad_build', { expectedVersion: current.version }); expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo(4000, 7);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current.dirty).toBe(false);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+});
+
 test('attaches reversed rectangle picks deliberately, follows their drivers and detaches through the ordinary relation editor', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const feature = { id: 'attached', kind: 'sketch', name: 'Attached rectangle', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

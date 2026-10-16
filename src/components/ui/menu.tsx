@@ -41,8 +41,8 @@ MenuSurface.displayName = 'MenuSurface';
 
 export interface MenuItemProps extends ButtonProps { danger?: boolean }
 export const MenuItem = forwardRef<HTMLButtonElement, MenuItemProps>(
-  ({ className, danger, role = 'menuitem', variant = 'menu', type = 'button', ...props }, ref) =>
-    <Button ref={ref} role={role} variant={variant} type={type} className={cn('ui-menu-item', danger && 'ui-menu-item-danger', className)} {...props} />
+  ({ className, danger, role = 'menuitem', variant = 'menu', type = 'button', tooltipSide = 'right', ...props }, ref) =>
+    <Button ref={ref} role={role} variant={variant} type={type} tooltipSide={tooltipSide} className={cn('ui-menu-item', danger && 'ui-menu-item-danger', className)} {...props} />
 );
 MenuItem.displayName = 'MenuItem';
 export interface MenuCheckboxItemProps extends Omit<MenuItemProps, 'onClick'> { checked: boolean; onCheckedChange: (checked: boolean) => void }

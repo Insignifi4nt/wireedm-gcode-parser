@@ -6,10 +6,11 @@ import './tooltip.css';
 export interface TooltipProps {
   content: React.ReactNode;
   children: React.ReactElement<React.HTMLAttributes<HTMLElement>>;
+  side?: React.ComponentProps<typeof TooltipPrimitive.Content>['side'];
 }
 
 /** Help describes a control; its visible text or aria-label remains its name. */
-export function Tooltip({ content, children }: TooltipProps) {
+export function Tooltip({ content, children, side }: TooltipProps) {
   const [open, setOpen] = React.useState(false);
   const id = React.useId();
   const hasContent = content !== undefined && content !== null && content !== '' && content !== false;
@@ -35,7 +36,7 @@ export function Tooltip({ content, children }: TooltipProps) {
     <TooltipPrimitive.Root open={open && hasContent} onOpenChange={next => setOpen(next && hasContent)}>
       <TooltipPrimitive.Trigger asChild>{trigger}</TooltipPrimitive.Trigger>
       {hasContent && <TooltipPrimitive.Portal>
-        <TooltipPrimitive.Content id={id} className="ui-tooltip-content" sideOffset={6} collisionPadding={8}>
+        <TooltipPrimitive.Content id={id} className="ui-tooltip-content" side={side} sideOffset={6} collisionPadding={8}>
           {content}
         </TooltipPrimitive.Content>
       </TooltipPrimitive.Portal>}
