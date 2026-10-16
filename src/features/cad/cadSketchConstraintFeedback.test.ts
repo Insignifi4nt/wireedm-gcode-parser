@@ -53,13 +53,13 @@ describe('candidate-owned sketch constraint feedback', () => {
     });
   });
 
-  it.each(['parallel', 'perpendicular'] as const)('names %s line operands while retaining shared point and entity inspection identities', kind => {
+  it.each(['parallel', 'perpendicular', 'collinear'] as const)('names %s line operands while retaining shared point and entity inspection identities', kind => {
     const candidate = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }, { id: 'c', position: [0, 8] }],
       entities: [{ id: 'z-edge', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },
         { id: 'a-edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'c' }],
       relations: [{ id: proposedId, kind, lineIds: ['z-edge', 'a-edge'] }] });
     const subject = describeCadSketchConstraintSource(candidate, { kind: 'relation', id: proposedId });
-    expect(subject.label).toBe(`${kind === 'parallel' ? 'Parallel' : 'Perpendicular'} relation 1 · Line 2 and Line 1`);
+    expect(subject.label).toBe(`${kind === 'parallel' ? 'Parallel' : kind === 'perpendicular' ? 'Perpendicular' : 'Collinear'} relation 1 · Line 2 and Line 1`);
     expect(subject.pointIds).toEqual(['a', 'b', 'c']); expect(subject.entityIds).toEqual(['z-edge', 'a-edge']);
   });
 

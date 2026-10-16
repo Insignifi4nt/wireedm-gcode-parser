@@ -62,6 +62,16 @@ function compile(input: CadSketchSolveInput) {
         constraint({ id, type: 'l2l_angle_pppp', l1p1_id: a.fromPointId, l1p2_id: a.towardPointId,
           l2p1_id: b.fromPointId, l2p2_id: b.towardPointId, angle: cadSketchAngleTarget(relation, input.parameters).signedRadians }, id); break;
       }
+      case 'collinear': {
+        const [a, b] = resolveCadSketchLinePair(graph, relation.lineIds);
+        for (const line of [a, b]) if (!cadSketchLineDirection(line, numericPoints)) throw new Error('A sketch line has no numeric endpoints.');
+        constraint({ id, type: 'parallel', l1_id: a.id, l2_id: b.id }, id);
+        // A shared authored endpoint already supplies incidence. Disjoint lines
+        // need one additional scalar equation, with the same source diagnostic.
+        if (![b.startPointId, b.endPointId].some(pointId => pointId === a.startPointId || pointId === a.endPointId))
+          constraint({ id: `$collinear-on:${id}`, type: 'point_on_line_pl', p_id: b.startPointId, l_id: a.id }, id);
+        break;
+      }
       case 'parallel': case 'perpendicular': case 'equal-length':
         for (const line of resolveCadSketchLinePair(graph, relation.lineIds)) {
           if (!cadSketchLineDirection(line, numericPoints)) throw new Error('A sketch line has no numeric endpoints.');

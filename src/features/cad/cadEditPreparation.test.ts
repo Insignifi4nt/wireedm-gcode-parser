@@ -13,7 +13,8 @@ import { translateCadSketchGraph } from '@/domain/cad/cadSketchTranslation';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTreatment';
 import { createCadFreshSketchDrawing } from '@/domain/cad/cadFreshSketchGraph';
-import { endTrim, trimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
+import { endTrim, trimPart, middleTrim, middleTrimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
+import { trimCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
 import { extendPart, lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
 
 const require = createRequire(import.meta.url);
@@ -42,6 +43,32 @@ const splitLine = { kind: 'split-sketch-entity', sketchId: 'sketch', split: { ki
   splitPointId: 'cut', newEntityId: 'after', supportRelationId: 'support' } } satisfies CadEdit;
 
 describe('shared CAD edit preparation with the real sketch solver', () => {
+  it('constructs a middle trim from the preceding solved cutters and atomically rejects any later cut-point projection', async () => {
+    const source = middleTrimPart(), feature = source.features[0];
+    if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Middle source missing.');
+    const document = parseCadDocument({ ...source, parameters: { ...source.parameters, cutterX: 5 }, features: [{ ...feature, graph: { ...feature.graph,
+      points: feature.graph.points.map(point => point.id === 'cut-b' ? { ...point, position: [5, 5] }
+        : point.id === 'right-b' ? { ...point, position: [15, 5] } : point),
+      relations: [...feature.graph.relations, { id: 'cutter-x', kind: 'fixed-axis', pointId: 'cut-a', axis: 'x', value: ' cutterX ' },
+        { id: 'cutter-vertical', kind: 'vertical', pointIds: ['cut-a', 'cut-b'] }] } }] });
+    const current = document.features[0]; if (current.kind !== 'sketch' || !current.graph) throw new Error('Current graph missing.');
+    const parameters = { ...document.parameters, cutterX: 6 }, graph = { ...current.graph, points: current.graph.points.map(point =>
+      point.id === 'cut-a' || point.id === 'cut-b' ? { ...point, position: [6, point.position[1]] as const } : point) };
+    const trim = { ...middleTrim, boundaries: [{ entityId: 'cutter', index: 0, parameter: .3, position: [6, 0] },
+      { entityId: 'cutter-right', index: 0, parameter: .75, position: [15, 0] }] as const, cutPointIds: ['fresh-left', 'fresh-right'] as const };
+    const expected = trimCadSketchEntity({ graph, parameters, trim });
+    const edits = [{ kind: 'set-parameter', name: 'cutterX', value: 6 }, { kind: 'trim-sketch-entity', sketchId: 'sketch', trim }] as const;
+    const prepared = await prepareCadEdits(document, edits, solver);
+    expect(graphOf(prepared.document)).toEqual(expected.graph); expect(prepared.document.parameters).toEqual(parameters);
+    const session = new CadSession(document), before = session.getSnapshot();
+    await expect(session.editPrepared(before.version, async accepted => (await prepareCadEdits(accepted, edits, { solve: async input => {
+      const solved = await solver.solve(input); if (solved.kind !== 'solved') return solved;
+      return { ...solved, graph: { ...solved.graph, points: solved.graph.points.map(point => point.id === 'fresh-left'
+        ? { ...point, position: [6.01, .01] as const } : point) } };
+    } })).document)).rejects.toMatchObject({ code: 'sketch-trim-intent' });
+    expect(session.getSnapshot()).toBe(before);
+  });
+
   it('extends from the preceding solved boundary and rejects native projection of the exact complete candidate', async () => {
     const source = extendPart(), original = parseCadDocument({ ...source, parameters: { ...source.parameters, offset: -5 },
       features: source.features.map(feature => feature.kind === 'sketch' && feature.graph ? { ...feature, graph: { ...feature.graph,

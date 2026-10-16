@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { createCadFreshSketchGraph } from '@/domain/cad/cadFreshSketchGraph';
 import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { prepareCadSketchEndTrim, prepareCadSketchLineExtend, trimCadSketchEntity, extendCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
+import { prepareCadSketchTrim, prepareCadSketchLineExtend, trimCadSketchEntity, extendCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { prepareCadEdits } from './cadEditPreparation';
 import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
@@ -28,7 +28,7 @@ describe('real PlaneGCS direction-preserving line boundary preparation', () => {
       { id: 'fence-a', position: [5, -5] }, { id: 'fence-b', position: [5, 5] }, { id: 'outside', position: [' retained ', '-7'] }],
     entities: [...rectangle.entities, { id: 'fence', kind: 'line', construction: true, startPointId: 'fence-a', endPointId: 'fence-b' }] });
     const document = part(graph), before = JSON.stringify(document);
-    const preview = prepareCadSketchEndTrim({ graph, parameters: document.parameters, entityId: 'rect_5', parameter: .1 });
+    const preview = prepareCadSketchTrim({ graph, parameters: document.parameters, entityId: 'rect_5', parameter: .1 });
     if (preview.target.kind !== 'end') throw new Error('Expected an end trim.');
     const trim = { ...preview.target, cutPointId: 'cut' }, expected = trimCadSketchEntity({ graph, parameters: document.parameters, trim });
     expect(expected.graph.relations).toEqual([{ id: 'rect_9', kind: 'horizontal', pointIds: ['cut', 'rect_2'] }, ...graph.relations.slice(1)]);

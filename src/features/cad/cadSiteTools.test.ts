@@ -9,7 +9,7 @@ import type { CadBuildResult } from '@/domain/cad/cadDocument';
 import { refs as regionRefs, pad as regionPad, pocket as regionPocket, sketch as regionSketch } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
 import { CadSketchSplitDependencyError } from '@/domain/cad/cadSketchSplit';
 import { CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '@/domain/cad/cadSketchTrimExtend';
-import { endTrim } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
+import { endTrim, middleTrim } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
 import { lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
 
 describe('CAD tool argument boundary and discovery', () => {
@@ -33,7 +33,7 @@ describe('CAD tool argument boundary and discovery', () => {
     expect(controller).not.toHaveBeenCalled();
   });
 
-  it('exposes strict end-trim/delete proposals on the existing reads and refuses mixed or unwitnessed input before controller access', async () => {
+  it('exposes strict end/middle/delete trim proposals on the existing reads and refuses mixed or unwitnessed input before controller access', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed trim reached controller.'); });
     const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
     if (!inspect || !read) throw new Error('Missing region reads.');
@@ -44,11 +44,13 @@ describe('CAD tool argument boundary and discovery', () => {
       expect(await inspect.execute({ expectedVersion: 'current', sketchId: 'regions', ...input })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
     for (const tool of [inspect, read]) {
       const query = { expectedVersion: 'current', sketchId: 'regions', ...(tool === read ? { boundaryProfileId: 'outer' } : {}) };
-      for (const proposal of [{ trim: endTrim }, { trim: deletion, parameterValues: { span: 30 } }])
+      for (const proposal of [{ trim: endTrim }, { trim: middleTrim }, { trim: deletion, parameterValues: { span: 30 } }])
         expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(true);
       for (const proposal of [{ trim: endTrim, sketch: regionSketch() }, { trim: endTrim, split: {} },
         { trim: { ...endTrim, boundary: undefined } }, { trim: { ...endTrim, end: 'middle' } },
         { trim: { ...endTrim, boundary: { ...endTrim.boundary, parameter: '0.25' } } },
+        { trim: { ...middleTrim, supportRelationId: undefined } }, { trim: { ...middleTrim, boundaries: [middleTrim.boundaries[0]] } },
+        { trim: { ...middleTrim, cutPointIds: ['one'] } }, { trim: { ...middleTrim, end: 'start' } },
         { trim: { ...deletion, cutPointId: 'unused' } }, { trim: endTrim, parameterValues: { span: '30' } }]) {
         expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(false);
         expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });

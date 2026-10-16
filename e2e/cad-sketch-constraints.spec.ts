@@ -353,6 +353,108 @@ test('trims a consumed edge, reconnects deliberately and matches the same guarde
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
 });
 
+test('removes a consumed middle span, reconnects both exact survivors and matches the same agent repair through save', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const sketch = { id: 'outline', kind: 'sketch', name: 'Notched plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: ['20.0000', '10.00'] }, { id: 'd', position: [0, 10] },
+      { id: 'fence-left', position: [5, -5] }, { id: 'cut-left', position: [5, 0] },
+      { id: 'fence-right', position: [15, -5] }, { id: 'cut-right', position: [15, 0] }],
+    entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+      { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+      { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+      { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' },
+      { id: 'left-cutter', kind: 'line', construction: true, startPointId: 'fence-left', endPointId: 'cut-left' },
+      { id: 'right-cutter', kind: 'line', construction: true, startPointId: 'fence-right', endPointId: 'cut-right' }],
+    relations: [{ id: 'bottom', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'right', kind: 'vertical', pointIds: ['b', 'c'] },
+      { id: 'top', kind: 'horizontal', pointIds: ['c', 'd'] }, { id: 'left', kind: 'vertical', pointIds: ['d', 'a'] }]
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
+  let current = await context(page);
+  const originalRegions = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id });
+  const pad = { id: 'pad', kind: 'extrude', name: 'Notched blank', suppressed: false, sketchId: sketch.id,
+    regionSelection: [originalRegions.items[0].reference], distance: ' 5e0 ', symmetric: false, operation: 'new', targetId: null };
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: pad }] }); current = await context(page);
+  const base = current; await call(page, 'cad_build', { expectedVersion: base.version });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: base.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: base.version } } });
+  await page.getByRole('button', { name: 'Select Notched plate in history', exact: true }).dblclick();
+  const openTrim = async () => {
+    const a = await page.locator('[data-cad-sketch-point="a"]').boundingBox(), b = await page.locator('[data-cad-sketch-point="b"]').boundingBox();
+    if (!a || !b) throw new Error('Middle-trim endpoints unavailable.');
+    await page.mouse.click((a.x + a.width / 2 + b.x + b.width / 2) / 2, a.y + a.height / 2 - 1, { button: 'right' });
+    const trim = page.getByRole('menuitem', { name: 'Trim here', exact: true }); await expect(trim).toBeEnabled(); await trim.focus();
+    await expect(page.getByLabel('Trim preview', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-cad-sketch-trim-point]')).toHaveCount(2);
+    expect(await page.locator('[data-cad-sketch-trim-point]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-cad-sketch-trim-point'))))
+      .toEqual(['cut-left', 'cut-right']);
+    return trim;
+  };
+  await openTrim(); await page.keyboard.press('Escape'); await expect(page.getByLabel('Trim preview', { exact: true })).toHaveCount(0);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: sketch.id })).feature).toEqual(sketch);
+  await (await openTrim()).click();
+  const countAfterTrim = sketch.graph.entities.length + 1;
+  await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(countAfterTrim);
+  await page.keyboard.press('Control+z'); await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(sketch.graph.entities.length);
+  await page.keyboard.press('Control+Shift+z'); await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(countAfterTrim);
+  expect((await context(page)).version).toBe(base.version);
+  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  const left = await page.locator('[data-cad-sketch-point="cut-left"]').boundingBox(); if (!left) throw new Error('Left retained endpoint unavailable.');
+  await page.mouse.click(left.x + left.width / 2, left.y + left.height / 2);
+  await page.keyboard.press('ArrowUp'); await page.keyboard.press('Space');
+  await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight'); await page.keyboard.press('Space');
+  const right = await page.locator('[data-cad-sketch-point="cut-right"]').boundingBox(); if (!right) throw new Error('Right retained endpoint unavailable.');
+  await page.mouse.click(right.x + right.width / 2, right.y + right.height / 2);
+  await page.getByRole('button', { name: 'Finish path', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect(page.getByRole('form', { name: 'Update dependent sketch areas', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Choose areas for Notched blank', exact: true }).click();
+  const area = await page.getByLabel('3D model canvas').boundingBox(); if (!area) throw new Error('Replacement area unavailable.');
+  // The notch is in the lower quarter of the view; the upper plate is unambiguous material.
+  await page.mouse.click(area.x + area.width / 2, area.y + area.height * .4);
+  await page.getByRole('button', { name: 'Finish area selection', exact: true }).click();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: sketch.id })).feature).toEqual(sketch);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const human = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(human.graph.points.slice(0, sketch.graph.points.length)).toEqual(sketch.graph.points);
+  expect(human.graph.relations.slice(0, sketch.graph.relations.length)).toEqual(sketch.graph.relations);
+  const support = human.graph.relations.find((relation: { kind: string }) => relation.kind === 'collinear'); expect(support).toBeDefined();
+  expect(support.lineIds[0]).toBe('ab');
+  expect(human.graph.entities[0]).toEqual({ ...sketch.graph.entities[0], endPointId: 'cut-left' });
+  expect(human.graph.entities.find((entity: { id: string }) => entity.id === support.lineIds[1]))
+    .toEqual({ ...sketch.graph.entities[0], id: support.lineIds[1], startPointId: 'cut-right' });
+  const built = await call(page, 'cad_build', { expectedVersion: current.version }); expect(built.diagnostics).toEqual([]);
+  expect(built.bodies).toHaveLength(1); expect(built.bodies[0].volumeMm3).toBeCloseTo(750, 7);
+  await call(page, 'cad_history', { expectedVersion: current.version, direction: 'undo' }); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: pad.id })).feature).toEqual(pad);
+  const query = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id, trimAt: { entityId: 'ab', parameter: .5 } });
+  expect(query.trimPreview.target).toMatchObject({ kind: 'middle', entityId: 'ab', parameter: .5,
+    boundaries: [{ entityId: 'left-cutter', parameter: .25, position: [5, 0], endpointPointId: 'cut-left' },
+      { entityId: 'right-cutter', parameter: .75, position: [15, 0], endpointPointId: 'cut-right' }] });
+  const trim = { ...query.trimPreview.target, cutPointIds: ['cut-left', 'cut-right'], newEntityId: support.lineIds[1], supportRelationId: support.id };
+  const openProposal = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id, proposal: { trim } });
+  expect(openProposal.items).toEqual([]);
+  const replacement = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id, proposal: { sketch: human } });
+  expect(replacement.items[0].areaMm2).toBeCloseTo(150, 9);
+  const changedPad = { ...pad, regionSelection: [replacement.items[0].reference] };
+  const additions = { points: human.graph.points.slice(sketch.graph.points.length),
+    entities: human.graph.entities.filter((entity: { id: string }) => entity.id !== support.lineIds[1] && !sketch.graph.entities.some(original => original.id === entity.id)),
+    relations: human.graph.relations.filter((relation: { id: string }) => relation.id !== support.id && !sketch.graph.relations.some(original => original.id === relation.id)) };
+  const edits = [{ kind: 'trim-sketch-entity', sketchId: sketch.id, trim },
+    { kind: 'append-sketch-entities', sketchId: sketch.id, geometry: additions }, { kind: 'update-feature', feature: changedPad }];
+  expect((await rawCall(page, 'cad_edit_document', { expectedVersion: current.version, edits: edits.slice(0, 1) })).ok).toBe(false);
+  expect((await context(page)).version).toBe(current.version);
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits }); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  expect((await call(page, 'cad_build', { expectedVersion: current.version })).bodies[0].volumeMm3).toBeCloseTo(750, 7);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current.dirty).toBe(false);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: pad.id })).feature).toEqual(changedPad);
+});
+
 test('extends the chosen line end to its exact boundary joint, matches the agent operation and preserves the closed solid through save', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const sketch = { id: 'outline', kind: 'sketch', name: 'Extend outline', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

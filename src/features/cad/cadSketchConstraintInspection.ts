@@ -63,6 +63,7 @@ const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
   coincident: 'Keeps two distinct source points at the same location.', horizontal: 'Keeps two points at the same Y coordinate.',
   vertical: 'Keeps two points at the same X coordinate.', 'fixed-point': 'Fixes a point at its driving X and Y coordinates.',
   parallel: 'Keeps two line directions parallel.', perpendicular: 'Keeps two line directions at a right angle.',
+  collinear: 'Keeps two lines on the same infinite supporting line without joining endpoints or fixing lengths.',
   'equal-length': 'Keeps two line lengths equal.', 'equal-radius': 'Keeps two circle or arc radii equal.',
   'line-angle': 'Drives the declared clockwise or counterclockwise sector between two explicit line rays in degrees.',
   'radial-size': 'Drives circle or arc size using the declared radius or diameter.',

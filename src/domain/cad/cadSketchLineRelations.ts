@@ -29,8 +29,15 @@ export function checkCadSketchLineRelation(graph: CadSketchGraph, relation: CadS
   try {
     const lines = resolveCadSketchLinePair(graph, relation.lineIds), a = cadSketchLineDirection(lines[0], points), b = cadSketchLineDirection(lines[1], points);
     if (!a || !b) return [];
-    const q = Math.abs(relation.kind === 'parallel' ? a.x * b.y - a.y * b.x : a.x * b.x + a.y * b.y);
-    const residualMm = q * Math.max(a.length, b.length), tolerance = cadSketchDriverTolerance([a.start, a.end, b.start, b.end]);
+    const q = Math.abs(relation.kind === 'perpendicular' ? a.x * b.x + a.y * b.y : a.x * b.y - a.y * b.x);
+    let residualMm = q * Math.max(a.length, b.length);
+    if (relation.kind === 'collinear') {
+      // Both finite segments must lie on the same infinite support. Check both
+      // directions so source order or a short reference cannot hide an offset.
+      const supportDistance = (line: NonNullable<typeof a>, point: Point2) => Math.abs(line.x * (point.y - line.start.y) - line.y * (point.x - line.start.x));
+      residualMm = Math.max(residualMm, supportDistance(a, b.start), supportDistance(a, b.end), supportDistance(b, a.start), supportDistance(b, a.end));
+    }
+    const tolerance = cadSketchDriverTolerance([a.start, a.end, b.start, b.end]);
     // A separate dimensionless accuracy contract: <=1e-12 transverse error per
     // unit direction. World-origin roundoff must never license a large angle.
     // This tightens the existing world-mm gate; neither native thresholds nor

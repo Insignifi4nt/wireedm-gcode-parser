@@ -30,6 +30,7 @@ export const CadSketchGraphSchema = Type.Object({
     ...(['coincident', 'horizontal', 'vertical'] as const).map(kind => Type.Object({ id, kind: Type.Literal(kind), pointIds: pair }, strict)),
     Type.Object({ id, kind: Type.Literal('parallel'), lineIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('perpendicular'), lineIds: pair }, strict),
+    Type.Object({ id, kind: Type.Literal('collinear'), lineIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('equal-length'), lineIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('equal-radius'), curveIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('line-angle'), rays: Type.Tuple([angleRay, angleRay]), sense: Type.Union([Type.Literal('cw'), Type.Literal('ccw')]), value: CadScalarSchema }, strict),
@@ -48,7 +49,7 @@ export type CadSketchGraphPoint = CadSketchGraph['points'][number];
 export type CadSketchGraphEntity = CadSketchGraph['entities'][number];
 export type CadSketchGraphRelation = CadSketchGraph['relations'][number];
 export type CadSketchCornerRelation = Extract<CadSketchGraphRelation, { kind: 'fillet-corner' | 'chamfer-corner' }>;
-export type CadSketchLineRelation = Extract<CadSketchGraphRelation, { kind: 'parallel' | 'perpendicular' }>;
+export type CadSketchLineRelation = Extract<CadSketchGraphRelation, { kind: 'parallel' | 'perpendicular' | 'collinear' }>;
 export type CadSketchRadialRelation = Extract<CadSketchGraphRelation, { kind: 'radial-size' }>;
 export type CadSketchEqualRelation = Extract<CadSketchGraphRelation, { kind: 'equal-length' | 'equal-radius' }>;
 export type CadSketchAngleRelation = Extract<CadSketchGraphRelation, { kind: 'line-angle' }>;
@@ -82,7 +83,7 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   for (const item of graph.entities) references(item.id, cadSketchEntityPointIds(item));
   for (const item of graph.relations) {
     if (item.kind === 'fillet-corner' || item.kind === 'chamfer-corner') resolveCadSketchCornerTopology(graph, item);
-    if (item.kind === 'parallel' || item.kind === 'perpendicular' || item.kind === 'equal-length') resolveCadSketchLinePair(graph, item.lineIds);
+    if (item.kind === 'parallel' || item.kind === 'perpendicular' || item.kind === 'collinear' || item.kind === 'equal-length') resolveCadSketchLinePair(graph, item.lineIds);
     if (item.kind === 'equal-radius') resolveCadSketchRadiusPair(graph, item.curveIds);
     if (item.kind === 'line-angle') resolveCadSketchAngleRays(graph, item.rays);
     if (item.kind === 'radial-size') {
@@ -143,7 +144,7 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
       if (relation.kind === 'radial-size') {
         issues.push(...checkCadSketchRadialRelation(graph, relation, points, parameters)); continue;
       }
-      if (relation.kind === 'parallel' || relation.kind === 'perpendicular') {
+      if (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear') {
         issues.push(...checkCadSketchLineRelation(graph, relation, points)); continue;
       }
       if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') {

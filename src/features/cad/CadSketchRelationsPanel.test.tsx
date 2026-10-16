@@ -63,6 +63,32 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it('keeps generated Collinear support authoritative until its deliberate removal is applied', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Trimmed line', 'trimmed-line'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Survivors', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+        points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'cut0', position: [4, 0] }, { id: 'cut1', position: [6, 0] }, { id: 'b', position: [10, 0] }],
+        entities: [{ id: 'before', kind: 'line', construction: true, startPointId: 'a', endPointId: 'cut0' },
+          { id: 'after', kind: 'line', construction: true, startPointId: 'cut1', endPointId: 'b' }],
+        relations: [{ id: 'support', kind: 'collinear', lineIds: ['before', 'after'] }]
+      }
+    }] });
+    const h = await mount(source, [{ kind: 'entity', id: 'after' }, { kind: 'entity', id: 'before' }], { initialCommand: { kind: 'line-angle' } });
+    expect(button('Add angle').disabled).toBe(true); expect(field('Parallel').disabled).toBe(true); expect(field('Perpendicular').disabled).toBe(true);
+    expect(field('Parallel').getAttribute('aria-description')).toContain('Collinear'); expect(field('Perpendicular').getAttribute('aria-description')).toContain('Collinear');
+    expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.prepare).not.toHaveBeenCalled();
+    await clickRelation('Inspect', 'Collinear', 1); expect(h.inspect).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'support', kind: 'collinear' }));
+    await clickRelation('Remove', 'Collinear', 1);
+    expect(button('Add angle').disabled).toBe(false); expect(field('Parallel').disabled).toBe(false); expect(field('Perpendicular').disabled).toBe(false);
+    await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
+    const sketch = source.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Survivors missing.');
+    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [expect.objectContaining({ graph: { ...sketch.graph, relations: [] } })] }));
+    await click('Cancel'); expect(h.session.getSnapshot().document).toBe(source); expect(h.edit).not.toHaveBeenCalled();
+    expect(button('Add angle').disabled).toBe(true); expect(field('Parallel').disabled).toBe(true);
+    await clickRelation('Remove', 'Collinear', 1); await click('Apply');
+    expect(h.edit).toHaveBeenCalledExactlyOnceWith([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'support' }], expect.any(AbortSignal));
+    expect(h.session.getSnapshot().document.features[0]).toMatchObject({ graph: { ...sketch.graph, relations: [] } });
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toBe(source);
+  });
   it('authors relative X/Y drivers deliberately, cancels privately and restores their exact accepted orientation after reverse selection', async () => {
     const source = parseCadDocument({ ...createCadDocument('Located bore', 'located-bore'), schemaVersion: 2, parameters: { boreX: 30 }, features: [{
       id: 'sketch', kind: 'sketch', name: 'Plate and bore', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

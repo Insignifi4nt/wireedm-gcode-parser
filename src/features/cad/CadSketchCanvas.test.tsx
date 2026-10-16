@@ -404,6 +404,60 @@ describe('graph spatial selection', () => {
     await act(async () => document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     expect(h.edited).not.toHaveBeenCalled(); expect(h.selected).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
   });
+  async function middleTrimFixture() {
+    const h = await spatialFixture(), graph = h.feature.graph!;
+    const feature: CadSketchFeature = { ...h.feature, graph: { ...graph,
+      points: [...graph.points, ...[2, 4, 6, 8].flatMap((x, index) => [
+        { id: `cut${index}a`, position: [x, index === 1 ? 0 : -5] as const }, { id: `cut${index}b`, position: [x, 5] as const }])],
+      entities: [...graph.entities, ...[0, 1, 2, 3].map(index => ({ id: `cutter${index}`, kind: 'line' as const,
+        construction: true, startPointId: `cut${index}a`, endPointId: `cut${index}b` }))] } };
+    await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });
+    const open = async () => { await h.pointer('pointerdown', 5.3, .1, false, 7, 2); await h.pointer('pointerup', 5.3, .1, false, 7, 2); };
+    const trim = () => { const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Trim here');
+      if (!item) throw new Error('Middle Trim missing.'); return item; };
+    return { ...h, feature, open, trim };
+  }
+  it('previews only the bracketed middle line interval and submits both exact contacts with stable identities once', async () => {
+    const h = await middleTrimFixture(), original = structuredClone(h.feature); await h.open();
+    expect(h.trim().disabled).toBe(false); await act(async () => h.trim().focus());
+    const view = currentControls().getState(); if (view.mode === 'solid') throw new Error('Sketch view missing.');
+    const intervals = (selector: string) => [...container.querySelectorAll(selector)].map(line =>
+      [Number(line.getAttribute('x1')) + view.centerMm[0], Number(line.getAttribute('x2')) + view.centerMm[0]]);
+    expect(intervals('[aria-label="Trim preview"] .is-retained')).toEqual([[0, 4], [6, 10]]);
+    expect(intervals('[aria-label="Trim preview"] .is-removed')).toEqual([[4, 6]]);
+    expect(container.querySelectorAll('[aria-label="Trim preview"] .is-boundary')).toHaveLength(2);
+    const markers = () => [...container.querySelectorAll('[data-cad-sketch-trim-point]')];
+    const ids = markers().map(marker => marker.getAttribute('data-cad-sketch-trim-point'));
+    expect(ids).toEqual(['cut1a', expect.any(String)]); expect(new Set(ids).size).toBe(2);
+    expect(markers().map(marker => Number(marker.getAttribute('cx')) + view.centerMm[0])).toEqual([4, 6]);
+    const split = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Split here');
+    await act(async () => split?.focus()); await act(async () => h.trim().focus());
+    expect(markers().map(marker => marker.getAttribute('data-cad-sketch-trim-point'))).toEqual(ids);
+    expect(h.edited).not.toHaveBeenCalled(); await act(async () => h.trim().click());
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'trim-sketch-entity', sketchId: h.feature.id, trim: {
+      kind: 'middle', entityId: 'ab', parameter: expect.closeTo(.53, 12), cutPointIds: ids, newEntityId: expect.any(String), supportRelationId: expect.any(String),
+      boundaries: [{ entityId: 'cutter1', index: 0, parameter: .4, position: [4, 0], endpointPointId: 'cut1a' },
+        { entityId: 'cutter2', index: 0, parameter: .6, position: [6, 0] }]
+    } }], expect.any(AbortSignal));
+    const accepted = applyCadEdits(h.props().graphControls!.document, h.edited.mock.calls[0][0]).features[0];
+    if (accepted.kind !== 'sketch' || !accepted.graph) throw new Error('Middle Trim candidate missing.');
+    const target = h.edited.mock.calls[0][0][0].trim;
+    expect(accepted.graph.entities[0]).toMatchObject({ id: 'ab', startPointId: 'a', endPointId: 'cut1a' });
+    expect(accepted.graph.entities.find(entity => entity.id === target.newEntityId)).toMatchObject({ startPointId: ids[1], endPointId: 'b' });
+    expect(accepted.graph.relations).toEqual([{ id: target.supportRelationId, kind: 'collinear', lineIds: ['ab', target.newEntityId] }]);
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: ids[0] }); expect(h.feature).toEqual(original); expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
+  it('dismisses a middle removal without changing source and cancels its deferred completion after the actual frame changes', async () => {
+    const h = await middleTrimFixture(), resize = notifyResize, original = structuredClone(h.feature);
+    await h.open(); expect(h.trim().disabled).toBe(false); await act(async () => h.trim().focus());
+    await act(async () => document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(h.edited).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+    const operation = deferred<void>(); h.edited.mockReturnValue(operation.promise); await h.open(); await act(async () => h.trim().click());
+    const signal: unknown = h.edited.mock.calls[0]?.[1]; if (!(signal instanceof AbortSignal)) throw new Error('Middle Trim signal missing.');
+    await act(async () => { width = 800; resize(); }); expect(signal.aborted).toBe(true);
+    await act(async () => operation.resolve(undefined));
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.feature).toEqual(original);
+  });
   it('previews Extend from the owned near end to its finite boundary and submits that exact point once', async () => {
     const h = await spatialFixture(), graph = h.feature.graph!;
     const feature: CadSketchFeature = { ...h.feature, graph: { ...graph,

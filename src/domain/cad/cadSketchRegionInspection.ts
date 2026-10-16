@@ -10,7 +10,7 @@ import { resolveCadSketchContours, type CadResolvedSketchContour, type CadSketch
 import { createCadSketchCellIndex, selectCadSketchRegions, type CadSketchCellReference } from './cadSketchRegionSelection';
 import { cadScalarParameterNames, mapCadFeatureScalars } from './cadParameters';
 import { CadSketchSplitTargetSchema, splitCadSketchEntity, type CadSketchSplitTarget } from './cadSketchSplit';
-import { CadSketchTrimTargetSchema, prepareCadSketchEndTrim, trimCadSketchEntity, type CadSketchTrimTarget,
+import { CadSketchTrimTargetSchema, prepareCadSketchTrim, trimCadSketchEntity, type CadSketchTrimTarget,
   CadSketchExtendTargetSchema, prepareCadSketchLineExtend, extendCadSketchEntity, type CadSketchExtendTarget } from './cadSketchTrimExtend';
 
 export interface CadPreparedSketchCell {
@@ -190,7 +190,7 @@ export function inspectCadSketchRegions(document: CadDocument, sketchId: string,
   const { sketch, parameters } = activeSketch(document, sketchId, input.proposal);
   const trimPreview = input.trimAt === undefined ? undefined : (() => {
     if (!sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
-    return prepareCadSketchEndTrim({ graph: sketch.graph, parameters, ...input.trimAt });
+    return prepareCadSketchTrim({ graph: sketch.graph, parameters, ...input.trimAt });
   })();
   const extendPreview = input.extendAt === undefined ? undefined : (() => {
     if (!sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');

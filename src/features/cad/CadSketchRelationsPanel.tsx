@@ -23,7 +23,7 @@ const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? 
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
 const relationLabels = {
   'fixed-point': 'Fixed point', distance: 'Length', coincident: 'Coincident', horizontal: 'Horizontal', vertical: 'Vertical',
-  parallel: 'Parallel', perpendicular: 'Perpendicular', 'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer'
+  parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', 'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer'
 } satisfies Record<Exclude<CadSketchGraphRelation['kind'], 'fixed-axis' | 'radial-size' | 'axis-distance'>, string>;
 const relationLabel = (relation: CadSketchGraphRelation): string => relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
   : relation.kind === 'axis-distance' ? relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance'
@@ -36,7 +36,7 @@ const selectedEntityPair = (selection: readonly CadSketchGraphSelection[], graph
   && selection.every(atom => atom.kind === 'entity' && graph.entities.some(entity => entity.id === atom.id && (kind === 'line' ? entity.kind === 'line' : entity.kind !== 'line')))
   && selection[0].id !== selection[1].id ? [selection[0].id, selection[1].id] : null;
 const sameEntityPair = (relation: CadSketchGraphRelation, pair: readonly [string, string]) => {
-  const ids = relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'equal-length' ? relation.lineIds
+  const ids = relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear' || relation.kind === 'equal-length' ? relation.lineIds
     : relation.kind === 'equal-radius' ? relation.curveIds : relation.kind === 'line-angle' ? relation.rays.map(ray => ray.lineId) : null;
   return Boolean(ids?.includes(pair[0]) && ids.includes(pair[1]));
 };
@@ -118,7 +118,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const [initialAngle] = useState(() => {
     if (initialCommand?.kind !== 'line-angle' || !linePair) return null;
     const existing = graph.relations.find(relation => relation.kind === 'line-angle' && sameEntityPair(relation, linePair));
-    const orientation = graph.relations.find(relation => (relation.kind === 'parallel' || relation.kind === 'perpendicular') && sameEntityPair(relation, linePair));
+    const orientation = graph.relations.find(relation => (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear') && sameEntityPair(relation, linePair));
     if (!existing && orientation) return { relation: null, choose: false, error: `Remove ${relationLabel(orientation)} before adding Angle.` };
     try { return { relation: existing ?? createCadSketchLineAngleRelation({ graph, parameters: cadDocument.parameters, lineIds: linePair, relationId: angleId }), choose: false, error: null }; }
     catch (cause) { return { relation: null, choose: cause instanceof CadError && cause.code === 'ambiguous-sketch-angle-sector',
@@ -197,7 +197,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const activeRelation = relations.find(relation => relation.id === activeRelationId);
   const pointRoles = activeRelation?.kind === 'axis-distance' ? activeRelation.pointIds : pointPair;
   const angleOwner = linePair && draft.relations.find(relation => relation.kind === 'line-angle' && sameEntityPair(relation, linePair));
-  const orientationOwner = linePair && draft.relations.find(relation => (relation.kind === 'parallel' || relation.kind === 'perpendicular') && sameEntityPair(relation, linePair));
+  const orientationOwner = linePair && draft.relations.find(relation => (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear') && sameEntityPair(relation, linePair));
   const angleChoices = useMemo(() => {
     if (!choosingAngle || !linePair) return null;
     try { return cadSketchLineAngleSectors({ graph: draft, parameters, lineIds: linePair, relationId: angleId }); }
@@ -376,12 +376,11 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       </div>}
       {linePair && <div className="cad-sketch-profile-actions cad-sketch-pair-actions">
         {(['parallel', 'perpendicular'] as const).map(kind => {
-          const opposite = kind === 'parallel' ? 'perpendicular' : 'parallel';
           const checked = draft.relations.some(relation => relation.kind === kind && sameEntityPair(relation, linePair));
-          const blocked = !checked && (Boolean(angleOwner) || draft.relations.some(relation => relation.kind === opposite && sameEntityPair(relation, linePair)));
+          const blocker = angleOwner ?? orientationOwner, blocked = !checked && Boolean(blocker);
           return <label key={kind} className="cad-check"><Input type="checkbox" aria-label={relationLabels[kind]}
             checked={checked} disabled={blocked}
-            title={blocked ? `Remove ${angleOwner ? 'Angle' : relationLabels[opposite]} before adding ${relationLabels[kind]}.` : undefined}
+            title={blocked && blocker ? `Remove ${relationLabel(blocker)} before adding ${relationLabels[kind]}.` : undefined}
             onChange={event => toggleEntityPairRelation(kind, event.target.checked)} />{relationLabels[kind]}</label>;
         })}
         <Button type="button" disabled={Boolean(orientationOwner)} title={orientationOwner ? `Remove ${relationLabel(orientationOwner)} before adding Angle.` : 'Drive the actual corner angle'} onClick={addAngle}><MeasureIcon size={13} /> {angleOwner ? 'Edit angle' : 'Add angle'}</Button>

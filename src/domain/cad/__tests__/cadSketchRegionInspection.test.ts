@@ -7,7 +7,7 @@ import type { CadSketchFeature } from '../cadDocument';
 import { createCadDocument, parseCadDocument } from '../cadSchema';
 import { reduceCadEditIntents } from '../cadOperations';
 import type { CadSketchRegionProposal } from '../cadSketchRegionInspection';
-import { endTrim, trimPart } from './cadSketchTrimFixtures';
+import { endTrim, trimPart, middleTrim, middleTrimPart } from './cadSketchTrimFixtures';
 import { extendPart, lineExtend } from './cadSketchExtendFixtures';
 
 function splitSource() {
@@ -21,6 +21,16 @@ function splitSource() {
 const split = { kind: 'line', entityId: 'edge-a', parameter: .5, splitPointId: 'joint', newEntityId: 'a-new', supportRelationId: 'straight' } as const;
 
 describe('prepared closed-cell inspection and physical selection', () => {
+  it('queries the middle span without allocating IDs and keeps accepted cells separate from proposed survivors', () => {
+    const source = middleTrimPart(), before = JSON.stringify(source), current = inspectCadSketchRegions(source, 'sketch');
+    const query = inspectCadSketchRegions(source, 'sketch', { trimAt: { entityId: 'ab', parameter: .5 } });
+    expect(query.items).toEqual(current.items); expect(query.total).toBe(2);
+    const { cutPointIds: _cuts, newEntityId: _new, supportRelationId: _support, ...target } = middleTrim;
+    expect(query.trimPreview).toMatchObject({ target, removed: { length: 10 }, survivors: [{ length: 5 }, { length: 5 }],
+      cuts: [{ point: [5, 0] }, { point: [15, 0] }] });
+    for (const field of ['cutPointIds', 'newEntityId', 'supportRelationId']) expect(query.trimPreview?.target).not.toHaveProperty(field);
+    expect(JSON.stringify(source)).toBe(before);
+  });
   it('queries a line extension without allocating IDs and rejects changed witnesses or mixed read modes', () => {
     const source = extendPart(), original = JSON.stringify(source), accepted = inspectCadSketchRegions(source, 'sketch');
     const query = inspectCadSketchRegions(source, 'sketch', { extendAt: { entityId: 'ab', end: 'start' } });
@@ -52,6 +62,7 @@ describe('prepared closed-cell inspection and physical selection', () => {
 
   it.each([
     { name: 'Trim', part: trimPart, topology: { trim: endTrim }, edit: { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: endTrim } as const },
+    { name: 'Middle Trim', part: middleTrimPart, topology: { trim: middleTrim }, edit: { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: middleTrim } as const },
     { name: 'Extend', part: extendPart, topology: { extend: lineExtend }, edit: { kind: 'extend-sketch-entity', sketchId: 'sketch', extend: lineExtend } as const }
   ])('preflights the actual $name result and exact remaining refs before an atomic explicit-consumer repair', ({ part, topology, edit }) => {
     const session = new CadSession(part(true)), before = session.getSnapshot(), original = JSON.stringify(before.document);

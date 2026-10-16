@@ -20,11 +20,14 @@ const boundary = Type.Object({ entityId: id, index: Type.Integer({ minimum: 0, m
 export const CadSketchTrimTargetSchema = Type.Union([
   Type.Object({ kind: Type.Literal('delete'), entityId: id, parameter }, strict),
   Type.Object({ kind: Type.Literal('end'), entityId: id, parameter, end: Type.Union([Type.Literal('start'), Type.Literal('end')]),
-    boundary, cutPointId: id }, strict)
+    boundary, cutPointId: id }, strict),
+  Type.Object({ kind: Type.Literal('middle'), entityId: id, parameter, boundaries: Type.Tuple([boundary, boundary]),
+    cutPointIds: Type.Tuple([id, id]), newEntityId: id, supportRelationId: id }, strict)
 ]);
 type Immutable<T> = { readonly [K in keyof T]: Immutable<T[K]> };
 export type CadSketchTrimTarget = Immutable<Static<typeof CadSketchTrimTargetSchema>>;
 export type CadSketchEndTrimTarget = Extract<CadSketchTrimTarget, { kind: 'end' }>;
+export type CadSketchMiddleTrimTarget = Extract<CadSketchTrimTarget, { kind: 'middle' }>;
 export const CadSketchExtendTargetSchema = Type.Object({ kind: Type.Literal('line'), entityId: id,
   end: Type.Union([Type.Literal('start'), Type.Literal('end')]),
   boundary: Type.Object({ ...boundary.properties, parameter: Type.Number() }, strict), endPointId: id }, strict);
@@ -48,12 +51,28 @@ export interface CadSketchEndTrimPreparation {
   readonly boundary: PathSegment | null;
   readonly point: readonly [number, number] | null;
 }
-export interface CadSketchTrimResult {
+export interface CadSketchMiddleTrimPreparation {
+  readonly target: Omit<CadSketchMiddleTrimTarget, 'cutPointIds' | 'newEntityId' | 'supportRelationId'>;
+  readonly removed: LinePathSegment;
+  readonly survivors: readonly [LinePathSegment, LinePathSegment];
+  readonly cuts: readonly [{ readonly boundary: PathSegment; readonly point: readonly [number, number] },
+    { readonly boundary: PathSegment; readonly point: readonly [number, number] }];
+}
+export type CadSketchTrimPreparation = CadSketchEndTrimPreparation | CadSketchMiddleTrimPreparation;
+export interface CadSketchEndTrimResult {
   readonly graph: CadSketchGraph;
   readonly retainedEntityId: string | null;
   readonly removedEntityId: string | null;
   readonly cutPointId: string | null;
 }
+export interface CadSketchMiddleTrimResult {
+  readonly graph: CadSketchGraph;
+  readonly retainedEntityId: string;
+  readonly removedEntityId: null;
+  readonly cutPointIds: readonly [string, string];
+  readonly newEntityId: string;
+}
+export type CadSketchTrimResult = CadSketchEndTrimResult | CadSketchMiddleTrimResult;
 export class CadSketchTrimDependencyError extends CadError {
   readonly relationIds: readonly string[];
   readonly pointIds: readonly string[];
@@ -110,7 +129,7 @@ function sameEndpointPair(edge: Pick<SourceLine, 'startPointId' | 'endPointId'>,
   return pair.length === 2 && (edge.startPointId === pair[0] && edge.endPointId === pair[1] || edge.startPointId === pair[1] && edge.endPointId === pair[0]);
 }
 function retainedLineDirection(graph: CadSketchGraph, line: SourceLine, relation: CadSketchGraphRelation): boolean {
-  if (relation.kind === 'parallel' || relation.kind === 'perpendicular') return true;
+  if (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear') return true;
   if (relation.kind !== 'horizontal' && relation.kind !== 'vertical') return false;
   return !sameEndpointPair(line, relation.pointIds) || !graph.entities.some(other => other.id !== line.id
     && other.kind !== 'circle' && sameEndpointPair(other, relation.pointIds));
@@ -123,6 +142,11 @@ function assertDependencies(graph: CadSketchGraph, entityId: string, detached: r
     || owners.some(relation => cadSketchRelationPointIds(graph, relation).includes(id)));
   if (owners.length || drivers.length) throw operation === 'trim' ? new CadSketchTrimDependencyError(owners.map(relation => relation.id), drivers)
     : new CadSketchExtendDependencyError(owners.map(relation => relation.id), drivers);
+}
+function assertMiddleDependencies(graph: CadSketchGraph, entityId: string): void {
+  const owners = graph.relations.filter(relation => cadSketchRelationEntityIds(relation).includes(entityId)
+    && relation.kind !== 'parallel' && relation.kind !== 'perpendicular' && relation.kind !== 'collinear');
+  if (owners.length) throw new CadSketchTrimDependencyError(owners.map(relation => relation.id), []);
 }
 function partition(segment: OpenSegment, point: Point2, t: number): readonly [OpenSegment, OpenSegment] {
   const minimum = Math.max(1e-7, cadPathClosureTolerance([segment.start, point, segment.end]));
@@ -210,15 +234,15 @@ function replaceEndpoint(graph: CadSketchGraph, parameters: Readonly<Record<stri
   return candidate;
 }
 
-/** One clicked outer span, with no inferred interior attachment or relation transfer. */
-export function prepareCadSketchEndTrim({ graph: input, parameters, entityId, parameter: pick }: Source & {
+/** One clicked span, with no inferred cutter attachment or coordinate healing. */
+export function prepareCadSketchTrim({ graph: input, parameters, entityId, parameter: pick }: Source & {
   readonly entityId: string; readonly parameter: number;
-}): CadSketchEndTrimPreparation {
+}): CadSketchTrimPreparation {
   if (!Number.isFinite(pick) || pick < 0 || pick > 1) throw new CadError('invalid-sketch-trim', 'Choose a finite source parameter from zero to one.');
   const graph = parseCadSketchGraph(input), entity = graph.entities.find(item => item.id === entityId);
-  if (!entity || entity.kind === 'circle') throw new CadError('invalid-sketch-trim-target', 'End trim supports a line or open arc.');
+  if (!entity || entity.kind === 'circle') throw new CadError('invalid-sketch-trim-target', 'Trim supports a line or open arc.');
   const geometry = compileCadSketchGraph(graph, parameters), segment = geometry.segments.find(item => item.id === entityId);
-  if (!segment || segment.kind === 'circle') throw new CadError('invalid-sketch-trim-target', 'End trim supports a line or open arc.');
+  if (!segment || segment.kind === 'circle') throw new CadError('invalid-sketch-trim-target', 'Trim supports a line or open arc.');
   const unique = boundaryEvents(graph, parameters, geometry.segments, { kind: 'trim', segment });
   if (!unique.length) {
     assertDependencies(graph, entityId, [entity.startPointId, entity.endPointId]);
@@ -230,7 +254,20 @@ export function prepareCadSketchEndTrim({ graph: input, parameters, entityId, pa
     throw new CadError('ambiguous-sketch-trim', 'Choose the portion to remove, away from its intersection.');
   const first = unique[0], last = unique[unique.length - 1];
   const end = pick < first.witness.parameter ? 'start' : pick > last.witness.parameter ? 'end' : null;
-  if (!end) throw new CadError('unsupported-sketch-trim-middle', 'Middle trim is not supported yet. Split explicitly before editing both surviving pieces.');
+  if (!end) {
+    if (segment.kind !== 'line' || entity.kind !== 'line') throw new CadError('unsupported-sketch-trim-middle', 'Middle trim supports lines. Split this arc explicitly before editing its surviving pieces.');
+    const after = unique.findIndex(event => event.witness.parameter > pick), left = unique[after - 1], right = unique[after];
+    assertEndpointRange(left.point, 'trim'); assertEndpointRange(right.point, 'trim'); assertMiddleDependencies(graph, entityId);
+    const minimum = Math.max(1e-7, cadPathClosureTolerance([segment.start, left.point, right.point, segment.end]));
+    if (distance(segment.start, left.point) <= minimum || distance(left.point, right.point) <= minimum || distance(right.point, segment.end) <= minimum) throw precision();
+    const result: CadSketchMiddleTrimPreparation = {
+      target: { kind: 'middle', entityId, parameter: pick, boundaries: [left.witness, right.witness] },
+      removed: createLineSegment({ ...segment, start: left.point, end: right.point }),
+      survivors: [createLineSegment({ ...segment, end: left.point }), createLineSegment({ ...segment, start: right.point })],
+      cuts: [{ boundary: left.boundary, point: [left.point.x, left.point.y] }, { boundary: right.boundary, point: [right.point.x, right.point.y] }]
+    };
+    freezeData(result); return result;
+  }
   const event = end === 'start' ? first : last;
   assertEndpointRange(event.point, 'trim');
   assertDependencies(graph, entityId, [end === 'start' ? entity.startPointId : entity.endPointId], 'trim', entity.kind === 'line' ? entity : undefined);
@@ -243,12 +280,28 @@ export function prepareCadSketchEndTrim({ graph: input, parameters, entityId, pa
 
 /** Recheck the exact preview witness; never retarget a changed source to another intersection. */
 export function trimCadSketchEntity({ graph: input, parameters, trim }: Source & { readonly trim: CadSketchTrimTarget }): CadSketchTrimResult {
-  if (!isCadImportData(trim) || !Value.Check(CadSketchTrimTargetSchema, trim)) throw new CadError('invalid-sketch-trim', 'Choose one complete end-trim request.');
-  const graph = parseCadSketchGraph(input), prepared = prepareCadSketchEndTrim({ graph, parameters, entityId: trim.entityId, parameter: trim.parameter });
-  const target = trim.kind === 'delete' ? trim : { kind: trim.kind, entityId: trim.entityId, parameter: trim.parameter, end: trim.end, boundary: trim.boundary };
+  if (!isCadImportData(trim) || !Value.Check(CadSketchTrimTargetSchema, trim)) throw new CadError('invalid-sketch-trim', 'Choose one complete trim request.');
+  const graph = parseCadSketchGraph(input), prepared = prepareCadSketchTrim({ graph, parameters, entityId: trim.entityId, parameter: trim.parameter });
+  const target = trim.kind === 'delete' ? trim : trim.kind === 'end'
+    ? { kind: trim.kind, entityId: trim.entityId, parameter: trim.parameter, end: trim.end, boundary: trim.boundary }
+    : { kind: trim.kind, entityId: trim.entityId, parameter: trim.parameter, boundaries: trim.boundaries };
   if (!Value.Equal(prepared.target, target)) throw new CadError('stale-sketch-trim', 'The trim boundary changed. Choose the portion again.');
   if (trim.kind === 'delete') return Object.freeze({ graph: parseCadSketchGraph({ ...graph, entities: graph.entities.filter(entity => entity.id !== trim.entityId) }),
     retainedEntityId: null, removedEntityId: trim.entityId, cutPointId: null });
+  if (trim.kind === 'middle') {
+    const line = graph.entities.find(entity => entity.id === trim.entityId);
+    if (!line || line.kind !== 'line') throw new CadError('invalid-sketch-trim-target', 'Middle trim supports an existing line.');
+    for (const [index, witness] of trim.boundaries.entries()) if (witness.endpointPointId !== undefined && trim.cutPointIds[index] !== witness.endpointPointId)
+      throw new CadError('invalid-sketch-trim-point', 'Use the exact witnessed boundary endpoint identity.');
+    const candidate = parseCadSketchGraph({ ...graph,
+      points: [...graph.points, ...trim.boundaries.flatMap((witness, index) => witness.endpointPointId === undefined ? [{ id: trim.cutPointIds[index], position: witness.position }] : [])],
+      entities: graph.entities.flatMap(entity => entity.id === line.id ? [{ ...line, endPointId: trim.cutPointIds[0] },
+        { ...line, id: trim.newEntityId, startPointId: trim.cutPointIds[1] }] : [entity]),
+      relations: [...graph.relations, { id: trim.supportRelationId, kind: 'collinear', lineIds: [line.id, trim.newEntityId] }] });
+    compileCadSketchGraph(candidate, parameters);
+    return Object.freeze({ graph: candidate, retainedEntityId: line.id, removedEntityId: null,
+      cutPointIds: Object.freeze([trim.cutPointIds[0], trim.cutPointIds[1]] satisfies [string, string]), newEntityId: trim.newEntityId });
+  }
   const candidate = replaceEndpoint(graph, parameters, trim.entityId, trim.end, trim.boundary, trim.cutPointId, 'trim');
   return Object.freeze({ graph: candidate, retainedEntityId: trim.entityId, removedEntityId: null, cutPointId: trim.cutPointId });
 }
