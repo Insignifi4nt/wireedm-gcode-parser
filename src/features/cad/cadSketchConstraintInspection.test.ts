@@ -1,3 +1,5 @@
+import { prepareCadEdits } from './cadEditPreparation';
+import { symmetricRelation, symmetryPart } from '@/domain/cad/__tests__/cadSketchSymmetryFixtures';
 import { circleRow, circleRowPart } from '@/domain/cad/__tests__/cadSketchLinearPatternFixtures';
 // @vitest-environment node
 import { createRequire } from 'node:module';
@@ -307,4 +309,11 @@ it('exposes actual pattern ownership and stable omitted mappings without changin
   const owner=pageCadSketchConstraints(inspection,{section:'relations'}).items[0];
   expect(owner).toMatchObject({source:{id:'row'},pattern:{count:4,direction:'+x',pitch:{scalar:' pitch ',valueMm:15,role:'expression-driver'},instances:expect.arrayContaining([{index:2,pointId:'holes_i2_p0',entityId:'holes_i2_e0',inRange:true,omitted:true,active:false}])}});
   expect(JSON.stringify(document)).toBe(exact);
+});
+
+
+it('inspects symmetry with all point and axis identities and no invented value or size driver',async()=>{
+  const source=symmetryPart(),prepared=await prepareCadEdits(source,[{kind:'set-sketch-relation',sketchId:'sketch',relation:symmetricRelation}],solver);
+  const inspection=await inspectCadSketchConstraints(prepared.document,'sketch',async()=>solver);const row=pageCadSketchConstraints(inspection,{section:'relations'}).items[0];
+  expect(row).toMatchObject({source:symmetricRelation,entityIds:['axis'],points:[{id:'left'},{id:'right'},{id:'axis-a'},{id:'axis-b'}]});expect(row).not.toHaveProperty('value');
 });

@@ -788,3 +788,28 @@ describe('contextual concentric curve centers',()=>{
     expect(h.pending).toHaveBeenLastCalledWith(false);expect(h.prepare).not.toHaveBeenCalled();expect(h.edit).not.toHaveBeenCalled();expect(h.session.getSnapshot().document).toBe(original);
   });
 });
+
+
+describe('point symmetry about a selected sketch line',()=>{
+  const pairedBores=()=>parseCadDocument({...createCadDocument('Paired bores'),schemaVersion:2,features:[{
+    id:'sketch',kind:'sketch',name:'Layout',plane:'XY',offset:0,suppressed:false,profiles:[],graph:{
+      points:[{id:'left',position:[' 15.00 ','10']},{id:'right',position:[55,10]},{id:'axis-a',position:['35','0']},{id:'axis-b',position:['35','20']}],
+      entities:[{id:'left-bore',kind:'circle',centerPointId:'left',radius:' 3.00 ',construction:false},{id:'right-bore',kind:'circle',centerPointId:'right',radius:' 4.000 ',construction:false},
+        {id:'axis',kind:'line',startPointId:'axis-a',endPointId:'axis-b',construction:true}],relations:[]}}]});
+  it.each(['point','entity'] as const)('authors %s position symmetry, cancels and preserves the accepted tuple on reversed selection',async(kind)=>{
+    const original=pairedBores(),selection:readonly CadSketchGraphSelection[]=[{kind,id:kind==='point'?'right':'right-bore'},{kind:'entity',id:'axis'},{kind,id:kind==='point'?'left':'left-bore'}];
+    const label=kind==='point'?'Symmetric points':'Symmetric centers',h=await mount(original,selection);
+    await act(async()=>field(label).click());await click('Cancel');expect(h.session.getSnapshot().document).toBe(original);expect(h.edit).not.toHaveBeenCalled();
+    await act(async()=>field(label).click());await click('Apply');
+    const edit=h.edit.mock.calls[0]?.[0][0];expect(edit).toMatchObject({kind:'set-sketch-relation',sketchId:'sketch',relation:{kind:'symmetric',pointIds:['right','left'],lineId:'axis'}});
+    if(edit?.kind!=='set-sketch-relation')throw Error('Missing symmetry');const owner=edit.relation,accepted=h.session.getSnapshot().document,sketch=accepted.features[0];
+    expect(sketch).toEqual({...original.features[0],graph:{...(original.features[0].kind==='sketch'?original.features[0].graph:{}),relations:[owner]}});
+    await h.render([...selection].reverse());expect(field(label).checked).toBe(true);await act(async()=>field(label).click());await act(async()=>field(label).click());expect(h.pending).toHaveBeenLastCalledWith(false);expect(h.edit).toHaveBeenCalledTimes(1);
+    await act(async()=>field(label).click());await click('Apply');expect(h.session.getSnapshot().document.features).toEqual(original.features);
+    await act(async()=>h.session.undo());expect(h.session.getSnapshot().document).toEqual(accepted);
+  });
+  it('does not offer symmetry when a selected point is an endpoint of the axis',async()=>{
+    await mount(pairedBores(),[{kind:'point',id:'axis-a'},{kind:'point',id:'right'},{kind:'entity',id:'axis'}]);
+    expect(document.querySelector('input[aria-label="Symmetric points"]')).toBeNull();
+  });
+});

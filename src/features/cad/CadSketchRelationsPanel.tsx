@@ -5,6 +5,7 @@ import { CloseIcon, ConfirmIcon, LinkIcon, MeasureIcon } from '@wire-edm/icons-r
 import type { CadDocument, CadScalar, CadSketchFeature } from '@/domain/cad/cadDocument';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation, CadSketchReferenceDimension } from '@/domain/cad/cadSketchGraph';
 import { cadSketchReferenceDimensionToDriving, measureCadSketchReferenceDimension, resolveCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
+import { resolveCadSketchSymmetryOperands } from '@/domain/cad/cadSketchSymmetryRelations';
 import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 import { cadSketchRelationPointIds, mapCadSketchRelationScalars } from '@/domain/cad/cadSketchGraphReferences';
 import { cadSketchLinearPatternForSelection, cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
@@ -27,7 +28,7 @@ import './cad-sketch-profile.css';
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
 const relationLabels = {
-  'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', 'fixed-point': 'Fixed point', distance: 'Length', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', 'external-reference': 'Linked reference',
+  symmetric: 'Symmetric points', 'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', 'fixed-point': 'Fixed point', distance: 'Length', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', 'external-reference': 'Linked reference',
   parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', 'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer'
 } satisfies Record<Exclude<CadSketchGraphRelation['kind'], 'fixed-axis' | 'radial-size' | 'axis-distance'>, string>;
 const relationLabel = (relation: CadSketchGraphRelation): string => relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
@@ -65,6 +66,17 @@ function selectedPointLine(selection: readonly CadSketchGraphSelection[], graph:
   const point = selection.find(atom => atom.kind === 'point'), edge = selection.find(atom => atom.kind === 'entity');
   const line = edge && graph.entities.find(entity => entity.id === edge.id);
   return point && line?.kind === 'line' && point.id !== line.startPointId && point.id !== line.endPointId ? { pointId: point.id, lineId: line.id } : null;
+}
+function selectedSymmetry(selection: readonly CadSketchGraphSelection[], graph: CadSketchGraph) {
+  if (selection.length !== 3) return null;
+  const axes = selection.filter(atom => atom.kind === 'entity' && graph.entities.some(entity => entity.id === atom.id && entity.kind === 'line'));
+  if (axes.length !== 1) return null;
+  const targets = selection.filter(atom => atom !== axes[0]);
+  const ids = targets.map(atom => atom.kind === 'point' ? atom.id : (() => { const entity = graph.entities.find(entity => entity.id === atom.id); return entity?.kind === 'circle' ? entity.centerPointId : null; })());
+  if (!ids[0] || !ids[1]) return null;
+  const operands = { pointIds: [ids[0],ids[1]] as const, lineId: axes[0].id };
+  try { resolveCadSketchSymmetryOperands(graph,operands); return { ...operands, label: targets.every(atom => atom.kind === 'entity') ? 'Symmetric centers' : 'Symmetric points' }; }
+  catch { return null; }
 }
 const selectedEntityPair = (selection: readonly CadSketchGraphSelection[], graph: CadSketchGraph, kind: 'line' | 'curve'): readonly [string, string] | null => selection.length === 2
   && selection.every(atom => atom.kind === 'entity' && graph.entities.some(entity => entity.id === atom.id && (kind === 'line' ? entity.kind === 'line' : entity.kind !== 'line')))
@@ -149,6 +161,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const singleton = selection.length === 1 ? selection[0] : null;
   const pointPair = selectedPointPair(selection);
   const pointLine = selectedPointLine(selection, graph);
+  const symmetry = selectedSymmetry(selection, graph);
   const linePair = selectedEntityPair(selection, graph, 'line'), curvePair = selectedEntityPair(selection, graph, 'curve');
   const entityPair = linePair ?? curvePair;
   const [angleId] = useState(() => crypto.randomUUID());
@@ -301,6 +314,12 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
     } else {
       setError(null); setDraft(current => ({ ...current, relations: current.relations.filter(relation => relation.kind !== kind || !sameEntityPair(relation, pair)) }));
     }
+  };
+  const toggleSymmetry = (enabled: boolean) => {
+    if (!symmetry || patternLock) return;
+    const matches = (relation: CadSketchGraphRelation) => relation.kind === 'symmetric' && relation.lineId === symmetry.lineId && samePair(relation,symmetry.pointIds);
+    if (enabled) changeRelation(source.graph.relations.find(matches) ?? {id:crypto.randomUUID(),kind:'symmetric',pointIds:symmetry.pointIds,lineId:symmetry.lineId});
+    else { setError(null); setDraft(current=>({...current,relations:current.relations.filter(relation=>!matches(relation))})); }
   };
   const toggleMidpoint = (enabled: boolean) => {
     if (!pointLine) return;
@@ -464,6 +483,10 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
           disabled={Boolean(selectedReference)} title={referenceLock ?? undefined} checked={draft.relations.some(relation => relation.kind === kind && samePair(relation, dimensionPair))} onChange={event => toggleLineAxis(kind, event.target.checked)} />{kind === 'horizontal' ? 'Horizontal' : 'Vertical'}</label>)}
         <Button type="button" title={referenceLock ?? undefined} disabled={Boolean(selectedReference) || draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, dimensionPair))} onClick={() => addLength()}><MeasureIcon size={13} /> Add length</Button>
       </div>}
+      {symmetry && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label={symmetry.label} disabled={Boolean(patternLock)} title={patternLock ?? undefined}
+        checked={draft.relations.some(relation=>relation.kind==='symmetric'&&relation.lineId===symmetry.lineId&&samePair(relation,symmetry.pointIds))}
+        onChange={event=>toggleSymmetry(event.target.checked)} />{symmetry.label}</label>
+        <CadContextHelp label="Point symmetry">Keeps these two positions mirrored about the selected line. Circle selections use their centers; radii and other dimensions keep their own drivers. The axis follows its existing constraints. Construction and linked reference lines can be axes.</CadContextHelp></div>}
       {pointPair && !patternLock && <div className="cad-sketch-profile-actions cad-sketch-pair-actions">
         {(['coincident', 'horizontal', 'vertical'] as const).map(kind => <label key={kind} className="cad-check"><Input type="checkbox" aria-label={kind[0].toUpperCase() + kind.slice(1)}
           title={kind === 'coincident' ? 'Keeps the selected points together as a shared sketch joint.' : undefined}

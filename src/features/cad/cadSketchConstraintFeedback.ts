@@ -23,7 +23,7 @@ interface PreparationFailureInput {
 }
 
 const relationNames: Record<CadSketchGraphRelation['kind'], string> = {
-  'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', distance: 'Distance', 'axis-distance': 'Axis distance',
+  symmetric: 'Symmetric points', 'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', distance: 'Distance', 'axis-distance': 'Axis distance',
   'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'external-reference': 'Linked reference',
   'fixed-point': 'Fixed point', 'fixed-axis': 'Fixed axis', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer', 'radial-size': 'Radial size'
 };
@@ -55,6 +55,7 @@ export function describeCadSketchConstraintSource(graph: CadSketchGraph, source:
         ? relation.lineIds.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label)
         : relation.kind === 'equal-radius' ? relation.curveIds.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label)
         : relation.kind === 'radial-size' || relation.kind === 'external-reference' ? [describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.entityId }).label]
+        : relation.kind === 'symmetric' ? [...relation.pointIds.map(pointLabel), describeCadSketchConstraintSource(graph,{kind:'entity',id:relation.lineId}).label]
         : relation.kind === 'linear-pattern' ? [describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.seed.entityId }).label]
         : relation.kind === 'reference-dimension' ? relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds.map(pointLabel)
           : [describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.measurement.entityId }).label]

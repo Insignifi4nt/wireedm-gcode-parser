@@ -17,6 +17,14 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: live point symmetry
+
+Accepted the bounded [two-point symmetry contract](2026-10-16-sketch-next-workflows-after-reference.md#current-next-choice-after-circle-rows-cf69090): two declared points reflected about one actual sketch line, with circle-center convenience labelled as positions only. The source schema, complete four-point dependencies, independent physical reflection check and existing native equation share the ordinary guarded edit path. No radius driver, point projection, hidden fixed axis or tolerance change. Linked axes/anchors are supported; pattern-generated operands keep their owner lock.
+
+Meaningful source/native, actual free-pair Move, UI, inspection, private-Finish and both storage-adapter gates pass, including fixed incompatible native Success being independently rejected. Focused integration passes158 cases; full types/build/docs/source/shared-control checks pass. Independent source review has no open finding. The complete paired-bore journey passes Chromium and Firefox: Cancel/Apply, parameter following, private source isolation, Finish, exact Undo/Redo, agent parity and save/reload.
+
+Native pointer selection of both circumferences and the construction axis exposes Symmetric centers. LeftX15→20 moves the right center55→50 while exact source strings and independent radii3/4 remain. Accepted source is unchanged until Finish. Native Pad5 is one6607.3009183012755 mm³ solid, bounds[0,0,0]→[70,20,5], freedom0 and zero diagnostics. Exact Undo/Redo pass; temporary draft restored empty and closed without Save. Evidence: tmp/sketch-symmetry-native-{editor.png,solid.png,proof.json}. Older readers reject the additive schema2 arm; no migration, native binary, version or remote change. Whole-shape symmetry and the broader sketch inventory remain unfinished.
+
 ## Checkpoint: persistent circle rows
 
 Accepted the bounded first [sketch pattern scope](2026-10-16-sketch-linear-pattern-plan.md): one material circle repeated along local ±X/±Y, count1–32, exact linked pitch and stable omitted occurrences. Copies follow seed size/position, stay selectable and are edited through their owner or explicit Detach. A compact editor and numbered canvas toggles replace an occurrence list. API/schema/native preparation, private Finish, inspection metadata, guarded member operations and both storage adapters share the same contract.

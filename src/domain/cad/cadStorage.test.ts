@@ -1,3 +1,4 @@
+import { symmetricRelation, symmetryPart, symmetrySketch } from './__tests__/cadSketchSymmetryFixtures';
 import { circleRow, circleRowPart, rowSketch } from './__tests__/cadSketchLinearPatternFixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
@@ -29,6 +30,16 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     localStorage.clear();
     adapter = kind === 'browser-cache' ? createBrowserCacheAdapter(localStorage)
       : createBrowserDirectoryAdapter(new FakeDirectoryHandle('cad-test') as unknown as FileSystemDirectoryHandle);
+  });
+  it('round trips point symmetry and independent bore drivers, rejecting a forged reflection before writes',async()=>{
+    const base=symmetryPart(),sketch=symmetrySketch(base),source=parseCadDocument({...base,features:[{...sketch,graph:{...sketch.graph,
+      points:sketch.graph.points.map(point=>point.id==='right'?{...point,position:[55,10]}:point),relations:[symmetricRelation]}}]});
+    const saved=await saveCadDocument(adapter,source,{expectedSavedVersion:null}),reopened=await loadCadDocument(adapter,source.id);expect(reopened.document).toEqual(source);
+    const graph=symmetrySketch(source).graph,raw=await adapter.readExactText?.(cadDocumentPath(source.id)),writes=vi.spyOn(adapter,'writeText');
+    const forged={...source,features:[{...symmetrySketch(source),graph:{...graph,points:graph.points.map(point=>point.id==='right'?{...point,position:[54,10] as const}:point)}}]};
+    await expect(saveCadDocument(adapter,forged,{expectedSavedVersion:saved.savedVersion})).rejects.toThrow();expect(writes).not.toHaveBeenCalled();expect(await adapter.readExactText?.(cadDocumentPath(source.id))).toBe(raw);
+    const detached=applyCadEdits(source,[{kind:'remove-sketch-relation',sketchId:'sketch',relationId:symmetricRelation.id}]);await saveCadDocument(adapter,detached,{expectedSavedVersion:saved.savedVersion});expect((await loadCadDocument(adapter,source.id)).document).toEqual(detached);
+    expect(symmetrySketch(detached).graph).toEqual({...graph,relations:[]});
   });
   it('preserves circle-row identities, exclusions and detached geometry through successive saves',async()=>{
     const source=applyCadEdits(circleRowPart(),[{kind:'set-sketch-relation',sketchId:'sketch',relation:{...circleRow,omittedInstances:[2]}}]);
