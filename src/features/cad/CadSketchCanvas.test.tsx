@@ -244,6 +244,31 @@ describe('graph spatial selection', () => {
     };
     return { feature, props: () => props, show, canvas, pointer, selected, selectedSet, edited, deleted, pending, error, release };
   }
+  it('captures graph command scope and releases only its menu ownership, rejecting an obsolete frame', async () => {
+    const h = await spatialFixture(), started = vi.fn();
+    const graph = h.props().graphControls; if (!graph) throw new Error('Graph missing.');
+    const selection: readonly CadSketchGraphSelection[] = [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }];
+    await h.show({ graphControls: { ...graph, selection }, graphContextMenu: scope => {
+      return [{ label: 'Dimension', onSelect: () => started(scope, h.pending.mock.lastCall?.[0]) }];
+    } });
+    const point = container.querySelector<SVGGElement>('[data-cad-sketch-point="a"]'); if (!point) throw new Error('Point missing.');
+    const open = async () => act(async () => { point.focus(); point.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+    const action = () => { const found = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Dimension'); if (!found) throw new Error('Dimension menu item missing.'); return found; };
+    await open(); expect(h.selected).not.toHaveBeenCalled(); expect(h.selectedSet).not.toHaveBeenCalled();
+    await act(async () => action().click()); expect(started).toHaveBeenCalledExactlyOnceWith(selection, false);
+    expect(document.activeElement).toBe(point); expect(h.edited).not.toHaveBeenCalled();
+    await open(); const stale = action();
+    vi.mocked(h.canvas.getBoundingClientRect).mockReturnValue({ left: 20, top: 20, right: 1020, bottom: 520, width: 1000, height: 500, x: 20, y: 20, toJSON: () => ({}) });
+    await act(async () => stale.click()); expect(started).toHaveBeenCalledTimes(1);
+    await open(); expect(action().isConnected).toBe(true);
+    await h.show({ documentVersion: 'two' });
+    expect(document.querySelector('[role="menu"]')).toBeNull(); expect(h.pending).toHaveBeenLastCalledWith(false);
+    await open(); expect(action().isConnected).toBe(true);
+    await h.show({ interactionLocked: true });
+    expect(document.querySelector('[role="menu"]')).toBeNull(); expect(started).toHaveBeenCalledTimes(1);
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.selectedSet).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+  });
+
   it('routes an owned axis pick to eligible edges without changing the source set or exposing drag and delete', async () => {
     const h = await spatialFixture(), onPick = vi.fn(), onCancel = vi.fn();
     const selection: readonly CadSketchGraphSelection[] = [{ kind: 'entity', id: 'ab' }];
@@ -477,7 +502,8 @@ describe('graph spatial selection', () => {
     expect(h.error).not.toHaveBeenCalled();
   });
   it('offers exact overlapping operands on right click and commits only the chosen target', async () => {
-    const h = await spatialFixture();
+    const h = await spatialFixture(), start = vi.fn();
+    await h.show({ graphContextMenu: scope => [{ label: 'Dimension', onSelect: () => start(scope) }] });
     await h.pointer('pointerdown', 10, 0, true, 7, 2); await h.pointer('pointerup', 10, 0, true, 7, 2);
     const items = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
     const edge = items.find(item => item.textContent?.startsWith('Line 2'));
@@ -489,6 +515,12 @@ describe('graph spatial selection', () => {
     expect(h.selected).toHaveBeenCalledExactlyOnceWith({ kind: 'entity', id: 'bc' }, true);
     expect(document.activeElement).toBe(container.querySelector('[data-cad-sketch-entity="bc"]'));
     expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.edited).not.toHaveBeenCalled();
+    const filter = container.querySelector<HTMLSelectElement>('[aria-label="Sketch selection filter"]'); if (!filter) throw new Error('Filter missing.');
+    await act(async () => { filter.value = 'points'; filter.dispatchEvent(new Event('change', { bubbles: true })); });
+    await h.pointer('pointerdown', 10, 0, false, 7, 2); await h.pointer('pointerup', 10, 0, false, 7, 2);
+    const dimension = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Dimension');
+    if (!dimension) throw new Error('Singleton point action missing.'); await act(async () => dimension.click());
+    expect(start).toHaveBeenCalledExactlyOnceWith([{ kind: 'point', id: 'b' }]); expect(h.edited).not.toHaveBeenCalled();
   });
   it('previews an exact off-grid split at the owned cursor and submits the same named joint once', async () => {
     const h = await spatialFixture(), original = structuredClone(h.feature), operation = deferred<void>(); h.edited.mockReturnValue(operation.promise);

@@ -9,13 +9,25 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [x] Record official CAD sketch references and an implementation/acceptance matrix.
 - [x] Reproduce and correct point/segment/profile picking and dragging. A free point moves independently of the whole closed contour; exact set Move remains explicit.
 - [x] Establish stable geometry references and a coherent constraint model, including dimensions, degrees of freedom, conflicting/redundant constraints and cancellation. Broader relation coverage remains part of the tool inventory below.
-- [ ] Complete direct editing across supported line, arc, circle, rectangle, slot, polygon and generated/reference geometry. Distinguish free and driven controls without misleading edit affordances.
-- [ ] Complete the sketch tool and interaction inventory established by the research. Cover selection, snapping, construction/reference geometry, trim/extend/offset, transforms and other core sketch operations as supported by a consistent domain model.
-- [ ] Keep human commands and agent operations equivalent, guarded, versioned, discoverable and documented.
-- [ ] Verify complete part-building workflows, exact geometry, undo/redo, rejected edits, saves/reopens and downstream rebuilds. Test meaningful math and state invariants at shared application/domain operations; inspect interaction and visuals in the actual browser.
-- [ ] Independently audit sketch mode against the original goal and source-backed scenarios. Investigate missing or weak evidence, rather than treating passing tests as completion.
+- [x] Complete direct editing across supported line, arc, circle, rectangle, slot, polygon and generated/reference geometry. Distinguish free and driven controls without misleading edit affordances.
+- [x] Complete the supported core sketch tool and interaction inventory established by the research. Cover selection, snapping, construction/reference geometry, trim/extend/offset and transforms through consistent domain operations; retain explicit limits below.
+- [x] Keep human commands and agent operations equivalent, guarded, versioned, discoverable and documented for the delivered contracts.
+- [x] Verify complete part-building workflows, exact geometry, undo/redo, rejected edits, saves/reopens and downstream rebuilds. Test meaningful math and state invariants at shared application/domain operations; inspect interaction and visuals in the actual browser.
+- [x] Independently audit the supported sketch loop against the original goal and source-backed scenarios. Investigate missing or weak evidence, rather than treating passing tests as completion.
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
+
+Current phase,17 October: the practical sketch loop is accepted for the delivered analytic contracts. The [independent audit](2026-10-16-sketch-final-workflow-audit.md) does not claim every vendor command or S01–S22 permutation. General arrays, broader projection, associative Offset and arbitrary curve corners remain explicit expansion/coverage limits. Earlier checkpoint “Next” paragraphs are historical; this section and the latest audit govern current work. The overall local-only goal remains active.
+
+## Checkpoint: context editing and whole-workflow reconciliation
+
+Right-click/Shift+F10 on an actual graph point or edge now opens the same Dimension/Move editors as the dock. Targeted geometry outside the selection gets its own scope; a target inside the set retains it. Owned source/version/frame/selection guards, synchronous menu release, Escape focus and generated/linked restrictions remain. Existing Split/Extend preview order is retained. Review's linked-guide angle mismatch and the broader browser run's ambiguous shared-point regression are both reproduced and repaired with focused regressions.
+
+The broader83 CAD journeys produce79 initial passes and four investigated failures. Two old creation cases now assert actual graph geometry/driver identities and retain their analytic solid/history checks; one transient view capture uses the existing bounded stale-view recovery. The final8 affected journeys pass Chromium and Firefox after the pointer repair. Focused groups236/146/135/3 overlap; scoped types, full build plus final production packaging,98 docs/native-source checks and shared controls pass. Independent review is closed. [Acceptance](2026-10-17-sketch-context-editing.md).
+
+Native pointer/keyboard opens Dimension, Cancels, sets Ø8, Shift-selects two circles and Moves+5. Accepted source stays exact until Finish; one4685.84073464102mm³ Pad5, expected bounds, no diagnostics and exact Undo/Redo. Disposable draft restored empty/closed without Save; tmp/sketch-context-native-{menu.png,editor.png,solid.png,proof.json}. Hosted guidance now matches accepted constraints, references, placement, patterns and intersection areas. No schema/native/tolerance, version or remote change.
+
+Next existing-workspace work: correct Section for CAM's guaranteed invalid initial height by sharing DXF's body-interior default, preserve custom review values, and remove forced title capitalization. Assess the separate inability to repick an existing topology operation through an owned pre-feature source; do not weaken accepted-build identity checks. [Workspace findings and proposed seams](2026-10-17-cad-workspace-tools-audit.md).
 
 ## Checkpoint: precise reused-detail placement
 

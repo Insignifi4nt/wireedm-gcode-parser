@@ -37,7 +37,7 @@ import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { cadArcSvgPath } from './cadSketchSvg';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadSketchBoxSelection } from './useCadSketchBoxSelection';
-import { cadSketchGeometryPickAllows, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
+import { cadSketchGeometryPickAllows, cadSketchGraphSelectionsEqual, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import { CadContextMenu, type CadContextMenuItem } from './CadContextMenu';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
 import type { CadFreshSketchDrawing, CadFreshSketchPick } from '@/domain/cad/cadFreshSketchGraph';
@@ -88,6 +88,7 @@ interface CadSketchOverlapPick {
   readonly version?: string; readonly cancelSignal: number; readonly filter: CadSketchGraphPickFilter; readonly frameKey: string; readonly frame: string;
   readonly clientX: number; readonly clientY: number; readonly toggle: boolean; readonly candidates: readonly CadSketchGraphSelection[];
   readonly target?: CadSketchGraphSelection;
+  readonly selection: readonly CadSketchGraphSelection[];
   readonly geometryPick?: CadSketchGraphControls['geometryPick'];
   readonly split?: SplitPreview;
   readonly trim?: TrimPreview;
@@ -97,7 +98,7 @@ interface CadSketchOverlapPick {
   readonly action?: 'split' | 'trim' | 'extend';
 }
 
-export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVersion, placementLabel, tool, selectedProfileId, onSelectProfile, onAddProfile, onAddFreshSketch, onAddPath, onTranslateProfile, onMoveHandle, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onError, cancelSignal, interactionLocked: externalInteractionLocked = false, onControlsReady, viewLocked = false, navigationMode = 'mouse', onContextMenu, previewProfile, previewSketch, graphControls, inspection, dimensionControls, getFitArea }: {
+export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVersion, placementLabel, tool, selectedProfileId, onSelectProfile, onAddProfile, onAddFreshSketch, onAddPath, onTranslateProfile, onMoveHandle, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onError, cancelSignal, interactionLocked: externalInteractionLocked = false, onControlsReady, viewLocked = false, navigationMode = 'mouse', onContextMenu, graphContextMenu, previewProfile, previewSketch, graphControls, inspection, dimensionControls, getFitArea }: {
   sketch: CadSketchFeature | CadCurveFeature;
   parameters: Readonly<Record<string, number>>;
   documentVersion?: string;
@@ -121,6 +122,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   viewLocked?: boolean;
   navigationMode?: 'mouse' | 'trackpad';
   onContextMenu?(request: CadSketchContextMenuRequest): void;
+  graphContextMenu?(selection: readonly CadSketchGraphSelection[]): readonly CadContextMenuItem[];
   previewProfile?: CadSketchProfile | null;
   previewSketch?: CadSketchFeature | null;
   graphControls?: CadSketchGraphControls;
@@ -436,23 +438,32 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     selection: graphControls?.selection ?? [], onSelectSet: graphControls?.onSelectSet, onPendingChange: publishBoxPending, onError,
     onCancel: () => { suppressProfileClick.current = true; },
     project: projectSelection });
-  const currentOverlap = overlap && overlap.prepared === sourceGraph && overlap.document === graphControls?.document && overlap.version === documentVersion && overlap.cancelSignal === cancelSignal
-    && overlap.geometryPick === geometryPick && overlap.filter === pickFilter && overlap.frameKey === spatialFrameKey && tool === 'select' && !isPreview && !baseInteractionLocked ? overlap : null;
+  const overlapEnvironment = useRef({ sourceGraph, document: graphControls?.document, documentVersion, cancelSignal, geometryPick, pickFilter, spatialFrameKey, selection: graphControls?.selection, allowed: false });
+  overlapEnvironment.current = { sourceGraph, document: graphControls?.document, documentVersion, cancelSignal, geometryPick, pickFilter, spatialFrameKey, selection: graphControls?.selection,
+    allowed: tool === 'select' && !positionPick && !isPreview && !baseInteractionLocked };
+  const overlapIsCurrent = (owned: CadSketchOverlapPick) => {
+    const current = overlapEnvironment.current;
+    return current.allowed && owned.prepared === current.sourceGraph && owned.document === current.document && owned.version === current.documentVersion
+      && owned.cancelSignal === current.cancelSignal && owned.geometryPick === current.geometryPick && owned.filter === current.pickFilter && owned.frameKey === current.spatialFrameKey
+      && cadSketchGraphSelectionsEqual(owned.selection, current.selection ?? []) && projectSelection(owned)?.frame === owned.frame;
+  };
+  const currentOverlap = overlap && overlapIsCurrent(overlap) ? overlap : null;
   const closeOverlap = useCallback(() => { setOverlap(null); setPickHighlight(null); }, []);
   useLayoutEffect(() => { if (overlap && !currentOverlap) closeOverlap(); }, [overlap, currentOverlap, closeOverlap]);
-  const openOverlap = (event: { clientX: number; clientY: number; shiftKey?: boolean }, trigger: 'pointer' | 'keyboard' = 'pointer', focusedEntityId?: string) => {
+  const openOverlap = (event: { clientX: number; clientY: number; shiftKey?: boolean }, trigger: 'pointer' | 'keyboard' = 'pointer', focusedAtom?: CadSketchGraphSelection) => {
     const projection = projectSelection(event), rect = svg.current?.getBoundingClientRect();
     if (!sourceGraph || !graphControls || !projection || !rect?.height || tool !== 'select' || isPreview || interactionLocked) return false;
     const candidates = graphPicks(projection.point, span / rect.height);
-    const focused = focusedEntityId && trigger === 'keyboard' && (geometryPick ? geometryPick.eligibleEntityIds.includes(focusedEntityId) : pickFilter !== 'points' && sourceGraph.graph.entities.some(entity => entity.id === focusedEntityId && (entity.kind !== 'circle' || cadSketchLinearPatternForSelection(sourceGraph.graph, {kind:'entity',id:entity.id}) || cadSketchExternalReferenceForSelection(sourceGraph.graph, { kind: 'entity', id: entity.id }))))
-      ? { kind: 'entity' as const, id: focusedEntityId } : undefined;
+    const focused = focusedAtom && trigger === 'keyboard' && (geometryPick ? cadSketchGeometryPickAllows(geometryPick, focusedAtom)
+      : focusedAtom.kind === 'point' ? graphContextMenu && pickFilter !== 'edges' && sourceGraph.graph.points.some(point => point.id === focusedAtom.id)
+      : pickFilter !== 'points' && sourceGraph.graph.entities.some(entity => entity.id === focusedAtom.id && (entity.kind !== 'circle' || graphContextMenu || cadSketchLinearPatternForSelection(sourceGraph.graph, focusedAtom) || cadSketchExternalReferenceForSelection(sourceGraph.graph, focusedAtom)))) ? focusedAtom : undefined;
     if (!candidates.length && !focused) return false;
     const selected = graphControls.selection.length === 1 ? graphControls.selection[0] : null;
-    const target = trigger === 'pointer' ? candidates.length === 1 && candidates[0].kind === 'entity' ? candidates[0]
+    const target = trigger === 'pointer' ? candidates.length === 1 && (candidates[0].kind === 'entity' || graphContextMenu && !geometryPick) ? candidates[0]
       : selected?.kind === 'entity' && candidates.some(atom => atom.kind === 'entity' && atom.id === selected.id) ? selected : undefined : focused;
     setOverlap({ prepared: sourceGraph, document: graphControls.document, version: documentVersion, cancelSignal, filter: pickFilter, frameKey: spatialFrameKey, frame: projection.frame, geometryPick,
-      clientX: event.clientX, clientY: event.clientY, toggle: Boolean(event.shiftKey), candidates, target,
-      ...(geometryPick ? {} : focused && sourceGraph.graph.entities.find(entity => entity.id === focused.id)?.kind === 'circle' ? { extendEnds: [] }
+      clientX: event.clientX, clientY: event.clientY, toggle: Boolean(event.shiftKey), candidates, target, selection: graphControls.selection,
+      ...(geometryPick || target?.kind === 'point' ? {} : focused && sourceGraph.graph.entities.find(entity => entity.id === focused.id)?.kind === 'circle' ? { extendEnds: [] }
         : focused ? { action: 'extend', extendEnd: 'start', extendEnds: (['start', 'end'] as const).map(end => ({ end,
         preview: prepareCadSketchExtendEndPreview(sourceGraph, sourceSketch.id, focused.id, end) })) }
         : target ? { action: 'split', split: prepareCadSketchSplitPreview(sourceGraph, sourceSketch.id, target.id, projection.point),
@@ -484,11 +495,17 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       } })) : [];
   const patternOwner = sourceGraph && overlapTarget ? cadSketchLinearPatternForSelection(sourceGraph.graph,overlapTarget) : null;
   const actOnPattern = (action: () => void) => {
-    if (!currentOverlap || projectSelection(currentOverlap)?.frame !== currentOverlap.frame || baseInteractionLocked) return;
-    flushSync(() => { closeOverlap(); pendingChange.current(false); }); action();
+    if (!currentOverlap || !overlapIsCurrent(currentOverlap)) return;
+    const owned = currentOverlap;
+    flushSync(() => { closeOverlap(); pendingChange.current(false); });
+    if (overlapIsCurrent(owned)) action();
   };
+  const commandScope = currentOverlap && overlapTarget ? currentOverlap.selection.some(atom => atom.kind === overlapTarget.kind && atom.id === overlapTarget.id)
+    ? currentOverlap.selection : [overlapTarget] : [];
+  const graphCommandItems = currentOverlap && overlapTarget && !geometryPick && graphContextMenu ? graphContextMenu(commandScope).map(item => 'kind' in item ? item
+    : { ...item, onHighlight: () => { highlightEdgeAction(); setPickHighlight(overlapTarget); item.onHighlight?.(); }, onSelect: () => actOnPattern(item.onSelect) }) : [];
   const referenceOwner = sourceGraph && overlapTarget ? cadSketchExternalReferenceForSelection(sourceGraph.graph, overlapTarget) : undefined;
-  const overlapItems: readonly CadContextMenuItem[] = currentOverlap && geometryPick ? (overlapTarget ? [overlapTarget] : currentOverlap.candidates).map(atom => ({
+  const overlapItems: readonly CadContextMenuItem[] = [...(currentOverlap && geometryPick ? (overlapTarget ? [overlapTarget] : currentOverlap.candidates).map(atom => ({
     label: overlapTarget ? geometryPick.label : `${geometryPick.label} · ${atom.kind === 'point' ? 'Point' : ({ line: 'Line', arc: 'Arc', circle: 'Circle' })[sourceGraph?.graph.entities.find(entity => entity.id === atom.id)?.kind ?? 'line']} ${(atom.kind === 'point' ? sourceGraph?.points.findIndex(point => point.id === atom.id) ?? -1 : sourceGraph?.geometry.segments.findIndex(entity => entity.id === atom.id) ?? -1) + 1}`,
     onHighlight: () => setPickHighlight(atom), onSelect: () => selectOverlap(atom)
   })) : currentOverlap && overlapTarget && patternOwner ? [
@@ -506,7 +523,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (projectSelection(owned)?.frame === owned.frame) graphControls.onSelect(overlapTarget);
       }, 'Unable to detach this reference.');
     } }] : []),
-    ...(currentOverlap.extendEnds ? [] : [
+    ...(currentOverlap.extendEnds || overlapTarget.kind === 'point' ? [] : [
     { label: 'Split here', disabled: currentOverlap.split?.kind !== 'ready', help: currentOverlap.split?.kind === 'unavailable' ? currentOverlap.split.reason : undefined,
       onHighlight: () => highlightEdgeAction('split'), onSelect: () => {
       if (projectSelection(currentOverlap)?.frame !== currentOverlap.frame || baseInteractionLocked || currentOverlap.split?.kind !== 'ready' || !graphControls) return;
@@ -534,7 +551,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         }, 'Unable to trim this edge.');
       } }]),
     ...extendItems,
-    { label: 'Select edge', onHighlight: () => { highlightEdgeAction(); setPickHighlight(overlapTarget); }, onSelect: () => selectOverlap(overlapTarget) },
+    { label: overlapTarget.kind === 'point' ? 'Select point' : 'Select edge', onHighlight: () => { highlightEdgeAction(); setPickHighlight(overlapTarget); }, onSelect: () => selectOverlap(overlapTarget) },
     ...(currentOverlap.candidates.length > 1 ? [{ label: 'Select other', onSelect: () => setOverlap({ ...currentOverlap, target: undefined, split: undefined, trim: undefined, extend: undefined, extendEnds: undefined, extendEnd: undefined, action: undefined }) }] : [])
   ] : currentOverlap?.candidates.map(atom => {
     const point = atom.kind === 'point' ? sourceGraph?.points.find(point => point.id === atom.id) : null;
@@ -543,7 +560,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     const label = point ? `Point ${(index ?? -1) + 1} · ${point.position.map(value => formatCadQuantity(value)).join(', ')} mm`
       : `${entity?.kind === 'line' ? 'Line' : entity?.kind === 'circle' ? 'Circle' : 'Arc'} ${(index ?? -1) + 1}`;
     return { label, onHighlight: () => setPickHighlight(atom), onSelect: () => selectOverlap(atom) };
-  }) ?? [];
+  }) ?? []), ...(graphCommandItems.length ? [{ kind: 'separator' } satisfies CadContextMenuItem, ...graphCommandItems] : [])];
   const getDrawingPick = (event: { clientX: number; clientY: number; ctrlKey: boolean; metaKey: boolean }): DrawingPick => {
     const raw = getRawPoint(event) ?? [0, 0], suppressed = event.ctrlKey || event.metaKey, rect = svg.current?.getBoundingClientRect();
     setCursorInput({ point: raw, suppressed, mode: 'pointer' });
@@ -851,7 +868,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           const at = point ?? (segment ? [segment.start.x, segment.start.y] : center);
           const bounds = event.currentTarget.getBoundingClientRect();
           if (openOverlap({ clientX: bounds.left + bounds.width / 2 + (at[0] - center[0]) / width * bounds.width,
-            clientY: bounds.top + bounds.height / 2 - (at[1] - center[1]) / span * bounds.height }, 'keyboard', entityId ?? undefined)) return;
+            clientY: bounds.top + bounds.height / 2 - (at[1] - center[1]) / span * bounds.height }, 'keyboard', pointId ? { kind: 'point', id: pointId } : entityId ? { kind: 'entity', id: entityId } : undefined)) return;
           const profileId = selectedProfileId && profilePicker.hasProfile(selectedProfileId) ? selectedProfileId : null;
           const rect = event.currentTarget.getBoundingClientRect();
           if (!geometryPick && !positionPick && pickFilter === 'auto') onContextMenu?.({ clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, trigger: 'keyboard', profileId, pointMm: center });
@@ -993,7 +1010,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       onClose={closeSnapChoice} onHighlight={candidate => { if (choiceIsCurrent(currentSnapChoice)) setChoiceHighlight(candidate); }}
       onChoose={candidate => { if (choiceIsCurrent(currentSnapChoice)) placeChosen.current(candidate); }}
       onOutsidePointerDown={event => { suppressProfileClick.current = true; event.preventDefault(); event.stopPropagation(); }} />}
-    {currentOverlap && <CadContextMenu anchor={{ x: currentOverlap.clientX + (currentOverlap.target ? 12 : 0), y: currentOverlap.clientY + (currentOverlap.target ? 12 : 0) }} title={currentOverlap.target ? 'Sketch edge' : 'Select other'} items={overlapItems} onClose={closeOverlap}
+    {currentOverlap && <CadContextMenu anchor={{ x: currentOverlap.clientX + (currentOverlap.target ? 12 : 0), y: currentOverlap.clientY + (currentOverlap.target ? 12 : 0) }} title={currentOverlap.target ? currentOverlap.target.kind === 'point' ? 'Sketch point' : 'Sketch edge' : 'Select other'} items={overlapItems} onClose={closeOverlap}
       onOutsidePointerDown={event => { event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true; }} />}
     {dimensionControls && sketch.kind === 'sketch' && dimensionProfile && dimensionAnchor && tool === 'select' && !isPreview && <CadSketchDimensionControls {...dimensionControls} interactionLocked={dimensionControls.interactionLocked || submission.applying || dragPreview !== null} sketch={sketch} profile={dimensionProfile} parameters={parameters} anchor={dimensionAnchor} project={point => ({ x: (point[0] - center[0]) / width * viewportSize.width + viewportSize.width / 2, y: (center[1] - point[1]) / span * viewportSize.height + viewportSize.height / 2 })} cancelSignal={cancelSignal} />}
     {isPreview && <div className="cad-sketch-context" role="status">Preview · Apply to keep changes</div>}

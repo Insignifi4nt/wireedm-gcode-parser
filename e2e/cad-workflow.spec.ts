@@ -343,7 +343,7 @@ test('datum Loft preflight and human section editing preserve placement through 
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: revised.version }))
     .toMatchObject({ ok: true, data: { buildVersion: revised.version, view: { available: true, referenceVersion: revised.version } } });
   await call(page, 'cad_set_viewport', { expectedVersion: revised.version, command: { kind: 'fit' } });
-  await expectRenderedSolidCapture(page, await call(page, 'cad_capture_preview', { expectedVersion: revised.version }));
+  await expectRenderedSolidCapture(page, await captureCadPreview(page, revised.version));
   await page.screenshot({ path: 'tmp/cad-datum-loft.png' });
   const downloaded = page.waitForEvent('download');
   await call(page, 'cad_export_solid', { expectedVersion: revised.version, format: 'step' });
@@ -1497,6 +1497,7 @@ test('human mixed path drawing retains invalid points and commits one exact undo
   await page.getByRole('button', { name: 'Design in CAD' }).click();
   await createSketchOnCanvasPlane(page);
   const blank = await context(page);
+  const blankFeatures = await call(page, 'cad_read_features', { expectedVersion: blank.version });
   await page.getByRole('button', { name: 'Path', exact: true }).click();
   await page.getByRole('button', { name: '3-point Arc', exact: true }).click();
   const canvas = page.getByLabel('Sketch drawing canvas');
@@ -1514,27 +1515,40 @@ test('human mixed path drawing retains invalid points and commits one exact undo
   await canvas.press('ArrowRight'); await canvas.press('ArrowRight');
   await canvas.press('ArrowDown'); await canvas.press('ArrowDown'); await canvas.press('Space');
   await page.getByRole('button', { name: 'Close profile', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false, featureCount: 1 });
   let current = await context(page);
-  expect(current).toMatchObject({ workflowOpen: false, featureCount: 1 });
+  expect(current.version).not.toBe(blank.version);
   const features = await call(page, 'cad_read_features', { expectedVersion: current.version });
   if (!('items' in features) || !Array.isArray(features.items)) throw new Error('Missing sketch');
   const sketch = features.items[0] as CadSketchFeature;
-  expect(sketch.profiles).toHaveLength(1);
-  expect(sketch.profiles[0].geometry).toMatchObject({ kind: 'path', segments: [
-    { kind: 'arc', radius: 10, sweep: 180 }, { kind: 'line', start: [0, 20], end: [0, 0] }
-  ] });
+  expect(sketch.profiles).toEqual([]);
+  const graph = sketch.graph;
+  if (!graph) throw new Error('Missing authored path graph');
+  expect(graph.points).toHaveLength(3); expect(graph.entities).toHaveLength(2); expect(graph.relations).toEqual([]);
+  const [arc, closingLine] = graph.entities;
+  if (arc.kind !== 'arc' || closingLine.kind !== 'line') throw new Error('Expected one arc and its closing line');
+  expect(arc).toMatchObject({ construction: false, direction: 'ccw' });
+  expect(graph.points.find(point => point.id === arc.startPointId)?.position).toEqual([0, 0]);
+  expect(graph.points.find(point => point.id === arc.endPointId)?.position).toEqual([0, 20]);
+  expect(graph.points.find(point => point.id === arc.centerPointId)?.position).toEqual([0, 10]);
+  // These exact supports and CCW direction retain the authored R10, 180-degree semicircle.
+  expect(closingLine).toMatchObject({ construction: false, startPointId: arc.endPointId, endPointId: arc.startPointId });
   expect(await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: sketch.id }))
-    .toMatchObject({ materialAreaMm2: expect.closeTo(50 * Math.PI, 8) });
+    .toMatchObject({ materialAreaMm2: expect.closeTo(50 * Math.PI, 8), boundaryLengthMm: expect.closeTo(10 * Math.PI + 20, 8),
+      boundsMm: { minX: 0, minY: 0, maxX: expect.closeTo(10, 8), maxY: 20 } });
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   current = await context(page);
-  expect(await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id }))
-    .toMatchObject({ feature: { profiles: [] } });
+  expect((await call(page, 'cad_read_features', { expectedVersion: current.version })).items).toEqual(blankFeatures.items);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   current = await context(page);
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
   current = await context(page);
   expect(await call(page, 'cad_build', { expectedVersion: current.version }))
     .toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(500 * Math.PI, 7) }] });
@@ -1559,40 +1573,67 @@ test('human sketch drawing and dimensions share undo and active-workflow protect
   expect(current).toMatchObject({ workflowOpen: true });
   expect(await rawCall(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'rename-document', name: 'Interrupt drawing' }] })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
   await canvas.click({ position: { x: box.width * 0.6, y: box.height * 0.35 } });
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   const drawn = await context(page);
   const drawnFeatures = await call(page, 'cad_read_features', { expectedVersion: drawn.version });
   if (!Array.isArray(drawnFeatures.items)) throw new Error('Missing drawn sketch');
   const freeSketch = drawnFeatures.items[0] as CadSketchFeature;
-  expect(freeSketch.profiles).toHaveLength(1);
-  expect(freeSketch.profiles[0].constraints).toBeUndefined();
-  const freeGeometry = freeSketch.profiles[0].geometry;
-  if (freeGeometry.kind !== 'rectangle' || typeof freeGeometry.height !== 'number') throw new Error('Expected a free rectangle with numeric drawing geometry');
-  await expect(page.getByRole('button', { name: 'Edit Width', exact: true })).toHaveCount(0);
+  expect(freeSketch.profiles).toEqual([]);
+  const graph = freeSketch.graph;
+  if (!graph || graph.points.some(point => point.position.some(value => typeof value !== 'number'))) throw new Error('Expected a numeric authored rectangle graph');
+  expect(graph.points).toHaveLength(4); expect(graph.entities).toHaveLength(4);
+  expect(graph.relations.map(relation => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical']);
+  const ys = graph.points.map(point => Number(point.position[1]));
+  const freeHeight = Math.max(...ys) - Math.min(...ys);
+  expect(freeHeight).toBeGreaterThan(0);
+  const widthEdge = graph.entities.find(entity => entity.kind === 'line'
+    && graph.points.find(point => point.id === entity.startPointId)?.position[1] === graph.points.find(point => point.id === entity.endPointId)?.position[1]);
+  if (!widthEdge || widthEdge.kind !== 'line') throw new Error('Missing horizontal rectangle edge');
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await canvas.locator(`[data-cad-sketch-entity="${widthEdge.id}"]`).focus();
+  await canvas.locator(`[data-cad-sketch-entity="${widthEdge.id}"]`).press('Enter');
   await page.getByRole('button', { name: 'Dimension', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Dimension quantity', exact: true }).selectOption('width');
-  await page.getByLabel('Dimension value', { exact: true }).fill('53');
+  await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('53');
   expect(await context(page)).toMatchObject({ version: drawn.version, workflowOpen: true });
   expect(await rawCall(page, 'cad_edit_document', { expectedVersion: drawn.version, edits: [{ kind: 'rename-document', name: 'Interrupt dimension' }] }))
     .toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(drawn.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
   current = await context(page);
-  expect(current).toMatchObject({ workflowOpen: false });
   const features = await call(page, 'cad_read_features', { expectedVersion: current.version });
-  expect(features).toMatchObject({ items: [{ kind: 'sketch', profiles: [{ geometry: { kind: 'rectangle', width: 53 }, constraints: [{ kind: 'dimension', quantity: 'width' }] }] }] });
-  await expect(page.getByRole('button', { name: 'Edit Width', exact: true })).toBeVisible();
+  if (!Array.isArray(features.items)) throw new Error('Missing dimensioned sketch');
+  const dimensioned = features.items[0] as CadSketchFeature;
+  if (!dimensioned.graph) throw new Error('Missing dimensioned rectangle graph');
+  expect(dimensioned.graph.points.map(point => point.id)).toEqual(graph.points.map(point => point.id));
+  expect(dimensioned.graph.entities).toEqual(graph.entities);
+  expect(dimensioned.graph.relations.slice(0, 4)).toEqual(graph.relations);
+  expect(dimensioned.graph.relations).toHaveLength(5);
+  const width = dimensioned.graph.relations[4];
+  expect(width).toMatchObject({ kind: 'distance', pointIds: [widthEdge.startPointId, widthEdge.endPointId], value: 53 });
+  const xsAfter = dimensioned.graph.points.map(point => Number(point.position[0]));
+  const ysAfter = dimensioned.graph.points.map(point => Number(point.position[1]));
+  expect(Math.max(...xsAfter) - Math.min(...xsAfter)).toBeCloseTo(53, 8);
+  expect(Math.max(...ysAfter) - Math.min(...ysAfter)).toBeCloseTo(freeHeight, 8);
+  await expect(canvas.locator(`[data-cad-sketch-dimension="${width.id}"]`).getByRole('button', { name: /^Configure distance / })).toBeVisible();
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   current = await context(page);
   const undone = await call(page, 'cad_read_features', { expectedVersion: current.version });
   expect(undone.items).toEqual([freeSketch]);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   current = await context(page);
   expect((await call(page, 'cad_read_features', { expectedVersion: current.version })).items).toEqual(features.items);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   const padded = await context(page);
   await expect.poll(() => context(page), { timeout: 60_000 }).toMatchObject({ version: padded.version, buildState: 'ready', buildVersion: padded.version, diagnostics: [], workflowOpen: false });
-  expect(await call(page, 'cad_build', { expectedVersion: padded.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(53 * freeGeometry.height * 10, 7) }] });
+  expect(await call(page, 'cad_build', { expectedVersion: padded.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(53 * freeHeight * 10, 7) }] });
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ dirty: false, savedVersion: expect.any(String) });
 });

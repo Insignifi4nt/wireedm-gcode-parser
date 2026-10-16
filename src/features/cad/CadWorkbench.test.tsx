@@ -1491,6 +1491,79 @@ describe('CAD sketch interaction', () => {
     expect(currentDocument).toBe(replaced); expect(currentSession.getSnapshot().canUndo).toBe(false);
   });
 
+  it('opens graph context Dimension on its actual target and moves the retained selected set through the existing editors', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Menu layout'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Menu layout', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }], entities: [
+          { id: 'first', kind: 'circle', construction: false, centerPointId: 'a', radius: 3 },
+          { id: 'second', kind: 'circle', construction: false, centerPointId: 'b', radius: 3 }], relations: []
+      }
+    }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    const edge = (id: string) => { const found = container.querySelector<SVGGElement>(`[data-cad-sketch-entity="${id}"]`); if (!found) throw new Error('Missing graph edge.'); return found; };
+    const key = async (id: string, key: string, shiftKey = false) => act(async () => {
+      const target = edge(id); target.focus(); target.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }));
+    });
+    const menu = async (label: string) => act(async () => {
+      const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === label);
+      if (!item) throw new Error(`${label} menu item missing.`); item.click();
+    });
+    await key('first', 'Enter'); const before = currentSession.getSnapshot();
+    await key('second', 'F10', true);
+    const dimensionItem = document.querySelector<HTMLButtonElement>('[role="menuitem"]'); if (!dimensionItem) throw new Error('Menu missing.');
+    await act(async () => dimensionItem.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(edge('second')); expect(currentSession.getSnapshot()).toEqual(before);
+    await key('second', 'F10', true); await menu('Dimension');
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'second' }]);
+    expect(field('Diameter').value).toBe('6'); expect(currentDocument).toBe(before.document);
+    await click('Cancel'); expect(currentDocument).toBe(before.document);
+    await key('second', 'F10', true); await menu('Dimension'); await click('Apply');
+    const dimensioned = currentDocument.features[0];
+    expect(dimensioned).toMatchObject({ graph: { relations: [{ kind: 'radial-size', entityId: 'second', quantity: 'diameter', value: 6 }] } });
+    await key('first', 'Enter', true); const selected = viewport().getState().selectedSketchGeometrySet, original = currentDocument;
+    expect(selected).toEqual([{ kind: 'entity', id: 'second' }, { kind: 'entity', id: 'first' }]);
+    await key('second', 'F10', true); await menu('Move selection');
+    const moveX = container.querySelector<HTMLInputElement>('[aria-label="Move X"]'); if (!moveX) throw new Error('Move field missing.');
+    await input(moveX, '5'); await click('Cancel'); expect(currentDocument).toBe(original);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual(selected);
+    await key('first', 'F10', true); await menu('Move selection');
+    const nextX = container.querySelector<HTMLInputElement>('[aria-label="Move X"]'); if (!nextX) throw new Error('Move field missing.');
+    await input(nextX, '5'); await click('Apply');
+    expect(currentDocument.features[0]).toEqual({ ...dimensioned, graph: { ...(dimensioned.kind === 'sketch' ? dimensioned.graph : {}),
+      points: [{ id: 'a', position: [5, 0] }, { id: 'b', position: [25, 0] }] } });
+    await act(async () => currentSession.undo()); expect(currentDocument).toEqual(original);
+  });
+
+  it('offers the same angle Dimension from dock and context menu for a linked guide and a free line', async () => {
+    const base = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [
+      { id: 'layout', kind: 'sketch', name: 'Layout', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+        points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: ['20', '0'] }],
+        entities: [{ id: 'guide', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' }], relations: [] } },
+      { id: 'target', kind: 'sketch', name: 'Target', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+        points: [{ id: 'u', position: [0, 0] }, { id: 'v', position: [10, 10] }],
+        entities: [{ id: 'free', kind: 'line', construction: false, startPointId: 'u', endPointId: 'v' }], relations: [] } },
+    ] });
+    const source = applyCadEdits(base, [{ kind: 'use-sketch-entity', sketchId: 'target', sourceSketchId: 'layout', sourceEntityId: 'guide', idPrefix: 'ref' }]);
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'target' }));
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: [{ kind: 'entity', id: 'ref_e0' }, { kind: 'entity', id: 'free' }] }));
+    expect(button('Dimension').disabled).toBe(false); await click('Dimension');
+    expect(Number(field('Angle').value)).toBe(45); await click('Cancel'); expect(currentDocument).toBe(source);
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'), free = container.querySelector<SVGGElement>('[data-cad-sketch-entity="free"]');
+    if (!canvas || !free) throw new Error('Line canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    await act(async () => { free.focus(); free.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+    const action = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Dimension');
+    if (!action) throw new Error('Dimension action missing.'); expect(action.disabled).toBe(false);
+    await act(async () => action.click()); expect(Number(field('Angle').value)).toBe(45); await click('Apply');
+    const target = currentDocument.features[1], original = source.features[1];
+    if (target.kind !== 'sketch' || original.kind !== 'sketch' || !target.graph || !original.graph) throw new Error('Target missing.');
+    expect(currentDocument.features[0]).toEqual(source.features[0]); expect(target.graph.points).toEqual(original.graph.points); expect(target.graph.entities).toEqual(original.graph.entities);
+    expect(target.graph.relations).toEqual([...original.graph.relations, expect.objectContaining({ kind: 'line-angle', value: 45 })]);
+    await act(async () => currentSession.undo()); expect(currentDocument).toEqual(source);
+  });
+
   it('starts Dimension before picking an edge, cancels cleanly and applies a linked length through the same editor', async () => {
     await mount({ ...createCadDocument(), parameters: { plateWidth: 50 } }); await startSketch();
     await canvasClick(300, 200); await canvasClick(450, 100); await click('Select');
