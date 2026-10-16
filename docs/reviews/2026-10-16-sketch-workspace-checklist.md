@@ -17,6 +17,12 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: separate nested dimension lines
+
+The native plate revealed width and bore offsets sharing parallel annotation baselines. The [bounded lane repair](2026-10-16-sketch-dimension-lanes.md) keeps analytic geometry and drivers intact, packing only parallel linear annotations outward with original witness attachments. Horizontal/vertical regressions fail before implementation. Independent review also reproduces and repairs translated oblique classification without tolerance changes. Source review and production acceptance are complete. Saved reference-dimension design is being assessed separately; no new persisted model is implemented.
+
+Final three-suite group passes79 cases; full production types/build/docs/source/sharedUI checks pass. Three complete annotation/private-edit journeys pass in each Chromium and Firefox. Native plate annotations occupy distinct lanes, and the moved width label still previews55 then Cancel restores50 and exact part source. Solid remains6108.628330588458 mm³, no diagnostics; disposable draft undone empty without Save. [Review and acceptance](2026-10-16-sketch-dimension-lanes.md). No saved model or native change. Next is the independently reviewed saved-reference-dimension contract; ordinary tangency and persistent sketch patterns also remain open.
+
 ## Checkpoint: compact selected geometry inspection
 
 The [inspection plan](2026-10-16-sketch-selection-inspection-plan.md) addresses the observed blank-plate friction: passive analytic sizes and a compact incident-relation list. Production acceptance is complete for this bounded slice.

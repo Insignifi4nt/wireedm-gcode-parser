@@ -50,6 +50,28 @@ function linearDimensions(...args: Parameters<typeof layoutCadSketchGraphDimensi
 }
 
 describe('signed graph axis dimension layout', () => {
+  it.each(['x', 'y'] as const)('separates nested %s dimension lines in screen space without changing their operands or geometry attachments', axis => {
+    const horizontal=axis==='x', graph=parseCadSketchGraph({ points:[{id:'a',position:[0,0]},{id:'b',position:[50,0]},{id:'c',position:[50,25]},{id:'d',position:[0,25]},{id:'hole',position:[25,12.5]}], entities:[],relations:[
+      {id:'overall',kind:'distance',pointIds:horizontal?['a','b']:['d','a'],value:horizontal?50:25},
+      {id:'bore',kind:'axis-distance',pointIds:['a','hole'],axis,value:horizontal?25:12.5}
+    ]}), exact=JSON.stringify(graph);
+    for(const scale of [.1,1]) {
+      const layouts=linearDimensions(graph,{},scale), overall=layouts[0], bore=layouts[1], perpendicular=horizontal?1:0;
+      const gap=Math.abs(overall.label[perpendicular]-bore.label[perpendicular])/scale;
+      const outerBox=cadSketchGraphDimensionLabel(overall.valueMm,overall.kind), innerBox=cadSketchGraphDimensionLabel(bore.valueMm,bore.kind);
+      expect(gap).toBeGreaterThanOrEqual((horizontal?outerBox.height+innerBox.height:outerBox.width+innerBox.width)/2+8-1e-9);
+      expect(overall.label[perpendicular]).toBeLessThan(bore.label[perpendicular]);
+      expect(overall.relation).toBe(graph.relations[0]); expect(bore.relation).toBe(graph.relations[1]);
+      for(const layout of layouts) {
+        expect(layout.arrows.map(arrow=>arrow[0])).toEqual(layout.line);
+        for(let index=0;index<2;index++)expect(layout.extensions[index][1][perpendicular]-layout.line[index][perpendicular]).toBeCloseTo(-2*scale,12);
+      }
+      const reversed=linearDimensions({...graph,relations:[...graph.relations].reverse()},{},scale);
+      expect(reversed.map(l=>[l.relation.id,l.line,l.label]).reverse()).toEqual(layouts.map(l=>[l.relation.id,l.line,l.label]));
+    }
+    expect(JSON.stringify(graph)).toBe(exact);
+  });
+
   it.each(['x', 'y'] as const)('projects %s guides orthogonally outward without changing side or source identity when operands reverse', axis => {
     for (const outside of [[100, 100], [-100, -100]]) {
       const graph = parseCadSketchGraph({ points: [{ id: 'from', position: [30, 20] }, { id: 'to', position: [0, 40] },
@@ -101,6 +123,24 @@ describe('signed graph axis dimension layout', () => {
 });
 
 describe('explicit graph distance layout', () => {
+  it('separates translated nested oblique dimensions using their actual parallel lines', () => {
+    const graph=parseCadSketchGraph({points:[{id:'a',position:[1e8,1e8]},{id:'b',position:[1e8+30,1e8+40]},{id:'c',position:[1e8+15,1e8+20]}],entities:[],relations:[
+      {id:'overall',kind:'distance',pointIds:['a','b'],value:50},{id:'short',kind:'distance',pointIds:['a','c'],value:25}
+    ]});
+    const [overall,short]=linearDimensions(graph,{},.1), gap=((overall.line[0][0]-short.line[0][0])*.8-(overall.line[0][1]-short.line[0][1])*.6)/.1;
+    expect(gap).toBeGreaterThan(40);
+    expect(overall.extensions[0][0]).toEqual(short.extensions[0][0]);
+    expect(overall.arrows.map(arrow=>arrow[0])).toEqual(overall.line);
+  });
+
+  it('leaves separated projected spans and nonparallel annotations at their original geometric offsets', () => {
+    const graph=parseCadSketchGraph({points:[{id:'a',position:[0,0]},{id:'b',position:[10,0]},{id:'c',position:[100,0]},{id:'d',position:[110,0]},{id:'e',position:[20,20]}],entities:[],relations:[
+      {id:'near',kind:'distance',pointIds:['a','b'],value:10},{id:'far',kind:'distance',pointIds:['c','d'],value:10},{id:'oblique',kind:'distance',pointIds:['b','e'],value:Math.sqrt(500)}
+    ]});
+    const together=linearDimensions(graph,{},.1);
+    graph.relations.forEach((relation,index)=>expect(together[index]).toEqual(linearDimensions({...graph,relations:[relation]},{},.1)[0]));
+  });
+
   it('places bottom, top and vertical dimensions twenty screen pixels outward from graph bounds', () => {
     const graph = rectangle(), before = JSON.stringify(graph);
     const layouts = linearDimensions(graph, { width: 20 }, .1);

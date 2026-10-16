@@ -48,6 +48,54 @@ function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixe
     label: [a.x / 2 + b.x / 2 + nx * 20 * mmPerPixel, a.y / 2 + b.y / 2 + ny * 20 * mmPerPixel] };
 }
 
+type AlignedDimension = Extract<CadSketchGraphDimensionLayout, { kind: 'distance' | 'distance-x' | 'distance-y' | 'setback' }>;
+const isAlignedDimension = (dimension: CadSketchGraphDimensionLayout): dimension is AlignedDimension =>
+  dimension.kind === 'distance' || dimension.kind === 'distance-x' || dimension.kind === 'distance-y' || dimension.kind === 'setback';
+
+/** Pack parallel occupied strips outward; keep source attachments and returned relation order intact. */
+function separateAlignedDimensions(dimensions: readonly CadSketchGraphDimensionLayout[], mmPerPixel: number): readonly CadSketchGraphDimensionLayout[] {
+  const result = [...dimensions], placed: AlignedDimension[] = [];
+  const length = (dimension: AlignedDimension) => Math.hypot(dimension.line[1][0] - dimension.line[0][0], dimension.line[1][1] - dimension.line[0][1]);
+  const key = (dimension: AlignedDimension) => dimension.relation.id + '/' + dimension.kind + (dimension.kind === 'setback' ? dimension.side : '');
+  const ordered = dimensions.flatMap((dimension, index) => isAlignedDimension(dimension) ? [{ dimension, index }] : [])
+    .sort((a, b) => length(a.dimension) - length(b.dimension) || (key(a.dimension) < key(b.dimension) ? -1 : key(a.dimension) > key(b.dimension) ? 1 : 0));
+  const halfBox = (dimension: AlignedDimension, x: number, y: number) => {
+    const box = cadSketchGraphDimensionLabel(dimension.valueMm, dimension.kind);
+    return (Math.abs(x) * box.width + Math.abs(y) * box.height) * mmPerPixel / 2;
+  };
+  const span = (dimension: AlignedDimension, x: number, y: number) => {
+    const first = dimension.line[0][0] * x + dimension.line[0][1] * y, second = dimension.line[1][0] * x + dimension.line[1][1] * y;
+    const center = dimension.label[0] * x + dimension.label[1] * y, half = halfBox(dimension, x, y);
+    return [Math.min(first, second, center - half), Math.max(first, second, center + half)] as const;
+  };
+  for (const { dimension, index } of ordered) {
+    const guide = dimension.extensions[0], dx = guide[1][0] - guide[0][0], dy = guide[1][1] - guide[0][1], guideLength = Math.hypot(dx, dy);
+    if (!guideLength) { placed.push(dimension); continue; }
+    const lineLength = length(dimension), ux = lineLength ? (dimension.line[1][0] - dimension.line[0][0]) / lineLength : -dy / guideLength;
+    const uy = lineLength ? (dimension.line[1][1] - dimension.line[0][1]) / lineLength : dx / guideLength;
+    const side = -uy * dx + ux * dy < 0 ? -1 : 1, nx = -uy * side, ny = ux * side, occupied = span(dimension, ux, uy);
+    const forbidden = placed.flatMap(other => {
+      const vx = other.line[1][0] - other.line[0][0], vy = other.line[1][1] - other.line[0][1], otherLength = Math.hypot(vx, vy);
+      const otherGuide = other.extensions[0], ox = otherGuide[1][0] - otherGuide[0][0], oy = otherGuide[1][1] - otherGuide[0][1];
+      if (otherLength ? Math.abs(ux * vy - uy * vx) > otherLength * 1e-12 : Math.abs(nx * oy - ny * ox) > Math.hypot(ox, oy) * 1e-12) return [];
+      const interval = span(other, ux, uy);
+      if (occupied[0] > interval[1] || occupied[1] < interval[0]) return [];
+      const distance = (dimension.line[0][0] - other.line[0][0]) * nx + (dimension.line[0][1] - other.line[0][1]) * ny;
+      const gap = halfBox(dimension, nx, ny) + halfBox(other, nx, ny) + 8 * mmPerPixel;
+      return [[-distance - gap, -distance + gap] as const];
+    }).sort((a, b) => a[0] - b[0]);
+    let offset = 0;
+    for (const [start, end] of forbidden) { if (offset < start) break; if (offset < end) offset = end; }
+    if (offset === 0) { placed.push(dimension); continue; }
+    const shift = (point: SketchPoint): SketchPoint => [point[0] + nx * offset, point[1] + ny * offset];
+    const shifted: AlignedDimension = { ...dimension, line: [shift(dimension.line[0]), shift(dimension.line[1])], label: shift(dimension.label),
+      arrows: dimension.arrows.map(arrow => [shift(arrow[0]), shift(arrow[1]), shift(arrow[2])]),
+      extensions: dimension.extensions.map(guide => [guide[0], shift(guide[1])]) };
+    result[index] = shifted; placed.push(shifted);
+  }
+  return result;
+}
+
 function radialGeometry(center: Point2, radius: number, angle: number, valueMm: number, kind: 'radius' | 'diameter', mmPerPixel: number): Omit<LinearDimensionGeometry, 'valueMm'> {
   const ux = Math.cos(angle), uy = Math.sin(angle), tip: SketchPoint = [center.x + ux * radius, center.y + uy * radius];
   const box = cadSketchGraphDimensionLabel(valueMm, kind);
@@ -149,7 +197,7 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
   const bounds = coordinates.reduce((box, point) => ({ minX: Math.min(box.minX, point.x), minY: Math.min(box.minY, point.y),
     maxX: Math.max(box.maxX, point.x), maxY: Math.max(box.maxY, point.y) }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
   const center: SketchPoint = [bounds.minX / 2 + bounds.maxX / 2, bounds.minY / 2 + bounds.maxY / 2];
-  return graph.relations.flatMap((relation): CadSketchGraphDimensionLayout[] => {
+  const dimensions = graph.relations.flatMap((relation): CadSketchGraphDimensionLayout[] => {
     if (relation.kind === 'line-angle') return [...angularDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind === 'radial-size') return [...radialDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') return [...cornerDimensions(graph, relation, points, parameters, mmPerPixel)];
@@ -181,4 +229,5 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
     if (tie ? Math.abs(dx) >= Math.abs(dy) ? ny > 0 : nx < 0 : outward < 0) { nx = -nx; ny = -ny; }
     return [{ kind: 'distance', relation, valueMm, ...alignedGeometry(a, b, nx, ny, mmPerPixel) }];
   });
+  return separateAlignedDimensions(dimensions, mmPerPixel);
 }
