@@ -12,6 +12,7 @@ import { cadScalarParameterNames, mapCadFeatureScalars } from './cadParameters';
 import { CadSketchSplitTargetSchema, splitCadSketchEntity, type CadSketchSplitTarget } from './cadSketchSplit';
 import { CadSketchTrimTargetSchema, prepareCadSketchTrim, trimCadSketchEntity, type CadSketchTrimTarget,
   CadSketchExtendTargetSchema, prepareCadSketchLineExtend, extendCadSketchEntity, type CadSketchExtendTarget } from './cadSketchTrimExtend';
+import { CadSketchOffsetRequestSchema, prepareCadSketchOffset, type CadSketchOffsetRequest } from './cadSketchOffset';
 
 export interface CadPreparedSketchCell {
   readonly reference: CadSketchCellReference;
@@ -104,19 +105,21 @@ function resolveCells(sketch: CadSketchFeature, parameters: CadDocument['paramet
 
 /** Numeric additions/overrides keep existing semantics; topology proposals never accept a replacement sketch. */
 export type CadSketchRegionProposal =
-  | { readonly sketch?: CadSketchFeature; readonly split?: never; readonly trim?: never; readonly extend?: never; readonly parameterValues?: CadDocument['parameters'] }
-  | { readonly split: CadSketchSplitTarget; readonly sketch?: never; readonly trim?: never; readonly extend?: never; readonly parameterValues?: CadDocument['parameters'] }
-  | { readonly trim: CadSketchTrimTarget; readonly sketch?: never; readonly split?: never; readonly extend?: never; readonly parameterValues?: CadDocument['parameters'] }
-  | { readonly extend: CadSketchExtendTarget; readonly sketch?: never; readonly split?: never; readonly trim?: never; readonly parameterValues?: CadDocument['parameters'] };
+  | { readonly sketch?: CadSketchFeature; readonly split?: never; readonly trim?: never; readonly extend?: never; readonly offset?: never; readonly parameterValues?: CadDocument['parameters'] }
+  | { readonly split: CadSketchSplitTarget; readonly sketch?: never; readonly trim?: never; readonly extend?: never; readonly offset?: never; readonly parameterValues?: CadDocument['parameters'] }
+  | { readonly trim: CadSketchTrimTarget; readonly sketch?: never; readonly split?: never; readonly extend?: never; readonly offset?: never; readonly parameterValues?: CadDocument['parameters'] }
+  | { readonly extend: CadSketchExtendTarget; readonly sketch?: never; readonly split?: never; readonly trim?: never; readonly offset?: never; readonly parameterValues?: CadDocument['parameters'] }
+  | { readonly offset: CadSketchOffsetRequest; readonly sketch?: never; readonly split?: never; readonly trim?: never; readonly extend?: never; readonly parameterValues?: CadDocument['parameters'] };
 export const CadSketchRegionProposalSchema = Type.Union([
   Type.Object({ sketch: Type.Optional(CadSketchFeatureSchema), parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false, minProperties: 1 }),
   Type.Object({ split: CadSketchSplitTargetSchema, parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false }),
   Type.Object({ trim: CadSketchTrimTargetSchema, parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false }),
-  Type.Object({ extend: CadSketchExtendTargetSchema, parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false })
+  Type.Object({ extend: CadSketchExtendTargetSchema, parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false }),
+  Type.Object({ offset: CadSketchOffsetRequestSchema, parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false })
 ]);
 export function validateCadSketchRegionProposal(proposal: CadSketchRegionProposal): void {
   if (!isCadImportData(proposal) || !Value.Check(CadSketchRegionProposalSchema, proposal))
-    throw new CadError('invalid-region-proposal', 'Propose a complete same-ID sketch, one exact split, one witnessed end trim or one witnessed line extension, with optional numeric parameter values; parameter-only proposals are also supported.');
+    throw new CadError('invalid-region-proposal', 'Propose a complete same-ID sketch, one exact split, one witnessed trim or line extension, or one detached loop offset, with optional numeric parameter values; parameter-only proposals are also supported.');
 }
 
 function activeSketch(document: CadDocument, sketchId: string, proposal?: CadSketchRegionProposal) {
@@ -143,11 +146,13 @@ function activeSketch(document: CadDocument, sketchId: string, proposal?: CadSke
     } else if (proposal.extend !== undefined) {
       if (!sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
       source = { ...sketch, graph: extendCadSketchEntity({ graph: sketch.graph, parameters, extend: proposal.extend }).graph };
+    } else if (proposal.offset !== undefined) {
+      source = prepareCadSketchOffset({ sketch, parameters, ...proposal.offset }).sketch;
     }
     const sourcePlane = source.plane;
     const requiredDatums = typeof sourcePlane === 'string' ? [] : validated.features.slice(0, index)
       .filter(feature => feature.kind === 'datum-plane' && feature.id === sourcePlane.featureId);
-    const candidate = parseCadDocument({ ...validated, parameters, features: [...requiredDatums, source] });
+    const candidate = parseCadDocument({ ...validated, schemaVersion: source.graph ? 2 : validated.schemaVersion, parameters, features: [...requiredDatums, source] });
     const effective = candidate.features[candidate.features.length - 1];
     if (effective.kind !== 'sketch') throw new CadError('invalid-region-proposal', 'The proposed source must remain a sketch.');
     if (effective.suppressed) throw new CadError('suppressed-sketch', `Sketch "${effective.name}" is suppressed. Resume it before choosing its areas.`);

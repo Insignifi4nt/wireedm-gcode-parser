@@ -13,6 +13,22 @@ import { endTrim, middleTrim } from '@/domain/cad/__tests__/cadSketchTrimFixture
 import { lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('exposes the same strict detached offset request in edit discovery and mutually exclusive region proposals', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed offset reached controller.'); });
+    const tools = cadSiteTools(controller), reads = tools.filter(tool => tool.name === 'cad_inspect_sketch_regions' || tool.name === 'cad_read_sketch_region_reference');
+    const offset = { source: { kind: 'graph-cycle', sourceRefs: [{ entityId: 'edge', reversed: false }] }, distance: ' inset ', idPrefix: 'copy' };
+    const definition = CadToolEditDefinitions.find(edit => edit.properties.kind.const === 'offset-sketch-loop');
+    if (!definition) throw new Error('Offset edit definition missing.');
+    expect(Value.Check(definition, { kind: 'offset-sketch-loop', sketchId: 'sketch', ...offset })).toBe(true);
+    for (const tool of reads) {
+      const query = { expectedVersion: 'current', sketchId: 'sketch', ...(tool.name === 'cad_read_sketch_region_reference' ? { boundaryProfileId: 'circle' } : {}) };
+      expect(Value.Check(tool.inputSchema, { ...query, proposal: { offset, parameterValues: { inset: -2 } } })).toBe(true);
+      for (const proposal of [{ offset, trim: endTrim }, { offset, sketch: regionSketch() }, { offset: { ...offset, idPrefix: 'x'.repeat(65) } },
+        { offset: { ...offset, source: { ...offset.source, sourceRefs: [] } } }, { offset: { ...offset, geometry: {} } }])
+        expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(controller).not.toHaveBeenCalled();
+  });
   it('exposes line-Extend query and exact proposals with mutually exclusive modes and finite unbounded source parameters', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid extend reached operations.'); });
     const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');

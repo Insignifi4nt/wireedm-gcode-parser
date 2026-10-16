@@ -16,6 +16,7 @@ import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRun
 import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
 import { endTrim, trimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
 import { extendPart, lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
+import { compileCadSketchGeometry } from '@/domain/cad/compileCadSketchGeometry';
 
 const require = createRequire(import.meta.url);
 const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
@@ -46,6 +47,31 @@ function source(explicit = false, earlierGraph = false) {
 const removeEdge: CadEdit = { kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: [], entityIds: ['bc'], relationIds: [], cascade: false };
 
 describe('owned consumed-sketch draft', () => {
+  it('keeps a detached inset private, preserves local redo for zero, and finishes one guarded area repair with Cancel recovery', async () => {
+    const main = new CadSession(source(true)), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    const cycle = compileCadSketchGeometry(sketchOf(base.document), base.document.parameters).graph?.cycles[0];
+    if (!cycle) throw new Error('Source cycle missing.');
+    const edit = { kind: 'offset-sketch-loop', sketchId: 'sketch', source: { kind: 'graph-cycle', sourceRefs: cycle.sourceRefs }, distance: -1, idPrefix: 'inset' } satisfies CadEdit;
+    expect(() => draft.validateEdits([{ ...edit, sketchId: 'later' }])).toThrow();
+    await draft.editPrepared([edit], prepare); const local = draft.getSnapshot(); expect(main.getSnapshot()).toBe(base);
+    expect(sketchOf(local.document).graph?.points.slice(0, 4)).toEqual(sketchOf(base.document).graph?.points);
+    draft.undo(); const undone = draft.getSnapshot(); expect(undone.canRedo).toBe(true);
+    await draft.editPrepared([{ ...edit, distance: 0 }], prepare); expect(draft.getSnapshot()).toBe(undone);
+    draft.redo(); expect(draft.getSnapshot().document).toBe(local.document);
+    const repair = draft.inspectAreaRepairs(base); if (!repair) throw new Error('Area repair missing.');
+    const ring = repair.cells.cells.find(cell => cell.defaultMaterial); if (!ring) throw new Error('Inset ring missing.');
+    expect(ring.areaMm2).toBeCloseTo(56, 10);
+    const pad = base.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Pad missing.');
+    const finish = draft.finishEdits(base, [{ kind: 'update-feature', feature: { ...pad, regionSelection: [ring.reference] } }]);
+    await main.editPrepared(base.version, document => prepare(document, finish.edits), undefined,
+      () => draft.assertCurrent(main.getSnapshot(), finish.localVersion));
+    const accepted = main.getSnapshot(); main.undo(); expect(main.getSnapshot().document).toBe(base.document); expect(main.getSnapshot().canUndo).toBe(false);
+    main.redo(); expect(main.getSnapshot().document).toBe(accepted.document); main.undo();
+    const cancelled = new CadSketchEditDraft(main.getSnapshot(), 'sketch'); let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const pending = cancelled.editPrepared([edit], async (document, edits, signal) => { await gate; return prepare(document, edits, signal); });
+    cancelled.cancel(); release(); await expect(pending).rejects.toThrow(); expect(main.getSnapshot().canRedo).toBe(true);
+  });
   it.each([
     { name: 'Trim', part: trimPart, edit: { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: endTrim } satisfies CadEdit },
     { name: 'Extend', part: extendPart, edit: { kind: 'extend-sketch-entity', sketchId: 'sketch', extend: lineExtend } satisfies CadEdit }

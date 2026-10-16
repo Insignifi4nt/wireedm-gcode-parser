@@ -198,6 +198,52 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('offsets the complete selected graph loop as one detached copy and selects its new geometry', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Plate', 'offset-plate'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Plate', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+        points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: ['40.0000', '20.00'] }, { id: 'd', position: [0, 20] }],
+        entities: ['ab', 'bc', 'cd', 'da'].map((id, index) => ({ id, kind: 'line', construction: false, startPointId: ['a', 'b', 'c', 'd'][index], endPointId: ['b', 'c', 'd', 'a'][index] })), relations: []
+      }
+    }] });
+    await mount(source);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    expect(button('Offset loop').disabled).toBe(true);
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'point', id: 'a' } }));
+    expect(button('Offset loop').disabled).toBe(true);
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'ab' } }));
+    await click('Offset loop');
+    expect(currentDocument).toBe(source); expect(viewport().getState().workflowOpen).toBe(true);
+    await input(field('Offset distance'), '2'); await click('Inside');
+    const sourceSketch = source.features[0]; if (sourceSketch.kind !== 'sketch' || !sourceSketch.graph) throw new Error('Plate missing.');
+    for (const entity of sourceSketch.graph.entities) expect(container.querySelector(`[data-cad-sketch-entity="${entity.id}"]`)?.classList.contains('is-relation-highlighted')).toBe(true);
+    expect(currentDocument).toBe(source); await click('Apply');
+    const accepted = currentDocument.features[0]; if (accepted.kind !== 'sketch' || !accepted.graph) throw new Error('Offset missing.');
+    expect(accepted.graph.points.slice(0, 4)).toEqual(sourceSketch.graph.points);
+    expect(accepted.graph.points.slice(4).map(point => point.position)).toEqual([[2, 2], [38, 2], [38, 18], [2, 18]]);
+    expect(accepted.graph.entities).toHaveLength(8);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: accepted.graph.entities[4].id }]);
+    expect(viewport().getState().workflowOpen).toBe(false);
+  });
+
+  it('opens the same offset editor for a legacy profile, cancels its preview, then accepts a detached graph copy', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), features: [{ id: 'sketch', kind: 'sketch', name: 'Bore', plane: 'XY', offset: 0, suppressed: false,
+      profiles: [{ id: 'bore', name: 'Bore', construction: false, geometry: { kind: 'circle', x: ' 0 ', y: '0.0', radius: '10.000' } }] }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await act(async () => viewport().apply({ kind: 'select-profile', profileId: 'bore' })); await click('Offset loop');
+    expect(viewport().getState().workflowOpen).toBe(true);
+    expect(button('Rectangle').disabled).toBe(true); expect(button('Finish sketch').disabled).toBe(true);
+    expect(container.querySelectorAll('[data-cad-sketch-entity]')).toHaveLength(1);
+    await input(field('Offset distance'), '2'); expect(currentDocument).toBe(source);
+    expect(container.querySelector('[data-cad-sketch-entity] circle')?.getAttribute('r')).toBe('12');
+    await click('Cancel'); expect(currentDocument).toBe(source); expect(viewport().getState().selectedProfileId).toBe('bore');
+    expect(viewport().getState().workflowOpen).toBe(false); await click('Offset loop');
+    await input(field('Offset distance'), '2'); await click('Apply');
+    const accepted = currentDocument.features[0]; if (accepted.kind !== 'sketch' || !accepted.graph) throw new Error('Offset missing.');
+    expect(accepted.profiles).toEqual(source.features[0].kind === 'sketch' ? source.features[0].profiles : []);
+    expect(accepted.graph.entities[0]).toMatchObject({ kind: 'circle', radius: 12 });
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: accepted.graph.entities[0].id }]);
+    expect(viewport().getState().selectedProfileId).toBeNull(); expect(viewport().getState().workflowOpen).toBe(false);
+  });
   it('selects the accepted Split joint in the real owned sketch workspace after private publication', async () => {
     const initial = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Outline',
       suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

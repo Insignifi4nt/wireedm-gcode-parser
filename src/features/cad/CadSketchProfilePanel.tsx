@@ -55,7 +55,8 @@ export function CadSketchProfilePanel({ document: cadDocument, sketch, profile, 
   };
   useLayoutEffect(() => { pendingCallback.current = onPendingChange; onPendingChange(editor !== null || submission.applying); }, [editor !== null, submission.applying, onPendingChange]);
   useLayoutEffect(() => { if (editor) input.current?.focus(); }, [editor?.kind]);
-  useEffect(() => () => pendingCallback.current(false), []);
+  // Release ownership before a replacement editor publishes its pending state.
+  useLayoutEffect(() => () => pendingCallback.current(false), []);
   useEffect(() => { if (previousCancel.current !== cancelSignal) { previousCancel.current = cancelSignal; close(); } }, [cancelSignal]);
   useEffect(() => { if (command && command.documentId === cadDocument.id && command.profileId === profile.id && previousCommand.current !== command.token) { previousCommand.current = command.token; begin(command.kind); onCommandConsumed?.(command.token); } }, [command]);
   const candidate = useMemo(() => {

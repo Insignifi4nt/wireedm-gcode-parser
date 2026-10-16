@@ -9,6 +9,7 @@ import { reduceCadEditIntents } from '../cadOperations';
 import type { CadSketchRegionProposal } from '../cadSketchRegionInspection';
 import { endTrim, trimPart, middleTrim, middleTrimPart } from './cadSketchTrimFixtures';
 import { extendPart, lineExtend } from './cadSketchExtendFixtures';
+import { offsetCirclePart } from './cadSketchOffsetFixtures';
 
 function splitSource() {
   return parseCadDocument({ ...createCadDocument('Split regions', 'split-regions'), schemaVersion: 2, parameters: { span: 20, retained: 7 }, features: [{
@@ -21,6 +22,28 @@ function splitSource() {
 const split = { kind: 'line', entityId: 'edge-a', parameter: .5, splitPointId: 'joint', newEntityId: 'a-new', supportRelationId: 'straight' } as const;
 
 describe('prepared closed-cell inspection and physical selection', () => {
+  it('preflights the same detached offset request before an atomic explicit-consumer repair', () => {
+    const source = offsetCirclePart(), sketch = source.features[0]; if (sketch.kind !== 'sketch') throw new Error('Missing circle.');
+    const acceptedReference = prepareCadSketchCells(sketch, source.parameters).cells[0].reference;
+    const document = parseCadDocument({ ...source, features: [...source.features, { id: 'pad', kind: 'extrude', name: 'Bore stock',
+      sketchId: 'sketch', suppressed: false, distance: 5, symmetric: false, operation: 'new', targetId: null, regionSelection: [acceptedReference] }] });
+    const session = new CadSession(document), before = session.getSnapshot();
+    const offset = { source: { kind: 'profile', profileId: 'circle' }, distance: 'offsetMm', idPrefix: 'detached' } as const;
+    const proposal = { offset, parameterValues: { offsetMm: -2 } }, result = inspectCadSketchRegions(document, 'sketch', { proposal });
+    expect(result.proposed).toBe(true); expect(result.total).toBe(2);
+    const ring = result.items.find(item => item.depth === 0); if (!ring) throw new Error('Offset ring missing.');
+    expect(ring.areaMm2).toBeCloseTo(Math.PI * 36, 10);
+    expect(readCadSketchRegionReference(document, 'sketch', ring.boundaryProfileId, proposal)).toEqual(ring.reference);
+    const edits = [{ kind: 'set-parameter', name: 'offsetMm', value: -2 }, { kind: 'offset-sketch-loop', sketchId: 'sketch', ...offset }] as const;
+    expect(() => session.edit(edits, before.version)).toThrowError(expect.objectContaining({ code: 'stale-sketch-region' }));
+    expect(session.getSnapshot()).toBe(before);
+    const pad = document.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad.');
+    session.edit([...edits, { kind: 'update-feature', feature: { ...pad, regionSelection: [ring.reference] } }], before.version);
+    const accepted = session.getSnapshot(); expect(accepted.document.features[0]).toMatchObject({ profiles: sketch.profiles });
+    session.undo(); expect(session.getSnapshot().document).toBe(document); expect(session.getSnapshot().canUndo).toBe(false);
+    session.redo(); expect(session.getSnapshot().document).toBe(accepted.document);
+    expect(() => inspectCadSketchRegions(document, 'sketch', { proposal: { offset, sketch } as never })).toThrowError(expect.objectContaining({ code: 'invalid-region-proposal' }));
+  });
   it('queries the middle span without allocating IDs and keeps accepted cells separate from proposed survivors', () => {
     const source = middleTrimPart(), before = JSON.stringify(source), current = inspectCadSketchRegions(source, 'sketch');
     const query = inspectCadSketchRegions(source, 'sketch', { trimAt: { entityId: 'ab', parameter: .5 } });

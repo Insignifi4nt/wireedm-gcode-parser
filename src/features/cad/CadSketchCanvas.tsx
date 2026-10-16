@@ -841,7 +841,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       {Math.abs(center[0]) <= width / 2 && <path d={`M ${-center[0]} ${-span / 2} V ${span / 2}`} className="cad-axis-y" strokeWidth={span / 700} />}
       <g transform="scale(1,-1)" strokeWidth={span / 450}>
         {savedCurve && <g className="cad-profile is-selected"><CadPathDraftGeometry segments={savedCurve.segments} preview={false} viewCenter={center} /></g>}
-        {!graphControls && graphGeometry?.segments.map(segment => {
+        {(!graphControls || !sourceGraph) && graphGeometry?.segments.map(segment => {
           const boundary = cadSketchGraphBoundary(segment);
           const construction = graphGeometry.constructionIds.has(segment.id);
           return <g key={segment.id} data-cad-sketch-entity={segment.id} className={`cad-profile${construction ? ' is-construction' : ''}`} strokeDasharray={construction ? `${span / 80} ${span / 120}` : undefined}>

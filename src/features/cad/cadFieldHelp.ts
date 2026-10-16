@@ -32,6 +32,7 @@ export function cadScalarHelp(label: string) {
     case 'Angular extent': return 'The angle occupied by the circular pattern. A full turn distributes instances around 360 degrees.';
     case 'Angle': return 'Rotation or angular extent in degrees, according to the selected feature and axis.';
     case 'Offset': return 'Signed displacement along the selected reference plane normal.';
+    case 'Offset distance': return 'Distance between the source and copied supports in the sketch plane. Positive is outside the selected loop; negative is inside. Line corners use miter intersections. An expression is evaluated once; the copy does not follow later source or parameter changes.';
     case 'Width': return 'The transverse size of this profile in its local reference frame.';
     case 'Height': return 'The profile size along its local Y direction.';
     case 'Length': return 'The distance used by this profile or solid feature. For a Pad, it follows the sketch normal.';
