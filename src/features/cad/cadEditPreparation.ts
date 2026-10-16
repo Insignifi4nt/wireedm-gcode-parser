@@ -7,7 +7,7 @@ import type { CadSketchSolveDiagnostics, CadSketchSolverClient } from './sketch-
 
 export function needsCadSketchPreparation(document: CadDocument, edits: readonly CadEdit[]): boolean {
   return document.features.some(feature => feature.kind === 'sketch' && feature.graph)
-    || edits.some(edit => (edit.kind === 'add-feature' || edit.kind === 'update-feature') && edit.feature.kind === 'sketch' && edit.feature.graph);
+    || edits.some(edit => edit.kind === 'append-sketch-entities' || (edit.kind === 'add-feature' || edit.kind === 'update-feature') && edit.feature.kind === 'sketch' && edit.feature.graph);
 }
 
 /** Reduce intent, solve numeric copies, then validate the whole part before a session can commit it. */

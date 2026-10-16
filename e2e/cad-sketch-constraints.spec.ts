@@ -2,6 +2,134 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('moves one shared graph point over an enclosing profile, with cancel, undo and keyboard editing', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: {
+    id: 'outline', kind: 'sketch', name: 'Outline', suppressed: false, plane: 'XY', offset: 0,
+    profiles: [{ id: 'outer', name: 'Outer', construction: false, geometry: { kind: 'rectangle', x: -5, y: -10, width: 40, height: 30, cornerRadius: 0 } }],
+    graph: { points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }, { id: 'd', position: [0, 10] }],
+      entities: [
+        { id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+        { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+        { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+        { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' }
+      ], relations: [] }
+  } }] });
+  const initial = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: initial.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: initial.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: initial.version, command: { kind: 'edit-sketch', sketchId: 'outline' } });
+  const point = page.getByRole('button', { name: 'Point 2 in Outline', exact: true });
+  const box = await point.boundingBox();
+  const scale = await page.getByLabel('Sketch drawing canvas').evaluate(element => {
+    const canvas = element as SVGSVGElement, bounds = canvas.getBoundingClientRect();
+    return { x: bounds.width / canvas.viewBox.baseVal.width, y: bounds.height / canvas.viewBox.baseVal.height };
+  });
+  if (!box) throw new Error('Missing graph point.');
+  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const drag = async () => {
+    await page.mouse.move(start.x, start.y); await page.mouse.down();
+    await page.mouse.move(start.x + 5 * scale.x, start.y - 5 * scale.y, { steps: 4 });
+  };
+  await drag();
+  expect(await context(page)).toMatchObject({ version: initial.version, workflowOpen: true });
+  await page.keyboard.press('Escape'); await page.mouse.up();
+  await expect.poll(() => context(page)).toMatchObject({ version: initial.version, workflowOpen: false });
+  await drag(); await page.mouse.up();
+  await expect.poll(async () => (await context(page)).version).not.toBe(initial.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  await expect(point).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Select Outer profile', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  const source = async () => call(page, 'cad_get_feature', { expectedVersion: (await context(page)).version, featureId: 'outline' });
+  expect(await source()).toMatchObject({ feature: {
+    profiles: [{ geometry: { x: -5, y: -10, width: 40, height: 30 } }],
+    graph: { points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [25, 5] }, { id: 'c', position: [20, 10] }, { id: 'd', position: [0, 10] }] }
+  } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(source).toMatchObject({ feature: { graph: { points: [{ position: ['0', '0'] }, { position: [20, 0] }, { position: [20, 10] }, { position: [0, 10] }] } } });
+  const beforeNudge = (await context(page)).version;
+  await point.press('ArrowRight');
+  await expect.poll(async () => (await context(page)).version).not.toBe(beforeNudge);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  expect(await source()).toMatchObject({ feature: { graph: { points: [{ position: ['0', '0'] }, { position: [25, 0] }, { position: [20, 10] }, { position: [0, 10] }] } } });
+  const beforeLocked = (await context(page)).version;
+  await page.getByRole('button', { name: 'Point 1 in Outline', exact: true }).press('ArrowRight');
+  expect(await context(page)).toMatchObject({ version: beforeLocked, workflowOpen: false });
+  await point.press('Delete');
+  await expect.poll(async () => (await context(page)).version).not.toBe(beforeLocked);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  const deleted = await source();
+  expect(deleted.feature.graph.points.map((item: { id: string }) => item.id)).toEqual(['a', 'c', 'd']);
+  expect(deleted.feature.graph.entities.map((item: { id: string }) => item.id)).toEqual(['cd', 'da']);
+  expect(deleted.feature.profiles).toHaveLength(1);
+  await page.keyboard.press('Control+z');
+  await expect.poll(source).toMatchObject({ feature: { graph: { points: [{ position: ['0', '0'] }, { position: [25, 0] }, { position: [20, 10] }, { position: [0, 10] }] } } });
+});
+
+test('edits graph relations and linked circle radius through the shared inspector with honest freedom and edge-only picking', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'radius', value: 10 },
+    { kind: 'add-feature', feature: { id: 'outline', kind: 'sketch', name: 'Outline', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'center', position: ['0', '0'] }, { id: 'a', position: ['30', '0'] }, { id: 'b', position: [40, 5] }],
+      entities: [{ id: 'ring', kind: 'circle', construction: false, centerPointId: 'center', radius: ' radius ' },
+        { id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: []
+    } } }
+  ] });
+  let current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: 'outline' } });
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('2 degrees of freedom');
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'ring' } } });
+  const ring = page.locator('[data-cad-sketch-entity="ring"] > circle');
+  const interior = await ring.evaluate(element => {
+    const circle = element as SVGCircleElement, matrix = circle.getScreenCTM();
+    if (!matrix) throw new Error('Circle projection is unavailable.');
+    const point = new DOMPoint(circle.cx.baseVal.value + 4, circle.cy.baseVal.value + 4).matrixTransform(matrix);
+    return { x: point.x, y: point.y };
+  });
+  await page.mouse.click(interior.x, interior.y);
+  expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometry).toBeUndefined();
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'ab' } } });
+  await page.getByRole('checkbox', { name: 'Horizontal', exact: true }).check();
+  const endY = () => page.locator('[data-cad-sketch-entity="ab"] > line').evaluate(line => Number(line.getAttribute('y2')) - Number(line.getAttribute('y1')));
+  await expect.poll(endY).toBeCloseTo(0, 9);
+  expect((await context(page)).version).toBe(current.version);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click(); await expect.poll(endY).toBeCloseTo(5, 9);
+  await page.getByRole('checkbox', { name: 'Horizontal', exact: true }).check(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  current = await context(page);
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('1 degree of freedom');
+  expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometry).toEqual({ kind: 'entity', id: 'ab' });
+  await page.getByRole('button', { name: 'Add length', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('15'); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  current = await context(page);
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('Fully constrained');
+  await expect(page.getByRole('button', { name: 'Point 3 in Outline', exact: true })).toHaveAttribute('aria-disabled', 'true');
+  const inspection = await call(page, 'cad_inspect_sketch_constraints', { expectedVersion: current.version, sketchId: 'outline' });
+  expect(inspection.analysis).toMatchObject({ kind: 'solved', degreesOfFreedom: 0 });
+  const feature = await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'outline' });
+  expect(feature.feature.graph.points[2].position[0]).toBeCloseTo(45, 8);
+  await page.getByRole('button', { name: 'Configure distance 15 mm', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('17.5');
+  await expect.poll(() => page.locator('[data-cad-sketch-entity="ab"] > line').evaluate(line => Number(line.getAttribute('x2')) - Number(line.getAttribute('x1')))).toBeCloseTo(17.5, 9);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Configure distance 15 mm', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Length mm', exact: true })).toHaveValue('15');
+  expect((await context(page)).version).toBe(current.version);
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'ring' } } });
+  await page.getByRole('textbox', { name: 'Radius mm', exact: true }).fill('12.5'); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'outline' })).feature.graph.entities[0].radius).toBe(' radius ');
+  expect((await call(page, 'cad_inspect_parameters', { expectedVersion: current.version })).items).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'radius', value: 12.5 })]));
+});
+
 test('previews and applies a linked size across legacy and solved sketch geometry, with cancel and undo', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
@@ -18,7 +146,7 @@ test('previews and applies a linked size across legacy and solved sketch geometr
     .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: initial.version } } });
   await call(page, 'cad_set_viewport', { expectedVersion: initial.version, command: { kind: 'edit-sketch', sketchId: 'outline' } });
   await call(page, 'cad_set_viewport', { expectedVersion: initial.version, command: { kind: 'select-profile', profileId: 'plate' } });
-  const length = () => page.locator('[data-cad-sketch-entity="ab"] line').evaluate(line => Number(line.getAttribute('x2')) - Number(line.getAttribute('x1')));
+  const length = () => page.locator('[data-cad-sketch-entity="ab"] > line').evaluate(line => Number(line.getAttribute('x2')) - Number(line.getAttribute('x1')));
   await expect.poll(length).toBeCloseTo(20, 9);
   await page.getByRole('button', { name: 'Configure Width dimension', exact: true }).click();
   await page.getByRole('textbox', { name: 'Dimension value', exact: true }).fill('30');

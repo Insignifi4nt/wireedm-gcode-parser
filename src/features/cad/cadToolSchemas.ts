@@ -1,7 +1,15 @@
-import { Type } from '@sinclair/typebox';
+import { Type, type Static } from '@sinclair/typebox';
+import { CadIdentifierSchema } from '@/domain/cad/cadPrimitives';
+import { pageFields } from '@/features/webmcp/siteTools';
 import { CadEditSchema, type CadEdit } from '@/domain/cad/cadOperations';
 import { CadDocumentSchema, CadFeatureSchema } from '@/domain/cad/cadSchema';
 import { CadPluginPackageSchema } from '@/domain/cad/plugins/cadPlugins';
+
+export const CadToolSketchConstraintSectionSchema = Type.Union([Type.Literal('relations'), Type.Literal('points'), Type.Literal('entities')]);
+export type CadSketchConstraintSection = Static<typeof CadToolSketchConstraintSectionSchema>;
+export const CadToolSketchConstraintsQuerySchema = Type.Object({ expectedVersion: Type.String({ minLength: 1, maxLength: 160 }), sketchId: CadIdentifierSchema,
+  section: Type.Optional(CadToolSketchConstraintSectionSchema), ...pageFields,
+  offset: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })) }, { additionalProperties: false });
 
 // Registration carries only the common feature envelope. Complete definitions
 // are discoverable per kind, while execution still validates the full schemas.
@@ -29,6 +37,9 @@ const editDescriptions: Partial<Record<CadEdit['kind'], string>> = {
   'remove-sketch-dimension': 'Remove explicit intent; retains the geometry scalar, including any driving expression.',
   'translate-sketch-profiles': 'Move contours in local XY mm; rejects nonzero motion on an expression-driven position axis.',
   'move-sketch-handle': 'Use a revision-scoped grip from cad_inspect_sketch_handles. Local-mm delta; projects onto free components, preserves drivers.',
+  'append-sketch-entities': 'Append new graph IDs, allowing references to existing points. Never replaces IDs or merges nearby points. Solves and validates the complete part before acceptance.',
+  'delete-sketch-elements': 'Delete exact graph point/entity/relation IDs. Without cascade, all dependent elements must be selected; cascade removes only incident entities/relations of selected points, retaining other points and CAD features.',
+  'set-sketch-construction': 'Set construction on exact graph entity IDs while retaining their geometry and relations. Complete-part validation may reject loss of downstream material.',
   'move-sketch-point': 'Move a stable graph point by local-mm delta. Solves temporary drag intent, retaining relations and exact expression drivers. No saved drag constraint.',
   'set-sketch-relation': 'Add or replace a stable sketch-owned graph relation. Solve and validate atomically; conflicting/redundant relations reject the batch.',
   'remove-sketch-relation': 'Remove one graph relation by exact ID, retaining its current geometry. Missing IDs reject.',

@@ -18,7 +18,7 @@ function setup(mode: 'solid' | 'sketch' | 'curve' = 'solid') {
     buildState: mode === 'solid' ? 'ready' : 'idle', visibleBodyIds: [], visibleReferenceIds: [], visibleReferencePlanes: [],
     buildId: mode === 'solid' ? 'build-1' : null, pickMode: 'body', topologySelection: null, meshes: [],
     rendered: { getState: () => Object.freeze(state), fit: vi.fn(), setGrid: vi.fn(), setView: vi.fn(), capture },
-    selectFeature: vi.fn(), selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: (action) => action(),
+    selectFeature: vi.fn(), selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), selectSketchGeometry: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: (action) => action(),
   };
   let current = bindings;
   return { controls: createCadWorkbenchViewportControls(() => current), capture,
@@ -27,6 +27,36 @@ function setup(mode: 'solid' | 'sketch' | 'curve' = 'solid') {
 }
 
 describe('shared CAD viewport controls', () => {
+  const graphSketch = { id: 'sketch-1', name: 'Outline', kind: 'sketch' as const, plane: 'XY' as const, offset: 0, suppressed: false, profiles: [],
+    graph: { points: [{ id: 'a', position: [0, 0] as const }, { id: 'b', position: [10, 0] as const }],
+      entities: [{ id: 'ab', kind: 'line' as const, construction: false, startPointId: 'a', endPointId: 'b' }], relations: [] } };
+  it('selects graph points and edges by category only in the active sketch and blocks pending workflows', () => {
+    const context = setup('sketch'); context.update({ document: { ...context.bindings.document, schemaVersion: 2, features: [graphSketch] } });
+    for (const selection of [{ kind: 'point', id: 'a' }, { kind: 'entity', id: 'ab' }, null] as const) {
+      context.controls.apply({ kind: 'select-sketch-geometry', selection });
+      expect(context.bindings.selectSketchGeometry).toHaveBeenLastCalledWith(selection);
+    }
+    for (const selection of [{ kind: 'point', id: 'ab' }, { kind: 'entity', id: 'a' }, { kind: 'point', id: 'missing' }] as const) {
+      expect(() => context.controls.apply({ kind: 'select-sketch-geometry', selection })).toThrow('active sketch');
+    }
+    context.update({ selectedSketchGeometry: { kind: 'point', id: 'a' } });
+    expect(context.controls.getState()).toMatchObject({ selectedSketchGeometry: { kind: 'point', id: 'a' } });
+    context.update({ workflowOpen: true });
+    expect(() => context.controls.apply({ kind: 'select-sketch-geometry', selection: null })).toThrow('Apply or cancel');
+    context.update({ workflowOpen: false, sketchId: null });
+    expect(() => context.controls.apply({ kind: 'select-sketch-geometry', selection: null })).toThrow('sketch editor');
+    expect(context.bindings.selectSketchGeometry).toHaveBeenCalledTimes(3);
+  });
+  it('captures graph-only reference sketches without a solid build and rejects a changed point selection', async () => {
+    const context = setup(); context.update({ document: { ...context.bindings.document, schemaVersion: 2, features: [graphSketch] },
+      visibleReferenceIds: [graphSketch.id], buildState: 'idle', buildVersion: null, buildId: null });
+    context.updateView({ mode: 'solid', available: true, view: 'Isometric', gridVisible: true, zoom: 1, revision: 1,
+      referenceVersion: 'version-1', referenceFeatureIds: [graphSketch.id] });
+    await expect(context.controls.capture(new AbortController().signal)).resolves.toMatchObject({ buildVersion: null });
+    const sketch = setup('sketch'); sketch.update({ selectedSketchGeometry: { kind: 'point', id: 'a' } });
+    sketch.capture.mockImplementationOnce(async () => { sketch.update({ selectedSketchGeometry: { kind: 'entity', id: 'ab' } }); return png; });
+    await expect(sketch.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
+  });
   it('selects only principal or active datum planes as view state and refuses geometry-editor or workflow requests', () => {
     const context = setup(); const datum = { id: 'mount', name: 'Mount', kind: 'datum-plane' as const, suppressed: false,
       definition: { kind: 'world' as const, basePlane: 'XZ' as const, origin: [0, 0, 0] as const, rotation: [0, 0, 0] as const } };

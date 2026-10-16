@@ -23,7 +23,7 @@ import { importCadDxfCurve, type CadDxfCurveImportInput, type CadDxfCurveImportR
 import { parseDxf } from '@/domain/dxf/parseDxf';
 import { part as regionPart, refs as regionRefs, sketch as regionSketch, pad as regionPad } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
 import type { CadEdit } from '@/domain/cad/cadOperations';
-import type { CadSketchSolveInput } from './sketch-solver/cadSketchSolverTypes';
+import type { CadSketchSolveInput, CadSketchSolveResult } from './sketch-solver/cadSketchSolverTypes';
 
 const kernel = vi.hoisted(() => ({ build: vi.fn(), section: vi.fn(), export: vi.fn(), importSolid: vi.fn(), importDxf: vi.fn(), importDxfCurve: vi.fn(), inspectTopology: vi.fn(), resolveTopologyPicks: vi.fn(), dispose: vi.fn() }));
 const createClient = vi.hoisted(() => vi.fn());
@@ -109,12 +109,132 @@ function completeViewport(h: Awaited<ReturnType<typeof harness>>) {
     meshes: [], visibleBodyIds, visibleReferenceIds, visibleReferencePlanes,
     rendered: { getState: () => rendered, fit: vi.fn(), setGrid: vi.fn(), setView: view => { if (rendered.mode === 'solid') rendered = { ...rendered, view, revision: rendered.revision + 1 }; }, capture },
     selectFeature: featureId => { bindings = { ...bindings, selectedFeatureId: featureId }; }, selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(),
-    selectProfile: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: action => action() };
+    selectProfile: vi.fn(), selectSketchGeometry: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: action => action() };
   const controls = createCadWorkbenchViewportControls(() => bindings);
   h.cad().setViewportControls(controls);
   return { controls, capture, updateBindings: (change: Partial<CadViewportBindings>) => { bindings = { ...bindings, ...change }; },
     updateRendered: (change: Partial<CadRenderedViewState>) => { rendered = { ...rendered, ...change } as CadRenderedViewState; } };
 }
+
+function inspectedSketchDocument() {
+  return parseCadDocument({ ...createCadDocument('Constraint inspection', 'cad_constraints'), schemaVersion: 2, parameters: { span: 20 }, features: [{
+    id: 'sketch', kind: 'sketch', name: 'Line', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [20, 0] }],
+      entities: [{ id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+      relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: ' span ' }]
+    }
+  }] });
+}
+function inspectedSolve(input: CadSketchSolveInput): CadSketchSolveResult {
+  return { kind: 'solved', graph: input.graph, diagnostics: { status: 'success', degreesOfFreedom: 0,
+    conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } };
+}
+
+describe('accepted sketch constraint inspection guards', () => {
+  it('shares immutable accepted source across pages without editing, saving or adding history', async () => {
+    const h = await harness(); await act(async () => h.session.replace(inspectedSketchDocument()));
+    await act(async () => { await h.cad().save(); });
+    const before = h.session.getSnapshot(), exact = JSON.stringify(before.document);
+    sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+    const tool = cadSiteTools(h.cad).find(tool => tool.name === 'cad_inspect_sketch_constraints');
+    if (!tool) throw new Error('Missing constraint inspection tool');
+    expect(await tool.execute({ expectedVersion: before.version, sketchId: 'sketch', offset: 0, limit: 1 })).toMatchObject({ ok: true,
+      data: { version: before.version, persisted: false, pointCount: 2, entityCount: 1, relationCount: 2, total: 2, nextOffset: 1,
+        analysis: { kind: 'solved', status: 'success', degreesOfFreedom: 0 }, items: [{ source: { id: 'horizontal' } }] } });
+    const last = await tool.execute({ expectedVersion: before.version, sketchId: 'sketch', offset: 1, limit: 1 });
+    expect(last).toMatchObject({ ok: true, data: { nextOffset: null, items: [{ source: { id: 'length', value: ' span ' },
+      value: { scalar: ' span ', valueMm: 20, role: 'expression-driver' } }] } });
+    expect(last).not.toHaveProperty('data.graph'); expect(last).not.toHaveProperty('data.parameters');
+    expect(await tool.execute({ expectedVersion: before.version, sketchId: 'sketch', section: 'points', offset: 1 })).toMatchObject({ ok: true,
+      data: { section: 'points', total: 2, items: [{ id: 'b', entityIds: ['edge'] }] } });
+    expect(sketchSolver.solve).toHaveBeenCalledOnce(); expect(createSketchClient).toHaveBeenCalledOnce();
+    expect(h.session.getSnapshot()).toBe(before); expect(JSON.stringify(before.document)).toBe(exact);
+    expect((await loadCadDocument(h.workbench().adapter, before.document.id)).document).toEqual(before.document);
+    await act(async () => h.session.edit([{ kind: 'rename-document', name: 'New accepted source' }]));
+    await expect(tool.execute({ expectedVersion: before.version, sketchId: 'sketch' })).resolves.toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    await h.cad().inspectSketchConstraints('sketch'); expect(sketchSolver.solve).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache unavailable native analysis and still checks closed workflows and cancellation on cache hits', async () => {
+    const h = await harness(); await act(async () => h.session.replace(inspectedSketchDocument()));
+    const before = h.session.getSnapshot();
+    sketchSolver.solve.mockRejectedValueOnce(new Error('Worker stopped')).mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+    expect(await h.cad().inspectSketchConstraints('sketch')).toMatchObject({ analysis: { kind: 'unavailable', diagnostics: { degreesOfFreedom: null } } });
+    expect(await h.cad().inspectSketchConstraints('sketch')).toMatchObject({ analysis: { kind: 'solved' } });
+    expect(sketchSolver.solve).toHaveBeenCalledTimes(2);
+    await act(async () => h.session.setWorkflowOpen(true));
+    await expect(h.cad().inspectSketchConstraints('sketch')).rejects.toMatchObject({ code: 'WORKFLOW_OPEN' });
+    await act(async () => h.session.setWorkflowOpen(false));
+    const abort = new AbortController(); abort.abort();
+    await expect(h.cad().inspectSketchConstraints('sketch', before.version, abort.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(h.session.getSnapshot().document).toBe(before.document); expect(sketchSolver.solve).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['cancelled', 'changed', 'workflow', 'storage', 'closed'] as const)('rejects a late constraint analysis after %s without changing accepted work', async cause => {
+    const h = await harness(); await act(async () => h.session.replace(inspectedSketchDocument()));
+    const before = h.session.getSnapshot(), pending = deferred<CadSketchSolveResult>(), abort = new AbortController();
+    sketchSolver.solve.mockReturnValueOnce(pending.promise);
+    const operation = h.cad().inspectSketchConstraints('sketch', before.version, abort.signal);
+    await vi.waitFor(() => expect(sketchSolver.solve).toHaveBeenCalledOnce());
+    if (cause === 'cancelled') abort.abort();
+    if (cause === 'changed') await act(async () => h.session.edit([{ kind: 'rename-document', name: 'Retained new name' }]));
+    if (cause === 'workflow') await act(async () => h.session.setWorkflowOpen(true));
+    if (cause === 'storage') await h.switchWorkbench(await openWorkbench('constraint-other-store'));
+    if (cause === 'closed') await act(async () => h.cad().back());
+    const retained = h.session.getSnapshot();
+    const sketch = before.document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing graph');
+    pending.resolve(inspectedSolve({ graph: sketch.graph, parameters: before.document.parameters }));
+    await expect(operation).rejects.toMatchObject(cause === 'cancelled' ? { name: 'AbortError' }
+      : { code: cause === 'workflow' ? 'WORKFLOW_OPEN' : cause === 'closed' ? 'CAD_NOT_OPEN' : 'STALE_STATE' });
+    expect(h.session.getSnapshot()).toBe(retained);
+    if (cause === 'cancelled' || cause === 'workflow' || cause === 'storage') {
+      if (cause === 'workflow') await act(async () => h.session.setWorkflowOpen(false));
+      sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+      await h.cad().inspectSketchConstraints('sketch'); expect(sketchSolver.solve).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('validates narrow public inspection arguments before native work and returns source errors honestly', async () => {
+    const h = await harness(); await act(async () => h.session.replace(inspectedSketchDocument()));
+    const tool = cadSiteTools(h.cad).find(tool => tool.name === 'cad_inspect_sketch_constraints');
+    if (!tool) throw new Error('Missing constraint inspection tool');
+    const query = { expectedVersion: h.session.getSnapshot().version, sketchId: 'sketch' };
+    for (const input of [{ ...query, section: 'all' }, { ...query, offset: -1 }, { ...query, limit: 51 }, { ...query, graph: {} }, { sketchId: 'sketch' }])
+      expect(await tool.execute(input)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(createSketchClient).not.toHaveBeenCalled();
+    expect(await tool.execute({ ...query, sketchId: 'missing' })).toMatchObject({ ok: false, error: { code: 'missing-sketch' } });
+    expect(createSketchClient).not.toHaveBeenCalled();
+  });
+
+  it('pages complete large source rows under the public reply budget while reporting complete native diagnostic counts', async () => {
+    const h = await harness(), exactDriver = `${' '.repeat(490)}0`;
+    const points = Array.from({ length: 75 }, (_, index) => ({ id: `point-${index}`, position: [exactDriver, index] }));
+    const relations = points.map((point, index) => ({ id: `axis-${index}-${'x'.repeat(75)}`, kind: 'fixed-axis',
+      pointId: point.id, axis: 'x', value: exactDriver }));
+    const document = parseCadDocument({ ...inspectedSketchDocument(), features: [{ id: 'sketch', kind: 'sketch', name: 'Many drivers',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points, entities: [], relations } }] });
+    await act(async () => h.session.replace(document)); const before = h.session.getSnapshot();
+    const ids = relations.map(relation => relation.id);
+    sketchSolver.solve.mockResolvedValue({ kind: 'rejected', reason: 'redundant', message: '孔'.repeat(5000), diagnostics: {
+      status: 'converged', degreesOfFreedom: 75, conflictingIds: ids, redundantIds: ids, partiallyRedundantIds: ids,
+      issues: ids.map(id => ({ source: { kind: 'relation', id }, code: 'relation-residual', message: '孔'.repeat(2000) })) } });
+    const tool = cadSiteTools(h.cad).find(tool => tool.name === 'cad_inspect_sketch_constraints');
+    if (!tool) throw new Error('Missing constraint inspection tool');
+    let offset: number | null = 0; const read: typeof relations = [];
+    while (offset !== null) {
+      const receipt = await tool.execute({ expectedVersion: before.version, sketchId: 'sketch', offset, limit: 50 });
+      expect(receipt).toMatchObject({ ok: true, data: { pointCount: 75, relationCount: 75, total: 75,
+        analysis: { status: 'converged', degreesOfFreedom: 75, conflicting: { count: 75, omittedCount: 67 }, issueCount: 75, omittedIssueCount: 73 } } });
+      expect(utf8Bytes(JSON.stringify(receipt))).toBeLessThan(32 * 1024);
+      const result = receipt as { data: { items: { source: typeof relations[number]; diagnostics: { redundant: boolean } }[]; nextOffset: number | null } };
+      expect(result.data.items.length).toBeGreaterThan(0); expect(result.data.items.length).toBeLessThan(50);
+      expect(result.data.items.every(row => row.diagnostics.redundant)).toBe(true);
+      read.push(...result.data.items.map(row => row.source)); offset = result.data.nextOffset;
+    }
+    expect(read).toEqual(relations); expect(sketchSolver.solve).toHaveBeenCalledOnce();
+    expect(h.session.getSnapshot()).toBe(before);
+  });
+});
 
 describe('CAD controller asynchronous guards', () => {
   it('captures the complete edit batch before cold and warm asynchronous solver preparation', async () => {

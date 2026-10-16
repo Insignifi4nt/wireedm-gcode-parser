@@ -37,7 +37,7 @@ export function createCadSketchHandlePicker(profiles: readonly CadSketchProfile[
 
 export const CAD_SKETCH_PICK_RADIUS_PX = 6;
 const tau = 2 * Math.PI;
-function boundaryDistance(point: Point2, segment: PathSegment): number {
+export function cadSketchBoundaryDistance(point: Point2, segment: PathSegment): number {
   if (segment.kind === 'circle') return Math.abs(Math.hypot(point.x - segment.center.x, point.y - segment.center.y) - segment.radius);
   if (segment.kind === 'line') {
     const dx = segment.end.x - segment.start.x; const dy = segment.end.y - segment.start.y;
@@ -79,7 +79,7 @@ export function createCadSketchProfilePicker(profiles: readonly CadSketchProfile
       let boundary: { id: string; distance: number } | null = null;
       let interior: { id: string; area: number } | null = null;
       for (const profile of prepared) {
-        const distance = profile.segments.reduce((closest, segment) => Math.min(closest, boundaryDistance(location, segment)), Infinity);
+        const distance = profile.segments.reduce((closest, segment) => Math.min(closest, cadSketchBoundaryDistance(location, segment)), Infinity);
         if (distance <= tolerance && (!boundary || distance < boundary.distance)) boundary = { id: profile.id, distance };
         if (!profile.construction && profile.area > 0 && (!interior || profile.area < interior.area) && profile.contains(location)) interior = { id: profile.id, area: profile.area };
       }

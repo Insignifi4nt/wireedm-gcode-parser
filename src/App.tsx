@@ -141,6 +141,7 @@ function WorkbenchApp({ services }: AppProps) {
             onEdit={(edit, signal) => cad.edit([edit], undefined, false, signal)} onUndo={() => cad.undo()} onRedo={() => cad.redo()}
             onEditMany={(edits, signal) => cad.edit(edits, undefined, false, signal)}
             onPrepareEdits={cad.preparePreviewEdits}
+            onInspectSketchConstraints={cad.inspectSketchConstraints}
             onWorkflowChange={cadSession.setWorkflowOpen}
             onBack={cad.back} onSave={async () => { await cad.save(); }}
             onOpenDocument={() => { void cad.showLibrary().catch(error => cad.setErrorMessage(String(error))); }}

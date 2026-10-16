@@ -11,7 +11,7 @@ import { ToolError } from '@/features/webmcp/siteTools';
 import { CadSession, hasUnsavedCadDraft } from './cadSession';
 import { useCadUnloadGuard } from './useCadUnloadGuard';
 import { installCadPlugin, listCadPlugins } from '@/domain/cad/plugins/cadPluginStorage';
-import type { CadViewportCommand, CadWorkbenchViewportControls, CadViewportState } from './cadViewportControls';
+import { cadViewportVisualIdentity, type CadViewportCommand, type CadWorkbenchViewportControls, type CadViewportState } from './cadViewportControls';
 import { preparePreviewCapture, downloadPreviewCapture, type PreviewCaptureArtifact } from '@/features/webmcp/previewCapture';
 import { createCadTopologyActions } from './cadTopologyActions';
 import { cadBytesToBase64, cadSolidImportByteLength, isCadSolidImportResult, parseCadSolidImportSource, type CadSolidImportSource } from '@/domain/cad/cadImports';
@@ -22,6 +22,7 @@ import { createCadFeaturePreviewCoordinator, type CadFeaturePreviewState } from 
 import type { CadSketchRegionProposal } from '@/domain/cad/cadSketchRegionInspection';
 import { needsCadSketchPreparation, prepareCadEdits } from './cadEditPreparation';
 import type { CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
+import type { CadSketchConstraintInspection } from './cadSketchConstraintInspection';
 
 type App = Pick<ReturnType<typeof useWorkbenchAppController>, 'connectedWorkbench' | 'workbenchInteractionLocked' | 'runAgentWorkbenchOperation'>;
 type Kernel = ReturnType<typeof import('./kernel/cadKernelClient').createCadKernelClient>;
@@ -44,7 +45,6 @@ function matchingSectionResult(value: unknown, request: CadSectionRequest, param
   return value;
 }
 type CadPreviewArtifact = PreviewCaptureArtifact & { documentId: string; viewState: CadViewportState; sketchId: string | null; curveId: string | null };
-const viewIdentity = (state: CadViewportState) => JSON.stringify([state.documentVersion, state.buildVersion, state.buildId, state.selectedFeatureId, state.selectedProfileId, state.sketchId, state.curveId, state.selectedReferencePlane, state.awaitingSketchPlane, state.pickMode, state.topologySelection, state.view]);
 
 export function useCadController(app: App, session: CadSession, open: boolean, setOpen: (open: boolean) => void,
   getCamDraft: () => DraftReadSnapshot | null) {
@@ -73,6 +73,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   const busy = useRef(false);
   const preparing = useRef<AbortController | null>(null);
   const sketchSolver = useRef<Promise<CadSketchSolverClient> | null>(null);
+  const constraintInspections = useRef(new WeakMap<CadDocument, Map<string, CadSketchConstraintInspection>>());
   const current = useRef({ app, open }); current.current = { app, open };
   const kernel = useRef<Promise<Kernel> | null>(null);
   const buildAbort = useRef<AbortController | null>(null);
@@ -473,6 +474,24 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       return await importSolidSource(source, pending.version, controller.signal, 'import');
     } finally { if (importAbort.current === controller) importAbort.current = null; }
   }
+  async function inspectSketchConstraints(sketchId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
+    editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
+    const source = session.getSnapshot().document, workbench = connected();
+    let inspection = constraintInspections.current.get(source)?.get(sketchId);
+    if (!inspection) {
+      const { inspectCadSketchConstraints } = await import('./cadSketchConstraintInspection');
+      signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
+      inspection = await inspectCadSketchConstraints(source, sketchId, getSketchSolver, signal);
+    }
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
+    if (session.getSnapshot().document !== source || current.current.app.connectedWorkbench !== workbench)
+      throw new ToolError('STALE_STATE', 'The CAD workspace changed while inspecting sketch constraints.');
+    if (inspection.analysis.kind !== 'unavailable') {
+      const cached = constraintInspections.current.get(source) ?? new Map<string, CadSketchConstraintInspection>();
+      cached.set(sketchId, inspection); constraintInspections.current.set(source, cached);
+    }
+    return { version: expectedVersion, persisted: false, ...inspection };
+  }
   async function inspectSketchHandles(sketchId: string, profileId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
     const { inspectCadSketchHandles } = await import('@/domain/cad/cadSketchHandles');
@@ -590,7 +609,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       const prepared = await preparePreviewCapture(captured.image, { projectId: null, draftVersion: expectedVersion, dirty: captured.dirty, contentSource: 'cad-draft' }, signal);
       try {
         signal.throwIfAborted(); session.assertVersion(expectedVersion); session.assertWorkflowClosed();
-        if (viewport.current !== controls || viewIdentity(controls.getState()) !== viewIdentity(captured.viewState)) throw new ToolError('STALE_VIEW', 'The CAD view changed during capture. Capture the current view again.');
+        if (viewport.current !== controls || cadViewportVisualIdentity(controls.getState()) !== cadViewportVisualIdentity(captured.viewState)) throw new ToolError('STALE_VIEW', 'The CAD view changed during capture. Capture the current view again.');
       } catch (error) { URL.revokeObjectURL(prepared.previewUrl); throw error; }
       const artifact: CadPreviewArtifact = { ...prepared, fileName: `cad-preview-${captured.image.source}.png`, documentId: captured.documentId, sketchId: captured.sketchId, curveId: captured.curveId, viewState: captured.viewState };
       const previous = previewUrl.current;
@@ -737,7 +756,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   function back() { connected(); session.assertWorkflowClosed(); changeOpen(false); }
   const isBusy = () => busy.current || preparing.current !== null;
   return { session, snapshot, open, enter, edit, preparePreviewEdits, save, list, projectActions, plugins, installPlugin, showLibrary, library, libraryLoading, libraryDiagnostic, closeLibrary,
-    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, inspectSketchHandles, measureCurve, inspectSketchRegions, readSketchRegionReference, inspectPlugin, inspectParameters, inspectPlane, inspectLoft, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, exportSectionDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
+    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, inspectSketchConstraints, inspectSketchHandles, measureCurve, inspectSketchRegions, readSketchRegionReference, inspectPlugin, inspectParameters, inspectPlane, inspectLoft, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, exportSectionDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
     setViewportControls, readViewport: (expectedVersion: string) => getViewport(expectedVersion).getState(), changeViewport, captureViewport, previewArtifact,
     inspectTopology: topology.inspect, resolveTopologyPicks: topology.resolve,
     build, buildVersion, buildState, featurePreview, previewFeature: featurePreviewCoordinator.update, errorMessage, setErrorMessage, storageBusy, isBusy, isOpen: () => current.current.open,

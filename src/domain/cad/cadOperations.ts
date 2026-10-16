@@ -10,7 +10,8 @@ import { addCadSketchDimension, cadSketchDimensionScalar, CadSketchDimensionCons
 import { CadPoint2Schema, CadScalarSchema } from './cadPrimitives';
 import { evaluateCadScalar } from './cadExpression';
 import { CadSketchHandleSchema, moveCadSketchHandle, type CadSketchHandle } from './cadSketchHandles';
-import { CadSketchGraphSchema, type CadSketchGraphRelation } from './cadSketchGraph';
+import { CadSketchGraphSchema, type CadSketchGraph, type CadSketchGraphRelation } from './cadSketchGraph';
+import { appendCadSketchEntities, deleteCadSketchElements, setCadSketchConstruction } from './cadSketchGraphEdits';
 
 export type CadEdit =
   | { readonly kind: 'add-feature'; readonly feature: CadFeature; readonly beforeId?: string }
@@ -29,6 +30,9 @@ export type CadEdit =
   | { readonly kind: 'remove-sketch-dimension'; readonly sketchId: string; readonly profileId: string; readonly dimensionId: string }
   | { readonly kind: 'translate-sketch-profiles'; readonly sketchId: string; readonly profileIds: readonly string[]; readonly translation: CadPoint2 }
   | { readonly kind: 'move-sketch-handle'; readonly sketchId: string; readonly profileId: string; readonly handle: CadSketchHandle; readonly translation: CadPoint2 }
+  | { readonly kind: 'append-sketch-entities'; readonly sketchId: string; readonly geometry: CadSketchGraph }
+  | { readonly kind: 'delete-sketch-elements'; readonly sketchId: string; readonly pointIds: readonly string[]; readonly entityIds: readonly string[]; readonly relationIds: readonly string[]; readonly cascade: boolean }
+  | { readonly kind: 'set-sketch-construction'; readonly sketchId: string; readonly entityIds: readonly string[]; readonly construction: boolean }
   | { readonly kind: 'move-sketch-point'; readonly sketchId: string; readonly pointId: string; readonly translation: CadPoint2 }
   | { readonly kind: 'set-sketch-relation'; readonly sketchId: string; readonly relation: CadSketchGraphRelation }
   | { readonly kind: 'remove-sketch-relation'; readonly sketchId: string; readonly relationId: string }
@@ -54,6 +58,9 @@ export const CadEditSchema = Type.Union([
   Type.Object({ kind: Type.Literal('remove-sketch-dimension'), sketchId: identifier, profileId: identifier, dimensionId: identifier }, strict),
   Type.Object({ kind: Type.Literal('translate-sketch-profiles'), sketchId: identifier, profileIds: Type.Array(identifier, { minItems: 1, maxItems: 256, uniqueItems: true }), translation: CadPoint2Schema }, strict),
   Type.Object({ kind: Type.Literal('move-sketch-handle'), sketchId: identifier, profileId: identifier, handle: CadSketchHandleSchema, translation: CadPoint2Schema }, strict),
+  Type.Object({ kind: Type.Literal('append-sketch-entities'), sketchId: identifier, geometry: CadSketchGraphSchema }, strict),
+  Type.Object({ kind: Type.Literal('delete-sketch-elements'), sketchId: identifier, pointIds: Type.Array(identifier, { uniqueItems: true }), entityIds: Type.Array(identifier, { uniqueItems: true }), relationIds: Type.Array(identifier, { uniqueItems: true }), cascade: Type.Boolean() }, strict),
+  Type.Object({ kind: Type.Literal('set-sketch-construction'), sketchId: identifier, entityIds: Type.Array(identifier, { uniqueItems: true }), construction: Type.Boolean() }, strict),
   Type.Object({ kind: Type.Literal('move-sketch-point'), sketchId: identifier, pointId: identifier, translation: CadPoint2Schema }, strict),
   Type.Object({ kind: Type.Literal('set-sketch-relation'), sketchId: identifier, relation: CadSketchGraphSchema.properties.relations.items }, strict),
   Type.Object({ kind: Type.Literal('remove-sketch-relation'), sketchId: identifier, relationId: identifier }, strict),
@@ -182,6 +189,14 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
         if (!feature.profiles.some(profile => profile.id === edit.profileId)) throw new CadError('missing-profile', 'The selected sketch contour no longer exists.');
         const translation = [evaluateCadScalar(edit.translation[0], parameters), evaluateCadScalar(edit.translation[1], parameters)] satisfies readonly [number, number];
         features[index] = { ...feature, profiles: feature.profiles.map(profile => profile.id === edit.profileId ? moveCadSketchHandle({ profile, handle: edit.handle, translation, parameters }) : profile) };
+        break;
+      }
+      case 'append-sketch-entities': case 'delete-sketch-elements': case 'set-sketch-construction': {
+        const index = indexOf(edit.sketchId), sketch = features[index];
+        if (sketch.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose an existing sketch to edit.');
+        features[index] = edit.kind === 'append-sketch-entities' ? appendCadSketchEntities({ sketch, geometry: edit.geometry })
+          : edit.kind === 'delete-sketch-elements' ? deleteCadSketchElements({ sketch, pointIds: edit.pointIds, entityIds: edit.entityIds, relationIds: edit.relationIds, cascade: edit.cascade })
+            : setCadSketchConstruction({ sketch, entityIds: edit.entityIds, construction: edit.construction });
         break;
       }
       case 'move-sketch-point': case 'set-sketch-relation': case 'remove-sketch-relation': {

@@ -76,6 +76,10 @@ describe('sketch preview capture layout', () => {
 });
 
 describe('saved Sketch initial fit', () => {
+  it('fits an isolated graph point at its evaluated coordinates even without an edge', async () => {
+    await mount({ ...sketch, graph: { points: [{ id: 'anchor', position: ['origin', 20] }], entities: [], relations: [] } }, { origin: 100000000 });
+    expect(currentControls().getState()).toMatchObject({ mode: 'sketch', centerMm: [100000000, 20], heightSpanMm: 25 });
+  });
   it.each(['sketch', 'curve'] as const)('fits far-origin %s contours inside current free pixels and does not reframe on inspector changes', async kind => {
     width = 900; height = 800;
     const feature: CadSketchFeature | CadCurveFeature = kind === 'sketch' ? imported() : { id: 'far-curve', kind: 'curve', name: 'Far curve', suppressed: false, plane: 'XY', offset: 0,

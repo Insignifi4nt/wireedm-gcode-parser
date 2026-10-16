@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
-import { prepareCadEdits } from './cadEditPreparation';
+import { needsCadSketchPreparation, prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 
@@ -20,6 +20,19 @@ const source = () => parseCadDocument({ ...createCadDocument('Line', 'line'), sc
 }] });
 
 describe('shared CAD edit preparation with the real sketch solver', () => {
+  it('prepares the first appended graph before accepting its initially unsolved relations', async () => {
+    const document = parseCadDocument({ ...createCadDocument('First line', 'first-line'), features: [{ id: 'sketch', name: 'Sketch', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [] }] });
+    const edits: readonly CadEdit[] = [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: {
+      points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [10, 2] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+      relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }]
+    } }];
+    expect(needsCadSketchPreparation(document, edits)).toBe(true);
+    const prepared = await prepareCadEdits(document, edits, solver);
+    expect(prepared.document.schemaVersion).toBe(2); expect(document.schemaVersion).toBe(1);
+    expect(prepared.document.features[0]).toMatchObject({ graph: { points: [{ position: ['0', '0'] }, { position: [10, 0] }] } });
+  });
+
   it('solves a parameter change before acceptance, preserves expressions and commits exactly one undo step', async () => {
     const session = new CadSession(source()), before = session.getSnapshot();
     const accepted = await session.editPrepared(before.version, async document => (await prepareCadEdits(document, [{ kind: 'set-parameter', name: 'length', value: 30 }], solver)).document);

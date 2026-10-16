@@ -116,7 +116,7 @@ it('publishes actual viewport resizing once, keeps same-size notifications quiet
     selectedReferencePlane: null, awaitingSketchPlane: false, sketchId: null, curveId: null, workflowOpen: false, busy: false,
     buildVersion: snapshot.version, buildId: 'build', buildState: 'ready', visibleBodyIds: [], visibleReferenceIds: [], visibleReferencePlanes: [],
     pickMode: 'body', topologySelection: null, meshes: [mesh], rendered: currentControls(),
-    selectFeature: vi.fn(), selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(),
+    selectFeature: vi.fn(), selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), selectSketchGeometry: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(),
     selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: action => action()
   };
   const boundary = createCadWorkbenchViewportControls(() => bindings), before = boundary.getState(), token = cadViewportMetadataToken(session, before);

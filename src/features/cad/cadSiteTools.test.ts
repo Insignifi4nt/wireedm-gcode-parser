@@ -129,6 +129,32 @@ describe('CAD tool argument boundary and discovery', () => {
     }
     expect(controller).not.toHaveBeenCalled();
   });
+  it('discovers strict graph authoring edits and rejects implicit repair or widened deletion before draft access', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid graph edit reached operations'); });
+    const tool = cadSiteTools(controller).find(entry => entry.name === 'cad_edit_document');
+    if (!tool) throw new Error('Missing CAD edit tool');
+    const append = { kind: 'append-sketch-entities', sketchId: 'sketch', geometry: { points: [{ id: 'new', position: [' span ', 0] }],
+      entities: [{ id: 'line', kind: 'line', startPointId: 'existing', endPointId: 'new', construction: false }], relations: [] } };
+    const remove = { kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: ['new'], entityIds: [], relationIds: [], cascade: false };
+    const construction = { kind: 'set-sketch-construction', sketchId: 'sketch', entityIds: ['line'], construction: true };
+    for (const edit of [append, remove, construction]) {
+      const declared = CadToolEditDefinitions.find(schema => schema.properties.kind.const === edit.kind);
+      const shared = CadEditSchema.anyOf.find(schema => schema.properties.kind.const === edit.kind);
+      if (!declared || !shared) throw new Error('Graph edit discovery missing.');
+      expect(declared.properties).toEqual(shared.properties);
+      expect(declared.required).toEqual(shared.required);
+      expect(Value.Check(declared, edit)).toBe(true);
+      expect(Value.Check(declared, { ...edit, heal: true })).toBe(false);
+    }
+    for (const edit of [
+      { ...append, geometry: { ...append.geometry, provenance: 'generated' } },
+      { ...append, geometry: { ...append.geometry, points: [{ id: 'new', position: [0, 1, 2] }] } },
+      { ...remove, pointIds: ['new', 'new'] }, { ...remove, cascade: 'automatic' },
+      { kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: [], entityIds: [], cascade: true },
+      { ...construction, entityIds: ['line', 'line'] }, { ...construction, construction: 1 }, { ...construction, force: true }
+    ]) expect(await tool.execute({ expectedVersion: 'current', edits: [edit] })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(controller).not.toHaveBeenCalled();
+  });
   it('bounds ordered Loft preflight and rejects repair or source payloads before reaching operations', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid Loft inspection reached the controller'); });
     const inspect = cadSiteTools(controller).find(entry => entry.name === 'cad_inspect_loft');

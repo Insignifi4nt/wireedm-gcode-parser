@@ -35,7 +35,7 @@ export function prepareCadSketchCells(sketch: CadSketchFeature, parameters: CadD
   if (!names) {
     const used = new Set<string>();
     mapCadFeatureScalars(sketch, (value, path) => {
-      if (path.startsWith('profiles.')) for (const name of cadScalarParameterNames(value)) used.add(name);
+      if (path.startsWith('profiles.') || path.startsWith('graph.')) for (const name of cadScalarParameterNames(value)) used.add(name);
       return value;
     });
     names = [...used];

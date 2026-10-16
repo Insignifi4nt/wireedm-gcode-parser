@@ -10,6 +10,8 @@ export type CadNamedView = Static<typeof CadNamedViewSchema>;
 const id = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' });
 const strict = { additionalProperties: false };
 export const CadPickModeSchema = Type.Union([Type.Literal('body'), Type.Literal('face'), Type.Literal('edge')]);
+export const CadSketchGraphSelectionSchema = Type.Object({ kind: Type.Union([Type.Literal('point'), Type.Literal('entity')]), id }, strict);
+export type CadSketchGraphSelection = Static<typeof CadSketchGraphSelectionSchema>;
 export const CadViewportCommandSchema = Type.Union([
   Type.Object({ kind: Type.Literal('set-view'), view: CadNamedViewSchema }, strict),
   Type.Object({ kind: Type.Literal('fit') }, strict),
@@ -19,6 +21,7 @@ export const CadViewportCommandSchema = Type.Union([
   Type.Object({ kind: Type.Literal('edit-sketch'), sketchId: id }, strict),
   Type.Object({ kind: Type.Literal('edit-curve'), curveId: id }, strict),
   Type.Object({ kind: Type.Literal('select-profile'), profileId: Type.Union([id, Type.Null()]) }, strict),
+  Type.Object({ kind: Type.Literal('select-sketch-geometry'), selection: Type.Union([CadSketchGraphSelectionSchema, Type.Null()]) }, strict),
   Type.Object({ kind: Type.Literal('finish-sketch') }, strict),
   Type.Object({ kind: Type.Literal('finish-curve') }, strict),
   Type.Object({ kind: Type.Literal('set-pick-mode'), mode: CadPickModeSchema }, strict),
@@ -45,6 +48,7 @@ export interface CadViewportState {
   readonly dirty: boolean;
   readonly selectedFeatureId: string | null;
   readonly selectedProfileId: string | null;
+  readonly selectedSketchGeometry?: CadSketchGraphSelection;
   readonly selectedReferencePlane: CadSketchPlane | null;
   readonly awaitingSketchPlane: boolean;
   readonly sketchId: string | null;
@@ -58,6 +62,13 @@ export interface CadViewportState {
   readonly buildState: 'idle' | 'building' | 'ready' | 'error';
   readonly visibleBodyIds: readonly string[];
   readonly view: CadRenderedViewState | null;
+}
+
+/** Capture identity excludes temporary locks and the unrelated solid build while editing in 2D. */
+export function cadViewportVisualIdentity(state: CadViewportState): string {
+  return JSON.stringify([state.documentId, state.documentVersion, state.selectedFeatureId, state.selectedProfileId, state.selectedSketchGeometry,
+    state.sketchId, state.curveId, state.selectedReferencePlane, state.awaitingSketchPlane,
+    state.view?.mode === 'solid' ? [state.buildVersion, state.buildId, state.buildState, state.pickMode, state.topologySelection, state.visibleBodyIds] : null, state.view]);
 }
 
 /** Both 2D and 3D show the current CAD draft, including unsaved edits. */

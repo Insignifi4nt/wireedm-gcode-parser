@@ -4,6 +4,7 @@ import { part, refs, sketch } from './cadSketchRegionFixtures';
 import { pad } from './cadSketchRegionFixtures';
 import { CadSession } from '@/features/cad/cadSession';
 import type { CadSketchFeature } from '../cadDocument';
+import { createCadDocument, parseCadDocument } from '../cadSchema';
 
 describe('prepared closed-cell inspection and physical selection', () => {
   it('preflights each shared-driver source even when an earlier selected extrusion also needs the same atomic repair', () => {
@@ -112,6 +113,29 @@ describe('prepared closed-cell inspection and physical selection', () => {
     const changed = prepareCadSketchCells({ ...sketch(), profiles: sketch().profiles.filter(profile => profile.id !== 'island') }, {});
     expect(changed.pick({ x: 0, y: 0 })?.reference).toEqual({ ...refs.bore, voidProfileIds: [] });
     expect(prepared.pick({ x: 0, y: 0 })?.reference).toEqual(refs.island);
+  });
+
+  it('tracks graph point, radius and relation drivers in accepted cell preparations while excluding placement', () => {
+    const document = parseCadDocument({ ...createCadDocument('Circle', 'circle'), schemaVersion: 2,
+      parameters: { origin: 2, radius: 5, fix: 2, placement: 17 }, features: [{
+        id: 'graph', kind: 'sketch', name: 'Graph', suppressed: false, plane: 'XY', offset: 'placement', profiles: [], graph: {
+          points: [{ id: 'center', position: [' origin ', 0] }],
+          entities: [{ id: 'circle', kind: 'circle', centerPointId: 'center', radius: ' radius ', construction: false }],
+          relations: [{ id: 'fixed', kind: 'fixed-axis', pointId: 'center', axis: 'x', value: ' fix ' }]
+        }
+      }] }), source = document.features[0], before = JSON.stringify(document);
+    if (source.kind !== 'sketch') throw new Error('Graph fixture missing.');
+    const initial = prepareCadSketchCells(source, document.parameters);
+    expect(initial.cells[0].areaMm2).toBeCloseTo(25 * Math.PI, 11);
+    expect(initial.pick({ x: 6, y: 0 })?.reference.boundaryProfileId).toBe('circle');
+    expect(prepareCadSketchCells(source, { ...document.parameters, placement: 99, unrelated: 123 })).toBe(initial);
+    expect(() => prepareCadSketchCells(source, { ...document.parameters, fix: 3 })).toThrow('driving relation');
+    const enlarged = prepareCadSketchCells(source, { ...document.parameters, radius: 7 });
+    expect(enlarged).not.toBe(initial); expect(enlarged.cells[0].areaMm2).toBeCloseTo(49 * Math.PI, 11);
+    const moved = prepareCadSketchCells(source, { ...document.parameters, origin: 3, fix: 3 });
+    expect(moved.cells[0].boundsMm).toEqual({ minX: expect.closeTo(-2, 12), minY: expect.closeTo(-5, 12), maxX: expect.closeTo(8, 12), maxY: expect.closeTo(5, 12) });
+    expect(inspectCadSketchRegions(document, 'graph').items[0].areaMm2).toBeCloseTo(25 * Math.PI, 11);
+    expect(JSON.stringify(document)).toBe(before);
   });
 
   it('reuses actual concave and circular path containment rather than bounding boxes', () => {

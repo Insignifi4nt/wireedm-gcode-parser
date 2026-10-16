@@ -8,7 +8,7 @@ type Preview = { readonly kind: 'idle' | 'waiting' } | { readonly kind: 'ready';
   | { readonly kind: 'error'; readonly message: string };
 
 /** Keep solved sketch candidates disposable and discard late results from a different input. */
-export function useCadPreparedPreview(source: CadDocument, edits: readonly CadEdit[] | null, prepare: CadPrepareEdits | undefined, enabled: boolean): Preview {
+export function useCadPreparedPreview(source: CadDocument, edits: readonly CadEdit[] | null, prepare: CadPrepareEdits | undefined, enabled: boolean, debounceMs = 100): Preview {
   const asynchronous = Boolean(edits?.length && prepare && needsCadSketchPreparation(source, edits));
   const immediate = useMemo<Preview>(() => {
     if (!enabled || !edits?.length) return { kind: 'idle' };
@@ -26,8 +26,8 @@ export function useCadPreparedPreview(source: CadDocument, edits: readonly CadEd
       }, error => {
         if (!controller.signal.aborted) setResolved({ source, edits, prepare, preview: { kind: 'error', message: error instanceof Error ? error.message : 'This sketch edit could not be solved.' } });
       });
-    }, 100);
+    }, debounceMs);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [source, edits, prepare, enabled, asynchronous]);
+  }, [source, edits, prepare, enabled, asynchronous, debounceMs]);
   return enabled && asynchronous && resolved?.source === source && resolved.edits === edits && resolved.prepare === prepare ? resolved.preview : immediate;
 }
