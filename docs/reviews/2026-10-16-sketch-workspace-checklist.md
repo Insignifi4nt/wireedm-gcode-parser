@@ -123,6 +123,14 @@ Evidence: 54 domain/native/feedback/inspection cases, 119 editor/workbench cases
 
 This is additive CAD schema 2; older readers reject the new relation. Existing documents have no migration. No native rebuild, installed post/machine change, app version bump or remote action. Next: [position-only drawing snaps from legacy profiles](2026-10-16-sketch-legacy-profile-position-snaps-plan.md). Broader associative references, relation/topology tools and the complete sketch audit remain open; the overall goal is active and incomplete.
 
+## Checkpoint: position-only drawing snaps from legacy profiles
+
+The shared drawing snap resolver now accepts detached analytic positions from accepted legacy profiles, including construction geometry and current plugin output. Actual rounded joints, signed arc midpoints, slot cap centers and primitive centers replace any temptation to reuse edit grips or display samples. The existing chooser handles mixed graph/profile ties and legacy-only sketches. Profile hints explicitly say Position only / No relation, and contain no graph IDs, so Path joins and inferred coincidence cannot attach to them. Preparation is memoized by accepted source; source, frame, version and cancellation guards still own choices.
+
+Evidence: 34 focused pure/prepared cases and 101 related UI cases pass, with meaningful REDs before implementation and clean scoped types. Full build, documentation/discovery/schema/source distributions, shared UI and icon integration pass. The new slot-to-boss journey and two affected graph-snap journeys pass in Chromium and Firefox. Native browser acceptance separately retains exact [2.1,3.2], radius 5 and no inferred relations despite Create relations being enabled; moving the source slot leaves that circle detached. Explicit Pad builds one 125π mm³ solid without diagnostics. Four Undo operations restore the empty disposable draft, with no saved user record or preference change. [Independent review, production evidence and pending-release compatibility](2026-10-16-sketch-legacy-profile-position-snaps-review.md).
+
+No schema, storage or public tool-write change. Direct WebMCP discovery of arbitrary plugin drawing positions remains a separate gap. Next priority is completing everyday boundary editing, including deliberate middle-span Trim, ahead of broader associative references. Offset, intersecting material cells, remaining relation/tool coverage and the overall goal remain incomplete. No push, PR, merge or deployment.
+
 ## Initial findings
 
 The canvas picker initially returned a profile ID. Selecting/dragging a boundary therefore translated its whole profile. The initial constraint module recorded explicit dimensions for primitive profile sizes and preserved expressions, but had no general point/segment relationship solver. Paths and polygons exposed no dimension quantities. These were model and interaction gaps, not styling issues.

@@ -544,6 +544,54 @@ test('attaches reversed rectangle picks deliberately, follows their drivers and 
   expect(current.dirty).toBe(false); expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(following);
 });
 
+test('draws from a legacy slot position without inventing a joint, then moves the reference and saves the detached solid', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const sketch = { id: 'legacy', kind: 'sketch', name: 'Legacy reference', suppressed: false, plane: 'XY', offset: 0, profiles: [{
+    id: 'slot', name: 'Reference slot', construction: true, geometry: { kind: 'slot', x: ' slotX ', y: 3.2, length: 20, width: 6, angle: 30 }
+  }] };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'slotX', value: 2.1 }, { kind: 'add-feature', feature: sketch }
+  ] }); let current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: sketch.id } });
+  await page.getByRole('button', { name: 'Circle', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).check();
+  const profile = await page.getByRole('button', { name: 'Select Reference slot profile', exact: true }).boundingBox();
+  if (!profile) throw new Error('Legacy source geometry unavailable.');
+  const x = profile.x + profile.width / 2, y = profile.y + profile.height / 2;
+  await page.mouse.move(x, y);
+  await expect(page.locator('[data-cad-sketch-snap-kind="profile-position"]')).toBeVisible();
+  await page.mouse.click(x, y); await page.keyboard.press('Escape');
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
+  await page.mouse.click(x, y);
+  // One exact keyboard grid step sizes the circle around the acquired off-grid center.
+  await page.keyboard.press('ArrowRight'); await page.keyboard.press('Space');
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const human = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(human.profiles).toEqual(sketch.profiles); expect(human.graph.points).toEqual([{ id: expect.any(String), position: [2.1, 3.2] }]);
+  expect(human.graph.relations).toEqual([]); expect(human.graph.entities).toHaveLength(1);
+  const circle = human.graph.entities[0]; expect(circle).toMatchObject({ kind: 'circle', construction: false, centerPointId: human.graph.points[0].id });
+  expect(circle.radius).toBe(5);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await call(page, 'cad_history', { expectedVersion: current.version, direction: 'undo' }); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
+  await call(page, 'cad_history', { expectedVersion: current.version, direction: 'redo' }); current = await context(page);
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'set-parameter', name: 'slotX', value: 12.1 }] }); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  const regions = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id }); expect(regions.items).toHaveLength(1);
+  const pad = { id: 'pad', kind: 'extrude', name: 'Detached boss', suppressed: false, sketchId: sketch.id, distance: ' 5e0 ',
+    symmetric: false, operation: 'new', targetId: null, regionSelection: [regions.items[0].reference] };
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: pad }] }); current = await context(page);
+  const built = await call(page, 'cad_build', { expectedVersion: current.version }); expect(built.diagnostics).toEqual([]);
+  expect(built.bodies).toHaveLength(1); expect(built.bodies[0].volumeMm3).toBeCloseTo(Math.PI * circle.radius ** 2 * 5, 7);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current).toMatchObject({ dirty: false, parameters: { slotX: 12.1 } });
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: pad.id })).feature).toEqual(pad);
+});
+
 test('places a plate and bore from off-grid geometry snaps, then extrudes and reopens their exact independent source', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const feature = { id: 'snapped', kind: 'sketch', name: 'Snap references', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

@@ -70,6 +70,62 @@ describe('sketch canvas profile picking', () => {
     const item = [...menu?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []].find(button => new RegExp(`^Point ${point}(?:\\D|$)`).test(button.textContent ?? ''));
     if (!item) throw new Error(`Missing snap choice ${point}.`); return item;
   };
+  const legacySlot = { id: 'slot', name: 'Mounting slot', construction: false,
+    geometry: { kind: 'slot' as const, x: 2.1, y: 3.2, length: 12, width: 4, angle: 30 } };
+  const profileChoice = (name: string) => {
+    const item = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="Choose snap target actions"] [role="menuitem"]')].find(button => button.textContent?.startsWith(name));
+    if (!item) throw new Error(`Missing profile snap ${name}.`); return item;
+  };
+  it('draws a detached Path from a legacy-only slot center and retains its numeric start after the source moves', async () => {
+    const onAddPath = vi.fn(), h = await fixture([legacySlot], { tool: 'path', onAddPath });
+    await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
+    const hint = container.querySelector('[data-cad-sketch-snap-kind="profile-position"]');
+    expect(hint?.getAttribute('aria-label')).toMatch(/Mounting slot.*Center.*No relation/);
+    expect(container.querySelector('[data-cad-drawing-snap-profile="slot"]')).not.toBeNull();
+    await h.click(2.2, 3.3);
+    await h.render({ sketch: { id: 'sketch', name: 'Sketch', suppressed: false, kind: 'sketch', plane: 'XY', offset: 0,
+      profiles: [{ ...legacySlot, geometry: { ...legacySlot.geometry, x: 42.1 } }] } });
+    await h.click(30, 30, h.svg, { ctrlKey: true });
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]')!.click());
+    const draft = onAddPath.mock.calls[0]?.[0];
+    expect(draft).toMatchObject({ start: [2.1, 3.2], segments: [{ kind: 'line', end: [expect.closeTo(30, 10), expect.closeTo(30, 10)] }] });
+    expect(draft).not.toHaveProperty('startPointId'); expect(draft.segments[0]).not.toHaveProperty('endPointId');
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+  });
+  it('keeps legacy positions detached with inference enabled and preserves modifier bypass', async () => {
+    const onAddFreshSketch = vi.fn(), h = await fixture([legacySlot], { tool: 'rectangle', onAddFreshSketch });
+    await act(async () => inference().click()); await h.click(2.2, 3.3);
+    expect(container.querySelector('[data-cad-sketch-attachment]')).toBeNull();
+    await h.click(22.1, 13.2, h.svg, { ctrlKey: true });
+    expect(onAddFreshSketch).toHaveBeenNthCalledWith(1, { kind: 'rectangle', first: { kind: 'position', point: [2.1, 3.2] },
+      opposite: { kind: 'position', point: [expect.closeTo(22.1, 10), expect.closeTo(13.2, 10)] } }, expect.any(AbortSignal));
+    await h.click(2.2, 3.3, h.svg, { ctrlKey: true }); await h.click(22.2, 13.3, h.svg, { ctrlKey: true });
+    expect(onAddFreshSketch.mock.calls[1][0].first).toEqual({ kind: 'position', point: [expect.closeTo(2.2, 10), expect.closeTo(3.3, 10)] });
+    expect(h.added).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+  });
+  it('chooses among graph and legacy owners at the same position without turning the chosen profile into a graph join', async () => {
+    const onAddPath = vi.fn(), source = { ...graphSketch, profiles: [legacySlot, { ...circle('bore', 2.1, 3.2, 4), name: 'Pilot bore' }] };
+    const h = await fixture([], { sketch: source, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    await h.click(2.2, 3.3); expect(snapChoice(1)).toBeDefined(); expect(profileChoice('Pilot bore')).toBeDefined();
+    const slot = profileChoice('Mounting slot'); await act(async () => slot.focus());
+    expect(container.querySelector('[data-cad-drawing-snap-profile="slot"]')).not.toBeNull();
+    expect(container.querySelector('[data-cad-sketch-snap-kind="profile-position"]')?.getAttribute('aria-label')).toMatch(/No relation/);
+    expect(h.selected).not.toHaveBeenCalled(); await act(async () => slot.click());
+    await h.click(40, 30, h.svg, { ctrlKey: true }); await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]')!.click());
+    expect(onAddPath.mock.calls[0][0]).toMatchObject({ start: [2.1, 3.2] }); expect(onAddPath.mock.calls[0][0]).not.toHaveProperty('startPointId');
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+  });
+  it('invalidates legacy-only ambiguous ownership on source replacement and dismisses outside without placing', async () => {
+    const profiles = [legacySlot, { ...circle('bore', 2.1, 3.2, 4), name: 'Pilot bore' }], onAddPath = vi.fn();
+    const h = await fixture(profiles, { tool: 'path', onAddPath, documentVersion: 'one' });
+    await h.click(2.2, 3.3); const stale = profileChoice('Mounting slot');
+    await h.render({ documentVersion: 'two' }); await act(async () => stale.click());
+    expect(h.pending).toHaveBeenLastCalledWith(false); expect(container.querySelector('[aria-label="Finish path"]')).toBeNull();
+    await h.click(2.2, 3.3); expect(profileChoice('Pilot bore')).toBeDefined();
+    await h.pointer('pointerdown', { ...h.position(50, 50), button: 0, buttons: 1 }); await h.click(50, 50);
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull(); expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect(container.querySelector('[aria-label="Finish path"]')).toBeNull(); expect(onAddPath).not.toHaveBeenCalled();
+  });
   it('requires the chosen exact Path identity and preserves its first point when an ambiguous endpoint is dismissed', async () => {
     const onAddPath = vi.fn(), source = ambiguousSketch(), h = await fixture([], { sketch: source, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
     const before = h.frame(); await h.click(2.2, 3.3);

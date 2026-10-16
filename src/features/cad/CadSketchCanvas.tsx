@@ -15,6 +15,8 @@ import { CadSketchProfileGeometry } from './CadSketchProfileGeometry';
 import { createCadSketchHandlePicker, createCadSketchProfilePicker, type CadSketchHandlePick } from './cadSketchPicking';
 import { cadPathDraftEndpoint, closeCadPathDraft, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, updateCadPathDraft, type CadPathDraft, type CadPathDrawingAction } from './cadPathDrawing';
 import { prepareCadSketchGeometrySnaps, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
+import { prepareCadSketchProfilePositionSnaps } from './cadSketchProfilePositionSnaps';
+import { cadSketchProfileSnapLabel } from './cadSketchSnapLabels';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
 import { CadSketchSnapChooser } from './CadSketchSnapChooser';
 import { CadPathDraftGeometry, CadPathSegmentGeometry } from './CadPathDraftGeometry';
@@ -213,6 +215,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     return false;
   };
   const sourceGraph = useMemo(() => sourceSketch.kind === 'sketch' && sourceSketch.graph ? prepareCadSketchGraphInteraction(sourceSketch.graph, graphSourceParameters) : null, [sourceSketch, graphSourceParameters]);
+  const sourceProfiles = sourceSketch.kind === 'sketch' ? sourceSketch.profiles : NO_PROFILES;
+  const profileSnapSources = useMemo(() => prepareCadSketchProfilePositionSnaps({ profiles: sourceProfiles, parameters: graphSourceParameters }), [sourceProfiles, graphSourceParameters]);
+  const drawingSnaps = useMemo(() => prepareCadSketchGeometrySnaps(sourceGraph ? { graph: sourceGraph.graph, points: sourceGraph.points, segments: sourceGraph.geometry.segments } : undefined,
+    profileSnapSources), [sourceGraph, profileSnapSources]);
   const visualGraph = useMemo(() => sketch === sourceSketch && parameters === graphSourceParameters ? sourceGraph
     : sketch.kind === 'sketch' && sketch.graph ? prepareCadSketchGraphInteraction(sketch.graph, parameters) : null, [sketch, sourceSketch, parameters, graphSourceParameters, sourceGraph]);
   const graphGeometry = useMemo(() => visualGraph && sketch.kind === 'sketch' ? { ...visualGraph.geometry, constructionIds: new Set(sketch.graph?.entities.filter(entity => entity.construction).map(entity => entity.id)) } : null, [visualGraph, sketch]);
@@ -264,7 +270,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         const closure = snapDraftStart({ cursor: raw, mmPerPixel, draftStart });
         if (closure.kind === 'hit') return { point: closure.candidate.point, candidate: closure.candidate };
       }
-      const result = (snap && sourceGraph ? sourceGraph.snap : snapDraftStart)({ cursor: raw, mmPerPixel, draftStart });
+      const result = (snap ? drawingSnaps : snapDraftStart)({ cursor: raw, mmPerPixel, draftStart });
       if (result.kind === 'hit') return drawingCandidate(result.candidate);
       if (result.kind === 'ambiguous') return { point: raw, candidates: result.candidates };
     }
@@ -277,7 +283,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const canInfer = freshDrawing && Boolean(onAddFreshSketch);
   const inferencePoint = canInfer && inferCoincidence && !(tool === 'circle' && picks.length) && snapHint && 'pointId' in snapHint.target ? snapHint.target.pointId : undefined;
   const snapLabel = inferencePoint ? `Coincident with Point ${(sourceGraph?.graph.points.findIndex(point => point.id === inferencePoint) ?? -1) + 1}`
-    : snapHint ? snapHint.target.kind === 'draft-start' ? tool === 'polygon' ? 'Close profile' : 'Path start'
+    : snapHint ? snapHint.target.kind === 'profile-position' ? `${cadSketchProfileSnapLabel(snapHint.target, sourceProfiles)} · Position only · No relation`
+    : snapHint.target.kind === 'draft-start' ? tool === 'polygon' ? 'Close profile' : 'Path start'
     : cursorPick.existingPointId ? `Join ${snapHint.target.kind}` : `${snapHint.target.kind[0].toUpperCase()}${snapHint.target.kind.slice(1)} position · No relation` : '';
   const snapHighlight: CadSketchGraphSelection | null = snapHint && 'pointId' in snapHint.target ? { kind: 'point', id: snapHint.target.pointId }
     : snapHint?.target.kind === 'midpoint' ? { kind: 'entity', id: snapHint.target.entityId } : null;
@@ -385,16 +392,18 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   };
   // Identity pins the complete accepted source, unfinished drawing and camera.
   // Cursor movement over the menu does not change the captured drawing intent.
-  const drawingOwner = useMemo(() => ({ sourceSketch, sourceGraph, parameters: graphSourceParameters, document: graphControls?.document,
+  const drawingOwner = useMemo(() => ({ sourceSketch, drawingSnaps, parameters: graphSourceParameters, document: graphControls?.document,
     documentVersion, tool, picks, pathDraft, inferCoincidence, snap, gridStep, cancelSignal, spatialFrameKey,
     pathAvailable: Boolean(onAddPath), freshAvailable: Boolean(onAddFreshSketch) }),
-  [sourceSketch, sourceGraph, graphSourceParameters, graphControls?.document, documentVersion, tool, picks, pathDraft, inferCoincidence, snap, gridStep, cancelSignal, spatialFrameKey, Boolean(onAddPath), Boolean(onAddFreshSketch)]);
+  [sourceSketch, drawingSnaps, graphSourceParameters, graphControls?.document, documentVersion, tool, picks, pathDraft, inferCoincidence, snap, gridStep, cancelSignal, spatialFrameKey, Boolean(onAddPath), Boolean(onAddFreshSketch)]);
   const choiceEnvironment = useRef({ owner: drawingOwner, locked: false });
   // Our own drawing pending locks navigation; viewLocked must not dismiss its chooser.
   choiceEnvironment.current = { owner: drawingOwner, locked: baseInteractionLocked || overlapPending || isPreview };
   const choiceIsCurrent = (choice: DrawingSnapChoice) => choice.owner === choiceEnvironment.current.owner && !choiceEnvironment.current.locked
     && projectSelection(choice)?.frame === choice.frame;
   const currentSnapChoice = snapChoice && choiceIsCurrent(snapChoice) ? snapChoice : null;
+  const profileSnapTarget = (currentSnapChoice ? choiceHighlight : snapHint)?.target;
+  const snapProfile = profileSnapTarget?.kind === 'profile-position' ? sourceProfiles.find(profile => profile.id === profileSnapTarget.profileId) : undefined;
   const choicePointId = choiceHighlight && 'pointId' in choiceHighlight.target ? choiceHighlight.target.pointId : undefined;
   const closeSnapChoice = useCallback(() => { setSnapChoice(null); setChoiceHighlight(null); svg.current?.focus({ preventScroll: true }); }, []);
   useLayoutEffect(() => { if (snapChoice && !currentSnapChoice) closeSnapChoice(); }, [snapChoice, currentSnapChoice, closeSnapChoice]);
@@ -652,7 +661,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     if (interactionLocked) return;
     if (!pick.candidates) { placePoint(pick.point, pick.existingPointId, pick.candidate); return; }
     const bounds = svg.current?.getBoundingClientRect();
-    if (!sourceGraph || !bounds?.width || !bounds.height || !attachedSourceCurrent()) return;
+    if (!bounds?.width || !bounds.height || !attachedSourceCurrent()) return;
     const at = anchor ?? { clientX: bounds.left + bounds.width / 2 + (pick.point[0] - center[0]) / width * bounds.width,
       clientY: bounds.top + bounds.height / 2 - (pick.point[1] - center[1]) / span * bounds.height };
     const projected = projectSelection(at); if (!projected) return;
@@ -840,7 +849,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
                 : <path d={cadArcSvgPath(boundary, center)} />}
           </g>;
         })}
-        {profiles.map((profile) => <g key={profile.id} role="button" aria-label={`Select ${profile.name} profile`} aria-pressed={profile.id === selectedProfileId && detailSelection.kind === 'profile'} transform={dragPreview?.profile.id === profile.id && !dragPreview.handle ? `translate(${dragPreview.translation[0]} ${dragPreview.translation[1]})` : undefined} tabIndex={tool === 'select' && pickFilter === 'auto' && !interactionLocked ? 0 : -1} data-cad-parameter-highlight={inspection?.profileIds.includes(profile.id) ? profile.id : undefined} className={`cad-profile ${profile.construction ? 'is-construction' : ''} ${profile.id === selectedProfileId && detailSelection.kind === 'profile' ? 'is-selected' : ''} ${inspection?.profileIds.includes(profile.id) ? 'is-parameter-highlighted' : ''}`} strokeDasharray={profile.construction ? `${span / 80} ${span / 120}` : undefined} onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && tool === 'select' && pickFilter === 'auto' && !interactionLocked) { event.preventDefault(); event.stopPropagation(); setActiveHandle(null); onSelectProfile(profile.id); } }} onClick={(event) => { if (event.detail === 0 && event.button === 0 && tool === 'select' && pickFilter === 'auto' && !interactionLocked) { event.stopPropagation(); setActiveHandle(null); onSelectProfile(profile.id); } }}><CadSketchProfileGeometry geometry={dragPreview?.handle && dragPreview.profile.id === profile.id ? dragPreview.profile.geometry : profile.geometry} parameters={parameters} viewCenter={center} /></g>)}
+        {profiles.map((profile) => <g key={profile.id} role="button" aria-label={`Select ${profile.name} profile`} aria-pressed={profile.id === selectedProfileId && detailSelection.kind === 'profile'} transform={dragPreview?.profile.id === profile.id && !dragPreview.handle ? `translate(${dragPreview.translation[0]} ${dragPreview.translation[1]})` : undefined} tabIndex={tool === 'select' && pickFilter === 'auto' && !interactionLocked ? 0 : -1} data-cad-parameter-highlight={inspection?.profileIds.includes(profile.id) ? profile.id : undefined} data-cad-drawing-snap-profile={snapProfile?.id === profile.id ? profile.id : undefined}
+          className={`cad-profile ${profile.construction ? 'is-construction' : ''} ${profile.id === selectedProfileId && detailSelection.kind === 'profile' ? 'is-selected' : ''} ${inspection?.profileIds.includes(profile.id) ? 'is-parameter-highlighted' : ''} ${snapProfile?.id === profile.id ? 'cad-sketch-entity is-pick-highlighted' : ''}`} strokeDasharray={profile.construction ? `${span / 80} ${span / 120}` : undefined} onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && tool === 'select' && pickFilter === 'auto' && !interactionLocked) { event.preventDefault(); event.stopPropagation(); setActiveHandle(null); onSelectProfile(profile.id); } }} onClick={(event) => { if (event.detail === 0 && event.button === 0 && tool === 'select' && pickFilter === 'auto' && !interactionLocked) { event.stopPropagation(); setActiveHandle(null); onSelectProfile(profile.id); } }}><CadSketchProfileGeometry geometry={dragPreview?.handle && dragPreview.profile.id === profile.id ? dragPreview.profile.geometry : profile.geometry} parameters={parameters} viewCenter={center} /></g>)}
         {tool === 'select' && pickFilter === 'auto' && onMoveHandle && !isPreview && !externalInteractionLocked && <g className="cad-sketch-handles">
           {displayHandles.map(grip => {
             const key = `${grip.profileId}/${cadSketchHandleKey(grip.handle)}`;
@@ -893,7 +903,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
                   : <path d={cadArcSvgPath(boundary, center)} />}</g>;
           })}
           <CadSketchSnapHint candidate={choiceHighlight} center={center} scaleX={width / (viewportSize.width || 800)} scaleY={span / (viewportSize.height || 600)}
-            label={choicePointId === undefined ? 'Choose midpoint' : `Choose Point ${(sourceGraph?.graph.points.findIndex(point => point.id === choicePointId) ?? -1) + 1}`} />
+            label={choiceHighlight.target.kind === 'profile-position' ? `${cadSketchProfileSnapLabel(choiceHighlight.target, sourceProfiles)} · Position only · No relation`
+              : choicePointId === undefined ? 'Choose midpoint' : `Choose Point ${(sourceGraph?.graph.points.findIndex(point => point.id === choicePointId) ?? -1) + 1}`} />
         </g>}
         {points.map(([x, y], index) => <circle key={index} cx={x - center[0]} cy={y - center[1]} r={span / 170} className="cad-sketch-vertex" />)}
         {picks.filter(pick => pick.kind === 'coincident').map(pick => <circle key={pick.relationId} data-cad-sketch-attachment={pick.sourcePointId}
@@ -904,7 +915,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         x={Math.min(boxSelection.box.start[0], boxSelection.box.end[0]) - center[0]} y={center[1] - Math.max(boxSelection.box.start[1], boxSelection.box.end[1])}
         width={Math.abs(boxSelection.box.end[0] - boxSelection.box.start[0])} height={Math.abs(boxSelection.box.end[1] - boxSelection.box.start[1])} />}
     </svg>
-    {currentSnapChoice && sourceGraph && <CadSketchSnapChooser anchor={{ x: currentSnapChoice.clientX, y: currentSnapChoice.clientY }} candidates={currentSnapChoice.candidates} graph={sourceGraph.graph}
+    {currentSnapChoice && <CadSketchSnapChooser anchor={{ x: currentSnapChoice.clientX, y: currentSnapChoice.clientY }} candidates={currentSnapChoice.candidates} graph={sourceGraph?.graph} profiles={sourceProfiles}
       onClose={closeSnapChoice} onHighlight={candidate => { if (choiceIsCurrent(currentSnapChoice)) setChoiceHighlight(candidate); }}
       onChoose={candidate => { if (choiceIsCurrent(currentSnapChoice)) placeChosen.current(candidate); }}
       onOutsidePointerDown={event => { suppressProfileClick.current = true; event.preventDefault(); event.stopPropagation(); }} />}

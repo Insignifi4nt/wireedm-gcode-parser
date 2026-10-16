@@ -5,11 +5,22 @@ import { pointOnArcAtParameter } from '@/domain/path-intel/segments';
 import type { PathSegment } from '@/domain/path-intel/types';
 import type { SketchPoint } from './cadSketchInteraction';
 
+export type CadSketchProfileSnapLocation =
+  | { readonly kind: 'center' }
+  | { readonly kind: 'endpoint'; readonly boundaryIndex: number }
+  | { readonly kind: 'midpoint'; readonly boundaryIndex: number }
+  | { readonly kind: 'arc-center'; readonly boundaryIndex: number };
+export interface CadSketchProfilePositionSnapSource {
+  readonly profileId: string;
+  readonly location: CadSketchProfileSnapLocation;
+  readonly point: SketchPoint;
+}
 export type CadSketchSnapTarget =
   | { readonly kind: 'endpoint'; readonly pointId: string }
   | { readonly kind: 'center'; readonly pointId: string }
   | { readonly kind: 'point'; readonly pointId: string }
   | { readonly kind: 'midpoint'; readonly entityId: string }
+  | { readonly kind: 'profile-position'; readonly profileId: string; readonly location: CadSketchProfileSnapLocation }
   | { readonly kind: 'draft-start' };
 export interface CadSketchSnapCandidate {
   readonly target: CadSketchSnapTarget;
@@ -33,7 +44,8 @@ export interface CadSketchSnapQuery {
 const NONE: CadSketchSnapResult = Object.freeze({ kind: 'none' });
 function copyPoint(point: SketchPoint): SketchPoint { return Object.freeze([point[0], point[1]] satisfies [number, number]); }
 function targetKey(target: CadSketchSnapTarget): string {
-  return target.kind === 'draft-start' ? 'draft-start' : target.kind === 'midpoint' ? `midpoint:${target.entityId}` : `${target.kind}:${target.pointId}`;
+  return target.kind === 'profile-position' ? `profile-position:${target.profileId}:${target.location.kind}:${'boundaryIndex' in target.location ? target.location.boundaryIndex : ''}`
+    : target.kind === 'draft-start' ? 'draft-start' : target.kind === 'midpoint' ? `midpoint:${target.entityId}` : `${target.kind}:${target.pointId}`;
 }
 interface PointOwner { readonly entityId: string; readonly kind: 'endpoint' | 'center' }
 type SourceCandidate =
@@ -45,7 +57,9 @@ export function prepareCadSketchGeometrySnaps(source?: {
   readonly graph: CadSketchGraph;
   readonly points: readonly { readonly id: string; readonly position: SketchPoint }[];
   readonly segments: readonly PathSegment[];
-}): (query: CadSketchSnapQuery) => CadSketchSnapResult {
+}, profilePositions: readonly CadSketchProfilePositionSnapSource[] = []): (query: CadSketchSnapQuery) => CadSketchSnapResult {
+  const profileCandidates = profilePositions.map(source => ({ profileId: source.profileId,
+    location: Object.freeze({ ...source.location }), point: copyPoint(source.point) }));
   const owners = new Map<string, PointOwner[]>();
   for (const entity of source?.graph.entities ?? []) {
     for (const pointId of cadSketchEntityPointIds(entity)) {
@@ -96,6 +110,8 @@ export function prepareCadSketchGeometrySnaps(source?: {
         if (kind) add({ kind, pointId: candidate.pointId }, candidate.point, eligible.map(owner => owner.entityId));
       }
     }
+    if (permitted('profile-position')) for (const candidate of profileCandidates)
+      add({ kind: 'profile-position', profileId: candidate.profileId, location: candidate.location }, candidate.point, []);
     // A bound start already competes as its exact source point. Stale references
     // never become a fresh closure target with invented identity.
     if (draftStart?.pointId === undefined && draftStart && permitted('draft-start')) add({ kind: 'draft-start' }, draftStart.point, []);

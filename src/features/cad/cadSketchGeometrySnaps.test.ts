@@ -3,9 +3,49 @@ import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadPathClosureTolerance } from '@/domain/cad/cadAnalyticSegments';
 import { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
-import { prepareCadSketchGeometrySnaps } from './cadSketchGeometrySnaps';
+import { prepareCadSketchGeometrySnaps, type CadSketchProfilePositionSnapSource } from './cadSketchGeometrySnaps';
 
 describe('prepared sketch geometry snaps', () => {
+  it('retains profile position intent beside exact graph points and only suppresses graph midpoints', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'owned', position: [10, 0] }],
+      entities: [{ id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [] });
+    const prepared = prepareCadSketchGraphInteraction(graph, {}), profileSources: readonly CadSketchProfilePositionSnapSource[] = [
+      { profileId: 'second', location: { kind: 'center' }, point: [10, 0] },
+      { profileId: 'first', location: { kind: 'midpoint', boundaryIndex: 4 }, point: [10, 0] }
+    ];
+    for (const sources of [profileSources, [...profileSources].reverse()]) {
+      const snap = prepareCadSketchGeometrySnaps({ graph, points: prepared.points, segments: prepared.geometry.segments }, sources);
+      const result = snap({ cursor: [10, 0], mmPerPixel: [1, 1] });
+      if (result.kind !== 'ambiguous') throw new Error('Distinct topology and numeric profile intents must remain selectable.');
+      expect(result.candidates.map(candidate => candidate.target)).toEqual([
+        { kind: 'point', pointId: 'owned' },
+        { kind: 'profile-position', profileId: 'first', location: { kind: 'midpoint', boundaryIndex: 4 } },
+        { kind: 'profile-position', profileId: 'second', location: { kind: 'center' } }
+      ]);
+      expect(result.candidates.slice(1).every(candidate => candidate.entityIds.length === 0)).toBe(true);
+      expect(snap({ cursor: [10, 0], mmPerPixel: [1, 1], kinds: ['point'] })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'point', pointId: 'owned' } } });
+    }
+  });
+
+  it('ranks detached legacy-only sources by screen metric without creating graph identities', () => {
+    const firstPoint: [number, number] = [.4, 0], firstLocation = { kind: 'endpoint' as const, boundaryIndex: 2 };
+    const sources = [{ profileId: 'near-world', location: firstLocation, point: firstPoint },
+      { profileId: 'near-screen', location: { kind: 'center' as const }, point: [0, 2.125] as const }];
+    const snap = prepareCadSketchGeometrySnaps(undefined, sources);
+    firstPoint[0] = 999; firstLocation.boundaryIndex = 99; sources.reverse();
+    expect(snap({ cursor: [0, 0], mmPerPixel: [.1, 1] })).toEqual({ kind: 'hit', candidate: {
+      target: { kind: 'profile-position', profileId: 'near-screen', location: { kind: 'center' } }, point: [0, 2.125], distancePx: 2.125, entityIds: []
+    } });
+    const result = snap({ cursor: [.4, 0], mmPerPixel: [.01, .01], kinds: ['profile-position'], excludePointIds: ['near-world'], excludeEntityIds: ['near-world'] });
+    expect(result).toMatchObject({ kind: 'hit', candidate: { target: {
+      kind: 'profile-position', profileId: 'near-world', location: { kind: 'endpoint', boundaryIndex: 2 }
+    }, point: [.4, 0], entityIds: [] } });
+    if (result.kind !== 'hit' || result.candidate.target.kind !== 'profile-position') throw new Error('Expected a detached numeric profile target.');
+    expect('pointId' in result.candidate.target).toBe(false); expect('entityId' in result.candidate.target).toBe(false);
+    expect(Reflect.set(result.candidate.target.location, 'boundaryIndex', 7)).toBe(false);
+    expect(Reflect.set(result.candidate.point, '0', 7)).toBe(false);
+  });
+
   it('ranks actual X/Y screen distance independently of source order and retains exact off-grid coordinates', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'near-world', position: [.4, 0] }, { id: 'near-screen', position: [0, 2.125] }], entities: [], relations: [] });
     for (const points of [graph.points, [...graph.points].reverse()]) {
