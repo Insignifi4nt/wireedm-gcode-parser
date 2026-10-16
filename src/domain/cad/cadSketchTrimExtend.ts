@@ -10,7 +10,7 @@ import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from './cadSket
 import { resolveCadSketchGraphJoints, resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
 import { evaluateCadScalar } from './cadExpression';
 import { classifyLineRayPathSegmentIntersection, classifyParameterizedPathSegmentIntersection } from '@/domain/path-intel/intersections';
-import { createArcSegment, createLineSegment, pointOnArcAtParameter } from '@/domain/path-intel/segments';
+import { createArcSegment, createCircleSegment, createLineSegment, pointOnArcAtParameter } from '@/domain/path-intel/segments';
 import type { ArcPathSegment, CirclePathSegment, LinePathSegment, PathSegment, Point2 } from '@/domain/path-intel/types';
 
 const strict = { additionalProperties: false }, id = CadIdentifierSchema;
@@ -31,17 +31,27 @@ export type CadSketchTrimTarget = Immutable<Static<typeof CadSketchTrimTargetSch
 export type CadSketchEndTrimTarget = Extract<CadSketchTrimTarget, { kind: 'end' }>;
 export type CadSketchMiddleTrimTarget = Extract<CadSketchTrimTarget, { kind: 'middle' }>;
 export type CadSketchCircleTrimTarget = Extract<CadSketchTrimTarget, { kind: 'circle' }>;
-export const CadSketchExtendTargetSchema = Type.Object({ kind: Type.Literal('line'), entityId: id,
+export const CadSketchExtendTargetSchema = Type.Object({ kind: Type.Union([Type.Literal('line'), Type.Literal('arc')]), entityId: id,
   end: Type.Union([Type.Literal('start'), Type.Literal('end')]),
   boundary: Type.Object({ ...boundary.properties, parameter: Type.Number() }, strict), endPointId: id }, strict);
 export type CadSketchExtendTarget = Immutable<Static<typeof CadSketchExtendTargetSchema>>;
-export interface CadSketchLineExtendPreparation {
-  readonly target: Omit<CadSketchExtendTarget, 'endPointId'>;
-  readonly added: LinePathSegment;
-  readonly extended: LinePathSegment;
+export type CadSketchLineExtendTarget = CadSketchExtendTarget & { readonly kind: 'line' };
+export type CadSketchArcExtendTarget = CadSketchExtendTarget & { readonly kind: 'arc' };
+interface ExtendContact {
   readonly boundary: PathSegment;
   readonly point: readonly [number, number];
 }
+export interface CadSketchLineExtendPreparation extends ExtendContact {
+  readonly target: Omit<CadSketchLineExtendTarget, 'endPointId'>;
+  readonly added: LinePathSegment;
+  readonly extended: LinePathSegment;
+}
+export interface CadSketchArcExtendPreparation extends ExtendContact {
+  readonly target: Omit<CadSketchArcExtendTarget, 'endPointId'>;
+  readonly added: ArcPathSegment;
+  readonly extended: ArcPathSegment;
+}
+export type CadSketchExtendPreparation = CadSketchLineExtendPreparation | CadSketchArcExtendPreparation;
 export interface CadSketchExtendResult {
   readonly graph: CadSketchGraph;
   readonly retainedEntityId: string;
@@ -107,10 +117,10 @@ type OpenSegment = Exclude<PathSegment, { kind: 'circle' }>;
 type SourceLine = Extract<CadSketchGraph['entities'][number], { kind: 'line' }>;
 type Witness = CadSketchEndTrimTarget['boundary'];
 interface Event { witness: Witness; boundary: PathSegment; point: Point2 }
-type BoundaryQuery = { kind: 'trim'; segment: PathSegment } | { kind: 'extend'; segment: LinePathSegment; end: 'start' | 'end' };
+type BoundaryQuery = { kind: 'trim'; segment: PathSegment } | { kind: 'extend'; segment: OpenSegment; end: 'start' | 'end' };
 const fullTurn = 2 * Math.PI;
 const precision = (operation: 'trim' | 'extend' = 'trim') => new CadError(`sketch-${operation}-precision`,
-  operation === 'trim' ? 'This intersection cannot leave an exact nondegenerate trim at these coordinates.' : 'This intersection cannot produce an exact nondegenerate line extension at these coordinates.');
+  operation === 'trim' ? 'This intersection cannot leave an exact nondegenerate trim at these coordinates.' : 'This intersection cannot produce an exact nondegenerate extension at these coordinates.');
 const ambiguous = (operation: 'trim' | 'extend' = 'trim') => new CadError(`ambiguous-sketch-${operation}`,
   `${operation === 'trim' ? 'Trim' : 'Extend'} needs a unique transverse intersection; overlapping, tangent or undeclared coincident boundaries need explicit repair.`);
 function freezeData(value: unknown): void {
@@ -124,6 +134,16 @@ function at(segment: OpenSegment, t: number): Point2 {
     : pointOnArcAtParameter(segment, { segmentId: segment.id, reversed: false }, t);
 }
 function distance(a: Readonly<Point2>, b: Readonly<Point2>): number { return Math.hypot(a.x - b.x, a.y - b.y); }
+function arcOutwardParameter(segment: ArcPathSegment, point: Readonly<Point2>, end: 'start' | 'end'): number {
+  const endpoint = end === 'start' ? segment.start : segment.end;
+  const a = { x: endpoint.x - segment.center.x, y: endpoint.y - segment.center.y }, b = { x: point.x - segment.center.x, y: point.y - segment.center.y };
+  const sense = (segment.clockwise ? -1 : 1) * (end === 'start' ? -1 : 1), cross = sense * (a.x * b.y - a.y * b.x);
+  let angle = Math.atan2(cross, a.x * b.x + a.y * b.y);
+  if (angle < 0) angle += fullTurn;
+  const t = end === 'start' ? -angle / Math.abs(segment.sweepRadians) : 1 + angle / Math.abs(segment.sweepRadians);
+  if (!Number.isFinite(t) || angle === fullTurn || angle === 0 && cross !== 0 || angle > 0 && t === (end === 'start' ? 0 : 1)) throw precision('extend');
+  return t === 0 ? 0 : t;
+}
 /** Circle Trim's fixed +X/CCW phase. A cursor direction is not a support-membership certificate. */
 export function cadSketchCircleTrimParameter(segment: CirclePathSegment, point: Readonly<Point2>): number | null {
   const x = point.x - segment.center.x, y = point.y - segment.center.y;
@@ -211,7 +231,7 @@ function circlePieces(circle: CirclePathSegment, previous: Event, next: Event): 
   if (Math.abs(removed.sweepRadians + survivor.sweepRadians - fullTurn) * circle.radius > tolerance) throw precision();
   return [removed, survivor];
 }
-function checkMiddleArcPiece(source: ArcPathSegment, piece: ArcPathSegment, expected: number, tolerance: number): void {
+function checkArcPiece(source: ArcPathSegment, piece: ArcPathSegment, expected: number, tolerance: number, operation: 'trim' | 'extend' = 'trim'): void {
   const a = { x: piece.start.x - source.center.x, y: piece.start.y - source.center.y }, b = { x: piece.end.x - source.center.x, y: piece.end.y - source.center.y };
   const direction = source.clockwise ? -1 : 1, cross = direction * (a.x * b.y - a.y * b.x), dot = a.x * b.x + a.y * b.y;
   const sweep = direction * piece.sweepRadians;
@@ -219,7 +239,7 @@ function checkMiddleArcPiece(source: ArcPathSegment, piece: ArcPathSegment, expe
     || distance(piece.center, source.center) > tolerance || Math.abs(piece.radius - source.radius) > tolerance
     || Math.abs(distance(piece.center, piece.start) - source.radius) > tolerance || Math.abs(distance(piece.center, piece.end) - source.radius) > tolerance
     || Math.abs(piece.sweepRadians - expected) >= Math.PI || Math.abs(piece.sweepRadians - expected) * source.radius > tolerance
-    || cross > 0 && sweep >= Math.PI || cross < 0 && sweep <= Math.PI || cross === 0 && dot >= 0) throw precision();
+    || cross > 0 && sweep >= Math.PI || cross < 0 && sweep <= Math.PI || cross === 0 && dot >= 0) throw precision(operation);
 }
 function middleArcPieces(segment: ArcPathSegment, left: Event, right: Event) {
   const make = (start: Point2, end: Point2) => createArcSegment({ id: segment.id, source: segment.source, center: segment.center,
@@ -228,7 +248,7 @@ function middleArcPieces(segment: ArcPathSegment, left: Event, right: Event) {
   const expected = [segment.sweepRadians * left.witness.parameter, segment.sweepRadians * (right.witness.parameter - left.witness.parameter),
     segment.sweepRadians * (1 - right.witness.parameter)];
   const tolerance = cadPathClosureTolerance([segment.center, segment.start, left.point, right.point, segment.end]);
-  for (const [index, piece] of [before, removed, after].entries()) checkMiddleArcPiece(segment, piece, expected[index], tolerance);
+  for (const [index, piece] of [before, removed, after].entries()) checkArcPiece(segment, piece, expected[index], tolerance);
   if (Math.abs(before.sweepRadians + removed.sweepRadians + after.sweepRadians - segment.sweepRadians) * segment.radius > tolerance) throw precision();
   return { removed, survivors: [before, after] as const };
 }
@@ -237,32 +257,61 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
   const { segment } = query, operation = query.kind;
   const numericPoints = new Map(graph.points.map(point => [point.id, { x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters) }]));
   const joint = resolveCadSketchGraphJoints(graph, numericPoints), events: Event[] = [];
+  const support = query.kind === 'extend' && segment.kind === 'arc'
+    ? createCircleSegment({ id: segment.id, source: segment.source, center: segment.center, radius: segment.radius }) : null;
   for (const other of segments) {
     if (other.id === segment.id) continue;
-    const tolerance = cadPathClosureTolerance([...extent(segment), ...extent(other)]);
-    const result = query.kind === 'trim' ? classifyParameterizedPathSegmentIntersection(segment, other, tolerance)
-      : classifyLineRayPathSegmentIntersection(query.segment, other, query.end, tolerance);
+    const tolerance = cadPathClosureTolerance([...extent(support ?? segment), ...extent(other)]);
+    const result = query.kind === 'extend' && query.segment.kind === 'line' ? classifyLineRayPathSegmentIntersection(query.segment, other, query.end, tolerance)
+      : classifyParameterizedPathSegmentIntersection(support ?? segment, other, tolerance);
     if (result.kind === 'overlap') throw ambiguous(operation);
     if (result.kind !== 'points') continue;
-    const hits = result.points.map(hit => ({ hit, parameter: segment.kind === 'circle' ? cadSketchCircleTrimParameter(segment, hit.point) : hit.leftParameter }))
+    const hits = result.points.map(hit => ({ hit, parameter: query.kind === 'extend' && segment.kind === 'arc' ? arcOutwardParameter(segment, hit.point, query.end)
+      : segment.kind === 'circle' ? cadSketchCircleTrimParameter(segment, hit.point) : hit.leftParameter }))
       .sort((a, b) => (a.parameter ?? -1) - (b.parameter ?? -1));
     for (const [index, candidate] of hits.entries()) {
       const { hit, parameter: t } = candidate;
       if (t === null || !Number.isFinite(t)) throw precision(operation);
       if (query.kind === 'trim' ? t < 0 || t > 1 : query.end === 'start' ? t > 0 : t < 1) throw precision(operation);
-      const point = segment.kind === 'circle' ? hit.point : at(segment, t);
+      const total = query.kind === 'extend' && segment.kind === 'arc' ? Math.abs(segment.sweepRadians) * (query.end === 'start' ? 1 - t : t) : null;
+      if (total !== null && total > fullTurn) continue;
+      const point = segment.kind === 'circle' || support ? hit.point : at(segment, t);
       if (distance(point, hit.point) > tolerance) throw precision(operation);
-      if (segment.kind === 'circle' && Math.abs(distance(point, segment.center) - segment.radius) > tolerance) throw precision(operation);
+      if ((segment.kind === 'circle' || support) && segment.kind !== 'line' && Math.abs(distance(point, segment.center) - segment.radius) > tolerance) throw precision(operation);
+      const boundaryEntity = graph.entities.find(item => item.id === other.id);
+      const endpointPointId = boundaryEntity && boundaryEntity.kind !== 'circle'
+        ? hit.rightParameter === 0 ? boundaryEntity.startPointId : hit.rightParameter === 1 ? boundaryEntity.endPointId : undefined : undefined;
+      if (query.kind === 'extend' && segment.kind === 'arc') {
+        const entity = graph.entities.find(entity => entity.id === segment.id);
+        if (!entity || entity.kind !== 'arc') throw precision(operation);
+        const current = query.end === 'start' ? segment.start : segment.end, opposite = query.end === 'start' ? segment.end : segment.start;
+        const same = (position: Point2, id: string): boolean => {
+          if (point.x === position.x && point.y === position.y || endpointPointId !== undefined && joint(endpointPointId) === joint(id)) return true;
+          if (other.kind !== 'line' || boundaryEntity?.kind !== 'line' || hit.rightParameter === null) return false;
+          const parameter = hit.rightParameter;
+          const dx = other.end.x - other.start.x, dy = other.end.y - other.start.y;
+          const closest = -((other.start.x - segment.center.x) * dx + (other.start.y - segment.center.y) * dy) / (dx * dx + dy * dy);
+          // A declared common endpoint names one analytic root, not its nearby sibling.
+          return [boundaryEntity.startPointId, boundaryEntity.endPointId].some((pointId, index) => {
+            const saved = numericPoints.get(pointId);
+            return joint(pointId) === joint(id) && saved !== undefined && distance(saved, point) <= tolerance
+              && Math.sign(index - closest) === Math.sign(parameter - closest);
+          });
+        };
+        if (same(opposite, query.end === 'start' ? entity.endPointId : entity.startPointId)) continue;
+        if (total === fullTurn) throw precision(operation);
+        if (t === (query.end === 'start' ? 0 : 1)) {
+          if (same(current, query.end === 'start' ? entity.startPointId : entity.endPointId)) continue;
+          throw precision(operation);
+        }
+      }
       if (other.kind === 'circle') {
         if (Math.abs(distance(point, other.center) - other.radius) > tolerance) throw precision(operation);
       } else if (hit.rightParameter === null || hit.rightParameter < 0 || hit.rightParameter > 1
         || distance(point, at(other, hit.rightParameter)) > tolerance) throw precision(operation);
       const u = tangent(segment, point, operation), v = tangent(other, point, operation);
       if (Math.abs(u.x * v.y - u.y * v.x) <= 64 * Number.EPSILON) throw ambiguous(operation);
-      if (query.kind === 'trim' ? segment.kind !== 'circle' && (t === 0 || t === 1) : t === (query.end === 'start' ? 0 : 1)) continue;
-      const boundaryEntity = graph.entities.find(item => item.id === other.id);
-      const endpointPointId = boundaryEntity && boundaryEntity.kind !== 'circle'
-        ? hit.rightParameter === 0 ? boundaryEntity.startPointId : hit.rightParameter === 1 ? boundaryEntity.endPointId : undefined : undefined;
+      if (query.kind === 'trim' ? segment.kind !== 'circle' && (t === 0 || t === 1) : segment.kind === 'line' && t === (query.end === 'start' ? 0 : 1)) continue;
       const exact = endpointPointId ? numericPoints.get(endpointPointId) : point;
       if (!exact || distance(exact, point) > tolerance) throw precision(operation);
       events.push({ witness: { entityId: other.id, index, parameter: t, position: [exact.x, exact.y],
@@ -419,7 +468,7 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
     if (source.kind === 'arc' && 'survivors' in prepared) for (const [index, expected] of prepared.survivors.entries()) {
       const actual = compiled.segments.find(segment => segment.id === (index === 0 ? source.id : trim.newEntityId));
       if (expected.kind !== 'arc' || actual?.kind !== 'arc') throw precision();
-      checkMiddleArcPiece(expected, actual, expected.sweepRadians, cadPathClosureTolerance([expected.center, expected.start, expected.end]));
+      checkArcPiece(expected, actual, expected.sweepRadians, cadPathClosureTolerance([expected.center, expected.start, expected.end]));
     }
     return Object.freeze({ graph: candidate, retainedEntityId: source.id, removedEntityId: null,
       cutPointIds: Object.freeze([trim.cutPointIds[0], trim.cutPointIds[1]] satisfies [string, string]), newEntityId: trim.newEntityId });
@@ -429,10 +478,44 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
 }
 
 /** Extend one endpoint along its exact source support; cutters remain finite and untouched. */
+export function prepareCadSketchExtend({ graph: input, parameters, entityId, end }: Source & { readonly entityId: string; readonly end: 'start' | 'end' }): CadSketchExtendPreparation {
+  if (end !== 'start' && end !== 'end') throw new CadError('invalid-sketch-extend', 'Choose the start or end of one edge.');
+  const graph = parseCadSketchGraph(input), entity = graph.entities.find(item => item.id === entityId);
+  if (entity?.kind === 'line') return prepareLineExtend(graph, parameters, entity, end);
+  if (!entity || entity.kind !== 'arc') throw new CadError('invalid-sketch-extend-target', 'Extend needs an existing line or open arc.');
+  const geometry = compileCadSketchGraph(graph, parameters), segment = geometry.segments.find(item => item.id === entityId);
+  if (!segment || segment.kind !== 'arc') throw precision('extend');
+  assertDependencies(graph, entityId, [end === 'start' ? entity.startPointId : entity.endPointId], 'extend');
+  const events = boundaryEvents(graph, parameters, geometry.segments, { kind: 'extend', segment, end }), event = end === 'start' ? events.at(-1) : events[0];
+  if (!event) throw new CadError('missing-sketch-extend-boundary', 'No finite boundary intersects the unused circular support beyond this endpoint.');
+  assertEndpointRange(event.point, 'extend');
+  const current = end === 'start' ? segment.start : segment.end, opposite = end === 'start' ? segment.end : segment.start;
+  const tolerance = cadPathClosureTolerance([segment.center, segment.start, segment.end, event.point]), minimum = Math.max(1e-7, tolerance);
+  if (distance(current, event.point) <= minimum || distance(opposite, event.point) <= minimum) throw precision('extend');
+  if (event.witness.endpointPointId !== undefined) {
+    const joint = resolveCadSketchPointIdentities(graph), key = joint(event.witness.endpointPointId);
+    if (key === joint(entity.centerPointId) || key === joint(end === 'start' ? entity.endPointId : entity.startPointId)) throw precision('extend');
+  }
+  const make = (start: Point2, finish: Point2) => createArcSegment({ id: segment.id, source: segment.source, center: segment.center,
+    start, end: finish, clockwise: segment.clockwise });
+  const extended = make(end === 'start' ? event.point : segment.start, end === 'end' ? event.point : segment.end);
+  const added = make(end === 'start' ? event.point : current, end === 'start' ? current : event.point);
+  const expected = segment.sweepRadians * (end === 'start' ? 1 - event.witness.parameter : event.witness.parameter);
+  checkArcPiece(segment, extended, expected, tolerance, 'extend'); checkArcPiece(segment, added, expected - segment.sweepRadians, tolerance, 'extend');
+  const result: CadSketchArcExtendPreparation = { target: { kind: 'arc', entityId, end, boundary: event.witness }, added, extended,
+    boundary: event.boundary, point: [event.point.x, event.point.y] };
+  freezeData(result); return result;
+}
+
+/** Strict line entry point retained for existing callers. */
 export function prepareCadSketchLineExtend({ graph: input, parameters, entityId, end }: Source & { readonly entityId: string; readonly end: 'start' | 'end' }): CadSketchLineExtendPreparation {
   if (end !== 'start' && end !== 'end') throw new CadError('invalid-sketch-extend', 'Choose the start or end of one line.');
   const graph = parseCadSketchGraph(input), entity = graph.entities.find(item => item.id === entityId);
   if (!entity || entity.kind !== 'line') throw new CadError('invalid-sketch-extend-target', 'This extension supports an existing line endpoint.');
+  return prepareLineExtend(graph, parameters, entity, end);
+}
+function prepareLineExtend(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, entity: SourceLine, end: 'start' | 'end'): CadSketchLineExtendPreparation {
+  const entityId = entity.id;
   const geometry = compileCadSketchGraph(graph, parameters), segment = geometry.segments.find(item => item.id === entityId);
   if (!segment || segment.kind !== 'line') throw new CadError('invalid-sketch-extend-target', 'This extension supports an existing line endpoint.');
   assertDependencies(graph, entityId, [end === 'start' ? entity.startPointId : entity.endPointId], 'extend', entity);
@@ -449,10 +532,24 @@ export function prepareCadSketchLineExtend({ graph: input, parameters, entityId,
   freezeData(result); return result;
 }
 export function extendCadSketchEntity({ graph: input, parameters, extend }: Source & { readonly extend: CadSketchExtendTarget }): CadSketchExtendResult {
-  if (!isCadImportData(extend) || !Value.Check(CadSketchExtendTargetSchema, extend)) throw new CadError('invalid-sketch-extend', 'Choose one complete line-extension request.');
-  const graph = parseCadSketchGraph(input), prepared = prepareCadSketchLineExtend({ graph, parameters, entityId: extend.entityId, end: extend.end });
+  if (!isCadImportData(extend) || !Value.Check(CadSketchExtendTargetSchema, extend)) throw new CadError('invalid-sketch-extend', 'Choose one complete line or arc extension request.');
+  const graph = parseCadSketchGraph(input), source = graph.entities.find(entity => entity.id === extend.entityId);
+  if (!source || source.kind !== extend.kind) throw new CadError('invalid-sketch-extend-target', 'The extension source must retain its requested kind.');
+  const prepared = prepareCadSketchExtend({ graph, parameters, entityId: extend.entityId, end: extend.end });
   const { endPointId, ...target } = extend;
   if (!Value.Equal(prepared.target, target)) throw new CadError('stale-sketch-extend', 'The extension boundary changed. Choose the endpoint again.');
+  if (source.kind === 'arc') {
+    if (extend.boundary.endpointPointId !== undefined && endPointId !== extend.boundary.endpointPointId)
+      throw new CadError('invalid-sketch-extend-point', 'Use the exact witnessed boundary endpoint identity.');
+    const joint = resolveCadSketchPointIdentities(graph), key = extend.boundary.endpointPointId === undefined ? endPointId : joint(endPointId);
+    if (key === joint(source.centerPointId) || key === joint(extend.end === 'start' ? source.endPointId : source.startPointId))
+      throw new CadError('invalid-sketch-extend-point', 'The arc endpoint needs a distinct identity from its center and opposite endpoint.');
+  }
   const candidate = replaceEndpoint(graph, parameters, extend.entityId, extend.end, extend.boundary, endPointId, 'extend');
+  if (prepared.extended.kind === 'arc') {
+    const actual = compileCadSketchGraph(candidate, parameters).segments.find(segment => segment.id === extend.entityId), expected = prepared.extended;
+    if (actual?.kind !== 'arc') throw precision('extend');
+    checkArcPiece(expected, actual, expected.sweepRadians, cadPathClosureTolerance([expected.center, expected.start, expected.end]), 'extend');
+  }
   return Object.freeze({ graph: candidate, retainedEntityId: extend.entityId, endPointId });
 }

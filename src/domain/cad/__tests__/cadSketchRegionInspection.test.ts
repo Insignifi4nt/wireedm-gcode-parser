@@ -12,6 +12,8 @@ import { extendPart, lineExtend } from './cadSketchExtendFixtures';
 import { offsetCirclePart } from './cadSketchOffsetFixtures';
 import { circleTrimPart, lowerDAreaMm2 } from './cadSketchCircleTrimFixtures';
 import { middleArcTrimPart, clippedDAreaMm2 } from './cadSketchMiddleArcTrimFixtures';
+import { arcExtendPart, quarterSegmentAreaMm2, extendedSegmentAreaMm2 } from './cadSketchArcExtendFixtures';
+import { measureCadResolvedProfile } from '../cadMeasurements';
 
 function splitSource() {
   return parseCadDocument({ ...createCadDocument('Split regions', 'split-regions'), schemaVersion: 2, parameters: { span: 20, retained: 7 }, features: [{
@@ -24,6 +26,39 @@ function splitSource() {
 const split = { kind: 'line', entityId: 'edge-a', parameter: .5, splitPointId: 'joint', newEntityId: 'a-new', supportRelationId: 'straight' } as const;
 
 describe('prepared closed-cell inspection and physical selection', () => {
+  it('queries and proposes arc Extend before an explicit two-cell union repair while retaining the original divider', () => {
+    const source = arcExtendPart(), sketch = source.features[0]; if (sketch.kind !== 'sketch') throw new Error('Arc sketch missing.');
+    const catalog = prepareCadSketchCells(sketch, source.parameters, 'graph-cells'), oldSelection = catalog.pack(catalog.cells.map(cell => cell.id));
+    expect(catalog.cells).toHaveLength(1); expect(catalog.cells[0].areaMm2).toBeCloseTo(quarterSegmentAreaMm2, 10);
+    const document = parseCadDocument({ ...source, features: [...source.features, { id: 'pad', kind: 'extrude', name: 'Quarter blank', sketchId: 'sketch',
+      suppressed: false, distance: 5, symmetric: false, operation: 'new', targetId: null, regionSelection: oldSelection }] });
+    const session = new CadSession(document), before = session.getSnapshot(), original = JSON.stringify(document);
+    const current = inspectCadSketchRegions(document, 'sketch', { mode: 'graph-cells' });
+    const query = inspectCadSketchRegions(document, 'sketch', { mode: 'graph-cells', extendAt: { entityId: 'arc', end: 'end' } });
+    expect(query.items).toEqual(current.items);
+    const preview = query.extendPreview; if (!preview) throw new Error('Arc extension preview missing.');
+    expect(preview.target).toMatchObject({ kind: 'arc', boundary: { endpointPointId: 'c', position: [-6, 8] } });
+    expect(preview.added.kind).toBe('arc'); expect(preview.extended.kind).toBe('arc');
+    const extend = { ...preview.target, endPointId: 'c' }, proposal = { extend };
+    const inspection = inspectCadSketchRegions(document, 'sketch', { mode: 'graph-cells', proposal });
+    expect(inspection).toMatchObject({ proposed: true, total: 2 });
+    expect(inspection.items.reduce((area, cell) => area + cell.areaMm2, 0)).toBeCloseTo(extendedSegmentAreaMm2, 10);
+    const ids = inspection.items.map(cell => cell.cellId), reference = readCadSketchRegionReference(document, 'sketch', { cellIds: ids }, proposal);
+    const edit = { kind: 'extend-sketch-entity', sketchId: 'sketch', extend } as const, effective = reduceCadEditIntents(document, [edit]), changed = effective.features[0];
+    if (changed.kind !== 'sketch') throw new Error('Extended segment missing.');
+    const prepared = prepareCadSketchCells(changed, effective.parameters, 'graph-cells');
+    expect(prepared.pack(ids)).toEqual(reference);
+    const union = prepared.resolve(reference); expect(union).toHaveLength(1);
+    expect(measureCadResolvedProfile(union[0].boundary.geometry).areaMm2).toBeCloseTo(extendedSegmentAreaMm2, 10);
+    expect(() => session.edit([edit], before.version)).toThrowError(expect.objectContaining({ code: 'stale-sketch-region' }));
+    expect(session.getSnapshot()).toBe(before); expect(JSON.stringify(document)).toBe(original);
+    const pad = document.features[1]; if (pad.kind !== 'extrude') throw new Error('Quarter consumer missing.');
+    session.edit([edit, { kind: 'update-feature', feature: { ...pad, regionSelection: reference } }], before.version);
+    const accepted = session.getSnapshot(); expect(accepted.document.features[0]).toEqual(changed);
+    expect(accepted.document.features[1]).toMatchObject({ regionSelection: reference });
+    session.undo(); expect(session.getSnapshot().document).toBe(document); session.redo(); expect(session.getSnapshot().document).toBe(accepted.document);
+  });
+
   it('queries and proposes middle-arc Trim before an explicit clipped-D repair without carrying the old D union witness', () => {
     const source = middleArcTrimPart(), sketch = source.features[0]; if (sketch.kind !== 'sketch') throw new Error('D sketch missing.');
     const catalog = prepareCadSketchCells(sketch, source.parameters, 'graph-cells'), wholeD = catalog.pack(catalog.cells.map(cell => cell.id));

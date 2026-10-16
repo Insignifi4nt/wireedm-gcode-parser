@@ -424,7 +424,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     const projection = projectSelection(event), rect = svg.current?.getBoundingClientRect();
     if (!sourceGraph || !graphControls || !projection || !rect?.height || tool !== 'select' || isPreview || interactionLocked) return false;
     const candidates = sourceGraph.pick(projection.point, span / rect.height, pickFilter);
-    const focused = focusedEntityId && trigger === 'keyboard' && pickFilter !== 'points' && sourceGraph.graph.entities.some(entity => entity.id === focusedEntityId && entity.kind === 'line')
+    const focused = focusedEntityId && trigger === 'keyboard' && pickFilter !== 'points' && sourceGraph.graph.entities.some(entity => entity.id === focusedEntityId && entity.kind !== 'circle')
       ? { kind: 'entity' as const, id: focusedEntityId } : undefined;
     if (!candidates.length && !focused) return false;
     const selected = graphControls.selection.length === 1 ? graphControls.selection[0] : null;

@@ -1,6 +1,6 @@
 import type { CadEdit } from '@/domain/cad/cadOperations';
-import { CadSketchExtendDependencyError, CadSketchTrimDependencyError, cadSketchCircleTrimParameter, prepareCadSketchTrim, prepareCadSketchLineExtend,
-  type CadSketchTrimPreparation, type CadSketchLineExtendPreparation } from '@/domain/cad/cadSketchTrimExtend';
+import { CadSketchExtendDependencyError, CadSketchTrimDependencyError, cadSketchCircleTrimParameter, prepareCadSketchTrim, prepareCadSketchExtend,
+  type CadSketchTrimPreparation, type CadSketchExtendPreparation } from '@/domain/cad/cadSketchTrimExtend';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { nearestPointOnSegment } from '@/domain/path-editor/pathPointInference';
 import type { PathSegment } from '@/domain/path-intel/types';
@@ -15,7 +15,7 @@ export type CadSketchTrimPreview = Unavailable
       readonly geometry: CadSketchTrimPreparation; readonly help: string };
 export type CadSketchExtendPreview = { readonly label: string } & (Unavailable
   | { readonly kind: 'ready'; readonly edit: Extract<CadEdit, { kind: 'extend-sketch-entity' }>;
-      readonly geometry: CadSketchLineExtendPreparation; readonly help: string });
+      readonly geometry: CadSketchExtendPreparation; readonly help: string });
 
 function unavailable(prepared: ReturnType<typeof prepareCadSketchGraphInteraction>, cause: unknown, fallback: string): Unavailable {
   if (cause instanceof CadSketchTrimDependencyError || cause instanceof CadSketchExtendDependencyError) {
@@ -60,25 +60,25 @@ export function prepareCadSketchTrimPreview(prepared: ReturnType<typeof prepareC
   }
 }
 
-/** The pointer chooses an explicit source end; the analytic ray query chooses its finite boundary. */
+/** The pointer chooses an explicit source end; the analytic query chooses its finite boundary. */
 export function prepareCadSketchExtendPreview(prepared: ReturnType<typeof prepareCadSketchGraphInteraction>, sketchId: string,
   entityId: string, cursor: SketchPoint): CadSketchExtendPreview {
   const segment = prepared.geometry.segments.find(segment => segment.id === entityId);
-  if (!segment || segment.kind !== 'line') return { kind: 'unavailable', label: 'Extend', reason: 'Extend supports a line endpoint. Arc and circle extension are not supported yet.' };
+  if (!segment || segment.kind === 'circle') return { kind: 'unavailable', label: 'Extend', reason: 'Extend needs the end of a line or arc.' };
   const parameter = nearestPointOnSegment(segment, { segmentId: entityId, reversed: false }, { x: cursor[0], y: cursor[1] }).t;
   if (parameter === .5) return { kind: 'unavailable', label: 'Extend', reason: 'Right-click nearer the end you want to extend.' };
   return prepareCadSketchExtendEndPreview(prepared, sketchId, entityId, parameter < .5 ? 'start' : 'end');
 }
 
-/** Keyboard actions own the source line and an explicit end, without a pointer parameter. */
+/** Keyboard actions own the source edge and an explicit end, without a pointer parameter. */
 export function prepareCadSketchExtendEndPreview(prepared: ReturnType<typeof prepareCadSketchGraphInteraction>, sketchId: string,
   entityId: string, end: 'start' | 'end'): CadSketchExtendPreview {
   const label = `Extend ${end}`;
   try {
-    const geometry = prepareCadSketchLineExtend({ graph: prepared.graph, parameters: prepared.parameters, entityId, end });
+    const geometry = prepareCadSketchExtend({ graph: prepared.graph, parameters: prepared.parameters, entityId, end });
     const extend = { ...geometry.target, endPointId: geometry.target.boundary.endpointPointId ?? crypto.randomUUID() };
     return { kind: 'ready', label, edit: { kind: 'extend-sketch-entity', sketchId, extend }, geometry, help: contactHelp(extend.boundary, 'Extend') };
-  } catch (cause) { return { ...unavailable(prepared, cause, 'This line cannot be extended from this end.'), label }; }
+  } catch (cause) { return { ...unavailable(prepared, cause, 'This edge cannot be extended from this end.'), label }; }
 }
 
 function Stroke({ segment, center, className }: { segment: PathSegment; center: SketchPoint; className: string }) {

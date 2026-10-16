@@ -14,7 +14,7 @@ export type { CadSketchCellMode, CadSketchCellId } from './cadSketchRegionSelect
 import { cadScalarParameterNames, mapCadFeatureScalars } from './cadParameters';
 import { CadSketchSplitTargetSchema, splitCadSketchEntity, type CadSketchSplitTarget } from './cadSketchSplit';
 import { CadSketchTrimTargetSchema, prepareCadSketchTrim, trimCadSketchEntity, type CadSketchTrimTarget,
-  CadSketchExtendTargetSchema, prepareCadSketchLineExtend, extendCadSketchEntity, type CadSketchExtendTarget } from './cadSketchTrimExtend';
+  CadSketchExtendTargetSchema, prepareCadSketchExtend, extendCadSketchEntity, type CadSketchExtendTarget } from './cadSketchTrimExtend';
 import { CadSketchOffsetRequestSchema, prepareCadSketchOffset, type CadSketchOffsetRequest } from './cadSketchOffset';
 
 export interface CadPreparedSketchCell {
@@ -230,7 +230,7 @@ export interface CadSketchGraphCellInspection {
   readonly boundsMm: CadBounds2;
 }
 type InspectionResult<Item> = { sketchId: string; proposed?: true; trimPreview?: ReturnType<typeof prepareCadSketchTrim>;
-  extendPreview?: ReturnType<typeof prepareCadSketchLineExtend>; coordinateSystem: 'sketch-local'; units: 'mm';
+  extendPreview?: ReturnType<typeof prepareCadSketchExtend>; coordinateSystem: 'sketch-local'; units: 'mm';
   items: Item[]; total: number; nextOffset: number | null };
 export const CadSketchRegionReadTargetSchema = Type.Union([
   CadSketchSplitTargetSchema.anyOf[0].properties.entityId,
@@ -268,7 +268,7 @@ export function inspectCadSketchRegions(document: CadDocument, sketchId: string,
   })();
   const extendPreview = input.extendAt === undefined ? undefined : (() => {
     if (!sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
-    return prepareCadSketchLineExtend({ graph: sketch.graph, parameters, ...input.extendAt });
+    return prepareCadSketchExtend({ graph: sketch.graph, parameters, ...input.extendAt });
   })();
   const prepared = prepareCadSketchCells(sketch, parameters, input.mode ?? 'contours');
   const start = Math.min(offset, prepared.cells.length), end = start + Math.min(limit, prepared.cells.length - start);

@@ -8,6 +8,8 @@ import { prepareCadSketchLineExtend, extendCadSketchEntity } from '@/domain/cad/
 import { prepareCadEdits } from './cadEditPreparation';
 import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
+import { arcExtendPart, arcExtendTarget } from '@/domain/cad/__tests__/cadSketchArcExtendFixtures';
+import { CadSession } from './cadSession';
 
 const require = createRequire(import.meta.url);
 const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
@@ -30,6 +32,35 @@ async function prepared(graph: CadSketchGraph, entityId: string, parameters: Rea
 }
 
 describe('real PlaneGCS exact line Extend preparation', () => {
+  it.each([false, true])('preserves the complete arc Extend candidate with numeric interior contact=%s', async interior => {
+    const document = arcExtendPart(interior), source = document.features[0];
+    if (source.kind !== 'sketch' || !source.graph) throw new Error('Arc extension source missing.');
+    const original = JSON.stringify(document), extend = arcExtendTarget(document);
+    expect(extend.kind).toBe('arc'); expect(extend.endPointId).toBe(interior ? 'contact' : 'c');
+    const expected = extendCadSketchEntity({ graph: source.graph, parameters: document.parameters, extend });
+    const prepared = await prepareCadEdits(document, [{ kind: 'extend-sketch-entity', sketchId: 'sketch', extend }], runtime);
+    expect(prepared.document).toEqual({ ...document, features: [{ ...source, graph: expected.graph }] });
+    expect(expected.graph.points.slice(0, source.graph.points.length)).toEqual(source.graph.points);
+    expect(expected.graph.points.slice(source.graph.points.length)).toEqual(interior ? [{ id: 'contact', position: [-6, 8] }] : []);
+    expect(expected.graph.entities).toEqual(source.graph.entities.map(entity => entity.id === 'arc' ? { ...entity, endPointId: extend.endPointId } : entity));
+    expect(expected.graph.relations).toEqual(source.graph.relations);
+    expect(prepared.sketchDiagnostics[0].diagnostics).toEqual({ status: 'success', degreesOfFreedom: 3,
+      conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] });
+    expect(JSON.stringify(document)).toBe(original);
+  });
+
+  it('rejects an arc Extend detaching exact endpoint drivers without committing a preceding parameter intent', async () => {
+    const original = arcExtendPart(), sketch = original.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Arc extension source missing.');
+    const extend = arcExtendTarget(original), document = parseCadDocument({ ...original, features: [{ ...sketch, graph: { ...sketch.graph,
+      points: sketch.graph.points.map(point => point.id === 'b' ? { ...point, position: ['0.000', 10] } : point) } }] });
+    const session = new CadSession(document), before = session.getSnapshot();
+    await expect(session.editPrepared(before.version, async accepted => (await prepareCadEdits(accepted, [
+      { kind: 'set-parameter', name: 'retained', value: 99 }, { kind: 'extend-sketch-entity', sketchId: 'sketch', extend }
+    ], runtime)).document)).rejects.toMatchObject({ code: 'dependent-sketch-extend', relationIds: [], pointIds: ['b'] });
+    expect(session.getSnapshot()).toBe(before); expect(session.getSnapshot().document.parameters).toEqual({ retained: 7 });
+  });
+
   it('preserves a numeric intersection endpoint and every untouched source component exactly', async () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [' origin ', 0] }, { id: 'b', position: [10, 0] },
       { id: 'c', position: [20, -5] }, { id: 'd', position: [20, 5] }], entities: [

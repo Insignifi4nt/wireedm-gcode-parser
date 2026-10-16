@@ -17,6 +17,18 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Next: preserve radius ownership during arc boundary edits
+
+The [bounded retained-radius plan](2026-10-16-sketch-arc-radius-owner-plan.md) is under independent design review. The intended policy preserves existing radius/diameter and Equal radius records verbatim only when a surviving arc retains its certified circular support. Endpoint drivers and topology owners remain protected. Start-side native meaning and a later ordinary radius-parameter edit need explicit proof before implementation acceptance. This is unfinished work, not part of the accepted Extend checkpoint.
+
+## Checkpoint: arc Extend
+
+Middle-arc Trim is accepted local checkpoint `3cefc297`. The [arc Extend plan](2026-10-16-sketch-arc-extend-plan.md) and independent design review keep the current command, strict receipt fields and finite cutters, adding only a truthful arc kind and outward unused-gap query. An arc may grow across a half turn but never complete a circle. Whole-arc and changed-end drivers remain explicit blockers. The [integration assessment](2026-10-16-sketch-arc-extend-integration-assessment.md) confirms generic preparation, private editing, cancellation, history and repair need no new owner or service.
+
+The Canvas regression and complete production journey reproduce the unavailable command before implementation. Independent source review repaired three real contact-ordering/branch issues without changing precision or the shared intersection classifier. Final domain checks pass 54 cases across six suites, and final integrated Canvas/native preparation/region checks pass 75 across three (overlapping owner evidence). Full production build/types, public docs/source distributions, shared UI and icons pass. Seven distinct complete part journeys pass in both Chromium and Firefox. [Review and acceptance](2026-10-16-sketch-arc-extend-review.md).
+
+Native human editing and actual WebMCP produce the identical exact sketch and deliberate two-cell Pad union, changing volume from 142.69908169872411 to 353.5743588970452 mm³ with one solid and no diagnostics. Cancel leaves accepted intent untouched; one Undo restores the original full part. Standalone agent Extend rejects stale material intent atomically, while explicit repair succeeds. The section retains one line and two true R10 arcs, without the internal divider wall. Proofs: `tmp/sketch-arc-extend-{preview,solid}.png`, `tmp/sketch-arc-extend-native-proof.json`. The disposable draft was undone empty and closed without saving user records. No remote action, release bump, schema, precision or native change.
+
 ## Checkpoint: middle-arc Trim
 
 The [bounded plan](2026-10-16-sketch-next-boundary-plan.md) and independent design review reuse the existing middle-Trim target, shared center and ordinary Equal radius support. The actual pinned-native preflight passes the unchanged complete candidate: equality reduces freedom from 6 to 5; the fixed-endpoint variant remains exact at 0 freedoms without invented redundancy IDs; a later ordinary R12 edit moves both children to R12. Evidence: ignored `tmp/sketch-middle-arc-native-preflight.{mts,json,log}`. No native/tolerance change is authorized.

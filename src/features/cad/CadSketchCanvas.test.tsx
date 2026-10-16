@@ -513,6 +513,33 @@ describe('graph spatial selection', () => {
     await act(async () => operation.resolve(undefined));
     expect(h.selected).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.feature).toEqual(original);
   });
+  it('extends an arc through the same exact endpoint preview and keyboard-owned command', async () => {
+    const h = await spatialFixture();
+    const feature: CadSketchFeature = { ...h.feature, graph: {
+      points: [{ id: 'center', position: [' 0.00 ', '0'] }, { id: 'a', position: ['10', '0'] },
+        { id: 'b', position: [0, 10] }, { id: 'c', position: [-6, 8] }],
+      entities: [{ id: 'rim', kind: 'arc', centerPointId: 'center', startPointId: 'a', endPointId: 'b', direction: 'ccw', construction: false },
+        { id: 'old-chord', kind: 'line', startPointId: 'b', endPointId: 'a', construction: false },
+        { id: 'new-chord', kind: 'line', startPointId: 'c', endPointId: 'a', construction: false }], relations: []
+    } };
+    await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });
+    await h.pointer('pointerdown', 6, 8, false, 7, 2); await h.pointer('pointerup', 6, 8, false, 7, 2);
+    const extendEnd = () => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Extend end');
+    expect(extendEnd()?.disabled).toBe(false); await act(async () => extendEnd()?.focus());
+    const preview = container.querySelector('[aria-label="Extend preview"]');
+    expect(preview?.querySelectorAll('path.is-added')).toHaveLength(1); expect(preview?.querySelectorAll('path.is-retained')).toHaveLength(1);
+    expect(preview?.querySelector('[data-cad-sketch-extend-point]')?.getAttribute('data-cad-sketch-extend-point')).toBe('c');
+    expect(h.edited).not.toHaveBeenCalled();
+    await act(async () => document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    const edge = container.querySelector('[data-cad-sketch-entity="rim"]'); if (!edge) throw new Error('Arc missing.');
+    await act(async () => edge.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })));
+    expect(extendEnd()?.disabled).toBe(false); await act(async () => extendEnd()?.click());
+    const edit = h.edited.mock.calls[0]?.[0]?.[0];
+    expect(edit).toMatchObject({ kind: 'extend-sketch-entity', sketchId: feature.id, extend: { kind: 'arc', entityId: 'rim', end: 'end', endPointId: 'c' } });
+    expect(applyCadEdits(h.props().graphControls!.document, [edit]).features[0]).toEqual({ ...feature, graph: { ...feature.graph,
+      entities: [{ ...feature.graph!.entities[0], endPointId: 'c' }, ...feature.graph!.entities.slice(1)] } });
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: 'c' });
+  });
   it('previews Extend from the owned near end to its finite boundary and submits that exact point once', async () => {
     const h = await spatialFixture(), graph = h.feature.graph!;
     const feature: CadSketchFeature = { ...h.feature, graph: { ...graph,
