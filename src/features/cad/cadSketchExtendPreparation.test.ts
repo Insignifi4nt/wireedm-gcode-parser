@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { prepareCadSketchLineExtend, extendCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
+import { prepareCadSketchLineExtend, prepareCadSketchExtend, extendCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
 import { prepareCadEdits } from './cadEditPreparation';
 import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
@@ -32,6 +32,27 @@ async function prepared(graph: CadSketchGraph, entityId: string, parameters: Rea
 }
 
 describe('real PlaneGCS exact line Extend preparation', () => {
+  it('preserves a diameter owner through start-side arc extension while its native radius spoke changes endpoint', async () => {
+    const base = arcExtendPart(), source = base.features[0];
+    if (source.kind !== 'sketch' || !source.graph) throw new Error('Arc source missing.');
+    const document = parseCadDocument({ ...base, parameters: { stockRadius: 10 }, features: [{ ...source, graph: { ...source.graph,
+      points: source.graph.points.map(point => point.id === 'a' ? { ...point, position: [10, 0] }
+        : point.id === 'b' ? { ...point, position: [' 0 ', 10] } : point.id === 'c' ? { ...point, position: [6, -8] } : point),
+      entities: source.graph.entities.map(entity => entity.id === 'closure' && entity.kind === 'line' ? { ...entity, endPointId: 'b' } : entity),
+      relations: [{ id: 'diameter', kind: 'radial-size', entityId: 'arc', quantity: 'diameter', value: ' 2 * stockRadius ' }] } }] });
+    const owned = document.features[0]; if (owned.kind !== 'sketch' || !owned.graph) throw new Error('Owned arc missing.');
+    const original = JSON.stringify(document), preview = prepareCadSketchExtend({ graph: owned.graph, parameters: document.parameters, entityId: 'arc', end: 'start' });
+    expect(preview.target.boundary.endpointPointId).toBe('c');
+    const extend = { ...preview.target, endPointId: 'c' }, expected = extendCadSketchEntity({ graph: owned.graph, parameters: document.parameters, extend });
+    const prepared = await prepareCadEdits(document, [{ kind: 'extend-sketch-entity', sketchId: 'sketch', extend }], runtime);
+    expect(prepared.document).toEqual({ ...document, features: [{ ...owned, graph: expected.graph }] });
+    expect(expected.graph.points).toEqual(owned.graph.points); expect(expected.graph.relations).toEqual(owned.graph.relations);
+    expect(expected.graph.entities).toEqual(owned.graph.entities.map(entity => entity.id === 'arc' ? { ...entity, startPointId: 'c' } : entity));
+    expect(prepared.sketchDiagnostics[0].diagnostics).toEqual({ status: 'success', degreesOfFreedom: 3,
+      conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] });
+    expect(JSON.stringify(document)).toBe(original);
+  });
+
   it.each([false, true])('preserves the complete arc Extend candidate with numeric interior contact=%s', async interior => {
     const document = arcExtendPart(interior), source = document.features[0];
     if (source.kind !== 'sketch' || !source.graph) throw new Error('Arc extension source missing.');

@@ -17,9 +17,15 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
-## Next: preserve radius ownership during arc boundary edits
+## Next: direct sketch reuse
 
-The [bounded retained-radius plan](2026-10-16-sketch-arc-radius-owner-plan.md) is under independent design review. The intended policy preserves existing radius/diameter and Equal radius records verbatim only when a surviving arc retains its certified circular support. Endpoint drivers and topology owners remain protected. Start-side native meaning and a later ordinary radius-parameter edit need explicit proof before implementation acceptance. This is unfinished work, not part of the accepted Extend checkpoint.
+The [next workflow assessment](2026-10-16-sketch-next-user-workflows.md) prioritizes paired mounting details and deliberate reuse over another numerical micro-investigation. The [Mirror copy proposal](2026-10-16-sketch-mirror-copy-plan.md) uses direct canvas axis picking, a visibly independent numeric copy and existing preview/private-edit ownership. Its internal-joint, native exactness and interaction policy require design review before implementation. Persistent Symmetry, editable patterns, source references and Split-owner consistency remain unfinished.
+
+## Checkpoint: preserve radius ownership during arc boundary edits
+
+The [bounded retained-radius plan](2026-10-16-sketch-arc-radius-owner-plan.md) passed design and actual-source review. Existing radius/diameter and Equal radius records remain verbatim only when the surviving arc retains its certified circle. Endpoint drivers and topology owners remain protected. Five net production lines change the existing dependency policy; no new UI state or solver layer. The upgraded existing D-plate journey reproduces disabled Trim before implementation. Seven pure suites pass 58 cases and two native preparation suites pass 13, with scoped types and full production build/docs/source distributions clean. The complete upgraded journey passes in Chromium and Firefox; related arc Extend/circle Trim also pass in Firefox. [Review and acceptance](2026-10-16-sketch-arc-radius-owner-review.md).
+
+Native human Trim and named-parameter R12 editing retain the original driver/equality text, update both survivors and the peer circle, preserve the Pad selector and build one solid without diagnostics. Trimmed volume is 1265.3981633974481 mm³; R12 volume is 1773.456452662415 mm³. Its native section has two lines and two R12 arcs. Cancel and complete-part Undo work; actual WebMCP produces identical full source/Pad results. A genuinely contradictory fixed-point/radius batch rejects with actual issue IDs and exact session preservation. Proofs: `tmp/sketch-arc-radius-owner-{preview,solid}.png` and native JSON. The disposable native draft was undone empty and closed without saving user records. No version, schema, native, tolerance or remote change; the goal remains incomplete.
 
 ## Checkpoint: arc Extend
 

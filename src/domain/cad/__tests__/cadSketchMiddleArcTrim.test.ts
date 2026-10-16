@@ -70,7 +70,7 @@ describe('exact middle-arc Trim', () => {
       .toThrowError(expect.objectContaining({ code: 'sketch-trim-precision' }));
   });
 
-  it('retains center and original outer-point drivers while reporting actual whole-arc owners without transferring them', () => {
+  it('retains center, original outer-point and radius drivers while keeping whole-edge deletion strict', () => {
     const document = middleArcTrimPart(true), sketch = document.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Expected fixed D source.');
     const retained = parseCadSketchGraph({ ...sketch.graph, relations: [
@@ -82,8 +82,11 @@ describe('exact middle-arc Trim', () => {
     const result = trimCadSketchEntity({ graph: retained, parameters: document.parameters, trim: { ...preview.target, cutPointIds: ['p', 'q'], newEntityId: 'after', supportRelationId: 'same' } });
     expect(result.graph.points).toEqual(retained.points); expect(result.graph.relations.slice(0, retained.relations.length)).toEqual(retained.relations);
     const owned = parseCadSketchGraph({ ...retained, relations: [...retained.relations, { id: 'radius', kind: 'radial-size', entityId: 'arc', quantity: 'radius', value: ' 10 ' }] });
-    expect(() => prepareCadSketchTrim({ graph: owned, parameters: document.parameters, entityId: 'arc', parameter: .5 }))
-      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['radius'], pointIds: [] }));
+    const ownedPreview = prepareCadSketchTrim({ graph: owned, parameters: document.parameters, entityId: 'arc', parameter: .5 });
+    if (ownedPreview.target.kind !== 'middle') throw new Error('Expected retained radius on the middle arc source.');
+    const ownedResult = trimCadSketchEntity({ graph: owned, parameters: document.parameters, trim: { ...ownedPreview.target,
+      cutPointIds: ['p', 'q'], newEntityId: 'after', supportRelationId: 'same' } });
+    expect(ownedResult.graph.relations.slice(0, owned.relations.length)).toEqual(owned.relations);
     expect(() => prepareCadSketchTrim({ graph: result.graph, parameters: document.parameters, entityId: 'arc', parameter: .5 }))
       .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: expect.arrayContaining(['same']) }));
   });

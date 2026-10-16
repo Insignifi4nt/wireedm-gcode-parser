@@ -53,7 +53,7 @@ describe('exact sketch end Trim', () => {
       { id: 'fence', kind: 'line', construction: true, startPointId: 'c', endPointId: 'd' }], relations: [horizontal,
       { id: 'radius', kind: 'radial-size', entityId: 'arc', quantity: 'radius', value: ' 10 ' }] });
     expect(() => prepareCadSketchTrim({ graph: arc, parameters: {}, entityId: 'arc', parameter: 0.1 }))
-      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['direction', 'radius'] }));
+      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['direction'], pointIds: ['a'] }));
   });
 
   it('rejects an out-of-range cut on a legal arc bulge rather than exposing a malformed ready witness', () => {

@@ -13,6 +13,8 @@ import { circleTrimPart } from '@/domain/cad/__tests__/cadSketchCircleTrimFixtur
 import { CadSession } from './cadSession';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { middleArcTrimPart, middleArcTrimTarget } from '@/domain/cad/__tests__/cadSketchMiddleArcTrimFixtures';
+import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
+import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
 
 const require = createRequire(import.meta.url);
 const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
@@ -36,16 +38,47 @@ describe('real PlaneGCS exact end-Trim preparation', () => {
     expect(JSON.stringify(document)).toBe(original);
   });
 
-  it('atomically rejects a middle-arc trim owned by an existing whole-arc radius instead of transferring it to a child', async () => {
+  it('retains middle-arc radius owners, propagates an ordinary radius edit to both survivors and peer, and atomically rejects a contradiction', async () => {
     const source = middleArcTrimPart(), sketch = source.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Middle arc source missing.');
-    const trim = middleArcTrimTarget(source), document = parseCadDocument({ ...source, features: [{ ...sketch, graph: { ...sketch.graph,
-      relations: [{ id: 'radius', kind: 'radial-size', entityId: 'arc', quantity: 'radius', value: 10 }] } }] });
-    const session = new CadSession(document), before = session.getSnapshot();
-    await expect(session.editPrepared(before.version, async accepted => (await prepareCadEdits(accepted, [
-      { kind: 'set-parameter', name: 'retained', value: 99 }, { kind: 'trim-sketch-entity', sketchId: 'sketch', trim }
-    ], runtime)).document)).rejects.toMatchObject({ code: 'dependent-sketch-trim', relationIds: ['radius'], pointIds: [] });
-    expect(session.getSnapshot()).toBe(before); expect(session.getSnapshot().document.parameters).toEqual({ retained: 7 });
+    const document = parseCadDocument({ ...source, parameters: { stockRadius: 10 }, features: [{ ...sketch, graph: { ...sketch.graph,
+      points: [...sketch.graph.points, { id: 'peer-center', position: ['35.000', '0.000'] }],
+      entities: [...sketch.graph.entities, { id: 'peer', kind: 'circle', centerPointId: 'peer-center', radius: 10, construction: true }],
+      relations: [{ id: 'stock-radius', kind: 'radial-size', entityId: 'arc', quantity: 'radius', value: ' stockRadius ' },
+        { id: 'peer-radius', kind: 'equal-radius', curveIds: ['peer', 'arc'] }] } }] });
+    const owned = document.features[0]; if (owned.kind !== 'sketch' || !owned.graph) throw new Error('Owned arc missing.');
+    const original = JSON.stringify(document), trim = middleArcTrimTarget(document);
+    const expected = trimCadSketchEntity({ graph: owned.graph, parameters: document.parameters, trim });
+    const prepared = await prepareCadEdits(document, [{ kind: 'trim-sketch-entity', sketchId: 'sketch', trim }], runtime), changed = prepared.document.features[0];
+    if (changed.kind !== 'sketch' || !changed.graph) throw new Error('Middle survivors missing.');
+    expect(prepared.document).toEqual({ ...document, features: [{ ...owned, graph: expected.graph }] });
+    expect(changed.graph.points).toEqual(owned.graph.points);
+    expect(changed.graph.relations).toEqual([...owned.graph.relations, { id: 'common-radius', kind: 'equal-radius', curveIds: ['arc', 'after'] }]);
+    expect(prepared.sketchDiagnostics[0].diagnostics).toEqual({ status: 'success', degreesOfFreedom: 4,
+      conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] });
+    const cells = prepareCadSketchCells(changed, prepared.document.parameters, 'graph-cells'), selection = cells.pack(cells.cells.map(cell => cell.id));
+    const part = parseCadDocument({ ...prepared.document, features: [...prepared.document.features, { id: 'pad', kind: 'extrude', name: 'Radius plate', sketchId: 'sketch',
+      suppressed: false, distance: 5, symmetric: false, operation: 'new', targetId: null, regionSelection: selection }] });
+    const resized = await prepareCadEdits(part, [{ kind: 'set-parameter', name: 'stockRadius', value: 12 }], runtime), resizedSketch = resized.document.features[0];
+    if (resizedSketch.kind !== 'sketch' || !resizedSketch.graph) throw new Error('Resized survivors missing.');
+    const arcs = compileCadSketchGraph(resizedSketch.graph, resized.document.parameters).segments.filter(segment => segment.kind === 'arc');
+    expect(arcs).toHaveLength(2);
+    for (const arc of arcs) { expect(arc.radius).toBeCloseTo(12, 12); expect(Math.hypot(arc.end.x - arc.center.x, arc.end.y - arc.center.y)).toBeCloseTo(12, 12); }
+    expect(resizedSketch.graph.entities.find(entity => entity.id === 'peer')).toMatchObject({ radius: 12 });
+    expect(resizedSketch.graph.relations).toEqual(changed.graph.relations);
+    for (const point of changed.graph.points.filter(point => point.position.some(value => typeof value === 'string')))
+      expect(resizedSketch.graph.points.find(candidate => candidate.id === point.id)).toEqual(point);
+    expect(resized.document.features[1]).toEqual(part.features[1]);
+    expect(resized.sketchDiagnostics[0].diagnostics).toMatchObject({ status: 'success', conflictingIds: [], redundantIds: [], issues: [] });
+    const session = new CadSession(part), before = session.getSnapshot();
+    const failure = await session.editPrepared(before.version, async accepted => (await prepareCadEdits(accepted, [
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'fixed-radius-10', kind: 'fixed-point', pointId: 'a', position: [-8, 6] } },
+      { kind: 'set-parameter', name: 'stockRadius', value: 12 }
+    ], runtime)).document).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(CadSketchPreparationError);
+    if (!(failure instanceof CadSketchPreparationError)) throw new Error('Expected native radius conflict.');
+    expect(failure.diagnostics.conflictingIds).toEqual(expect.arrayContaining(['stock-radius', 'fixed-radius-10']));
+    expect(failure.feedback.reason).toBe('conflicting'); expect(session.getSnapshot()).toBe(before); expect(JSON.stringify(document)).toBe(original);
   });
 
   it('preserves the complete circle-to-major-arc candidate and atomically rejects a later incompatible radius driver', async () => {

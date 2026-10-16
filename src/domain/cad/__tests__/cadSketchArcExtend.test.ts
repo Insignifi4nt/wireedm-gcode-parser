@@ -125,7 +125,7 @@ describe('exact endpoint-owned arc Extend', () => {
       .toThrowError(expect.objectContaining({ code: 'missing-sketch-extend-boundary' }));
   });
 
-  it('retains center/opposite drivers and rejects whole-arc owners, detached drivers, stale witnesses and forged endpoint identities atomically', () => {
+  it('retains center/opposite/radius drivers while rejecting detached drivers, stale witnesses and forged endpoint identities atomically', () => {
     const document = arcExtendPart(), sketch = document.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Expected arc source.');
     const graph = parseCadSketchGraph({ ...sketch.graph, relations: [
@@ -138,8 +138,9 @@ describe('exact endpoint-owned arc Extend', () => {
       .toThrowError(expect.objectContaining({ code: 'invalid-sketch-extend-point' }));
     const owned = parseCadSketchGraph({ ...graph, relations: [...graph.relations,
       { id: 'radius', kind: 'radial-size', entityId: 'arc', quantity: 'radius', value: ' 10 ' }] });
-    expect(() => prepareCadSketchExtend({ graph: owned, parameters: document.parameters, entityId: 'arc', end: 'end' }))
-      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-extend', relationIds: ['radius'] }));
+    const ownedPreview = prepareCadSketchExtend({ graph: owned, parameters: document.parameters, entityId: 'arc', end: 'end' });
+    expect(extendCadSketchEntity({ graph: owned, parameters: document.parameters, extend: { ...ownedPreview.target, endPointId: 'c' } }).graph.relations)
+      .toEqual(owned.relations);
     const driven = parseCadSketchGraph({ ...graph, points: graph.points.map(point => point.id === 'b' ? { ...point, position: ['0.000', 10] } : point) });
     expect(() => prepareCadSketchExtend({ graph: driven, parameters: document.parameters, entityId: 'arc', end: 'end' }))
       .toThrowError(expect.objectContaining({ code: 'dependent-sketch-extend', pointIds: ['b'] }));
