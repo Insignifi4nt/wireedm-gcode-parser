@@ -5,6 +5,8 @@ import { CadSketchExtendDependencyError, prepareCadSketchLineExtend, extendCadSk
 import { cadAnalyticSegments } from '../cadAnalyticSegments';
 import { signedAreaOfPath } from '@/domain/path-intel/segments';
 import { createCadDocument, parseCadDocument } from '../cadSchema';
+import { createCadSketchCornerTreatment } from '../cadSketchCornerTreatment';
+import type { CadSketchGraphRelation } from '../cadSketchGraph';
 
 function source() {
   return parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] },
@@ -15,6 +17,51 @@ function source() {
 }
 
 describe('exact line Extend', () => {
+  it('transfers vertical endpoint intent while retaining Parallel/Perpendicular and an adjacent old-corner horizontal pair exactly', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [0, 5] },
+      { id: 'c', position: [' targetX ', ' height '] }, { id: 'd', position: [10, 10] }, { id: 'e', position: [10, 0] }, { id: 'f', position: [5, 5] }],
+      entities: [{ id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+        { id: 'boundary', kind: 'line', construction: true, startPointId: 'c', endPointId: 'd' },
+        { id: 'reference', kind: 'line', construction: true, startPointId: 'e', endPointId: 'd' },
+        { id: 'adjacent', kind: 'line', construction: false, startPointId: 'b', endPointId: 'f' }], relations: [
+        { id: 'vertical', kind: 'vertical', pointIds: ['b', 'a'] },
+        { id: 'parallel', kind: 'parallel', lineIds: ['reference', 'edge'] },
+        { id: 'perpendicular', kind: 'perpendicular', lineIds: ['edge', 'boundary'] },
+        { id: 'old-corner', kind: 'horizontal', pointIds: ['f', 'b'] }] });
+    const parameters = { targetX: 0, height: 10 }, before = JSON.stringify(graph);
+    const preview = prepareCadSketchLineExtend({ graph, parameters, entityId: 'edge', end: 'end' });
+    expect(preview.target.boundary.endpointPointId).toBe('c');
+    const result = extendCadSketchEntity({ graph, parameters, extend: { ...preview.target, endPointId: 'c' } });
+    expect(result.graph.relations).toEqual([{ id: 'vertical', kind: 'vertical', pointIds: ['c', 'a'] }, ...graph.relations.slice(1)]);
+    expect(result.graph.points).toEqual(graph.points);
+    expect(result.graph.entities).toEqual([{ ...graph.entities[0], endPointId: 'c' }, ...graph.entities.slice(1)]);
+    expect(JSON.stringify(graph)).toBe(before);
+  });
+
+  it('keeps explicit point/attachment/angle/corner ownership and shared-line H/V ambiguity blocked', () => {
+    const original = source(), graph = parseCadSketchGraph({ ...original, points: [...original.points, { id: 'alias', position: [10, 0] }] });
+    const owners: readonly CadSketchGraphRelation[] = [
+      { id: 'fixed-axis', kind: 'fixed-axis', pointId: 'b', axis: 'y', value: ' 0 ' },
+      { id: 'fixed-point', kind: 'fixed-point', pointId: 'b', position: [' 10 ', '0'] },
+      { id: 'attachment', kind: 'coincident', pointIds: ['b', 'alias'] },
+      { id: 'angle', kind: 'line-angle', rays: [{ lineId: 'edge', towardPointId: 'b' }, { lineId: 'near', towardPointId: 'd' }], sense: 'ccw', value: ' 90 ' }
+    ];
+    for (const owner of owners) expect(() => prepareCadSketchLineExtend({ graph: parseCadSketchGraph({ ...graph, relations: [owner] }), parameters: {}, entityId: 'edge', end: 'end' }))
+      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-extend', relationIds: [owner.id] }));
+    const duplicate = parseCadSketchGraph({ ...graph, entities: [...graph.entities,
+      { id: 'other-line', kind: 'line', construction: true, startPointId: 'b', endPointId: 'a' }],
+      relations: [{ id: 'direction', kind: 'horizontal', pointIds: ['a', 'b'] }] });
+    expect(() => prepareCadSketchLineExtend({ graph: duplicate, parameters: {}, entityId: 'edge', end: 'end' }))
+      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-extend', relationIds: ['direction'] }));
+    let id = 0;
+    const corner = createCadSketchCornerTreatment({ graph: parseCadSketchGraph({ points: [{ id: 'v', position: [0, 0] }, { id: 'a', position: [20, 0] },
+      { id: 'b', position: [0, 20] }], entities: [{ id: 'edge', kind: 'line', construction: false, startPointId: 'v', endPointId: 'a' },
+      { id: 'other', kind: 'line', construction: false, startPointId: 'v', endPointId: 'b' }], relations: [] }), parameters: {}, pointId: 'v',
+      treatment: { kind: 'fillet', radius: 2 }, createId: () => `corner_${++id}` });
+    expect(() => prepareCadSketchLineExtend({ graph: corner.graph, parameters: {}, entityId: 'edge', end: 'end' }))
+      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-extend', relationIds: [corner.relationId] }));
+  });
+
   it('rejects an out-of-range generated endpoint from a legal boundary instead of offering a malformed edit', () => {
     const document = parseCadDocument({ ...createCadDocument('Range', 'range'), schemaVersion: 2, features: [{
       id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
@@ -126,7 +173,7 @@ describe('exact line Extend', () => {
     catch (error) {
       expect(error).toBeInstanceOf(CadSketchExtendDependencyError);
       if (!(error instanceof CadSketchExtendDependencyError)) throw error;
-      expect(error.relationIds).toEqual(['span', 'horizontal']); expect(error.pointIds).toEqual(['b']);
+      expect(error.relationIds).toEqual(['span']); expect(error.pointIds).toEqual(['b']);
       expect(Object.isFrozen(error.relationIds)).toBe(true); expect(error.message).not.toContain('span');
     }
     const fixed = parseCadSketchGraph({ ...original, points: original.points.map(point => point.id === 'b' ? { ...point, position: [' length ', 0] } : point) });

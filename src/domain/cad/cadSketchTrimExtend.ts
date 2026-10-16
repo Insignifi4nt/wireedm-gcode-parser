@@ -2,7 +2,7 @@ import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { CadIdentifierSchema, CadNumberSchema } from './cadPrimitives';
 import { CadError } from './cadError';
-import { parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
+import { parseCadSketchGraph, type CadSketchGraph, type CadSketchGraphRelation } from './cadSketchGraph';
 import { isCadImportData } from './cadImportData';
 import { compileCadSketchGraph } from './cadSketchGraphGeometry';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
@@ -74,6 +74,7 @@ interface Source {
   readonly graph: CadSketchGraph; readonly parameters: Readonly<Record<string, number>>;
 }
 type OpenSegment = Exclude<PathSegment, { kind: 'circle' }>;
+type SourceLine = Extract<CadSketchGraph['entities'][number], { kind: 'line' }>;
 type Witness = CadSketchEndTrimTarget['boundary'];
 interface Event { witness: Witness; boundary: PathSegment; point: Point2 }
 type BoundaryQuery = { kind: 'trim'; segment: OpenSegment } | { kind: 'extend'; segment: LinePathSegment; end: 'start' | 'end' };
@@ -105,9 +106,19 @@ function tangent(segment: PathSegment, point: Readonly<Point2>, operation: 'trim
   if (!Number.isFinite(length) || length <= 1e-7) throw precision(operation);
   return { x: vector.x / length, y: vector.y / length };
 }
-function assertDependencies(graph: CadSketchGraph, entityId: string, detached: readonly string[], operation: 'trim' | 'extend' = 'trim') {
-  const owners = graph.relations.filter(relation => cadSketchRelationEntityIds(relation).includes(entityId)
-    || cadSketchRelationPointIds(graph, relation).some(id => detached.includes(id)));
+function sameEndpointPair(edge: Pick<SourceLine, 'startPointId' | 'endPointId'>, pair: readonly string[]): boolean {
+  return pair.length === 2 && (edge.startPointId === pair[0] && edge.endPointId === pair[1] || edge.startPointId === pair[1] && edge.endPointId === pair[0]);
+}
+function retainedLineDirection(graph: CadSketchGraph, line: SourceLine, relation: CadSketchGraphRelation): boolean {
+  if (relation.kind === 'parallel' || relation.kind === 'perpendicular') return true;
+  if (relation.kind !== 'horizontal' && relation.kind !== 'vertical') return false;
+  return !sameEndpointPair(line, relation.pointIds) || !graph.entities.some(other => other.id !== line.id
+    && other.kind !== 'circle' && sameEndpointPair(other, relation.pointIds));
+}
+function assertDependencies(graph: CadSketchGraph, entityId: string, detached: readonly string[], operation: 'trim' | 'extend' = 'trim', retainedLine?: SourceLine) {
+  const owners = graph.relations.filter(relation => (cadSketchRelationEntityIds(relation).includes(entityId)
+    || cadSketchRelationPointIds(graph, relation).some(id => detached.includes(id)))
+    && !(retainedLine && retainedLineDirection(graph, retainedLine, relation)));
   const drivers = detached.filter(id => graph.points.find(point => point.id === id)?.position.some(value => typeof value === 'string')
     || owners.some(relation => cadSketchRelationPointIds(graph, relation).includes(id)));
   if (owners.length || drivers.length) throw operation === 'trim' ? new CadSketchTrimDependencyError(owners.map(relation => relation.id), drivers)
@@ -184,7 +195,15 @@ function replaceEndpoint(graph: CadSketchGraph, parameters: Readonly<Record<stri
   witness: Witness, pointId: string, operation: 'trim' | 'extend'): CadSketchGraph {
   const endpoint = witness.endpointPointId;
   if (endpoint !== undefined && pointId !== endpoint) throw new CadError(`invalid-sketch-${operation}-point`, 'Use the exact witnessed boundary endpoint identity.');
-  const candidate = parseCadSketchGraph({ ...graph,
+  const source = graph.entities.find(entity => entity.id === entityId), line = source?.kind === 'line' ? source : null;
+  // A surviving line explicitly transfers only its own endpoint-pair axis relation.
+  // Adjacent axis operands keep the detached old point; scalar/attachment drivers never transfer.
+  const relations = line ? graph.relations.map((relation): CadSketchGraphRelation => {
+    if ((relation.kind !== 'horizontal' && relation.kind !== 'vertical') || !sameEndpointPair(line, relation.pointIds)) return relation;
+    const old = end === 'start' ? line.startPointId : line.endPointId;
+    return { ...relation, pointIds: [relation.pointIds[0] === old ? pointId : relation.pointIds[0], relation.pointIds[1] === old ? pointId : relation.pointIds[1]] };
+  }) : graph.relations;
+  const candidate = parseCadSketchGraph({ ...graph, relations,
     points: endpoint === undefined ? [...graph.points, { id: pointId, position: witness.position }] : graph.points,
     entities: graph.entities.map(entity => entity.id === entityId ? { ...entity, [end === 'start' ? 'startPointId' : 'endPointId']: pointId } : entity) });
   compileCadSketchGraph(candidate, parameters);
@@ -214,7 +233,7 @@ export function prepareCadSketchEndTrim({ graph: input, parameters, entityId, pa
   if (!end) throw new CadError('unsupported-sketch-trim-middle', 'Middle trim is not supported yet. Split explicitly before editing both surviving pieces.');
   const event = end === 'start' ? first : last;
   assertEndpointRange(event.point, 'trim');
-  assertDependencies(graph, entityId, [end === 'start' ? entity.startPointId : entity.endPointId]);
+  assertDependencies(graph, entityId, [end === 'start' ? entity.startPointId : entity.endPointId], 'trim', entity.kind === 'line' ? entity : undefined);
   const pieces = partition(segment, event.point, event.witness.parameter);
   const result: CadSketchEndTrimPreparation = { target: { kind: 'end', entityId, parameter: pick, end, boundary: event.witness },
     removed: pieces[end === 'start' ? 0 : 1], survivor: pieces[end === 'start' ? 1 : 0], boundary: event.boundary,
@@ -241,7 +260,7 @@ export function prepareCadSketchLineExtend({ graph: input, parameters, entityId,
   if (!entity || entity.kind !== 'line') throw new CadError('invalid-sketch-extend-target', 'This extension supports an existing line endpoint.');
   const geometry = compileCadSketchGraph(graph, parameters), segment = geometry.segments.find(item => item.id === entityId);
   if (!segment || segment.kind !== 'line') throw new CadError('invalid-sketch-extend-target', 'This extension supports an existing line endpoint.');
-  assertDependencies(graph, entityId, [end === 'start' ? entity.startPointId : entity.endPointId], 'extend');
+  assertDependencies(graph, entityId, [end === 'start' ? entity.startPointId : entity.endPointId], 'extend', entity);
   const events = boundaryEvents(graph, parameters, geometry.segments, { kind: 'extend', segment, end });
   const event = end === 'start' ? events.at(-1) : events[0];
   if (!event) throw new CadError('missing-sketch-extend-boundary', 'No finite boundary intersects this line beyond the selected endpoint.');

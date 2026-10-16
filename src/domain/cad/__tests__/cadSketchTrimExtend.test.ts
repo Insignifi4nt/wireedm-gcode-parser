@@ -5,6 +5,7 @@ import { CadSketchTrimDependencyError, prepareCadSketchEndTrim, trimCadSketchEnt
 import { cadAnalyticSegments } from '../cadAnalyticSegments';
 import { signedAreaOfPath } from '@/domain/path-intel/segments';
 import { createCadDocument, parseCadDocument } from '../cadSchema';
+import { createCadFreshSketchGraph } from '../cadFreshSketchGraph';
 
 function fences() {
   return parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] },
@@ -15,6 +16,46 @@ function fences() {
 }
 
 describe('exact sketch end Trim', () => {
+  it.each([false, true])('transfers only the fresh rectangle line’s unordered H/V pair, keeping old adjacent direction and reversed=%s source intent', reversed => {
+    let id = 0;
+    const rectangle = createCadFreshSketchGraph({ geometry: { kind: 'rectangle', x: 0, y: 0, width: 20, height: 10, cornerRadius: 0 },
+      construction: false, createId: () => `rect_${++id}` });
+    const graph = parseCadSketchGraph({ ...rectangle, points: [...rectangle.points, { id: 'fence-a', position: [' cutX ', '0'] },
+      { id: 'fence-b', position: [5, 5] }], entities: [...rectangle.entities.map(entity => reversed && entity.id === 'rect_5' && entity.kind === 'line'
+      ? { ...entity, startPointId: 'rect_2', endPointId: 'rect_1' } : entity),
+      { id: 'fence', kind: 'line', construction: true, startPointId: 'fence-a', endPointId: 'fence-b' }],
+      relations: rectangle.relations.map(relation => relation.id === 'rect_9' ? { ...relation, pointIds: ['rect_2', 'rect_1'] } : relation) });
+    const parameters = { cutX: 5 }, before = JSON.stringify(graph);
+    const preview = prepareCadSketchEndTrim({ graph, parameters, entityId: 'rect_5', parameter: reversed ? 0.9 : 0.1 });
+    if (preview.target.kind !== 'end') throw new Error('Expected surviving line.');
+    expect(preview.target.boundary.endpointPointId).toBe('fence-a');
+    const result = trimCadSketchEntity({ graph, parameters, trim: { ...preview.target, cutPointId: 'fence-a' } });
+    expect(result.graph.relations).toEqual([{ id: 'rect_9', kind: 'horizontal', pointIds: ['rect_2', 'fence-a'] }, ...graph.relations.slice(1)]);
+    expect(result.graph.points).toEqual(graph.points);
+    expect(result.graph.entities[0]).toEqual({ ...graph.entities[0], [reversed ? 'endPointId' : 'startPointId']: 'fence-a' });
+    expect(result.graph.entities.slice(1)).toEqual(graph.entities.slice(1));
+    expect(JSON.stringify(graph)).toBe(before);
+  });
+
+  it('keeps ambiguous shared endpoint-pair ownership, arc direction pairs and no-hit line deletion blocked', () => {
+    const original = fences(), horizontal = { id: 'direction', kind: 'horizontal' as const, pointIds: ['b', 'a'] as const };
+    const shared = parseCadSketchGraph({ ...original, points: [...original.points, { id: 'center', position: [10, 0] }],
+      entities: [...original.entities, { id: 'other-arc', kind: 'arc', construction: false, centerPointId: 'center', startPointId: 'a', endPointId: 'b', direction: 'ccw' }],
+      relations: [horizontal] });
+    expect(() => prepareCadSketchEndTrim({ graph: shared, parameters: {}, entityId: 'edge', parameter: 0.1 }))
+      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['direction'] }));
+    const deleted = parseCadSketchGraph({ ...original, entities: [original.entities[0]], relations: [horizontal] });
+    expect(() => prepareCadSketchEndTrim({ graph: deleted, parameters: {}, entityId: 'edge', parameter: 0.1 }))
+      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['direction'] }));
+    const arc = parseCadSketchGraph({ points: [{ id: 'o', position: [0, 0] }, { id: 'a', position: [10, 0] }, { id: 'b', position: [-10, 0] },
+      { id: 'c', position: [5, -20] }, { id: 'd', position: [5, 20] }], entities: [
+      { id: 'arc', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 'a', endPointId: 'b', direction: 'ccw' },
+      { id: 'fence', kind: 'line', construction: true, startPointId: 'c', endPointId: 'd' }], relations: [horizontal,
+      { id: 'radius', kind: 'radial-size', entityId: 'arc', quantity: 'radius', value: ' 10 ' }] });
+    expect(() => prepareCadSketchEndTrim({ graph: arc, parameters: {}, entityId: 'arc', parameter: 0.1 }))
+      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['direction', 'radius'] }));
+  });
+
   it('rejects an out-of-range cut on a legal arc bulge rather than exposing a malformed ready witness', () => {
     const document = parseCadDocument({ ...createCadDocument('Arc range', 'arc-range'), schemaVersion: 2, features: [{
       id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
@@ -149,7 +190,7 @@ describe('exact sketch end Trim', () => {
     catch (error) {
       expect(error).toBeInstanceOf(CadSketchTrimDependencyError);
       if (!(error instanceof CadSketchTrimDependencyError)) throw error;
-      expect(error.relationIds).toEqual(['span', 'horizontal']); expect(error.pointIds).toEqual(['a']);
+      expect(error.relationIds).toEqual(['span']); expect(error.pointIds).toEqual(['a']);
       expect(Object.isFrozen(error.relationIds)).toBe(true); expect(error.message).not.toContain('span');
     }
     const driven = parseCadSketchGraph({ ...original, points: original.points.map(point => point.id === 'a' ? { ...point, position: [' origin ', 0] } : point) });

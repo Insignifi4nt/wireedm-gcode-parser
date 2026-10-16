@@ -190,7 +190,12 @@ test('trims a consumed edge, reconnects deliberately and matches the same guarde
       { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
       { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
       { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' },
-      { id: 'fence', kind: 'line', construction: true, startPointId: 'fence-a', endPointId: 'fence-b' }], relations: []
+      { id: 'fence', kind: 'line', construction: true, startPointId: 'fence-a', endPointId: 'fence-b' }], relations: [
+        { id: 'bottom-horizontal', kind: 'horizontal', pointIds: ['a', 'b'] },
+        { id: 'right-vertical', kind: 'vertical', pointIds: ['b', 'c'] },
+        { id: 'top-horizontal', kind: 'horizontal', pointIds: ['c', 'd'] },
+        { id: 'left-vertical', kind: 'vertical', pointIds: ['d', 'a'] }
+      ]
   } };
   await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
   let current = await context(page);
@@ -244,7 +249,7 @@ test('trims a consumed edge, reconnects deliberately and matches the same guarde
   expect(human.graph.points.slice(0, sketch.graph.points.length)).toEqual(sketch.graph.points);
   expect(human.graph.points.find((point: { id: string }) => point.id === cutPointId).position).toEqual([10, 0]);
   expect(human.graph.entities[0]).toEqual({ ...sketch.graph.entities[0], startPointId: cutPointId });
-  expect(human.graph.relations).toEqual([]);
+  expect(human.graph.relations).toEqual([{ ...sketch.graph.relations[0], pointIds: [cutPointId, 'b'] }, ...sketch.graph.relations.slice(1)]);
   expect((await call(page, 'cad_build', { expectedVersion: current.version })).bodies[0].volumeMm3).toBeCloseTo(4000, 7);
   await page.keyboard.press('Control+z'); current = await context(page);
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
@@ -282,7 +287,12 @@ test('extends the chosen line end to its exact boundary joint, matches the agent
     entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
       { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
       { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
-      { id: 'de', kind: 'line', construction: false, startPointId: 'd', endPointId: 'e' }], relations: []
+      { id: 'de', kind: 'line', construction: false, startPointId: 'd', endPointId: 'e' }], relations: [
+        { id: 'bottom-horizontal', kind: 'horizontal', pointIds: ['a', 'b'] },
+        { id: 'right-vertical', kind: 'vertical', pointIds: ['b', 'c'] },
+        { id: 'top-horizontal', kind: 'horizontal', pointIds: ['c', 'd'] },
+        { id: 'left-vertical', kind: 'vertical', pointIds: ['d', 'e'] }
+      ]
   } };
   await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
   let current = await context(page); const baseVersion = current.version;
@@ -305,7 +315,8 @@ test('extends the chosen line end to its exact boundary joint, matches the agent
   await (await openExtend()).click(); await expect(page.locator('[data-cad-sketch-point="e"]')).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
   const human = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
-  expect(human.graph.points).toEqual(sketch.graph.points); expect(human.graph.relations).toEqual([]);
+  expect(human.graph.points).toEqual(sketch.graph.points);
+  expect(human.graph.relations).toEqual([{ ...sketch.graph.relations[0], pointIds: ['e', 'b'] }, ...sketch.graph.relations.slice(1)]);
   expect(human.graph.entities).toEqual([{ ...sketch.graph.entities[0], startPointId: 'e' }, ...sketch.graph.entities.slice(1)]);
   await page.keyboard.press('Control+z'); current = await context(page);
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
