@@ -2,6 +2,50 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('joins distinct sketch endpoints deliberately, then exports and saves their exact constrained extrusion', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const feature = { id: 'joined', kind: 'sketch', name: 'Joined plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [[0, 0], [20, 0], [20, 0], [20, 10], [20, 10], [0, 10], [0, 10], [0, 5]].map((position, index) => ({ id: `p${index}`, position: index === 0 ? [' 0 ', ' 0 '] : position })),
+    entities: [0, 1, 2, 3].map(index => ({ id: `line${index}`, kind: 'line', construction: false, startPointId: `p${index * 2}`, endPointId: `p${index * 2 + 1}` })),
+    relations: [...[0, 1, 2].map(index => ({ id: `join${index}`, kind: 'coincident', pointIds: [`p${index * 2 + 1}`, `p${index * 2 + 2}`] })),
+      ...[0, 1, 2, 3].map(index => ({ id: `axis${index}`, kind: index % 2 ? 'vertical' : 'horizontal', pointIds: [`p${index * 2}`, `p${index * 2 + 1}`] })),
+      { id: 'width', kind: 'distance', pointIds: ['p0', 'p1'], value: ' 20 ' }, { id: 'height', kind: 'distance', pointIds: ['p2', 'p3'], value: 10 }]
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature }] });
+  let current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: 'joined' } });
+  await page.getByRole('button', { name: 'Point 1 in Joined plate', exact: true }).click();
+  await page.getByRole('button', { name: 'Point 8 in Joined plate', exact: true }).click({ modifiers: ['Shift'] });
+  await page.getByRole('checkbox', { name: 'Coincident', exact: true }).check();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'joined' })).feature).toEqual(feature);
+  await page.getByRole('checkbox', { name: 'Coincident', exact: true }).check();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const joined = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'joined' })).feature;
+  expect(joined.graph.points).toHaveLength(8); expect(joined.graph.points[0].position).toEqual([' 0 ', ' 0 ']); expect(joined.graph.points[7].position).toEqual([0, 0]);
+  const closure = joined.graph.relations.find((relation: { kind: string; id: string }) => relation.kind === 'coincident' && !feature.graph.relations.some(source => source.id === relation.id));
+  expect(closure).toMatchObject({ kind: 'coincident', pointIds: ['p0', 'p7'] });
+  expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: 'joined' })).materialAreaMm2).toBeCloseTo(200, 9);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  const downloading = page.waitForEvent('download'); await call(page, 'cad_export_dxf', { expectedVersion: current.version, sketchId: 'joined' });
+  const path = await (await downloading).path(); if (!path) throw new Error('DXF download missing.');
+  expect((await readFile(path, 'utf8')).match(/\nLINE\r?\n/g)).toHaveLength(4);
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'pad', kind: 'extrude', name: 'Plate thickness', suppressed: false, sketchId: 'joined', distance: 5, symmetric: false, operation: 'new', targetId: null
+  } }] });
+  current = await context(page);
+  const built = await call(page, 'cad_build', { expectedVersion: current.version }); expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo(1000, 7);
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'remove-sketch-relation', sketchId: 'joined', relationId: closure.id }] })).toMatchObject({ ok: false });
+  expect((await context(page)).version).toBe(current.version);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible();
+  current = await context(page); expect(current.dirty).toBe(false);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'joined' })).feature).toEqual(joined);
+});
+
 test('selects analytic boxes and overlapping sketch operands through shared filters without changing geometry', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const feature = { id: 'spatial', kind: 'sketch', name: 'Spatial sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

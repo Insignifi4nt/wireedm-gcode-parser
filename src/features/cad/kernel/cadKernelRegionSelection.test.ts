@@ -10,6 +10,10 @@ import type { CadFeature, CadPlane, CadSketchFeature } from '../../../domain/cad
 import { inspectCadSketchRegions } from '../../../domain/cad/cadSketchRegionInspection';
 import { CadSession } from '../cadSession';
 import { refs, sketch, pad, part, stock, pocket } from '../../../domain/cad/__tests__/cadSketchRegionFixtures';
+import { createCadDocument } from '@/domain/cad/cadSchema';
+import { measureCadSketch } from '@/domain/cad/cadMeasurements';
+import { cadSketchToDxf } from '@/domain/cad/cadCam';
+import { parseDxf } from '@/domain/dxf/parseDxf';
 
 beforeAll(async () => {
   const wasmBinary = await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));
@@ -17,6 +21,35 @@ beforeAll(async () => {
 }, 60_000);
 
 describe('native selected-cell input', () => {
+  it('carries declared line/major-arc joints through exact material, DXF and STEP without changing source', async () => {
+    const document = parseCadDocument({ ...createCadDocument('Declared arc joint'), schemaVersion: 2, parameters: { radius: 5 }, features: [
+      { id: 'sketch', name: 'Joined supports', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'o', position: [0, 0] }, { id: 'a', position: [' radius ', 0] }, { id: 'b', position: [0, 'radius'] },
+          { id: 'a2', position: ['radius', 0] }, { id: 'b2', position: [0, ' radius '] }],
+        entities: [{ id: 'arc', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 'a', endPointId: 'b', direction: 'cw' },
+          { id: 'chord', kind: 'line', construction: false, startPointId: 'b2', endPointId: 'a2' }],
+        relations: [{ id: 'join-a', kind: 'coincident', pointIds: ['a', 'a2'] }, { id: 'join-b', kind: 'coincident', pointIds: ['b', 'b2'] }] } },
+      { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false, sketchId: 'sketch', distance: ' 5e0 ', symmetric: false, operation: 'new', targetId: null },
+    ] });
+    const before = JSON.stringify(document), expectedArea = 18.75 * Math.PI + 12.5;
+    expect(measureCadSketch(document, 'sketch').materialAreaMm2).toBeCloseTo(expectedArea, 10);
+    const dxf = parseDxf(cadSketchToDxf(document, 'sketch'));
+    expect(dxf.entities).toHaveLength(2);
+    expect(dxf.entities.find(entity => entity.type === 'arc')).toMatchObject({ center: { x: 0, y: 0 }, radius: 5 });
+    const exportedArc = dxf.entities.find(entity => entity.type === 'arc');
+    if (exportedArc?.type !== 'arc') throw new Error('Exported arc missing');
+    expect(((exportedArc.endAngle - exportedArc.startAngle) % 360 + 360) % 360).toBe(270);
+    // The existing material exporter normalizes the outer contour winding.
+    expect(dxf.entities.find(entity => entity.type === 'line')).toMatchObject({ start: { x: 5, y: 0 }, end: { x: 0, y: 5 } });
+    const model = buildCadKernelModel(document);
+    try {
+      expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes).toHaveLength(1);
+      expect(model.result.meshes[0].volume).toBeCloseTo(expectedArea * 5, 7);
+      const imported = prepareCadSolidImport({ format: 'step', fileName: 'declared-joints.step', encoding: 'utf8', data: await model.export('step').text() });
+      expect(imported.volume).toBeCloseTo(expectedArea * 5, 6); expect(imported.solidCount).toBe(1);
+      expect(JSON.stringify(document)).toBe(before);
+    } finally { model.dispose(); }
+  });
   it('builds independently expected material after one shared-driver source and reference repair batch', () => {
     const first: CadSketchFeature = { ...sketch(), profiles: sketch().profiles.map(profile => profile.id === 'bore' && profile.geometry.kind === 'circle'
       ? { ...profile, geometry: { ...profile.geometry, x: 'location' } } : profile) };

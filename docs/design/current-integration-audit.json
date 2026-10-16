@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T05:13:30.690Z",
+  "generatedAt": "2026-10-16T05:25:42.025Z",
   "baseline": {
     "path": "docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json",
     "publishedCheckpoint": "6e2113fa0151ef7d0b378ad3de7635664b2fab82",
@@ -8,7 +8,7 @@
     "originalContextPreserved": true
   },
   "currentSource": {
-    "scannedProductionTsFiles": 496,
+    "scannedProductionTsFiles": 497,
     "catalogImports": 267,
     "currentImportedSymbolReferences": 324,
     "catalogExportsParsed": 227,
@@ -1314,7 +1314,7 @@
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 264,
+      "line": 265,
       "symbol": "MeasureIcon",
       "catalogId": "measure",
       "context": "<Button type=\"button\" disabled={draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, pointPair))} onClick={addLength}><MeasureIcon size={13} /> Add distance</Button>",
@@ -1322,7 +1322,7 @@
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 289,
+      "line": 290,
       "symbol": "CloseIcon",
       "catalogId": "close",
       "context": "<Button type=\"button\" aria-label={`Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title=\"Remove this relation and retain the current geometry\" onClick={() => removeRelation(relation.id)}><CloseIcon size={12} /></Button>",
@@ -1330,7 +1330,7 @@
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 305,
+      "line": 306,
       "symbol": "CloseIcon",
       "catalogId": "close",
       "context": "<Button type=\"button\" onClick={reset}><CloseIcon size={13} /> Cancel</Button>",
@@ -1338,7 +1338,7 @@
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 305,
+      "line": 306,
       "symbol": "ConfirmIcon",
       "catalogId": "confirm",
       "context": "<Button variant=\"primary\" type=\"submit\" disabled={interactionLocked || submission.applying || scalarPending || !candidate.edits?.length || Boolean(blockingIssue)}><ConfirmIcon size={13} /> Apply</Button>",
@@ -8169,28 +8169,28 @@
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 264,
+      "line": 265,
       "symbol": "MeasureIcon",
       "catalogId": "measure",
       "context": "<Button type=\"button\" disabled={draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, pointPair))} onClick={addLength}><MeasureIcon size={13} /> Add distance</Button>"
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 289,
+      "line": 290,
       "symbol": "CloseIcon",
       "catalogId": "close",
       "context": "<Button type=\"button\" aria-label={`Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title=\"Remove this relation and retain the current geometry\" onClick={() => removeRelation(relation.id)}><CloseIcon size={12} /></Button>"
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 305,
+      "line": 306,
       "symbol": "CloseIcon",
       "catalogId": "close",
       "context": "<Button type=\"button\" onClick={reset}><CloseIcon size={13} /> Cancel</Button>"
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 305,
+      "line": 306,
       "symbol": "ConfirmIcon",
       "catalogId": "confirm",
       "context": "<Button variant=\"primary\" type=\"submit\" disabled={interactionLocked || submission.applying || scalarPending || !candidate.edits?.length || Boolean(blockingIssue)}><ConfirmIcon size={13} /> Apply</Button>"

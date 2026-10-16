@@ -63,6 +63,28 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it('adds and releases declared coincidence without merging point identities, and restores the accepted relation exactly', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Joined points', 'joined-points'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [' 0 ', ' 0 '] }, { id: 'b', position: [0, 0] }], entities: [], relations: []
+      }
+    }] });
+    const h = await mount(source, [{ kind: 'point', id: 'b' }, { kind: 'point', id: 'a' }]);
+    await act(async () => field('Coincident').click());
+    await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
+    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [expect.objectContaining({ graph: {
+      points: [{ id: 'a', position: [' 0 ', ' 0 '] }, { id: 'b', position: [0, 0] }], entities: [],
+      relations: [expect.objectContaining({ kind: 'coincident', pointIds: ['b', 'a'] })]
+    } })] }));
+    expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+    await click('Apply'); const accepted = h.session.getSnapshot().document;
+    await act(async () => field('Coincident').click()); await act(async () => field('Coincident').click());
+    expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.edit).toHaveBeenCalledOnce();
+    await act(async () => field('Coincident').click()); await click('Apply');
+    expect(h.session.getSnapshot().document.features[0]).toMatchObject({ graph: { points: [{ id: 'a', position: [' 0 ', ' 0 '] }, { id: 'b', position: [0, 0] }], relations: [] } });
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toBe(accepted);
+  });
+
   it.each(['cancel', 'source change', 'other sketch'] as const)('inspects rejected candidate operands without changing the exact draft, and handles %s', async ending => {
     const source = lineDocument(), sketch = source.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing graph.');

@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph } from '../../../domain/cad/cadSketchGraph';
 import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from './cadSketchSolverModule';
+import { resolveCadSketchRegions } from '@/domain/cad/cadSketchGeometry';
+import { measureCadResolvedProfile } from '@/domain/cad/cadMeasurements';
 
 const require = createRequire(import.meta.url);
 const initialize = () => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href);
@@ -124,6 +126,12 @@ describe('real PlaneGCS sketch solving', () => {
     expect(result.kind).toBe('solved'); if (result.kind !== 'solved') throw new Error(result.message);
     expect(result.diagnostics.degreesOfFreedom).toBe(0);
     expect(result.graph.points.map(point => point.position)).toEqual([[0, 0], [20, 0], [20, 0], [20, 10], [20, 10], [0, 10], [0, 10], [0, 0]]);
+    expect(result.graph.points.map(point => point.id)).toEqual(graph.points.map(point => point.id));
+    expect(result.graph.relations).toEqual(graph.relations);
+    const material = resolveCadSketchRegions({ id: 'sketch', kind: 'sketch', name: 'Joined rectangle', suppressed: false,
+      plane: 'XY', offset: 0, profiles: [], graph: result.graph }, {});
+    expect(material).toHaveLength(1);
+    expect(measureCadResolvedProfile(material[0].boundary.geometry).areaMm2).toBe(200);
   });
   it('solves an oblique endpoint arc directly through its equal-radius structural relation', async () => {
     const graph = parseCadSketchGraph({ points: [

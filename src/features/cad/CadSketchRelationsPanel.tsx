@@ -158,7 +158,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       return { ...current, relations: retained };
     });
   };
-  const togglePairAxis = (kind: 'horizontal' | 'vertical', enabled: boolean) => {
+  const togglePairRelation = (kind: 'coincident' | 'horizontal' | 'vertical', enabled: boolean) => {
     if (!pointPair) return;
     // Keep other relations for the shared preparation/conflict checks.
     if (enabled) {
@@ -258,9 +258,10 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
           checked={draft.relations.some(relation => relation.kind === kind && samePair(relation, dimensionPair))} onChange={event => toggleLineAxis(kind, event.target.checked)} />{kind === 'horizontal' ? 'Horizontal' : 'Vertical'}</label>)}
         <Button type="button" disabled={draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, dimensionPair))} onClick={addLength}><MeasureIcon size={13} /> Add length</Button>
       </div>}
-      {pointPair && <div className="cad-sketch-profile-actions">
-        {(['horizontal', 'vertical'] as const).map(kind => <label key={kind} className="cad-check"><Input type="checkbox" aria-label={kind === 'horizontal' ? 'Horizontal' : 'Vertical'}
-          checked={draft.relations.some(relation => relation.kind === kind && samePair(relation, pointPair))} onChange={event => togglePairAxis(kind, event.target.checked)} />{kind === 'horizontal' ? 'Horizontal' : 'Vertical'}</label>)}
+      {pointPair && <div className="cad-sketch-profile-actions cad-sketch-pair-actions">
+        {(['coincident', 'horizontal', 'vertical'] as const).map(kind => <label key={kind} className="cad-check"><Input type="checkbox" aria-label={kind[0].toUpperCase() + kind.slice(1)}
+          title={kind === 'coincident' ? 'Keeps the selected points together as a shared sketch joint.' : undefined}
+          checked={draft.relations.some(relation => relation.kind === kind && samePair(relation, pointPair))} onChange={event => togglePairRelation(kind, event.target.checked)} />{kind[0].toUpperCase() + kind.slice(1)}</label>)}
         <Button type="button" disabled={draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, pointPair))} onClick={addLength}><MeasureIcon size={13} /> Add distance</Button>
       </div>}
       {!corner && selectedPoint && <div className="cad-sketch-profile-actions">{(['x', 'y'] as const).map(axis => {
