@@ -99,6 +99,14 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
             }
             bindings.selectSketchGeometrySet(selections); return;
           }
+          case 'set-sketch-pick-filter': {
+            if (bindings.curveId || !bindings.document.features.some(feature => feature.kind === 'sketch' && feature.id === bindings.sketchId && !feature.suppressed)) throw new ToolError('WRONG_VIEW', 'Open an active sketch editor before changing its pick filter.');
+            if (!rendered) throw new ToolError('VIEW_UNAVAILABLE', 'Wait for the sketch viewport to load.');
+            const view = rendered.getState();
+            if (view.mode !== 'sketch') throw new ToolError('WRONG_VIEW', 'Open the sketch viewport before changing its pick filter.');
+            if (!view.available || !rendered.setSketchPickFilter) throw new ToolError('VIEW_UNAVAILABLE', 'Wait for sketch picking controls to load.');
+            rendered.setSketchPickFilter(command.filter); return;
+          }
           case 'finish-sketch':
             if (!bindings.sketchId) throw new ToolError('WRONG_VIEW', 'No sketch editor is open.');
             bindings.finishSketch(); return;

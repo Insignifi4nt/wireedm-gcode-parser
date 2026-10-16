@@ -200,10 +200,15 @@
 .cad-sketch-point-mark { fill: var(--card); stroke: var(--primary); stroke-width: 1.5px; vector-effect: non-scaling-stroke; pointer-events: none; }
 .cad-sketch-graph-point:is(:hover, :focus-visible, .is-active) .cad-sketch-point-mark { fill: var(--primary); stroke: var(--foreground); }
 .cad-sketch-graph-point.is-locked .cad-sketch-point-mark { fill: var(--muted-foreground); stroke: var(--card); }
+.cad-sketch-graph-point.is-locked.is-active .cad-sketch-point-mark { fill: var(--primary); stroke: var(--foreground); }
 .cad-sketch-drag-target { fill: none; stroke: var(--primary); stroke-width: 1px; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .cad-sketch-drag-target.is-invalid { stroke: var(--destructive); }
+.cad-sketch-selection-box { fill: color-mix(in srgb, var(--primary) 12%, transparent); stroke: var(--primary); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.cad-sketch-selection-box.is-cross { stroke-dasharray: 5 3; }
 .cad-sketch-entity.is-relation-highlighted { stroke: var(--warning, #f0bf71); }
 .cad-sketch-graph-point.is-relation-highlighted .cad-sketch-point-mark { fill: var(--warning, #f0bf71); stroke: var(--foreground); }
+.cad-sketch-entity.is-pick-highlighted { stroke: var(--foreground); }
+.cad-sketch-graph-point.is-pick-highlighted .cad-sketch-point-mark { fill: var(--foreground); stroke: var(--primary); }
 .cad-sketch-freedom { display: flex; align-items: center; gap: 5px; padding: 7px 12px; color: var(--muted-foreground); font-size: 10px; border-bottom: 1px solid var(--border); }
 .cad-crosshair { stroke: #9cdae4; pointer-events: none; }
 .cad-plane-label { font-size: 10px; letter-spacing: .5px; margin-right: 7px; }

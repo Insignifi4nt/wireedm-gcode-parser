@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { Value } from '@sinclair/typebox/value';
 import { createCadDocument } from '@/domain/cad/cadSchema';
 import { createCadWorkbenchViewportControls, type CadViewportBindings } from './cadWorkbenchViewport';
-import type { CadRenderedViewState } from './cadViewportControls';
+import { CadViewportCommandSchema, type CadRenderedViewState } from './cadViewportControls';
+import type { CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import type { EditorPreviewCapture } from '@/features/webmcp/previewCapture';
 
 const png: EditorPreviewCapture = { source: '3d', dataUrl: 'data:image/png;base64,iVBORw0KGgo=', width: 100, height: 100 };
@@ -30,6 +32,62 @@ describe('shared CAD viewport controls', () => {
   const graphSketch = { id: 'sketch-1', name: 'Outline', kind: 'sketch' as const, plane: 'XY' as const, offset: 0, suppressed: false, profiles: [],
     graph: { points: [{ id: 'a', position: [0, 0] as const }, { id: 'b', position: [10, 0] as const }],
       entities: [{ id: 'ab', kind: 'line' as const, construction: false, startPointId: 'a', endPointId: 'b' }], relations: [] } };
+  it('routes sketch screen filters without changing accepted source or selection and keeps exact-ID picks independent', () => {
+    const context = setup('sketch'), rendered = context.bindings.rendered;
+    if (!rendered) throw new Error('Sketch renderer missing');
+    const document = { ...context.bindings.document, schemaVersion: 2 as const, features: [graphSketch] };
+    const view = { mode: 'sketch' as const, available: true, plane: 'XY' as const, gridVisible: true, snapEnabled: true,
+      gridStepMm: 5, centerMm: [0, 0] as const, heightSpanMm: 160, revision: 1 };
+    const setSketchPickFilter = vi.fn((filter: CadSketchGraphPickFilter) => context.updateView({ ...view, sketchPickFilter: filter }));
+    context.update({ document, selectedSketchGeometrySet: [{ kind: 'point', id: 'a' }], rendered: { ...rendered, setSketchPickFilter } });
+    for (const filter of ['auto', 'edges', 'points'] as const) {
+      context.controls.apply({ kind: 'set-sketch-pick-filter', filter });
+      expect(setSketchPickFilter).toHaveBeenLastCalledWith(filter);
+      expect(context.controls.getState()).toMatchObject({ documentVersion: 'version-1', selectedSketchGeometrySet: [{ kind: 'point', id: 'a' }], view: { sketchPickFilter: filter } });
+    }
+    expect(context.bindings.selectSketchGeometrySet).not.toHaveBeenCalled();
+    context.controls.apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'ab' } });
+    expect(context.bindings.selectSketchGeometrySet).toHaveBeenLastCalledWith([{ kind: 'entity', id: 'ab' }]);
+    context.controls.apply({ kind: 'set-sketch-pick-filter', filter: 'edges' });
+    context.controls.apply({ kind: 'select-sketch-geometry-set', selections: [{ kind: 'point', id: 'b' }] });
+    expect(context.bindings.selectSketchGeometrySet).toHaveBeenLastCalledWith([{ kind: 'point', id: 'b' }]);
+    expect(document.features[0]).toBe(graphSketch);
+  });
+  it.each(['faces', 'point', '', null, ['points']].map(filter => ({ filter })))('rejects an unsupported sketch pick filter at the command boundary: $filter', ({ filter }) => {
+    expect(Value.Check(CadViewportCommandSchema, { kind: 'set-sketch-pick-filter', filter })).toBe(false);
+  });
+  it('rejects sketch filter requests outside the active available editor or during guarded work', () => {
+    const context = setup('sketch'), rendered = context.bindings.rendered;
+    if (!rendered) throw new Error('Sketch renderer missing');
+    const document = { ...context.bindings.document, schemaVersion: 2 as const, features: [graphSketch] };
+    const setSketchPickFilter = vi.fn();
+    const supported = { ...rendered, setSketchPickFilter };
+    const cases: readonly [Partial<CadViewportBindings>, string][] = [
+      [{ sketchId: null }, 'WRONG_VIEW'],
+      [{ document: { ...document, features: [{ ...graphSketch, suppressed: true }] } }, 'WRONG_VIEW'],
+      [{ curveId: 'curve-1' }, 'WRONG_VIEW'],
+      [{ rendered: null }, 'VIEW_UNAVAILABLE'],
+      [{ rendered: { ...supported, getState: () => ({ mode: 'sketch', available: false, plane: 'XY', gridVisible: true,
+        snapEnabled: true, gridStepMm: 5, centerMm: [0, 0], heightSpanMm: 160, revision: 1 }) } }, 'VIEW_UNAVAILABLE'],
+      [{ rendered: { ...supported, setSketchPickFilter: undefined } }, 'VIEW_UNAVAILABLE'],
+      [{ rendered: { ...supported, getState: () => ({ mode: 'solid', available: true, view: 'Top', gridVisible: true, zoom: 1, revision: 1 }) } }, 'WRONG_VIEW'],
+      [{ workflowOpen: true }, 'WORKFLOW_OPEN'], [{ busy: true }, 'BUSY'],
+    ];
+    for (const [change, code] of cases) {
+      context.update({ ...context.bindings, document, rendered: supported, ...change });
+      expect(() => context.controls.apply({ kind: 'set-sketch-pick-filter', filter: 'points' })).toThrowError(expect.objectContaining({ code }));
+    }
+    expect(setSketchPickFilter).not.toHaveBeenCalled();
+  });
+  it('captures the observed sketch filter and rejects a filter change even when camera and selection stay the same', async () => {
+    const context = setup('sketch');
+    const view = { mode: 'sketch' as const, available: true, plane: 'XY' as const, gridVisible: true, snapEnabled: true,
+      gridStepMm: 5, centerMm: [0, 0] as const, heightSpanMm: 160, revision: 1, sketchPickFilter: 'points' as const };
+    context.updateView(view);
+    await expect(context.controls.capture(new AbortController().signal)).resolves.toMatchObject({ viewState: { view: { sketchPickFilter: 'points' } } });
+    context.capture.mockImplementationOnce(async () => { context.updateView({ ...view, sketchPickFilter: 'edges' }); return png; });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
+  });
   it('selects graph points and edges by category only in the active sketch and blocks pending workflows', () => {
     const context = setup('sketch'); context.update({ document: { ...context.bindings.document, schemaVersion: 2, features: [graphSketch] } });
     for (const selection of [{ kind: 'point', id: 'a' }, { kind: 'entity', id: 'ab' }, null] as const) {

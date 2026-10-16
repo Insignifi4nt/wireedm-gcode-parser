@@ -2,6 +2,61 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('selects analytic boxes and overlapping sketch operands through shared filters without changing geometry', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const feature = { id: 'spatial', kind: 'sketch', name: 'Spatial sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [40, 20] }],
+    entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+      { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }], relations: []
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature }] });
+  const current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: feature.id } });
+  const canvas = page.getByLabel('Sketch drawing canvas');
+  const project = async (x: number, y: number) => {
+    const state = await call(page, 'cad_get_viewport', { expectedVersion: current.version });
+    const view = state.view as { centerMm: [number, number] };
+    return canvas.evaluate((element, { x, y, center }) => {
+      const matrix = (element as SVGSVGElement).getScreenCTM(); if (!matrix) throw new Error('Sketch projection unavailable.');
+      const p = new DOMPoint(x - center[0], center[1] - y).matrixTransform(matrix); return { x: p.x, y: p.y };
+    }, { x, y, center: view.centerMm });
+  };
+  const box = async (start: [number, number], end: [number, number]) => {
+    const a = await project(...start), b = await project(...end);
+    await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(b.x, b.y, { steps: 3 }); await page.mouse.up();
+  };
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'set-sketch-pick-filter', filter: 'points' } });
+  await box([-2, -2], [22, 2]);
+  expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }]);
+  expect(await context(page)).toMatchObject({ version: current.version, workflowOpen: false });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'set-sketch-pick-filter', filter: 'edges' } });
+  await box([22, 4], [-2, -2]);
+  expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'ab' }, { kind: 'entity', id: 'bc' }]);
+  await canvas.press('Escape');
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'set-sketch-pick-filter', filter: 'auto' } });
+  const at = await project(20, 0); await page.mouse.click(at.x, at.y, { button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Select other actions', exact: true });
+  await expect(menu).toBeVisible(); expect(await context(page)).toMatchObject({ workflowOpen: true });
+  await menu.getByRole('menuitem', { name: 'Line 2', exact: true }).hover();
+  await expect(page.locator('[data-cad-sketch-entity="bc"]')).toHaveClass(/is-pick-highlighted/);
+  await menu.press('Escape'); expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometrySet).toEqual([]);
+  await page.mouse.click(at.x, at.y, { button: 'right' });
+  const empty = await project(-5, -5); await page.mouse.click(empty.x, empty.y);
+  await expect(menu).toBeHidden(); expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometrySet).toEqual([]);
+  await page.mouse.click(at.x, at.y, { button: 'right' });
+  await menu.getByRole('menuitem', { name: 'Line 2', exact: true }).click();
+  expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'bc' }]);
+  const selectedEdge = page.getByRole('button', { name: 'Line 2 in Spatial sketch', exact: true });
+  await expect(selectedEdge).toBeFocused(); await selectedEdge.press('Shift+F10');
+  await menu.getByRole('menuitem', { name: /^Point 2 ·/ }).click();
+  await expect(page.getByRole('button', { name: 'Point 2 in Spatial sketch', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'b' }]);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(feature);
+  expect(await context(page)).toMatchObject({ version: current.version, workflowOpen: false });
+});
+
 test('selects point pairs directly for alignment and linked distance without implicit dragging or discarded constraints', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [

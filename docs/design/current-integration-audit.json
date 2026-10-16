@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T04:26:32.302Z",
+  "generatedAt": "2026-10-16T04:49:45.936Z",
   "baseline": {
     "path": "docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json",
     "publishedCheckpoint": "6e2113fa0151ef7d0b378ad3de7635664b2fab82",
@@ -8,7 +8,7 @@
     "originalContextPreserved": true
   },
   "currentSource": {
-    "scannedProductionTsFiles": 494,
+    "scannedProductionTsFiles": 495,
     "catalogImports": 267,
     "currentImportedSymbolReferences": 324,
     "catalogExportsParsed": 227,
@@ -1298,7 +1298,7 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 620,
+      "line": 701,
       "symbol": "ConfirmIcon",
       "catalogId": "confirm",
       "context": "<Button aria-label=\"Finish path\" title=\"Keep this path open without adding a closing edge\" disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(false)}><ConfirmIcon size={13} /> Finish path</Button>",
@@ -3639,8 +3639,8 @@
       "scoutActualSymbol": "FitViewIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 611,
-        "column": 280,
+        "line": 692,
+        "column": 768,
         "symbol": "FitViewIcon",
         "exportedSymbol": "FitViewIcon",
         "catalogId": "fit-view",
@@ -3662,8 +3662,8 @@
       "scoutActualSymbol": "GridIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 611,
-        "column": 427,
+        "line": 692,
+        "column": 915,
         "symbol": "GridIcon",
         "exportedSymbol": "GridIcon",
         "catalogId": "grid",
@@ -3685,8 +3685,8 @@
       "scoutActualSymbol": "SnapIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 611,
-        "column": 637,
+        "line": 692,
+        "column": 1125,
         "symbol": "SnapIcon",
         "exportedSymbol": "SnapIcon",
         "catalogId": "snap",
@@ -3708,7 +3708,7 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 620,
+        "line": 701,
         "column": 750,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -3731,7 +3731,7 @@
       "scoutActualSymbol": "UndoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 620,
+        "line": 701,
         "column": 980,
         "symbol": "UndoIcon",
         "exportedSymbol": "UndoIcon",
@@ -3754,7 +3754,7 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 620,
+        "line": 701,
         "column": 1082,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
@@ -3777,7 +3777,7 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 622,
+        "line": 703,
         "column": 106,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -3800,7 +3800,7 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 622,
+        "line": 703,
         "column": 209,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
@@ -5116,8 +5116,8 @@
         "symbol": "Loader2",
         "exportedSymbol": "Loader2",
         "catalogId": "busy",
-        "confidenceScore": 264.5,
-        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, relation: inspectedRelation, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onDelete: deleteSketchGeometry, onConfigureRelation: configureGraphRelation, onEditMan"
+        "confidenceScore": 264.47,
+        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, relation: inspectedRelation, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onSelectSet: selectGraphSet, onDelete: deleteSketchGeometry, onConfigureRelation: conf"
       },
       "resolution": "resolved",
       "actualSymbol": "Loader2",
@@ -5300,8 +5300,8 @@
         "symbol": "Loader2",
         "exportedSymbol": "Loader2",
         "catalogId": "busy",
-        "confidenceScore": 265.75,
-        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, relation: inspectedRelation, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onDelete: deleteSketchGeometry, onConfigureRelation: configureGraphRelation, onEditMan"
+        "confidenceScore": 265.7,
+        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, relation: inspectedRelation, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onSelectSet: selectGraphSet, onDelete: deleteSketchGeometry, onConfigureRelation: conf"
       },
       "resolution": "resolved",
       "actualSymbol": "Loader2",
@@ -5346,8 +5346,8 @@
         "symbol": "PencilRuler",
         "exportedSymbol": "PencilRuler",
         "catalogId": "sketch",
-        "confidenceScore": 263.25,
-        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, relation: inspectedRelation, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onDelete: deleteSketchGeometry, onConfigureRelation: configureGraphRelation, onEditMan"
+        "confidenceScore": 263.23,
+        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, relation: inspectedRelation, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onSelectSet: selectGraphSet, onDelete: deleteSketchGeometry, onConfigureRelation: conf"
       },
       "resolution": "resolved",
       "actualSymbol": "PencilRuler",
@@ -8155,7 +8155,7 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 620,
+      "line": 701,
       "symbol": "ConfirmIcon",
       "catalogId": "confirm",
       "context": "<Button aria-label=\"Finish path\" title=\"Keep this path open without adding a closing edge\" disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(false)}><ConfirmIcon size={13} /> Finish path</Button>"

@@ -60,6 +60,31 @@ async function fixture(overrides: Partial<Props> = {}) {
 }
 
 describe('graph point interaction ownership', () => {
+  it('uses the prepared hit ranking rather than the SVG target, without dragging a different point implicitly', async () => {
+    const pickAt = vi.fn(() => ({ kind: 'point' as const, id: 'mixed' }));
+    const h = await fixture({ pickAt });
+    await h.pointer(h.point('b'), 'pointerdown'); await h.pointer(h.point('b'), 'pointerup');
+    expect(pickAt).toHaveBeenCalledWith(expect.objectContaining({ clientX: 100, clientY: 100 }));
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: 'mixed' });
+    expect(h.point('mixed').focus).toHaveBeenCalledOnce(); expect(h.point('b').focus).not.toHaveBeenCalled();
+    expect(h.capture).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+    await h.key(h.point('mixed'), 'Enter'); expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: 'mixed' });
+  });
+  it('keeps excluded kinds selected visually while removing their keyboard action and tab stop', async () => {
+    const h = await fixture({ filter: 'edges' });
+    await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'point', id: 'a' }] } });
+    expect(h.point().getAttribute('aria-pressed')).toBe('true'); expect(h.point().getAttribute('tabindex')).toBe('-1');
+    await h.key(h.point(), 'Enter'); await h.key(h.point(), 'ArrowRight'); await h.key(h.point(), 'Delete');
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+    await h.key(h.edge(), 'Enter'); expect(h.selected).toHaveBeenLastCalledWith({ kind: 'entity', id: 'edge' });
+  });
+  it('lets a filtered empty pointer click reach the canvas clear or box owner', async () => {
+    const h = await fixture({ filter: 'points', pickAt: () => null });
+    await h.pointer(h.edge(), 'pointerdown');
+    await act(async () => h.edge().dispatchEvent(new MouseEvent('click', { button: 0, detail: 1, bubbles: true })));
+    expect(h.parentPointer).toHaveBeenCalledOnce(); expect(h.parentClick).toHaveBeenCalledOnce();
+    expect(h.selected).not.toHaveBeenCalled();
+  });
   it('toggles point and edge selection with Shift without capturing, moving or claiming an edit', async () => {
     const h = await fixture();
     await h.pointer(h.point('b'), 'pointerdown', { shiftKey: true });

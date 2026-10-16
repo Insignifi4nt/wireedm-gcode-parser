@@ -4,6 +4,9 @@ import { CadError } from '@/domain/cad/cadError';
 import { CadIdentifierSchema } from '@/domain/cad/cadPrimitives';
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 
+export const CadSketchGraphPickFilterSchema = Type.Union([Type.Literal('auto'), Type.Literal('points'), Type.Literal('edges')]);
+export type CadSketchGraphPickFilter = Static<typeof CadSketchGraphPickFilterSchema>;
+
 export const CadSketchGraphSelectionSchema = Type.Object({
   kind: Type.Union([Type.Literal('point'), Type.Literal('entity')]), id: CadIdentifierSchema,
 }, { additionalProperties: false });
