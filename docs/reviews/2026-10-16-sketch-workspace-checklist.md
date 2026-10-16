@@ -17,6 +17,16 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: Dimension-first point picking
+
+Dimension now accepts one edge or two sequential points, with the first point highlighted and an explicit second-point prompt. It can also start from one selected point. The existing point-pair editor supplies Aligned/Horizontal/Vertical and Reference choices; fixed/linked points can anchor a free partner. Escape restores previous tool/selection without history. Typed point/entity eligibility replaces the old edge-only picker for Dimension, Mirror and Use; the latter commands keep entity-only lists. Picking cannot drag, resize, delete or select a closed profile. Source/version and overlap ownership remain guarded.
+
+RED coverage reproduced the disabled command on expression-radius circles. Focused Workbench/Canvas/GraphLayer/Mirror checks pass182 cases, including cancellation, ordered operands, point-over-edge selection, stale source after the first point and mutation isolation. Full types/build/docs/source/shared-control checks pass; independent source review found no actionable issue. One complete private-edit/Undo/agent-parity/Save/reload journey passes in each Chromium and Firefox.
+
+Native pointer verification selected the fixed plate corner and bore center without Shift, canceled after the first pick, then authored ΔX30 and ΔY20. Private edits preserved the accepted original until Finish; the resulting center is [30,20], freedom0 and Pad5 is one 9748.672587712816 mm³ solid without diagnostics. One Undo restores the exact original source. Temporary draft restored empty and closed without Save. Evidence: tmp/sketch-dimension-points-native-proof.json and matching editor/solid PNGs. No schema/native change or new agent tool. [Official Dimension-first point workflow](https://cad.onshape.com/help/Content/Sketch/dimension.htm).
+
+Next: evaluate the bounded [persistent sketch pattern plan](2026-10-16-sketch-linear-pattern-plan.md). The broader sketch inventory remains unfinished.
+
 ## Checkpoint: curve-center alignment
 
 Two selected arcs/circles now expose Concentric through the existing center-point coincidence. Shared identity and transitive coincidence are recognized without duplicate relations; direct relations preserve their ID and tuple when restored. No new graph arm, native primitive or implicit size driver. Unconstrained geometry follows ordinary solving; radius drivers and exact source remain authoritative.

@@ -29,7 +29,7 @@ async function harness(prepare?: ComponentProps<typeof CadSketchMirrorEditor>['o
   const pick = async () => {
     const offered = interaction.mock.calls.at(-1)?.[0];
     if (offered?.kind !== 'choose-line') throw new Error('Line picker unavailable.');
-    await act(async () => offered.pick.onPick('axis'));
+    await act(async () => offered.pick.onPick({ kind: 'entity', id: 'axis' }));
     await act(async () => vi.advanceTimersByTimeAsync(100));
   };
   await render(); return { document, editing, edit, preview, interaction, cancelled, accepted, pending, render, pick };

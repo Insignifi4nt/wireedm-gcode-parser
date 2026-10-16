@@ -476,3 +476,13 @@ describe('graph point interaction ownership', () => {
     expect(h.edited).toHaveBeenCalledOnce(); expect(h.release.mock.calls).toEqual([['a', 11], ['a', 11]]);
   });
 });
+
+it('routes a point grip to its command owner without starting a move, selecting an edge or deleting source geometry', async () => {
+  const h = await fixture(), onPick = vi.fn();
+  await h.render({ controls: { ...h.props().controls, geometryPick: { eligibleEntityIds: [], eligiblePointIds: ['a', 'mixed'], label: 'Choose point', onPick, onCancel: vi.fn() } } });
+  await h.pointer(h.point(), 'pointerdown'); await h.pointer(h.point(), 'pointermove', { clientX: 110 }); await h.pointer(h.point(), 'pointerup', { clientX: 110 });
+  expect(onPick).toHaveBeenCalledExactlyOnceWith({ kind: 'point', id: 'a' }); expect(h.capture).not.toHaveBeenCalled();
+  await h.key(h.point(), 'ArrowRight'); await h.key(h.point(), 'Delete'); await h.key(h.edge(), 'Enter'); await h.key(h.point('b'), 'Enter');
+  expect(onPick).toHaveBeenCalledTimes(1); expect(h.selected).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+  await h.key(h.point('mixed'), 'Enter'); expect(onPick).toHaveBeenLastCalledWith({ kind: 'point', id: 'mixed' });
+});

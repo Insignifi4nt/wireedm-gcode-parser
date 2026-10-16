@@ -1439,6 +1439,35 @@ describe('CAD sketch interaction', () => {
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
+  it('picks two points after Dimension without moving geometry, restores canceled selection and keeps the exact ordered axis driver', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Bore layout',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points: [{ id: 'origin', position: [' 0 ', '0'] }, { id: 'center', position: [18, 12] }],
+        entities: [{ id: 'outer', kind: 'circle', centerPointId: 'origin', radius: ' 50 ', construction: true },
+          { id: 'bore', kind: 'circle', centerPointId: 'center', radius: ' 4 ', construction: false }], relations: [] } }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const point = (id: string) => {
+      const element = container.querySelector(`[data-cad-sketch-point="${id}"]`); if (!element) throw new Error('Point missing.');
+      return element;
+    };
+    const pick = async (id: string) => act(async () => point(id).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    const accepted = currentSession.getSnapshot(); await click('Path'); await click('Dimension');
+    expect(button('Finish sketch').disabled).toBe(true); await pick('origin');
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'origin' }]);
+    expect(currentDocument).toBe(source); expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
+    await pick('origin'); expect(viewport().getState().selectedSketchGeometrySet).toHaveLength(1);
+    await act(async () => point('origin').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
+    expect(currentDocument).toBe(source); await canvasKey('Escape');
+    expect(currentSession.getSnapshot()).toEqual(accepted); expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    expect(button('Path').getAttribute('aria-pressed')).toBe('true');
+    await click('Dimension'); await pick('origin'); await pick('center');
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'origin' }, { kind: 'point', id: 'center' }]);
+    expect(currentDocument).toBe(source); await click('Horizontal distance'); await input(field('Horizontal distance'), '18'); expect(button('Apply').disabled).toBe(false); await click('Apply');
+    expect(container.querySelector('[role=alert]')?.textContent ?? '').toBe('');
+    expect(currentDocument.features[0]).toMatchObject({ graph: { points: source.features[0].kind === 'sketch' ? source.features[0].graph?.points : [],
+      relations: [{ kind: 'axis-distance', axis: 'x', pointIds: ['origin', 'center'], value: 18 }] } });
+    expect(currentSession.getSnapshot().canUndo).toBe(true); expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
   it('invalidates a pending Dimension pick on a new source and opens arc sizing through the existing editor', async () => {
     const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Arc guide',
       suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points: [{ id: 'center', position: [' 0 ', '0'] },
@@ -1446,10 +1475,14 @@ describe('CAD sketch interaction', () => {
         { id: 'arc', kind: 'arc', centerPointId: 'center', startPointId: 'start', endPointId: 'end', direction: 'ccw', construction: true }], relations: [] } }] });
     await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
     await click('Dimension'); expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
+    const center = container.querySelector('[data-cad-sketch-point="center"]'); if (!center) throw new Error('Center missing.');
+    await act(async () => center.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'center' }]);
     const changed = { ...source, parameters: { newDriver: 3 } };
     await act(async () => replaceDocument(changed));
     expect(currentDocument).toEqual(changed); const replaced = currentDocument; expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
-    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'center' }]);
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: null }));
     await click('Dimension');
     const arc = container.querySelector('[data-cad-sketch-entity="arc"]'); if (!arc) throw new Error('Arc missing.');
     await act(async () => arc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));

@@ -219,17 +219,35 @@ describe('graph spatial selection', () => {
   it('routes an owned axis pick to eligible edges without changing the source set or exposing drag and delete', async () => {
     const h = await spatialFixture(), onPick = vi.fn(), onCancel = vi.fn();
     const selection: readonly CadSketchGraphSelection[] = [{ kind: 'entity', id: 'ab' }];
-    await h.show({ graphControls: { ...h.props().graphControls!, selection, entityPick: { eligibleEntityIds: ['bc'], label: 'Use as mirror line', onPick, onCancel } } });
+    await h.show({ graphControls: { ...h.props().graphControls!, selection, geometryPick: { eligibleEntityIds: ['bc'], eligiblePointIds: [], label: 'Use as mirror line', onPick, onCancel } } });
     await h.pointer('pointerdown', 20, 10); await h.pointer('pointerup', 20, 10);
-    expect(onPick).toHaveBeenCalledExactlyOnceWith('bc'); expect(h.selected).not.toHaveBeenCalled(); expect(h.selectedSet).not.toHaveBeenCalled();
+    expect(onPick).toHaveBeenCalledExactlyOnceWith({ kind: 'entity', id: 'bc' }); expect(h.selected).not.toHaveBeenCalled(); expect(h.selectedSet).not.toHaveBeenCalled();
     await h.pointer('pointerdown', 0, 0); await h.pointer('pointermove', 5, 5); await h.pointer('pointerup', 5, 5);
     await h.pointer('pointerdown', -10, -10); await h.pointer('pointerup', -10, -10);
     const axis = container.querySelector('[data-cad-sketch-entity="bc"]'); if (!axis) throw new Error('Axis line missing.');
     await act(async () => axis.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
-    expect(onPick).toHaveBeenLastCalledWith('bc'); expect(onPick).toHaveBeenCalledTimes(2);
+    expect(onPick).toHaveBeenLastCalledWith({ kind: 'entity', id: 'bc' }); expect(onPick).toHaveBeenCalledTimes(2);
     await act(async () => axis.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true })));
     expect(h.deleted).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled(); expect(h.selected).not.toHaveBeenCalled();
     expect(h.props().graphControls!.selection).toBe(selection);
+    await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+  it('borrows exact point picks before edges and disables geometry mutations while choosing a second operand', async () => {
+    const h = await spatialFixture(), onPick = vi.fn(), onCancel = vi.fn();
+    const pick = { eligibleEntityIds: ['ab'], eligiblePointIds: ['a', 'b', 'c'], label: 'Choose a dimension operand', onPick, onCancel };
+    await h.show({ graphControls: { ...h.props().graphControls!, geometryPick: pick } });
+    await h.pointer('pointerdown', 0, 0); await h.pointer('pointermove', 5, 5); await h.pointer('pointerup', 5, 5);
+    expect(onPick).toHaveBeenCalledExactlyOnceWith({ kind: 'point', id: 'a' });
+    expect(h.edited).not.toHaveBeenCalled(); expect(h.selected).not.toHaveBeenCalled(); expect(h.selectedSet).not.toHaveBeenCalled();
+    await h.show({ graphControls: { ...h.props().graphControls!, geometryPick: { ...pick, eligibleEntityIds: [], eligiblePointIds: ['b', 'c'] } } });
+    await h.pointer('pointerdown', 0, 0); await h.pointer('pointerup', 0, 0);
+    await h.pointer('pointerdown', 5, 0); await h.pointer('pointerup', 5, 0); expect(onPick).toHaveBeenCalledTimes(1);
+    await h.pointer('pointerdown', 10, 0); await h.pointer('pointerup', 10, 0); expect(onPick).toHaveBeenLastCalledWith({ kind: 'point', id: 'b' });
+    const point = container.querySelector('[data-cad-sketch-point="c"]'); if (!point) throw new Error('Point missing.');
+    for (const key of ['ArrowRight', 'Delete', 'Enter']) await act(async () => point.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })));
+    expect(onPick).toHaveBeenLastCalledWith({ kind: 'point', id: 'c' }); expect(onPick).toHaveBeenCalledTimes(3);
+    expect(h.deleted).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
     await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     expect(onCancel).toHaveBeenCalledOnce();
   });

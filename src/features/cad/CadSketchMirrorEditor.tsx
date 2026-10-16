@@ -9,7 +9,7 @@ import { CadContextHelp } from './CadContextHelp';
 import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 
-export type CadSketchMirrorInteraction = { readonly kind: 'choose-line'; readonly pick: NonNullable<CadSketchGraphControls['entityPick']> }
+export type CadSketchMirrorInteraction = { readonly kind: 'choose-line'; readonly pick: NonNullable<CadSketchGraphControls['geometryPick']> }
   | { readonly kind: 'preview'; readonly axisLineId: string };
 
 interface Props {
@@ -42,10 +42,11 @@ export function CadSketchMirrorEditor(props: Props) {
     callbacks.current.onInteractionChange(null); callbacks.current.onPendingChange(false); callbacks.current.onPreviewDocument(null);
   }; }, []);
   const eligibleEntityIds = useMemo(() => owner.sketch.graph?.entities.filter(entity => entity.kind === 'line' && !owner.entityIds.includes(entity.id)).map(entity => entity.id) ?? [], [owner]);
-  const pick = useMemo<CadSketchGraphControls['entityPick']>(() => axis !== null || !sourceCurrent || props.interactionLocked || submission.applying ? undefined : ({
-    eligibleEntityIds, label: 'Use as mirror line', onCancel: cancel,
-    onPick: id => {
-      const latest = callbacks.current;
+  const pick = useMemo<CadSketchGraphControls['geometryPick']>(() => axis !== null || !sourceCurrent || props.interactionLocked || submission.applying ? undefined : ({
+    eligibleEntityIds, eligiblePointIds: [], label: 'Use as mirror line', onCancel: cancel,
+    onPick: selection => {
+      if (selection.kind !== 'entity') return;
+      const id = selection.id, latest = callbacks.current;
       if (ended.current || latest.interactionLocked || latest.document !== owner.document || latest.documentVersion !== owner.version || !eligibleEntityIds.includes(id)) return;
       setAxis(id); setError(null);
     }

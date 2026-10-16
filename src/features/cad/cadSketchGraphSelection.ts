@@ -9,6 +9,18 @@ export type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelecti
 export const CadSketchGraphPickFilterSchema = Type.Union([Type.Literal('auto'), Type.Literal('points'), Type.Literal('edges')]);
 export type CadSketchGraphPickFilter = Static<typeof CadSketchGraphPickFilterSchema>;
 
+/** A command borrows selection without enabling geometry edits or changing its frozen operands. */
+export interface CadSketchGeometryPick {
+  readonly eligibleEntityIds: readonly string[];
+  readonly eligiblePointIds: readonly string[];
+  readonly label: string;
+  onPick(selection: CadSketchGraphSelection): void;
+  onCancel(): void;
+}
+export function cadSketchGeometryPickAllows(pick: CadSketchGeometryPick, selection: CadSketchGraphSelection): boolean {
+  return (selection.kind === 'point' ? pick.eligiblePointIds : pick.eligibleEntityIds).includes(selection.id);
+}
+
 function freezeSelection(selections: readonly CadSketchGraphSelection[]): readonly CadSketchGraphSelection[] {
   return Object.freeze(selections.map(selection => Object.freeze({ kind: selection.kind, id: selection.id })));
 }

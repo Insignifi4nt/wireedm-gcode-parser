@@ -14,7 +14,7 @@ export type CadSketchReferenceInteraction = {
   readonly kind: 'source';
   readonly source: CadSketchFeature | null;
   readonly eligibleSketchIds: readonly string[];
-  readonly pick: CadSketchGraphControls['entityPick'];
+  readonly pick: CadSketchGraphControls['geometryPick'];
   chooseSource(sketchId: string): void;
 } | { readonly kind: 'preview' };
 
@@ -57,8 +57,8 @@ export function CadSketchReferenceEditor(props: Props) {
     : entityId !== null ? { kind: 'preview' } : {
       kind: 'source', source, eligibleSketchIds: sources.map(sketch => sketch.id),
       chooseSource: id => { if (current() && choice.current.entityId === null && sources.some(sketch => sketch.id === id)) { setSourceId(id); setError(null); } },
-      pick: source ? { eligibleEntityIds, label: 'Use as reference', onCancel: cancel,
-        onPick: id => { if (current() && choice.current.entityId === null && choice.current.sourceId === source.id && eligibleEntityIds.includes(id)) { setEntityId(id); setError(null); } } } : undefined
+      pick: source ? { eligibleEntityIds, eligiblePointIds: [], label: 'Use as reference', onCancel: cancel,
+        onPick: selection => { if (selection.kind !== 'entity') return; const id = selection.id; if (current() && choice.current.entityId === null && choice.current.sourceId === source.id && eligibleEntityIds.includes(id)) { setEntityId(id); setError(null); } } } : undefined
     }, [sourceCurrent, props.interactionLocked, submission.applying, entityId, source, sources, eligibleEntityIds]);
   useLayoutEffect(() => { props.onInteractionChange(interaction); }, [interaction, props.onInteractionChange]);
   const edits = useMemo<readonly CadEdit[] | null>(() => !source || !entityId ? null : [{ kind: 'use-sketch-entity', sketchId: owner.sketch.id,
