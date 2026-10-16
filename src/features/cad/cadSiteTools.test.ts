@@ -12,6 +12,19 @@ import { CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '@/
 import { endTrim, middleTrim } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
 import { lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
 
+it('offers explicit graph-cell inspection and unique numeric receipt reads without accepting mixed legacy targets', async () => {
+  const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid graph receipt reached operations'); });
+  const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+  if (!inspect || !read) throw new Error('Missing region tools');
+  expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', sketchId: 'sketch', mode: 'graph-cells' })).toBe(true);
+  expect(Value.Check(read.inputSchema, { expectedVersion: 'current', sketchId: 'sketch', cellIds: [0, 2], proposal: { parameterValues: { separation: 7 } } })).toBe(true);
+  for (const cellIds of [[], [0, 0], [-1], [.5], [Infinity], ['0']])
+    expect(await read.execute({ expectedVersion: 'current', sketchId: 'sketch', cellIds })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+  expect(await read.execute({ expectedVersion: 'current', sketchId: 'sketch', cellIds: [0], boundaryProfileId: 'old' })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+  expect(await inspect.execute({ expectedVersion: 'current', sketchId: 'sketch', mode: 'guess' })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+  expect(controller).not.toHaveBeenCalled();
+});
+
 describe('CAD tool argument boundary and discovery', () => {
   it('exposes the same strict detached offset request in edit discovery and mutually exclusive region proposals', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed offset reached controller.'); });

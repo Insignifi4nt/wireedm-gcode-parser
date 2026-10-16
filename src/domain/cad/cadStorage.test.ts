@@ -14,6 +14,7 @@ import { importCadDxfSketch } from './cadDxfImport';
 import { importCadDxfCurve } from './cadCurveDxf';
 import { cadDocumentPath, listCadDocuments, loadCadDocument, saveCadDocument } from './cadStorage';
 import { CAD_FORMER_DOCUMENT_BYTES } from './__tests__/cadBudgetFixture';
+import { graphCellSelectionAt, intersectingCircleSketch } from './__tests__/cadIntersectingCellFixtures';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -32,6 +33,26 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     await expect(saveCadDocument(adapter, { ...document, name: 'Stale' }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('changed in storage');
     expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(next.savedVersion);
     expect((await listCadDocuments(adapter)).entries).toMatchObject([{ id: 'cad_bracket', name: 'Edited' }]);
+  });
+  it('round trips exact graph-cell witnesses and refuses stale or malformed selections before writes', async () => {
+    const sketch = intersectingCircleSketch(), parameters = { separation: 6 }, selection = graphCellSelectionAt(sketch, parameters, [[3, 0]]);
+    const document = parseCadDocument({ ...createCadDocument('Lens', 'cad_graph_cells'), schemaVersion: 2, parameters, features: [sketch,
+      { id: 'pad', kind: 'extrude', name: 'Lens pad', suppressed: false, sketchId: sketch.id, distance: 5,
+        symmetric: false, operation: 'new', targetId: null, regionSelection: selection }] });
+    const first = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(document);
+    const changed = applyCadEdits(document, [{ kind: 'set-parameter', name: 'separation', value: 7 }]);
+    const saved = await saveCadDocument(adapter, changed, { expectedSavedVersion: first.savedVersion });
+    const reopened = await loadCadDocument(adapter, document.id), path = cadDocumentPath(document.id), exact = await adapter.readExactText?.(path);
+    expect(reopened.document).toEqual(changed); expect(reopened.document.features[1]).toMatchObject({ regionSelection: selection });
+    expect(reopened.document.features[0]).toEqual(sketch);
+    const write = vi.spyOn(adapter, 'writeText');
+    await expect(saveCadDocument(adapter, { ...changed, parameters: { separation: 11 } }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow();
+    const pad = changed.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad');
+    await expect(saveCadDocument(adapter, { ...changed, features: [changed.features[0], { ...pad,
+      regionSelection: { ...selection, cells: [selection.cells[0], selection.cells[0]] } }] }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow();
+    expect(write).not.toHaveBeenCalled(); expect(await adapter.readExactText?.(path)).toBe(exact);
+    expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(saved.savedVersion);
   });
   it('round trips ordered signed and zero graph offsets exactly and refuses malformed axes before overwriting the saved revision', async () => {
     const document = parseCadDocument({ ...createCadDocument('Located bore', 'cad_axis_distances'), schemaVersion: 2,

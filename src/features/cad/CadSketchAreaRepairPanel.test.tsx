@@ -16,7 +16,7 @@ async function fixture() {
   ] }] });
   const sketch = document.features[0]; if (sketch.kind !== 'sketch') throw new Error('Sketch fixture missing.');
   const cells = prepareCadSketchCells(sketch, document.parameters);
-  const inspection: CadSketchAreaRepairInspection = { sketchId: 'sketch', localVersion: 'local', cells, consumers: ['pad', 'second-pad'].map(id => ({
+  const inspection: CadSketchAreaRepairInspection = { sketchId: 'sketch', localVersion: 'local', consumers: ['pad', 'second-pad'].map(id => ({ cells,
     feature: { id, name: id, kind: 'extrude', suppressed: false, sketchId: 'sketch', distance: 5, symmetric: false, operation: 'new', targetId: null,
       regionSelection: [{ boundaryProfileId: 'old-boundary', voidProfileIds: [], ancestorProfileIds: [] }] }, issue: 'Boundary replaced'
   })) };

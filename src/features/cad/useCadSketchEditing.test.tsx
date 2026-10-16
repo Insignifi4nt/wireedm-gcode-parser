@@ -7,6 +7,7 @@ import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
 import { CadSession } from './cadSession';
 import { useCadSketchEditing } from './useCadSketchEditing';
+import type { CadSketchAreaRepairInspection } from './cadSketchEditDraft';
 
 let root: Root, container: HTMLDivElement;
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
@@ -52,6 +53,11 @@ function replacePlate(document: CadDocument): CadEdit {
   const sketch = sketchOf(document);
   return { kind: 'update-feature', feature: { ...sketch, profiles: sketch.profiles.map(profile => ({ ...profile, id: 'replacement' })) } };
 }
+function contourCells(repair: CadSketchAreaRepairInspection) {
+  const cells = repair.consumers[0].cells;
+  if (cells.mode !== 'contours') throw new Error('Expected whole-contour repair in this fixture.');
+  return cells;
+}
 
 it('inspects stale area choices before submission and finishes geometry plus explicit consumer repairs in one global undo', async () => {
   const h = await mount(explicitlySelectedPart()), base = h.session.getSnapshot();
@@ -60,7 +66,7 @@ it('inspects stale area choices before submission and finishes geometry plus exp
   const repair = h.editing().inspectAreaRepairs(); if (!repair) throw new Error('Missing repair');
   expect(repair.consumers.map(consumer => consumer.feature.id)).toEqual(['pad']);
   expect(h.session.getSnapshot().document).toBe(base.document);
-  const selections = repair.consumers.map(consumer => ({ featureId: consumer.feature.id, selection: repair.cells.cells.map(cell => cell.reference) }));
+  const selections = repair.consumers.map(consumer => ({ featureId: consumer.feature.id, selection: contourCells(repair).cells.map(cell => cell.reference) }));
   await act(async () => h.editing().setWorkflowOpen(true));
   expect(() => h.editing().inspectAreaRepairs()).toThrow(expect.objectContaining({ code: 'WORKFLOW_OPEN' }));
   await act(async () => h.editing().finish(undefined, { localVersion: repair.localVersion, selections }));
@@ -75,7 +81,7 @@ it('refuses stale local repair revisions and invalid, empty, duplicate or unrela
   const h = await mount(explicitlySelectedPart()), base = h.session.getSnapshot(); await act(async () => h.editing().begin('sketch'));
   await act(async () => h.editing().edit([replacePlate(base.document)]));
   const repair = h.editing().inspectAreaRepairs(); if (!repair) throw new Error('Missing repair');
-  const valid = { featureId: 'pad', selection: repair.cells.cells.map(cell => cell.reference) };
+  const valid = { featureId: 'pad', selection: contourCells(repair).cells.map(cell => cell.reference) };
   const oldPad = base.document.features[1]; if (oldPad.kind !== 'extrude' || !oldPad.regionSelection) throw new Error('Missing original selection');
   for (const selections of [[], [{ ...valid, selection: [] }], [valid, valid], [{ ...valid, selection: [...valid.selection, ...valid.selection] }], [{ ...valid, featureId: 'sketch' }],
     [{ ...valid, selection: oldPad.regionSelection }]]) {
@@ -91,7 +97,7 @@ it.each([false, true])('captures explicit repairs before deferred Finish and pre
   const h = await mount(explicitlySelectedPart()), base = h.session.getSnapshot(); await act(async () => h.editing().begin('sketch'));
   await act(async () => h.editing().edit([replacePlate(base.document)]));
   const repair = h.editing().inspectAreaRepairs(); if (!repair) throw new Error('Missing repair');
-  const selection = repair.cells.cells.map(cell => ({ ...cell.reference })), selections = [{ featureId: 'pad', selection }];
+  const selection = contourCells(repair).cells.map(cell => ({ ...cell.reference })), selections = [{ featureId: 'pad', selection }];
   let complete: () => void = () => { throw new Error('Missing deferred commit'); };
   h.commit.mockImplementationOnce((edits, version, signal) => h.session.editPrepared(version,
     document => new Promise(resolve => { complete = () => resolve(applyCadEdits(document, edits)); }), signal));

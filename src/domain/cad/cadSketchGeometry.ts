@@ -7,7 +7,8 @@ import { signedDxfArcSweepRadians } from '@/domain/dxf/arcSweep';
 import { angleIsOnSweep, pathBounds, signedAreaOfPath } from '@/domain/path-intel/segments';
 import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
 import { cadAnalyticSegments, cadPathClosureTolerance, resolveCadPathSegments, type ResolvedCadPathSegment } from './cadAnalyticSegments';
-import { selectCadSketchRegions, type CadSketchCellReference } from './cadSketchRegionSelection';
+import { selectCadSketchRegions, isCadSketchGraphCellSelection, type CadSketchCellReference, type CadSketchRegionSelection } from './cadSketchRegionSelection';
+import { prepareCadSketchGraphCells } from './cadSketchGraphCells';
 import { compileCadSketchGeometry, type CadCompiledSketchProfile } from './compileCadSketchGeometry';
 export { cadPathClosureTolerance, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 
@@ -134,6 +135,11 @@ export interface CadResolvedSketchContour {
 /** Every even-depth boundary adds material; its immediate children leave voids. */
 export interface CadSketchRegion {
   readonly boundary: CadResolvedSketchContour; readonly voids: readonly CadResolvedSketchContour[];
+}
+export interface CadSketchMaterialBoundary { readonly geometry: ResolvedCadProfile }
+export interface CadSketchMaterialRegion {
+  readonly boundary: CadSketchMaterialBoundary;
+  readonly voids: readonly CadSketchMaterialBoundary[];
 }
 
 export type CadAnalyticBoundary = Extract<DxfEntity, { type: 'line' | 'arc' | 'circle' }>;
@@ -368,8 +374,11 @@ export function resolveCadSketchContours(sketch: CadSketchFeature, parameters: R
   return resolved;
 }
 
-export function resolveCadSketchRegions(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>, selection?: readonly CadSketchCellReference[]): readonly CadSketchRegion[] {
-  return selectCadSketchRegions(resolveCadSketchContours(sketch, parameters), selection);
+export function resolveCadSketchRegions(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>, selection?: readonly CadSketchCellReference[]): readonly CadSketchRegion[];
+export function resolveCadSketchRegions(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>, selection?: CadSketchRegionSelection): readonly CadSketchMaterialRegion[];
+export function resolveCadSketchRegions(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>, selection?: CadSketchRegionSelection): readonly CadSketchMaterialRegion[] {
+  return isCadSketchGraphCellSelection(selection) ? prepareCadSketchGraphCells(sketch, parameters).resolve(selection)
+    : selectCadSketchRegions(resolveCadSketchContours(sketch, parameters), selection);
 }
 
 export function validateCadSketchGeometry(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): void {

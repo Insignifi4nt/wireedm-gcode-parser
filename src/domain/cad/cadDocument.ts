@@ -4,7 +4,7 @@ import type { CadDxfImportSource } from './cadDxfSource';
 import type { CadPluginProfile } from './plugins/cadPlugins';
 import type { CadParameterGroup, CadParameterMetadata } from './cadParameters';
 import type { CadSketchDimensionConstraint } from './cadSketchConstraints';
-import type { CadSketchCellReference } from './cadSketchRegionSelection';
+import type { CadSketchRegionSelection } from './cadSketchRegionSelection';
 import type { CadSketchGraph } from './cadSketchGraph';
 
 /** Millimetres and degrees. Strings are arithmetic expressions over named parameters. */
@@ -59,12 +59,12 @@ export interface CadSweepFeature extends CadFeatureBase {
 }
 export interface CadPocketFeature extends CadFeatureBase {
   readonly kind: 'pocket'; readonly sketchId: string; readonly targetId: string;
-  readonly regionSelection?: readonly CadSketchCellReference[];
+  readonly regionSelection?: CadSketchRegionSelection;
   readonly extent: { readonly kind: 'through-all'; readonly direction: 'positive' | 'negative' | 'both' };
 }
 export type CadFeature = CadDatumPlaneFeature | CadSketchFeature | CadCurveFeature | CadSweepFeature | CadPocketFeature
   | (CadFeatureBase & { readonly kind: 'imported'; readonly source: CadSolidImportSource })
-  | (CadFeatureBase & { readonly kind: 'extrude'; readonly sketchId: string; readonly distance: CadScalar; readonly symmetric: boolean; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null; readonly regionSelection?: readonly CadSketchCellReference[] })
+  | (CadFeatureBase & { readonly kind: 'extrude'; readonly sketchId: string; readonly distance: CadScalar; readonly symmetric: boolean; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null; readonly regionSelection?: CadSketchRegionSelection })
   | (CadFeatureBase & { readonly kind: 'revolve'; readonly sketchId: string; readonly angle: CadScalar; readonly axis: 'x' | 'y'; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })
   | (CadFeatureBase & { readonly kind: 'loft'; readonly sketchIds: readonly string[]; readonly ruled: boolean; readonly operation: 'new' | 'join' | 'cut'; readonly targetId: string | null })
   | (CadFeatureBase & { readonly kind: 'fillet' | 'chamfer'; readonly targetId: string; readonly radius: CadScalar; readonly selection?: CadEdgeSelection | null;

@@ -7,7 +7,7 @@ import { isCadImportData } from './cadImportData';
 import { CadFeatureBaseSchemaFields, CadIdentifierSchema } from './cadPrimitives';
 import { CadPocketDirectionSchema, type CadPocketDirection } from './cadPocketExtent';
 import { evaluateCadScalar } from './cadExpression';
-import { resolveCadSketchRegions, cadProfileToEntities, type CadSketchRegion } from './cadSketchGeometry';
+import { resolveCadSketchRegions, cadProfileToEntities, type CadSketchMaterialRegion } from './cadSketchGeometry';
 import { cadFeatureProducesBody, cadVisibleBodyIds } from './cadFeatureInputs';
 import { cadPocketSectionScale } from './cadPocketSectionScale';
 import { requireCadPrincipalPlane } from './cadDatumPlanes';
@@ -37,7 +37,7 @@ export interface CadResolvedPocketInputs {
   readonly sketch: CadSketchFeature;
   readonly plane: CadPlane;
   readonly offset: number;
-  readonly regions: readonly CadSketchRegion[];
+  readonly regions: readonly CadSketchMaterialRegion[];
   readonly direction: CadPocketDirection;
   readonly targetId: string;
   readonly sectionEdgeCount: number;

@@ -45,7 +45,7 @@ it('shares actual120-tooth picker cells through named-depth edits while current 
   observed.resolutions = 0;
   try {
     await act(async () => root.render(<Harness />));
-    const initial = await begin(); expect(initial.cells.pick({ x: 20, y: 0 })?.reference.boundaryProfileId).toBe('outline');
+    const initial = await begin(); expect(initial.cells.pick({ x: 20, y: 0 })?.name).toBe('Spur gear');
     await act(async () => initial.onCancel());
     expect(observed.resolutions).toBe(1);
     for (let index = 0; index < 12; index++) {
@@ -62,7 +62,7 @@ it('shares actual120-tooth picker cells through named-depth edits while current 
     expect(owned?.getState()?.model.quantityMm).toBe(7.1);
     const next = await begin(); expect(next.cells).toBe(initial.cells); expect(observed.resolutions).toBe(1);
     const hit = next.cells.pick({ x: 20, y: 0 }); if (!hit) throw Error('Material cell disappeared');
-    await act(async () => next.onSelect([hit.reference])); await act(async () => current().onCancel());
+    await act(async () => next.onSelect(next.cells.pack([hit.id]))); await act(async () => current().onCancel());
     expect(container.querySelector<HTMLInputElement>('[aria-label="Length mm"]')?.value).toBe('7.1');
     const cancel = [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === 'Cancel'); if (!cancel) throw Error('Feature Cancel missing');
     await act(async () => cancel.click());

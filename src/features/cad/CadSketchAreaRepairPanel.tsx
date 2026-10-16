@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { CloseIcon, SelectIcon } from '@wire-edm/icons-react';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { prepareCadDatumFrames, resolveCadSketchPlacement } from '@/domain/cad/cadDatumPlanes';
-import type { CadSketchCellReference } from '@/domain/cad/cadSketchRegionSelection';
+import { cadSketchRegionSelectionCount, type CadSketchRegionSelection } from '@/domain/cad/cadSketchRegionSelection';
 import { CadContextHelp } from './CadContextHelp';
 import type { CadFeatureReferencePickCommand, CadFeatureRegionPickCommand } from './cadFeatureReferencePicking';
 import type { CadSketchAreaRepairInspection, CadSketchAreaRepairs } from './cadSketchEditDraft';
@@ -25,7 +25,7 @@ export interface CadSketchAreaRepairPanelProps {
 /** Explicit replacements remain a disposable final-choice form, never a second part history. */
 export function CadSketchAreaRepairPanel({ formId, document, documentVersion, inspection, interactionLocked, onReferencePick, onReadyChange, onFinish, onCancel }: CadSketchAreaRepairPanelProps) {
   const submission = useCadEditSubmission(), [owner] = useState(() => crypto.randomUUID());
-  const [choices, setChoices] = useState<Readonly<Record<string, readonly CadSketchCellReference[]>>>({});
+  const [choices, setChoices] = useState<Readonly<Record<string, CadSketchRegionSelection>>>({});
   const [picker, setPicker] = useState<CadFeatureRegionPickCommand | null>(null), [error, setError] = useState<string | null>(null);
   const pickToken = useRef<symbol | null>(null);
   const focus = useRef<HTMLElement | null>(null), callbacks = useRef({ onReferencePick, onReadyChange }); callbacks.current = { onReferencePick, onReadyChange };
@@ -34,7 +34,7 @@ export function CadSketchAreaRepairPanel({ formId, document, documentVersion, in
     if (sketch?.kind !== 'sketch') throw new Error('The edited sketch is unavailable.');
     return resolveCadSketchPlacement(sketch, document.parameters, prepareCadDatumFrames(document.features, document.parameters));
   }, [document, inspection.sketchId]);
-  const ready = inspection.consumers.every(({ feature }) => choices[feature.id]?.length) && !picker && !submission.applying && !interactionLocked;
+  const ready = inspection.consumers.every(({ feature }) => cadSketchRegionSelectionCount(choices[feature.id]) > 0) && !picker && !submission.applying && !interactionLocked;
   useLayoutEffect(() => { onReadyChange(ready); }, [ready, onReadyChange]);
   useLayoutEffect(() => { onReferencePick(picker ?? { kind: 'clear', owner }); }, [picker, owner, onReferencePick]);
   useLayoutEffect(() => {
@@ -43,6 +43,9 @@ export function CadSketchAreaRepairPanel({ formId, document, documentVersion, in
   useLayoutEffect(() => () => { pickToken.current = null; callbacks.current.onReferencePick({ kind: 'clear', owner }); callbacks.current.onReadyChange(false); }, [owner]);
   const begin = (featureId: string) => {
     if (interactionLocked || submission.applying || pickToken.current) return;
+    const consumer = inspection.consumers.find(entry => entry.feature.id === featureId);
+    if (!consumer) return;
+    const cells = consumer.cells;
     const token = Symbol('consumer-area-pick'); pickToken.current = token;
     const previous = choices[featureId] ?? [];
     focus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null;
@@ -53,11 +56,11 @@ export function CadSketchAreaRepairPanel({ formId, document, documentVersion, in
     };
     setError(null);
     const command: CadFeatureRegionPickCommand = { kind: 'pick-regions', owner, expectedVersion: documentVersion, label: 'Replacement areas',
-      sketchId: inspection.sketchId, cells: inspection.cells, placement, selection: previous,
+      sketchId: inspection.sketchId, cells, placement, selection: previous,
       onSelect(selection) {
         if (pickToken.current !== token) return;
         try {
-          if (selection.length) inspection.cells.resolve(selection);
+          if (cadSketchRegionSelectionCount(selection)) cells.resolve(selection);
           setChoices(current => ({ ...current, [featureId]: selection }));
           setPicker(current => current ? { ...current, selection } : null);
         } catch (cause) { setError(cause instanceof Error ? cause.message : 'Choose current closed areas.'); }
@@ -73,14 +76,16 @@ export function CadSketchAreaRepairPanel({ formId, document, documentVersion, in
     }}>
     <div className="cad-property-title">Update areas <CadContextHelp label="Dependent sketch areas">The boundary changed. Choose the new closed areas for each dependent feature. Finish accepts the sketch and these explicit choices as one part edit. Back to sketch keeps your geometry editable.</CadContextHelp></div>
     <fieldset className="cad-feature-fields" disabled={interactionLocked || submission.applying || Boolean(picker)}>
-      <ul className="cad-consumer-area-list">{inspection.consumers.map(({ feature, issue }) => <li key={feature.id}>
+      <ul className="cad-consumer-area-list">{inspection.consumers.map(({ feature, issue, cells }) => {
+        const count = cadSketchRegionSelectionCount(choices[feature.id]);
+        return <li key={feature.id}>
         <span>{feature.name}<CadContextHelp label={`${feature.name} areas`}>{issue}</CadContextHelp></span>
-        <Button type="button" className="cad-area-choice" aria-label={`Choose areas for ${feature.name}`} disabled={!inspection.cells.cells.length} onClick={() => begin(feature.id)}>
-          <SelectIcon size={13} /><span>{choices[feature.id]?.length ? `${choices[feature.id].length} ${choices[feature.id].length === 1 ? 'area' : 'areas'}` : 'Choose areas'}</span>
+        <Button type="button" className="cad-area-choice" aria-label={`Choose areas for ${feature.name}`} disabled={!cells.cells.length} onClick={() => begin(feature.id)}>
+          <SelectIcon size={13} /><span>{count ? `${count} ${count === 1 ? 'area' : 'areas'}` : 'Choose areas'}</span>
         </Button>
-      </li>)}</ul>
+      </li>; })}</ul>
     </fieldset>
-    {!inspection.cells.cells.length && <p className="cad-error" role="alert">Close a material boundary before choosing replacement areas.</p>}
+    {inspection.consumers.some(consumer => !consumer.cells.cells.length) && <p className="cad-error" role="alert">Close a material boundary before choosing replacement areas.</p>}
     {error && <p className="cad-error" role="alert">{error}</p>}
     <div className="cad-form-actions"><Button type="button" disabled={submission.applying} onClick={onCancel}><CloseIcon size={13} /> Back to sketch</Button></div>
   </form>;

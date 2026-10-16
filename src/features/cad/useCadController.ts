@@ -19,7 +19,9 @@ import { parseCadDxfImportSource, type CadDxfUnits } from '@/domain/cad/cadDxfSo
 import type { DxfUnitDeclaration } from '@/domain/dxf/types';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { createCadFeaturePreviewCoordinator, type CadFeaturePreviewState } from './cadFeaturePreview';
-import type { CadSketchRegionInspectionInput, CadSketchRegionProposal } from '@/domain/cad/cadSketchRegionInspection';
+import { CadSketchRegionReadTargetSchema, type CadSketchRegionReadTarget, type CadSketchRegionInspectionInput, type CadSketchRegionProposal } from '@/domain/cad/cadSketchRegionInspection';
+import { Value } from '@sinclair/typebox/value';
+import { isCadImportData } from '@/domain/cad/cadImportData';
 import { needsCadSketchPreparation, prepareCadEdits } from './cadEditPreparation';
 import type { CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
 import type { CadSketchConstraintInspection } from './cadSketchConstraintInspection';
@@ -526,38 +528,43 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   }
   async function inspectSketchRegions(sketchId: string, page: CadSketchRegionInspectionInput = {}, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
+    if (!isCadImportData(page)) throw new ToolError('INVALID_ARGUMENT', 'Malformed sketch region query.');
+    const captured = structuredClone(page);
     const { inspectCadSketchRegions } = await import('@/domain/cad/cadSketchRegionInspection');
     signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
-    const result = inspectCadSketchRegions(session.getSnapshot().document, sketchId, page);
-    signal?.throwIfAborted(); return result;
+    const result = inspectCadSketchRegions(session.getSnapshot().document, sketchId, captured);
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed(); return result;
   }
-  async function readSketchRegionReference(sketchId: string, boundaryProfileId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal, proposal?: CadSketchRegionProposal) {
+  async function readSketchRegionReference(sketchId: string, target: CadSketchRegionReadTarget, expectedVersion = session.getSnapshot().version, signal?: AbortSignal, proposal?: CadSketchRegionProposal) {
     editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
-    const document = session.getSnapshot().document, key = `${sketchId}/${boundaryProfileId}`;
-    if (proposal !== undefined) {
+    if (!isCadImportData(target) || !Value.Check(CadSketchRegionReadTargetSchema, target) || proposal !== undefined && !isCadImportData(proposal))
+      throw new ToolError('INVALID_ARGUMENT', 'Choose one contour boundary or unique graph cell IDs.');
+    const capturedTarget = structuredClone(target), capturedProposal = proposal === undefined ? undefined : structuredClone(proposal);
+    const document = session.getSnapshot().document, targetKey = JSON.stringify(capturedTarget), key = JSON.stringify([sketchId, capturedTarget]);
+    if (capturedProposal !== undefined) {
       const { readCadSketchRegionReference, validateCadSketchRegionProposal } = await import('@/domain/cad/cadSketchRegionInspection');
       signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
-      validateCadSketchRegionProposal(proposal);
-      const proposalKey = JSON.stringify(proposal), previous = proposedRegionReferenceTexts.current;
+      validateCadSketchRegionProposal(capturedProposal);
+      const proposalKey = JSON.stringify(capturedProposal), previous = proposedRegionReferenceTexts.current;
       const cache = previous?.document === document && previous.sketchId === sketchId && previous.proposalKey === proposalKey
         ? previous : { document, sketchId, proposalKey, texts: new Map<string, string>() };
-      let text = cache.texts.get(boundaryProfileId);
+      let text = cache.texts.get(targetKey);
       if (text === undefined) {
-        text = JSON.stringify(readCadSketchRegionReference(document, sketchId, boundaryProfileId, proposal));
-        signal?.throwIfAborted(); cache.texts.set(boundaryProfileId, text);
+        text = JSON.stringify(readCadSketchRegionReference(document, sketchId, capturedTarget, capturedProposal));
+        signal?.throwIfAborted(); cache.texts.set(targetKey, text);
         proposedRegionReferenceTexts.current = cache;
       }
-      return text;
+      signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed(); return text;
     }
     let cache = regionReferenceTexts.current.get(document), text = cache?.get(key);
     if (text === undefined) {
       const { readCadSketchRegionReference } = await import('@/domain/cad/cadSketchRegionInspection');
       signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
-      text = JSON.stringify(readCadSketchRegionReference(document, sketchId, boundaryProfileId));
+      text = JSON.stringify(readCadSketchRegionReference(document, sketchId, capturedTarget));
       signal?.throwIfAborted();
       cache ??= new Map<string, string>(); cache.set(key, text); regionReferenceTexts.current.set(document, cache);
     }
-    return text;
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed(); return text;
   }
   async function inspectPlugin(sketchId: string, profileId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();

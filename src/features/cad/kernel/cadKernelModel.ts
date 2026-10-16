@@ -2,7 +2,7 @@ import { cast, Compound, CompoundSketch, getOC, isShape3D, makeAx1, measureVolum
 import type { CadBuildResult, CadDocument, CadFeature, CadMesh, CadScalar, CadSketchFeature } from '../../../domain/cad/cadDocument';
 import { evaluateCadAngle, evaluateCadScalar } from '../../../domain/cad/cadExpression';
 import { CadError } from '../../../domain/cad/cadError';
-import { resolveCadSketchRegions, type CadSketchRegion } from '../../../domain/cad/cadSketchGeometry';
+import { resolveCadSketchRegions, type CadSketchMaterialRegion } from '../../../domain/cad/cadSketchGeometry';
 import type { CadSectionRequest, CadSectionResult } from '../../../domain/cad/cadSection';
 import { createCadKernelPlane } from './cadKernelPlane';
 import { resolveCadExtrudeRevolvePlacement, resolveCadWorldDatum, type CadDatumFrameLookup, type CadResolvedFrame } from '../../../domain/cad/cadDatumPlanes';
@@ -95,7 +95,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
     for (const shape of shapes) if (!retained.has(shape)) { cadKernelDisposeShape(shape); shapes.delete(shape); }
   }
 
-  function fromSketch(feature: Extract<CadFeature, { kind: 'extrude' | 'revolve' }>, regions: readonly CadSketchRegion[]): Shape3D {
+  function fromSketch(feature: Extract<CadFeature, { kind: 'extrude' | 'revolve' }>, regions: readonly CadSketchMaterialRegion[]): Shape3D {
     const sketch = sketches.get(feature.sketchId);
     if (!sketch) throw new CadError('missing-sketch', 'The source sketch is unavailable or suppressed.');
     const placement = resolveCadExtrudeRevolvePlacement(feature, sketch, document.parameters, frameLookup);

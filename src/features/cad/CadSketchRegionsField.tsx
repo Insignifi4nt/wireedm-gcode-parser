@@ -3,16 +3,17 @@ import { useContext, useMemo, useRef } from 'react';
 import { CloseIcon, SelectIcon } from '@wire-edm/icons-react';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { prepareCadDatumFrames, resolveCadSketchPlacement } from '@/domain/cad/cadDatumPlanes';
-import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
-import type { CadSketchCellReference } from '@/domain/cad/cadSketchRegionSelection';
+import { cadSketchCellModeForAreas, prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
+import { cadSketchRegionSelectionCount, type CadSketchRegionSelection } from '@/domain/cad/cadSketchRegionSelection';
+import { cadSketchSourceAvailability } from '@/domain/cad/cadSketchSources';
 import { CadFeatureReferencePickingContext } from './cadFeatureReferencePicking';
 import { CadContextHelp } from './CadContextHelp';
 import './cad-sketch-regions.css';
 
 /** Select resolved areas without extracting profiles or rewriting the source sketch. */
 export function CadSketchRegionsField({ document, sketchId, selection, onChange }: {
-  document: CadDocument; sketchId: string; selection: readonly CadSketchCellReference[] | undefined;
-  onChange(selection: readonly CadSketchCellReference[] | undefined): void;
+  document: CadDocument; sketchId: string; selection: CadSketchRegionSelection | undefined;
+  onChange(selection: CadSketchRegionSelection | undefined): void;
 }) {
   const picking = useContext(CadFeatureReferencePickingContext);
   const source = document.features.find(feature => feature.id === sketchId);
@@ -23,12 +24,15 @@ export function CadSketchRegionsField({ document, sketchId, selection, onChange 
       const plane = source.plane;
       const datum = typeof plane === 'string' ? undefined : document.features.slice(0, sourceIndex)
         .find(feature => feature.id === plane.featureId);
-      return { kind: 'ready' as const, cells: prepareCadSketchCells(source, document.parameters),
+      return { kind: 'ready' as const, cells: prepareCadSketchCells(source, document.parameters, cadSketchCellModeForAreas(source, document.parameters, selection)),
+        wholeAvailable: cadSketchSourceAvailability(source, 'extrude', document.parameters).kind === 'default-material',
         placement: resolveCadSketchPlacement(source, document.parameters, prepareCadDatumFrames(datum?.kind === 'datum-plane' ? [datum] : [], document.parameters)) };
     } catch (cause) {
       return { kind: 'unavailable' as const, reason: cause instanceof Error ? cause.message : 'Correct the sketch before choosing its closed areas.' };
     }
-  }, [source, document.features, document.parameters]);
+  }, [source, document.features, document.parameters, selection]);
+  const count = cadSketchRegionSelectionCount(selection);
+  const wholeAvailable = prepared.kind === 'ready' && prepared.wholeAvailable;
   const current = useRef({ sketchId, onChange }); current.current = { sketchId, onChange };
   const begin = () => {
     if (prepared.kind !== 'ready' || !picking?.beginRegions || !picking.precedingIds.has(sketchId)) return;
@@ -51,10 +55,10 @@ export function CadSketchRegionsField({ document, sketchId, selection, onChange 
     <div className="cad-area-actions">
       <Button type="button" className="cad-area-choice" aria-label="Pick closed areas from model"
         aria-description={prepared.kind === 'unavailable' ? prepared.reason : 'Click an area; hold Shift to add or remove areas.'}
-        disabled={!picking?.beginRegions || !picking.precedingIds.has(sketchId) || prepared.kind !== 'ready'} onClick={begin}>
-        <SelectIcon size={13} /><span>{selection === undefined ? 'Whole sketch' : selection.length ? `${selection.length} ${selection.length === 1 ? 'area' : 'areas'}` : 'No areas'}</span>
+        disabled={!picking?.beginRegions || !picking.precedingIds.has(sketchId) || prepared.kind !== 'ready' || !prepared.cells.cells.length} onClick={begin}>
+        <SelectIcon size={13} /><span>{selection === undefined ? wholeAvailable ? 'Whole sketch' : 'Choose areas' : count ? `${count} ${count === 1 ? 'area' : 'areas'}` : 'No areas'}</span>
       </Button>
-      {selection !== undefined && <Button type="button" className="cad-area-reset" aria-label="Restore whole sketch" title="Restore whole sketch" onClick={() => onChange(undefined)}><CloseIcon size={12} /></Button>}
+      {selection !== undefined && <Button type="button" className="cad-area-reset" aria-label={wholeAvailable ? 'Restore whole sketch' : 'Clear chosen areas'} title={wholeAvailable ? 'Restore whole sketch' : 'Clear chosen areas'} onClick={() => onChange(undefined)}><CloseIcon size={12} /></Button>}
     </div>
   </div>;
 }

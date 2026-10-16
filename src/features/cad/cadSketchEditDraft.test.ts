@@ -11,7 +11,7 @@ import { CAD_STAR_PLUGIN, createCadPluginProfile } from '@/domain/cad/plugins/ca
 import { dxf, stock } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
-import { CadSketchEditDraft } from './cadSketchEditDraft';
+import { CadSketchEditDraft, type CadSketchAreaRepairInspection } from './cadSketchEditDraft';
 import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
 import { endTrim, trimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
@@ -45,8 +45,45 @@ function source(explicit = false, earlierGraph = false) {
       profiles: [{ id: 'plugin', name: 'Exact plugin', construction: false, geometry: createCadPluginProfile(CAD_STAR_PLUGIN) }] }] });
 }
 const removeEdge: CadEdit = { kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: [], entityIds: ['bc'], relationIds: [], cascade: false };
+function contourCells(repair: CadSketchAreaRepairInspection) {
+  const cells = repair.consumers[0].cells;
+  if (cells.mode !== 'contours') throw new Error('Expected existing whole-contour repair in this fixture.');
+  return cells;
+}
 
 describe('owned consumed-sketch draft', () => {
+  it('repairs a vanished graph lens using current graph cells and accepts source plus explicit replacement in one undo', async () => {
+    const sketch: CadSketchFeature = { id: 'lens', kind: 'sketch', name: 'Lens source', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: ['0.000', 0] }, { id: 'b', position: [' separation ', '0.00'] }], entities: [
+        { id: 'left', kind: 'circle', construction: false, centerPointId: 'a', radius: '5.000' },
+        { id: 'right', kind: 'circle', construction: false, centerPointId: 'b', radius: 5 }], relations: []
+    } };
+    const parameters = { separation: 6 }, cells = prepareCadSketchCells(sketch, parameters, 'graph-cells');
+    const lens = cells.pick({ x: 3, y: 0 }); if (!lens) throw new Error('Lens missing.');
+    const pad = { id: 'lens-pad', kind: 'extrude', name: 'Lens pad', suppressed: false, sketchId: sketch.id,
+      distance: ' 5e0 ', symmetric: false, operation: 'new', targetId: null, regionSelection: cells.pack([lens.id]) } as const;
+    const main = new CadSession(parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters, features: [sketch, pad] }));
+    const base = main.getSnapshot(), draft = new CadSketchEditDraft(base, sketch.id);
+    await draft.editPrepared([{ kind: 'set-parameter', name: 'separation', value: 11 }], prepare);
+    const local = draft.getSnapshot(); expect(main.getSnapshot()).toBe(base);
+    expect(local.document.features[0]).toEqual(sketch);
+    await expect(prepare(base.document, draft.finishEdits(base).edits)).rejects.toMatchObject({ code: 'stale-sketch-region' });
+    const repair = draft.inspectAreaRepairs(base); if (!repair) throw new Error('Missing lens repair.');
+    expect(repair.consumers).toHaveLength(1);
+    const replacement = repair.consumers[0].cells;
+    expect(replacement.mode).toBe('graph-cells'); expect(replacement.cells).toHaveLength(2);
+    const disk = replacement.pick({ x: 0, y: 0 }); if (!disk) throw new Error('Current disk missing.');
+    expect(disk.areaMm2).toBeCloseTo(25 * Math.PI, 10);
+    draft.undo(); expect(draft.inspectAreaRepairs(base)).toBeNull(); draft.redo();
+    const regionSelection = replacement.pack([disk.id]);
+    const finish = draft.finishEdits(base, [{ kind: 'update-feature', feature: { ...pad, regionSelection } }]);
+    await main.editPrepared(base.version, document => prepare(document, finish.edits), undefined,
+      () => draft.assertCurrent(main.getSnapshot(), finish.localVersion));
+    expect(main.getSnapshot().document.features).toEqual([sketch, { ...pad, regionSelection }]);
+    expect(main.getSnapshot().document.parameters).toEqual({ separation: 11 });
+    main.undo(); expect(main.getSnapshot().document).toBe(base.document); expect(main.getSnapshot().canUndo).toBe(false);
+  });
+
   it('keeps a detached inset private, preserves local redo for zero, and finishes one guarded area repair with Cancel recovery', async () => {
     const main = new CadSession(source(true)), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
     const cycle = compileCadSketchGeometry(sketchOf(base.document), base.document.parameters).graph?.cycles[0];
@@ -59,7 +96,7 @@ describe('owned consumed-sketch draft', () => {
     await draft.editPrepared([{ ...edit, distance: 0 }], prepare); expect(draft.getSnapshot()).toBe(undone);
     draft.redo(); expect(draft.getSnapshot().document).toBe(local.document);
     const repair = draft.inspectAreaRepairs(base); if (!repair) throw new Error('Area repair missing.');
-    const ring = repair.cells.cells.find(cell => cell.defaultMaterial); if (!ring) throw new Error('Inset ring missing.');
+    const ring = contourCells(repair).cells.find(cell => cell.defaultMaterial); if (!ring) throw new Error('Inset ring missing.');
     expect(ring.areaMm2).toBeCloseTo(56, 10);
     const pad = base.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Pad missing.');
     const finish = draft.finishEdits(base, [{ kind: 'update-feature', feature: { ...pad, regionSelection: [ring.reference] } }]);
@@ -75,7 +112,7 @@ describe('owned consumed-sketch draft', () => {
   it.each([
     { name: 'Trim', part: trimPart, edit: { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: endTrim } satisfies CadEdit },
     { name: 'Extend', part: extendPart, edit: { kind: 'extend-sketch-entity', sketchId: 'sketch', extend: lineExtend } satisfies CadEdit }
-  ])('$name keeps consumed geometry private with local history, explicit area repair, deferred Cancel and one global Finish', async ({ part, edit }) => {
+  ])('$name keeps consumed geometry private with local history, explicit area repair, deferred Cancel and one global Finish', async ({ name, part, edit }) => {
     const main = new CadSession(part(true)), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
     expect(() => draft.validateEdits([{ ...edit, sketchId: 'other' }])).toThrow('sketch');
     await draft.editPrepared([edit], prepare);
@@ -85,9 +122,14 @@ describe('owned consumed-sketch draft', () => {
     draft.redo(); expect(draft.getSnapshot().document).toBe(local.document);
     await expect(prepare(base.document, draft.finishEdits(base).edits)).rejects.toMatchObject({ code: 'stale-sketch-region' });
     const repair = draft.inspectAreaRepairs(base); if (!repair) throw new Error('Missing area repair.');
-    expect(repair.cells.cells).toHaveLength(1); expect(repair.cells.cells[0].areaMm2).toBe(200);
+    const currentCells = repair.consumers[0].cells;
+    // Extend leaves an open overhang at a real T-joint. The graph catalog also
+    // exposes that closed plate; deliberately retain the other original blank.
+    expect(currentCells.cells).toHaveLength(name === 'Extend' ? 2 : 1);
+    expect(currentCells.cells.every(cell => cell.areaMm2 === 200)).toBe(true);
     const pad = base.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad.');
-    const regionSelection = repair.cells.cells.map(cell => cell.reference);
+    const remaining = currentCells.pick({ x: 50, y: 5 }); if (!remaining) throw new Error('Remaining original blank missing.');
+    const regionSelection = currentCells.pack([remaining.id]);
     const finish = draft.finishEdits(base, [{ kind: 'update-feature', feature: { ...pad, regionSelection } }]);
     await main.editPrepared(base.version, document => prepare(document, finish.edits), undefined,
       () => draft.assertCurrent(main.getSnapshot(), finish.localVersion));
@@ -118,10 +160,10 @@ describe('owned consumed-sketch draft', () => {
     await expect(prepare(base.document, draft.finishEdits(base).edits)).rejects.toThrow();
     const repair = draft.inspectAreaRepairs(base); if (!repair) throw new Error('Split area repair missing');
     expect(repair.consumers.map(consumer => consumer.feature.id)).toEqual(['pad']);
-    expect(repair.cells.cells).toHaveLength(1);
-    expect(repair.cells.cells[0]).toMatchObject({ areaMm2: 200, boundaryLengthMm: 60 });
+    expect(contourCells(repair).cells).toHaveLength(1);
+    expect(contourCells(repair).cells[0]).toMatchObject({ areaMm2: 200, boundaryLengthMm: 60 });
     const pad = base.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad');
-    const regionSelection = repair.cells.cells.map(cell => cell.reference);
+    const regionSelection = contourCells(repair).cells.map(cell => cell.reference);
     expect(regionSelection).not.toEqual(pad.regionSelection); expect(JSON.stringify(regionSelection)).toContain('after');
     const finish = draft.finishEdits(base, [{ kind: 'update-feature', feature: { ...pad, regionSelection } }]);
     await main.editPrepared(base.version, document => prepare(document, finish.edits), undefined, () => draft.assertCurrent(main.getSnapshot(), finish.localVersion));
@@ -218,7 +260,7 @@ describe('owned consumed-sketch draft', () => {
     const repair = draft.inspectAreaRepairs(base); if (!repair) throw new Error('Missing area repair');
     expect(repair).toMatchObject({ sketchId: 'sketch', localVersion: draft.getSnapshot().version, consumers: [{ feature: pad, issue: expect.any(String) }] });
     expect(repair.consumers[0].feature).toBe(pad);
-    const regionSelection = repair.cells.cells.map(cell => cell.reference);
+    const regionSelection = contourCells(repair).cells.map(cell => cell.reference);
     expect(JSON.stringify(regionSelection)).toContain('replacement');
     const finish = draft.finishEdits(base, [{ kind: 'update-feature', feature: { ...pad, regionSelection } }]);
     const result = await prepare(base.document, finish.edits);
@@ -239,7 +281,7 @@ describe('owned consumed-sketch draft', () => {
       { id: 'replacement', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }] } }], prepare);
     const local = draft.getSnapshot(), repair = draft.inspectAreaRepairs(base);
     expect(repair?.consumers.map(consumer => consumer.feature.id)).toEqual(['pad', 'pocket']);
-    expect(repair?.cells.cells).toHaveLength(2); expect(draft.getSnapshot()).toBe(local); expect(main.getSnapshot()).toBe(base);
+    expect(repair?.consumers.every(consumer => consumer.cells.cells.length === 2)).toBe(true); expect(draft.getSnapshot()).toBe(local); expect(main.getSnapshot()).toBe(base);
     draft.cancel(); expect(() => draft.inspectAreaRepairs(base)).toThrow(expect.objectContaining({ code: 'SKETCH_DRAFT_CLOSED' }));
   });
 

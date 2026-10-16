@@ -105,7 +105,7 @@ describe('compact distance / Through-all forms', () => {
       { ...document, features: [profile, other] });
     await select('Profile sketch', 'other_profile');
     expect(current).toEqual({ ...original, sketchId: 'other_profile' });
-    expect(resolveCadSketchRegions(other, document.parameters, current.regionSelection).map(region => region.boundary.profile.id).sort()).toEqual(['bore', 'extra']);
+    expect(resolveCadSketchRegions(other, document.parameters).map(region => region.boundary.profile.id).sort()).toEqual(['bore', 'extra']);
   });
 
   it('keeps a datum distance cut supported while disabling its unsupported Through-all extent without altering the draft', async () => {

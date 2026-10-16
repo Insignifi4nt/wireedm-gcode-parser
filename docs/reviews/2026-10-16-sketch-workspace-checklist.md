@@ -17,6 +17,16 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: deliberate intersecting areas
+
+The [bounded slice](2026-10-16-sketch-intersecting-cells-plan.md) now supports deliberate areas such as an overlapping-circle lens and a divided rectangle. Exact analytic subedges form the selected union, removing shared dividers and retaining holes. Existing Whole sketch behavior and saved whole-contour references stay exact. Transient intersections never rewrite sketch points or constraints. Compact schema-2 references follow unchanged source topology; vanished or ambiguous areas require explicit repair. The earlier isolated arrangement draft is adopted only in this reviewed slice, with near-event identity repairs and unchanged modeling tolerances.
+
+Domain, UI/private editing, schema, guarded agent reads, both storage adapters and actual native material pass focused checks. The final build/types, public docs/source distributions, shared UI and icon checks pass. Six relevant complete production journeys pass in Chromium and Firefox, including the new lens workflow and existing area repair, Trim, Extend and Offset paths. Independent domain/event/union and adapter/UI reviews found no remaining actionable issue. [Evidence, scope and compatibility](2026-10-16-sketch-intersecting-cells-review.md).
+
+Native human picking and WebMCP discovery/chunked reads produce identical area references and one 153.54621232609466 mm³ lens solid. Moving only the second free center removes the lens; deliberate disk repair and Finish yield one 392.6990816987241 mm³ solid. One Undo restores the exact original circles and lens selector together. Both disposable drafts were returned empty without saving user records. Proofs: `tmp/sketch-cells-{solid,repaired-solid}.png`.
+
+Remaining sketch work includes circle Trim, arc Extend, constraint-transfer semantics, persistent reference reuse and further direct-edit/selection acceptance. Tangent native preflight remains unresolved. No installed post/machine change, storage migration, app-version bump, push, PR, merge or deployment. Sketch mode and the local-only goal remain incomplete.
+
 ## Checkpoint: detached analytic Offset
 
 The [bounded Offset slice](2026-10-16-sketch-offset-plan.md) creates an independent numeric graph loop without changing the source or its constraints. One selected closed edge or legacy outline opens a compact shared editor with explicit Inside/Outside direction, exact analytic preview, Cancel and Apply. Stable prefix-derived identities serve the same guarded human and agent operation. Zero adds no geometry/history/native work. Unsupported joins, collapse, contacts and lost branches reject without healing. Review repaired a near-half-turn branch loss while retaining exact Slot half-turn intent; no native settings or tolerances changed.

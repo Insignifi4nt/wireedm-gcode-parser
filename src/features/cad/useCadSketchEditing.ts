@@ -110,12 +110,12 @@ export function useCadSketchEditing<Inspection>(host: Host<Inspection>) {
       const inspection = owned.draft.inspectAreaRepairs(source);
       if (!inspection || !Array.isArray(repairs.selections) || !repairs.selections.length)
         throw new CadSessionError('SKETCH_AREA_REPAIR_SELECTION', 'Choose replacement areas for the affected consumers.');
-      const consumers = new Map(inspection.consumers.map(consumer => [consumer.feature.id, consumer.feature])), repaired = new Set<string>();
+      const consumers = new Map(inspection.consumers.map(consumer => [consumer.feature.id, consumer])), repaired = new Set<string>();
       for (const entry of repairs.selections) {
-        const original = consumers.get(entry.featureId);
-        if (!original || repaired.has(entry.featureId)) throw new CadSessionError('SKETCH_AREA_REPAIR_SELECTION', 'Choose each affected consumer once without changing unrelated features.');
-        inspection.cells.resolve(entry.selection); repaired.add(entry.featureId);
-        consumerEdits.push({ kind: 'update-feature', feature: { ...original, regionSelection: entry.selection } });
+        const consumer = consumers.get(entry.featureId);
+        if (!consumer || repaired.has(entry.featureId)) throw new CadSessionError('SKETCH_AREA_REPAIR_SELECTION', 'Choose each affected consumer once without changing unrelated features.');
+        consumer.cells.resolve(entry.selection); repaired.add(entry.featureId);
+        consumerEdits.push({ kind: 'update-feature', feature: { ...consumer.feature, regionSelection: entry.selection } });
       }
     }
     const prepared = owned.draft.finishEdits(source, consumerEdits);

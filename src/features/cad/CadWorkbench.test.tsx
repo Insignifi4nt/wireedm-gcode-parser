@@ -414,8 +414,8 @@ describe('CAD sketch interaction', () => {
     if (staleConsumer.kind !== 'extrude') throw new Error('Pad fixture missing');
     const build = { ...topologyBuild, meshes: [...topologyBuild.meshes, { ...topologyBuild.meshes[0], featureId: 'second-pad', volume: 1234 }] };
     await mount(initial, { build, buildState: 'ready', sketchEdit: { sketchId: edited.id, cancel: vi.fn(), finish,
-      inspectAreaRepairs: () => ({ sketchId: edited.id, localVersion: currentSession.getSnapshot().version, cells,
-        consumers: [{ feature: staleConsumer, issue: 'The selected boundary changed.' }] }) } });
+      inspectAreaRepairs: () => ({ sketchId: edited.id, localVersion: currentSession.getSnapshot().version,
+        consumers: [{ feature: staleConsumer, issue: 'The selected boundary changed.', cells }] }) } });
     await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: edited.id }));
     await click('Finish sketch');
     await click('Choose areas for Dependent pad');
@@ -773,7 +773,7 @@ describe('CAD sketch interaction', () => {
     await act(async () => replaceBuild({ ...topologyBuild, buildId: 'republished-native-build' }));
     expect(viewportRegions).toBe(command); expect(currentDocument).toBe(initial);
     expect(currentSession.getSnapshot()).toMatchObject({ version: before.version, workflowOpen: true });
-    await act(async () => command.onSelect(command.cells.cells.filter(cell => cell.defaultMaterial).map(cell => cell.reference)));
+    await act(async () => command.onSelect(command.cells.pack(command.cells.selectedCellIds(undefined))));
     expect(viewportRegions?.cells).toBe(command.cells); expect(viewportRegions?.placement).toBe(command.placement);
     await click('Cancel area selection'); expect(viewportRegions).toBeNull();
     await click('Pick profile sketch from model');
