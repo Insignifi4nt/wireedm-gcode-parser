@@ -1,7 +1,7 @@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ContextType } from 'react';
-import { CloseIcon, ConfirmIcon } from '@wire-edm/icons-react';
+import { CloseIcon, ConfirmIcon, SelectIcon } from '@wire-edm/icons-react';
 import type { CadDocument, CadFeature, CadPlane, CadProfile, CadScalar, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
 import { resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
@@ -56,6 +56,7 @@ interface CadFeatureEditorProps {
   featurePreview?: CadFeaturePreviewState;
   previewEnabled?: boolean;
   onReferencePick?(command: CadFeatureReferencePickCommand): void;
+  topologyPickingEnabled?: boolean;
   onDepthInteractionReady?(control: CadExtrudeDepthControl | null, released?: CadExtrudeDepthControl): void;
 }
 
@@ -66,7 +67,7 @@ export function CadFeatureEditor(props: CadFeatureEditorProps) {
   return <CadFeatureEditorForm key={`${props.feature.id}/${props.feature.kind}`} {...props} />;
 }
 
-function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onPendingChange, currentBodyIds, documentVersion, onFeaturePreview, featurePreview, previewEnabled = true, onReferencePick, onDepthInteractionReady }: CadFeatureEditorProps) {
+function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onPendingChange, currentBodyIds, documentVersion, onFeaturePreview, featurePreview, previewEnabled = true, onReferencePick, topologyPickingEnabled = false, onDepthInteractionReady }: CadFeatureEditorProps) {
   const submission = useCadEditSubmission();
   const cancel = () => { submission.cancel(); onCancel(); };
   const previewOwner = useId(), previewCallback = useRef(onFeaturePreview);
@@ -132,15 +133,15 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
   const markRelationEdited = useCallback((key: string) => setRelationEdits(previous => previous[key] ? previous : { ...previous, [key]: true }), []);
   const scalarContext = { parameters: effectiveDocument.parameters, acceptedScalars, relationEdits, valueDrafts, setValueDraft, setIssue, setRelationPending, markRelationEdited, changeParameter };
   const [error, setError] = useState<string | null>(null);
-  const capturedEdges = feature.kind === 'fillet' || feature.kind === 'chamfer' ? feature.selection : null;
+  const [capturedEdges, setCapturedEdges] = useState(feature.kind === 'fillet' || feature.kind === 'chamfer' ? feature.selection : null);
   const candidateEdits = useMemo(() => cadFeatureCandidateEdits({ feature: draft, isNew, parameters: parameterEdits }), [draft, isNew, parameterEdits]);
-  useEffect(() => { draftSource.current = feature; setDraft(feature); setParameterEdits({}); setValueDrafts({}); setRelationEdits({}); setError(null); setPicker(null); pickToken.current = null; regionStart.current = null; }, [feature]);
+  useEffect(() => { draftSource.current = feature; setDraft(feature); setCapturedEdges(feature.kind === 'fillet' || feature.kind === 'chamfer' ? feature.selection : null); setParameterEdits({}); setValueDrafts({}); setRelationEdits({}); setError(null); setPicker(null); pickToken.current = null; regionStart.current = null; }, [feature]);
   useLayoutEffect(() => { onPendingChange(isNew || draftSource.current === feature && (changed || scalarPending || Boolean(pickCurrent) || depthGestureActive)); }, [isNew, feature, changed, scalarPending, pickCurrent, depthGestureActive, onPendingChange]);
   useLayoutEffect(() => { onReferencePick?.(pickCurrent ?? { kind: 'clear', owner: previewOwner }); }, [onReferencePick, pickCurrent, previewOwner]);
   useLayoutEffect(() => () => pickerCallback.current?.({ kind: 'clear', owner: previewOwner }), [previewOwner]);
   useLayoutEffect(() => {
     if (!onFeaturePreview || !documentVersion) return;
-    if (!staleDraft && !areasMissing && draftSource.current === feature && previewEnabled && pickCurrent?.kind !== 'pick' && (isNew || changed || scalarPending)) {
+    if (!staleDraft && !areasMissing && draftSource.current === feature && previewEnabled && pickCurrent?.kind !== 'pick' && pickCurrent?.kind !== 'pick-topology' && (isNew || changed || scalarPending)) {
       onFeaturePreview(scalarPending
         ? { kind: 'blocked', owner: previewOwner, expectedVersion: documentVersion, edits: candidateEdits, message: Object.values(fieldIssues)[0] ?? 'Finish editing the relation before applying this feature.' }
         : { kind: 'candidate', owner: previewOwner, expectedVersion: documentVersion, edits: candidateEdits });
@@ -250,6 +251,22 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
       : bodies;
     return <SelectField reference label={label} value={value} options={options} onChange={onChange} />;
   };
+  const topologyPicker = (target: Extract<CadFeature, { kind: 'fillet' | 'chamfer' | 'shell' }>) => !isNew && topologyPickingEnabled && onReferencePick && documentVersion
+    ? <div className="cad-context-actions"><Button type="button" disabled={staleDraft || scalarPending || submission.applying || !visibleIds.includes(target.targetId)} onClick={() => {
+      if (pickToken.current || depthGestureActive) return;
+      const token = Symbol('topology-pick'); pickToken.current = token;
+      pickerFocus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null;
+      setPicker({ kind: 'pick-topology', owner: previewOwner, expectedVersion: documentVersion, purpose: target.kind,
+        label: target.kind === 'shell' ? 'Opening face' : 'Edges', request: { featureId: feature.id, bodyId: target.targetId, parameterValues: { ...parameterEdits } },
+        onSelect(result) {
+          const environment = pickEnvironment.current;
+          if (pickToken.current !== token || environment.document !== document || environment.documentVersion !== documentVersion) return;
+          if (result.bodyId !== target.targetId || result.purpose !== target.kind) throw new Error('The topology choice does not belong to this feature input.');
+          if (result.purpose === 'shell' && target.kind === 'shell') update({ ...target, opening: result.opening });
+          else if (result.purpose !== 'shell' && target.kind !== 'shell') { setCapturedEdges(result.selection); update({ ...target, selection: result.selection }); }
+          endPick(token, true);
+        }, onCancel: () => endPick(token) });
+    }}><SelectIcon size={13} />{target.kind === 'shell' ? 'Choose opening' : 'Choose edges'}</Button></div> : null;
   let fields: React.ReactNode;
   switch (draft.kind) {
     case 'datum-plane': fields = <CadScalarEditContext.Provider value={scalarContext}><CadDatumPlaneFields feature={draft} parameters={effectiveDocument.parameters} onChange={update} /></CadScalarEditContext.Provider>; break;
@@ -281,6 +298,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
             ? `${capturedEdges.expectedCount} ${capturedEdges.expectedCount === 1 ? 'edge' : 'edges'} + tangents` : `Selected edges (${capturedEdges.expectedCount})`
             : 'Selected edges, pick before starting', disabled: !capturedEdges },
         ]} onChange={scope => update(scope === 'selected' ? { ...draft, selection: capturedEdges } : { ...strict, selection: null })} />
+        {topologyPicker(draft)}
         {scalar('radius', draft.kind === 'fillet' ? 'Radius' : 'Distance', draft.radius, radius => update({ ...draft, radius }))}
         {draft.selection && <><div className="cad-check"><Input id={tangentId} type="checkbox" aria-label="Follow tangent edges" checked={draft.tangentPropagation === true}
           onChange={event => update(event.target.checked ? { ...draft, tangentPropagation: true }
@@ -290,7 +308,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
           </CadContextHelp></div><CadTopologyQuerySummary selection={draft.selection} /></>}
       </>; break;
     }
-    case 'shell': fields = <>{body('Body', draft.targetId, (targetId) => update({ ...draft, targetId }))}{scalar('thickness', 'Wall thickness', draft.thickness, (thickness) => update({ ...draft, thickness }))}<CadTopologyQuerySummary selection={draft.opening} /></>; break;
+    case 'shell': fields = <>{body('Body', draft.targetId, (targetId) => update({ ...draft, targetId }))}{topologyPicker(draft)}{scalar('thickness', 'Wall thickness', draft.thickness, (thickness) => update({ ...draft, thickness }))}<CadTopologyQuerySummary selection={draft.opening} /></>; break;
     case 'boolean': fields = <>{body('Target body', draft.targetId, (targetId) => update({ ...draft, targetId }))}{body('Tool body', draft.toolId, (toolId) => update({ ...draft, toolId }))}<SelectField label="Operation" value={draft.operation} options={[{ value: 'union', label: 'Union' }, { value: 'cut', label: 'Subtract tool' }, { value: 'intersect', label: 'Intersection' }]} onChange={(operation) => update({ ...draft, operation })} /></>; break;
     case 'transform': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<VectorFields label="Translation" unit="mm">{scalar('translation.0', 'X', draft.translation[0], (value) => update({ ...draft, translation: [value, draft.translation[1], draft.translation[2]] }), undefined, 'Translation X')}{scalar('translation.1', 'Y', draft.translation[1], (value) => update({ ...draft, translation: [draft.translation[0], value, draft.translation[2]] }), undefined, 'Translation Y')}{scalar('translation.2', 'Z', draft.translation[2], (value) => update({ ...draft, translation: [draft.translation[0], draft.translation[1], value] }), undefined, 'Translation Z')}</VectorFields><VectorFields label="Rotation about world origin" unit="deg">{scalar('rotation.0', 'Around X', draft.rotation[0], (value) => update({ ...draft, rotation: [value, draft.rotation[1], draft.rotation[2]] }), 'deg')}{scalar('rotation.1', 'Around Y', draft.rotation[1], (value) => update({ ...draft, rotation: [draft.rotation[0], value, draft.rotation[2]] }), 'deg')}{scalar('rotation.2', 'Around Z', draft.rotation[2], (value) => update({ ...draft, rotation: [draft.rotation[0], draft.rotation[1], value] }), 'deg')}</VectorFields></>; break;
     case 'linear-pattern': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<label className="cad-field"><span>Instances, including original</span><Input type="number" min="2" max="100" value={draft.count} onChange={(event) => update({ ...draft, count: Number(event.target.value) })} /></label><VectorFields label="Spacing between instances" unit="mm">{scalar('spacing.0', 'X', draft.spacing[0], (value) => update({ ...draft, spacing: [value, draft.spacing[1], draft.spacing[2]] }), undefined, 'Spacing X')}{scalar('spacing.1', 'Y', draft.spacing[1], (value) => update({ ...draft, spacing: [draft.spacing[0], value, draft.spacing[2]] }), undefined, 'Spacing Y')}{scalar('spacing.2', 'Z', draft.spacing[2], (value) => update({ ...draft, spacing: [draft.spacing[0], draft.spacing[1], value] }), undefined, 'Spacing Z')}</VectorFields></>; break;
@@ -323,7 +341,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
       }
     };
   }, [onReferencePick, documentVersion, staleDraft, preceding, depthGestureActive, previewOwner, document, draft]);
-  return <form className="cad-property-form" aria-busy={submission.applying || undefined} onKeyDown={event => { if (pickCurrent && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); endPick(); } }} onSubmit={(event) => { event.preventDefault(); if (pickCurrent || staleDraft || scalarPending || areasMissing || depthGestureActive || submission.applying) return; if (waitingForPreview) { setError('Wait for a valid preview of this edit.'); return; } submission.submit(signal => onApply(draft, parameterEdits, signal), () => setError(null), cause => setError(cause instanceof Error ? cause.message : 'Unable to apply this feature.')); }}>
+  return <form hidden={pickCurrent?.kind === 'pick-topology'} className="cad-property-form" aria-busy={submission.applying || undefined} onKeyDown={event => { if (pickCurrent && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); endPick(); } }} onSubmit={(event) => { event.preventDefault(); if (pickCurrent || staleDraft || scalarPending || areasMissing || depthGestureActive || submission.applying) return; if (waitingForPreview) { setError('Wait for a valid preview of this edit.'); return; } submission.submit(signal => onApply(draft, parameterEdits, signal), () => setError(null), cause => setError(cause instanceof Error ? cause.message : 'Unable to apply this feature.')); }}>
     <div className="cad-property-title">{isNew ? 'Create' : 'Edit'} {featureLabels[draft.kind].toLowerCase()}<CadContextHelp label={featureLabels[draft.kind]}>{cadFeatureHelp[draft.kind]}</CadContextHelp></div>
     <fieldset className="cad-feature-fields" disabled={Boolean(pickCurrent) || staleDraft || depthGestureActive || submission.applying}>
     <CadFeatureReferencePickingContext.Provider value={pickingContext}>{fields}</CadFeatureReferencePickingContext.Provider></fieldset>

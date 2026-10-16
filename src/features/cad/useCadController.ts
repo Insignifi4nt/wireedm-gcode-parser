@@ -14,6 +14,8 @@ import { installCadPlugin, listCadPlugins } from '@/domain/cad/plugins/cadPlugin
 import { cadViewportVisualIdentity, type CadViewportCommand, type CadWorkbenchViewportControls, type CadViewportState } from './cadViewportControls';
 import { preparePreviewCapture, downloadPreviewCapture, type PreviewCaptureArtifact } from '@/features/webmcp/previewCapture';
 import { createCadTopologyActions } from './cadTopologyActions';
+import type { CadTopologyInspectRequest, CadTopologyResolvePicksRequest } from '@/domain/cad/cadTopology';
+import { createCadFeatureInputCoordinator } from './cadFeatureInput';
 import { cadBytesToBase64, cadSolidImportByteLength, isCadSolidImportResult, parseCadSolidImportSource, type CadSolidImportSource } from '@/domain/cad/cadImports';
 import { parseCadDxfImportSource, type CadDxfUnits } from '@/domain/cad/cadDxfSource';
 import type { DxfUnitDeclaration } from '@/domain/dxf/types';
@@ -96,6 +98,20 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   }), [session]);
   useLayoutEffect(() => { featurePreviewCoordinator.invalidate(); }, [featurePreviewCoordinator, snapshot.version, app.connectedWorkbench?.adapter, open, app.workbenchInteractionLocked, storageBusy]);
   useEffect(() => () => featurePreviewCoordinator.dispose(), [featurePreviewCoordinator]);
+  const featureInputCoordinator = useMemo(() => createCadFeatureInputCoordinator({
+    assertCurrent(expectedVersion, scope) {
+      const workbench = connected(); editable(expectedVersion); session.assertWorkflowClosed(scope);
+      return { document: session.getSnapshot().document, storage: workbench.adapter };
+    },
+    createKernel: async () => (await import('./kernel/cadKernelClient')).createCadKernelClient(),
+    prepare: prepareDocument,
+  }), [session]);
+  useLayoutEffect(() => { featureInputCoordinator.invalidate(); }, [featureInputCoordinator, snapshot.version, app.connectedWorkbench?.adapter, open, app.workbenchInteractionLocked, storageBusy]);
+  useLayoutEffect(() => {
+    try { session.assertWorkflowClosed('editor'); } catch { featureInputCoordinator.invalidate(); }
+  }, [featureInputCoordinator, session, snapshot]);
+  useEffect(() => () => featureInputCoordinator.dispose(), [featureInputCoordinator]);
+  const releaseFeatureInput = useCallback((inputToken: string) => featureInputCoordinator.clear(inputToken), [featureInputCoordinator]);
   function changeOpen(value: boolean) {
     current.current.open = value;
     setOpen(value);
@@ -671,6 +687,14 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     getBuild: () => liveBuild.current,
     getKernel
   });
+  function inspectTopology(request: CadTopologyInspectRequest, expectedVersion: string, signal?: AbortSignal, scope?: 'editor', inputToken?: string) {
+    return inputToken === undefined ? topology.inspect(request, expectedVersion, signal, scope)
+      : featureInputCoordinator.inspect(request, expectedVersion, signal, scope, inputToken);
+  }
+  function resolveTopologyPicks(request: CadTopologyResolvePicksRequest, expectedVersion: string, signal?: AbortSignal, scope?: 'editor', inputToken?: string) {
+    return inputToken === undefined ? topology.resolve(request, expectedVersion, signal, scope)
+      : featureInputCoordinator.resolve(request, expectedVersion, signal, scope, inputToken);
+  }
   async function inspectSection(request: CadSectionRequest, expectedVersion: string, signal?: AbortSignal, scope?: 'section' | 'dxf-export') {
     editable(expectedVersion); session.assertWorkflowClosed(scope);
     signal?.throwIfAborted();
@@ -776,7 +800,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   return { session, snapshot, sketchEditing, open, enter, edit, preparePreviewEdits, save, list, projectActions, plugins, installPlugin, showLibrary, library, libraryLoading, libraryDiagnostic, closeLibrary,
     openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, inspectSketchConstraints, inspectSketchHandles, measureCurve, inspectSketchRegions, readSketchRegionReference, inspectPlugin, inspectParameters, inspectPlane, inspectLoft, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, exportSectionDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
     setViewportControls, readViewport: (expectedVersion: string) => getViewport(expectedVersion).getState(), changeViewport, captureViewport, previewArtifact,
-    inspectTopology: topology.inspect, resolveTopologyPicks: topology.resolve,
+    inspectTopology, resolveTopologyPicks, buildFeatureInput: featureInputCoordinator.build, releaseFeatureInput,
     build, buildVersion, buildState, featurePreview, previewFeature: featurePreviewCoordinator.update, errorMessage, setErrorMessage, storageBusy, isBusy, isOpen: () => current.current.open,
     undo: (expected?: string) => { editable(expected); session.undo(expected); },
     redo: (expected?: string) => { editable(expected); session.redo(expected); }

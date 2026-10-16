@@ -32,6 +32,7 @@ import { cadAnalyticPathMetrics, resolveCadProfile } from '@/domain/cad/cadSketc
 import { resolveCadCurve } from '@/domain/cad/cadCurve';
 import { CadIdentifierSchema } from '@/domain/cad/cadPrimitives';
 import { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS } from '@/domain/cad/cadLoft';
+import { CadFeatureInputRequestSchema } from './cadFeatureInput';
 
 const id = Type.String({ minLength: 1, maxLength: 160 });
 const version = { expectedVersion: id };
@@ -350,21 +351,35 @@ export function cadSiteTools(getController: () => CadController) {
       return { version: input.expectedVersion, buildId: result.buildId, durationMs: result.durationMs, ...diagnosticSummary(result.diagnostics),
         bodies: bodies.items, totalBodies: bodies.total, nextBodyOffset: bodies.nextOffset };
     }),
-    tool('cad_inspect_topology', 'Inspect exact faces or edges of a successfully built body in world coordinates. Pin expectedVersion and expectedBuildId from cad_build. Returns bounded descriptors and opaque keys for this build only; follow nextOffset. Lengths/coordinates are mm; areas mm². Stale snapshots are rejected without rebuilding. Keys must never be saved in features.', object({
+    tool('cad_build_feature_input', 'Build the strict history before an existing Fillet, Chamfer or Shell to replace its selected edges/opening. Choose a body visible at that point; optional finite numeric parameterValues propose correlated edits without accepting them. Returns an ephemeral inputToken/buildId for the existing topology tools. The accepted document/build is unchanged. Use the resulting geometric selector and same parameter batch in cad_edit_document. Finish visible editors before agent calls.', object({ ...version, ...CadFeatureInputRequestSchema.properties }), async (cad, input, signal) => {
+      const { expectedVersion, ...request } = input;
+      const snapshot = await cad.buildFeatureInput(request, expectedVersion, signal);
+      const mesh = snapshot.result.meshes.find(body => body.featureId === snapshot.bodyId);
+      if (!mesh) throw new ToolError('NOT_FOUND', 'The requested input body is unavailable.');
+      return { inputToken: snapshot.inputToken, documentId: snapshot.documentId, version: snapshot.version, featureId: snapshot.featureId, bodyId: snapshot.bodyId,
+        parameterValues: snapshot.parameterValues, buildId: snapshot.result.buildId, durationMs: snapshot.result.durationMs,
+        body: { featureId: mesh.featureId, name: mesh.name, volumeMm3: mesh.volume, solidCount: mesh.solidCount ?? null, boundsMm: mesh.bounds,
+          previewFaces: new Set(mesh.faceGroups.map(group => group.key)).size, previewEdges: new Set(mesh.edgeGroups.map(group => group.key)).size } };
+    }),
+    tool('cad_inspect_topology', 'Inspect exact faces or edges of a successfully built body in world coordinates. Pin expectedVersion and expectedBuildId from cad_build, or include inputToken from cad_build_feature_input for that isolated feature input. Returns bounded descriptors and opaque keys for this build only; follow nextOffset. Lengths/coordinates are mm; areas mm². Stale snapshots are rejected without rebuilding. Keys must never be saved in features.', object({
       ...version, bodyId: id, expectedBuildId: id, kind: Type.Union([Type.Literal('edge'), Type.Literal('face')]),
+      inputToken: Type.Optional(id),
       offset: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 }))
     }), async (cad, input, signal) => {
       const offset = input.offset ?? 0;
-      const result = await cad.inspectTopology({ bodyId: input.bodyId, expectedBuildId: input.expectedBuildId,
-        selection: { kind: 'page', topology: input.kind, offset, limit: input.limit ?? 10 } }, input.expectedVersion, signal);
+      const request = { bodyId: input.bodyId, expectedBuildId: input.expectedBuildId,
+        selection: { kind: 'page' as const, topology: input.kind, offset, limit: input.limit ?? 10 } };
+      const result = await (input.inputToken === undefined ? cad.inspectTopology(request, input.expectedVersion, signal)
+        : cad.inspectTopology(request, input.expectedVersion, signal, undefined, input.inputToken));
       const bounded = page(result.descriptors, { limit: result.descriptors.length });
-      return { ...result, descriptors: bounded.items, nextOffset: bounded.nextOffset === null ? result.nextOffset : offset + bounded.nextOffset };
+      return { ...result, ...(input.inputToken === undefined ? {} : { inputToken: input.inputToken }), descriptors: bounded.items, nextOffset: bounded.nextOffset === null ? result.nextOffset : offset + bounded.nextOffset };
     }),
-    tool('cad_resolve_topology', 'Convert up to 32 current edge picks into strict fillet/chamfer geometric selectors, or one planar face into an inward-shell opening query. Read-only: no feature is added. Pin the version/build from topology inspection, then use the returned selection/opening in cad_edit_document. Exact expected counts reject ambiguity; unsupported curves fail instead of broadening selection. Numeric selectors may need explicit parameter expressions when upstream dimensions change.', object({
-      ...version, ...CadTopologyResolvePicksRequestSchema.properties, picks: Type.Array(CadTopologyPickSchema, { minItems: 1, maxItems: 32 })
-    }), (cad, input, signal) => {
-      const { expectedVersion, ...request } = input;
-      return cad.resolveTopologyPicks(request, expectedVersion, signal);
+    tool('cad_resolve_topology', 'Convert up to 32 current edge picks into strict fillet/chamfer geometric selectors, or one planar face into an inward-shell opening query. Read-only: no feature is added. Pin the version/build from topology inspection, including inputToken for an isolated existing-feature input, then use the returned selection/opening in cad_edit_document. Exact expected counts reject ambiguity; unsupported curves fail instead of broadening selection. Numeric selectors may need explicit parameter expressions when upstream dimensions change.', object({
+      ...version, ...CadTopologyResolvePicksRequestSchema.properties, inputToken: Type.Optional(id), picks: Type.Array(CadTopologyPickSchema, { minItems: 1, maxItems: 32 })
+    }), async (cad, input, signal) => {
+      const { expectedVersion, inputToken, ...request } = input;
+      if (inputToken === undefined) return cad.resolveTopologyPicks(request, expectedVersion, signal);
+      return { ...await cad.resolveTopologyPicks(request, expectedVersion, signal, undefined, inputToken), inputToken };
     }),
     tool('cad_inspect_sketch_constraints', 'Read graph freedom/status and paged source relations, points or entities with exact drivers and analytic local measurements. Saved reference-dimension rows report computed measurement separately from driving values; they add no native equation. Does not apply a solve or change history. Requires a current version and closed workflows.', CadToolSketchConstraintsQuerySchema, async (cad, input, signal) => {
       const inspection = await cad.inspectSketchConstraints(input.sketchId, input.expectedVersion, signal);

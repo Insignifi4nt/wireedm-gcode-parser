@@ -512,6 +512,52 @@ describe('CAD controller asynchronous guards', () => {
     expect(previewClient.dispose).toHaveBeenCalledOnce(); expect(kernel.dispose).not.toHaveBeenCalled();
     expect(h.cad().featurePreview).toEqual({ kind: 'idle' }); expect(h.cad().build).toBe(acceptedBuild); expect(h.session.getSnapshot()).toEqual(before); expect(h.session.getSnapshot().document).toBe(before.document);
   });
+  it('borrows a consumed feature input through the controller without replacing the accepted build or granting tools editor access', async () => {
+    const h = await harness(true);
+    await act(async () => h.session.edit([
+      { kind: 'set-parameter', name: 'height', value: 10 },
+      { kind: 'add-feature', feature: { kind: 'extrude', id: 'pad', name: 'Pad', suppressed: false, sketchId: 'sketch', distance: ' height ', symmetric: false, operation: 'new', targetId: null } },
+      { kind: 'add-feature', feature: { kind: 'fillet', id: 'round', name: 'Round', suppressed: false, targetId: 'pad', radius: ' 1 ', selection: null } },
+    ]));
+    const before = h.session.getSnapshot();
+    const mesh = { featureId: 'round', name: 'Round', positions: [], normals: [], indices: [], edges: [], faceGroups: [], edgeGroups: [], volume: 990, bounds: { min: [0, 0, 0] as const, max: [20, 10, 10] as const } };
+    const accepted: CadBuildResult = { buildId: 'accepted-round', meshes: [mesh], diagnostics: [], durationMs: 1 };
+    kernel.build.mockResolvedValue(accepted);
+    await act(async () => { await h.cad().inspectBuild(before.version); });
+    const inputKernel = { ...kernel, build: vi.fn(async (): Promise<CadBuildResult> => ({ ...accepted, buildId: 'input-pad', meshes: [{ ...mesh, featureId: 'pad', name: 'Pad', volume: 3000 }] })), dispose: vi.fn(),
+      inspectTopology: vi.fn(async () => ({ bodyId: 'pad', buildId: 'input-pad', descriptors: [], total: 0, nextOffset: null })),
+      resolveTopologyPicks: vi.fn(async () => ({ bodyId: 'pad', buildId: 'input-pad', purpose: 'fillet' as const,
+        selection: { expectedCount: 1, queries: [{ kind: 'edges' as const, expectedCount: 1, predicates: [{ kind: 'line-endpoints' as const, start: [0, 0, 0] as const, end: [20, 0, 0] as const }] }] } })),
+    };
+    createClient.mockReturnValue(inputKernel);
+    const borrowed = await h.cad().buildFeatureInput({ featureId: 'round', bodyId: 'pad', parameterValues: { height: 15 } }, before.version);
+    expect(borrowed.document.features.map(feature => feature.id)).toEqual(['sketch', 'pad']);
+    expect(borrowed.document.parameters.height).toBe(15);
+    const query: CadTopologyInspectRequest = { bodyId: 'pad', expectedBuildId: 'input-pad', selection: { kind: 'page', topology: 'edge', offset: 0, limit: 10 } };
+    await h.cad().inspectTopology(query, before.version, undefined, undefined, borrowed.inputToken);
+    expect(inputKernel.inspectTopology).toHaveBeenCalledWith(borrowed.document, query, expect.any(AbortSignal));
+    await expect(h.cad().inspectTopology(query, before.version)).rejects.toMatchObject({ code: 'STALE_BUILD' });
+    expect(h.cad().build).toBe(accepted); expect(h.session.getSnapshot()).toBe(before);
+    const tools = cadSiteTools(h.cad), buildInput = tools.find(tool => tool.name === 'cad_build_feature_input');
+    const inspectInput = tools.find(tool => tool.name === 'cad_inspect_topology'), resolveInput = tools.find(tool => tool.name === 'cad_resolve_topology');
+    if (!buildInput || !inspectInput || !resolveInput) throw new Error('Missing input tools');
+    const receipt = await buildInput.execute({ expectedVersion: before.version, featureId: 'round', bodyId: 'pad', parameterValues: { height: 15 } });
+    expect(receipt).toMatchObject({ ok: true, data: { version: before.version, featureId: 'round', bodyId: 'pad', buildId: 'input-pad', parameterValues: { height: 15 }, body: { volumeMm3: 3000 } } });
+    if (!receipt || typeof receipt !== 'object' || !('data' in receipt) || !receipt.data || typeof receipt.data !== 'object'
+      || !('inputToken' in receipt.data) || typeof receipt.data.inputToken !== 'string') throw new Error('Missing input receipt');
+    const token = receipt.data.inputToken;
+    expect(await inspectInput.execute({ expectedVersion: before.version, expectedBuildId: 'input-pad', bodyId: 'pad', kind: 'edge', inputToken: token })).toMatchObject({ ok: true, data: { inputToken: token, total: 0 } });
+    expect(await resolveInput.execute({ expectedVersion: before.version, expectedBuildId: 'input-pad', bodyId: 'pad', purpose: 'fillet', picks: [{ kind: 'edge', key: 'edge_1' }], inputToken: token })).toMatchObject({ ok: true, data: { inputToken: token, purpose: 'fillet', selection: { expectedCount: 1 } } });
+    expect(h.cad().build).toBe(accepted); expect(h.session.getSnapshot()).toBe(before);
+    await act(async () => h.session.setWorkflowOpen(true));
+    await expect(h.cad().buildFeatureInput({ featureId: 'round', bodyId: 'pad' }, before.version)).rejects.toMatchObject({ code: 'WORKFLOW_OPEN' });
+    expect(await buildInput.execute({ expectedVersion: before.version, featureId: 'round', bodyId: 'pad' })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    const editor = await h.cad().buildFeatureInput({ featureId: 'round', bodyId: 'pad' }, before.version, undefined, 'editor');
+    h.cad().releaseFeatureInput(borrowed.inputToken);
+    await h.cad().inspectTopology({ ...query, expectedBuildId: editor.result.buildId }, before.version, undefined, 'editor', editor.inputToken);
+    h.cad().releaseFeatureInput(editor.inputToken);
+    await Promise.resolve(); expect(inputKernel.dispose).toHaveBeenCalledTimes(3);
+  });
   it('keeps agent edits and history blocked while the document library owns the UI, then opens its chosen saved part', async () => {
     const h = await harness(true);
     await act(async () => { await h.cad().save(); await h.cad().showLibrary(); });

@@ -14,10 +14,12 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [x] Keep human commands and agent operations equivalent, guarded, versioned, discoverable and documented for the delivered contracts.
 - [x] Verify complete part-building workflows, exact geometry, undo/redo, rejected edits, saves/reopens and downstream rebuilds. Test meaningful math and state invariants at shared application/domain operations; inspect interaction and visuals in the actual browser.
 - [x] Independently audit the supported sketch loop against the original goal and source-backed scenarios. Investigate missing or weak evidence, rather than treating passing tests as completion.
-- [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
-- [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
+- [x] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
+- [x] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
-Current phase,17 October: the practical sketch loop is accepted for the delivered analytic contracts. The [independent audit](2026-10-16-sketch-final-workflow-audit.md) does not claim every vendor command or S01–S22 permutation. General arrays, broader projection, associative Offset and arbitrary curve corners remain explicit expansion/coverage limits. Earlier checkpoint “Next” paragraphs are historical; this section and the latest audit govern current work. The overall local-only goal remains active.
+Final acceptance,17 October: the practical sketch loop and subsequent existing-workspace repairs are accepted for the delivered analytic contracts. The [sketch audit](2026-10-16-sketch-final-workflow-audit.md) and [final product audit](2026-10-17-cad-workspace-final-product-audit.md) establish no further concrete supported-workflow defect after the topology repair's acceptance. They do not claim every vendor command or S01–S22 permutation. General arrays, broader projection, associative Offset, general tangency and arbitrary curve corners remain explicit expansion/coverage limits. Earlier checkpoint “Next” and “goal remains active” paragraphs are historical; this section and the final audit govern completion. The completed branch remains local, with no push, PR, merge, deployment or version bump.
+
+The final source, independent reviews, production packaging and complete Chromium/Firefox/native receipts are reconciled below. Browser acceptance uses representative complete parts and exact source/history/material invariants; it is not universal accessibility, performance or native Zen certification. The recorded native oblique-arc precision limit remains unrepaired: invalid candidates are rejected, and conditioning experiments that caused regressions were not shipped. That deferred numerical investigation is retained below rather than marked complete. No required implementation or acceptance gate remains open within the delivered scope.
 
 ## Checkpoint: context editing and whole-workflow reconciliation
 
@@ -35,7 +37,17 @@ The raised Z5–15 plate journey fails on the old default0, then passes with def
 
 Removed forced title capitalization; static feature action headings now use deliberate sentence case while user/plugin names remain exact. The existing shared-control checker also rejects forced capitalize styles, with a meaningful architecture fixture rather than new per-copy UI tests. Actual native heading is Edit sketch with computed transform none; tmp/cad-sentence-case-native.png. No schema, native, tolerance, version or remote change.
 
-Next: the separately scoped inability to repick an existing topology operation through its owned pre-feature source; do not weaken accepted-build identity checks. [Workspace findings and proposed seams](2026-10-17-cad-workspace-tools-audit.md). The overall local-only goal remains active.
+The separately scoped topology-repick gap below is now accepted. [Workspace findings and repair](2026-10-17-cad-workspace-tools-audit.md). The overall local-only goal remains active pending the final objective audit.
+
+## Checkpoint: replace edges and openings in existing solid features
+
+Existing Fillet/Chamfer now offer Choose edges; Shell offers Choose opening. The compact owned stage displays the exact body before that operation, including proposed shared-parameter edits. Direct canvas picks and the reused exact topology list resolve through one isolated input build. Cancel retains pending fields and restores focus; Use returns the ordinary selector to the original form. Full-part preview and the existing Apply remain mandatory. The accepted build, source and history stay separate; source/version/storage/scope changes invalidate the temporary token. Public agents use the same guarded input-build/inspect/resolve route, without editor privileges. Numeric selectors retain their documented upstream-change limits.
+
+The three complete production journeys pass Chromium and Firefox: replacement, Cancel/focus, equivalent agent selection, exact source, native volume, one Undo/Redo, save and reload. Focused service/controller/tool178, UI18 and Workbench/preview107 checks pass; groups overlap. Full build/types, final production packaging with98 docs/source checks, final scoped types and shared controls pass. Independent UI and service reviews are closed without open findings. The final browser pass caught and closed a real Cancel-focus regression; no timeout or retry workaround was added.
+
+Actual native pointer repicking changes a20mm fillet edge and retains the analytic995.7079632679488mm³ volume. A correlated Shell edit changes wall1→2 and stock height5→10, then chooses a200mm² side opening: native volume1231.9999999999998mm³ agrees with expected1232. The exact `wall` and `wall * 5` expressions survive; Undo/Redo retain the complete source. Disposable native drafts were restored empty and closed without Save. Evidence: tmp/cad-topology-repick-{chromium,firefox}-final.log and tmp/cad-topology-native-{edge,shell}-{pick.png,solid.png,proof.json}. Native Cancel focus is certified by the final browser journeys, not the earlier pointer receipt.
+
+No geometry algorithm, native protocol, tolerance, saved schema, version or remote change. [Owned-input contract and acceptance](2026-10-17-cad-topology-repick-plan.md). Next: reconcile the final whole-objective audit and local commits; do not reopen unrelated numerical or feature-expansion work without a concrete finding.
 
 ## Checkpoint: precise reused-detail placement
 
@@ -381,6 +393,8 @@ Evidence: 81 focused domain, picking and gesture cases; TypeScript and shared UI
 Constraint implementation now follows the graph-first integration plan, replacing the initial parallel-ID draft. A pinned PlaneGCS dependency and source packaging are prepared separately; browser worker, graph persistence, async ownership and user-facing relation tools are still in progress. Do not treat these foundations as completed sketch mode.
 
 ## Later solver precision work
+
+Deferred numerical investigation, outside the accepted workflow gates above. Both evaluated conditioning approaches caused accepted-to-rejected regressions, so neither was shipped. This remains a known limitation, not a completed improvement or a reason to weaken source validation.
 
 - [ ] Improve ordinary oblique arc solving while retaining strict source closure and exact expression drivers. The current native equal-radius spoke relation passed 28 of 36 bounded review cases. It explicitly rejects native Success for radii 0.25 and 10 at centers (0,0) or (100,300), both traversal directions, with fixed center/start at 30°, fixed end X at 145° and free end Y seeded 20% above its intended relative value. Residuals around 3.63e-11/6.65e-11 mm exceed the existing 1e-12 gate. Do not hide these rejections by changing coordinates or loosening validation. Exact fixture formulas, limitations and evidence are in [the solver reference](2026-10-16-sketch-solver-options.md#production-adapter-foundation-and-remaining-arc-limit).
 

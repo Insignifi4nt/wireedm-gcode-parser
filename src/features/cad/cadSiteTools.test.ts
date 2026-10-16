@@ -273,6 +273,19 @@ describe('CAD tool argument boundary and discovery', () => {
     expect(Value.Check(CadFeatureSchema, sketch)).toBe(true); expect(Value.Check(data.schema, sketch)).toBe(true);
     expect(Value.Check(data.schema, { ...sketch, unknown: true })).toBe(false);
   });
+  it('offers a narrow feature-input build and tokened topology reads without granting editor workflow scope', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid input reached controller'); });
+    const tools = cadSiteTools(controller), build = tools.find(tool => tool.name === 'cad_build_feature_input');
+    const inspect = tools.find(tool => tool.name === 'cad_inspect_topology'), resolve = tools.find(tool => tool.name === 'cad_resolve_topology');
+    if (!build || !inspect || !resolve) throw new Error('Missing feature-input topology tools');
+    expect(Value.Check(build.inputSchema, { expectedVersion: 'current', featureId: 'round', bodyId: 'pad', parameterValues: { height: 15 } })).toBe(true);
+    expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', expectedBuildId: 'input', bodyId: 'pad', kind: 'edge', inputToken: 'input-token' })).toBe(true);
+    expect(Value.Check(resolve.inputSchema, { expectedVersion: 'current', expectedBuildId: 'input', bodyId: 'pad', purpose: 'fillet', picks: [{ kind: 'edge', key: 'edge' }], inputToken: 'input-token' })).toBe(true);
+    for (const invalid of [{ scope: 'editor' }, { parameterValues: { height: '15' } }, { document: createCadDocument() }]) {
+      expect(await build.execute({ expectedVersion: 'current', featureId: 'round', bodyId: 'pad', ...invalid })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(controller).not.toHaveBeenCalled();
+  });
   it('reports native solid counts per paginated body and keeps older unknown counts explicitly null', async () => {
     const mesh = { featureId: 'joined', name: 'Joined', positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2], edges: [],
       faceGroups: [{ start: 0, count: 3, key: 'face' }], edgeGroups: [], volume: 8064, bounds: { min: [0, 0, 0] as const, max: [24, 20, 20] as const } };
