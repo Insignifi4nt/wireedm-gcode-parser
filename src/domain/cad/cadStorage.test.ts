@@ -1,4 +1,5 @@
 import { symmetricRelation, symmetryPart, symmetrySketch } from './__tests__/cadSketchSymmetryFixtures';
+import { pointOnLineRelation, pointOnLinePart, pointOnLineSketch } from './__tests__/cadSketchPointOnLineFixtures';
 import { circleRow, circleRowPart, rowSketch } from './__tests__/cadSketchLinearPatternFixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
@@ -30,6 +31,15 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     localStorage.clear();
     adapter = kind === 'browser-cache' ? createBrowserCacheAdapter(localStorage)
       : createBrowserDirectoryAdapter(new FakeDirectoryHandle('cad-test') as unknown as FileSystemDirectoryHandle);
+  });
+  it('round trips a sliding point without a cached position or forged off-guide save',async()=>{
+    const base=pointOnLinePart(),sketch=pointOnLineSketch(base),source=parseCadDocument({...base,features:[{...sketch,graph:{...sketch.graph,
+      points:sketch.graph.points.map(point=>point.id==='p'?{...point,position:[10,5]}:point),relations:[pointOnLineRelation]}}]});
+    const saved=await saveCadDocument(adapter,source,{expectedSavedVersion:null});expect((await loadCadDocument(adapter,source.id)).document).toEqual(source);
+    const graph=pointOnLineSketch(source).graph,raw=await adapter.readExactText?.(cadDocumentPath(source.id)),writes=vi.spyOn(adapter,'writeText');
+    const forged={...source,features:[{...pointOnLineSketch(source),graph:{...graph,points:graph.points.map(point=>point.id==='p'?{...point,position:[10,6] as const}:point)}}]};
+    await expect(saveCadDocument(adapter,forged,{expectedSavedVersion:saved.savedVersion})).rejects.toThrow();expect(writes).not.toHaveBeenCalled();expect(await adapter.readExactText?.(cadDocumentPath(source.id))).toBe(raw);
+    const detached=applyCadEdits(source,[{kind:'remove-sketch-relation',sketchId:'sketch',relationId:pointOnLineRelation.id}]);await saveCadDocument(adapter,detached,{expectedSavedVersion:saved.savedVersion});expect((await loadCadDocument(adapter,source.id)).document).toEqual(detached);expect(pointOnLineSketch(detached).graph).toEqual({...graph,relations:[]});
   });
   it('round trips point symmetry and independent bore drivers, rejecting a forged reflection before writes',async()=>{
     const base=symmetryPart(),sketch=symmetrySketch(base),source=parseCadDocument({...base,features:[{...sketch,graph:{...sketch.graph,

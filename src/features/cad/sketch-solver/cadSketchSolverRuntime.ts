@@ -16,6 +16,7 @@ import { resolveCadSketchRadiusPair } from '../../../domain/cad/cadSketchEqualRe
 import { cadSketchAngleTarget, resolveCadSketchAngleRays } from '../../../domain/cad/cadSketchAngleRelations';
 import { resolveCadSketchMidpointOperands } from '../../../domain/cad/cadSketchMidpointRelations';
 import { resolveCadSketchSymmetryOperands } from '../../../domain/cad/cadSketchSymmetryRelations';
+import { resolveCadSketchPointOnLineOperands } from '../../../domain/cad/cadSketchPointOnLineRelations';
 import { cadSketchLinearPatternInstances } from '../../../domain/cad/cadSketchLinearPattern';
 
 function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] {
@@ -80,6 +81,11 @@ function compile(input: CadSketchSolveInput) {
         const { line } = resolveCadSketchSymmetryOperands(graph, relation);
         if (!cadSketchLineDirection(line, numericPoints)) throw new Error('A symmetry axis has no numeric endpoints.');
         constraint({ id, type: 'p2p_symmetric_ppl', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1], l_id: line.id }, id); break;
+      }
+      case 'point-on-line': {
+        const { line } = resolveCadSketchPointOnLineOperands(graph, relation);
+        if (!cadSketchLineDirection(line, numericPoints)) throw new Error('A point-on-line guide has no numeric endpoints.');
+        constraint({ id, type: 'point_on_line_pl', p_id: relation.pointId, l_id: line.id }, id); break;
       }
       case 'line-angle': {
         const [a, b] = resolveCadSketchAngleRays(graph, relation.rays);

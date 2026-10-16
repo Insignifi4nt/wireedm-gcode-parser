@@ -17,6 +17,14 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: sliding point on line
+
+Point on line now uses the ordinary point+line relation editor and guarded API. It retains one sliding freedom on the infinite support, without endpoint identity, midpoint, radius or coordinate drivers. Shared source/dependency/owner checks, one existing native equation and an independent physical residual preserve exact source and linked authority. The bounded five-solve prereq,38 foundation checks and124 integration checks pass, plus full types/build/docs/source/shared controls. Independent review is clean after correcting an overbroad size-help claim.
+
+The complete Chromium/Firefox journey includes actual off-guide pointer drag, FixX30, guideHeight30→24, private Cancel/Apply/Finish, exact Undo/Redo, equivalent agent intent and save/reload. Free numeric solver results are compared physically, retaining ordinary few-ulp differences between independently seeded solves; saved/history snapshots and all authored strings remain exact. Both persistence adapters reject forged off-guide saves before writes. Native pointer proof slides the point to[30,15], then guide edits put it at[30,12.000000000000002] with R3 unchanged. Pad5 volume10358.628330588459 mm³, one solid, bounds[0,0,0]→[70,30,5], freedom0 and no diagnostics. Exact Undo/Redo pass; temporary draft restored empty and closed without Save. Evidence: tmp/sketch-point-on-line-native-{editor.png,solid.png,proof.json}. No native/tolerance, migration, version or remote change. Sketch goal remains open.
+
+Next observed interaction repair: native dragging a point from a multi-item selection first reduces selection but does not move until a second gesture. Source confirms the old selection-count guard after the explicit single-point choice. Verify a genuine mounted/browser regression before changing it; retain Shift selection, explicit set Move, pending/version ownership and point-only motion.
+
 ## Checkpoint: live point symmetry
 
 Accepted the bounded [two-point symmetry contract](2026-10-16-sketch-next-workflows-after-reference.md#current-next-choice-after-circle-rows-cf69090): two declared points reflected about one actual sketch line, with circle-center convenience labelled as positions only. The source schema, complete four-point dependencies, independent physical reflection check and existing native equation share the ordinary guarded edit path. No radius driver, point projection, hidden fixed axis or tolerance change. Linked axes/anchors are supported; pattern-generated operands keep their owner lock.

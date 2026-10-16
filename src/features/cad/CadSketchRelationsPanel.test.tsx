@@ -813,3 +813,21 @@ describe('point symmetry about a selected sketch line',()=>{
     expect(document.querySelector('input[aria-label="Symmetric points"]')).toBeNull();
   });
 });
+
+describe('point incidence on a selected line',()=>{
+  const layout=()=>parseCadDocument({...createCadDocument('Guided bore'),schemaVersion:2,features:[{
+    id:'sketch',kind:'sketch',name:'Layout',plane:'XY',offset:0,suppressed:false,profiles:[],graph:{
+      points:[{id:'a',position:[' 0.00 ','0']},{id:'b',position:['40','20']},{id:'center',position:[10,5]}],
+      entities:[{id:'guide',kind:'line',startPointId:'a',endPointId:'b',construction:true},{id:'bore',kind:'circle',centerPointId:'center',radius:' 3.00 ',construction:false}],relations:[]}}]});
+  it('authors incidence without fixing the point or size, cancels and reuses its exact identity after reversed picking',async()=>{
+    const original=layout(),selection:readonly CadSketchGraphSelection[]=[{kind:'point',id:'center'},{kind:'entity',id:'guide'}],h=await mount(original,selection);
+    await act(async()=>field('Point on line').click());await click('Cancel');expect(h.session.getSnapshot().document).toBe(original);expect(h.edit).not.toHaveBeenCalled();
+    await act(async()=>field('Point on line').click());await click('Apply');
+    const edit=h.edit.mock.calls[0]?.[0][0];expect(edit).toMatchObject({kind:'set-sketch-relation',sketchId:'sketch',relation:{kind:'point-on-line',pointId:'center',lineId:'guide'}});
+    if(edit?.kind!=='set-sketch-relation')throw Error('Missing incidence');const owner=edit.relation,accepted=h.session.getSnapshot().document;
+    expect(accepted.features[0]).toEqual({...original.features[0],graph:{...(original.features[0].kind==='sketch'?original.features[0].graph:{}),relations:[owner]}});
+    await h.render([...selection].reverse());expect(field('Point on line').checked).toBe(true);expect(field('Midpoint').disabled).toBe(true);await act(async()=>field('Point on line').click());expect(field('Midpoint').disabled).toBe(false);await act(async()=>field('Point on line').click());expect(h.pending).toHaveBeenLastCalledWith(false);expect(h.edit).toHaveBeenCalledTimes(1);
+    await act(async()=>field('Point on line').click());await click('Apply');expect(h.session.getSnapshot().document.features).toEqual(original.features);
+    await act(async()=>h.session.undo());expect(h.session.getSnapshot().document).toEqual(accepted);
+  });
+});

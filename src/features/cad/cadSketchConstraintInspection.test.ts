@@ -1,5 +1,6 @@
 import { prepareCadEdits } from './cadEditPreparation';
 import { symmetricRelation, symmetryPart } from '@/domain/cad/__tests__/cadSketchSymmetryFixtures';
+import { pointOnLineRelation, pointOnLinePart } from '@/domain/cad/__tests__/cadSketchPointOnLineFixtures';
 import { circleRow, circleRowPart } from '@/domain/cad/__tests__/cadSketchLinearPatternFixtures';
 // @vitest-environment node
 import { createRequire } from 'node:module';
@@ -316,4 +317,11 @@ it('inspects symmetry with all point and axis identities and no invented value o
   const source=symmetryPart(),prepared=await prepareCadEdits(source,[{kind:'set-sketch-relation',sketchId:'sketch',relation:symmetricRelation}],solver);
   const inspection=await inspectCadSketchConstraints(prepared.document,'sketch',async()=>solver);const row=pageCadSketchConstraints(inspection,{section:'relations'}).items[0];
   expect(row).toMatchObject({source:symmetricRelation,entityIds:['axis'],points:[{id:'left'},{id:'right'},{id:'axis-a'},{id:'axis-b'}]});expect(row).not.toHaveProperty('value');
+});
+
+it('inspects actual point-on-line dependencies and sliding freedom without inventing a dimension',async()=>{
+  const source=pointOnLinePart(),prepared=await prepareCadEdits(source,[{kind:'set-sketch-relation',sketchId:'sketch',relation:pointOnLineRelation}],solver);
+  const inspection=await inspectCadSketchConstraints(prepared.document,'sketch',async()=>solver),row=pageCadSketchConstraints(inspection,{section:'relations'}).items[0];
+  expect(inspection.analysis).toMatchObject({kind:'solved',diagnostics:{degreesOfFreedom:1}});
+  expect(row).toMatchObject({source:pointOnLineRelation,entityIds:['guide'],points:[{id:'p'},{id:'a'},{id:'b'}]});expect(row).not.toHaveProperty('value');
 });

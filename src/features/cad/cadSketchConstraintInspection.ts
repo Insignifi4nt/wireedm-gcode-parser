@@ -64,6 +64,7 @@ export async function inspectCadSketchConstraints(document: CadDocument, sketchI
 }
 
 const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
+  'point-on-line': 'Keeps a point on the infinite supporting line of the named guide, with sliding freedom unless other dimensions constrain it. Does not join material boundaries, fix the guide or drive a circle radius.',
   symmetric: 'Keeps two point positions reflected about the infinite supporting line of the named axis. It does not fix that axis, join points or equalize circle radii.',
   'linear-pattern': 'Owns a row of circles. Copies follow the seed center and radius at the declared signed axis pitch. Edit this owner to change count, direction or exclusions; detach before independent copy edits.',
   'reference-dimension': 'Measures current geometry without driving it or adding a native equation.',
