@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T02:56:04.607Z",
+  "generatedAt": "2026-10-16T03:11:33.015Z",
   "baseline": {
     "path": "docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json",
     "publishedCheckpoint": "6e2113fa0151ef7d0b378ad3de7635664b2fab82",
@@ -8,7 +8,7 @@
     "originalContextPreserved": true
   },
   "currentSource": {
-    "scannedProductionTsFiles": 487,
+    "scannedProductionTsFiles": 488,
     "catalogImports": 265,
     "currentImportedSymbolReferences": 320,
     "catalogExportsParsed": 227,
@@ -1282,7 +1282,7 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 608,
+      "line": 618,
       "symbol": "ConfirmIcon",
       "catalogId": "confirm",
       "context": "<Button aria-label=\"Finish path\" title=\"Keep this path open without adding a closing edge\" disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(false)}><ConfirmIcon size={13} /> Finish path</Button>",
@@ -3607,7 +3607,7 @@
       "scoutActualSymbol": "FitViewIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 599,
+        "line": 609,
         "column": 280,
         "symbol": "FitViewIcon",
         "exportedSymbol": "FitViewIcon",
@@ -3630,7 +3630,7 @@
       "scoutActualSymbol": "GridIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 599,
+        "line": 609,
         "column": 427,
         "symbol": "GridIcon",
         "exportedSymbol": "GridIcon",
@@ -3653,13 +3653,13 @@
       "scoutActualSymbol": "SnapIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 599,
-        "column": 573,
+        "line": 609,
+        "column": 637,
         "symbol": "SnapIcon",
         "exportedSymbol": "SnapIcon",
         "catalogId": "snap",
-        "confidenceScore": 754.86,
-        "context": "<Button aria-label=\"Toggle grid snapping\" disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><SnapIcon size={14} /></Button>"
+        "confidenceScore": 316.17,
+        "context": "<Button aria-label=\"Toggle snapping\" title=\"Snap to the grid; Path mode also joins existing graph points\" disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><SnapIcon size={14} /></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "SnapIcon",
@@ -3676,7 +3676,7 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 608,
+        "line": 618,
         "column": 750,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -3699,7 +3699,7 @@
       "scoutActualSymbol": "UndoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 608,
+        "line": 618,
         "column": 980,
         "symbol": "UndoIcon",
         "exportedSymbol": "UndoIcon",
@@ -3722,7 +3722,7 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 608,
+        "line": 618,
         "column": 1082,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
@@ -3745,7 +3745,7 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 610,
+        "line": 620,
         "column": 106,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -3768,7 +3768,7 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 610,
+        "line": 620,
         "column": 209,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
@@ -8109,7 +8109,7 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 608,
+      "line": 618,
       "symbol": "ConfirmIcon",
       "catalogId": "confirm",
       "context": "<Button aria-label=\"Finish path\" title=\"Keep this path open without adding a closing edge\" disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(false)}><ConfirmIcon size={13} /> Finish path</Button>"

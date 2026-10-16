@@ -254,7 +254,7 @@ describe('direct sketch contour manipulation', () => {
 
   it('uses unsnapped displacement when snapping is disabled', async () => {
     const h = await harness();
-    const snap = container.querySelector<HTMLButtonElement>('button[aria-label="Toggle grid snapping"]'); if (!snap) throw new Error('Snap toggle missing.');
+    const snap = container.querySelector<HTMLButtonElement>('button[aria-label="Toggle snapping"]'); if (!snap) throw new Error('Snap toggle missing.');
     await act(async () => snap.click());
     await h.pointer('pointerdown', [4, 3]); await h.pointer('pointermove', [9.2, 1.9]); await h.pointer('pointerup', [9.2, 1.9]);
     expect(h.translated).toHaveBeenCalledExactlyOnceWith('profile', [expect.closeTo(5.2, 12), expect.closeTo(-1.1, 12)], expect.any(AbortSignal));

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { applyCadEdits } from '@/domain/cad/cadOperations';
 import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
-import { checkCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { MAX_CAD_PATH_CONSTRUCTION_EDGES } from '@/domain/cad/cadPathConstruction';
 import { createCadPathDraft, updateCadPathDraft, type CadPathDraft } from './cadPathDrawing';
@@ -30,6 +30,73 @@ function arcDraft(start: readonly [number, number], end: readonly [number, numbe
 }
 
 describe('live path draft graph construction', () => {
+  it('reconnects existing exact endpoint identities through real append without copying their expression drivers', () => {
+    const parameters = { width: 20 }, existingGraph = parseCadSketchGraph({ points: [
+      { id: 'a', position: [0, 0] }, { id: 'b', position: [' width ', 0] }, { id: 'c', position: [' width ', 10] }, { id: 'd', position: [0, 10] }
+    ], entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+      { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+      { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' }], relations: [] });
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters, features: [{ id: 'sketch', kind: 'sketch', name: 'Repair',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: existingGraph }] }), before = JSON.stringify(source);
+    let draft = updateCadPathDraft(createCadPathDraft(), { kind: 'point', point: [20, 0], existingPointId: 'b' });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [20, 10], existingPointId: 'c' });
+    const geometry = createCadPathDraftGraph({ draft, existingGraph, parameters, closed: false, construction: false, createId: idFactory() });
+    expect(geometry.points).toEqual([]);
+    expect(geometry.entities).toMatchObject([{ kind: 'line', startPointId: 'b', endPointId: 'c' }]);
+    const complete = applyCadEdits(source, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry }]);
+    expect(measureCadSketch(complete, 'sketch').materialAreaMm2).toBe(200);
+    expect(complete.features[0]).toMatchObject({ graph: { points: existingGraph.points } });
+    expect(JSON.stringify(source)).toBe(before); expect(Object.isFrozen(geometry)).toBe(true);
+  });
+
+  it('uses existing arc endpoints but always authors its own center and never references a through pick', () => {
+    const existingGraph = parseCadSketchGraph({ points: [{ id: 'start', position: [' radius ', 0] }, { id: 'end', position: [0, 'radius'] },
+      { id: 'through', position: [-5, 0] }, { id: 'old-center', position: [0, 0] }], entities: [], relations: [] });
+    let draft = updateCadPathDraft(createCadPathDraft('arc'), { kind: 'point', point: [5, 0], existingPointId: 'start' });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [0, 5], existingPointId: 'end' });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [-5, 0], existingPointId: 'through' });
+    const graph = createCadPathDraftGraph({ draft, existingGraph, parameters: { radius: 5 }, closed: false, construction: false, createId: idFactory() });
+    expect(graph.points).toHaveLength(1); expect(graph.points[0].position).toEqual([0, 0]); expect(graph.points[0].id).not.toBe('old-center');
+    expect(graph.entities).toEqual([{ id: 'path_0002', kind: 'arc', startPointId: 'start', endPointId: 'end', centerPointId: 'path_0001', direction: 'cw', construction: false }]);
+    expect(JSON.stringify(graph)).not.toContain('through');
+  });
+
+  it('never infers existing identity from equal coordinates and honors only deliberate final return identity', () => {
+    const existingGraph = parseCadSketchGraph({ points: [{ id: 'old', position: [0, 0] }, { id: 'coincident', position: [0, 0] }], entities: [], relations: [] });
+    const unreferenced = createCadPathDraftGraph({ draft: lines([[0, 0], [10, 0]]), existingGraph, closed: false, construction: false, createId: idFactory() });
+    expect(unreferenced.points).toHaveLength(2); expect(unreferenced.points.every(point => point.id !== 'old')).toBe(true);
+    let draft = updateCadPathDraft(createCadPathDraft(), { kind: 'point', point: [0, 0], existingPointId: 'old' });
+    for (const point of [[10, 0], [10, 10]] as const) draft = updateCadPathDraft(draft, { kind: 'point', point });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [0, 0], existingPointId: 'old' });
+    const graph = createCadPathDraftGraph({ draft, existingGraph, closed: false, construction: false, createId: idFactory() });
+    expect(graph.entities[graph.entities.length - 1]).toMatchObject({ endPointId: 'old' }); expect(graph.points).toHaveLength(2);
+    draft = updateCadPathDraft(draft, { kind: 'undo-last' });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [0, 0], existingPointId: 'coincident' });
+    expect(() => createCadPathDraftGraph({ draft, existingGraph, closed: true, construction: false, createId: idFactory() })).toThrowError(expect.objectContaining({ code: 'ambiguous-path-closure' }));
+  });
+
+  it.each(['missing', 'moved', 'changed-driver'] as const)('rejects a %s reference without mutating source or authoring state', cause => {
+    const existingGraph = parseCadSketchGraph({ points: cause === 'missing' ? [] : [{ id: 'anchor', position: cause === 'changed-driver' ? ['size', 0] : [1e-12, 0] }], entities: [], relations: [] });
+    let draft = updateCadPathDraft(createCadPathDraft(), { kind: 'point', point: [0, 0], existingPointId: 'anchor' });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 0] });
+    const before = JSON.stringify({ existingGraph, draft });
+    expect(() => createCadPathDraftGraph({ draft, existingGraph, parameters: { size: 1 }, closed: false, construction: false, createId: idFactory() }))
+      .toThrowError(expect.objectContaining({ code: 'stale-path-point-reference' }));
+    expect(JSON.stringify({ existingGraph, draft })).toBe(before);
+  });
+
+  it('closes with a real edge to a borrowed off-grid start and rejects IDs colliding with the existing graph', () => {
+    const existingGraph = parseCadSketchGraph({ points: [{ id: 'anchor', position: [' .25 ', '.75'] }], entities: [], relations: [] });
+    let draft = updateCadPathDraft(createCadPathDraft(), { kind: 'point', point: [.25, .75], existingPointId: 'anchor' });
+    for (const point of [[10, .75], [10, 10]] as const) draft = updateCadPathDraft(draft, { kind: 'point', point });
+    const graph = createCadPathDraftGraph({ draft, existingGraph, closed: true, construction: false, createId: idFactory() });
+    expect(graph.points).toHaveLength(2); expect(graph.entities).toHaveLength(3);
+    expect(graph.entities[0]).toMatchObject({ startPointId: 'anchor' }); expect(graph.entities[2]).toMatchObject({ endPointId: 'anchor' });
+    expect(() => createCadPathDraftGraph({ draft, existingGraph, closed: false, construction: false, createId: () => 'anchor' }))
+      .toThrowError(expect.objectContaining({ code: 'duplicate-sketch-id' }));
+    expect(existingGraph.points).toEqual([{ id: 'anchor', position: [' .25 ', '.75'] }]);
+  });
+
   it('preserves mixed analytic support and authored joints through real append and material measurement', () => {
     let draft = lines([[0, 0], [20, 0]]);
     draft = updateCadPathDraft(draft, { kind: 'mode', mode: 'arc' });

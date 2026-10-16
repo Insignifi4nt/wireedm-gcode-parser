@@ -397,7 +397,23 @@ test('edits a consumed sketch privately with local history, rejected Finish, exa
   await expect(page.getByLabel('3D model viewport')).toBeVisible();
   await expect.poll(() => context(page)).toMatchObject({ version: base.version, workflowOpen: false });
   expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: 'outline' })).feature).toEqual(original);
-  await openEdit(); await page.getByRole('button', { name: 'Point 2 in Outline', exact: true }).press('ArrowRight');
+  await openEdit();
+  await page.getByRole('button', { name: 'Line 2 in Outline', exact: true }).press('Delete');
+  await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(3);
+  const endpoints = [];
+  for (const id of ['b', 'c']) {
+    const box = await page.locator(`[data-cad-sketch-point="${id}"]`).boundingBox();
+    if (!box) throw new Error('Sketch endpoint unavailable.');
+    endpoints.push({ x: box.x + box.width / 2 + 1, y: box.y + box.height / 2 + 1 });
+  }
+  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  for (const point of endpoints) await page.mouse.click(point.x, point.y);
+  await page.getByRole('button', { name: 'Finish path', exact: true }).click();
+  await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(4);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: 'outline' })).feature).toEqual(original);
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await expect(page.locator('[data-cad-sketch-point]')).toHaveCount(4);
+  await page.getByRole('button', { name: 'Point 2 in Outline', exact: true }).press('ArrowRight');
   await expect(page.locator('[data-cad-sketch-point="b"] title')).toHaveText(/25, 0 mm/);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await expect(page.getByLabel('3D model viewport')).toBeVisible();

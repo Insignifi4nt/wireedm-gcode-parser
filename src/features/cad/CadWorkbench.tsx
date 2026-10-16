@@ -608,7 +608,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     }, signal);
   };
   const addPath = (draft: CadPathDraft, closed: boolean, signal?: AbortSignal) =>
-    addSketchGraph(createCadPathDraftGraph({ draft, closed, construction, createId: () => crypto.randomUUID() }), signal);
+    addSketchGraph(createCadPathDraftGraph({ draft, closed, construction, createId: () => crypto.randomUUID(), existingGraph: sketch?.graph, parameters: document.parameters }), signal);
   const addProfile = (geometry: CadProfile, signal?: AbortSignal) => {
     if (!sketch) throw new Error('Open a sketch before drawing.');
     if (geometry.kind === 'circle' || geometry.kind === 'polygon' || geometry.kind === 'rectangle' && geometry.cornerRadius === 0) {
