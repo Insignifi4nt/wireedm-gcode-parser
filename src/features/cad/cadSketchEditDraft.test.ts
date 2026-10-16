@@ -18,6 +18,7 @@ import { endTrim, trimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures'
 import { extendPart, lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
 import { compileCadSketchGeometry } from '@/domain/cad/compileCadSketchGeometry';
 import { pairedBoreMirrorPart, mirrorBoreRequest } from '@/domain/cad/__tests__/cadSketchMirrorFixtures';
+import { dPlacement, placementPart, placementSketch } from '@/domain/cad/__tests__/cadSketchPlacementFixtures';
 
 const require = createRequire(import.meta.url);
 const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
@@ -53,6 +54,23 @@ function contourCells(repair: CadSketchAreaRepairInspection) {
 }
 
 describe('owned consumed-sketch draft', () => {
+  it('places a private detail with local no-op/Undo/Redo and one guarded full-part Finish', async () => {
+    const main = new CadSession(placementPart()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    const edit = { kind: 'place-sketch-geometry', sketchId: 'sketch', ...dPlacement } as const;
+    expect(() => draft.validateEdits([{ ...edit, sketchId: 'legacy' }])).toThrow('sketch');
+    await draft.editPrepared([edit], prepare); const local = draft.getSnapshot();
+    expect(main.getSnapshot()).toBe(base); expect(placementSketch(local.document).graph.points[0].position).toEqual([30, 20]);
+    draft.undo(); const undone = draft.getSnapshot();
+    await draft.editPrepared([{ ...edit, target: [0, 0], angleDegrees: 360 }], prepare);
+    expect(draft.getSnapshot()).toBe(undone); expect(draft.getSnapshot().canRedo).toBe(true);
+    draft.redo(); expect(draft.getSnapshot().document).toBe(local.document);
+    const finish = draft.finishEdits(base);
+    await main.editPrepared(base.version, document => prepare(document, finish.edits), undefined, () => draft.assertCurrent(main.getSnapshot(), finish.localVersion));
+    expect(placementSketch(main.getSnapshot().document).graph).toEqual(placementSketch(local.document).graph);
+    main.undo(); expect(main.getSnapshot().document).toBe(base.document); expect(main.getSnapshot().canUndo).toBe(false);
+    const cancelled = new CadSketchEditDraft(main.getSnapshot(), 'sketch'); await cancelled.editPrepared([edit], prepare); cancelled.cancel();
+    expect(main.getSnapshot().document).toBe(base.document); expect(main.getSnapshot().canRedo).toBe(true);
+  });
   it('keeps Mirror copy private with local history and one explicit consumer repair at guarded Finish', async () => {
     const main = new CadSession(pairedBoreMirrorPart(true)), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
     const edit = { kind: 'mirror-sketch-geometry', sketchId: 'sketch', ...mirrorBoreRequest } as const;

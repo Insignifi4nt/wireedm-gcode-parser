@@ -1,3 +1,4 @@
+import { placementPart, dPlacement } from '@/domain/cad/__tests__/cadSketchPlacementFixtures';
 import { describe, expect, it, vi } from 'vitest';
 import { Value } from '@sinclair/typebox/value';
 import { CadDocumentSchema, CadFeatureSchema, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
@@ -226,6 +227,15 @@ describe('CAD tool argument boundary and discovery', () => {
     expect(reply).toMatchObject({ ok: false, error: { code: 'dependent-sketch-split', details: { relationIds: ids.slice(0, 8), relationCount: 12, omittedRelationCount: 4 } } });
     expect(JSON.stringify(reply)).not.toContain('whole-edge-11'); expect(failure.message).not.toContain(ids[0]);
     expect(failure.relationIds).toEqual(ids);
+  });
+
+  it('identifies unselected placement dependencies and preserves the actual session after rejection',async()=>{
+    const source=placementPart(),session=new CadSession(source),before=session.getSnapshot();
+    const request={kind:'place-sketch-geometry',sketchId:'sketch',...dPlacement,selections:[{kind:'entity',id:'arc'}]}as const;
+    const tool=cadSiteTools(()=>{session.edit([request],before.version);throw Error('Expected the incident boundary to reject');}).find(t=>t.name==='cad_edit_document');
+    if(!tool)throw Error('Missing edit tool');
+    expect(await tool.execute({expectedVersion:before.version,edits:[request]})).toMatchObject({ok:false,error:{code:'dependent-sketch-placement',details:{entityIds:expect.arrayContaining(['chord'])}}});
+    expect(session.getSnapshot()).toBe(before);
   });
 
   it('returns the actual fillet owner for a duplicate tangent without changing accepted source or history', async () => {

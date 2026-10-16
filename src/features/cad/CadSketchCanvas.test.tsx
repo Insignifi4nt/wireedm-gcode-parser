@@ -146,6 +146,34 @@ describe('saved Sketch initial fit', () => {
     await mount({ ...sketch, profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 5000, y: 6000, radius: 2 } }] });
     expect(currentControls().getState()).toEqual(before); await act(async () => currentControls().fit()); expect(currentControls().getState()).toMatchObject({ centerMm: [5000, 6000] });
   });
+  it('fits a displaced locked preview with F while preserving view locks and drawing safety', async () => {
+    const graph: NonNullable<CadSketchFeature['graph']> = {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }],
+      entities: [{ id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [] };
+    const feature: CadSketchFeature = { ...sketch, graph };
+    const preview: CadSketchFeature = { ...feature, graph: { ...graph,
+      points: [{ id: 'a', position: [100, 200] }, { id: 'b', position: [130, 210] }] } };
+    const added = vi.fn(), selected = vi.fn();
+    let props: ComponentProps<typeof CadSketchCanvas> = { sketch: feature, parameters: {}, tool: 'circle', selectedProfileId: null,
+      onAddProfile: added, onSelectProfile: selected, onPendingChange: vi.fn(), onError: vi.fn(), cancelSignal: 0,
+      onControlsReady: value => { controls = value; } };
+    const show = async (next: Partial<typeof props> = {}) => { props = { ...props, ...next }; await act(async () => root.render(<CadSketchCanvas {...props} />)); };
+    const view = () => { const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch missing.'); return { centerMm: state.centerMm, heightSpanMm: state.heightSpanMm }; };
+    await show(); const before = view();
+    await show({ previewSketch: preview, interactionLocked: true, viewLocked: false });
+    const canvas = container.querySelector<SVGSVGElement>('.cad-sketch-canvas'), edge = canvas?.querySelector('[data-cad-sketch-entity="edge"]');
+    if (!canvas || !edge) throw new Error('Preview missing.');
+    const key = async (key: string, init: KeyboardEventInit = {}, target: Element = canvas) => act(async () => target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })));
+    await key('f', { ctrlKey: true }); await key('f', { isComposing: true }); await key('f', {}, edge);
+    expect(view()).toEqual(before);
+    await key('f'); expect(view()).toEqual({ centerMm: [115, 205], heightSpanMm: 25 });
+    for (const input of [' ', 'ArrowRight', ' ', 'Enter']) await key(input);
+    expect(added).not.toHaveBeenCalled(); expect(selected).not.toHaveBeenCalled();
+    const fitted = view();
+    await show({ previewSketch: { ...preview, graph: { ...graph, points: [{ id: 'a', position: [1000, 2000] }, { id: 'b', position: [1030, 2010] }] } }, viewLocked: true });
+    await key('F'); expect(view()).toEqual(fitted);
+    expect(feature.graph?.points).toEqual([{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }]);
+  });
 });
 
 describe('sketch mouse and trackpad navigation', () => {
@@ -206,13 +234,13 @@ describe('graph spatial selection', () => {
     const held = new Set<number>(), release = vi.fn();
     Object.assign(canvas, { setPointerCapture: (id: number) => held.add(id), hasPointerCapture: (id: number) => held.has(id),
       releasePointerCapture: (id: number) => { held.delete(id); release(id); } });
-    const pointer = async (type: string, x: number, y: number, shiftKey = false, pointerId = 7, button = 0) => {
+    const pointer = async (type: string, x: number, y: number, shiftKey = false, pointerId = 7, button = 0, target: Element = canvas, modifiers: Pick<MouseEventInit, 'ctrlKey' | 'metaKey'> = {}) => {
       const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
       const event = new MouseEvent(type, { button, buttons: type === 'pointerup' ? 0 : button === 2 ? 2 : 1, bubbles: true, cancelable: true, shiftKey,
         clientX: 510 + (x - state.centerMm[0]) / (state.heightSpanMm * 2) * 1000,
-        clientY: 270 - (y - state.centerMm[1]) / state.heightSpanMm * 500 });
+        clientY: 270 - (y - state.centerMm[1]) / state.heightSpanMm * 500, ...modifiers });
       Object.defineProperties(event, { pointerId: { value: pointerId }, isPrimary: { value: true } });
-      await act(async () => canvas.dispatchEvent(event));
+      await act(async () => target.dispatchEvent(event));
     };
     return { feature, props: () => props, show, canvas, pointer, selected, selectedSet, edited, deleted, pending, error, release };
   }
@@ -250,6 +278,96 @@ describe('graph spatial selection', () => {
     expect(h.deleted).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
     await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     expect(onCancel).toHaveBeenCalledOnce();
+  });
+  it('borrows midpoint and grid positions before graph pointer selection or dragging', async () => {
+    const h = await spatialFixture(), onPick = vi.fn(), onCancel = vi.fn(), geometryPick = vi.fn();
+    const graph = h.props().graphControls; if (!graph) throw new Error('Graph controls missing.');
+    const selection: readonly CadSketchGraphSelection[] = [{ kind: 'entity', id: 'bc' }];
+    await h.show({ graphControls: { ...graph, selection, positionPick: { label: 'Place anchor', onPick, onCancel },
+      geometryPick: { label: 'Use point position', eligiblePointIds: ['a', 'b', 'c'], eligibleEntityIds: [], onPick: geometryPick, onCancel } } });
+    const line = container.querySelector('[data-cad-sketch-entity="ab"]'); if (!line) throw new Error('Line missing.');
+    const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch missing.');
+    const event = new MouseEvent('pointerdown', { button: 0, buttons: 1, bubbles: true, cancelable: true,
+      clientX: 510 + (5 - state.centerMm[0]) / (state.heightSpanMm * 2) * 1000,
+      clientY: 270 + state.centerMm[1] / state.heightSpanMm * 500 });
+    Object.defineProperties(event, { pointerId: { value: 7 }, isPrimary: { value: true } });
+    await act(async () => line.dispatchEvent(event));
+    await h.pointer('pointermove', 8, 4); await h.pointer('pointerup', 8, 4);
+    await act(async () => line.dispatchEvent(new MouseEvent('click', { button: 0, detail: 1, bubbles: true })));
+    expect(onPick).toHaveBeenCalledExactlyOnceWith([5, 0]);
+    await h.pointer('pointerdown', 44.2, 17.6); await h.pointer('pointerup', 44.2, 17.6);
+    expect(onPick).toHaveBeenLastCalledWith([45, 20]);
+    expect(geometryPick).not.toHaveBeenCalled(); expect(h.selected).not.toHaveBeenCalled(); expect(h.selectedSet).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+    expect(h.props().graphControls?.selection).toBe(selection); expect(h.release).not.toHaveBeenCalled();
+  });
+  it('keeps positional snap ambiguity with its exact pick owner and rejects a moved frame', async () => {
+    const h = await spatialFixture(), picked = vi.fn(), replaced = vi.fn(), onCancel = vi.fn();
+    const graph = h.props().graphControls; if (!graph || !h.feature.graph) throw new Error('Graph missing.');
+    const feature = { ...h.feature, graph: { ...h.feature.graph, points: [...h.feature.graph.points,
+      { id: 'd', position: [5, 0] as const }, { id: 'e', position: [5, 0] as const }] } };
+    const positionPick = { label: 'Place anchor', onPick: picked, onCancel };
+    await h.show({ sketch: feature, graphControls: { ...graph, document: { ...graph.document, features: [feature] }, positionPick } });
+    const item = () => {
+      const button = document.querySelector<HTMLButtonElement>('[aria-label="Choose snap target actions"] button');
+      if (!button) throw new Error('Snap choice missing.'); return button;
+    };
+    await h.pointer('pointerdown', 5, 0);
+    expect(picked).not.toHaveBeenCalled(); await act(async () => item().click());
+    expect(picked).toHaveBeenCalledExactlyOnceWith([5, 0]); expect(Object.isFrozen(picked.mock.calls[0][0])).toBe(true);
+    await h.pointer('pointerdown', 5, 0); item();
+    await h.show({ graphControls: { ...h.props().graphControls!, positionPick: { ...positionPick, onPick: replaced } } });
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull();
+    await h.pointer('pointerdown', 5, 0); const stale = item();
+    vi.mocked(h.canvas.getBoundingClientRect).mockReturnValue({ left: 20, top: 20, right: 1020, bottom: 520, width: 1000, height: 500, x: 20, y: 20, toJSON: () => ({}) });
+    await act(async () => stale.click()); expect(replaced).not.toHaveBeenCalled();
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.selectedSet).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled(); expect(h.props().onAddProfile).not.toHaveBeenCalled();
+  });
+  it('accepts an owned keyboard cursor and raw modifier position while keeping legacy picks inert', async () => {
+    const h = await spatialFixture(), onPick = vi.fn(), onCancel = vi.fn(), geometryPicked = vi.fn();
+    const graph = h.props().graphControls; if (!graph) throw new Error('Graph missing.');
+    const feature: CadSketchFeature = { ...h.feature, profiles: [{ id: 'legacy', name: 'Legacy', construction: false,
+      geometry: { kind: 'rectangle', x: 20, y: 2, width: 2, height: 6, cornerRadius: 0 } }] };
+    const positionPick = { label: 'Place anchor', onPick, onCancel };
+    await h.show({ sketch: feature, selectedProfileId: 'legacy', graphControls: { ...graph, document: { ...graph.document, features: [feature] }, positionPick,
+      geometryPick: { label: 'Use point position', eligiblePointIds: ['a', 'b', 'c'], eligibleEntityIds: [], onPick: geometryPicked, onCancel } } });
+    for (const key of ['ArrowRight', 'Enter']) await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })));
+    expect(onPick).toHaveBeenCalledExactlyOnceWith([20, 10]);
+    const pending = deferred<EditorPreviewCapture>(); rasterize.mockReturnValue(pending.promise);
+    const capture = currentControls().capture(new AbortController().signal);
+    await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
+    pending.resolve(image); await expect(capture).rejects.toMatchObject({ code: 'STALE_VIEW' });
+    const point = container.querySelector('[data-cad-sketch-point="b"]'); if (!point) throw new Error('Point missing.');
+    await act(async () => point.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(geometryPicked).toHaveBeenCalledExactlyOnceWith({ kind: 'point', id: 'b' });
+    const profile = container.querySelector('[aria-label="Select Legacy profile"]'); if (!profile) throw new Error('Profile missing.');
+    await h.show({ graphControls: { ...h.props().graphControls!, geometryPick: undefined } });
+    await h.pointer('pointerdown', 21, 2, false, 7, 0, profile); await h.pointer('pointerup', 21, 2);
+    expect(onPick).toHaveBeenLastCalledWith([21, 2]);
+    await act(async () => profile.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    await h.pointer('pointerdown', 44.2, 17.6, false, 7, 0, h.canvas, { metaKey: true });
+    const raw: unknown = onPick.mock.lastCall?.[0]; expect(raw).toEqual([expect.closeTo(44.2, 10), expect.closeTo(17.6, 10)]);
+    const before = currentControls().getState();
+    await h.pointer('pointerdown', 0, 0, false, 8, 2); await h.pointer('pointermove', 10, 5, false, 8, 2); await h.pointer('pointerup', 10, 5, false, 8, 2);
+    expect(currentControls().getState()).not.toEqual(before);
+    await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(onCancel).toHaveBeenCalledOnce(); expect(h.selected).not.toHaveBeenCalled(); expect(h.selectedSet).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled(); expect(h.props().onSelectProfile).not.toHaveBeenCalled();
+    const accepted = onPick.mock.calls.length;
+    await h.show({ previewSketch: { ...feature, name: 'Preview' } });
+    await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(onPick).toHaveBeenCalledTimes(accepted);
+  });
+  it('keeps placement marks in sketch coordinates and invalidates an older capture when placement changes', async () => {
+    const h = await spatialFixture(), graph = h.props().graphControls; if (!graph) throw new Error('Graph missing.');
+    const placement = { anchor: [1, 2] as const, target: [9, -4] as const, angleDegrees: 90 };
+    await h.show({ graphControls: { ...graph, placement } });
+    const marks = container.querySelector('[data-cad-sketch-placement]'), line = marks?.querySelector('line');
+    expect(marks?.getAttribute('pointer-events')).toBe('none');
+    expect([line?.getAttribute('x1'), line?.getAttribute('y1'), line?.getAttribute('x2'), line?.getAttribute('y2')]).toEqual(['-14', '-8', '-6', '-14']);
+    expect(marks?.querySelector('text')?.textContent).toBe('+90°');
+    const pending = deferred<EditorPreviewCapture>(); rasterize.mockReturnValue(pending.promise);
+    const capture = currentControls().capture(new AbortController().signal);
+    await h.show({ graphControls: { ...graph, placement: { ...placement, target: [20, 5], angleDegrees: -30 } } });
+    pending.resolve(image); await expect(capture).rejects.toMatchObject({ code: 'STALE_VIEW' });
   });
   it('previews containment then publishes one complete set on release without creating an edit', async () => {
     const h = await spatialFixture();

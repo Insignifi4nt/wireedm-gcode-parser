@@ -28,6 +28,8 @@ export interface CadSketchGraphControls {
   readonly degreesOfFreedom?: number | null;
   readonly showDimensions?: boolean;
   readonly geometryPick?: CadSketchGeometryPick;
+  readonly positionPick?: { readonly label: string; onPick(point: SketchPoint): void; onCancel(): void };
+  readonly placement?: { readonly anchor: SketchPoint | null; readonly target: SketchPoint | null; readonly angleDegrees: number };
   readonly patternInteraction?: import('./CadSketchLinearPatternEditor').CadSketchLinearPatternInteraction;
   onEditPattern?(relationId: string): void;
   onSelect(selection: CadSketchGraphSelection | null, additive?: boolean): void;

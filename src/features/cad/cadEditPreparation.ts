@@ -122,12 +122,14 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
         continue;
       }
     }
-    if (edit.kind === 'translate-sketch-geometry' || edit.kind === 'split-sketch-entity' || edit.kind === 'trim-sketch-entity' || edit.kind === 'extend-sketch-entity' || edit.kind === 'offset-sketch-loop' || edit.kind === 'mirror-sketch-geometry' || edit.kind === 'copy-sketch-profile') {
+    if (edit.kind === 'translate-sketch-geometry' || edit.kind === 'place-sketch-geometry' || edit.kind === 'split-sketch-entity' || edit.kind === 'trim-sketch-entity' || edit.kind === 'extend-sketch-entity' || edit.kind === 'offset-sketch-loop' || edit.kind === 'mirror-sketch-geometry' || edit.kind === 'copy-sketch-profile') {
       await flush();
       const target = reduceCadEditIntents(candidate, [edit]);
       if (Value.Equal(candidate, target)) continue;
       candidate = target;
-      const error = () => edit.kind === 'split-sketch-entity'
+      const error = () => edit.kind === 'place-sketch-geometry'
+        ? new CadError('sketch-placement-intent', 'The constraints cannot preserve this exact placement. Adjust the selection or its relations.')
+        : edit.kind === 'split-sketch-entity'
         ? new CadError('sketch-split-intent', 'The constraints cannot preserve this exact split without changing geometry. Adjust its relations before splitting.')
         : edit.kind === 'trim-sketch-entity'
           ? new CadError('sketch-trim-intent', 'The constraints cannot preserve this exact trim without changing geometry. Adjust its relations before trimming.')

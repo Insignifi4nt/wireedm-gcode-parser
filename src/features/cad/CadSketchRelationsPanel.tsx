@@ -163,6 +163,7 @@ export interface CadSketchRelationsPanelProps {
   onCornerAccepted?(entityId: string, relationId: string): void;
   onEditPattern?(relationId: string, detach?: true): void;
   onSelectPatternSeed?(entityId: string): void;
+  onPlaceGeometry?(): void;
   interactionLocked: boolean;
   cancelSignal: number;
 }
@@ -174,7 +175,7 @@ export function CadSketchRelationsPanel(props: CadSketchRelationsPanelProps) {
   return <RelationsForm key={JSON.stringify([props.document.id, props.sketch.id, props.selection, props.cancelSignal])} {...props} graph={graph} />;
 }
 
-function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onInspectSubject, onCornerAccepted, onEditPattern, onSelectPatternSeed, interactionLocked }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
+function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onInspectSubject, onCornerAccepted, onEditPattern, onSelectPatternSeed, onPlaceGeometry, interactionLocked }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
   const submission = useCadEditSubmission();
   const singleton = selection.length === 1 ? selection[0] : null;
   const pointPair = selectedPointPair(selection);
@@ -498,8 +499,8 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         <CadContextHelp label="Linked reference">This construction edge follows its source sketch. Its position and size are read-only; use it for snaps or to constrain other geometry. Detach retains the current shape and local relations.</CadContextHelp>
         {selectedEntity?.kind === 'circle' && <span>R {formatCadQuantity(evaluateCadScalar(selectedEntity.radius, parameters))} mm</span>}
       </div>}
-      {move ? <div className="cad-placement-row"><label><span>ΔX</span><Input aria-label="Move X" autoFocus value={move.x} onChange={event => { setError(null); setGeometryDraft({ ...move, x: event.target.value }); }} /></label>
-        <label><span>ΔY</span><Input aria-label="Move Y" value={move.y} onChange={event => { setError(null); setGeometryDraft({ ...move, y: event.target.value }); }} /></label><small>mm</small></div> : <>
+      {move ? <>{onPlaceGeometry && <Button type="button" disabled={submission.applying || [move.x,move.y].some(value => !value.trim() || Number(value) !== 0)} onClick={() => { reset(); onPlaceGeometry(); }}>Place and rotate…</Button>}<div className="cad-placement-row"><label><span>ΔX</span><Input aria-label="Move X" autoFocus value={move.x} onChange={event => { setError(null); setGeometryDraft({ ...move, x: event.target.value }); }} /></label>
+        <label><span>ΔY</span><Input aria-label="Move Y" value={move.y} onChange={event => { setError(null); setGeometryDraft({ ...move, y: event.target.value }); }} /></label><small>mm</small></div></> : <>
       {selection.length > 1 && <div className="text-xs text-muted-foreground">{pointRoles ? pointRoles.map((id, index) => `${index ? 'To' : 'From'} Point ${graph.points.findIndex(point => point.id === id) + 1}`).join(' → ') : entityPair ? entityPair.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label).join(' · ') : pointLine ? `Point ${graph.points.findIndex(point => point.id === pointLine.pointId) + 1} · ${describeCadSketchConstraintSource(graph, { kind: 'entity', id: pointLine.lineId }).label}` : `${selection.filter(atom => atom.kind === 'point').length} points · ${selection.filter(atom => atom.kind === 'entity').length} edges`}</div>}
       {passiveMeasurement && <div className="cad-sketch-profile-actions"><Button type="button" onClick={addReference}><MeasureIcon size={13} /> Reference {passiveLabel}</Button>
         <CadContextHelp label="Reference dimension">Save a measurement on the sketch. It follows the geometry and does not constrain or move it. Use Make driving to set its size deliberately.</CadContextHelp></div>}
