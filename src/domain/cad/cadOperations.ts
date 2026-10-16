@@ -9,6 +9,7 @@ import { addCadPluginProfile, CadParameterGroupSchema, mapCadFeatureScalars, ren
 import { addCadSketchDimension, cadSketchDimensionScalar, CadSketchDimensionConstraintSchema, isCadSketchExpressionDriven, removeCadSketchDimension, setCadSketchDimensionValue, translateCadSketchProfile, type CadSketchDimensionConstraint } from './cadSketchConstraints';
 import { CadPoint2Schema, CadScalarSchema } from './cadPrimitives';
 import { evaluateCadScalar } from './cadExpression';
+import { CadSketchHandleSchema, moveCadSketchHandle, type CadSketchHandle } from './cadSketchHandles';
 
 export type CadEdit =
   | { readonly kind: 'add-feature'; readonly feature: CadFeature; readonly beforeId?: string }
@@ -26,6 +27,7 @@ export type CadEdit =
   | { readonly kind: 'set-sketch-dimension'; readonly sketchId: string; readonly profileId: string; readonly dimensionId: string; readonly value: CadScalar }
   | { readonly kind: 'remove-sketch-dimension'; readonly sketchId: string; readonly profileId: string; readonly dimensionId: string }
   | { readonly kind: 'translate-sketch-profiles'; readonly sketchId: string; readonly profileIds: readonly string[]; readonly translation: CadPoint2 }
+  | { readonly kind: 'move-sketch-handle'; readonly sketchId: string; readonly profileId: string; readonly handle: CadSketchHandle; readonly translation: CadPoint2 }
   | { readonly kind: 'rename-document'; readonly name: string };
 
 const identifier = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' });
@@ -47,6 +49,7 @@ export const CadEditSchema = Type.Union([
   Type.Object({ kind: Type.Literal('set-sketch-dimension'), sketchId: identifier, profileId: identifier, dimensionId: identifier, value: CadScalarSchema }, strict),
   Type.Object({ kind: Type.Literal('remove-sketch-dimension'), sketchId: identifier, profileId: identifier, dimensionId: identifier }, strict),
   Type.Object({ kind: Type.Literal('translate-sketch-profiles'), sketchId: identifier, profileIds: Type.Array(identifier, { minItems: 1, maxItems: 256, uniqueItems: true }), translation: CadPoint2Schema }, strict),
+  Type.Object({ kind: Type.Literal('move-sketch-handle'), sketchId: identifier, profileId: identifier, handle: CadSketchHandleSchema, translation: CadPoint2Schema }, strict),
   Type.Object({ kind: Type.Literal('rename-document'), name: Type.String({ minLength: 1, maxLength: 160, pattern: '\\S' }) }, strict)
 ]);
 
@@ -155,6 +158,14 @@ export function applyCadEdits(document: CadDocument, edits: readonly CadEdit[]):
           }
           return setCadSketchDimensionValue({ profile, quantity: constraint.quantity, value: edit.value });
         }) };
+        break;
+      }
+      case 'move-sketch-handle': {
+        const index = indexOf(edit.sketchId), feature = features[index];
+        if (feature.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose an existing sketch to edit.');
+        if (!feature.profiles.some(profile => profile.id === edit.profileId)) throw new CadError('missing-profile', 'The selected sketch contour no longer exists.');
+        const translation = [evaluateCadScalar(edit.translation[0], parameters), evaluateCadScalar(edit.translation[1], parameters)] satisfies readonly [number, number];
+        features[index] = { ...feature, profiles: feature.profiles.map(profile => profile.id === edit.profileId ? moveCadSketchHandle({ profile, handle: edit.handle, translation, parameters }) : profile) };
         break;
       }
       case 'translate-sketch-profiles': {

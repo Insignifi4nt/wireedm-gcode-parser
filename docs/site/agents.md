@@ -8,6 +8,7 @@ CAD and CAM are separate documents with separate draft versions. Begin with `cad
 | --- | --- |
 | `cad_get_context` | Draft version, exact parameter/group summaries with omission counts, saved version, pending workflow and build diagnostics |
 | `cad_describe_features` | Compact feature catalog or one exact accepted feature schema |
+| `cad_describe_edits` | Draft edit catalog or one operation's strict fields, without mutation |
 | `cad_describe_plugin_api` | Compact plugin API catalog or one complete strict package schema |
 | `cad_construct_path` | Construct and measure an exact closed line/three-point-arc profile without changing a document |
 | `cad_construct_curve` | Construct an exact open line/three-point-arc reference chain without changing a document |
@@ -15,6 +16,7 @@ CAD and CAM are separate documents with separate draft versions. Begin with `cad
 | `cad_measure_curve` | Exact open-chain length, local/world endpoints and bounds, plane and offset |
 | `cad_inspect_plane` | Active datum, Sketch or Curve placement: base frame, signed offset and placed world origin, without native work |
 | `cad_inspect_sketch_regions` | Closed sketch areas, exact cell references, local measurements and optional proposed-source preflight |
+| `cad_inspect_sketch_handles` | Version-scoped point and primitive grips, local coordinates and edit eligibility |
 | `cad_read_sketch_region_reference` | Complete exact cell-reference JSON in versioned text chunks when a reference exceeds the row budget |
 | `cad_inspect_loft` | Ordered section, common-frame placement and precision preflight before authoring a Loft |
 | `cad_inspect_sweep` | Read-only section/Curve placement, tangent, conservative clearance and work-limit preflight before authoring a Sweep |
@@ -114,6 +116,8 @@ Create a sketch through `cad_edit_document` with a complete `add-feature` defini
 
 ### Sketch dimensions and direct movement
 
+Use `cad_describe_edits` without `kind` to list draft edit operations, or with a specific `kind` to read its strict fields before calling `cad_edit_document`. Registration keeps a compact edit envelope; it never relaxes execution validation. Feature bodies and plugin packages use `cad_describe_features` and `cad_describe_plugin_api` for their complete definitions.
+
 Numeric drawing coordinates and sizes remain free until explicitly dimensioned. Named or arithmetic expressions already drive their quantities. A profile's optional `constraints` array records dimension intent, while its geometry scalar stores the single driving value. `cad_describe_features` with `kind: "sketch"` returns the complete schema; `cad_get_feature` returns the current profile and constraint IDs. Constraints support these quantities:
 
 | Profile | Driving quantities |
@@ -148,6 +152,10 @@ A compound driver such as `"width / 2"` rejects `set-sketch-dimension` with `dri
 The move uses the sketch's local XY axes, preserves size constraints and changes the hole's Y coordinate from 20 to 18; its expression-driven X coordinate stays linked. Direct movement supports 1–256 distinct rectangle, circle, slot, polygon or path profile IDs. A nonzero move on an expression-driven position axis fails, and one ineligible contour rejects the whole batch. Plugin placement uses its own configuration. Translation components may be parameter expressions, resolved at the edit's current document values.
 
 `remove-sketch-dimension` takes `sketchId`, `profileId` and `dimensionId`. It removes explicit intent and retains the geometry scalar, including any driving expression. Setting a named dimension to a number before removing it updates its parameter and keeps the link.
+
+For direct point editing, call `cad_inspect_sketch_handles` with the current version, `sketchId` and `profileId`. Follow its handle pages at that same version. Each grip reports its local millimetre `point`, label and whether it is `draggable`. Pass the returned `handle` unchanged to a `move-sketch-handle` edit with those owner IDs and a local XY `translation`, for example `[5, -2]`. This operation moves a polygon vertex or connected straight-path joint independently, resizes a rectangle corner/side with its opposite corner/side fixed, or edits a circle center/radius. A slot currently exposes its center. Numeric free components move; dimensioned sizes and expression-driven components remain unchanged. Rounded rectangles retain their corner radius and reject impossible sizes. Generated plugin contours stay controlled by their inputs. Arc-connected endpoints currently report constrained grips until supported analytic editing is available.
+
+Handle indices refer to this exact accepted revision. Reinspect after any edit, undo, reorder or replacement; do not save them as persistent constraint references. All edits in a batch use the geometry produced by preceding edits, so perform topology changes separately and inspect again. The shared edit boundary rejects missing/incompatible grips, invalid contours, stale versions and pending workflows. One successful batch is one undo step and remains unsaved until Save.
 
 To explicitly unlink a size, read its complete current feature with `cad_get_feature`, copy every field and replace only the intended geometry scalar with the resolved numeric value. Keep its constraint in that copied feature. Submit the complete `update-feature` followed by `remove-sketch-dimension` for that constraint in one atomic batch with the same current version. After the example above, replacing only the plate's `geometry.width` with numeric `72` and removing `plate_width` frees that width at 72 mm. The `width` parameter and other profiles' references remain intact. Relation replacement likewise requires an explicit complete-feature edit; value editing never silently discards a driver.
 

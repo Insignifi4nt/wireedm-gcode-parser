@@ -11,7 +11,7 @@ import { ToolError } from '@/features/webmcp/siteTools';
 import type { CadRenderedViewControls, CadRenderedViewState } from './cadViewportControls';
 import { closeSketchPolygon, snapSketchPathPoint, snapSketchPoint, twoPointSketchProfile, type SketchPoint, type SketchTool } from './cadSketchInteraction';
 import { CadSketchProfileGeometry } from './CadSketchProfileGeometry';
-import { createCadSketchProfilePicker } from './cadSketchPicking';
+import { createCadSketchHandlePicker, createCadSketchProfilePicker, type CadSketchHandlePick } from './cadSketchPicking';
 import { cadPathDraftEndpoint, closeCadPathDraft, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, updateCadPathDraft, type CadPathDrawingAction } from './cadPathDrawing';
 import { CadPathDraftGeometry, CadPathSegmentGeometry } from './CadPathDraftGeometry';
 import { cadProfileReferenceGeometry } from './cadViewportReferences';
@@ -19,6 +19,7 @@ import { CadGearInspectionOverlay } from './CadGearInspectionOverlay';
 import { CadSketchDimensionControls, type CadSketchDimensionControlsProps } from './CadSketchDimensionControls';
 import { readCadFitArea, type CadFitAreaReader } from './cadFitArea';
 import { translateCadSketchProfile } from '@/domain/cad/cadSketchConstraints';
+import { cadSketchHandleKey, moveCadSketchHandle, type CadSketchHandle } from '@/domain/cad/cadSketchHandles';
 
 const NO_PROFILES: readonly CadSketchProfile[] = Object.freeze([]);
 export interface CadSketchContextMenuRequest {
@@ -40,11 +41,13 @@ interface CadSketchProfileDrag {
   readonly mmPerPixelY: number;
   readonly snap: boolean;
   readonly gridStep: number;
+  readonly handle: CadSketchHandle | null;
+  readonly anchor: SketchPoint | null;
   moved: boolean;
   translation: SketchPoint;
 }
 
-export function CadSketchCanvas({ sketch, parameters, documentVersion, placementLabel, tool, selectedProfileId, onSelectProfile, onAddProfile, onTranslateProfile, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onError, cancelSignal, interactionLocked = false, onControlsReady, viewLocked = false, navigationMode = 'mouse', onContextMenu, previewProfile, inspection, dimensionControls, getFitArea }: {
+export function CadSketchCanvas({ sketch, parameters, documentVersion, placementLabel, tool, selectedProfileId, onSelectProfile, onAddProfile, onTranslateProfile, onMoveHandle, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onError, cancelSignal, interactionLocked = false, onControlsReady, viewLocked = false, navigationMode = 'mouse', onContextMenu, previewProfile, inspection, dimensionControls, getFitArea }: {
   sketch: CadSketchFeature | CadCurveFeature;
   parameters: Readonly<Record<string, number>>;
   documentVersion?: string;
@@ -54,6 +57,7 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
   onSelectProfile(id: string | null): void;
   onAddProfile(geometry: CadProfile): void;
   onTranslateProfile?(profileId: string, translation: SketchPoint): void;
+  onMoveHandle?(profileId: string, handle: CadSketchHandle, translation: SketchPoint): void;
   onAddCurve?(segments: readonly CadPathSegment[]): void;
   onCancelCurve?(): void;
   curveCreation?: boolean;
@@ -85,7 +89,9 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
   const [grid, setGrid] = useState(true);
   const [gridStep, setGridStep] = useState(5);
   const profileDrag = useRef<CadSketchProfileDrag | null>(null);
-  const [dragPreview, setDragPreview] = useState<{ profile: CadSketchProfile; translation: SketchPoint } | null>(null);
+  const [dragPreview, setDragPreview] = useState<{ profile: CadSketchProfile; translation: SketchPoint; handle: CadSketchHandle | null } | null>(null);
+  const [activeHandle, setActiveHandle] = useState<CadSketchHandlePick | null>(null);
+  const [hoverHandle, setHoverHandle] = useState<CadSketchHandlePick | null>(null);
   const suppressProfileClick = useRef(false);
   const pendingChange = useRef(onPendingChange);
   pendingChange.current = onPendingChange;
@@ -124,8 +130,17 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
     try { return resolveCadCurveGeometry(sketch, parameters); } catch { return null; }
   }, [sketch, parameters]);
   const profilePicker = useMemo(() => createCadSketchProfilePicker(profiles, parameters), [profiles, parameters]);
+  const handlePicker = useMemo(() => createCadSketchHandlePicker(profiles, parameters), [profiles, parameters]);
+  const handleProfile = dragPreview?.profile ?? profiles.find(profile => profile.id === selectedProfileId);
+  const previewHandlePicker = useMemo(() => dragPreview ? createCadSketchHandlePicker([dragPreview.profile], parameters) : handlePicker, [dragPreview, parameters, handlePicker]);
+  const visibleHandles = previewHandlePicker.handles.filter(handle => handle.profileId === handleProfile?.id);
   useLayoutEffect(() => { finishPan(); }, [documentVersion, interactionLocked, cancelSignal, sketch.id, profilePicker, finishPan]);
-  useLayoutEffect(() => { finishProfileDrag(); }, [documentVersion, sketch, parameters, tool, selectedProfileId, interactionLocked, cancelSignal, previewProfile, center, span, aspect, snap, gridStep, navigationMode, finishProfileDrag]);
+  useLayoutEffect(() => { finishProfileDrag(); }, [documentVersion, sketch, parameters, tool, interactionLocked, cancelSignal, previewProfile, center, span, aspect, snap, gridStep, navigationMode, finishProfileDrag]);
+  useLayoutEffect(() => {
+    if (profileDrag.current && profileDrag.current.profile.id !== selectedProfileId) finishProfileDrag();
+    setActiveHandle(current => current?.profileId === selectedProfileId ? current : null);
+  }, [selectedProfileId, finishProfileDrag]);
+  useEffect(() => { setHoverHandle(null); setActiveHandle(null); }, [documentVersion, sketch.id, tool, cancelSignal]);
   const width = span * aspect;
   const navigation = useRef({ center, span, aspect, viewLocked, navigationMode });
   navigation.current = { center, span, aspect, viewLocked, navigationMode };
@@ -206,17 +221,24 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
     ? snapSketchPathPoint(point, pathDraft.kind === 'idle' ? null : pathDraft.start, span / (svg.current?.getBoundingClientRect().height || Infinity), gridStep, snap)
     : snapSketchPoint(point, gridStep, snap);
   const getPoint = (event: { clientX: number; clientY: number }): SketchPoint => snapPoint(getRawPoint(event) ?? [0, 0]);
+  const pickGrip = (event: { target: EventTarget | null }, point: SketchPoint, millimetersPerPixel: number) => {
+    const key = event.target instanceof Element ? event.target.closest('[data-cad-sketch-grip]')?.getAttribute('data-cad-sketch-grip') : null;
+    const owned = key ? handlePicker.handles.find(grip => `${grip.profileId}/${cadSketchHandleKey(grip.handle)}` === key) : null;
+    return owned ?? handlePicker.pick(point, millimetersPerPixel, selectedProfileId);
+  };
   const moveProfile = (event: { pointerId: number; clientX: number; clientY: number }) => {
     const active = profileDrag.current;
     if (!active || event.pointerId !== active.pointerId) return;
     if (!active.moved && Math.hypot(event.clientX - active.clientX, event.clientY - active.clientY) <= 4) return;
     active.moved = true; suppressProfileClick.current = true;
-    const snapped = snapSketchPoint([(event.clientX - active.clientX) * active.mmPerPixelX, -(event.clientY - active.clientY) * active.mmPerPixelY], active.gridStep, active.snap);
-    const translation: SketchPoint = [snapped[0] === 0 ? 0 : snapped[0], snapped[1] === 0 ? 0 : snapped[1]];
+    const anchor = active.anchor ?? [0, 0];
+    const snapped = snapSketchPoint([anchor[0] + (event.clientX - active.clientX) * active.mmPerPixelX, anchor[1] - (event.clientY - active.clientY) * active.mmPerPixelY], active.gridStep, active.snap);
+    const translation: SketchPoint = [snapped[0] - anchor[0], snapped[1] - anchor[1]];
     try {
-      const profile = translateCadSketchProfile({ profile: active.profile, translation, parameters: active.parameters });
+      const profile = active.handle ? moveCadSketchHandle({ profile: active.profile, handle: active.handle, translation, parameters: active.parameters })
+        : translateCadSketchProfile({ profile: active.profile, translation, parameters: active.parameters });
       active.translation = translation;
-      setDragPreview(current => current && current.translation[0] === translation[0] && current.translation[1] === translation[1] ? current : { profile, translation });
+      setDragPreview(current => current && current.translation[0] === translation[0] && current.translation[1] === translation[1] ? current : { profile, translation, handle: active.handle });
     } catch (error) { finishProfileDrag(); onError(error instanceof Error ? error.message : 'Unable to move this contour.'); }
   };
   const changePath = (action: CadPathDrawingAction, focus = false) => {
@@ -331,14 +353,21 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
           // focus on the canvas rather than the profile's millimetre bounding box.
           event.preventDefault();
           event.currentTarget.focus({ preventScroll: true });
-          if (tool === 'select' && sketch.kind === 'sketch' && !viewLocked && !previewProfile && onTranslateProfile && selectedProfileId) {
+          if (tool === 'select' && sketch.kind === 'sketch' && !viewLocked && !previewProfile && (onTranslateProfile || onMoveHandle)) {
             const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
+            const grip = onMoveHandle && point && rect.height ? pickGrip(event, point, span / rect.height) : null;
+            if (grip) {
+              setActiveHandle(grip);
+              if (selectedProfileId !== grip.profileId) onSelectProfile(grip.profileId);
+              if (!grip.draggable) return;
+            } else setActiveHandle(null);
             const picked = point && rect.height ? profilePicker.pick(point, span / rect.height) : null;
-            const profile = picked === selectedProfileId ? sketch.profiles.find(profile => profile.id === selectedProfileId && profile.geometry.kind !== 'plugin') : null;
+            const id = grip?.profileId ?? (onTranslateProfile && picked === selectedProfileId ? selectedProfileId : null);
+            const profile = id ? sketch.profiles.find(profile => profile.id === id && profile.geometry.kind !== 'plugin') : null;
             if (profile && rect.width && rect.height) {
               profileDrag.current = { profile, sketch, parameters, pointerId: event.pointerId, element: event.currentTarget,
                 clientX: event.clientX, clientY: event.clientY, mmPerPixelX: width / rect.width, mmPerPixelY: span / rect.height,
-                snap, gridStep, moved: false, translation: [0, 0] };
+                snap, gridStep, handle: grip?.handle ?? null, anchor: grip?.point ?? null, moved: false, translation: [0, 0] };
               try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishProfileDrag(); }
             }
           }
@@ -350,7 +379,10 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
           if (event.button === 0) moveProfile(event);
           const active = finishProfileDrag(event.pointerId);
           if (event.button === 0 && active?.moved && (active.translation[0] !== 0 || active.translation[1] !== 0)) {
-            try { onTranslateProfile?.(active.profile.id, active.translation); }
+            try {
+              if (active.handle) onMoveHandle?.(active.profile.id, active.handle, active.translation);
+              else onTranslateProfile?.(active.profile.id, active.translation);
+            }
             catch (error) { onError(error instanceof Error ? error.message : 'Unable to move this contour.'); }
           }
           return;
@@ -378,8 +410,15 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
           const rect = event.currentTarget.getBoundingClientRect();
           if (!rect.width || !rect.height) { finishPan(event.pointerId); return; }
           setCenter([active.center[0] - (event.clientX - active.x) / rect.width * width, active.center[1] + (event.clientY - active.y) / rect.height * span]);
-        } else setCursor(getPoint(event));
+        } else {
+          setCursor(getPoint(event));
+          if (tool === 'select' && onMoveHandle && !interactionLocked && !viewLocked) {
+            const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
+            setHoverHandle(point && rect.height ? pickGrip(event, point, span / rect.height) : null);
+          }
+        }
       }}
+      onPointerLeave={() => setHoverHandle(null)}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && profileDrag.current) { event.preventDefault(); event.stopPropagation(); finishProfileDrag(); return; }
         if (event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) {
@@ -413,7 +452,11 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
         if (event.detail > 0 && suppressProfileClick.current) { suppressProfileClick.current = false; event.preventDefault(); return; }
         if (tool === 'select') {
           const point = getRawPoint(event); const rect = svg.current?.getBoundingClientRect();
-          if (point && rect?.height) onSelectProfile(profilePicker.pick(point, span / rect.height));
+          if (point && rect?.height) {
+            const grip = onMoveHandle ? pickGrip(event, point, span / rect.height) : null;
+            setActiveHandle(grip);
+            onSelectProfile(grip?.profileId ?? profilePicker.pick(point, span / rect.height));
+          }
         } else placePoint(getPoint(event));
       }}>
       <defs><pattern id="cad-sketch-grid" x={-center[0] % gridStep} y={center[1] % gridStep} width={gridStep} height={gridStep} patternUnits="userSpaceOnUse"><path d={`M ${gridStep} 0 H 0 V ${gridStep}`} fill="none" stroke="#29373f" strokeWidth={span / 1000} /></pattern></defs>
@@ -422,7 +465,32 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
       {Math.abs(center[0]) <= width / 2 && <path d={`M ${-center[0]} ${-span / 2} V ${span / 2}`} className="cad-axis-y" strokeWidth={span / 700} />}
       <g transform="scale(1,-1)" strokeWidth={span / 450}>
         {savedCurve && <g className="cad-profile is-selected"><CadPathDraftGeometry segments={savedCurve.segments} preview={false} viewCenter={center} /></g>}
-        {profiles.map((profile) => <g key={profile.id} role="button" aria-label={`Select ${profile.name} profile`} aria-pressed={profile.id === selectedProfileId} transform={dragPreview?.profile.id === profile.id ? `translate(${dragPreview.translation[0]} ${dragPreview.translation[1]})` : undefined} tabIndex={tool === 'select' && !interactionLocked ? 0 : -1} data-cad-parameter-highlight={inspection?.profileIds.includes(profile.id) ? profile.id : undefined} className={`cad-profile ${profile.construction ? 'is-construction' : ''} ${profile.id === selectedProfileId ? 'is-selected' : ''} ${inspection?.profileIds.includes(profile.id) ? 'is-parameter-highlighted' : ''}`} strokeDasharray={profile.construction ? `${span / 80} ${span / 120}` : undefined} onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && tool === 'select' && !interactionLocked) { event.preventDefault(); event.stopPropagation(); onSelectProfile(profile.id); } }} onClick={(event) => { if (event.detail === 0 && event.button === 0 && tool === 'select' && !interactionLocked) { event.stopPropagation(); onSelectProfile(profile.id); } }}><CadSketchProfileGeometry geometry={profile.geometry} parameters={parameters} viewCenter={center} /></g>)}
+        {profiles.map((profile) => <g key={profile.id} role="button" aria-label={`Select ${profile.name} profile`} aria-pressed={profile.id === selectedProfileId && !activeHandle} transform={dragPreview?.profile.id === profile.id && !dragPreview.handle ? `translate(${dragPreview.translation[0]} ${dragPreview.translation[1]})` : undefined} tabIndex={tool === 'select' && !interactionLocked ? 0 : -1} data-cad-parameter-highlight={inspection?.profileIds.includes(profile.id) ? profile.id : undefined} className={`cad-profile ${profile.construction ? 'is-construction' : ''} ${profile.id === selectedProfileId && !activeHandle ? 'is-selected' : ''} ${inspection?.profileIds.includes(profile.id) ? 'is-parameter-highlighted' : ''}`} strokeDasharray={profile.construction ? `${span / 80} ${span / 120}` : undefined} onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && tool === 'select' && !interactionLocked) { event.preventDefault(); event.stopPropagation(); setActiveHandle(null); onSelectProfile(profile.id); } }} onClick={(event) => { if (event.detail === 0 && event.button === 0 && tool === 'select' && !interactionLocked) { event.stopPropagation(); setActiveHandle(null); onSelectProfile(profile.id); } }}><CadSketchProfileGeometry geometry={dragPreview?.handle && dragPreview.profile.id === profile.id ? dragPreview.profile.geometry : profile.geometry} parameters={parameters} viewCenter={center} /></g>)}
+        {tool === 'select' && onMoveHandle && !previewProfile && !interactionLocked && <g className="cad-sketch-handles">
+          {(handleProfile ? visibleHandles.map(handle => ({ ...handle, profileId: handleProfile.id })) : hoverHandle ? [hoverHandle] : []).map(grip => {
+            const key = `${grip.profileId}/${cadSketchHandleKey(grip.handle)}`;
+            const selected = activeHandle?.profileId === grip.profileId && cadSketchHandleKey(activeHandle.handle) === cadSketchHandleKey(grip.handle);
+            return <circle key={key} data-cad-sketch-grip={key} cx={grip.point[0] - center[0]} cy={grip.point[1] - center[1]} r={4 * span / (viewportSize.height || 600)}
+              role="button" tabIndex={0} aria-label={`${grip.label} of ${handleProfile?.name ?? 'profile'}${grip.draggable ? '' : ', constrained'}`} aria-pressed={selected} aria-disabled={!grip.draggable}
+              className={`cad-sketch-handle${selected ? ' is-active' : ''}${grip.draggable ? '' : ' is-locked'}`}
+              onClick={event => { if (event.detail === 0) { event.stopPropagation(); setActiveHandle(grip); onSelectProfile(grip.profileId); } }}
+              onKeyDown={event => {
+                if (viewLocked || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault(); event.stopPropagation(); setActiveHandle(grip); onSelectProfile(grip.profileId); return;
+                }
+                const step = gridStep * (event.shiftKey ? 10 : 1);
+                const delta: SketchPoint | null = event.key === 'ArrowLeft' ? [-step, 0] : event.key === 'ArrowRight' ? [step, 0] : event.key === 'ArrowUp' ? [0, step] : event.key === 'ArrowDown' ? [0, -step] : null;
+                if (!delta) return;
+                event.preventDefault(); event.stopPropagation();
+                if (!grip.draggable) return;
+                try { onMoveHandle(grip.profileId, grip.handle, delta); }
+                catch (error) { onError(error instanceof Error ? error.message : 'Unable to edit this point.'); }
+              }}>
+              <title>{grip.label}{grip.draggable ? ' · Drag to edit, or use arrow keys' : ' · Controlled by dimensions or expressions'}</title>
+            </circle>;
+          })}
+        </g>}
         {inspection?.gear && inspectedGear?.geometry.kind === 'plugin' && <CadGearInspectionOverlay profile={inspectedGear.geometry} parameters={parameters} inputName={inspection.gear.inputName} span={span} viewCenter={center} />}
         {preview && <g className="cad-profile cad-profile-preview"><CadSketchProfileGeometry geometry={preview} parameters={parameters} viewCenter={center} /></g>}
         {tool === 'polygon' && points.length > 0 && <polyline className="cad-profile cad-profile-preview" points={[...points, cursor].map(([x, y]) => `${x - center[0]},${y - center[1]}`).join(' ')} />}

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-15T23:43:15.342Z",
+  "generatedAt": "2026-10-16T00:00:16.196Z",
   "baseline": {
     "path": "docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json",
     "publishedCheckpoint": "6e2113fa0151ef7d0b378ad3de7635664b2fab82",
@@ -8,7 +8,7 @@
     "originalContextPreserved": true
   },
   "currentSource": {
-    "scannedProductionTsFiles": 460,
+    "scannedProductionTsFiles": 461,
     "catalogImports": 262,
     "currentImportedSymbolReferences": 314,
     "catalogExportsParsed": 227,
@@ -3559,12 +3559,12 @@
       "scoutActualSymbol": "FitViewIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 444,
+        "line": 512,
         "column": 280,
         "symbol": "FitViewIcon",
         "exportedSymbol": "FitViewIcon",
         "catalogId": "fit-view",
-        "confidenceScore": 799.31,
+        "confidenceScore": 754.31,
         "context": "<Button aria-label={sketch.kind === 'curve' ? 'Fit curve' : 'Fit sketch'} disabled={viewLocked} onClick={fit}><FitViewIcon size={14} /></Button>"
       },
       "resolution": "resolved",
@@ -3582,12 +3582,12 @@
       "scoutActualSymbol": "GridIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 444,
+        "line": 512,
         "column": 427,
         "symbol": "GridIcon",
         "exportedSymbol": "GridIcon",
         "catalogId": "grid",
-        "confidenceScore": 799.31,
+        "confidenceScore": 754.31,
         "context": "<Button aria-label=\"Toggle sketch grid\" disabled={viewLocked} aria-pressed={grid} onClick={() => setGrid(!grid)}><GridIcon size={14} /></Button>"
       },
       "resolution": "resolved",
@@ -3605,12 +3605,12 @@
       "scoutActualSymbol": "SnapIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 444,
+        "line": 512,
         "column": 573,
         "symbol": "SnapIcon",
         "exportedSymbol": "SnapIcon",
         "catalogId": "snap",
-        "confidenceScore": 799.86,
+        "confidenceScore": 754.86,
         "context": "<Button aria-label=\"Toggle grid snapping\" disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><SnapIcon size={14} /></Button>"
       },
       "resolution": "resolved",
@@ -3628,12 +3628,12 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 451,
+        "line": 519,
         "column": 434,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
         "catalogId": "confirm",
-        "confidenceScore": 804.62,
+        "confidenceScore": 759.62,
         "context": "<Button aria-label={sketch.kind === 'curve' ? 'Finish curve' : 'Close profile'} title={sketch.kind === 'curve' ? 'Validate and save the open curve without a closing edge' : pathNeedsClosingLine ? 'Close the profile by adding a straight line to its start' : 'Validate and save the closed profile'} disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={closePath}><ConfirmIcon size={13} />{sketch.kind === 'curve' ? 'Finish curve' : pathNeedsClosingLine ? 'Close with line' : 'Close profile'}</Button>"
       },
       "resolution": "resolved",
@@ -3651,12 +3651,12 @@
       "scoutActualSymbol": "UndoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 451,
+        "line": 519,
         "column": 664,
         "symbol": "UndoIcon",
         "exportedSymbol": "UndoIcon",
         "catalogId": "undo",
-        "confidenceScore": 399.31,
+        "confidenceScore": 354.31,
         "context": "<Button disabled={interactionLocked} onClick={() => changePath({ kind: 'undo-last' }, true)}><UndoIcon size={13} /> Undo last</Button>"
       },
       "resolution": "resolved",
@@ -3674,12 +3674,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 451,
+        "line": 519,
         "column": 795,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 399.31,
+        "confidenceScore": 354.31,
         "context": "<Button disabled={interactionLocked} onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button>"
       },
       "resolution": "resolved",
@@ -3697,12 +3697,12 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 453,
+        "line": 521,
         "column": 106,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
         "catalogId": "confirm",
-        "confidenceScore": 395.89,
+        "confidenceScore": 350.89,
         "context": "<Button disabled={interactionLocked} onClick={close}><ConfirmIcon size={13} /> Close profile</Button>"
       },
       "resolution": "resolved",
@@ -3720,12 +3720,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 453,
+        "line": 521,
         "column": 215,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 394.5,
+        "confidenceScore": 349.5,
         "context": "<Button onClick={() => setPoints([])}><CloseIcon size={13} /> Cancel drawing</Button>"
       },
       "resolution": "resolved",

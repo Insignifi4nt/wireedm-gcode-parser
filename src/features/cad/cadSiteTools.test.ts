@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { Value } from '@sinclair/typebox/value';
 import { CadDocumentSchema, CadFeatureSchema } from '@/domain/cad/cadSchema';
 import { CadEditSchema } from '@/domain/cad/cadOperations';
-import { CadToolEditEnvelope } from './cadToolSchemas';
+import { CadToolEditDefinitions, CadToolEditEnvelope } from './cadToolSchemas';
 import { cadSiteTools } from './cadSiteTools';
 import type { CadController } from './useCadController';
 import type { CadBuildResult } from '@/domain/cad/cadDocument';
@@ -99,14 +99,14 @@ describe('CAD tool argument boundary and discovery', () => {
     };
     expect(edit.inputSchema.properties.edits.items).toBe(CadToolEditEnvelope);
     for (const [kind, meaning] of Object.entries(descriptions)) {
-      const declared = CadToolEditEnvelope.anyOf.find(schema => schema.properties.kind.const === kind);
+      const declared = CadToolEditDefinitions.find(schema => schema.properties.kind.const === kind);
       const shared = CadEditSchema.anyOf.find(schema => schema.properties.kind.const === kind);
       expect(declared?.description).toContain(meaning);
       expect(declared?.properties).toEqual(shared?.properties);
       expect(declared?.required).toEqual(shared?.required);
       expect(declared?.additionalProperties).toBe(false);
     }
-    const dimension = CadToolEditEnvelope.anyOf.find(schema => schema.properties.kind.const === 'set-sketch-dimension');
+    const dimension = CadToolEditDefinitions.find(schema => schema.properties.kind.const === 'set-sketch-dimension');
     expect(dimension?.description).toContain('Named bindings update parameters');
     expect(dimension?.description).toContain('compound drivers reject');
   });

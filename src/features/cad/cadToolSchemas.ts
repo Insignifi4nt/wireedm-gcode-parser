@@ -28,11 +28,16 @@ const editDescriptions: Partial<Record<CadEdit['kind'], string>> = {
   'set-sketch-dimension': 'Set displayed quantity (mm/deg); diameter halves to radius. Named bindings update parameters; compound drivers reject.',
   'remove-sketch-dimension': 'Remove explicit intent; retains the geometry scalar, including any driving expression.',
   'translate-sketch-profiles': 'Move contours in local XY mm; rejects nonzero motion on an expression-driven position axis.',
+  'move-sketch-handle': 'Use a revision-scoped grip from cad_inspect_sketch_handles. Local-mm delta; projects onto free components, preserves drivers.',
 };
-export const CadToolEditEnvelope = Type.Union(CadEditSchema.anyOf.map(edit => 'feature' in edit.properties
+export const CadToolEditDefinitions = CadEditSchema.anyOf.map(edit => 'feature' in edit.properties
   ? Type.Object({ ...edit.properties, feature: featureEnvelope }, { additionalProperties: false })
   : 'package' in edit.properties ? Type.Object({ ...edit.properties, package: CadToolPluginPackageEnvelope }, { additionalProperties: false })
-    : editDescriptions[edit.properties.kind.const] ? { ...edit, description: editDescriptions[edit.properties.kind.const] } : edit));
+    : editDescriptions[edit.properties.kind.const] ? { ...edit, description: editDescriptions[edit.properties.kind.const] } : edit);
+/** Discover an edit's fields on demand instead of repeating every contract on each connection. */
+export const CadToolEditEnvelope = Type.Union(CadEditSchema.anyOf.map(edit => Type.Object({ kind: edit.properties.kind }, {
+  additionalProperties: true, description: 'Fields: cad_describe_edits(kind). Execution validates the complete contract.'
+})));
 
 export const CadToolDocumentEnvelope = Type.Object({ ...CadDocumentSchema.properties,
   features: Type.Array(featureEnvelope, { maxItems: CadDocumentSchema.properties.features.maxItems })

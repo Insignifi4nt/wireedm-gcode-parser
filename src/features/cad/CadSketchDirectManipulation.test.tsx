@@ -7,6 +7,7 @@ import { CadSketchCanvas } from './CadSketchCanvas';
 import { CadSession } from './cadSession';
 import { CAD_STAR_PLUGIN, createCadPluginProfile } from '@/domain/cad/plugins/cadPlugins';
 import type { CadRenderedViewControls } from './cadViewportControls';
+import type { CadSketchHandle } from '@/domain/cad/cadSketchHandles';
 
 let root: Root, container: HTMLDivElement;
 beforeEach(() => {
@@ -28,6 +29,10 @@ async function harness(geometry: CadProfile = rectangle, overrides: Partial<Comp
   const translated = vi.fn((profileId: string, translation: readonly [number, number]) => {
     session.setWorkflowOpen(false);
     session.edit([{ kind: 'translate-sketch-profiles', sketchId: 'sketch', profileIds: [profileId], translation }]);
+  });
+  const reshaped = vi.fn((profileId: string, handle: CadSketchHandle, translation: readonly [number, number]) => {
+    session.setWorkflowOpen(false);
+    session.edit([{ kind: 'move-sketch-handle', sketchId: 'sketch', profileId, handle, translation }]);
   });
   const pending = vi.fn((value: boolean) => session.setWorkflowOpen(value));
   const selected = vi.fn(), error = vi.fn(), added = vi.fn(), menu = vi.fn();
@@ -64,10 +69,67 @@ async function harness(geometry: CadProfile = rectangle, overrides: Partial<Comp
     return sketch.profiles[0];
   };
   const click = async (point: readonly [number, number]) => act(async () => svg.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1, button: 0, ...position(...point) })));
-  return { svg, session, translated, pending, selected, error, added, menu, render, position, pointer, click, capture, release, profile, frame };
+  return { svg, session, translated, reshaped, pending, selected, error, added, menu, render, position, pointer, click, capture, release, profile, frame };
 }
 
 describe('direct sketch contour manipulation', () => {
+  it('drags a free vertex independently, previews without persistence and commits one undoable point edit', async () => {
+    const h = await harness({ kind: 'polygon', points: [[0, 0], [20, 0], [20, 10], [0, 10]] });
+    await h.render({ onMoveHandle: h.reshaped });
+    const initial = h.session.getSnapshot();
+    await h.pointer('pointerdown', [20, 0]); await h.pointer('pointermove', [25, -5]);
+    expect(h.session.getSnapshot().document).toBe(initial.document);
+    expect(h.session.getSnapshot().workflowOpen).toBe(true);
+    expect(container.querySelector('[aria-label="Select Profile profile"] polygon')?.getAttribute('points')).toBe('-12.5,-2.5 12.5,-7.5 7.5,7.5 -12.5,7.5');
+    await h.pointer('pointerup', [25, -5]);
+    expect(h.reshaped).toHaveBeenCalledExactlyOnceWith('profile', { kind: 'vertex', index: 1 }, [5, -5]);
+    expect(h.translated).not.toHaveBeenCalled();
+    expect(h.profile().geometry).toEqual({ kind: 'polygon', points: [[0, 0], [25, -5], [20, 10], [0, 10]] });
+    await act(async () => h.session.undo());
+    expect(h.session.getSnapshot().document).toEqual(initial.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+  });
+
+  it('never falls through from a locked point to whole-profile translation', async () => {
+    const h = await harness({ kind: 'polygon', points: [[0, 0], ['size', 'size / 2'], [0, 20]] });
+    await h.render({ onMoveHandle: h.reshaped });
+    const initial = h.session.getSnapshot();
+    await h.pointer('pointerdown', [20, 10]); await h.pointer('pointermove', [25, 15]); await h.pointer('pointerup', [25, 15]);
+    expect(h.session.getSnapshot()).toEqual(initial);
+    expect(h.translated).not.toHaveBeenCalled(); expect(h.reshaped).not.toHaveBeenCalled();
+  });
+
+  it('honors the explicitly hit grip when another grip is nearer in an overlapping screen footprint', async () => {
+    const h = await harness({ kind: 'circle', x: 0, y: 0, radius: 5 });
+    await h.render({ onMoveHandle: h.reshaped });
+    const radius = container.querySelector('[aria-label="Radius of Profile"]');
+    if (!radius) throw new Error('Radius grip missing.');
+    const event = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, buttons: 1, ...h.position(1, 0) });
+    Object.defineProperties(event, { pointerId: { value: 11 }, isPrimary: { value: true } });
+    await act(async () => radius.dispatchEvent(event));
+    await h.pointer('pointermove', [6, 0]); await h.pointer('pointerup', [6, 0]);
+    expect(h.reshaped).toHaveBeenCalledExactlyOnceWith('profile', { kind: 'radius' }, [5, 0]);
+    expect(h.profile().geometry).toEqual({ kind: 'circle', x: 0, y: 0, radius: 10 });
+    expect(h.translated).not.toHaveBeenCalled();
+  });
+
+  it('snaps the dragged point to the grid, cancels its preview, and supports a keyboard point edit', async () => {
+    const h = await harness({ kind: 'polygon', points: [[0, 0], [22, 2], [20, 20], [0, 20]] });
+    await h.render({ onMoveHandle: h.reshaped });
+    const initial = h.session.getSnapshot();
+    await h.pointer('pointerdown', [22, 2]); await h.pointer('pointermove', [26, 3]);
+    await act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    await h.pointer('pointerup', [26, 3]);
+    expect(h.session.getSnapshot()).toEqual(initial); expect(h.reshaped).not.toHaveBeenCalled();
+    await h.pointer('pointerdown', [22, 2]); await h.pointer('pointermove', [26, 3]); await h.pointer('pointerup', [26, 3]);
+    expect(h.reshaped).toHaveBeenCalledExactlyOnceWith('profile', { kind: 'vertex', index: 1 }, [3, 3]);
+    expect(h.profile().geometry).toMatchObject({ points: [[0, 0], [25, 5], [20, 20], [0, 20]] });
+    const point = container.querySelector<SVGCircleElement>('[aria-label="Point 2 of Profile"]');
+    if (!point) throw new Error('Point grip missing.');
+    await act(async () => point.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
+    expect(h.profile().geometry).toMatchObject({ points: [[0, 0], [30, 5], [20, 20], [0, 20]] });
+    expect(h.translated).not.toHaveBeenCalled();
+  });
+
   it('previews a snapped translation without editing, then commits one undoable move preserving dimensions and expressions', async () => {
     const h = await harness(), initial = h.session.getSnapshot();
     await h.pointer('pointerdown', [4, 3]);

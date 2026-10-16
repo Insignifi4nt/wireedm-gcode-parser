@@ -18,7 +18,7 @@ import { jsonByteLength, summarizeDiagnostic } from '@/features/webmcp/diagnosti
 import { CadSessionError } from './cadSession';
 import { CadPluginPackageSchema, fingerprintCadPluginPackage } from '@/domain/cad/plugins/cadPlugins';
 import type { CadController } from './useCadController';
-import { CadToolDocumentEnvelope, CadToolEditEnvelope, CadToolPluginPackageEnvelope, CadToolSketchEnvelope } from './cadToolSchemas';
+import { CadToolDocumentEnvelope, CadToolEditDefinitions, CadToolEditEnvelope, CadToolPluginPackageEnvelope, CadToolSketchEnvelope } from './cadToolSchemas';
 import { CadSketchRegionProposalSchema } from '@/domain/cad/cadSketchRegionInspection';
 import { CadConstructionPointSchema, CadPathConstructionStepSchema, createCadPathProfile, createCadOpenCurveSegments } from '@/domain/cad/cadPathConstruction';
 import { cadAnalyticPathMetrics, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
@@ -113,7 +113,7 @@ export function cadSiteTools(getController: () => CadController) {
       canUndo: state.canUndo, canRedo: state.canRedo, workflowOpen: state.workflowOpen, busy: cad.isBusy(),
       buildState: cad.buildState, buildVersion: cad.buildVersion, buildId: cad.build?.buildId ?? null,
       ...diagnosticSummary(cad.build?.diagnostics ?? []),
-      supported: { sketches: ['rectangle', 'circle', 'polygon', 'slot', 'path', 'plugin'], sketchDimensions: { rectangle: ['width', 'height'], circle: ['diameter', 'radius'], slot: ['length', 'width', 'angle'], intent: 'Optional constraints bind existing geometry scalars. Numeric geometry stays free; existing expressions stay driven. Radius/diameter share one freedom. No general path constraint solver.' }, sketchTranslation: ['rectangle', 'circle', 'slot', 'polygon', 'path'], plugins: { apiVersion: 2, acceptedApiVersions: [1, 2], instances: 'Exact package embedded in each profile; inputs accept named CAD parameter expressions.', relations: 'API 2 supports derived values, conditional editing, dynamic ranges, choices and constraints. Derived values cannot be stored as editable inputs.', generators: ['builtin-spur-gear', 'polygon-recipe'] }, references: ['curve', 'datum-plane'], planes: ['XY', 'XZ', 'YZ'],
+      supported: { sketches: ['rectangle', 'circle', 'polygon', 'slot', 'path', 'plugin'], sketchDimensions: { rectangle: ['width', 'height'], circle: ['diameter', 'radius'], slot: ['length', 'width', 'angle'], intent: 'Optional constraints bind existing geometry scalars. Numeric geometry stays free; existing expressions stay driven. Radius/diameter share one freedom. No general path constraint solver.' }, sketchTranslation: ['rectangle', 'circle', 'slot', 'polygon', 'path'], sketchHandles: { inspection: 'cad_inspect_sketch_handles', edit: 'move-sketch-handle', scope: 'Accepted revision only; free components move without replacing dimensions or expressions.' }, plugins: { apiVersion: 2, acceptedApiVersions: [1, 2], instances: 'Exact package embedded in each profile; inputs accept named CAD parameter expressions.', relations: 'API 2 supports derived values, conditional editing, dynamic ranges, choices and constraints. Derived values cannot be stored as editable inputs.', generators: ['builtin-spur-gear', 'polygon-recipe'] }, references: ['curve', 'datum-plane'], planes: ['XY', 'XZ', 'YZ'],
         datumPlacement: { definition: 'world', supported: ['sketch', 'curve', 'extrude', 'revolve', 'loft', 'sweep'], unsupported: ['pocket'], inspection: 'cad_inspect_plane' },
         solids: ['imported', 'extrude', 'pocket', 'revolve', 'loft', 'sweep', 'fillet', 'chamfer', 'shell', 'boolean', 'transform', 'linear-pattern', 'circular-pattern', 'mirror'],
         imports: ['cad-json', 'dxf', 'step', 'stl'],
@@ -279,9 +279,15 @@ export function cadSiteTools(getController: () => CadController) {
       if (!feature) throw new ToolError('NOT_FOUND', 'Feature does not exist. Read cad_read_features.');
       return { version: input.expectedVersion, feature };
     }),
-    tool('cad_edit_document', 'Apply typed edits atomically to the CAD draft: parameters, sketch dimensions/translations, rename, reorder or cascade deletion. One undo step; no save. Call cad_describe_features for complete add/update definitions; compact discovery retains strict execution. Rejects invalid geometry, references, stale versions and active workflows. No code execution.', object({ ...version, edits: Type.Array(CadEditSchema, { minItems: 1, maxItems: 128 }) }), (cad, input) => {
+    tool('cad_edit_document', 'Apply typed edits atomically to the CAD draft: parameters, sketch grips/dimensions/translations, rename, reorder or cascade deletion. One undo step; no save. Call cad_describe_edits(kind) for fields, cad_describe_features for complete add/update definitions; execution stays strict. Rejects invalid geometry, references, stale versions and active workflows. No code execution.', object({ ...version, edits: Type.Array(CadEditSchema, { minItems: 1, maxItems: 128 }) }), (cad, input) => {
       cad.edit(input.edits, input.expectedVersion, true); return context(cad);
     }, false, object({ ...version, edits: Type.Array(CadToolEditEnvelope, { minItems: 1, maxItems: 128 }) })),
+    tool('cad_describe_edits', 'Discover CAD edit fields without opening or changing a draft. No kind returns a catalog; kind returns its strict contract. Add/update features and plugin packages use their separate complete discovery tools. Execution always validates full definitions.', object({ kind: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })) }), (_cad, input) => {
+      if (!input.kind) return { items: CadToolEditDefinitions.map(schema => ({ kind: schema.properties.kind.const, description: schema.description ?? null })) };
+      const schema = CadToolEditDefinitions.find(schema => schema.properties.kind.const === input.kind);
+      if (!schema) throw new ToolError('NOT_FOUND', 'This CAD edit kind is unavailable. Read cad_describe_edits without kind.');
+      return { kind: input.kind, schema };
+    }),
     tool('cad_history', 'Undo or redo one CAD edit batch. Draft versions always advance; saved storage is unchanged until Save.', object({ ...version, direction: Type.Union([Type.Literal('undo'), Type.Literal('redo')]) }), (cad, input) => {
       if (input.direction === 'undo') cad.undo(input.expectedVersion); else cad.redo(input.expectedVersion);
       return context(cad);
@@ -326,6 +332,10 @@ export function cadSiteTools(getController: () => CadController) {
     }), (cad, input, signal) => {
       const { expectedVersion, ...request } = input;
       return cad.resolveTopologyPicks(request, expectedVersion, signal);
+    }),
+    tool('cad_inspect_sketch_handles', 'Inspect revision-scoped sketch grips: exact local-mm point, handle, label and draggable state. Follow pages at one version; use the returned handle with move-sketch-handle in cad_edit_document. Grips preserve dimensions/expressions; indices are never persistent relation IDs. No edits.', object({ ...version, sketchId: id, profileId: id, ...pageFields }), async (cad, input, signal) => {
+      const handles = await cad.inspectSketchHandles(input.sketchId, input.profileId, input.expectedVersion, signal);
+      return { version: input.expectedVersion, sketchId: input.sketchId, profileId: input.profileId, ...page(handles, input) };
     }),
     tool('cad_measure_sketch', 'Measure one validated sketch analytically in its local millimeter coordinates: paginated per-profile area (mm²), exact perimeter (mm), bounds (mm), total material area with nested holes/islands, and cut boundary length. Construction geometry is measured separately and excluded from cut totals. This measures the sketch, not a projection of the solid. Empty sketches return zero totals and null cut bounds.', object({ ...version, sketchId: id, ...pageFields }), async (cad, input, signal) => {
       const { profiles, ...measurement } = await cad.measureSketch(input.sketchId, input.expectedVersion, signal);

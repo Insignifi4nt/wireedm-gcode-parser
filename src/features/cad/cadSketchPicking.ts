@@ -4,6 +4,36 @@ import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
 import { createArcSegment, createCircleSegment, createLineSegment, signedAreaOfPath } from '@/domain/path-intel/segments';
 import type { PathSegment, Point2 } from '@/domain/path-intel/types';
 import type { SketchPoint } from './cadSketchInteraction';
+import { inspectCadSketchHandles, type CadSketchHandleDescriptor } from '@/domain/cad/cadSketchHandles';
+
+export interface CadSketchHandlePick extends CadSketchHandleDescriptor { readonly profileId: string }
+
+/** Grip eligibility precedes contour picking, so a vertex never falls through to a whole-profile move. */
+export function createCadSketchHandlePicker(profiles: readonly CadSketchProfile[], parameters: Readonly<Record<string, number>>) {
+  const handles = profiles.flatMap(profile => {
+    try { return inspectCadSketchHandles(profile, parameters).map(handle => ({ ...handle, profileId: profile.id })); }
+    catch { return []; }
+  });
+  return {
+    handles,
+    pick(point: SketchPoint, millimetersPerPixel: number, preferredProfileId?: string | null): CadSketchHandlePick | null {
+      if (!point.every(Number.isFinite) || !Number.isFinite(millimetersPerPixel) || millimetersPerPixel <= 0) return null;
+      const tolerance = CAD_SKETCH_PICK_RADIUS_PX * millimetersPerPixel;
+      let selected: CadSketchHandlePick | null = null, closest = tolerance, selectedPreferred = false;
+      for (const handle of handles) {
+        const distance = Math.hypot(point[0] - handle.point[0], point[1] - handle.point[1]);
+        if (distance > tolerance) continue;
+        const preferred = handle.profileId === preferredProfileId;
+        // Visible owned grips precede hidden ones. Equal-distance ties retain
+        // prepared profile/handle order, including locked grips.
+        if (!selected || preferred && !selectedPreferred || preferred === selectedPreferred && distance < closest) {
+          selected = handle; closest = distance; selectedPreferred = preferred;
+        }
+      }
+      return selected;
+    }
+  };
+}
 
 export const CAD_SKETCH_PICK_RADIUS_PX = 6;
 const tau = 2 * Math.PI;
