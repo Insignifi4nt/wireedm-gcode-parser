@@ -1439,10 +1439,44 @@ describe('CAD sketch interaction', () => {
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
-  it('opens a fresh edge dimension from the toolbar, cancels it and applies a linked length without losing structural relations', async () => {
+  it('invalidates a pending Dimension pick on a new source and opens arc sizing through the existing editor', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Arc guide',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points: [{ id: 'center', position: [' 0 ', '0'] },
+        { id: 'start', position: [5, 0] }, { id: 'end', position: [0, 5] }], entities: [
+        { id: 'arc', kind: 'arc', centerPointId: 'center', startPointId: 'start', endPointId: 'end', direction: 'ccw', construction: true }], relations: [] } }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await click('Dimension'); expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
+    const changed = { ...source, parameters: { newDriver: 3 } };
+    await act(async () => replaceDocument(changed));
+    expect(currentDocument).toEqual(changed); const replaced = currentDocument; expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    await click('Dimension');
+    const arc = container.querySelector('[data-cad-sketch-entity="arc"]'); if (!arc) throw new Error('Arc missing.');
+    await act(async () => arc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(field('Radius').value).toBe('5'); await click('Cancel');
+    expect(currentDocument).toBe(replaced); expect(currentSession.getSnapshot().canUndo).toBe(false);
+  });
+
+  it('starts Dimension before picking an edge, cancels cleanly and applies a linked length through the same editor', async () => {
     await mount({ ...createCadDocument(), parameters: { plateWidth: 50 } }); await startSketch();
     await canvasClick(300, 200); await canvasClick(450, 100); await click('Select');
+    await click('Expand Parameters');
+    const accepted = currentSession.getSnapshot(), created = currentDocument.features[0];
+    if (created.kind !== 'sketch' || !created.graph) throw new Error('Fresh rectangle missing.');
+    const edgeId = created.graph.entities[0].id;
+    await canvasClick(100, 350);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    expect(button('Dimension').disabled).toBe(false); await click('Dimension');
+    expect(button('Finish sketch').disabled).toBe(true); expect(button('Edit parameter plateWidth').disabled).toBe(true);
+    expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
+    await click('Cancel');
+    expect(currentSession.getSnapshot()).toEqual(accepted); expect(currentDocument).toBe(accepted.document);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
     await click('Dimension');
+    const edge = container.querySelector(`[data-cad-sketch-entity="${edgeId}"]`);
+    if (!edge) throw new Error('Dimension edge missing.');
+    await act(async () => edge.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
     expect(field('Length').value).toBe('50');
     expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
     await click('Cancel');

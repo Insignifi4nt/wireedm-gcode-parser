@@ -475,7 +475,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       } })) : [];
   const referenceOwner = sourceGraph && overlapTarget ? cadSketchExternalReferenceForSelection(sourceGraph.graph, overlapTarget) : undefined;
   const overlapItems: readonly CadContextMenuItem[] = currentOverlap && entityPick ? (overlapTarget ? [overlapTarget] : currentOverlap.candidates).map(atom => ({
-    label: overlapTarget ? entityPick.label : `${entityPick.label} · ${sourceGraph?.graph.entities.find(entity => entity.id === atom.id)?.kind === 'circle' ? 'Circle' : 'Line'} ${(sourceGraph?.geometry.segments.findIndex(entity => entity.id === atom.id) ?? -1) + 1}`,
+    label: overlapTarget ? entityPick.label : `${entityPick.label} · ${({ line: 'Line', arc: 'Arc', circle: 'Circle' })[sourceGraph?.graph.entities.find(entity => entity.id === atom.id)?.kind ?? 'line']} ${(sourceGraph?.geometry.segments.findIndex(entity => entity.id === atom.id) ?? -1) + 1}`,
     onHighlight: () => setPickHighlight(atom), onSelect: () => selectOverlap(atom)
   })) : currentOverlap && overlapTarget ? [
     ...(referenceOwner ? [{ label: 'Detach reference', help: 'Keep this geometry and its local relations, and release its source link.', onSelect: () => {

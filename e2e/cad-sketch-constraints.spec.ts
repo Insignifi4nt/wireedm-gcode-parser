@@ -40,7 +40,12 @@ test('resizes a free circle directly, cancels cleanly and preserves explicit siz
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(resized);
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry-set', selections: [{ kind: 'entity', id: 'rim' }] } });
   await grip.press('ArrowLeft'); await expect(rim).toHaveAttribute('r', '5');
+  const dimensionCanvas = await page.getByLabel('Sketch drawing canvas').boundingBox();
+  if (!dimensionCanvas) throw new Error('Dimension canvas unavailable.');
+  await page.mouse.click(dimensionCanvas.x + dimensionCanvas.width / 2, dimensionCanvas.y + 20);
+  await expect(grip).toHaveCount(0);
   await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.locator('[data-cad-sketch-entity="rim"]').press('Enter');
   await page.getByRole('textbox', { name: 'Diameter mm', exact: true }).fill('16');
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
