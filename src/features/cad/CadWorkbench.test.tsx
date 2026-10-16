@@ -268,6 +268,42 @@ describe('CAD sketch interaction', () => {
     await act(async () => currentSession.undo());
     expect(currentDocument.features[0]).toEqual(converted);
   });
+  it('changes the selected legacy profile construction through an owned edit without changing drawing defaults', async () => {
+    const initial = parseCadDocument({ ...createCadDocument(), parameters: { slotLength: 30 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Slot sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [{
+        id: 'slot', name: 'Slot', construction: false, geometry: { kind: 'slot', x: 0, y: 0, length: ' slotLength ', width: 8, angle: 20 }
+      }]
+    }] });
+    let accept: () => void = () => { throw new Error('Missing pending construction edit.'); };
+    let reject: (error: Error) => void = () => { throw new Error('Missing pending construction edit.'); };
+    const edit = vi.fn<NonNullable<CadWorkbenchProps['onEdit']>>((intent, signal) => new Promise((resolve, decline) => {
+      accept = () => { try { signal?.throwIfAborted(); resolve(currentSession.edit([intent])); } catch (error) { decline(error); } };
+      reject = decline;
+    }));
+    await mount(initial, { build: null, buildState: 'idle', onEdit: edit });
+    await act(async () => { viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }); viewport().apply({ kind: 'select-profile', profileId: 'slot' }); });
+    const control = () => {
+      const found = container.querySelector<HTMLInputElement>('.cad-sketch-options input');
+      if (!found) throw new Error('Construction control missing.'); return found;
+    };
+    await act(async () => control().click());
+    expect(edit).toHaveBeenCalledOnce(); expect(currentDocument).toBe(initial); expect(control().disabled).toBe(true);
+    await act(async () => accept());
+    const accepted = currentDocument, sketch = accepted.features[0];
+    if (sketch.kind !== 'sketch' || initial.features[0].kind !== 'sketch') throw new Error('Sketch missing.');
+    expect(sketch.profiles[0]).toEqual({ ...initial.features[0].profiles[0], construction: true });
+    expect(control().checked).toBe(true);
+    await act(async () => currentSession.undo()); expect(currentDocument).toEqual(initial);
+    await act(async () => currentSession.redo()); expect(currentDocument).toEqual(accepted); expect(control().checked).toBe(true);
+    await act(async () => control().click());
+    await act(async () => reject(new Error('A downstream feature needs the material.')));
+    expect(currentDocument).toEqual(accepted); expect(control().checked).toBe(true); expect(currentSession.getSnapshot().workflowOpen).toBe(false);
+    await act(async () => control().click());
+    const signal = edit.mock.calls.at(-1)?.[1]; expect(signal?.aborted).toBe(false);
+    await canvasKey('Escape'); expect(signal?.aborted).toBe(true);
+    await act(async () => accept()); expect(currentDocument).toEqual(accepted);
+    await click('Rectangle'); expect(control().checked).toBe(false);
+  });
   it('shows only current sketch areas while repairing a consumed boundary, without accepted suffix solids', async () => {
     const prefix = solidDocument(), sourceSketch = prefix.features[0];
     if (sourceSketch.kind !== 'sketch') throw new Error('Sketch fixture missing');
@@ -1165,6 +1201,24 @@ describe('CAD sketch interaction', () => {
     expect(currentDocument.features[0]).toMatchObject({ graph: { points: sketch.graph.points, entities: sketch.graph.entities.map(item => ({ ...item, construction: item.id === edge.id })) } });
     expect(viewport().getState().selectedSketchGeometry).toEqual({ kind: 'entity', id: edge.id });
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
+  it('authors a circle diameter from the toolbar and reopens that exact driver from its native annotation', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Round plate',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points: [{ id: 'center', position: [' 0 ', '0'] }],
+        entities: [{ id: 'circle', kind: 'circle', centerPointId: 'center', radius: 5, construction: false }], relations: [] } }] });
+    setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'circle' } }));
+    expect(button('Dimension').disabled).toBe(false); await click('Dimension');
+    expect(field('Diameter').value).toBe('10'); await click('Cancel'); expect(currentDocument).toBe(source);
+    await click('Dimension'); await click('Apply');
+    const sketch = currentDocument.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing radial sketch.');
+    const relation = sketch.graph.relations[0]; expect(relation).toMatchObject({ kind: 'radial-size', entityId: 'circle', quantity: 'diameter', value: 10 });
+    const label = container.querySelector('[data-cad-sketch-dimension] [role="button"]'); if (!label) throw new Error('Missing radial annotation.');
+    await act(async () => label.dispatchEvent(new MouseEvent('click', { button: 0, bubbles: true, cancelable: true })));
+    expect(field('Diameter').value).toBe('10'); expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'circle' }]);
+    expect(currentDocument.features[0]).toBe(sketch);
   });
 
   it('opens a fresh edge dimension from the toolbar, cancels it and applies a linked length without losing structural relations', async () => {

@@ -7,7 +7,7 @@ import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } fro
 import { cadSketchRelationPointIds, mapCadSketchRelationScalars } from '@/domain/cad/cadSketchGraphReferences';
 import { reduceCadEditIntents, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
-import { CadScalarEditContext, ScalarField, type CadScalarValueDraft } from './CadFields';
+import { CadScalarEditContext, ScalarField, SelectField, type CadScalarValueDraft } from './CadFields';
 import type { CadSketchGraphSelection } from './cadSketchGraphInteraction';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
@@ -20,8 +20,9 @@ const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? 
 const relationLabels = {
   'fixed-point': 'Fixed point', distance: 'Length', coincident: 'Coincident', horizontal: 'Horizontal', vertical: 'Vertical',
   parallel: 'Parallel', perpendicular: 'Perpendicular', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer'
-} satisfies Record<Exclude<CadSketchGraphRelation['kind'], 'fixed-axis'>, string>;
-const relationLabel = (relation: CadSketchGraphRelation): string => relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}` : relationLabels[relation.kind];
+} satisfies Record<Exclude<CadSketchGraphRelation['kind'], 'fixed-axis' | 'radial-size'>, string>;
+const relationLabel = (relation: CadSketchGraphRelation): string => relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
+  : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relationLabels[relation.kind];
 const samePair = (relation: CadSketchGraphRelation, pointIds: readonly [string, string]) => 'pointIds' in relation
   && relation.pointIds.includes(pointIds[0]) && relation.pointIds.includes(pointIds[1]);
 const selectedPointPair = (selection: readonly CadSketchGraphSelection[]): readonly [string, string] | null => selection.length === 2
@@ -46,7 +47,29 @@ function distanceRelation(graph: CadSketchGraph, pointIds: readonly [string, str
   return { id: crypto.randomUUID(), kind: 'distance' as const, pointIds,
     value: Math.hypot(positions[0][0] - positions[1][0], positions[0][1] - positions[1][1]) };
 }
-export type CadSketchRelationCommand = { readonly kind: 'inspect'; readonly relationId: string } | { readonly kind: 'length' | 'distance' | 'fillet' | 'chamfer' };
+const radialRelationForEntity = (graph: CadSketchGraph, entityId: string) => graph.relations.find(relation => relation.kind === 'radial-size' && relation.entityId === entityId
+  || relation.kind === 'fillet-corner' && relation.arcId === entityId);
+function radialDimension(graph: CadSketchGraph, entity: CadSketchGraphEntity, parameters: CadDocument['parameters']): CadSketchGraphRelation | null {
+  if (entity.kind === 'line') return null;
+  const existing = radialRelationForEntity(graph, entity.id);
+  if (existing) return existing;
+  // A source expression already drives this circle; never silently transfer it.
+  if (entity.kind === 'circle' && typeof entity.radius === 'string') return null;
+  const point = (id: string) => {
+    const found = graph.points.find(point => point.id === id);
+    if (!found) throw new Error('The selected curve is no longer available.');
+    return found.position.map(value => evaluateCadScalar(value, parameters));
+  };
+  let radius: number;
+  if (entity.kind === 'circle') radius = evaluateCadScalar(entity.radius, parameters);
+  else {
+    const center = point(entity.centerPointId), start = point(entity.startPointId);
+    radius = Math.hypot(start[0] - center[0], start[1] - center[1]);
+  }
+  const quantity = entity.kind === 'circle' ? 'diameter' : 'radius';
+  return { id: crypto.randomUUID(), kind: 'radial-size', entityId: entity.id, quantity, value: radius * (quantity === 'diameter' ? 2 : 1) };
+}
+export type CadSketchRelationCommand = { readonly kind: 'inspect'; readonly relationId: string } | { readonly kind: 'length' | 'distance' | 'radial-size' | 'fillet' | 'chamfer' };
 type CornerDraft = { readonly kind: 'fillet'; readonly radius: CadScalar } | { readonly kind: 'chamfer'; readonly setbacks: readonly [CadScalar, CadScalar] };
 
 export interface CadSketchRelationsPanelProps {
@@ -80,6 +103,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const latest = useRef({ document: cadDocument, sketch, graph }); latest.current = { document: cadDocument, sketch, graph };
   const [initialDimension] = useState(() => {
     const entity = singleton?.kind === 'entity' ? graph.entities.find(entity => entity.id === singleton.id) : null;
+    if (initialCommand?.kind === 'radial-size' && entity) return radialDimension(graph, entity, cadDocument.parameters);
     const pair = initialCommand?.kind === 'distance' ? pointPair : initialCommand?.kind === 'length' && entity?.kind === 'line' ? [entity.startPointId, entity.endPointId] as const : null;
     return pair ? distanceRelation(graph, pair, cadDocument.parameters) : null;
   });
@@ -143,6 +167,8 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const relevantPoints = new Set(selection.flatMap(atom => atom.kind === 'point' ? [atom.id] : draft.entities.filter(entity => entity.id === atom.id).flatMap(entityPoints)));
   const relations = draft.relations.filter(relation => cadSketchRelationPointIds(draft, relation).some(id => relevantPoints.has(id)));
   const activeRelation = relations.find(relation => relation.id === activeRelationId);
+  const radialOwner = selectedEntity && radialRelationForEntity(draft, selectedEntity.id);
+  const acceptedRadial = selectedEntity && source.graph.relations.find((relation): relation is Extract<CadSketchGraphRelation, { kind: 'radial-size' }> => relation.kind === 'radial-size' && relation.entityId === selectedEntity.id);
   useLayoutEffect(() => { onInspectRelation?.(activeRelation ?? null); return () => onInspectRelation?.(null); }, [activeRelation, onInspectRelation]);
   const changeRelation = (relation: CadSketchGraphRelation) => {
     setError(null); setDraft(current => ({ ...current, relations: current.relations.some(item => item.id === relation.id)
@@ -193,6 +219,13 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         ?? distanceRelation(draft, dimensionPair, parameters);
       changeRelation(relation); setActiveRelationId(relation.id);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to read this distance.'); }
+  };
+  const addRadialSize = () => {
+    if (!selectedEntity) return;
+    try {
+      const relation = acceptedRadial ?? radialDimension(draft, selectedEntity, parameters);
+      if (relation) { changeRelation(relation); setActiveRelationId(relation.id); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to read this curve size.'); }
   };
   const togglePointAxis = (axis: 'x' | 'y', enabled: boolean) => {
     if (!selectedPoint) return;
@@ -293,6 +326,12 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
             onChange={event => toggleLinePairRelation(kind, event.target.checked)} />{relationLabels[kind]}</label>;
         })}
       </div>}
+      {selectedEntity && selectedEntity.kind !== 'line' && !radialOwner && <div className="cad-sketch-profile-actions">
+        <Button type="button" disabled={selectedEntity.kind === 'circle' && typeof selectedEntity.radius === 'string'}
+          title={selectedEntity.kind === 'circle' && typeof selectedEntity.radius === 'string' ? 'Radius already follows an expression. Edit or release it with fx.' : 'Add a driving radial dimension'} onClick={addRadialSize}>
+          <MeasureIcon size={13} /> {acceptedRadial ? 'Restore' : 'Add'} {acceptedRadial?.quantity ?? (selectedEntity.kind === 'circle' ? 'diameter' : 'radius')}
+        </Button>
+      </div>}
       {!corner && selectedPoint && <div className="cad-sketch-profile-actions">{(['x', 'y'] as const).map(axis => {
         const fixed = draft.relations.some(relation => relation.kind === 'fixed-point' && relation.pointId === selectedPoint.id);
         const own = draft.relations.some(relation => relation.kind === 'fixed-axis' && relation.pointId === selectedPoint.id && relation.axis === axis);
@@ -309,16 +348,26 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
             setError(null); setDraft(current => ({ ...current, points: current.points.map(point => point.id === selectedPoint.id
               ? { ...point, position: axis === 'x' ? [value, point.position[1]] : [point.position[0], value] } : point) }));
           }} /> : null)}
-        {selectedEntity?.kind === 'circle' && <ScalarField fieldKey="radius" label="Radius" value={selectedEntity.radius} parameters={parameters} onChange={radius => {
+        {selectedEntity?.kind === 'circle' && !radialOwner && <ScalarField fieldKey="radius" label="Radius" value={selectedEntity.radius} parameters={parameters} onChange={radius => {
           setError(null); setDraft(current => ({ ...current, entities: current.entities.map(entity => entity.id === selectedEntity.id && entity.kind === 'circle' ? { ...entity, radius } : entity) }));
         }} />}
         {!corner && relations.length > 0 && <ul className="cad-sketch-constraint-list" aria-label="Sketch relations">{relations.map(relation => <li key={relation.id}>
           <Button type="button" aria-label={`Inspect ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} aria-pressed={activeRelationId === relation.id} onClick={() => { setInspectedFailure(null); setActiveRelationId(current => current === relation.id ? null : relation.id); }}>
-            {labelRelation(relation)}{(relation.kind === 'distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner') && <span>{relationQuantity(relation.value, parameters)}</span>}
+            {labelRelation(relation)}{(relation.kind === 'distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size') && <span>{relationQuantity(relation.value, parameters)}</span>}
             {relation.kind === 'chamfer-corner' && <span>{relation.values.map(value => relationQuantity(value, parameters)).join(' / ')}</span>}
           </Button><Button type="button" aria-label={`Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title="Remove this relation and retain the current geometry" onClick={() => removeRelation(relation.id)}><CloseIcon size={12} /></Button>
         </li>)}</ul>}
         {activeRelation && (activeRelation.kind === 'distance' || activeRelation.kind === 'fixed-axis') && <ScalarField fieldKey={`${activeRelation.id}/value`} label={labelRelation(activeRelation)} value={activeRelation.value} parameters={parameters} onChange={value => changeRelation({ ...activeRelation, value })} />}
+        {activeRelation?.kind === 'radial-size' && <>
+          {!source.graph.relations.some(relation => relation.id === activeRelation.id) && <SelectField label="Dimension quantity" value={activeRelation.quantity}
+            options={[{ value: 'radius', label: 'Radius' }, { value: 'diameter', label: 'Diameter' }]} onChange={quantity => {
+              if (quantity === activeRelation.quantity) return;
+              const value = typeof activeRelation.value === 'number' ? activeRelation.value * (quantity === 'diameter' ? 2 : .5)
+                : `(${activeRelation.value}) ${quantity === 'diameter' ? '*' : '/'} 2`;
+              changeRelation({ ...activeRelation, quantity, value });
+            }} />}
+          <ScalarField fieldKey={`${activeRelation.id}/value`} label={labelRelation(activeRelation)} value={activeRelation.value} parameters={parameters} onChange={value => changeRelation({ ...activeRelation, value })} />
+        </>}
         {activeRelation?.kind === 'fillet-corner' && <ScalarField fieldKey={`${activeRelation.id}/value`} label="Fillet radius" value={activeRelation.value} parameters={parameters} onChange={value => changeRelation({ ...activeRelation, value })} />}
         {activeRelation?.kind === 'chamfer-corner' && ([0, 1] as const).map(index => <ScalarField key={index} fieldKey={`${activeRelation.id}/values.${index}`} label={`Setback ${index + 1}`} value={activeRelation.values[index]} parameters={parameters}
           onChange={value => changeRelation({ ...activeRelation, values: index === 0 ? [value, activeRelation.values[1]] : [activeRelation.values[0], value] })} />)}

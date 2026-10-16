@@ -12,6 +12,20 @@ const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id
   relations: [{ id: 'dimension', kind: 'distance', pointIds: ['a', 'b'], value: ' length ' }] });
 
 describe('graph dimension activation', () => {
+  it.each(['radius', 'diameter'] as const)('opens an explicit circle %s driver with its exact source identity', async quantity => {
+    const source = parseCadSketchGraph({ points: [{ id: 'center', position: ['0', '0'] }],
+      entities: [{ id: 'circle', kind: 'circle', centerPointId: 'center', radius: 5, construction: false }],
+      relations: [{ id: 'size', kind: 'radial-size', entityId: 'circle', quantity, value: quantity === 'radius' ? ' size ' : 'size * 2' }] });
+    const configure = vi.fn(), parent = vi.fn();
+    await act(async () => root.render(<svg onClick={parent}><CadSketchGraphDimensions graph={source} parameters={{ size: 5 }} center={[0, 0]}
+      mmPerPixel={.1} interactive onConfigure={configure} selectedRelationId="size" /></svg>));
+    const label = container.querySelector<SVGGElement>('[role="button"]');
+    if (!label) throw new Error('Radial dimension label missing.');
+    await act(async () => label.dispatchEvent(new MouseEvent('click', { button: 0, bubbles: true, cancelable: true })));
+    expect(configure).toHaveBeenCalledExactlyOnceWith(source.relations[0]); expect(parent).not.toHaveBeenCalled();
+    expect(label.getAttribute('aria-pressed')).toBe('true');
+  });
+
   it.each([true, false])('owns label events and configures only when interactive=%s', async interactive => {
     const configure = vi.fn(), parent = vi.fn();
     await act(async () => root.render(<svg onPointerDown={parent} onClick={parent} onKeyDown={parent}><g transform="scale(1,-1)">

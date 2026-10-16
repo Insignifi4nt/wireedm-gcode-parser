@@ -63,6 +63,39 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it('authors a radial dimension with an explicit quantity, previews privately and releases it without changing source geometry', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Radial size', 'radial-size'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'center', position: [' 0 ', '0'] }], entities: [{ id: 'circle', kind: 'circle', centerPointId: 'center', radius: 5, construction: false }], relations: []
+      }
+    }] });
+    const h = await mount(source, { kind: 'entity', id: 'circle' }, { initialCommand: { kind: 'radial-size' } });
+    expect(field('Diameter mm').value).toBe('10');
+    const quantity = container.querySelector<HTMLSelectElement>('select[aria-label="Dimension quantity"]');
+    if (!quantity) throw new Error('Missing radial quantity selector.');
+    await act(async () => { quantity.value = 'radius'; quantity.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(field('Radius mm').value).toBe('5');
+    await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
+    expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+    await click('Apply'); const accepted = h.session.getSnapshot().document, sketch = accepted.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing accepted graph.');
+    const relation = sketch.graph.relations[0];
+    expect(relation).toMatchObject({ kind: 'radial-size', entityId: 'circle', quantity: 'radius', value: 5 });
+    expect(sketch.graph.entities).toEqual(source.features[0].kind === 'sketch' ? source.features[0].graph?.entities : undefined);
+    await clickRelation('Remove', 'Radius', 1); await click('Restore radius');
+    expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.edit).toHaveBeenCalledOnce();
+    await clickRelation('Remove', 'Radius', 1); await click('Cancel'); expect(h.session.getSnapshot().document).toBe(accepted);
+    await clickRelation('Remove', 'Radius', 1); await click('Apply');
+    expect(h.session.getSnapshot().document.features[0]).toMatchObject({ graph: { entities: sketch.graph.entities, relations: [] } });
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toBe(accepted);
+  });
+
+  it('opens an existing circle expression driver without silently transferring it into a redundant dimension', async () => {
+    const source = circleDocument(), h = await mount(source, { kind: 'entity', id: 'circle' }, { initialCommand: { kind: 'radial-size' } });
+    expect(field('Radius mm').value).toBe('5'); expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect(h.session.getSnapshot().document).toBe(source); expect(h.edit).not.toHaveBeenCalled();
+  });
+
   it.each(['parallel', 'perpendicular'] as const)('authors a %s line pair as one cancellable edit and restores its exact accepted relation', async kind => {
     const source = parseCadDocument({ ...createCadDocument('Line pair', 'line-pair'), schemaVersion: 2, features: [{
       id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

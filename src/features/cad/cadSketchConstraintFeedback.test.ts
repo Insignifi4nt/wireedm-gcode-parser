@@ -10,6 +10,15 @@ const graph = () => parseCadSketchGraph({ points: [{ id: 'a', position: [' 0 ', 
   relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: proposedId, kind: 'distance', pointIds: ['a', 'b'], value: ' 3 * 4 ' }] });
 
 describe('candidate-owned sketch constraint feedback', () => {
+  it.each(['radius', 'diameter'] as const)('names the displayed %s and exact curve operand for radial rejection inspection', quantity => {
+    const candidate = parseCadSketchGraph({ points: [{ id: 'center', position: [0, 0] }],
+      entities: [{ id: 'circle', kind: 'circle', construction: true, centerPointId: 'center', radius: 6 }],
+      relations: [{ id: proposedId, kind: 'radial-size', entityId: 'circle', quantity, value: ' dimension ' }] });
+    expect(describeCadSketchConstraintSource(candidate, { kind: 'relation', id: proposedId })).toMatchObject({
+      label: `${quantity === 'radius' ? 'Radius' : 'Diameter'} relation 1 · Circle 1`, pointIds: ['center'], entityIds: ['circle']
+    });
+  });
+
   it.each(['parallel', 'perpendicular'] as const)('names %s line operands while retaining shared point and entity inspection identities', kind => {
     const candidate = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }, { id: 'c', position: [0, 8] }],
       entities: [{ id: 'z-edge', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },

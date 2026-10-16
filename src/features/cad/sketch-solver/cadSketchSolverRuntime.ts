@@ -10,6 +10,7 @@ import { parseCadSketchSolveInput } from './cadSketchSolverProtocol';
 import { compileCadSketchCornerConstraints } from './cadSketchCornerConstraints';
 import { cadSketchLineDirection, resolveCadSketchLinePair } from '../../../domain/cad/cadSketchLineRelations';
 import type { Point2 } from '../../../domain/path-intel/types';
+import { cadSketchRadialTarget, resolveCadSketchRadialEntity } from '../../../domain/cad/cadSketchRadialRelations';
 
 function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] {
   switch (status) {
@@ -59,6 +60,12 @@ function compile(input: CadSketchSolveInput) {
         }
         constraint({ id, type: relation.kind === 'parallel' ? 'parallel' : 'perpendicular_ll', l1_id: relation.lineIds[0], l2_id: relation.lineIds[1] }, id); break;
       case 'distance': constraint({ id, type: 'p2p_distance', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1], distance: scalar(relation.value) }, id); break;
+      case 'radial-size': {
+        const entity = resolveCadSketchRadialEntity(graph, relation.entityId), radius = cadSketchRadialTarget(relation, input.parameters);
+        constraint(entity.kind === 'arc' ? { id, type: 'p2p_distance', p1_id: entity.centerPointId, p2_id: entity.startPointId, distance: radius }
+          : relation.quantity === 'radius' ? { id, type: 'circle_radius', c_id: entity.id, radius }
+            : { id, type: 'circle_diameter', c_id: entity.id, diameter: radius * 2 }, id); break;
+      }
       case 'fixed-point':
         constraint({ id: `$fixed-x:${id}`, type: 'coordinate_x', p_id: relation.pointId, x: scalar(relation.position[0]) }, id);
         constraint({ id: `$fixed-y:${id}`, type: 'coordinate_y', p_id: relation.pointId, y: scalar(relation.position[1]) }, id); break;

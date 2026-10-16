@@ -3,12 +3,13 @@ import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { cadPathClosureTolerance } from '@/domain/cad/cadAnalyticSegments';
 import { createArcSegment } from '@/domain/path-intel/segments';
 import { resolveCadSketchCornerTopology } from '@/domain/cad/cadSketchCornerGeometry';
+import { resolveCadSketchRadialEntity } from '@/domain/cad/cadSketchRadialRelations';
 import type { Point2 } from '@/domain/path-intel/types';
 import type { SketchPoint } from './cadSketchInteraction';
 import { formatCadQuantity } from './cadDisplayQuantity';
 
 export type CadSketchDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'distance' }>;
-export type CadSketchDimensionRelation = Extract<CadSketchGraphRelation, { kind: 'distance' | 'fillet-corner' | 'chamfer-corner' }>;
+export type CadSketchDimensionRelation = Extract<CadSketchGraphRelation, { kind: 'distance' | 'radial-size' | 'fillet-corner' | 'chamfer-corner' }>;
 type Pair = readonly [SketchPoint, SketchPoint];
 type Arrow = readonly [SketchPoint, SketchPoint, SketchPoint];
 interface DimensionGeometry {
@@ -20,13 +21,14 @@ interface DimensionGeometry {
 }
 export type CadSketchGraphDimensionLayout = DimensionGeometry & (
   { readonly kind: 'distance'; readonly relation: CadSketchDistanceRelation }
-  | { readonly kind: 'radius'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'fillet-corner' }> }
+  | { readonly kind: 'radius'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'fillet-corner' | 'radial-size' }> }
+  | { readonly kind: 'diameter'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'radial-size' }> }
   | { readonly kind: 'setback'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'chamfer-corner' }>; readonly side: 0 | 1; readonly lineId: string }
 );
 
 /** The layout and rendered label share one screen-pixel box. */
 export function cadSketchGraphDimensionLabel(valueMm: number, kind: CadSketchGraphDimensionLayout['kind']) {
-  const quantity = `${formatCadQuantity(valueMm)} mm`, text = kind === 'radius' ? `R ${quantity}` : quantity;
+  const quantity = `${formatCadQuantity(valueMm)} mm`, text = kind === 'radius' ? `R ${quantity}` : kind === 'diameter' ? `Ø ${quantity}` : quantity;
   return { quantity, text, width: Math.max(42, text.length * 7 + 12), height: 18 };
 }
 
@@ -43,7 +45,35 @@ function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixe
     label: [a.x / 2 + b.x / 2 + nx * 20 * mmPerPixel, a.y / 2 + b.y / 2 + ny * 20 * mmPerPixel] };
 }
 
-function cornerDimensions(graph: CadSketchGraph, relation: Exclude<CadSketchDimensionRelation, CadSketchDistanceRelation>,
+function radialGeometry(center: Point2, radius: number, angle: number, valueMm: number, kind: 'radius' | 'diameter', mmPerPixel: number): Omit<DimensionGeometry, 'valueMm'> {
+  const ux = Math.cos(angle), uy = Math.sin(angle), tip: SketchPoint = [center.x + ux * radius, center.y + uy * radius];
+  const box = cadSketchGraphDimensionLabel(valueMm, kind);
+  const clearance = (Math.abs(ux) * box.width / 2 + Math.abs(uy) * box.height / 2 + 8) * mmPerPixel;
+  const label: SketchPoint = [tip[0] + ux * clearance, tip[1] + uy * clearance];
+  const headLength = Math.min(6 * mmPerPixel, radius / 4), headWidth = Math.min(2.5 * mmPerPixel, radius / 8);
+  return { line: [[center.x, center.y], label], extensions: [], label,
+    arrows: [[tip, [tip[0] + ux * headLength - uy * headWidth, tip[1] + uy * headLength + ux * headWidth],
+      [tip[0] + ux * headLength + uy * headWidth, tip[1] + uy * headLength - ux * headWidth]]] };
+}
+
+function radialDimension(graph: CadSketchGraph, relation: Extract<CadSketchDimensionRelation, { kind: 'radial-size' }>,
+  points: ReadonlyMap<string, Point2>, parameters: Readonly<Record<string, number>>, mmPerPixel: number): readonly CadSketchGraphDimensionLayout[] {
+  const entity = resolveCadSketchRadialEntity(graph, relation.entityId), center = points.get(entity.centerPointId), valueMm = evaluateCadScalar(relation.value, parameters);
+  if (!center || !Number.isFinite(valueMm) || valueMm <= 0) return [];
+  let radius: number, angle: number;
+  if (entity.kind === 'circle') { radius = evaluateCadScalar(entity.radius, parameters); angle = Math.PI / 4; }
+  else {
+    const start = points.get(entity.startPointId), end = points.get(entity.endPointId); if (!start || !end) return [];
+    const arc = createArcSegment({ id: entity.id, center, start, end, clockwise: entity.direction === 'cw',
+      source: { sourceEntityIndex: 0, sourceEntityType: 'arc', layer: null, exact: true } });
+    radius = arc.radius; angle = arc.startAngleRadians + arc.sweepRadians / 2;
+  }
+  if (!Number.isFinite(radius) || radius <= 0) return [];
+  const geometry = radialGeometry(center, radius, angle, valueMm, relation.quantity, mmPerPixel);
+  return relation.quantity === 'radius' ? [{ kind: 'radius', relation, valueMm, ...geometry }] : [{ kind: 'diameter', relation, valueMm, ...geometry }];
+}
+
+function cornerDimensions(graph: CadSketchGraph, relation: Extract<CadSketchDimensionRelation, { kind: 'fillet-corner' | 'chamfer-corner' }>,
   points: ReadonlyMap<string, Point2>, parameters: Readonly<Record<string, number>>, mmPerPixel: number): readonly CadSketchGraphDimensionLayout[] {
   const topology = resolveCadSketchCornerTopology(graph, relation);
   if (relation.kind === 'fillet-corner' && topology.entity.kind === 'arc') {
@@ -52,15 +82,7 @@ function cornerDimensions(graph: CadSketchGraph, relation: Exclude<CadSketchDime
     if (!center || !start || !end || !Number.isFinite(valueMm) || valueMm <= 0) return [];
     const arc = createArcSegment({ id: topology.entity.id, center, start, end, clockwise: topology.entity.direction === 'cw',
       source: { sourceEntityIndex: 0, sourceEntityType: 'arc', layer: null, exact: true } });
-    const angle = arc.startAngleRadians + arc.sweepRadians / 2, ux = Math.cos(angle), uy = Math.sin(angle);
-    const tip: SketchPoint = [center.x + ux * arc.radius, center.y + uy * arc.radius];
-    const box = cadSketchGraphDimensionLabel(valueMm, 'radius');
-    const clearance = (Math.abs(ux) * box.width / 2 + Math.abs(uy) * box.height / 2 + 8) * mmPerPixel;
-    const label: SketchPoint = [tip[0] + ux * clearance, tip[1] + uy * clearance];
-    const headLength = Math.min(6 * mmPerPixel, arc.radius / 4), headWidth = Math.min(2.5 * mmPerPixel, arc.radius / 8);
-    return [{ kind: 'radius', relation, valueMm, line: [[center.x, center.y], label], extensions: [], label,
-      arrows: [[tip, [tip[0] + ux * headLength - uy * headWidth, tip[1] + uy * headLength + ux * headWidth],
-        [tip[0] + ux * headLength + uy * headWidth, tip[1] + uy * headLength - ux * headWidth]]] }];
+    return [{ kind: 'radius', relation, valueMm, ...radialGeometry(center, arc.radius, arc.startAngleRadians + arc.sweepRadians / 2, valueMm, 'radius', mmPerPixel) }];
   }
   if (relation.kind !== 'chamfer-corner') return [];
   const vertex = points.get(topology.vertexId), first = points.get(topology.trimPointIds[0]), second = points.get(topology.trimPointIds[1]);
@@ -78,7 +100,7 @@ function cornerDimensions(graph: CadSketchGraph, relation: Exclude<CadSketchDime
 
 /** Display-only declared dimensions. Scalar drivers and source IDs remain authoritative. */
 export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, mmPerPixel: number): readonly CadSketchGraphDimensionLayout[] {
-  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(relation => relation.kind === 'distance' || relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner')) return [];
+  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(relation => relation.kind === 'distance' || relation.kind === 'radial-size' || relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner')) return [];
   const points = new Map(graph.points.map(point => [point.id, {
     x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters)
   }]));
@@ -101,6 +123,7 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
     maxX: Math.max(box.maxX, point.x), maxY: Math.max(box.maxY, point.y) }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
   const center: SketchPoint = [bounds.minX / 2 + bounds.maxX / 2, bounds.minY / 2 + bounds.maxY / 2];
   return graph.relations.flatMap((relation): CadSketchGraphDimensionLayout[] => {
+    if (relation.kind === 'radial-size') return [...radialDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') return [...cornerDimensions(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind !== 'distance') return [];
     const a = points.get(relation.pointIds[0]), b = points.get(relation.pointIds[1]);

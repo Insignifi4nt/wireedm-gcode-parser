@@ -20,6 +20,23 @@ const source = () => parseCadDocument({ ...createCadDocument('Line', 'line'), sc
 }] });
 
 describe('accepted sketch constraint inspection', () => {
+  it.each(['radius', 'diameter'] as const)('exposes a radial %s source in displayed units with the actual curve reference', async quantity => {
+    const size = quantity === 'diameter' ? 20 : 10;
+    const document = parseCadDocument({ ...createCadDocument('Circle', 'radial'), schemaVersion: 2, parameters: { size }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Circle', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'center', position: [' 0 ', '0'] }], entities: [{ id: 'circle', kind: 'circle', construction: true, centerPointId: 'center', radius: 10 }],
+        relations: [{ id: 'dimension', kind: 'radial-size', entityId: 'circle', quantity, value: ' size ' }]
+      }
+    }] }), before = JSON.stringify(document);
+    const inspection = await inspectCadSketchConstraints(document, 'sketch', async () => solver);
+    expect(inspection.analysis).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 0 } });
+    expect(pageCadSketchConstraints(inspection, { section: 'relations' }).items).toMatchObject([{
+      source: { id: 'dimension', kind: 'radial-size', quantity, value: ' size ' }, entityIds: ['circle'], points: [{ id: 'center' }],
+      value: { scalar: ' size ', valueMm: size, role: 'expression-driver' }
+    }]);
+    expect(JSON.stringify(document)).toBe(before);
+  });
+
   it.each(['parallel', 'perpendicular'] as const)('exposes %s line identities and exact deduplicated point operands without inventing a scalar', async kind => {
     const document = parseCadDocument({ ...createCadDocument('Pair', 'pair'), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Pair',
       suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

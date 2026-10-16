@@ -95,6 +95,25 @@ function corner(angle = 0) {
 function ids() { let next = 0; return () => `corner-${++next}`; }
 
 describe('native graph corner dimension layout', () => {
+  it('attaches explicit circle and signed major-arc dimensions to their actual curve supports', () => {
+    const source = parseCadSketchGraph({ points: [{ id: 'origin', position: [0, 0] }, { id: 'center', position: [10, 20] },
+      { id: 'start', position: [5, 0] }, { id: 'end', position: [0, 5] }], entities: [
+      { id: 'circle', kind: 'circle', centerPointId: 'center', radius: 5, construction: false },
+      { id: 'arc', kind: 'arc', centerPointId: 'origin', startPointId: 'start', endPointId: 'end', direction: 'cw', construction: false }
+    ], relations: [{ id: 'diameter', kind: 'radial-size', entityId: 'circle', quantity: 'diameter', value: ' size * 2 ' },
+      { id: 'radius', kind: 'radial-size', entityId: 'arc', quantity: 'radius', value: ' size ' }] });
+    const layouts = layoutCadSketchGraphDimensions(source, { size: 5 }, .1);
+    expect(layouts).toMatchObject([{ kind: 'diameter', valueMm: 10 }, { kind: 'radius', valueMm: 5 }]);
+    expect(layouts[0].arrows[0][0]).toEqual([expect.closeTo(13.535533905932738, 12), expect.closeTo(23.535533905932738, 12)]);
+    expect(layouts[1].arrows[0][0]).toEqual([expect.closeTo(-3.5355339059327373, 12), expect.closeTo(-3.5355339059327378, 12)]);
+    expect(layouts.map(layout => layout.relation)).toEqual(source.relations);
+    const reversed = parseCadSketchGraph({ ...source, entities: source.entities.map(entity => entity.kind === 'arc'
+      ? { ...entity, startPointId: 'end', endPointId: 'start', direction: 'ccw' } : entity) });
+    const second = layoutCadSketchGraphDimensions(reversed, { size: 5 }, .1)[1];
+    expect(second.arrows[0][0][0]).toBeCloseTo(layouts[1].arrows[0][0][0], 12);
+    expect(second.arrows[0][0][1]).toBeCloseTo(layouts[1].arrows[0][0][1], 12);
+  });
+
   it('attaches a radial leader to the actual fillet arc and retains the exact radius driver', () => {
     const { graph } = createCadSketchCornerTreatment({ graph: corner().graph, parameters: { diameter: 4 }, pointId: 'vertex',
       treatment: { kind: 'fillet', radius: ' diameter / 2 ' }, createId: ids() }), before = JSON.stringify(graph);

@@ -22,7 +22,7 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
   return <g className="cad-sketch-graph-dimensions" role="group" aria-label="Sketch dimensions">
     {dimensions.map(dimension => {
       const { quantity, text, width, height } = cadSketchGraphDimensionLabel(dimension.valueMm, dimension.kind);
-      const name = dimension.kind === 'radius' ? 'radius' : dimension.kind === 'setback' ? `chamfer setback ${dimension.side + 1}` : 'distance';
+      const name = dimension.kind === 'radius' || dimension.kind === 'diameter' ? dimension.kind : dimension.kind === 'setback' ? `chamfer setback ${dimension.side + 1}` : 'distance';
       return <g key={`${dimension.relation.id}/${dimension.kind === 'setback' ? dimension.side : dimension.kind}`} data-cad-sketch-dimension={dimension.relation.id}
         data-cad-dimension-kind={dimension.kind} data-cad-dimension-side={dimension.kind === 'setback' ? dimension.side : undefined}
         style={{ color: selectedRelationId === dimension.relation.id ? 'var(--primary)' : 'var(--muted-foreground)' }}>

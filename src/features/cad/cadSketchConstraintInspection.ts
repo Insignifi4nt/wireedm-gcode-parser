@@ -63,6 +63,7 @@ const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
   coincident: 'Keeps two distinct source points at the same location.', horizontal: 'Keeps two points at the same Y coordinate.',
   vertical: 'Keeps two points at the same X coordinate.', 'fixed-point': 'Fixes a point at its driving X and Y coordinates.',
   parallel: 'Keeps two line directions parallel.', perpendicular: 'Keeps two line directions at a right angle.',
+  'radial-size': 'Drives circle or arc size using the declared radius or diameter.',
   'fixed-axis': 'Fixes one point coordinate; the other axis can remain free.', distance: 'Keeps the straight-line distance between two points.',
   'fillet-corner': 'Keeps a tangent minor arc at the original reference corner, with a driving radius and finite trimmed sides.',
   'chamfer-corner': 'Keeps two driving setbacks along the finite sides of the original reference corner.'
@@ -95,7 +96,7 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
   return page(graph?.relations ?? [], input, source => ({ source, meaning: relationMeanings[source.kind], diagnostics: diagnosticState(source.id),
     points: graph ? cadSketchRelationPointIds(graph, source).map(point) : [],
     ...(cadSketchRelationEntityIds(source).length ? { entityIds: cadSketchRelationEntityIds(source) } : {}),
-    ...(source.kind === 'distance' || source.kind === 'fixed-axis' || source.kind === 'fillet-corner' ? { value: scalar(source.value, true) }
+    ...(source.kind === 'distance' || source.kind === 'fixed-axis' || source.kind === 'fillet-corner' || source.kind === 'radial-size' ? { value: scalar(source.value, true) }
       : source.kind === 'fixed-point' ? { position: source.position.map(value => scalar(value, true)) }
       : source.kind === 'chamfer-corner' ? { values: source.values.map(value => scalar(value, true)) } : {}) }));
 }

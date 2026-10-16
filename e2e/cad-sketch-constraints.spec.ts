@@ -2,6 +2,59 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('drives a circle diameter and major-arc radius through native dimensions, then saves their exact extrusion', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const feature = { id: 'radial', kind: 'sketch', name: 'Radial plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'center', position: [' 0 ', '0'] }, { id: 'arc-center', position: ['20', '0'] },
+      { id: 'start', position: [25, '0'] }, { id: 'end', position: ['20', 5] }],
+    entities: [{ id: 'disk', kind: 'circle', centerPointId: 'center', radius: 5, construction: false },
+      { id: 'arc', kind: 'arc', centerPointId: 'arc-center', startPointId: 'start', endPointId: 'end', direction: 'cw', construction: true }], relations: []
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'nominal', value: 12 }, { kind: 'add-feature', feature }
+  ] });
+  let current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: feature.id } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'disk' } } });
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Diameter mm', exact: true }).fill('12.0000');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(feature);
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit Diameter relation', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Diameter expression', exact: true }).fill(' nominal ');
+  await page.getByRole('button', { name: 'Keep relation', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Diameter relation help', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  await page.getByRole('button', { name: 'Configure diameter 12 mm', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Diameter mm', exact: true }).fill('16');
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false, parameters: { nominal: 16 } }); current = await context(page);
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'arc' } } });
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Radius mm', exact: true }).fill('6');
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const accepted = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature;
+  expect(accepted.graph.entities).toEqual([{ ...feature.graph.entities[0], radius: 8 }, feature.graph.entities[1]]);
+  expect(accepted.graph.points).toEqual([feature.graph.points[0], feature.graph.points[1], { id: 'start', position: [26, '0'] }, { id: 'end', position: ['20', 6] }]);
+  expect(accepted.graph.relations).toEqual([expect.objectContaining({ kind: 'radial-size', quantity: 'diameter', value: ' nominal ', entityId: 'disk' }),
+    expect.objectContaining({ kind: 'radial-size', quantity: 'radius', value: 6, entityId: 'arc' })]);
+  await expect(page.getByRole('button', { name: 'Configure radius 6 mm', exact: true })).toBeVisible();
+  expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: feature.id })).materialAreaMm2).toBeCloseTo(64 * Math.PI, 9);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'pad', kind: 'extrude', name: 'Round plate thickness', suppressed: false, sketchId: feature.id, distance: 5, symmetric: false, operation: 'new', targetId: null
+  } }] });
+  current = await context(page); const built = await call(page, 'cad_build', { expectedVersion: current.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo(320 * Math.PI, 7);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current.dirty).toBe(false); expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(accepted);
+});
+
 test('aligns selected material edges to a construction reference, then rebuilds and reopens the constrained plate', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const feature = { id: 'aligned', kind: 'sketch', name: 'Aligned plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

@@ -24,7 +24,7 @@ interface PreparationFailureInput {
 
 const relationNames: Record<CadSketchGraphRelation['kind'], string> = {
   coincident: 'Coincident', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', distance: 'Distance',
-  'fixed-point': 'Fixed point', 'fixed-axis': 'Fixed axis', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer'
+  'fixed-point': 'Fixed point', 'fixed-axis': 'Fixed axis', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer', 'radial-size': 'Radial size'
 };
 const rejectionMessages: Record<Rejection['reason'], string> = {
   conflicting: 'Sketch constraints conflict.', redundant: 'Sketch constraints are redundant.', failed: 'The sketch solver could not solve this edit.',
@@ -50,8 +50,10 @@ export function describeCadSketchConstraintSource(graph: CadSketchGraph, source:
       pointIds = cadSketchRelationPointIds(graph, relation); entityIds = cadSketchRelationEntityIds(relation);
       const operands = relation.kind === 'parallel' || relation.kind === 'perpendicular'
         ? relation.lineIds.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label)
+        : relation.kind === 'radial-size' ? [describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.entityId }).label]
         : ('pointIds' in relation ? relation.pointIds : [relation.pointId]).map(pointLabel);
-      const name = relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}` : relationNames[relation.kind];
+      const name = relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
+        : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relationNames[relation.kind];
       label = `${name} relation ${index + 1} · ${operands.join(' and ')}`;
     } else label = 'Unavailable relation';
   } else if (source.kind === 'entity') {

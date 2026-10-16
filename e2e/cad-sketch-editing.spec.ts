@@ -76,6 +76,12 @@ test('edits slot sizes and an analytic arc joint without translating their profi
     .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: initial.version } } });
   await call(page, 'cad_set_viewport', { expectedVersion: initial.version, command: { kind: 'edit-sketch', sketchId: 'curves' } });
   await call(page, 'cad_set_viewport', { expectedVersion: initial.version, command: { kind: 'select-profile', profileId: 'slot' } });
+  const construction = page.getByRole('region', { name: 'Modeling area', exact: true }).getByRole('checkbox', { name: 'Construction', exact: true });
+  await construction.check();
+  await expect.poll(async () => call(page, 'cad_get_feature', { expectedVersion: (await context(page)).version, featureId: 'curves' }))
+    .toMatchObject({ feature: { profiles: [{ id: 'slot', construction: true, geometry: { x: 40, y: 0, length: 20, width: 10 } }, { id: 'arc', construction: false }] } });
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(construction).not.toBeChecked();
   await page.getByRole('button', { name: 'Length of Slot', exact: true }).press('ArrowRight');
   await page.getByRole('button', { name: 'Width of Slot', exact: true }).press('ArrowUp');
   let current = await context(page);
