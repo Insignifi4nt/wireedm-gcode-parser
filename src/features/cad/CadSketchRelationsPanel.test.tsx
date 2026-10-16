@@ -63,6 +63,34 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it('owns a whole-selection Move from zero displacement, previews privately and accepts one exact translation', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Move edges', 'move-edges'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'outside', position: [' 30 ', '0'] }],
+        entities: [{ id: 'line', kind: 'line', startPointId: 'a', endPointId: 'b', construction: true }],
+        relations: [{ id: 'width', kind: 'distance', pointIds: ['a', 'b'], value: ' 20 ' }]
+      }
+    }] });
+    const selections = [{ kind: 'entity' as const, id: 'line' }, { kind: 'point' as const, id: 'a' }];
+    const h = await mount(source, selections, { initialCommand: { kind: 'move' } });
+    expect(field('Move X').value).toBe('0'); expect(field('Move Y').value).toBe('0');
+    expect(h.pending).toHaveBeenLastCalledWith(true); expect(button('Apply').disabled).toBe(true);
+    await input('Move X', '10.0000'); await input('Move Y', '5');
+    await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
+    expect(h.session.getSnapshot().document).toBe(source);
+    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [expect.objectContaining({ graph: expect.objectContaining({
+      points: [{ id: 'a', position: [10, 5] }, { id: 'b', position: [30, 5] }, { id: 'outside', position: [' 30 ', '0'] }]
+    }) })] }));
+    await click('Cancel'); expect(h.edit).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+    await h.render([...selections].reverse()); await input('Move X', '10'); await input('Move Y', '5'); await click('Apply');
+    expect(h.edit).toHaveBeenLastCalledWith([{ kind: 'translate-sketch-geometry', sketchId: 'sketch', selections: [...selections].reverse(), translation: [10, 5] }], expect.any(AbortSignal));
+    expect(h.session.getSnapshot().document.features[0]).toMatchObject({ graph: {
+      points: [{ id: 'a', position: [10, 5] }, { id: 'b', position: [30, 5] }, { id: 'outside', position: [' 30 ', '0'] }],
+      relations: [{ id: 'width', kind: 'distance', pointIds: ['a', 'b'], value: ' 20 ' }]
+    } });
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toBe(source);
+  });
+
   it.each(['equal-length', 'equal-radius'] as const)('keeps %s pair edits private and restores their exact symmetric source identity', async kind => {
     const source = parseCadDocument({ ...createCadDocument('Equal sizes', 'equal-sizes'), schemaVersion: 2, parameters: { size: 10 }, features: [{
       id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

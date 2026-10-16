@@ -36,6 +36,7 @@ const editDescriptions: Partial<Record<CadEdit['kind'], string>> = {
   'set-sketch-dimension': 'Set displayed quantity (mm/deg); diameter halves to radius. Named bindings update parameters; compound drivers reject.',
   'remove-sketch-dimension': 'Remove explicit intent; retains the geometry scalar, including any driving expression.',
   'translate-sketch-profiles': 'Move contours in local XY mm; rejects nonzero motion on an expression-driven position axis.',
+  'translate-sketch-geometry': 'Translate 1–64 exact graph point/entity selections together in local XY mm. Shared endpoints move once, including incident unselected edges; complete corner treatments include their owned reference corner. Retains sizes, relations, expression drivers and every outside coordinate. Rejects blocked, distorted, numerically unrepresentable or solver-repaired motion atomically. This is exact translation, separate from a soft point drag.',
   'move-sketch-handle': 'Use a revision-scoped grip from cad_inspect_sketch_handles. Local-mm delta; projects onto free components, preserves drivers.',
   'append-sketch-entities': 'Append new graph IDs, allowing references to existing points. Never replaces IDs or merges nearby points. Solves and validates the complete part before acceptance.',
   'create-sketch-corner': 'Round or bevel one shared degree-two line corner with explicit new topology IDs. Retains the original reference point and exact drivers. Fillets keep tangent minor arcs; chamfers keep two finite setbacks. Complete-part checks still apply.',

@@ -14,6 +14,7 @@ import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPre
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { CadContextHelp } from './CadContextHelp';
 import { CadSketchPreparationError, describeCadSketchConstraintSource, type CadSketchConstraintFeedback, type CadSketchConstraintFeedbackSubject } from './cadSketchConstraintFeedback';
+import './cad-sketch-profile.css';
 
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
@@ -72,8 +73,9 @@ function radialDimension(graph: CadSketchGraph, entity: CadSketchGraphEntity, pa
   const quantity = entity.kind === 'circle' ? 'diameter' : 'radius';
   return { id: crypto.randomUUID(), kind: 'radial-size', entityId: entity.id, quantity, value: radius * (quantity === 'diameter' ? 2 : 1) };
 }
-export type CadSketchRelationCommand = { readonly kind: 'inspect'; readonly relationId: string } | { readonly kind: 'length' | 'distance' | 'radial-size' | 'fillet' | 'chamfer' };
-type CornerDraft = { readonly kind: 'fillet'; readonly radius: CadScalar } | { readonly kind: 'chamfer'; readonly setbacks: readonly [CadScalar, CadScalar] };
+export type CadSketchRelationCommand = { readonly kind: 'inspect'; readonly relationId: string } | { readonly kind: 'length' | 'distance' | 'radial-size' | 'fillet' | 'chamfer' | 'move' };
+type GeometryDraft = { readonly kind: 'fillet'; readonly radius: CadScalar } | { readonly kind: 'chamfer'; readonly setbacks: readonly [CadScalar, CadScalar] }
+  | { readonly kind: 'move'; readonly x: string; readonly y: string };
 
 export interface CadSketchRelationsPanelProps {
   document: CadDocument;
@@ -113,8 +115,10 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   });
   const [source, setSource] = useState(latest.current), [draft, setDraft] = useState<CadSketchGraph>(() => initialDimension && !graph.relations.some(relation => relation.id === initialDimension.id)
     ? { ...graph, relations: [...graph.relations, initialDimension] } : graph);
-  const [corner, setCorner] = useState<CornerDraft | null>(() => singleton?.kind === 'point' && initialCommand?.kind === 'fillet' ? { kind: 'fillet', radius: 1 }
-    : singleton?.kind === 'point' && initialCommand?.kind === 'chamfer' ? { kind: 'chamfer', setbacks: [1, 1] } : null);
+  const [geometryDraft, setGeometryDraft] = useState<GeometryDraft | null>(() => initialCommand?.kind === 'move' ? { kind: 'move', x: '0', y: '0' }
+    : singleton?.kind === 'point' && initialCommand?.kind === 'fillet' ? { kind: 'fillet', radius: 1 }
+      : singleton?.kind === 'point' && initialCommand?.kind === 'chamfer' ? { kind: 'chamfer', setbacks: [1, 1] } : null);
+  const move = geometryDraft?.kind === 'move' ? geometryDraft : null, corner = geometryDraft?.kind === 'move' ? null : geometryDraft;
   const [cornerIds] = useState(() => initialCommand?.kind === 'fillet' || initialCommand?.kind === 'chamfer'
     ? { trimPointIds: [crypto.randomUUID(), crypto.randomUUID()] as const, centerPointId: crypto.randomUUID(), entityId: crypto.randomUUID(), relationId: crypto.randomUUID() } : null);
   const [parameterEdits, setParameterEdits] = useState<Readonly<Record<string, number>>>({});
@@ -127,7 +131,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const [activeRelationId, setActiveRelationId] = useState<string | null>(initialCommand?.kind === 'inspect' ? initialCommand.relationId : initialDimension?.id ?? null);
   const callbacks = useRef({ onPendingChange, onPreviewDocument, onInspectRelation, onInspectSubject }); callbacks.current = { onPendingChange, onPreviewDocument, onInspectRelation, onInspectSubject };
   const reset = useCallback(() => {
-    submission.cancel(); setSource(latest.current); setDraft(latest.current.graph); setCorner(null);
+    submission.cancel(); setSource(latest.current); setDraft(latest.current.graph); setGeometryDraft(null);
     setParameterEdits({}); setValueDrafts({}); setFieldIssues({}); setRelationPending({}); setRelationEdits({}); setError(null);
     setActiveRelationId(null);
     setInspectedFailure(null);
@@ -248,7 +252,11 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
     try {
       const edits: CadEdit[] = Object.entries(parameterEdits).map(([name, value]) => ({ kind: 'set-parameter', name, value }));
       let created: { entityId: string; relationId: string } | undefined;
-      if (corner) {
+      if (move) {
+        const dx = Number(move.x), dy = Number(move.y);
+        if (!move.x.trim() || !move.y.trim() || !Number.isFinite(dx) || !Number.isFinite(dy)) throw new Error('Enter finite movement distances.');
+        if (dx || dy) edits.push({ kind: 'translate-sketch-geometry', sketchId: sketch.id, selections: selection, translation: [dx, dy] });
+      } else if (corner) {
         if (singleton?.kind !== 'point' || !cornerIds) throw new Error('Select the shared corner of two lines.');
         edits.push({ kind: 'create-sketch-corner', sketchId: sketch.id, pointId: singleton.id, treatment: corner.kind === 'fillet'
           ? { ...corner, ...cornerIds } : { ...corner, trimPointIds: cornerIds.trimPointIds, entityId: cornerIds.entityId, relationId: cornerIds.relationId } });
@@ -271,10 +279,10 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       }
       return { edits, issue: null, created };
     } catch (cause) { return { edits: null, issue: cause instanceof Error ? cause.message : 'Invalid sketch relation.' }; }
-  }, [parameterEdits, parameters, corner, cornerIds, singleton?.kind, singleton?.id, originalEntity, selectedEntity, originalPoint, selectedPoint, source, draft, cadDocument, sketch.id, onPrepareEdits]);
+  }, [parameterEdits, parameters, move, corner, cornerIds, singleton?.kind, singleton?.id, originalEntity, selectedEntity, originalPoint, selectedPoint, source, draft, cadDocument, sketch.id, selection, onPrepareEdits]);
   const scalarPending = Object.keys(fieldIssues).length > 0 || Object.values(relationPending).some(Boolean);
   const changed = Boolean(candidate.edits?.length) || candidate.issue !== null;
-  const pending = changed || scalarPending || submission.applying;
+  const pending = Boolean(move) || changed || scalarPending || submission.applying;
   useLayoutEffect(() => { onPendingChange(pending); }, [pending, onPendingChange]);
   useLayoutEffect(() => () => { callbacks.current.onPendingChange(false); callbacks.current.onPreviewDocument?.(null); callbacks.current.onInspectRelation?.(null); callbacks.current.onInspectSubject?.(null); }, []);
   useEffect(() => { if (source.document !== cadDocument && !pending) reset(); }, [source.document, cadDocument, pending, reset]);
@@ -304,11 +312,14 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         reset(); if (candidate.created) onCornerAccepted?.(candidate.created.entityId, candidate.created.relationId);
       }, cause => setError(cause instanceof CadSketchPreparationError ? cause.feedback : cause instanceof Error ? cause.message : 'Unable to apply this sketch relation.'));
     }}>
-    <div className="cad-property-title">{corner ? corner.kind === 'fillet' ? 'Sketch fillet' : 'Sketch chamfer' : pointPair ? 'Point pair' : linePair ? 'Line pair' : curvePair ? 'Curve pair' : selection.length > 1 ? `${selection.length} selected` : selectedPoint ? 'Point' : selectedEntity?.kind === 'circle' ? 'Circle' : selectedEntity?.kind === 'line' ? 'Line' : 'Arc'}
+    <div className="cad-property-title">{move ? 'Move selection' : corner ? corner.kind === 'fillet' ? 'Sketch fillet' : 'Sketch chamfer' : pointPair ? 'Point pair' : linePair ? 'Line pair' : curvePair ? 'Curve pair' : selection.length > 1 ? `${selection.length} selected` : selectedPoint ? 'Point' : selectedEntity?.kind === 'circle' ? 'Circle' : selectedEntity?.kind === 'line' ? 'Line' : 'Arc'}
+      {move && <CadContextHelp label="Move selection">Translate the selected points and edges together without changing their sizes. Shared endpoints also change their incident edges. Outside points and existing dimensions stay in place; a blocked move rejects instead of stretching the selection or releasing constraints.</CadContextHelp>}
       {corner && <CadContextHelp label="Corner treatment">The original corner stays as a reference, preserving its dimensions. Fillet radius rounds this corner tangentially. Chamfer setbacks measure from the original corner along the two incident lines.</CadContextHelp>}
-      {linePair && <CadContextHelp label="Line pair relations">Parallel keeps both directions aligned, including opposite directions. Perpendicular keeps a right angle. Equal length keeps both finite lengths equal. Lines may share an endpoint or be separate; construction lines also work. Other dimensions and relations remain in force.</CadContextHelp>}
-      {curvePair && <CadContextHelp label="Equal radius">Keeps the actual radii of these circles or arcs equal. Arc sweep and position remain independent. Add a radius or diameter dimension to control their shared size; two free curves still have a size freedom. Existing drivers stay in force.</CadContextHelp>}</div>
+      {!move && linePair && <CadContextHelp label="Line pair relations">Parallel keeps both directions aligned, including opposite directions. Perpendicular keeps a right angle. Equal length keeps both finite lengths equal. Lines may share an endpoint or be separate; construction lines also work. Other dimensions and relations remain in force.</CadContextHelp>}
+      {!move && curvePair && <CadContextHelp label="Equal radius">Keeps the actual radii of these circles or arcs equal. Arc sweep and position remain independent. Add a radius or diameter dimension to control their shared size; two free curves still have a size freedom. Existing drivers stay in force.</CadContextHelp>}</div>
     <fieldset key={resetVersion} className="cad-feature-fields" disabled={interactionLocked || submission.applying}>
+      {move ? <div className="cad-placement-row"><label><span>ΔX</span><Input aria-label="Move X" autoFocus value={move.x} onChange={event => { setError(null); setGeometryDraft({ ...move, x: event.target.value }); }} /></label>
+        <label><span>ΔY</span><Input aria-label="Move Y" value={move.y} onChange={event => { setError(null); setGeometryDraft({ ...move, y: event.target.value }); }} /></label><small>mm</small></div> : <>
       {selection.length > 1 && <div className="text-xs text-muted-foreground">{pointPair ? pointPair.map(id => `Point ${graph.points.findIndex(point => point.id === id) + 1}`).join(' · ') : entityPair ? entityPair.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label).join(' · ') : `${selection.filter(atom => atom.kind === 'point').length} points · ${selection.filter(atom => atom.kind === 'entity').length} edges`}</div>}
       {selectedEntity?.kind === 'line' && dimensionPair && <div className="cad-sketch-profile-actions">
         {(['horizontal', 'vertical'] as const).map(kind => <label key={kind} className="cad-check"><Input type="checkbox" aria-label={kind === 'horizontal' ? 'Horizontal' : 'Vertical'}
@@ -349,9 +360,9 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
           title={fixed ? 'Remove the fixed-point relation to release either axis.' : driven ? 'This coordinate already follows an exact expression.' : undefined} onChange={event => togglePointAxis(axis, event.target.checked)} />Fix {axis.toUpperCase()}</label>;
       })}</div>}
       <CadScalarEditContext.Provider value={scalarContext}>
-        {corner?.kind === 'fillet' && <ScalarField fieldKey="corner/value" label="Fillet radius" value={corner.radius} parameters={parameters} onChange={radius => setCorner({ kind: 'fillet', radius })} />}
+        {corner?.kind === 'fillet' && <ScalarField fieldKey="corner/value" label="Fillet radius" value={corner.radius} parameters={parameters} onChange={radius => setGeometryDraft({ kind: 'fillet', radius })} />}
         {corner?.kind === 'chamfer' && ([0, 1] as const).map(index => <ScalarField key={index} fieldKey={`corner/values.${index}`} label={`Setback ${index + 1}`} value={corner.setbacks[index]} parameters={parameters}
-          onChange={value => setCorner({ ...corner, setbacks: index === 0 ? [value, corner.setbacks[1]] : [corner.setbacks[0], value] })} />)}
+          onChange={value => setGeometryDraft({ ...corner, setbacks: index === 0 ? [value, corner.setbacks[1]] : [corner.setbacks[0], value] })} />)}
         {!corner && selectedPoint && (['x', 'y'] as const).map((axis, index) => typeof selectedPoint.position[index] === 'string' || typeof originalPoint?.position[index] === 'string'
           ? <ScalarField key={axis} fieldKey={`coordinate/${axis}`} label={axis.toUpperCase()} value={selectedPoint.position[index]} parameters={parameters} onChange={value => {
             setError(null); setDraft(current => ({ ...current, points: current.points.map(point => point.id === selectedPoint.id
@@ -382,6 +393,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
           onChange={value => changeRelation({ ...activeRelation, values: index === 0 ? [value, activeRelation.values[1]] : [activeRelation.values[0], value] })} />)}
         {activeRelation?.kind === 'fixed-point' && <>{(['x', 'y'] as const).map((axis, index) => <ScalarField key={axis} fieldKey={`${activeRelation.id}/position.${index}`} label={`Fixed ${axis.toUpperCase()}`} value={activeRelation.position[index]} parameters={parameters} onChange={value => changeRelation({ ...activeRelation, position: axis === 'x' ? [value, activeRelation.position[1]] : [activeRelation.position[0], value] })} />)}</>}
       </CadScalarEditContext.Provider>
+      </>}
     </fieldset>
     {issue && <p className="cad-error" role="alert">{issue}</p>}
     {feedback && feedback.subjects.length > 0 && <ul className="cad-sketch-diagnostic-list" aria-label="Constraint issues">{feedback.subjects.map((subject, index) => <li key={`${subject.category}/${subject.source.kind}/${subject.source.id}/${index}`}>

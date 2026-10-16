@@ -5,6 +5,7 @@ import { reduceCadEditIntents, validateCadEditBatch, type CadEdit } from '@/doma
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchSolveDiagnostics, CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
+import { Value } from '@sinclair/typebox/value';
 
 export function needsCadSketchPreparation(document: CadDocument, edits: readonly CadEdit[]): boolean {
   return document.features.some(feature => feature.kind === 'sketch' && feature.graph)
@@ -42,7 +43,16 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
   }
   for (const edit of captured) {
     signal?.throwIfAborted();
-    if (edit.kind === 'move-sketch-point') {
+    if (edit.kind === 'translate-sketch-geometry') {
+      await flush();
+      const target = reduceCadEditIntents(candidate, [edit]);
+      if (Value.Equal(candidate, target)) continue;
+      candidate = target;
+      await solve();
+      // Native success may project targets or propagate to outside points/radii.
+      // Exact Move accepts only its complete affine source candidate.
+      if (!Value.Equal(candidate, target)) throw new CadError('sketch-translation-intent', 'The constraints cannot satisfy this exact move without changing other geometry. Adjust the selection or its relations.');
+    } else if (edit.kind === 'move-sketch-point') {
       await flush();
       const sketch = candidate.features.find(feature => feature.id === edit.sketchId);
       const point = sketch?.kind === 'sketch' ? sketch.graph?.points.find(point => point.id === edit.pointId) : undefined;

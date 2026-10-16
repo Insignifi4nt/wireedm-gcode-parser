@@ -44,6 +44,23 @@ function source(explicit = false, earlierGraph = false) {
 const removeEdge: CadEdit = { kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: [], entityIds: ['bc'], relationIds: [], cascade: false };
 
 describe('owned consumed-sketch draft', () => {
+  it('moves a consumed graph privately, retains exact drivers/source and finishes as one global undo', async () => {
+    const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    const move: CadEdit = { kind: 'translate-sketch-geometry', sketchId: 'sketch', selections: ['ab', 'bc', 'cd', 'da'].map(id => ({ kind: 'entity', id })), translation: [0, 5] };
+    expect(() => draft.validateEdits([{ ...move, sketchId: 'later' }])).toThrow('sketch');
+    await draft.editPrepared([move], prepare);
+    expect(main.getSnapshot()).toBe(base);
+    const moved = draft.getSnapshot();
+    expect(sketchOf(moved.document).graph?.points.map(point => point.position)).toEqual([[0, 5], [' span ', 5], [' span ', 15], [0, 15]]);
+    expect(sketchOf(moved.document).source).toEqual(sketchOf(base.document).source);
+    draft.undo(); expect(draft.getSnapshot().document).toEqual(draft.initialDocument);
+    draft.redo(); expect(draft.getSnapshot().document).toBe(moved.document);
+    const finish = draft.finishEdits(base);
+    await main.editPrepared(base.version, document => prepare(document, finish.edits));
+    expect(main.getSnapshot().document.features.slice(1)).toEqual(base.document.features.slice(1));
+    main.undo(); expect(main.getSnapshot().document).toBe(base.document); expect(main.getSnapshot().canUndo).toBe(false);
+  });
+
   it('creates a parametric corner locally and finishes it without changing the original DXF or downstream definitions', async () => {
     const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
     const edit: CadEdit = { kind: 'create-sketch-corner', sketchId: 'sketch', pointId: 'a', treatment: {

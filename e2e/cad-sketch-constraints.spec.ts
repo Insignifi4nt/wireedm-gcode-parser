@@ -2,6 +2,75 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('moves selected constrained geometry privately without distortion, then finishes, undoes and reopens its solid', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const feature = { id: 'movable', kind: 'sketch', name: 'Movable plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }, { id: 'd', position: [0, 10] },
+      { id: 'center', position: [5, 5] }, { id: 'outside', position: [' 99 ', '99'] }],
+    entities: [{ id: 'ab', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false },
+      { id: 'bc', kind: 'line', startPointId: 'b', endPointId: 'c', construction: false },
+      { id: 'cd', kind: 'line', startPointId: 'c', endPointId: 'd', construction: false },
+      { id: 'da', kind: 'line', startPointId: 'd', endPointId: 'a', construction: false },
+      { id: 'hole', kind: 'circle', centerPointId: 'center', radius: ' bore ', construction: false }],
+    relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'vertical', kind: 'vertical', pointIds: ['b', 'c'] },
+      { id: 'top', kind: 'horizontal', pointIds: ['c', 'd'] }, { id: 'left', kind: 'vertical', pointIds: ['d', 'a'] },
+      { id: 'width', kind: 'distance', pointIds: ['a', 'b'], value: ' 20 ' }, { id: 'height', kind: 'distance', pointIds: ['b', 'c'], value: ' 10 ' }]
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'bore', value: 2 }, { kind: 'add-feature', feature }, { kind: 'add-feature', feature: {
+      id: 'pad', kind: 'extrude', name: 'Thickness', suppressed: false, sketchId: feature.id, distance: 5, symmetric: false, operation: 'new', targetId: null
+    } }
+  ] });
+  const base = await context(page); await call(page, 'cad_build', { expectedVersion: base.version });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: base.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: base.version } } });
+  const open = async () => {
+    await page.getByRole('button', { name: 'Select Movable plate in history', exact: true }).dblclick();
+    await expect(page.getByRole('button', { name: 'Cancel sketch edits', exact: true })).toBeVisible();
+  };
+  const selectAll = async () => {
+    await page.getByRole('button', { name: 'Line 1 in Movable plate', exact: true }).press('Enter');
+    for (const name of ['Line 2', 'Line 3', 'Line 4', 'Circle 5', 'Point 1']) await page.getByRole('button', { name: `${name} in Movable plate`, exact: true }).press('Shift+Enter');
+  };
+  const enterMove = async () => {
+    await page.getByRole('button', { name: 'Move selection', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Move X', exact: true }).fill('10.0000');
+    await page.getByRole('textbox', { name: 'Move Y', exact: true }).fill('5');
+  };
+  await open(); await page.getByRole('button', { name: 'Line 3 in Movable plate', exact: true }).press('Enter');
+  await page.getByRole('button', { name: 'Move selection', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Move Y', exact: true }).fill('5.0000');
+  await expect(page.getByRole('alert')).toContainText(/move|translation|constraint/i);
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: feature.id })).feature).toEqual(feature);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await selectAll(); await enterMove(); await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: feature.id })).feature).toEqual(feature);
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.locator('[data-cad-sketch-point="b"] title')).toHaveText(/30, 5 mm/);
+  await page.keyboard.press('Control+z'); await expect(page.locator('[data-cad-sketch-point="b"] title')).toHaveText(/20, 0 mm/);
+  await page.keyboard.press('Control+Shift+z'); await expect(page.locator('[data-cad-sketch-point="b"] title')).toHaveText(/30, 5 mm/);
+  expect(await context(page)).toMatchObject({ version: base.version, workflowOpen: true });
+  await page.getByRole('button', { name: 'Cancel sketch edits', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ version: base.version, workflowOpen: false });
+  await open(); await selectAll(); await enterMove(); await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.locator('[data-cad-sketch-point="b"] title')).toHaveText(/30, 5 mm/);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); let current = await context(page);
+  const accepted = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature;
+  expect(accepted.graph.points).toEqual(feature.graph.points.map(point => point.id === 'outside' ? point : { ...point, position: [Number(point.position[0]) + 10, Number(point.position[1]) + 5] }));
+  expect(accepted.graph.entities).toEqual(feature.graph.entities); expect(accepted.graph.relations).toEqual(feature.graph.relations);
+  const built = await call(page, 'cad_build', { expectedVersion: current.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies[0].boundsMm).toEqual({ min: [10, 5, 0], max: [30, 15, 5] });
+  expect(built.bodies[0].volumeMm3).toBeCloseTo(1000 - 20 * Math.PI, 7);
+  await page.keyboard.press('Control+z'); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(feature);
+  await page.keyboard.press('Control+Shift+z'); current = await context(page);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current.dirty).toBe(false); expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(accepted);
+});
+
 test('keeps plate sides and hole radii equal while editing their drivers, then extrudes and reopens the exact part', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const feature = { id: 'equal', kind: 'sketch', name: 'Equal plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

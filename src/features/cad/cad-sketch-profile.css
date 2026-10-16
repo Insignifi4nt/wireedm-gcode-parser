@@ -19,8 +19,8 @@
 .cad-sketch-intent-editor > .cad-feature-fields > label > :is(input, .ui-select, strong) { width: 100%; min-width: 0; font-size: 11px; }
 .cad-sketch-intent-editor > .cad-feature-fields > label > strong { color: var(--foreground); font-weight: 500; }
 .cad-sketch-intent-editor small { font-size: 9px; color: var(--muted-foreground); }
-.cad-sketch-intent-editor .cad-placement-row { display: flex; align-items: center; gap: 6px; }
-.cad-sketch-intent-editor .cad-placement-row label { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
-.cad-sketch-intent-editor .cad-placement-row input { width: 100%; min-width: 0; font-size: 11px; }
+.cad-sketch-profile-panel .cad-placement-row { display: flex; align-items: center; gap: 6px; }
+.cad-sketch-profile-panel .cad-placement-row label { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
+.cad-sketch-profile-panel .cad-placement-row input { width: 100%; min-width: 0; font-size: 11px; }
 .cad-sketch-relation { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
 .cad-workbench .cad-sketch-relation > button { font-size: 9px; padding: 3px 4px; }

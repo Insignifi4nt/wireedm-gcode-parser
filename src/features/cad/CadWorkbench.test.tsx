@@ -537,6 +537,21 @@ describe('CAD sketch interaction', () => {
     await act(async () => currentSession.undo()); expect(currentDocument).toEqual(original);
   });
 
+  it('routes Move to the exact graph selection and owns the workspace until Cancel even at zero displacement', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Movable edges', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }],
+      entities: [{ id: 'line', kind: 'line', startPointId: 'a', endPointId: 'b', construction: true }], relations: []
+    } }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const selections = [{ kind: 'entity' as const, id: 'line' }, { kind: 'point' as const, id: 'a' }];
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections }));
+    await click('Move selection'); expect(container.querySelector('input[aria-label="Move X"]')).not.toBeNull();
+    expect(button('Finish sketch').disabled).toBe(true); expect(button('Save').disabled).toBe(true);
+    expect(currentSession.getSnapshot()).toMatchObject({ document: source, workflowOpen: true, canUndo: false });
+    await click('Cancel'); expect(currentSession.getSnapshot()).toMatchObject({ document: source, workflowOpen: false, canUndo: false });
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual(selections);
+  });
+
   it('finishes the active sketch from its inspector without changing geometry or history', async () => {
     const original = solidDocument();
     await mount(original);

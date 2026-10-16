@@ -13,6 +13,8 @@ import { CadSketchHandleSchema, moveCadSketchHandle, type CadSketchHandle } from
 import { CadSketchGraphSchema, type CadSketchGraph, type CadSketchGraphRelation } from './cadSketchGraph';
 import { appendCadSketchEntities, deleteCadSketchElements, setCadSketchConstruction } from './cadSketchGraphEdits';
 import { CadSketchCornerCommandTreatmentSchema, createCadSketchCornerTreatmentFromIds, type CadSketchCornerCommandTreatment } from './cadSketchCornerTreatment';
+import { CadSketchGraphSelectionSchema, type CadSketchGraphSelection } from './cadSketchGraphSelection';
+import { translateCadSketchGraph } from './cadSketchTranslation';
 
 export type CadEdit =
   | { readonly kind: 'add-feature'; readonly feature: CadFeature; readonly beforeId?: string }
@@ -30,6 +32,7 @@ export type CadEdit =
   | { readonly kind: 'set-sketch-dimension'; readonly sketchId: string; readonly profileId: string; readonly dimensionId: string; readonly value: CadScalar }
   | { readonly kind: 'remove-sketch-dimension'; readonly sketchId: string; readonly profileId: string; readonly dimensionId: string }
   | { readonly kind: 'translate-sketch-profiles'; readonly sketchId: string; readonly profileIds: readonly string[]; readonly translation: CadPoint2 }
+  | { readonly kind: 'translate-sketch-geometry'; readonly sketchId: string; readonly selections: readonly CadSketchGraphSelection[]; readonly translation: CadPoint2 }
   | { readonly kind: 'move-sketch-handle'; readonly sketchId: string; readonly profileId: string; readonly handle: CadSketchHandle; readonly translation: CadPoint2 }
   | { readonly kind: 'append-sketch-entities'; readonly sketchId: string; readonly geometry: CadSketchGraph }
   | { readonly kind: 'create-sketch-corner'; readonly sketchId: string; readonly pointId: string; readonly treatment: CadSketchCornerCommandTreatment }
@@ -59,6 +62,7 @@ export const CadEditSchema = Type.Union([
   Type.Object({ kind: Type.Literal('set-sketch-dimension'), sketchId: identifier, profileId: identifier, dimensionId: identifier, value: CadScalarSchema }, strict),
   Type.Object({ kind: Type.Literal('remove-sketch-dimension'), sketchId: identifier, profileId: identifier, dimensionId: identifier }, strict),
   Type.Object({ kind: Type.Literal('translate-sketch-profiles'), sketchId: identifier, profileIds: Type.Array(identifier, { minItems: 1, maxItems: 256, uniqueItems: true }), translation: CadPoint2Schema }, strict),
+  Type.Object({ kind: Type.Literal('translate-sketch-geometry'), sketchId: identifier, selections: Type.Array(CadSketchGraphSelectionSchema, { minItems: 1, maxItems: 64, uniqueItems: true }), translation: CadPoint2Schema }, strict),
   Type.Object({ kind: Type.Literal('move-sketch-handle'), sketchId: identifier, profileId: identifier, handle: CadSketchHandleSchema, translation: CadPoint2Schema }, strict),
   Type.Object({ kind: Type.Literal('append-sketch-entities'), sketchId: identifier, geometry: CadSketchGraphSchema }, strict),
   Type.Object({ kind: Type.Literal('create-sketch-corner'), sketchId: identifier, pointId: identifier, treatment: CadSketchCornerCommandTreatmentSchema }, strict),
@@ -209,6 +213,12 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
         features[index] = edit.kind === 'append-sketch-entities' ? appendCadSketchEntities({ sketch, geometry: edit.geometry })
           : edit.kind === 'delete-sketch-elements' ? deleteCadSketchElements({ sketch, pointIds: edit.pointIds, entityIds: edit.entityIds, relationIds: edit.relationIds, cascade: edit.cascade })
             : setCadSketchConstruction({ sketch, entityIds: edit.entityIds, construction: edit.construction });
+        break;
+      }
+      case 'translate-sketch-geometry': {
+        const index = indexOf(edit.sketchId), feature = features[index];
+        if (feature.kind !== 'sketch' || !feature.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
+        features[index] = { ...feature, graph: translateCadSketchGraph({ graph: feature.graph, selections: edit.selections, translation: edit.translation, parameters }) };
         break;
       }
       case 'move-sketch-point': case 'set-sketch-relation': case 'remove-sketch-relation': {
