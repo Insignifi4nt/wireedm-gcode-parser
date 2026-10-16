@@ -187,6 +187,11 @@
 .cad-sketch-context { position: absolute; bottom: 32px; left: 12px; color: var(--muted-foreground); background: var(--card); border: 1px solid var(--border); padding: 4px 7px; font-size: 10px; pointer-events: none; }
 .cad-profile.is-construction { stroke: #628594; fill: none; }
 .cad-profile-preview { stroke: #71d2e1; fill: #56c7d214; pointer-events: none; }
+.cad-sketch-split-preview { fill: none; stroke-width: 2px; }
+.cad-sketch-split-preview > * { vector-effect: non-scaling-stroke; }
+.cad-sketch-split-preview .is-retained { stroke: var(--primary); }
+.cad-sketch-split-preview .is-new { stroke: var(--foreground); stroke-dasharray: 5 3; }
+.cad-sketch-split-preview circle { fill: var(--card); stroke: var(--primary); }
 .cad-curve-viewport .cad-profile, .cad-curve-viewport .cad-profile.is-selected, .cad-curve-viewport .cad-profile-preview { fill: none; }
 .cad-sketch-vertex { fill: #84dcea; stroke: #143645; }
 .cad-sketch-snap-target { fill: var(--card); fill-opacity: .35; stroke: var(--primary); stroke-width: 1.5px; vector-effect: non-scaling-stroke; pointer-events: none; }

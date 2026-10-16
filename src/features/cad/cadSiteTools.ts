@@ -22,6 +22,7 @@ import { CadToolDocumentEnvelope, CadToolEditDefinitions, CadToolEditEnvelope, C
 import { pageCadSketchConstraints, summarizeCadSketchConstraintAnalysis } from './cadSketchConstraintInspection';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { CadSketchRegionProposalSchema } from '@/domain/cad/cadSketchRegionInspection';
+import { CadSketchSplitDependencyError } from '@/domain/cad/cadSketchSplit';
 import { CadConstructionPointSchema, CadPathConstructionStepSchema, createCadPathProfile, createCadOpenCurveSegments } from '@/domain/cad/cadPathConstruction';
 import { cadAnalyticPathMetrics, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
 import { resolveCadCurve } from '@/domain/cad/cadCurve';
@@ -31,8 +32,10 @@ import { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS } from '@/domain/cad/cadLo
 const id = Type.String({ minLength: 1, maxLength: 160 });
 const version = { expectedVersion: id };
 const pageFields = { ...workbenchPageFields, offset: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })) };
-const regionProposalEnvelope = Type.Object({ ...CadSketchRegionProposalSchema.properties, sketch: Type.Optional(CadToolSketchEnvelope) },
-  { additionalProperties: false, minProperties: 1 });
+const regionProposalEnvelope = Type.Union([
+  Type.Object({ ...CadSketchRegionProposalSchema.anyOf[0].properties, sketch: Type.Optional(CadToolSketchEnvelope) }, { additionalProperties: false, minProperties: 1 }),
+  CadSketchRegionProposalSchema.anyOf[1]
+]);
 const pathConstructionSchema = object({ start: CadConstructionPointSchema,
   steps: Type.Array(CadPathConstructionStepSchema, { minItems: 1, maxItems: 128 }) });
 const documentText = new WeakMap<CadDocument, string>();
@@ -96,6 +99,9 @@ export function cadSiteTools(getController: () => CadController) {
       catch (error) {
         if (error instanceof CadSketchPreparationError) throw new ToolError(error.code, error.message, { feedback: error.feedback,
           analysis: summarizeCadSketchConstraintAnalysis({ kind: 'rejected', reason: error.feedback.reason, message: error.solverMessage, diagnostics: error.diagnostics }) });
+        if (error instanceof CadSketchSplitDependencyError) throw new ToolError(error.code, error.message, {
+          relationIds: error.relationIds.slice(0, 8), relationCount: error.relationIds.length, omittedRelationCount: Math.max(0, error.relationIds.length - 8)
+        });
         if (error instanceof CadError || error instanceof CadSessionError || error instanceof CadStorageError) throw new ToolError(error.code, error.message);
         throw error;
       }
@@ -117,7 +123,7 @@ export function cadSiteTools(getController: () => CadController) {
       canUndo: state.canUndo, canRedo: state.canRedo, workflowOpen: state.workflowOpen, busy: cad.isBusy(),
       buildState: cad.buildState, buildVersion: cad.buildVersion, buildId: cad.build?.buildId ?? null,
       ...diagnosticSummary(cad.build?.diagnostics ?? []),
-      supported: { sketchEntities: { schemaVersion: 2, definition: 'cad_describe_features(kind=sketch)', inspection: 'cad_inspect_sketch_constraints', edits: ['append-sketch-entities', 'delete-sketch-elements', 'set-sketch-construction', 'translate-sketch-geometry', 'move-sketch-point', 'set-sketch-relation', 'remove-sketch-relation', 'create-sketch-corner'], relations: ['coincident', 'horizontal', 'vertical', 'parallel', 'perpendicular', 'equal-length', 'equal-radius', 'fixed-point', 'fixed-axis', 'distance', 'radial-size', 'fillet-corner', 'chamfer-corner'], material: 'Simple closed cycles connected by shared point IDs or explicit coincidence; open, intersecting and branched geometry retained without fake cells.' }, sketches: ['rectangle', 'circle', 'polygon', 'slot', 'path', 'plugin'], sketchDimensions: { rectangle: ['width', 'height'], circle: ['diameter', 'radius'], slot: ['length', 'width', 'angle'], intent: 'Legacy profile dimensions bind their geometry scalars. Numeric geometry stays free; expressions stay driven. Radius/diameter share one freedom. Graph point/entity constraints are listed under sketchEntities.' }, sketchTranslation: ['rectangle', 'circle', 'slot', 'polygon', 'path'], sketchHandles: { inspection: 'cad_inspect_sketch_handles', edit: 'move-sketch-handle', scope: 'Accepted revision only; free components move without replacing dimensions or expressions.' }, plugins: { apiVersion: 2, acceptedApiVersions: [1, 2], instances: 'Exact package embedded in each profile; inputs accept named CAD parameter expressions.', relations: 'API 2 supports derived values, conditional editing, dynamic ranges, choices and constraints. Derived values cannot be stored as editable inputs.', generators: ['builtin-spur-gear', 'polygon-recipe'] }, references: ['curve', 'datum-plane'], planes: ['XY', 'XZ', 'YZ'],
+      supported: { sketchEntities: { schemaVersion: 2, definition: 'cad_describe_features(kind=sketch)', inspection: 'cad_inspect_sketch_constraints', edits: ['append-sketch-entities', 'delete-sketch-elements', 'set-sketch-construction', 'translate-sketch-geometry', 'move-sketch-point', 'set-sketch-relation', 'remove-sketch-relation', 'create-sketch-corner', 'split-sketch-entity'], relations: ['coincident', 'horizontal', 'vertical', 'parallel', 'perpendicular', 'equal-length', 'equal-radius', 'fixed-point', 'fixed-axis', 'distance', 'radial-size', 'fillet-corner', 'chamfer-corner'], material: 'Simple closed cycles connected by shared point IDs or explicit coincidence; open, intersecting and branched geometry retained without fake cells.' }, sketches: ['rectangle', 'circle', 'polygon', 'slot', 'path', 'plugin'], sketchDimensions: { rectangle: ['width', 'height'], circle: ['diameter', 'radius'], slot: ['length', 'width', 'angle'], intent: 'Legacy profile dimensions bind their geometry scalars. Numeric geometry stays free; expressions stay driven. Radius/diameter share one freedom. Graph point/entity constraints are listed under sketchEntities.' }, sketchTranslation: ['rectangle', 'circle', 'slot', 'polygon', 'path'], sketchHandles: { inspection: 'cad_inspect_sketch_handles', edit: 'move-sketch-handle', scope: 'Accepted revision only; free components move without replacing dimensions or expressions.' }, plugins: { apiVersion: 2, acceptedApiVersions: [1, 2], instances: 'Exact package embedded in each profile; inputs accept named CAD parameter expressions.', relations: 'API 2 supports derived values, conditional editing, dynamic ranges, choices and constraints. Derived values cannot be stored as editable inputs.', generators: ['builtin-spur-gear', 'polygon-recipe'] }, references: ['curve', 'datum-plane'], planes: ['XY', 'XZ', 'YZ'],
         datumPlacement: { definition: 'world', supported: ['sketch', 'curve', 'extrude', 'revolve', 'loft', 'sweep'], unsupported: ['pocket'], inspection: 'cad_inspect_plane' },
         solids: ['imported', 'extrude', 'pocket', 'revolve', 'loft', 'sweep', 'fillet', 'chamfer', 'shell', 'boolean', 'transform', 'linear-pattern', 'circular-pattern', 'mirror'],
         imports: ['cad-json', 'dxf', 'step', 'stl'],
@@ -162,7 +168,7 @@ export function cadSiteTools(getController: () => CadController) {
     }, false, object({ ...version, package: CadToolPluginPackageEnvelope })),
     tool('cad_inspect_plane', 'Resolve the current active datum, sketch or curve world frame and signed offset in mm. Preserves authored placement; does not certify native solid precision. Finish pending workflows; stale/unavailable references and cancellation reject. Feature definitions: cad_describe_features.', object({ ...version, featureId: id }),
       (cad, input, signal) => cad.inspectPlane(input.featureId, input.expectedVersion, signal)),
-    tool('cad_inspect_sketch_regions', 'Inspect current or proposed closed sketch cells with local area/bounds and exact regionSelection references for extrude/pocket. proposal uses a complete same-ID sketch and/or numeric parameterValues additions/overrides; source preflight only. Full sketch schema: cad_describe_features(kind=sketch). Read omitted references with cad_read_sketch_region_reference. No edits/native work.', object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, proposal: Type.Optional(CadSketchRegionProposalSchema) }), async (cad, input, signal) => {
+    tool('cad_inspect_sketch_regions', 'Inspect current or proposed closed sketch cells with local area/bounds and exact regionSelection references for extrude/pocket. proposal accepts a complete same-ID sketch OR one exact split, with optional numeric parameterValues additions/overrides; parameter-only proposals also work. Source preflight only, no native solve or full-part certification. Apply the same split IDs and explicit consumer repairs atomically. Full sketch: cad_describe_features(kind=sketch). Read omitted references with cad_read_sketch_region_reference. No edits.', object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, proposal: Type.Optional(CadSketchRegionProposalSchema) }), async (cad, input, signal) => {
       const inspection = await cad.inspectSketchRegions(input.sketchId, input, input.expectedVersion, signal);
       const projected = page(inspection.items, { limit: input.limit }, cell => {
         const referenceText = JSON.stringify(cell.reference);
@@ -177,7 +183,7 @@ export function cadSiteTools(getController: () => CadController) {
         items: projected.items, total: inspection.total,
         nextOffset: projected.nextOffset !== null ? (input.offset ?? 0) + projected.nextOffset : inspection.nextOffset };
     }, true, object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, proposal: Type.Optional(regionProposalEnvelope) })),
-    tool('cad_read_sketch_region_reference', 'Read exact regionSelection reference JSON in UTF-16 chunks. Concatenate text until nextOffset=null. Pin version, sketch/boundary IDs and identical optional proposal for every chunk. Proposed reads are source preflight only; full sketch schema: cad_describe_features(kind=sketch). No edits/native work.', object({ ...version, sketchId: CadIdentifierSchema, boundaryProfileId: CadIdentifierSchema,
+    tool('cad_read_sketch_region_reference', 'Read exact regionSelection reference JSON in UTF-16 chunks. Concatenate text until nextOffset=null. Pin version, sketch/boundary IDs and identical optional proposal for every chunk: a complete same-ID sketch OR one exact split, with optional numeric parameterValues; parameter-only proposals also work. Source preflight only; no native solve or full-part certification. Full sketch: cad_describe_features(kind=sketch). No edits.', object({ ...version, sketchId: CadIdentifierSchema, boundaryProfileId: CadIdentifierSchema,
       offset: pageFields.offset, length: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096 })), proposal: Type.Optional(CadSketchRegionProposalSchema) }), async (cad, input, signal) => {
       const text = await cad.readSketchRegionReference(input.sketchId, input.boundaryProfileId, input.expectedVersion, signal, input.proposal);
       const offset = input.offset ?? 0;

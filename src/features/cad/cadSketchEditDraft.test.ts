@@ -44,6 +44,43 @@ function source(explicit = false, earlierGraph = false) {
 const removeEdge: CadEdit = { kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: [], entityIds: ['bc'], relationIds: [], cascade: false };
 
 describe('owned consumed-sketch draft', () => {
+  it('splits a consumed edge privately and requires explicit area repair before one guarded Finish', async () => {
+    const main = new CadSession(source(true)), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    const split = { kind: 'split-sketch-entity', sketchId: 'sketch', split: { kind: 'line', entityId: 'ab', parameter: .25,
+      splitPointId: 'cut', newEntityId: 'after', supportRelationId: 'support' } } satisfies CadEdit;
+    expect(() => draft.validateEdits([{ ...split, sketchId: 'later' }])).toThrow('sketch');
+    await draft.editPrepared([split], prepare);
+    const local = draft.getSnapshot(), localSketch = sketchOf(local.document);
+    expect(main.getSnapshot()).toBe(base);
+    expect(localSketch.graph?.points.slice(0, 4)).toEqual(sketchOf(base.document).graph?.points);
+    expect(localSketch.graph?.points[4]).toEqual({ id: 'cut', position: [5, 0] });
+    expect(localSketch.source).toEqual(sketchOf(base.document).source);
+    draft.undo(); expect(draft.getSnapshot().document).toEqual(draft.initialDocument); expect(draft.inspectAreaRepairs(base)).toBeNull();
+    draft.redo(); expect(draft.getSnapshot().document).toBe(local.document);
+    await expect(prepare(base.document, draft.finishEdits(base).edits)).rejects.toThrow();
+    const repair = draft.inspectAreaRepairs(base); if (!repair) throw new Error('Split area repair missing');
+    expect(repair.consumers.map(consumer => consumer.feature.id)).toEqual(['pad']);
+    expect(repair.cells.cells).toHaveLength(1);
+    expect(repair.cells.cells[0]).toMatchObject({ areaMm2: 200, boundaryLengthMm: 60 });
+    const pad = base.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad');
+    const regionSelection = repair.cells.cells.map(cell => cell.reference);
+    expect(regionSelection).not.toEqual(pad.regionSelection); expect(JSON.stringify(regionSelection)).toContain('after');
+    const finish = draft.finishEdits(base, [{ kind: 'update-feature', feature: { ...pad, regionSelection } }]);
+    await main.editPrepared(base.version, document => prepare(document, finish.edits), undefined, () => draft.assertCurrent(main.getSnapshot(), finish.localVersion));
+    const accepted = main.getSnapshot();
+    expect(accepted.document.features[1]).toEqual({ ...pad, regionSelection });
+    expect(accepted.document.features.slice(2)).toEqual(base.document.features.slice(2));
+    expect(sketchOf(accepted.document).source).toEqual(sketchOf(base.document).source);
+    main.undo(); expect(main.getSnapshot().document).toBe(base.document); expect(main.getSnapshot().canUndo).toBe(false);
+    const cancelBase = main.getSnapshot(), cancelled = new CadSketchEditDraft(cancelBase, 'sketch');
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const pending = cancelled.editPrepared([split], async (document, edits, signal) => { await gate; return prepare(document, edits, signal); });
+    cancelled.cancel(); const retained = cancelled.getSnapshot(); release();
+    await expect(pending).rejects.toThrow(); expect(cancelled.getSnapshot()).toBe(retained); expect(main.getSnapshot()).toBe(cancelBase);
+    expect(main.getSnapshot().canRedo).toBe(true); main.redo(); expect(main.getSnapshot().document).toBe(accepted.document);
+  });
+
   it('moves a consumed graph privately, retains exact drivers/source and finishes as one global undo', async () => {
     const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
     const move: CadEdit = { kind: 'translate-sketch-geometry', sketchId: 'sketch', selections: ['ab', 'bc', 'cd', 'da'].map(id => ({ kind: 'entity', id })), translation: [0, 5] };

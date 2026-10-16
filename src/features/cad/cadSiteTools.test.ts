@@ -7,6 +7,7 @@ import { cadSiteTools } from './cadSiteTools';
 import type { CadController } from './useCadController';
 import type { CadBuildResult } from '@/domain/cad/cadDocument';
 import { refs as regionRefs, pad as regionPad, pocket as regionPocket, sketch as regionSketch } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
+import { CadSketchSplitDependencyError } from '@/domain/cad/cadSketchSplit';
 
 describe('CAD tool argument boundary and discovery', () => {
   it.each(['extrude', 'pocket'] as const)('advertises the exact optional closed-cell selection schema for %s without widening other feature kinds', async kind => {
@@ -45,6 +46,36 @@ describe('CAD tool argument boundary and discovery', () => {
       expect(await read.execute({ expectedVersion: 'current', sketchId: 'regions', boundaryProfileId: 'outer', proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
     }
     expect(controller).not.toHaveBeenCalled(); expect(inspect.annotations?.readOnlyHint).toBe(true); expect(read.annotations?.readOnlyHint).toBe(true);
+  });
+
+  it('advertises strict split proposals on both existing region reads and rejects mixed/extra arms before controller access', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid split proposal reached operations'); });
+    const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+    if (!inspect || !read) throw new Error('Missing region reads.');
+    const line = { kind: 'line', entityId: 'edge', parameter: .5, splitPointId: 'joint', newEntityId: 'second', supportRelationId: 'straight' };
+    const arc = { kind: 'arc', entityId: 'edge', parameter: .25, splitPointId: 'joint', newEntityId: 'second' };
+    for (const tool of [inspect, read]) {
+      const query = { expectedVersion: 'current', sketchId: 'regions', ...(tool === read ? { boundaryProfileId: 'outer' } : {}) };
+      for (const proposal of [{ split: line }, { split: arc, parameterValues: { span: 30 } }]) expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(true);
+      for (const proposal of [{ split: line, sketch: regionSketch() }, { split: { ...line, parameter: 0 } }, { split: { ...arc, supportRelationId: 'unused' } },
+        { split: { ...line, newEntityId: undefined } }, { split: { ...line, parameter: '0.5' } }, { split: line, parameterValues: { span: '30' } }, { split: line, edits: [] }]) {
+        expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(false);
+        expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+      }
+    }
+    expect(controller).not.toHaveBeenCalled();
+  });
+
+  it('returns exact bounded split blocker identities without putting machine IDs in the human repair message', async () => {
+    const ids = Array.from({ length: 12 }, (_, index) => `whole-edge-${index}`), failure = new CadSketchSplitDependencyError(ids);
+    const tools = cadSiteTools(() => { throw failure; }), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions');
+    if (!inspect) throw new Error('Missing region inspection.');
+    const reply = await inspect.execute({ expectedVersion: 'current', sketchId: 'graph', proposal: {
+      split: { kind: 'line', entityId: 'edge', parameter: .5, splitPointId: 'joint', newEntityId: 'second', supportRelationId: 'straight' }
+    } });
+    expect(reply).toMatchObject({ ok: false, error: { code: 'dependent-sketch-split', details: { relationIds: ids.slice(0, 8), relationCount: 12, omittedRelationCount: 4 } } });
+    expect(JSON.stringify(reply)).not.toContain('whole-edge-11'); expect(failure.message).not.toContain(ids[0]);
+    expect(failure.relationIds).toEqual(ids);
   });
 
   it('advertises the same complete sketch profile capacity that the shared authoring schema accepts', async () => {

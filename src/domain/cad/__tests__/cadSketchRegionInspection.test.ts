@@ -5,8 +5,67 @@ import { pad } from './cadSketchRegionFixtures';
 import { CadSession } from '@/features/cad/cadSession';
 import type { CadSketchFeature } from '../cadDocument';
 import { createCadDocument, parseCadDocument } from '../cadSchema';
+import { reduceCadEditIntents } from '../cadOperations';
+import type { CadSketchRegionProposal } from '../cadSketchRegionInspection';
+
+function splitSource() {
+  return parseCadDocument({ ...createCadDocument('Split regions', 'split-regions'), schemaVersion: 2, parameters: { span: 20, retained: 7 }, features: [{
+    id: 'graph', name: 'Outline', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], source: sketch().source, graph: {
+      points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [' span ', '0'] }, { id: 'c', position: [' span ', 10] }, { id: 'd', position: ['0', 10] }],
+      entities: ['a', 'b', 'c', 'd'].map((id, index) => ({ id: `edge-${id}`, kind: 'line', construction: false, startPointId: id, endPointId: ['b', 'c', 'd', 'a'][index] })), relations: []
+    }
+  }] });
+}
+const split = { kind: 'line', entityId: 'edge-a', parameter: .5, splitPointId: 'joint', newEntityId: 'a-new', supportRelationId: 'straight' } as const;
 
 describe('prepared closed-cell inspection and physical selection', () => {
+  it('preflights the exact named split and additive parameter values before one atomic explicit-consumer repair', () => {
+    const source = splitSource(), oldReference = inspectCadSketchRegions(source, 'graph').items[0].reference;
+    const consumer = { ...pad([oldReference]), sketchId: 'graph' };
+    const session = new CadSession({ ...source, features: [...source.features, consumer] }), before = session.getSnapshot(), original = JSON.stringify(before.document);
+    const proposal = { split, parameterValues: { span: 30, added: 11 } };
+    const inspection = inspectCadSketchRegions(before.document, 'graph', { proposal }), reference = inspection.items[0].reference;
+    expect(inspection).toMatchObject({ proposed: true, total: 1, items: [{ areaMm2: 300, boundaryLengthMm: 80 }] });
+    expect(reference).not.toEqual(oldReference);
+    expect(readCadSketchRegionReference(before.document, 'graph', reference.boundaryProfileId, proposal)).toEqual(reference);
+    const edits = [{ kind: 'set-parameter', name: 'span', value: 30 }, { kind: 'set-parameter', name: 'added', value: 11 },
+      { kind: 'split-sketch-entity', sketchId: 'graph', split }] as const;
+    const reduced = reduceCadEditIntents(before.document, edits), effective = reduced.features[0];
+    if (effective.kind !== 'sketch') throw new Error('Split sketch missing.');
+    expect(prepareCadSketchCells(effective, reduced.parameters).cells.map(cell => cell.reference)).toEqual(inspection.items.map(cell => cell.reference));
+    expect(reduced.parameters).toEqual({ span: 30, retained: 7, added: 11 });
+    expect(() => session.edit(edits, before.version)).toThrowError(expect.objectContaining({ code: 'stale-sketch-region' }));
+    expect(session.getSnapshot()).toBe(before); expect(JSON.stringify(before.document)).toBe(original);
+    session.edit([...edits, { kind: 'update-feature', feature: { ...consumer, regionSelection: [reference] } }], before.version);
+    const accepted = session.getSnapshot(); expect(accepted.document.features[0]).toEqual(effective);
+    expect(effective.source).toEqual(source.features[0].kind === 'sketch' ? source.features[0].source : undefined);
+    expect(effective.graph?.points.slice(0, 4)).toEqual(source.features[0].kind === 'sketch' ? source.features[0].graph?.points : undefined);
+    session.undo(); expect(session.getSnapshot().document).toBe(before.document); expect(session.getSnapshot().canUndo).toBe(false);
+    session.redo(); expect(session.getSnapshot().document).toBe(accepted.document);
+  });
+
+  it('rejects mixed, stale and whole-entity-owned split proposals without changing source or guessing repair', () => {
+    const source = splitSource(), feature = source.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Split sketch missing.');
+    const original = JSON.stringify(source);
+    const mixed = { split, sketch: feature } as unknown as CadSketchRegionProposal;
+    expect(() => inspectCadSketchRegions(source, 'graph', { proposal: mixed })).toThrowError(expect.objectContaining({ code: 'invalid-region-proposal' }));
+    expect(() => inspectCadSketchRegions(source, 'graph', { proposal: { split: { ...split, entityId: 'removed' } } })).toThrow();
+    expect(() => inspectCadSketchRegions(source, 'graph', { proposal: { split: { ...split, splitPointId: 'a' } } })).toThrow();
+    const blocked = parseCadDocument({ ...source, features: [{ ...feature, graph: { ...feature.graph,
+      relations: [{ id: 'whole-edge', kind: 'equal-length', lineIds: ['edge-a', 'edge-c'] }] } }] });
+    expect(() => inspectCadSketchRegions(blocked, 'graph', { proposal: { split } })).toThrowError(expect.objectContaining({ code: 'dependent-sketch-split', relationIds: ['whole-edge'] }));
+    expect(JSON.stringify(source)).toBe(original);
+  });
+
+  it('refuses to guess a split source that needs a native solve after proposed parameter overrides', () => {
+    const source = splitSource(), feature = source.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Split sketch missing.');
+    const driven = parseCadDocument({ ...source, features: [{ ...feature, graph: { ...feature.graph,
+      points: feature.graph.points.map(point => point.id === 'b' ? { ...point, position: [20, 0] } : point),
+      relations: [{ id: 'span-driver', kind: 'distance', pointIds: ['a', 'b'], value: ' span ' }] } }] });
+    const original = JSON.stringify(driven);
+    expect(() => inspectCadSketchRegions(driven, 'graph', { proposal: { split, parameterValues: { span: 30 } } })).toThrowError(expect.objectContaining({ code: 'invalid-sketch-graph-geometry' }));
+    expect(JSON.stringify(driven)).toBe(original);
+  });
   it('preflights each shared-driver source even when an earlier selected extrusion also needs the same atomic repair', () => {
     const first: CadSketchFeature = { ...sketch(), profiles: sketch().profiles.map(profile => profile.id === 'bore' && profile.geometry.kind === 'circle'
       ? { ...profile, geometry: { ...profile.geometry, x: 'location' } } : profile) };

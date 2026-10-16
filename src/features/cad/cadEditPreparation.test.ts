@@ -36,8 +36,73 @@ function graphOf(document: CadDocument) {
   const sketch = document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing fixture graph.'); return sketch.graph;
 }
 const move: CadEdit = { kind: 'translate-sketch-geometry', sketchId: 'sketch', selections: ['a', 'b', 'c', 'd'].map(id => ({ kind: 'entity', id: `edge-${id}` })), translation: [7, -3] };
+const splitLine = { kind: 'split-sketch-entity', sketchId: 'sketch', split: { kind: 'line', entityId: 'ab', parameter: .25,
+  splitPointId: 'cut', newEntityId: 'after', supportRelationId: 'support' } } satisfies CadEdit;
 
 describe('shared CAD edit preparation with the real sketch solver', () => {
+  it('splits the preceding solved line and accepts one exact topology change before later explicit edits', async () => {
+    const session = new CadSession(source()), before = session.getSnapshot();
+    const accepted = await session.editPrepared(before.version, async document => (await prepareCadEdits(document, [
+      { kind: 'set-parameter', name: 'length', value: 40 }, splitLine
+    ], solver)).document);
+    const graph = graphOf(accepted.document);
+    expect(graph.points).toEqual([{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [40, 0] }, { id: 'cut', position: [10, 0] }]);
+    expect(graph.entities).toEqual([
+      { id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'cut' },
+      { id: 'after', kind: 'line', construction: false, startPointId: 'cut', endPointId: 'b' }
+    ]);
+    expect(graph.relations).toEqual([...graphOf(before.document).relations, { id: 'support', kind: 'parallel', lineIds: ['ab', 'after'] }]);
+    const later: CadEdit = { kind: 'set-parameter', name: 'length', value: 60 };
+    const combined = await prepareCadEdits(before.document, [{ kind: 'set-parameter', name: 'length', value: 40 }, splitLine, later], solver);
+    expect(combined.document).toEqual((await prepareCadEdits(accepted.document, [later], solver)).document);
+    session.undo(); expect(session.getSnapshot().document).toBe(before.document); expect(session.getSnapshot().canUndo).toBe(false);
+    session.redo(); expect(session.getSnapshot().document).toBe(accepted.document);
+  });
+
+  it('keeps both exact native arc children on their original source supports and direction', async () => {
+    for (const direction of ['cw', 'ccw'] as const) {
+      const original = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Arc',
+        suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+          points: [{ id: 'center', position: [0, 0] }, { id: 'start', position: [10, 0] }, { id: 'end', position: [0, 10] }, { id: 'outside', position: [' 23 ', '-7'] }],
+          entities: [{ id: 'arc', kind: 'arc', construction: true, centerPointId: 'center', startPointId: 'start', endPointId: 'end', direction }], relations: []
+        } }] });
+      const result = await prepareCadEdits(original, [{ kind: 'split-sketch-entity', sketchId: 'sketch', split: { kind: 'arc', entityId: 'arc',
+        parameter: .5, splitPointId: 'cut', newEntityId: 'after' } }], solver);
+      const graph = graphOf(result.document);
+      expect(graph.points.slice(0, 4)).toEqual(graphOf(original).points); expect(graph.relations).toEqual([]);
+      expect(graph.entities).toEqual([
+        { id: 'arc', kind: 'arc', construction: true, centerPointId: 'center', startPointId: 'start', endPointId: 'cut', direction },
+        { id: 'after', kind: 'arc', construction: true, centerPointId: 'center', startPointId: 'cut', endPointId: 'end', direction }
+      ]);
+      const cut = graph.points.find(point => point.id === 'cut');
+      expect(cut?.position[0]).toBeCloseTo(direction === 'cw' ? -Math.SQRT1_2 * 10 : Math.SQRT1_2 * 10, 12);
+      expect(cut?.position[1]).toBeCloseTo(direction === 'cw' ? -Math.SQRT1_2 * 10 : Math.SQRT1_2 * 10, 12);
+      if (direction === 'ccw') {
+        const fixed = parseCadDocument({ ...original, features: original.features.map(feature => feature.kind === 'sketch' && feature.graph
+          ? { ...feature, graph: { ...feature.graph, points: feature.graph.points.map(point => ({ ...point,
+            position: point.position.map(value => typeof value === 'number' ? String(value) : value) })) } } : feature) });
+        const session = new CadSession(fixed), before = session.getSnapshot();
+        await expect(session.editPrepared(before.version, async document => (await prepareCadEdits(document, [{ kind: 'split-sketch-entity', sketchId: 'sketch', split: {
+          kind: 'arc', entityId: 'arc', parameter: .5, splitPointId: 'cut', newEntityId: 'after' } }], solver)).document))
+          .rejects.toMatchObject({ code: 'sketch-redundant', diagnostics: { redundantIds: ['after'] } });
+        expect(session.getSnapshot()).toBe(before);
+      }
+    }
+  });
+
+  it('rejects a solver-projected cut and a native conflicting split batch without accepting partial topology', async () => {
+    const session = new CadSession(source()), before = session.getSnapshot();
+    await expect(session.editPrepared(before.version, async document => (await prepareCadEdits(document, [splitLine], { solve: async input => {
+      const result = await solver.solve(input); if (result.kind !== 'solved') return result;
+      return { ...result, graph: { ...result.graph, points: result.graph.points.map(point => point.id === 'cut' ? { ...point, position: [6, 0] as const } : point) } };
+    } })).document)).rejects.toMatchObject({ code: 'sketch-split-intent' });
+    expect(session.getSnapshot()).toBe(before);
+    await expect(session.editPrepared(before.version, async document => (await prepareCadEdits(document, [splitLine,
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'bad-span', kind: 'distance', pointIds: ['a', 'b'], value: 10 } }
+    ], solver)).document)).rejects.toMatchObject({ code: 'sketch-conflicting' });
+    expect(session.getSnapshot()).toBe(before);
+  });
+
   it('propagates inferred fresh attachments, removes them without moving geometry and rejects an incompatible append atomically', async () => {
     const original = parseCadDocument({ ...createCadDocument('Attachments', 'attachments'), schemaVersion: 2, parameters: { anchorX: 10 }, features: [{
       id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [],

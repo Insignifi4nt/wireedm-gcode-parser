@@ -2,6 +2,68 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('splits a consumed sketch edge at its cursor, repairs its selected area deliberately and restores the complete edit with one Undo', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const sketch = { id: 'outline', kind: 'sketch', name: 'Split outline', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [' 0.0000 ', '0'] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [40, 20] }, { id: 'd', position: [0, 20] }],
+    entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+      { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+      { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+      { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' }], relations: []
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
+  let current = await context(page);
+  const regions = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id });
+  const pad = { id: 'pad', kind: 'extrude', name: 'Split plate', suppressed: false, sketchId: sketch.id,
+    regionSelection: [regions.items[0].reference], distance: ' 5e0 ', symmetric: false, operation: 'new', targetId: null };
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: pad }] }); current = await context(page);
+  await call(page, 'cad_build', { expectedVersion: current.version });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await page.getByRole('button', { name: 'Select Split outline in history', exact: true }).dblclick();
+  // Public tools read the accepted part, never the human's private sketch draft.
+  // Place this human gesture from the actual painted endpoint locations.
+  const a = await page.locator('[data-cad-sketch-point="a"]').boundingBox(), b = await page.locator('[data-cad-sketch-point="b"]').boundingBox();
+  if (!a || !b) throw new Error('Sketch endpoints unavailable.');
+  await page.mouse.click(a.x + a.width / 2 + .33 * (b.x + b.width / 2 - a.x - a.width / 2), a.y + a.height / 2 - 1, { button: 'right' });
+  const split = page.getByRole('menuitem', { name: 'Split here', exact: true }); await expect(split).toBeEnabled();
+  const jointId = await page.locator('[data-cad-sketch-split-point]').getAttribute('data-cad-sketch-split-point'); if (!jointId) throw new Error('Split marker unavailable.');
+  const previewX = Number(await page.locator('[data-cad-sketch-split-point]').getAttribute('cx')) - Number(await page.locator('[data-cad-sketch-point="a"] circle').first().getAttribute('cx'));
+  // Firefox/native input can round to a whole CSS pixel. Only pointer placement
+  // uses that screen allowance; accepted geometry must match its exact preview.
+  expect(Math.abs(previewX - 13.2)).toBeLessThanOrEqual(40 / Math.abs(b.x + b.width / 2 - a.x - a.width / 2));
+  await split.click();
+  await expect(page.locator(`[data-cad-sketch-point="${jointId}"]`)).toBeVisible();
+  await expect(page.locator(`[data-cad-sketch-point="${jointId}"]`)).toHaveAttribute('aria-pressed', 'true');
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
+  await page.keyboard.press('Control+z'); await expect(page.locator(`[data-cad-sketch-point="${jointId}"]`)).toHaveCount(0);
+  await page.keyboard.press('Control+Shift+z'); await expect(page.locator(`[data-cad-sketch-point="${jointId}"]`)).toBeVisible();
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect(page.getByRole('form', { name: 'Update dependent sketch areas', exact: true })).toBeVisible();
+  expect((await context(page)).version).toBe(current.version);
+  await page.getByRole('button', { name: 'Choose areas for Split plate', exact: true }).click();
+  const areaCanvas = page.getByLabel('3D model canvas'), areaBox = await areaCanvas.boundingBox(); if (!areaBox) throw new Error('Area view unavailable.');
+  await page.mouse.click(areaBox.x + areaBox.width / 2, areaBox.y + areaBox.height / 2);
+  await page.getByRole('button', { name: 'Finish area selection', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const changed = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(changed.graph.points.slice(0, 4)).toEqual(sketch.graph.points); expect(changed.graph.entities).toHaveLength(5);
+  expect(changed.graph.points.find((point: { id: string }) => point.id === jointId).position).toEqual([expect.closeTo(previewX, 12), 0]);
+  expect(changed.graph.relations).toEqual([{ id: expect.any(String), kind: 'parallel', lineIds: ['ab', expect.any(String)] }]);
+  const changedPad = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: pad.id })).feature;
+  expect({ ...changedPad, regionSelection: pad.regionSelection }).toEqual(pad); expect(changedPad.regionSelection).not.toEqual(pad.regionSelection);
+  const built = await call(page, 'cad_build', { expectedVersion: current.version }); expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo(4000, 7);
+  await page.keyboard.press('Control+z'); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: pad.id })).feature).toEqual(pad);
+  await page.keyboard.press('Control+Shift+z'); current = await context(page);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload(); await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible();
+  current = await context(page); expect(current.dirty).toBe(false);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(changed);
+});
+
 test('attaches reversed rectangle picks deliberately, follows their drivers and detaches through the ordinary relation editor', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const feature = { id: 'attached', kind: 'sketch', name: 'Attached rectangle', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

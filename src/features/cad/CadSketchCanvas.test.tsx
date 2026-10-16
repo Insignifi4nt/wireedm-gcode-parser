@@ -7,6 +7,7 @@ import type { EditorPreviewCapture } from '@/features/webmcp/previewCapture';
 import { CadSketchCanvas } from './CadSketchCanvas';
 import type { CadRenderedViewControls } from './cadViewportControls';
 import { createCadDocument } from '@/domain/cad/cadSchema';
+import { applyCadEdits } from '@/domain/cad/cadOperations';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
 
 const rasterize = vi.hoisted(() => vi.fn());
@@ -335,6 +336,73 @@ describe('graph spatial selection', () => {
     expect(h.selected).toHaveBeenCalledExactlyOnceWith({ kind: 'entity', id: 'bc' }, true);
     expect(document.activeElement).toBe(container.querySelector('[data-cad-sketch-entity="bc"]'));
     expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.edited).not.toHaveBeenCalled();
+  });
+  it('previews an exact off-grid split at the owned cursor and submits the same named joint once', async () => {
+    const h = await spatialFixture(), original = structuredClone(h.feature), operation = deferred<void>(); h.edited.mockReturnValue(operation.promise);
+    await h.pointer('pointerdown', 5.3, .1, false, 7, 2); await h.pointer('pointerup', 5.3, .1, false, 7, 2);
+    const split = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Split here');
+    expect(split).toBeDefined(); expect(split?.disabled).toBe(false); expect(h.edited).not.toHaveBeenCalled();
+    const joint = container.querySelector('[data-cad-sketch-split-point]'); expect(joint).not.toBeNull();
+    const pointId = joint?.getAttribute('data-cad-sketch-split-point');
+    await act(async () => split?.click());
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'split-sketch-entity', sketchId: h.feature.id, split: {
+      kind: 'line', entityId: 'ab', parameter: expect.closeTo(.53, 12), splitPointId: pointId,
+      newEntityId: expect.any(String), supportRelationId: expect.any(String)
+    } }], expect.any(AbortSignal));
+    const graphControls = h.props().graphControls; if (!graphControls) throw new Error('Graph controls missing.');
+    const acceptedDocument = applyCadEdits(graphControls.document, h.edited.mock.calls[0][0]), feature = acceptedDocument.features[0];
+    if (feature.kind !== 'sketch') throw new Error('Accepted sketch missing.');
+    await h.show({ sketch: feature, documentVersion: 'accepted', graphControls: { ...graphControls, document: acceptedDocument } });
+    expect(h.edited.mock.calls[0][1].aborted).toBe(false); expect(h.selected).not.toHaveBeenCalled();
+    await act(async () => operation.resolve(undefined));
+    expect(h.feature).toEqual(original); expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: pointId });
+  });
+  it('does not apply a cut after the actual SVG frame moves while its menu is open', async () => {
+    const h = await spatialFixture();
+    await h.pointer('pointerdown', 5, .1, false, 7, 2); await h.pointer('pointerup', 5, .1, false, 7, 2);
+    const split = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Split here');
+    expect(split).toBeDefined();
+    vi.mocked(h.canvas.getBoundingClientRect).mockReturnValue({ left: 20, top: 20, right: 1020, bottom: 520, width: 1000, height: 500, x: 20, y: 20, toJSON: () => ({}) });
+    await act(async () => split?.click()); expect(h.edited).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
+  it.each(['frame', 'blur', 'lock'] as const)('cancels an applying split on %s and ignores its late joint selection', async ending => {
+    const h = await spatialFixture(), resize = notifyResize, operation = deferred<void>(); h.edited.mockReturnValue(operation.promise);
+    await h.pointer('pointerdown', 5, .1, false, 7, 2); await h.pointer('pointerup', 5, .1, false, 7, 2);
+    const split = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Split here');
+    if (!split) throw new Error('Split action missing.');
+    await act(async () => split.click());
+    const signal: unknown = h.edited.mock.calls[0]?.[1]; if (!(signal instanceof AbortSignal)) throw new Error('Split signal missing.');
+    expect(signal.aborted).toBe(false);
+    if (ending === 'frame') await act(async () => { width = 800; resize(); });
+    else if (ending === 'blur') await act(async () => window.dispatchEvent(new Event('blur')));
+    else await h.show({ interactionLocked: true });
+    expect(signal.aborted).toBe(true); expect(h.pending).toHaveBeenLastCalledWith(false);
+    await act(async () => operation.resolve(undefined));
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.edited).toHaveBeenCalledOnce(); expect(h.error).not.toHaveBeenCalled();
+  });
+  it('requires an owned pointer location for Split here and drops a pending cut on source replacement', async () => {
+    const h = await spatialFixture(), edge = container.querySelector('[data-cad-sketch-entity="ab"]'); if (!edge) throw new Error('Missing edge.');
+    await act(async () => edge.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true, cancelable: true })));
+    expect([...document.querySelectorAll('[role="menuitem"]')].some(item => item.textContent === 'Split here')).toBe(false);
+    await act(async () => document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    await h.pointer('pointerdown', 5, .1, false, 7, 2); await h.pointer('pointerup', 5, .1, false, 7, 2);
+    expect(container.querySelector('[data-cad-sketch-split-point]')).not.toBeNull();
+    await h.show({ documentVersion: 'two' }); expect(container.querySelector('[data-cad-sketch-split-point]')).toBeNull();
+    expect(h.edited).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
+  it('identifies the owning relation when an otherwise valid edge cut is blocked', async () => {
+    const h = await spatialFixture(), graph = h.feature.graph; if (!graph) throw new Error('Graph missing.');
+    const feature = { ...h.feature, graph: { ...graph, points: [...graph.points, { id: 'p', position: [0, 10] as const }, { id: 'q', position: [10, 10] as const }],
+      entities: [...graph.entities, { id: 'guide', kind: 'line' as const, construction: true, startPointId: 'p', endPointId: 'q' }],
+      relations: [{ id: 'whole-owner', kind: 'parallel' as const, lineIds: ['ab', 'guide'] as const }] } };
+    await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });
+    await h.pointer('pointerdown', 5, .1, false, 7, 2); await h.pointer('pointerup', 5, .1, false, 7, 2);
+    const split = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Split here');
+    expect(split?.disabled).toBe(true);
+    expect(split?.getAttribute('aria-description')).toMatch(/Parallel relation 1.*Line 1 and Line 3/);
+    await act(async () => split?.click());
+    expect(h.edited).not.toHaveBeenCalled(); expect(container.querySelector('[data-cad-sketch-split-point]')).toBeNull();
   });
   it('dismisses overlap preview on Escape or a changed source without changing the accepted selection', async () => {
     const h = await spatialFixture();

@@ -4,7 +4,7 @@ import { createPortal, flushSync } from 'react-dom';
 import './cad-context-menu.css';
 
 export type CadContextMenuItem = { readonly kind: 'separator' }
-  | { readonly label: string; readonly disabled?: boolean; readonly danger?: boolean; onSelect(): void; onHighlight?(): void };
+  | { readonly label: string; readonly disabled?: boolean; readonly danger?: boolean; readonly help?: string; onSelect(): void; onHighlight?(): void };
 export interface CadContextMenuAnchor { readonly x: number; readonly y: number }
 
 /** Target actions share existing operations; the menu owns only focus and dismissal. */
@@ -50,7 +50,7 @@ export function CadContextMenu({ anchor, title, items, onClose, onOutsidePointer
     }}>
     <MenuLabel>{title}</MenuLabel>
     {items.map((item, index) => 'kind' in item ? <MenuSeparator key={index} />
-      : <MenuItem type="button" key={index} disabled={item.disabled} danger={item.danger}
+      : <MenuItem type="button" key={index} disabled={item.disabled} danger={item.danger} title={item.help}
         onFocus={() => item.onHighlight?.()} onPointerEnter={() => item.onHighlight?.()}
         onClick={() => { flushSync(onClose); item.onSelect(); }}>{item.label}</MenuItem>)}
   </MenuSurface>, document.body);

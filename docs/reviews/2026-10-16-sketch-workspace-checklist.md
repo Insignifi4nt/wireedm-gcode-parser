@@ -37,9 +37,19 @@ Native in-app browser independently verifies both visible reference points, the 
 
 Next: [exact line/arc splitting](2026-10-16-sketch-exact-split-plan.md), followed by the remaining topology tools, associative midpoint and full sketch acceptance inventory. The isolated arrangement module remains unwired. No persisted schema/storage migration, native change, installed machine/post change, version bump or remote action. Sketch mode and the overall goal remain incomplete.
 
+## Checkpoint: exact edge splitting
+
+One strict named-ID line/open-arc split now preserves both pieces, old source scalars and original endpoints. Lines gain an ordinary Parallel support; arcs keep their common center/direction. Whole-entity relation owners and uncertain geometry block without rewriting constraints. Shared preparation flushes preceding solves and checks the complete exact candidate; private history and explicit consumer-area repair use their existing paths. Existing agent region reads accept the same narrow split proposal and return actual replacement references for an atomic repair batch.
+
+Domain/edit, real native/private-draft and public proposal/controller cases pass focused checks. Independent review repaired pending Apply cancellation and named blocker help. Actual browser acceptance also caught the inspector briefly claiming a dirty edit after source replacement, cancelling the successful Split receipt before it selected the new joint. A real integrated regression now covers that ownership transition and genuine dirty-field locking; the small source-ownership guard preserves both. The final menu keeps the cut marker visible, and the accepted joint is selected with Move available.
+
+All 22 production sketch/region journeys pass in Chromium and Firefox against the final build, including local Undo/Redo, deliberate dependent-area repair, Finish, complete global Undo/Redo and save/reopen. Pointer placement alone allows one CSS pixel across engines; accepted geometry must still match the actual preview to 12 digits. Native human and WebMCP split-plus-repair both retain one 4000 mm³ plate, exact old source/consumer restoration and one-step Undo. Final native inspection confirms selected-joint interaction and exact Cancel; one Undo restores the empty disposable draft without saving user records. Proof: `tmp/sketch-exact-split-{menu,selected,solid}.png`. Full build, TypeScript, documentation/source distribution, shared UI and icon integration pass. [Review and root acceptance](2026-10-16-sketch-exact-split-review.md).
+
+Some fully driven arcs safely reject redundant native structural equations. No solver or tolerance change, persisted schema/storage migration, installed machine/post change, version bump or remote action was introduced. Full S16 still requires trim/extend, and S17 offset remains unimplemented. Next is a bounded physical driver-precision contract before useful angular dimensions; both investigations are recorded separately. The isolated arrangement remains unwired, and sketch mode and the overall goal remain incomplete.
+
 ## Initial findings
 
-The canvas picker currently returns a profile ID. Selecting/dragging a boundary therefore translates its whole profile. The constraint module records explicit dimensions for primitive profile sizes and preserves expressions, but has no general point/segment relationship solver. Paths and polygons expose no dimension quantities. These are model and interaction gaps, not styling issues.
+The canvas picker initially returned a profile ID. Selecting/dragging a boundary therefore translated its whole profile. The initial constraint module recorded explicit dimensions for primitive profile sizes and preserved expressions, but had no general point/segment relationship solver. Paths and polygons exposed no dimension quantities. These were model and interaction gaps, not styling issues.
 
 Research runs in parallel and will be recorded in `2026-10-16-sketch-workflow-reference.md`. The first implementation slice is the requested dashboard filter, followed by granular sketch selection and editing.
 

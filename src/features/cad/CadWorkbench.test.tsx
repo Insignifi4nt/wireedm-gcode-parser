@@ -17,6 +17,7 @@ import type { CadRenderedViewControls, CadWorkbenchViewportControls } from './ca
 import type { CadViewportContextMenuRequest } from './CadViewport';
 import type { CadFeatureRegionPickCommand } from './cadFeatureReferencePicking';
 import type { CadExtrudeDepthControl } from './cadExtrudeDepthInteraction';
+import { useCadSketchEditing } from './useCadSketchEditing';
 
 let requestViewportMenu: ((request: CadViewportContextMenuRequest) => void) | undefined;
 let pickViewportFeature: ((id: string | null) => void) | undefined;
@@ -197,6 +198,58 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('selects the accepted Split joint in the real owned sketch workspace after private publication', async () => {
+    const initial = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Outline',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }, { id: 'd', position: [0, 10] }],
+        entities: ['a', 'b', 'c', 'd'].map((id, index) => ({ id: `${id}-edge`, kind: 'line', construction: false, startPointId: id, endPointId: ['b', 'c', 'd', 'a'][index] })), relations: []
+      } }, { id: 'pad', kind: 'extrude', name: 'Pad', suppressed: false, sketchId: 'sketch', distance: 5, symmetric: false, operation: 'new', targetId: null }] });
+    const main = new CadSession(initial), base = main.getSnapshot(), storage = {};
+    function Harness() {
+      useSyncExternalStore(main.subscribe, main.getSnapshot);
+      const editing = useCadSketchEditing({ session: main, storage, open: true, locked: false,
+        prepare: async (document, edits, signal) => { await Promise.resolve(); signal?.throwIfAborted(); return applyCadEdits(document, edits); },
+        inspect: async () => undefined, commit: (edits, version, signal) => main.editPrepared(version, async document => applyCadEdits(document, edits), signal) });
+      const snapshot = editing.snapshot; currentDocument = snapshot.document;
+      return <CadWorkbench document={snapshot.document} documentVersion={snapshot.version} build={null} buildVersion={null} buildState="idle" dirty={snapshot.dirty}
+        canUndo={snapshot.canUndo} canRedo={snapshot.canRedo} onEdit={(edit, signal) => editing.sketchId ? editing.edit([edit], signal) : main.edit([edit])}
+        onEditMany={(edits, signal) => editing.sketchId ? editing.edit(edits, signal) : main.edit(edits)} onBeginSketchEdit={editing.begin}
+        sketchEdit={editing.sketchId ? { sketchId: editing.sketchId, finish: editing.finish, cancel: editing.cancel, inspectAreaRepairs: editing.inspectAreaRepairs } : undefined}
+        onWorkflowChange={editing.setWorkflowOpen} onUndo={editing.undo} onRedo={editing.redo} onSave={save} onBack={vi.fn()} onSendToCam={sendToCam}
+        onOpenDocument={vi.fn()} onNewDocument={vi.fn()} onImportDocument={async () => undefined} onExportDocument={vi.fn()}
+        onExportSolid={async () => undefined} onOpenDxfExport={async () => undefined} onViewportControlsReady={controls => { currentViewport = controls; }} />;
+    }
+    await act(async () => root.render(<Harness />));
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'sketch' })); await click('Edit sketch');
+    expect(currentDocument.features).toHaveLength(1); expect(main.getSnapshot().document).toBe(base.document);
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    let captured = false;
+    Object.assign(canvas, { setPointerCapture: () => { captured = true; }, hasPointerCapture: () => captured, releasePointerCapture: () => { captured = false; } });
+    const state = viewport().getState().view; if (!state || state.mode === 'solid') throw new Error('Sketch frame missing.');
+    const viewWidth = Number(canvas.getAttribute('viewBox')?.split(' ')[2]);
+    const pointer = async (type: string) => {
+      const event = new MouseEvent(type, { button: 2, buttons: type === 'pointerup' ? 0 : 2, bubbles: true, cancelable: true,
+        clientX: 300 + (5 - state.centerMm[0]) / viewWidth * 600, clientY: 200 + state.centerMm[1] / state.heightSpanMm * 400 });
+      Object.defineProperties(event, { pointerId: { value: 11 }, isPrimary: { value: true } });
+      await act(async () => canvas.dispatchEvent(event));
+    };
+    await pointer('pointerdown'); await pointer('pointerup');
+    const id = container.querySelector('[data-cad-sketch-split-point]')?.getAttribute('data-cad-sketch-split-point'); if (!id) throw new Error('Split preview missing.');
+    await click('Split here');
+    const localDocument = currentDocument, accepted = localDocument.features[0]; if (accepted.kind !== 'sketch') throw new Error('Accepted sketch missing.');
+    expect(accepted.graph?.entities).toHaveLength(5);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id }]);
+    expect(container.querySelector(`[data-cad-sketch-point="${id}"]`)?.getAttribute('aria-pressed')).toBe('true');
+    expect(button('Move selection').disabled).toBe(false); expect(main.getSnapshot().document).toBe(base.document);
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'sketch' }));
+    await input(field('Plane offset'), '2.5000');
+    expect(field('Plane offset').value).toBe('2.5000'); expect(button('Rectangle').disabled).toBe(true);
+    expect(viewport().getState().workflowOpen).toBe(true); expect(currentDocument).toBe(localDocument);
+    await click('Cancel'); expect(button('Rectangle').disabled).toBe(false); expect(viewport().getState().workflowOpen).toBe(false);
+    expect(main.getSnapshot().document).toBe(base.document);
+  });
+
   it('reports an unchanged authoritative point move without inferring permanent mobility, and ignores cancelled receipts', async () => {
     const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Constrained points', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
       points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [50, 20] }],

@@ -43,15 +43,17 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
   }
   for (const edit of captured) {
     signal?.throwIfAborted();
-    if (edit.kind === 'translate-sketch-geometry') {
+    if (edit.kind === 'translate-sketch-geometry' || edit.kind === 'split-sketch-entity') {
       await flush();
       const target = reduceCadEditIntents(candidate, [edit]);
       if (Value.Equal(candidate, target)) continue;
       candidate = target;
       await solve();
       // Native success may project targets or propagate to outside points/radii.
-      // Exact Move accepts only its complete affine source candidate.
-      if (!Value.Equal(candidate, target)) throw new CadError('sketch-translation-intent', 'The constraints cannot satisfy this exact move without changing other geometry. Adjust the selection or its relations.');
+      // Exact Move and Split accept only their complete constructed source candidate.
+      if (!Value.Equal(candidate, target)) throw edit.kind === 'split-sketch-entity'
+        ? new CadError('sketch-split-intent', 'The constraints cannot preserve this exact split without changing geometry. Adjust its relations before splitting.')
+        : new CadError('sketch-translation-intent', 'The constraints cannot satisfy this exact move without changing other geometry. Adjust the selection or its relations.');
     } else if (edit.kind === 'move-sketch-point') {
       await flush();
       const sketch = candidate.features.find(feature => feature.id === edit.sketchId);

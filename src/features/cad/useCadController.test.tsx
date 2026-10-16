@@ -24,6 +24,8 @@ import { parseDxf } from '@/domain/dxf/parseDxf';
 import { part as regionPart, refs as regionRefs, sketch as regionSketch, pad as regionPad } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import type { CadSketchSolveInput, CadSketchSolveResult } from './sketch-solver/cadSketchSolverTypes';
+import { inspectCadSketchRegions } from '@/domain/cad/cadSketchRegionInspection';
+import type { CadSketchCellReference } from '@/domain/cad/cadSketchRegionSelection';
 
 const kernel = vi.hoisted(() => ({ build: vi.fn(), section: vi.fn(), export: vi.fn(), importSolid: vi.fn(), importDxf: vi.fn(), importDxfCurve: vi.fn(), inspectTopology: vi.fn(), resolveTopologyPicks: vi.fn(), dispose: vi.fn() }));
 const createClient = vi.hoisted(() => vi.fn());
@@ -1322,6 +1324,53 @@ describe('CAD controller asynchronous guards', () => {
       await act(async () => h.cad().undo(accepted.version)); expect(h.session.getSnapshot().document).toEqual(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
       await act(async () => h.cad().redo(h.session.getSnapshot().version)); expect(h.session.getSnapshot().document).toEqual(accepted.document);
       expect(createClient).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('reads exact split proposal references through guarded public tools and repairs the consumer in one atomic split batch', async () => {
+    const h = await harness(); vi.useFakeTimers();
+    try {
+      const source = parseCadDocument({ ...createCadDocument('Split proposal', 'split-proposal'), schemaVersion: 2, parameters: { span: 20, retained: 7 }, features: [{
+        id: 'graph', kind: 'sketch', name: 'Outline', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+          points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [' span ', '0'] }, { id: 'c', position: [' span ', 10] }, { id: 'd', position: ['0', 10] }],
+          entities: ['a', 'b', 'c', 'd'].map((id, index) => ({ id: `edge-${id}`, kind: 'line', construction: false, startPointId: id, endPointId: ['b', 'c', 'd', 'a'][index] })), relations: []
+        }
+      }] });
+      const originalReference = inspectCadSketchRegions(source, 'graph').items[0].reference, consumer = { ...regionPad([originalReference]), sketchId: 'graph' };
+      await act(async () => h.session.replace({ ...source, features: [...source.features, consumer] }));
+      const before = h.session.getSnapshot(), original = JSON.stringify(before.document), tools = cadSiteTools(h.cad);
+      const inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference'), edit = tools.find(tool => tool.name === 'cad_edit_document');
+      if (!inspect || !read || !edit) throw new Error('Missing public region operations.');
+      const split = { kind: 'line', entityId: 'edge-a', parameter: .5, splitPointId: 'joint', newEntityId: 'a-new', supportRelationId: 'straight' } as const;
+      const proposal = { split, parameterValues: { span: 30 } };
+      const result = await inspect.execute({ expectedVersion: before.version, sketchId: 'graph', proposal }) as { ok: boolean; data: { items: { reference: CadSketchCellReference }[] } };
+      expect(result).toMatchObject({ ok: true, data: { proposed: true, items: [{ areaMm2: 300, boundaryLengthMm: 80 }] } });
+      const reference = result.data.items[0].reference; expect(reference).not.toEqual(originalReference);
+      let offset: number | null = 0; const chunks: string[] = [];
+      while (offset !== null) {
+        const chunk = await read.execute({ expectedVersion: before.version, sketchId: 'graph', boundaryProfileId: reference.boundaryProfileId, proposal, offset, length: 37 }) as { ok: boolean; data: { text: string; nextOffset: number | null } };
+        expect(chunk.ok).toBe(true); chunks.push(chunk.data.text); offset = chunk.data.nextOffset;
+      }
+      expect(chunks.join('')).toBe(JSON.stringify(reference)); expect(h.session.getSnapshot()).toBe(before);
+      expect(JSON.stringify(before.document)).toBe(original); expect(createSketchClient).not.toHaveBeenCalled();
+      await act(async () => h.session.setWorkflowOpen(true));
+      expect(await read.execute({ expectedVersion: before.version, sketchId: 'graph', boundaryProfileId: reference.boundaryProfileId, proposal })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+      await act(async () => h.session.setWorkflowOpen(false));
+      const abort = new AbortController(), pending = inspect.execute({ expectedVersion: before.version, sketchId: 'graph', proposal }, { signal: abort.signal });
+      abort.abort(); expect(await pending).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+      sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+      const edits = [{ kind: 'set-parameter', name: 'span', value: 30 }, { kind: 'split-sketch-entity', sketchId: 'graph', split }] as const;
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits })).toMatchObject({ ok: false, error: { code: 'stale-sketch-region' } }); });
+      expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().version).toBe(before.version); expect(h.session.getSnapshot().canUndo).toBe(false);
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits: [...edits, { kind: 'update-feature', feature: { ...consumer, regionSelection: [reference] } }] })).toMatchObject({ ok: true }); });
+      const accepted = h.session.getSnapshot();
+      expect(inspectCadSketchRegions(accepted.document, 'graph').items[0].reference).toEqual(reference);
+      expect(accepted.document.parameters).toEqual({ span: 30, retained: 7 });
+      expect(await read.execute({ expectedVersion: before.version, sketchId: 'graph', boundaryProfileId: reference.boundaryProfileId, proposal })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+      expect(await inspect.execute({ expectedVersion: accepted.version, sketchId: 'graph', proposal: { split: { ...split, splitPointId: 'joint-2', newEntityId: 'new-2', supportRelationId: 'straight-2' } } }))
+        .toMatchObject({ ok: false, error: { code: 'dependent-sketch-split', details: { relationIds: ['straight'], relationCount: 1, omittedRelationCount: 0 } } });
+      await act(async () => h.cad().undo(accepted.version)); expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+      await act(async () => h.cad().redo(h.session.getSnapshot().version)); expect(h.session.getSnapshot().document).toBe(accepted.document);
     } finally { vi.useRealTimers(); }
   });
 

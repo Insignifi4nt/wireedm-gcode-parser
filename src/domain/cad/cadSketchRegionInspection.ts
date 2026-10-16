@@ -9,6 +9,7 @@ import { measureCadResolvedProfile, type CadBounds2 } from './cadMeasurements';
 import { resolveCadSketchContours, type CadResolvedSketchContour, type CadSketchRegion } from './cadSketchGeometry';
 import { createCadSketchCellIndex, selectCadSketchRegions, type CadSketchCellReference } from './cadSketchRegionSelection';
 import { cadScalarParameterNames, mapCadFeatureScalars } from './cadParameters';
+import { CadSketchSplitTargetSchema, splitCadSketchEntity, type CadSketchSplitTarget } from './cadSketchSplit';
 
 export interface CadPreparedSketchCell {
   readonly reference: CadSketchCellReference;
@@ -99,16 +100,17 @@ function resolveCells(sketch: CadSketchFeature, parameters: CadDocument['paramet
   });
 }
 
-export interface CadSketchRegionProposal {
-  readonly sketch?: CadSketchFeature;
-  /** Numeric additions/overrides, not a replacement of the accepted parameter map. */
-  readonly parameterValues?: CadDocument['parameters'];
-}
-export const CadSketchRegionProposalSchema = Type.Object({ sketch: Type.Optional(CadSketchFeatureSchema),
-  parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false, minProperties: 1 });
+/** Numeric additions/overrides keep existing semantics; split never accepts a replacement sketch. */
+export type CadSketchRegionProposal =
+  | { readonly sketch?: CadSketchFeature; readonly split?: never; readonly parameterValues?: CadDocument['parameters'] }
+  | { readonly split: CadSketchSplitTarget; readonly sketch?: never; readonly parameterValues?: CadDocument['parameters'] };
+export const CadSketchRegionProposalSchema = Type.Union([
+  Type.Object({ sketch: Type.Optional(CadSketchFeatureSchema), parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false, minProperties: 1 }),
+  Type.Object({ split: CadSketchSplitTargetSchema, parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false })
+]);
 export function validateCadSketchRegionProposal(proposal: CadSketchRegionProposal): void {
   if (!isCadImportData(proposal) || !Value.Check(CadSketchRegionProposalSchema, proposal))
-    throw new CadError('invalid-region-proposal', 'Propose a complete same-ID sketch, numeric parameter values, or both.');
+    throw new CadError('invalid-region-proposal', 'Propose a complete same-ID sketch or one exact split, with optional numeric parameter values; parameter-only proposals are also supported.');
 }
 
 function activeSketch(document: CadDocument, sketchId: string, proposal?: CadSketchRegionProposal) {
@@ -124,10 +126,16 @@ function activeSketch(document: CadDocument, sketchId: string, proposal?: CadSke
     // Read only this complete source and its actual preceding datum dependency.
     // Other selected solids may intentionally need repair in the same later
     // atomic batch; validating them here would prevent inspecting fresh cells.
-    const source = proposal.sketch ?? sketch, sourcePlane = source.plane;
+    const parameters = { ...validated.parameters, ...proposal.parameterValues };
+    let source = proposal.sketch ?? sketch;
+    if (proposal.split !== undefined) {
+      if (!sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
+      source = { ...sketch, graph: splitCadSketchEntity({ graph: sketch.graph, parameters, split: proposal.split }).graph };
+    }
+    const sourcePlane = source.plane;
     const requiredDatums = typeof sourcePlane === 'string' ? [] : validated.features.slice(0, index)
       .filter(feature => feature.kind === 'datum-plane' && feature.id === sourcePlane.featureId);
-    const candidate = parseCadDocument({ ...validated, parameters: { ...validated.parameters, ...proposal.parameterValues }, features: [...requiredDatums, source] });
+    const candidate = parseCadDocument({ ...validated, parameters, features: [...requiredDatums, source] });
     const effective = candidate.features[candidate.features.length - 1];
     if (effective.kind !== 'sketch') throw new CadError('invalid-region-proposal', 'The proposed source must remain a sketch.');
     if (effective.suppressed) throw new CadError('suppressed-sketch', `Sketch "${effective.name}" is suppressed. Resume it before choosing its areas.`);

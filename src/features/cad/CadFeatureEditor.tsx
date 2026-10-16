@@ -127,7 +127,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
   const capturedEdges = feature.kind === 'fillet' || feature.kind === 'chamfer' ? feature.selection : null;
   const candidateEdits = useMemo(() => cadFeatureCandidateEdits({ feature: draft, isNew, parameters: parameterEdits }), [draft, isNew, parameterEdits]);
   useEffect(() => { draftSource.current = feature; setDraft(feature); setParameterEdits({}); setValueDrafts({}); setRelationEdits({}); setError(null); setPicker(null); pickToken.current = null; regionStart.current = null; }, [feature]);
-  useLayoutEffect(() => { onPendingChange(isNew || changed || scalarPending || Boolean(pickCurrent) || depthGestureActive); }, [isNew, changed, scalarPending, pickCurrent, depthGestureActive, onPendingChange]);
+  useLayoutEffect(() => { onPendingChange(isNew || draftSource.current === feature && (changed || scalarPending || Boolean(pickCurrent) || depthGestureActive)); }, [isNew, feature, changed, scalarPending, pickCurrent, depthGestureActive, onPendingChange]);
   useLayoutEffect(() => { onReferencePick?.(pickCurrent ?? { kind: 'clear', owner: previewOwner }); }, [onReferencePick, pickCurrent, previewOwner]);
   useLayoutEffect(() => () => pickerCallback.current?.({ kind: 'clear', owner: previewOwner }), [previewOwner]);
   useLayoutEffect(() => {
