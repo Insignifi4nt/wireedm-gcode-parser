@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CadMesh, CadPlane } from '@/domain/cad/cadDocument';
 import type { CadSectionRequest, CadSectionResult } from '@/domain/cad/cadSection';
 import type { DxfEntity } from '@/domain/dxf/types';
+import { cadSectionMiddleOffset } from './cadSectionMidpoint';
 
 /** Display exact analytic curves. This preview never becomes the machining source. */
 export function CadSectionPreview({ entities, label = 'Exact section preview' }: { entities: readonly DxfEntity[]; label?: string }) {
@@ -33,7 +34,7 @@ export function CadSectionPreview({ entities, label = 'Exact section preview' }:
 }
 
 export function CadSectionDialog({ bodies, initialBodyId, version, onClose, onInspect, onSend }: {
-  bodies: readonly Pick<CadMesh, 'featureId' | 'name'>[];
+  bodies: readonly Pick<CadMesh, 'featureId' | 'name' | 'bounds'>[];
   initialBodyId: string;
   version: string;
   onClose(): void;
@@ -42,9 +43,10 @@ export function CadSectionDialog({ bodies, initialBodyId, version, onClose, onIn
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const pending = useRef<AbortController | null>(null);
-  const [bodyId, setBodyId] = useState(initialBodyId);
+  const initialBody = bodies.find(body => body.featureId === initialBodyId) ?? bodies[0];
+  const [bodyId, setBodyId] = useState(initialBody?.featureId ?? '');
   const [plane, setPlane] = useState<CadPlane>('XY');
-  const [offset, setOffset] = useState('0');
+  const [offset, setOffset] = useState(cadSectionMiddleOffset(initialBody, 'XY'));
   const [result, setResult] = useState<CadSectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'inspect' | 'send' | null>(null);
@@ -80,8 +82,13 @@ export function CadSectionDialog({ bodies, initialBodyId, version, onClose, onIn
     <div className="space-y-3 p-4 text-xs">
       <p className="text-muted-foreground">Cut the final solid with a plane and transfer its exact closed contours. The preview includes downstream cuts and Boolean operations.</p>
       <div className="grid grid-cols-[2fr_1fr_1fr] gap-3">
-        <label>Solid body<Select className="mt-1 w-full px-2 py-1.5 text-xs" value={bodyId} disabled={busy !== null} onChange={event => setBodyId(event.target.value)}>{bodies.map(body => <option key={body.featureId} value={body.featureId}>{body.name}</option>)}</Select></label>
-        <label>Section plane<Select className="mt-1 w-full px-2 py-1.5 text-xs" value={plane} disabled={busy !== null} onChange={event => { if (event.target.value === 'XY' || event.target.value === 'XZ' || event.target.value === 'YZ') setPlane(event.target.value); }}><option>XY</option><option>XZ</option><option>YZ</option></Select></label>
+        <label>Solid body<Select className="mt-1 w-full px-2 py-1.5 text-xs" value={bodyId} disabled={busy !== null} onChange={event => {
+          setBodyId(event.target.value); setOffset(cadSectionMiddleOffset(bodies.find(body => body.featureId === event.target.value), plane)); setError(null);
+        }}>{bodies.map(body => <option key={body.featureId} value={body.featureId}>{body.name}</option>)}</Select></label>
+        <label>Section plane<Select className="mt-1 w-full px-2 py-1.5 text-xs" value={plane} disabled={busy !== null} onChange={event => {
+          const next = event.target.value;
+          if (next === 'XY' || next === 'XZ' || next === 'YZ') { setPlane(next); setOffset(cadSectionMiddleOffset(bodies.find(body => body.featureId === bodyId), next)); setError(null); }
+        }}><option>XY</option><option>XZ</option><option>YZ</option></Select></label>
         <label>Plane offset (mm)<Input className={input} value={offset} disabled={busy !== null} onChange={event => setOffset(event.target.value)} /></label>
       </div>
       <p className="text-muted-foreground">Offset follows {plane === 'XY' ? '+Z' : plane === 'XZ' ? '−Y' : '+X'}. Use a plane inside the material. Ellipse and spline sections are reported as unsupported.</p>

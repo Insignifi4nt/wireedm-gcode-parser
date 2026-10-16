@@ -33,7 +33,7 @@ import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmis
 import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 
 export const featureLabels: Record<CadFeature['kind'], string> = {
-  'datum-plane': 'Plane', sketch: 'Sketch', curve: 'Curve', imported: 'Imported solid', extrude: 'Pad / Pocket', pocket: 'Pocket', revolve: 'Revolve', loft: 'Loft', sweep: 'Sweep', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / Rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
+  'datum-plane': 'Plane', sketch: 'Sketch', curve: 'Curve', imported: 'Imported solid', extrude: 'Pad / pocket', pocket: 'Pocket', revolve: 'Revolve', loft: 'Loft', sweep: 'Sweep', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
 };
 
 const planeOptions = (['XY', 'XZ', 'YZ'] satisfies CadPlane[]).map((value) => ({ value, label: `${value} plane` }));
@@ -324,7 +324,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
     };
   }, [onReferencePick, documentVersion, staleDraft, preceding, depthGestureActive, previewOwner, document, draft]);
   return <form className="cad-property-form" aria-busy={submission.applying || undefined} onKeyDown={event => { if (pickCurrent && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); endPick(); } }} onSubmit={(event) => { event.preventDefault(); if (pickCurrent || staleDraft || scalarPending || areasMissing || depthGestureActive || submission.applying) return; if (waitingForPreview) { setError('Wait for a valid preview of this edit.'); return; } submission.submit(signal => onApply(draft, parameterEdits, signal), () => setError(null), cause => setError(cause instanceof Error ? cause.message : 'Unable to apply this feature.')); }}>
-    <div className="cad-property-title">{isNew ? 'Create' : 'Edit'} {featureLabels[draft.kind]}<CadContextHelp label={featureLabels[draft.kind]}>{cadFeatureHelp[draft.kind]}</CadContextHelp></div>
+    <div className="cad-property-title">{isNew ? 'Create' : 'Edit'} {featureLabels[draft.kind].toLowerCase()}<CadContextHelp label={featureLabels[draft.kind]}>{cadFeatureHelp[draft.kind]}</CadContextHelp></div>
     <fieldset className="cad-feature-fields" disabled={Boolean(pickCurrent) || staleDraft || depthGestureActive || submission.applying}>
     <CadFeatureReferencePickingContext.Provider value={pickingContext}>{fields}</CadFeatureReferencePickingContext.Provider></fieldset>
     {pickCurrent?.kind === 'pick' && <div className="cad-reference-pick-status" role="status">Pick {pickCurrent.label.toLowerCase()} in the model or history<Button type="button" aria-label="Cancel source selection" onClick={() => endPick()}><CloseIcon size={13} /></Button></div>}
@@ -401,7 +401,7 @@ export function CadProfileEditor({ profile, document, onApply, onCancel, onPendi
         : cause instanceof Error ? cause.message : 'Unable to apply this profile.');
     });
   }}>
-    <div className="cad-property-title">{geometry.kind === 'plugin' ? geometry.package.name : `${geometry.kind} profile`}</div>
+    <div className="cad-property-title">{geometry.kind === 'plugin' ? geometry.package.name : `${geometry.kind[0].toUpperCase()}${geometry.kind.slice(1)} profile`}</div>
     <fieldset className="cad-feature-fields" disabled={submission.applying}>
     {geometry.kind !== 'plugin' && profileOptions}
     {fields}

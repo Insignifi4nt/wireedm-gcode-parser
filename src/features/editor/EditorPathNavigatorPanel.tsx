@@ -2176,7 +2176,7 @@ function renderContourTreeNode({
               >
                 {label}
               </span>
-              <span className="min-w-0 truncate text-[10px] capitalize text-muted-foreground" data-upid-contour-field="role">
+              <span className="min-w-0 truncate text-[10px] text-muted-foreground" data-upid-contour-field="role">
                 · {element.classification}
               </span>
               {diagnosticSummary.count > 0 && (

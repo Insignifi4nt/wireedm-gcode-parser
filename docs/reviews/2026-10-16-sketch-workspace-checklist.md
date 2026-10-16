@@ -27,7 +27,15 @@ The broader83 CAD journeys produce79 initial passes and four investigated failur
 
 Native pointer/keyboard opens Dimension, Cancels, sets Ø8, Shift-selects two circles and Moves+5. Accepted source stays exact until Finish; one4685.84073464102mm³ Pad5, expected bounds, no diagnostics and exact Undo/Redo. Disposable draft restored empty/closed without Save; tmp/sketch-context-native-{menu.png,editor.png,solid.png,proof.json}. Hosted guidance now matches accepted constraints, references, placement, patterns and intersection areas. No schema/native/tolerance, version or remote change.
 
-Next existing-workspace work: correct Section for CAM's guaranteed invalid initial height by sharing DXF's body-interior default, preserve custom review values, and remove forced title capitalization. Assess the separate inability to repick an existing topology operation through an owned pre-feature source; do not weaken accepted-build identity checks. [Workspace findings and proposed seams](2026-10-17-cad-workspace-tools-audit.md).
+## Checkpoint: first section preview and authored headings
+
+Section for CAM now shares DXF's selected-body midpoint suggestion, including signed XZ offsets, deliberate body/plane replacement and unrounded small heights. Authored offset expressions survive unrelated renders; changing a request invalidates its reviewed preview. Native section validation and Send/Cancel/version guards remain authoritative. A midpoint is a suggestion, not a guarantee of material in every nonconvex body.
+
+The raised Z5–15 plate journey fails on the old default0, then passes with default10 and exact contour transfer. Section, DXF exchange and drawer/configuration production journeys pass Chromium and Firefox. Focused dialog/heading-consumer checks, all-project types/production build,98 documentation/source-distribution checks and shared UI rules pass. Independent source review is closed. Native preview proves XY10 (two contours/ten curves), XZ−20 (two/eight), unchanged authored custom height and DXF's same default; accepted source stays exact. Disposable drafts restored empty/closed without Save. Evidence: tmp/cad-section-native-{xy.png,xz.png,dxf.png,proof.json}.
+
+Removed forced title capitalization; static feature action headings now use deliberate sentence case while user/plugin names remain exact. The existing shared-control checker also rejects forced capitalize styles, with a meaningful architecture fixture rather than new per-copy UI tests. Actual native heading is Edit sketch with computed transform none; tmp/cad-sentence-case-native.png. No schema, native, tolerance, version or remote change.
+
+Next: the separately scoped inability to repick an existing topology operation through its owned pre-feature source; do not weaken accepted-build identity checks. [Workspace findings and proposed seams](2026-10-17-cad-workspace-tools-audit.md). The overall local-only goal remains active.
 
 ## Checkpoint: precise reused-detail placement
 

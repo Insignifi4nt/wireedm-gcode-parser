@@ -32,8 +32,8 @@ function isPaintProperty(property: string) {
   return /^(?:color$|(?:background|border|outline|box-shadow|text-shadow|fill|stroke|accent-color|caret-color|column-rule|text-decoration|text-emphasis|filter)(?:-|$))/.test(property);
 }
 
-function hasUppercaseUtility(value: string) {
-  return value.split(/\s+/).some(token => /(?:^|:)!?uppercase!?$|\[text-transform:uppercase\]!?$/.test(token));
+function hasForcedCaseUtility(value: string) {
+  return value.split(/\s+/).some(token => /(?:^|:)!?(?:uppercase|capitalize)!?$|\[text-transform:(?:uppercase|capitalize)\]!?$/.test(token));
 }
 
 function cssDeclarations(source: string, inspect: (property: string, value: string, offset: number, selectors: string[]) => void) {
@@ -67,17 +67,17 @@ function styleLocations(source: string, fileName: string): Location[] {
   }
   if (fileName.endsWith('.css')) {
     cssDeclarations(source, (property, value, offset, selectors) => {
-      if (property === 'text-transform' && /^uppercase(?:\s*!important)?\s*$/i.test(value.trim())) record(offset, 'uppercase-style');
-      if (property === '@apply' && hasUppercaseUtility(value)) record(offset, 'uppercase-class');
+      if (property === 'text-transform' && /^(?:uppercase|capitalize)(?:\s*!important)?\s*$/i.test(value.trim())) record(offset, 'forced-case-style');
+      if (property === '@apply' && hasForcedCaseUtility(value)) record(offset, 'forced-case-class');
       const shared = fileName.startsWith('src/components/ui/');
       if (shared && fileName !== 'src/components/ui/theme.css' && (isPaintProperty(property) || property.startsWith('--')) && hasLiteralColor(value)) record(offset, 'literal-control-color');
       if (!shared && selectors.some(selector => /\.ui-[\w-]+/.test(selector)) && (isPaintProperty(property) || property === 'opacity')) record(offset, 'shared-control-paint');
     });
-  } else if (/uppercase/i.test(source)) {
+  } else if (/uppercase|capitalize/i.test(source)) {
     const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
     function classes(node: ts.Node) {
       if ((ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node))
-        && hasUppercaseUtility(node.text)) record(node.getStart(file), 'uppercase-class');
+        && hasForcedCaseUtility(node.text)) record(node.getStart(file), 'forced-case-class');
       ts.forEachChild(node, classes);
     }
     function visit(node: ts.Node) {
@@ -85,11 +85,11 @@ function styleLocations(source: string, fileName: string): Location[] {
       if (ts.isPropertyAssignment(node)) {
         const name = ts.isIdentifier(node.name) || ts.isStringLiteralLike(node.name) ? node.name.text : '';
         if (name === 'className') classes(node.initializer);
-        if (name === 'textTransform' && ts.isStringLiteralLike(node.initializer) && node.initializer.text.toLowerCase() === 'uppercase') record(node.getStart(file), 'uppercase-style');
+        if (name === 'textTransform' && ts.isStringLiteralLike(node.initializer) && ['uppercase', 'capitalize'].includes(node.initializer.text.toLowerCase())) record(node.getStart(file), 'forced-case-style');
       }
       if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && ['cn', 'clsx', 'classnames', 'cva'].includes(node.expression.text)) classes(node);
       if (ts.isBinaryExpression(node) && ts.isPropertyAccessExpression(node.left) && node.left.name.text === 'textTransform'
-        && ts.isStringLiteralLike(node.right) && node.right.text.toLowerCase() === 'uppercase') record(node.getStart(file), 'uppercase-style');
+        && ts.isStringLiteralLike(node.right) && ['uppercase', 'capitalize'].includes(node.right.text.toLowerCase())) record(node.getStart(file), 'forced-case-style');
       ts.forEachChild(node, visit);
     }
     visit(file);

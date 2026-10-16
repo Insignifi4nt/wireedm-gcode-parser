@@ -38,19 +38,19 @@ it('finds one-off inputs, buttons, menus and native hover titles without treatin
   expect(unsharedControlLocations(source, 'fields.tsx').map(location => location.tag)).toEqual(['input', 'button', 'textarea', 'menu', 'native-tooltip']);
 });
 
-it('rejects forced uppercase styles in class variants, class helpers and CSS while retaining source data', async () => {
+it.each(['uppercase', 'capitalize'])('rejects forced %s styles in class variants, class helpers and CSS while retaining source data', async casing => {
   const violations = await checkFixture({
-    'src/view.tsx': `const source = 'uppercase';
-const view = <Button className={cn('text-sm md:uppercase', active && '!uppercase', { 'focus:uppercase': ready })} style={{ textTransform: 'uppercase' }} />;
-const arbitrary = <Button className="hover:[text-transform:uppercase]" />;
-const factory = React.createElement(Button, { className: 'uppercase' });`,
-    'src/view.css': `/* text-transform: uppercase; */
-.label { text-transform: uppercase; }
-.label-utility { @apply text-sm uppercase; }
-.source::before { content: 'text-transform: uppercase'; }`
+    'src/view.tsx': `const source = '${casing}';
+const view = <Button className={cn('text-sm md:${casing}', active && '!${casing}', { 'focus:${casing}': ready })} style={{ textTransform: '${casing}' }} />;
+const arbitrary = <Button className="hover:[text-transform:${casing}]" />;
+const factory = React.createElement(Button, { className: '${casing}' });`,
+    'src/view.css': `/* text-transform: ${casing}; */
+.label { text-transform: ${casing}; }
+.label-utility { @apply text-sm ${casing}; }
+.source::before { content: 'text-transform: ${casing}'; }`
   });
   expect(violations.map(value => value.match(/\(([^)]+)\)$/)?.[1]).sort()).toEqual([
-    'uppercase-class', 'uppercase-class', 'uppercase-class', 'uppercase-class', 'uppercase-class', 'uppercase-class', 'uppercase-style', 'uppercase-style'
+    'forced-case-class', 'forced-case-class', 'forced-case-class', 'forced-case-class', 'forced-case-class', 'forced-case-class', 'forced-case-style', 'forced-case-style'
   ]);
 });
 

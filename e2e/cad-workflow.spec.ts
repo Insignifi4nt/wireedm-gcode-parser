@@ -886,18 +886,21 @@ test('final-solid section preview protects its workflow and creates clean CAM ge
   const initial = await context(page);
   await call(page, 'cad_create_document', { expectedVersion: initial.version, name: 'Section plate' });
   const blank = await context(page);
-  await call(page, 'cad_edit_document', { expectedVersion: blank.version, edits });
+  await call(page, 'cad_edit_document', { expectedVersion: blank.version,
+    edits: edits.map(edit => edit.feature?.id === 'outline' ? { ...edit, feature: { ...edit.feature, offset: 5 } } : edit) });
   const current = await context(page);
-  await call(page, 'cad_build', { expectedVersion: current.version });
-  const request = { bodyId: 'pad', plane: 'XY', offset: 5 };
+  expect(await call(page, 'cad_build', { expectedVersion: current.version })).toMatchObject({
+    diagnostics: [], bodies: [{ boundsMm: { min: [expect.closeTo(0, 9), expect.closeTo(0, 9), 5], max: [expect.closeTo(60, 9), expect.closeTo(40, 9), 15] } }],
+  });
+  const request = { bodyId: 'pad', plane: 'XY', offset: 10 };
   const section = await call(page, 'cad_inspect_section', { expectedVersion: current.version, section: request, limit: 2 });
-  expect(section).toMatchObject({ bodyId: 'pad', plane: 'XY', offset: 5, contourCount: 2, entities: { items: expect.any(Array), total: 10, nextOffset: 2 } });
+  expect(section).toMatchObject({ bodyId: 'pad', plane: 'XY', offset: 10, contourCount: 2, entities: { items: expect.any(Array), total: 10, nextOffset: 2 } });
   await page.getByRole('button', { name: 'File', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Section for CAM', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Section for CAM' });
   await expect(dialog).toBeVisible();
   expect(await rawCall(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'rename-document', name: 'Interruption' }] })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
-  await dialog.getByLabel('Plane offset (mm)').fill('5');
+  await expect(dialog.getByLabel('Plane offset (mm)')).toHaveValue('10');
   await dialog.getByRole('button', { name: 'Preview section', exact: true }).click();
   await expect(dialog.getByRole('img', { name: 'Exact section preview' })).toBeVisible();
   await expect(dialog.getByRole('status')).toContainText('2 closed contours');

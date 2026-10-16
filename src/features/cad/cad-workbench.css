@@ -95,7 +95,7 @@
 .cad-selector-summary strong { font-size: 10px; font-weight: 500; color: var(--foreground); }
 .cad-selector-summary dl { margin: 5px 0 11px; }
 .cad-selector-summary dl > div { margin: 6px 0; }
-.cad-selector-summary dt { text-transform: capitalize; color: var(--muted-foreground); }
+.cad-selector-summary dt { color: var(--muted-foreground); }
 .cad-selector-summary dd { margin: 3px 0 0; overflow-wrap: anywhere; color: var(--foreground); font-variant-numeric: tabular-nums; }
 .cad-divider { height: 15px; width: 1px; background: var(--card); margin: 0 3px; }
 .cad-view-message { position: absolute; inset: 35% 15% auto; pointer-events: none; display: flex; flex-direction: column; text-align: center; gap: 9px; color: var(--muted-foreground); font-size: 12px; max-width: 460px; margin: auto; }
@@ -123,7 +123,7 @@
 .cad-panel-heading button { padding: 3px; }
 .cad-property-form { padding: 13px 13px 15px; }
 .cad-editor-fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
-.cad-property-title { color: var(--foreground); font-size: 13px; font-weight: 500; margin-bottom: 17px; text-transform: capitalize; }
+.cad-property-title { color: var(--foreground); font-size: 13px; font-weight: 500; margin-bottom: 17px; }
 .cad-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
 .cad-field > span { display: flex; justify-content: space-between; color: var(--muted-foreground); font-size: 12px; }
 .cad-field > span small { font-size: 10px; color: var(--muted-foreground); }

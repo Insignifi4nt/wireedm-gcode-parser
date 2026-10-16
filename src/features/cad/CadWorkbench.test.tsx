@@ -1069,7 +1069,7 @@ describe('CAD sketch interaction', () => {
     await act(async () => requestViewportMenu?.({ clientX: 100, clientY: 100, trigger: 'pointer', target: { kind: 'feature', featureId: 'pad-b' } }));
     expect(document.querySelector('[role="menu"]')).not.toBeNull();
     expect(() => viewport().apply({ kind: 'select-feature', featureId: 'pad' })).toThrow('Apply or cancel');
-    await click('Move / Rotate');
+    await click('Move / rotate');
     expect([...container.querySelectorAll('select')].find(select => [...select.options].some(option => option.value === 'pad-b'))?.value).toBe('pad-b');
     expect(currentSession.getSnapshot().document).toBe(accepted.document);
     await click('Apply');
@@ -1902,7 +1902,7 @@ describe('CAD sketch interaction', () => {
     expect(signal?.aborted).toBe(true); expect(currentSession.getSnapshot().workflowOpen).toBe(false);
     await click('Chamfer');
     await act(async () => finish?.({ bodyId: 'pad', buildId: 'build-1', purpose: 'fillet', selection: selectedEdgeQuery }));
-    expect(container.querySelector('.cad-property-title')?.textContent).toBe('Create Chamfer');
+    expect(container.querySelector('.cad-property-title')?.textContent).toBe('Create chamfer');
     await click('Apply');
     expect(currentDocument.features.at(-1)?.kind).toBe('chamfer');
   });

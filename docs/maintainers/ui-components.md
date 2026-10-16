@@ -33,7 +33,7 @@ Selection, diagnostic and geometry colors carry domain meaning and may remain in
 
 These are defaults for new work. Existing measured layouts and shared controls' intrinsic padding, strokes and alignment may use smaller increments. Canvas handles, source rows and narrow technical rails retain functional sizing. This does not claim every legacy layout already uses every token.
 
-Use sentence case for headings, labels, help and commands. Preserve authored acronyms such as CAD, CAM, DXF and UPID, axis names, identifiers, filenames and source text. Forced-uppercase styles are banned. Do not rewrite stored values or program text to satisfy a presentation rule.
+Use sentence case for headings, labels, help and commands. Preserve authored acronyms such as CAD, CAM, DXF and UPID, axis names, identifiers, filenames and source text. Forced uppercase and title-capitalization styles are banned by the shared UI check. Author the intended sentence case; do not rewrite stored values or program text to satisfy a presentation rule.
 
 Use weight, spacing and grouping to distinguish headings. Keep secondary metadata quieter than its value. Technical readouts may use tabular numerals. Formatting human summaries must not round pending edit text or replace raw expressions.
 
