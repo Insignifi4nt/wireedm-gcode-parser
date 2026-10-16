@@ -17,6 +17,7 @@ import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolver
 import { endTrim, trimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
 import { extendPart, lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
 import { compileCadSketchGeometry } from '@/domain/cad/compileCadSketchGeometry';
+import { pairedBoreMirrorPart, mirrorBoreRequest } from '@/domain/cad/__tests__/cadSketchMirrorFixtures';
 
 const require = createRequire(import.meta.url);
 const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
@@ -52,6 +53,27 @@ function contourCells(repair: CadSketchAreaRepairInspection) {
 }
 
 describe('owned consumed-sketch draft', () => {
+  it('keeps Mirror copy private with local history and one explicit consumer repair at guarded Finish', async () => {
+    const main = new CadSession(pairedBoreMirrorPart(true)), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    const edit = { kind: 'mirror-sketch-geometry', sketchId: 'sketch', ...mirrorBoreRequest } as const;
+    expect(() => draft.validateEdits([{ ...edit, sketchId: 'other' }])).toThrow('sketch');
+    await draft.editPrepared([edit], prepare); const local = draft.getSnapshot();
+    expect(main.getSnapshot()).toBe(base);
+    const source = sketchOf(base.document), changed = sketchOf(local.document);
+    expect(changed.graph?.entities.slice(0, source.graph?.entities.length)).toEqual(source.graph?.entities);
+    draft.undo(); expect(draft.inspectAreaRepairs(base)).toBeNull(); draft.redo(); expect(draft.getSnapshot().document).toBe(local.document);
+    await expect(prepare(base.document, draft.finishEdits(base).edits)).rejects.toMatchObject({ code: 'stale-sketch-region' });
+    const repair = draft.inspectAreaRepairs(base); if (!repair) throw new Error('Bore plate repair missing.');
+    const catalog = repair.consumers[0].cells, body = catalog.pick({ x: 5, y: 5 }); if (!body) throw new Error('Two-bore plate missing.');
+    expect(body.areaMm2).toBeCloseTo(1800 - 18 * Math.PI, 10);
+    const pad = base.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Pad missing.');
+    const regionSelection = catalog.pack([body.id]), finish = draft.finishEdits(base, [{ kind: 'update-feature', feature: { ...pad, regionSelection } }]);
+    await main.editPrepared(base.version, document => prepare(document, finish.edits), undefined,
+      () => draft.assertCurrent(main.getSnapshot(), finish.localVersion));
+    const accepted = main.getSnapshot(); expect(accepted.document.features).toEqual([changed, { ...pad, regionSelection }]);
+    main.undo(); expect(main.getSnapshot().document).toBe(base.document); expect(main.getSnapshot().canUndo).toBe(false);
+    main.redo(); expect(main.getSnapshot().document).toBe(accepted.document);
+  });
   it('repairs a vanished graph lens using current graph cells and accepts source plus explicit replacement in one undo', async () => {
     const sketch: CadSketchFeature = { id: 'lens', kind: 'sketch', name: 'Lens source', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
       points: [{ id: 'a', position: ['0.000', 0] }, { id: 'b', position: [' separation ', '0.00'] }], entities: [

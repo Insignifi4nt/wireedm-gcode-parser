@@ -26,6 +26,23 @@ it('offers explicit graph-cell inspection and unique numeric receipt reads witho
 });
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('shares strict Mirror identities between edit discovery and mutually exclusive read proposals', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed mirror reached controller.'); });
+    const tools = cadSiteTools(controller), reads = tools.filter(tool => tool.name === 'cad_inspect_sketch_regions' || tool.name === 'cad_read_sketch_region_reference');
+    const mirror = { entityIds: ['bore'], axisLineId: 'axis', idPrefix: 'mirror' };
+    const definition = CadToolEditDefinitions.find(edit => edit.properties.kind.const === 'mirror-sketch-geometry');
+    if (!definition) throw new Error('Mirror edit definition missing.');
+    expect(Value.Check(definition, { kind: 'mirror-sketch-geometry', sketchId: 'sketch', ...mirror })).toBe(true);
+    for (const tool of reads) {
+      const query = { expectedVersion: 'current', sketchId: 'sketch', ...(tool.name === 'cad_read_sketch_region_reference' ? { cellIds: [0] } : { mode: 'graph-cells' }) };
+      expect(Value.Check(tool.inputSchema, { ...query, proposal: { mirror, parameterValues: { axisX: 35 } } })).toBe(true);
+      for (const proposal of [{ mirror, sketch: regionSketch() }, { mirror, offset: {} }, { mirror: { ...mirror, entityIds: [] } },
+        { mirror: { ...mirror, entityIds: ['bore', 'bore'] } }, { mirror: { ...mirror, entityIds: Array.from({ length: 65 }, (_, i) => `e${i}`) } },
+        { mirror: { ...mirror, reflectedPoints: [[45, 15]] } }, { mirror: { ...mirror, idPrefix: 'x'.repeat(65) } }])
+        expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(controller).not.toHaveBeenCalled();
+  });
   it('exposes the same strict detached offset request in edit discovery and mutually exclusive region proposals', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed offset reached controller.'); });
     const tools = cadSiteTools(controller), reads = tools.filter(tool => tool.name === 'cad_inspect_sketch_regions' || tool.name === 'cad_read_sketch_region_reference');

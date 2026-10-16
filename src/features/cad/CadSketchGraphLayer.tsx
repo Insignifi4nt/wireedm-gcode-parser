@@ -26,6 +26,12 @@ export interface CadSketchGraphControls {
   readonly inspection?: { readonly pointIds: readonly string[]; readonly entityIds: readonly string[] } | null;
   readonly degreesOfFreedom?: number | null;
   readonly showDimensions?: boolean;
+  readonly entityPick?: {
+    readonly eligibleEntityIds: readonly string[];
+    readonly label: string;
+    onPick(entityId: string): void;
+    onCancel(): void;
+  };
   onSelect(selection: CadSketchGraphSelection | null, additive?: boolean): void;
   onSelectSet?(selections: readonly CadSketchGraphSelection[]): void;
   onDelete?(selection: CadSketchGraphSelection): void;
@@ -154,6 +160,10 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
   const referenceCorners = new Set(displayed.graph.relations.filter(relation => relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner').map(relation => relation.pointId));
   const choose = (selection: CadSketchGraphSelection, additive = false) => {
     if (active && !locked && !submission.applying) {
+      if (controls.entityPick) {
+        if (selection.kind === 'entity' && controls.entityPick.eligibleEntityIds.includes(selection.id)) controls.entityPick.onPick(selection.id);
+        return;
+      }
       try { if (additive) controls.onSelect(selection, true); else controls.onSelect(selection); }
       catch (cause) { onError(cause instanceof Error ? cause.message : 'Unable to select this geometry.'); }
     }
@@ -192,14 +202,14 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
     <= cadPathClosureTolerance([{ x: solvedPoint.position[0], y: solvedPoint.position[1] }, { x: snapCandidate.point[0], y: snapCandidate.point[1] }]));
   const limited = Boolean(snapCandidate && (preview.kind === 'error' || preview.kind === 'ready' && !attained));
   const snapLabel = snapCandidate ? `${snapCandidate.target.kind === 'endpoint' ? 'Endpoint' : snapCandidate.target.kind === 'center' ? 'Center' : snapCandidate.target.kind === 'midpoint' ? 'Midpoint' : 'Point'} position · ${limited ? 'Constraints limit movement' : 'No relation'}` : '';
-  const edgesInteractive = interactive && filter !== 'points', pointsInteractive = interactive && filter !== 'edges';
+  const edgesInteractive = interactive && (Boolean(controls.entityPick) || filter !== 'points'), pointsInteractive = interactive && !controls.entityPick && filter !== 'edges';
   const singleEntity = controls.selection.length === 1 && controls.selection[0].kind === 'entity' ? entities.get(controls.selection[0].id) : null;
   const circle = singleEntity?.kind === 'circle' ? cadSketchGraphCircleControl(prepared.graph, prepared.parameters, singleEntity.id) : null;
   const shownCircle = circle && displayed.graph.entities.some(entity => entity.id === circle.entityId && entity.kind === 'circle')
     ? cadSketchGraphCircleControl(displayed.graph, displayed.parameters, circle.entityId) : null;
   const radiusGripOffset = shownCircle ? Math.max(shownCircle.radius, 16 * Math.max(scaleX, scaleY)) : 0;
   const radiusGripX = shownCircle ? shownCircle.center[0] + radiusGripOffset - center[0] : 0;
-  const radiusInteractive = edgesInteractive && circle?.lockedReason === null && controls.degreesOfFreedom !== 0;
+  const radiusInteractive = edgesInteractive && !controls.entityPick && circle?.lockedReason === null && controls.degreesOfFreedom !== 0;
   const selected = (kind: CadSketchGraphSelection['kind'], id: string) => controls.selection.some(selection => selection.kind === kind && selection.id === id);
   const focusTarget = (element: SVGGElement, target: CadSketchGraphSelection) => element.closest('.cad-sketch-graph')?.querySelector<SVGGElement>(`[data-cad-sketch-${target.kind === 'point' ? 'point' : 'entity'}="${target.id}"]`)?.focus({ preventScroll: true });
   const clickTarget = (event: MouseEvent<SVGGElement>, target: CadSketchGraphSelection, eligible: boolean) => {
@@ -213,15 +223,16 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
       const entity = entities.get(segment.id);
       const related = relatedEntities.has(segment.id) || entity?.kind === 'line' && relatedPoints.has(entity.startPointId) && relatedPoints.has(entity.endPointId);
       const snapHighlighted = snapCandidate?.entityIds.includes(segment.id);
+      const edgeInteractive = edgesInteractive && (!controls.entityPick || controls.entityPick.eligibleEntityIds.includes(segment.id));
       return <g key={segment.id} data-cad-sketch-entity={segment.id} className={`cad-profile cad-sketch-entity${isSelected ? ' is-selected' : ''}${related ? ' is-relation-highlighted' : ''}${snapHighlighted || highlighted?.kind === 'entity' && highlighted.id === segment.id ? ' is-pick-highlighted' : ''}${construction.has(segment.id) ? ' is-construction' : ''}`}
-        role="button" aria-label={`${segment.kind[0].toUpperCase()}${segment.kind.slice(1)} ${index + 1} in ${sketch.name}`} aria-pressed={isSelected} aria-disabled={!edgesInteractive || undefined} tabIndex={edgesInteractive ? 0 : -1}
+        role="button" aria-label={`${segment.kind[0].toUpperCase()}${segment.kind.slice(1)} ${index + 1} in ${sketch.name}`} aria-pressed={isSelected} aria-disabled={!edgeInteractive || undefined} tabIndex={edgeInteractive ? 0 : -1}
         strokeDasharray={construction.has(segment.id) ? `${scaleY * 6} ${scaleY * 4}` : undefined}
-        onPointerDown={event => { if (event.button !== 0 || !active) return; const target = pickAt ? pickAt(event) : filter === 'points' ? null : { kind: 'entity' as const, id: segment.id }; if (!target) return; event.stopPropagation(); if (event.isPrimary === false || drag.current || !interactive) return; event.preventDefault(); focusTarget(event.currentTarget, target); choose(target, event.shiftKey); }}
-        onClick={event => clickTarget(event, { kind: 'entity', id: segment.id }, edgesInteractive)}
+        onPointerDown={event => { if (event.button !== 0 || !edgeInteractive) return; const target = pickAt ? pickAt(event) : filter === 'points' ? null : { kind: 'entity' as const, id: segment.id }; if (!target) return; event.stopPropagation(); if (event.isPrimary === false || drag.current) return; event.preventDefault(); focusTarget(event.currentTarget, target); choose(target, event.shiftKey); }}
+        onClick={event => clickTarget(event, { kind: 'entity', id: segment.id }, edgeInteractive)}
         onKeyDown={event => {
-          if (!edgesInteractive || drag.current || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+          if (!edgeInteractive || drag.current || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'entity', id: segment.id }, event.shiftKey); }
-          else if (event.key === 'Delete' && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'entity', id: segment.id }); }
+          else if (event.key === 'Delete' && !controls.entityPick && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'entity', id: segment.id }); }
         }}>
         <Boundary boundary={boundary} center={center} />
         {active && <g className="cad-sketch-entity-hit" strokeWidth={12 * scaleY}><Boundary boundary={boundary} center={center} /></g>}
@@ -239,6 +250,7 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
       return <g key={point.id} data-cad-sketch-point={point.id} data-cad-reference-corner={referenceCorner || undefined} role="button" aria-label={`${referenceCorner ? 'Reference corner' : 'Point'} ${index + 1} in ${sketch.name}`} aria-pressed={selected('point', point.id)} aria-disabled={!pointsInteractive || undefined} pointerEvents={active ? undefined : 'none'}
         tabIndex={pointsInteractive ? 0 : -1} className={`cad-sketch-graph-point${selected('point', point.id) ? ' is-active' : ''}${relatedPoints.has(point.id) ? ' is-relation-highlighted' : ''}${snapHighlighted || highlighted?.kind === 'point' && highlighted.id === point.id ? ' is-pick-highlighted' : ''}${canRequestMove ? '' : ' is-locked'}`}
         onPointerDown={event => {
+          if (controls.entityPick) return;
           if (event.button !== 0 || !active) return;
           const target = pickAt ? pickAt(event) : filter === 'edges' ? null : { kind: 'point' as const, id: point.id };
           if (!target) return;
@@ -271,7 +283,7 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
         <title>{referenceCorner ? 'Original reference corner · ' : ''}{formatCadQuantity(point.position[0])}, {formatCadQuantity(point.position[1])} mm · {movementHint}</title>
       </g>;
     })}
-    {circle && shownCircle && active && <g data-cad-sketch-circle-radius={circle.entityId} className={`cad-sketch-graph-point${radiusInteractive ? '' : ' is-locked'}`}
+    {circle && shownCircle && active && !controls.entityPick && <g data-cad-sketch-circle-radius={circle.entityId} className={`cad-sketch-graph-point${radiusInteractive ? '' : ' is-locked'}`}
       role="button" aria-label={`Resize circle radius in ${sketch.name}`} aria-disabled={!radiusInteractive || undefined} tabIndex={radiusInteractive ? 0 : -1}
       onPointerDown={event => {
         if (event.button !== 0 || !active) return; event.stopPropagation();
@@ -300,7 +312,7 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
       <title>{circle.lockedReason ?? (controls.degreesOfFreedom === 0 ? 'Fully constrained by dimensions and relations' : `Radius ${formatCadQuantity(shownCircle.radius)} mm · Drag to resize, or use arrow keys`)}</title>
     </g>}
     {active && controls.showDimensions !== false && <CadSketchGraphDimensions graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
-      selectedRelationId={controls.relation?.id} interactive={interactive && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)} />}
+      selectedRelationId={controls.relation?.id} interactive={interactive && !controls.entityPick && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)} />}
     {intent && drag.current?.moved && <circle className={`cad-sketch-drag-target${preview.kind === 'error' || candidate.issue ? ' is-invalid' : ''}`}
       cx={(intent.kind === 'point' ? intent.point.position[0] + intent.translation[0] : intent.circle.center[0] + intent.radius) - center[0]}
       cy={(intent.kind === 'point' ? intent.point.position[1] + intent.translation[1] : intent.circle.center[1]) - center[1]} r={5 * scaleY}>

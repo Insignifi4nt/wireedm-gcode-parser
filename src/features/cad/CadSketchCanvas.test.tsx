@@ -216,6 +216,23 @@ describe('graph spatial selection', () => {
     };
     return { feature, props: () => props, show, canvas, pointer, selected, selectedSet, edited, deleted, pending, error, release };
   }
+  it('routes an owned axis pick to eligible edges without changing the source set or exposing drag and delete', async () => {
+    const h = await spatialFixture(), onPick = vi.fn(), onCancel = vi.fn();
+    const selection: readonly CadSketchGraphSelection[] = [{ kind: 'entity', id: 'ab' }];
+    await h.show({ graphControls: { ...h.props().graphControls!, selection, entityPick: { eligibleEntityIds: ['bc'], label: 'Use as mirror line', onPick, onCancel } } });
+    await h.pointer('pointerdown', 20, 10); await h.pointer('pointerup', 20, 10);
+    expect(onPick).toHaveBeenCalledExactlyOnceWith('bc'); expect(h.selected).not.toHaveBeenCalled(); expect(h.selectedSet).not.toHaveBeenCalled();
+    await h.pointer('pointerdown', 0, 0); await h.pointer('pointermove', 5, 5); await h.pointer('pointerup', 5, 5);
+    await h.pointer('pointerdown', -10, -10); await h.pointer('pointerup', -10, -10);
+    const axis = container.querySelector('[data-cad-sketch-entity="bc"]'); if (!axis) throw new Error('Axis line missing.');
+    await act(async () => axis.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(onPick).toHaveBeenLastCalledWith('bc'); expect(onPick).toHaveBeenCalledTimes(2);
+    await act(async () => axis.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true })));
+    expect(h.deleted).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled(); expect(h.selected).not.toHaveBeenCalled();
+    expect(h.props().graphControls!.selection).toBe(selection);
+    await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
   it('previews containment then publishes one complete set on release without creating an edit', async () => {
     const h = await spatialFixture();
     await h.pointer('pointerdown', -2, -2); await h.pointer('pointermove', 12, 2);

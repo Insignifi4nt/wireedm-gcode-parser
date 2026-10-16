@@ -1080,6 +1080,7 @@ test('selects analytic boxes and overlapping sketch operands through shared filt
   expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'bc' }]);
   const selectedEdge = page.getByRole('button', { name: 'Line 2 in Spatial sketch', exact: true });
   await expect(selectedEdge).toBeFocused(); await selectedEdge.press('Shift+F10');
+  await page.getByRole('menu', { name: 'Sketch edge actions', exact: true }).getByRole('menuitem', { name: 'Select other', exact: true }).click();
   await menu.getByRole('menuitem', { name: /^Point 2 ·/ }).click();
   await expect(page.getByRole('button', { name: 'Point 2 in Spatial sketch', exact: true })).toBeFocused();
   await page.keyboard.press('Enter');

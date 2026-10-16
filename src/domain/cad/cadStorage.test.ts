@@ -15,6 +15,7 @@ import { importCadDxfCurve } from './cadCurveDxf';
 import { cadDocumentPath, listCadDocuments, loadCadDocument, saveCadDocument } from './cadStorage';
 import { CAD_FORMER_DOCUMENT_BYTES } from './__tests__/cadBudgetFixture';
 import { graphCellSelectionAt, intersectingCircleSketch } from './__tests__/cadIntersectingCellFixtures';
+import { pairedBoreMirrorPart, mirrorBoreRequest } from './__tests__/cadSketchMirrorFixtures';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -24,6 +25,22 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     localStorage.clear();
     adapter = kind === 'browser-cache' ? createBrowserCacheAdapter(localStorage)
       : createBrowserDirectoryAdapter(new FakeDirectoryHandle('cad-test') as unknown as FileSystemDirectoryHandle);
+  });
+  it('saves a detached mirrored bore exactly and preserves its numeric independence on a later source parameter edit', async () => {
+    const document = pairedBoreMirrorPart(), first = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const copied = applyCadEdits(document, [{ kind: 'mirror-sketch-geometry', sketchId: 'sketch', ...mirrorBoreRequest }]);
+    const second = await saveCadDocument(adapter, copied, { expectedSavedVersion: first.savedVersion });
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(copied);
+    const changed = applyCadEdits(copied, [{ kind: 'set-parameter', name: 'boreDiameter', value: 10 }]);
+    const saved = await saveCadDocument(adapter, changed, { expectedSavedVersion: second.savedVersion }), reopened = await loadCadDocument(adapter, document.id);
+    expect(reopened).toEqual(saved); expect(reopened.document.schemaVersion).toBe(2);
+    expect(reopened.document.features).toEqual(copied.features);
+    const source = document.features[0], sketch = reopened.document.features[0];
+    if (source.kind !== 'sketch' || !source.graph || sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Bore graph missing.');
+    expect(sketch.graph.points.slice(0, source.graph.points.length)).toEqual(source.graph.points);
+    expect(sketch.graph.entities.slice(0, source.graph.entities.length)).toEqual(source.graph.entities);
+    expect(sketch.graph.entities.at(-1)).toEqual({ id: 'mirror_e0', kind: 'circle', centerPointId: 'mirror_p0', radius: 3, construction: false });
+    expect(sketch.graph.relations).toEqual(source.graph.relations);
   });
   it('round trips the exact parametric document and detects concurrent saved changes', async () => {
     const document = createCadDocument('Bracket', 'cad_bracket');

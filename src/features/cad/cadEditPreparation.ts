@@ -43,7 +43,7 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
   }
   for (const edit of captured) {
     signal?.throwIfAborted();
-    if (edit.kind === 'translate-sketch-geometry' || edit.kind === 'split-sketch-entity' || edit.kind === 'trim-sketch-entity' || edit.kind === 'extend-sketch-entity' || edit.kind === 'offset-sketch-loop') {
+    if (edit.kind === 'translate-sketch-geometry' || edit.kind === 'split-sketch-entity' || edit.kind === 'trim-sketch-entity' || edit.kind === 'extend-sketch-entity' || edit.kind === 'offset-sketch-loop' || edit.kind === 'mirror-sketch-geometry') {
       await flush();
       const target = reduceCadEditIntents(candidate, [edit]);
       if (Value.Equal(candidate, target)) continue;
@@ -59,7 +59,9 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
             ? new CadError('sketch-extend-intent', 'The constraints cannot preserve this exact extension without changing geometry. Adjust its relations before extending.')
             : edit.kind === 'offset-sketch-loop'
               ? new CadError('sketch-offset-intent', 'The constraints cannot preserve this exact offset without changing geometry. Adjust its source or relations before offsetting.')
-              : new CadError('sketch-translation-intent', 'The constraints cannot satisfy this exact move without changing other geometry. Adjust the selection or its relations.');
+              : edit.kind === 'mirror-sketch-geometry'
+                ? new CadError('sketch-mirror-intent', 'The constraints cannot preserve this exact mirrored copy without changing geometry. Adjust its source or relations before mirroring.')
+                : new CadError('sketch-translation-intent', 'The constraints cannot satisfy this exact move without changing other geometry. Adjust the selection or its relations.');
     } else if (edit.kind === 'move-sketch-point') {
       await flush();
       const sketch = candidate.features.find(feature => feature.id === edit.sketchId);

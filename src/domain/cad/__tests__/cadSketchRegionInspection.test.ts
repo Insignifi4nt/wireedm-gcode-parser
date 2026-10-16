@@ -14,6 +14,8 @@ import { circleTrimPart, lowerDAreaMm2 } from './cadSketchCircleTrimFixtures';
 import { middleArcTrimPart, clippedDAreaMm2 } from './cadSketchMiddleArcTrimFixtures';
 import { arcExtendPart, quarterSegmentAreaMm2, extendedSegmentAreaMm2 } from './cadSketchArcExtendFixtures';
 import { measureCadResolvedProfile } from '../cadMeasurements';
+import { pairedBoreMirrorPart, mirrorBoreRequest } from './cadSketchMirrorFixtures';
+import { prepareCadSketchMirror } from '../cadSketchMirror';
 
 function splitSource() {
   return parseCadDocument({ ...createCadDocument('Split regions', 'split-regions'), schemaVersion: 2, parameters: { span: 20, retained: 7 }, features: [{
@@ -26,6 +28,23 @@ function splitSource() {
 const split = { kind: 'line', entityId: 'edge-a', parameter: .5, splitPointId: 'joint', newEntityId: 'a-new', supportRelationId: 'straight' } as const;
 
 describe('prepared closed-cell inspection and physical selection', () => {
+  it('packs the same detached bore proposal and requires an explicit plate repair in one undoable batch', () => {
+    const document = pairedBoreMirrorPart(true), session = new CadSession(document), before = session.getSnapshot(), original = JSON.stringify(document);
+    const proposal = { mirror: mirrorBoreRequest }, inspection = inspectCadSketchRegions(document, 'sketch', { mode: 'graph-cells', proposal });
+    expect(inspection.proposed).toBe(true);
+    const body = [...inspection.items].sort((a, b) => b.areaMm2 - a.areaMm2)[0];
+    expect(body.areaMm2).toBeCloseTo(1800 - 18 * Math.PI, 10);
+    const selection = readCadSketchRegionReference(document, 'sketch', { cellIds: [body.cellId] }, proposal);
+    const sketch = document.features[0], pad = document.features[1]; if (sketch.kind !== 'sketch' || pad.kind !== 'extrude') throw new Error('Plate missing.');
+    const expected = prepareCadSketchMirror({ sketch, parameters: document.parameters, ...mirrorBoreRequest });
+    expect(prepareCadSketchCells(expected.sketch, document.parameters, 'graph-cells').pack([body.cellId])).toEqual(selection);
+    const edit = { kind: 'mirror-sketch-geometry', sketchId: 'sketch', ...mirrorBoreRequest } as const;
+    expect(() => session.edit([edit], before.version)).toThrowError(expect.objectContaining({ code: 'stale-sketch-region' }));
+    expect(session.getSnapshot()).toBe(before); expect(JSON.stringify(document)).toBe(original);
+    session.edit([edit, { kind: 'update-feature', feature: { ...pad, regionSelection: selection } }], before.version);
+    const accepted = session.getSnapshot(); expect(accepted.document.features).toEqual([expected.sketch, { ...pad, regionSelection: selection }]);
+    session.undo(); expect(session.getSnapshot().document).toBe(document); session.redo(); expect(session.getSnapshot().document).toBe(accepted.document);
+  });
   it('queries and proposes arc Extend before an explicit two-cell union repair while retaining the original divider', () => {
     const source = arcExtendPart(), sketch = source.features[0]; if (sketch.kind !== 'sketch') throw new Error('Arc sketch missing.');
     const catalog = prepareCadSketchCells(sketch, source.parameters, 'graph-cells'), oldSelection = catalog.pack(catalog.cells.map(cell => cell.id));

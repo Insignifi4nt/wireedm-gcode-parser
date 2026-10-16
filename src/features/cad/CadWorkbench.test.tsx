@@ -18,6 +18,7 @@ import type { CadViewportContextMenuRequest } from './CadViewport';
 import type { CadFeatureRegionPickCommand } from './cadFeatureReferencePicking';
 import type { CadExtrudeDepthControl } from './cadExtrudeDepthInteraction';
 import { useCadSketchEditing } from './useCadSketchEditing';
+import { pairedBoreMirrorPart } from '@/domain/cad/__tests__/cadSketchMirrorFixtures';
 
 let requestViewportMenu: ((request: CadViewportContextMenuRequest) => void) | undefined;
 let pickViewportFeature: ((id: string | null) => void) | undefined;
@@ -198,6 +199,27 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('keeps its mirror axis chooser alive through an owned keyboard menu without replacing the copied source selection', async () => {
+    const source = pairedBoreMirrorPart(); await mount(source);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'bore' } }));
+    await click('Mirror copy');
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]');
+    const axis = container.querySelector<SVGGElement>('[data-cad-sketch-entity="axis"]');
+    if (!canvas || !axis) throw new Error('Mirror axis canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    await act(async () => { axis.focus(); axis.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+    const choice = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Use as mirror line');
+    expect(choice).toBeDefined(); expect(viewport().getState().workflowOpen).toBe(true);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'bore' }]); expect(currentDocument).toBe(source);
+    await act(async () => choice?.click()); expect(button('Apply').disabled).toBe(false);
+    await click('Apply');
+    const accepted = currentDocument.features[0]; if (accepted.kind !== 'sketch' || !accepted.graph) throw new Error('Copied bore missing.');
+    expect(accepted.graph.points.at(-1)?.position).toEqual([45, 15]);
+    expect(accepted.graph.entities.at(-1)).toMatchObject({ kind: 'circle', radius: 3 });
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: accepted.graph.entities.at(-1)?.id }]);
+    expect(viewport().getState().workflowOpen).toBe(false);
+  });
   it('offsets the complete selected graph loop as one detached copy and selects its new geometry', async () => {
     const source = parseCadDocument({ ...createCadDocument('Plate', 'offset-plate'), schemaVersion: 2, features: [{
       id: 'sketch', kind: 'sketch', name: 'Plate', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
