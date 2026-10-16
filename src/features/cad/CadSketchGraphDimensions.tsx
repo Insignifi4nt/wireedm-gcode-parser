@@ -22,13 +22,13 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
     x2={points[1][0] - center[0]} y2={points[1][1] - center[1]} vectorEffect="non-scaling-stroke" />;
   return <g className="cad-sketch-graph-dimensions" role="group" aria-label="Sketch dimensions">
     {dimensions.map(dimension => {
-      const { quantity, text, width, height } = cadSketchGraphDimensionLabel(dimension.kind === 'angle' ? dimension.valueDegrees : dimension.valueMm, dimension.kind);
+      const { quantity, text, width, height } = cadSketchGraphDimensionLabel(dimension.kind === 'angle' ? dimension.valueDegrees : dimension.valueMm, dimension.kind, dimension.relation.kind === 'reference-dimension');
       const name = dimension.kind === 'distance-x' ? 'horizontal distance' : dimension.kind === 'distance-y' ? 'vertical distance'
         : dimension.kind === 'radius' || dimension.kind === 'diameter' || dimension.kind === 'angle' ? dimension.kind : dimension.kind === 'setback' ? `chamfer setback ${dimension.side + 1}` : 'distance';
       const roles = dimension.relation.kind === 'axis-distance'
         ? `, From Point ${pointNumbers.get(dimension.relation.pointIds[0])} → To Point ${pointNumbers.get(dimension.relation.pointIds[1])}` : '';
       return <g key={`${dimension.relation.id}/${dimension.kind === 'setback' ? dimension.side : dimension.kind}`} data-cad-sketch-dimension={dimension.relation.id}
-        data-cad-dimension-kind={dimension.kind} data-cad-dimension-side={dimension.kind === 'setback' ? dimension.side : undefined}
+        data-cad-dimension-reference={dimension.relation.kind === 'reference-dimension' || undefined} data-cad-dimension-kind={dimension.kind} data-cad-dimension-side={dimension.kind === 'setback' ? dimension.side : undefined}
         style={{ color: selectedRelationId === dimension.relation.id ? 'var(--primary)' : 'var(--muted-foreground)' }}>
         <g fill="none" stroke="currentColor" strokeWidth={1} pointerEvents="none">
           {dimension.extensions.map((extension, index) => <g key={index} opacity={0.6}>{line(extension)}</g>)}
@@ -36,7 +36,7 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
           {dimension.arrows.map((arrow, index) => <polygon key={index} fill="currentColor" stroke="none"
             points={arrow.map(point => `${point[0] - center[0]},${point[1] - center[1]}`).join(' ')} />)}
         </g>
-        <g className="cad-sketch-graph-dimension-label" role="button" aria-label={`Configure ${name} ${quantity}${roles}`} aria-pressed={selectedRelationId === dimension.relation.id}
+        <g className="cad-sketch-graph-dimension-label" role="button" aria-label={`${dimension.relation.kind === 'reference-dimension' ? 'Inspect reference' : 'Configure'} ${name} ${quantity}${roles}`} aria-pressed={selectedRelationId === dimension.relation.id}
           aria-disabled={!interactive || undefined} tabIndex={interactive ? 0 : -1} style={{ cursor: interactive ? 'pointer' : 'default' }}
           transform={`translate(${dimension.label[0] - center[0]} ${dimension.label[1] - center[1]}) scale(${mmPerPixel} ${-mmPerPixel})`}
           onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); event.stopPropagation(); if (interactive && event.isPrimary !== false) event.currentTarget.focus({ preventScroll: true }); }}

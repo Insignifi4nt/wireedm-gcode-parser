@@ -182,6 +182,7 @@ function retainedArcRadius(entity: SourceEdge, relation: CadSketchGraphRelation)
 function assertDependencies(graph: CadSketchGraph, entityId: string, detached: readonly string[], operation: 'trim' | 'extend' = 'trim', retained?: SourceEdge) {
   const owners = graph.relations.filter(relation => (cadSketchRelationEntityIds(relation).includes(entityId)
     || cadSketchRelationPointIds(graph, relation).some(id => detached.includes(id)))
+    && !(relation.kind === 'reference-dimension' && (retained || !cadSketchRelationEntityIds(relation).includes(entityId)))
     && !(retained && (retained.kind === 'line' ? retainedLineDirection(graph, retained, relation) : retainedArcRadius(retained, relation))));
   const drivers = detached.filter(id => graph.points.find(point => point.id === id)?.position.some(value => typeof value === 'string')
     || owners.some(relation => cadSketchRelationPointIds(graph, relation).includes(id)));
@@ -190,12 +191,12 @@ function assertDependencies(graph: CadSketchGraph, entityId: string, detached: r
 }
 function assertMiddleDependencies(graph: CadSketchGraph, entity: SourceEdge): void {
   const owners = graph.relations.filter(relation => cadSketchRelationEntityIds(relation).includes(entity.id)
-    && relation.kind !== 'parallel' && relation.kind !== 'perpendicular' && relation.kind !== 'collinear' && !retainedArcRadius(entity, relation));
+    && relation.kind !== 'reference-dimension' && relation.kind !== 'parallel' && relation.kind !== 'perpendicular' && relation.kind !== 'collinear' && !retainedArcRadius(entity, relation));
   if (owners.length) throw new CadSketchTrimDependencyError(owners.map(relation => relation.id), []);
 }
-function assertCircleDependencies(graph: CadSketchGraph, entity: Extract<CadSketchGraph['entities'][number], { kind: 'circle' }>): void {
+function assertCircleDependencies(graph: CadSketchGraph, entity: Extract<CadSketchGraph['entities'][number], { kind: 'circle' }>, retained: boolean): void {
   if (typeof entity.radius === 'string') throw new CadError('driven-sketch-trim-radius', "Edit or release this circle's radius expression before trimming.");
-  const owners = graph.relations.filter(relation => cadSketchRelationEntityIds(relation).includes(entity.id));
+  const owners = graph.relations.filter(relation => (!retained || relation.kind !== 'reference-dimension') && cadSketchRelationEntityIds(relation).includes(entity.id));
   if (owners.length) throw new CadSketchTrimDependencyError(owners.map(relation => relation.id), []);
 }
 function partition(segment: OpenSegment, point: Point2, t: number): readonly [OpenSegment, OpenSegment] {
@@ -369,7 +370,7 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
   const geometry = compileCadSketchGraph(graph, parameters), segment = geometry.segments.find(item => item.id === entityId);
   if (!segment) throw new CadError('invalid-sketch-trim-target', 'Trim needs an existing graph edge.');
   const unique = boundaryEvents(graph, parameters, geometry.segments, { kind: 'trim', segment });
-  if (entity.kind === 'circle') assertCircleDependencies(graph, entity);
+  if (entity.kind === 'circle') assertCircleDependencies(graph, entity, unique.length >= 2);
   if (!unique.length) {
     if (entity.kind !== 'circle') assertDependencies(graph, entityId, [entity.startPointId, entity.endPointId]);
     const result: CadSketchEndTrimPreparation = { target: { kind: 'delete', entityId, parameter: pick }, removed: segment,

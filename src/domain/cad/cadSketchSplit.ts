@@ -40,7 +40,7 @@ export function splitCadSketchEntity({ graph: input, parameters, split }: {
     throw new CadError('invalid-sketch-split', 'Choose a line or open arc and a finite split parameter strictly between zero and one.');
   const graph = parseCadSketchGraph(input), entity = graph.entities.find(item => item.id === split.entityId);
   if (!entity || entity.kind !== split.kind) throw new CadError('invalid-sketch-split-target', 'The split source must remain the requested line or open arc.');
-  const blockers = graph.relations.filter(relation => cadSketchRelationEntityIds(relation).includes(entity.id));
+  const blockers = graph.relations.filter(relation => relation.kind !== 'reference-dimension' && cadSketchRelationEntityIds(relation).includes(entity.id));
   if (blockers.length) throw new CadSketchSplitDependencyError(blockers.map(relation => relation.id));
   const geometry = compileCadSketchGraph(graph, parameters), segment = geometry.segments.find(item => item.id === entity.id);
   if (!segment || segment.kind === 'circle') throw new CadError('invalid-sketch-split-target', 'This split source is not supported.');

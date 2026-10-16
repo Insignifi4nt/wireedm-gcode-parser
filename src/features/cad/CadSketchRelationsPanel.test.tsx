@@ -700,3 +700,59 @@ describe('selected sketch entity relations', () => {
     expect(field('Fix Y').checked).toBe(false); expect(field('Fix Y').disabled).toBe(false);
   });
 });
+
+
+describe('saved reference dimension editing', () => {
+  it('saves a passive diameter on expression-driven geometry and keeps its source owner explicit', async () => {
+    const source=circleDocument(), h=await mount(source,{kind:'entity',id:'circle'}), exact=JSON.stringify(source);
+    await click('Reference diameter');await act(async()=>{await vi.waitFor(()=>expect(h.prepare).toHaveBeenCalled());});
+    expect(container.querySelector('[aria-label="Reference dimension value"]')?.textContent).toBe('10 mm');
+    expect(button('Make driving').disabled).toBe(true);
+    await click('Apply');
+    const accepted=h.session.getSnapshot().document, sketch=accepted.features[0];if(sketch.kind!=='sketch')throw Error('Missing sketch');
+    expect(sketch.graph?.relations).toEqual([expect.objectContaining({kind:'reference-dimension',measurement:{kind:'radial-size',entityId:'circle',quantity:'diameter'}})]);
+    expect(sketch.graph?.entities).toEqual(source.features[0].kind==='sketch'?source.features[0].graph?.entities:[]);
+    expect(JSON.stringify(source)).toBe(exact);await act(async()=>h.session.undo());expect(h.session.getSnapshot().document).toBe(source);
+  });
+  it('converts the same saved identity through the ordinary scalar form, with exact Cancel and Undo', async () => {
+    const original=circleDocument(), first=original.features[0];if(first.kind!=='sketch'||!first.graph)throw Error('Missing graph');
+    const source=parseCadDocument({...original,parameters:{radius:3},features:[{...first,graph:{...first.graph,entities:first.graph.entities.map(e=>e.id==='circle'?{...e,radius:3}:e),
+      relations:[{id:'bore-size',kind:'reference-dimension',measurement:{kind:'radial-size',entityId:'circle',quantity:'diameter'}}]}}]});
+    const h=await mount(source,{kind:'entity',id:'circle'},{initialCommand:{kind:'inspect',relationId:'bore-size'}});
+    await click('Make driving');expect(field('Diameter mm').value).toBe('6');await act(async()=>field('Diameter mm').focus());await input('Diameter mm','8');await click('Cancel');
+    expect(h.session.getSnapshot().document).toBe(source);expect(h.edit).not.toHaveBeenCalled();
+    await clickRelation('Inspect','Reference dimension',1);await click('Make driving');await click('Edit Diameter relation');await input('Diameter expression',' radius * 2 ');await click('Keep relation');await click('Close Diameter relation help');await click('Apply');
+    expect(h.edit).toHaveBeenLastCalledWith([{kind:'set-sketch-relation',sketchId:'sketch',relation:{id:'bore-size',kind:'radial-size',entityId:'circle',quantity:'diameter',value:' radius * 2 '}}],expect.any(AbortSignal));
+    await act(async()=>h.session.undo());expect(h.session.getSnapshot().document).toBe(source);
+  });
+});
+
+
+it.each([false,true])('switches an unaccepted Dimension command to Reference without a hidden driver, existing=%s',async(existing)=>{
+  const original=lineDocument(), first=original.features[0];if(first.kind!=='sketch'||!first.graph)throw Error('Missing graph');
+  const reference={id:'saved-length',kind:'reference-dimension',measurement:{kind:'line-length',entityId:'line'}};
+  const source=existing?parseCadDocument({...original,features:[{...first,graph:{...first.graph,relations:[...first.graph.relations,reference]}}]}):original;
+  const h=await mount(source,{kind:'entity',id:'line'},{initialCommand:{kind:'length'}});
+  expect(field('Length mm').value).toBe('10');await click('Reference length');if(existing) expect(h.edit).not.toHaveBeenCalled();else await click('Apply');
+  const sketch=h.session.getSnapshot().document.features[0];if(sketch.kind!=='sketch')throw Error('Missing sketch');
+  expect(sketch.graph?.relations).toEqual([source.features[0].kind==='sketch'?source.features[0].graph?.relations[0]:null,
+    expect.objectContaining({kind:'reference-dimension',measurement:{kind:'line-length',entityId:'line'}})]);
+  expect(sketch.graph?.points).toEqual(source.features[0].kind==='sketch'?source.features[0].graph?.points:[]);
+});
+
+
+it('reads and converts reference values only from accepted geometry or its matching solved preview',async()=>{
+  const original=lineDocument(), first=original.features[0];if(first.kind!=='sketch'||!first.graph)throw Error('Missing graph');
+  const graph={...first.graph,points:[...first.graph.points.map(p=>p.id==='b'?{...p,position:[0,50]}:p),{id:'q',position:['20','0']}],relations:[...first.graph.relations,
+    {id:'driver',kind:'distance',pointIds:['a','b'],value:' width '},{id:'measured',kind:'reference-dimension',measurement:{kind:'point-distance',pointIds:['b','q']}}]};
+  const source=parseCadDocument({...original,parameters:{width:50},features:[{...first,graph}]}), settled=parseCadDocument({...source,parameters:{width:60},features:[{...first,graph:{...graph,points:graph.points.map(p=>p.id==='b'?{...p,position:[0,60]}:p)}}]});
+  let resolve!:(document:CadDocument)=>void;const prepare=vi.fn(()=>new Promise<CadDocument>(done=>{resolve=done;}));
+  const h=await mount(source,[{kind:'point',id:'b'},{kind:'point',id:'q'}],{initialCommand:{kind:'inspect',relationId:'driver'},onPrepareEdits:prepare});
+  const row=()=>container.querySelector('[aria-label^="Inspect Reference dimension"] span')?.textContent;
+  expect(row()).toBe('(53.851648 mm)');await act(async()=>field('Length mm').focus());await input('Length mm','60');
+  expect(row()).toBe('(—)');await act(async()=>{await vi.waitFor(()=>expect(prepare).toHaveBeenCalled());});
+  await act(async()=>resolve(settled));expect(row()).toBe('(63.245553 mm)');expect(h.session.getSnapshot().document).toBe(source);
+  await clickRelation('Inspect','Reference dimension',3);await click('Make driving');
+  await act(async()=>field('Distance mm').focus());expect(Number(field('Distance mm').value)).toBe(Math.hypot(60,20));
+  await click('Cancel');expect(row()).toBe('(53.851648 mm)');expect(h.edit).not.toHaveBeenCalled();
+});

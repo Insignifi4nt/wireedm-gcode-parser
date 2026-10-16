@@ -356,7 +356,11 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const graphFreedom = sketchFreedom?.document === document && sketchFreedom.version === props.documentVersion && sketchFreedom.sketchId === sketch?.id ? sketchFreedom.value : null;
   const configureGraphRelation = useCallback((relation: CadSketchDimensionRelation) => {
     if (interactionState.current.locked || !sketch?.graph?.relations.some(item => item.id === relation.id)) return;
-    if (relation.kind === 'distance') {
+    if (relation.kind === 'reference-dimension') {
+      const measurement = relation.measurement;
+      if (measurement.kind === 'point-distance') selectGraphSet(measurement.pointIds.map(id => ({ kind:'point', id })));
+      else selectGraph({ kind:'entity', id:measurement.entityId });
+    } else if (relation.kind === 'distance') {
       const entity = sketch.graph.entities.find(item => item.kind === 'line' && relation.pointIds.includes(item.startPointId) && relation.pointIds.includes(item.endPointId));
       if (entity) selectGraph({ kind: 'entity', id: entity.id });
       else selectGraphSet(relation.pointIds.map(id => ({ kind: 'point', id })));

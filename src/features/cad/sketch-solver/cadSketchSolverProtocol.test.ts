@@ -14,6 +14,17 @@ const replyWith = (graph: CadSketchGraph) => ({ id: 1, kind: 'result', result: {
   diagnostics: { status: 'success', degreesOfFreedom: 1, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } } });
 
 describe('shared sketch precision at document and worker boundaries', () => {
+  it('preserves the exact passive descriptor at the worker boundary without treating its readout as a driver', () => {
+    const graph = parseCadSketchGraph({ ...source(), relations: [{ id: 'measure', kind: 'reference-dimension',
+      measurement: { kind: 'point-distance', pointIds: ['b', 'a'] } }] });
+    const input = parseCadSketchSolveInput({ graph, parameters: { span: 10 } });
+    const moved = parseCadSketchGraph({ ...graph, points: [graph.points[0], { ...graph.points[1], position: [20, 0] }] });
+    expect(parseCadSketchSolverReply(replyWith(moved), input)).toMatchObject({ result: { kind: 'solved', graph: moved } });
+    const rebound = parseCadSketchGraph({ ...moved, relations: [{ id: 'measure', kind: 'reference-dimension',
+      measurement: { kind: 'point-distance', pointIds: ['a', 'b'] } }] });
+    expect(() => parseCadSketchSolverReply(replyWith(rebound), input)).toThrow('request');
+    expect(() => parseCadSketchSolverReply(replyWith({ ...moved, relations: [] }), input)).toThrow('request');
+  });
   it.each(['position', 'radius'] as const)('rejects a forged numeric reference %s even when local equations remain valid', component => {
     const document = circleReferencePart(true), target = document.features[1]; if (target.kind !== 'sketch' || !target.graph) throw new Error('Reference target missing.');
     const graph = target.graph, input = parseCadSketchSolveInput({ graph, parameters: document.parameters });

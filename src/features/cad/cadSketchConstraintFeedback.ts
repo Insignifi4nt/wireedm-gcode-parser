@@ -23,7 +23,7 @@ interface PreparationFailureInput {
 }
 
 const relationNames: Record<CadSketchGraphRelation['kind'], string> = {
-  coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', distance: 'Distance', 'axis-distance': 'Axis distance',
+  'reference-dimension': 'Reference dimension', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', distance: 'Distance', 'axis-distance': 'Axis distance',
   'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'external-reference': 'Linked reference',
   'fixed-point': 'Fixed point', 'fixed-axis': 'Fixed axis', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer', 'radial-size': 'Radial size'
 };
@@ -55,6 +55,8 @@ export function describeCadSketchConstraintSource(graph: CadSketchGraph, source:
         ? relation.lineIds.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label)
         : relation.kind === 'equal-radius' ? relation.curveIds.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label)
         : relation.kind === 'radial-size' || relation.kind === 'external-reference' ? [describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.entityId }).label]
+        : relation.kind === 'reference-dimension' ? relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds.map(pointLabel)
+          : [describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.measurement.entityId }).label]
         : ('pointIds' in relation ? relation.pointIds : [relation.pointId]).map(pointLabel);
       const name = relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
         : relation.kind === 'axis-distance' ? relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance'

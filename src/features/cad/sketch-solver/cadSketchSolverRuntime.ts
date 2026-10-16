@@ -55,6 +55,7 @@ function compile(input: CadSketchSolveInput) {
   for (const relation of graph.relations) {
     const id = relation.id;
     switch (relation.kind) {
+      case 'reference-dimension': break; // Saved measurement identity has no native equation or fixed variable.
       case 'external-reference': break; // Source authority is fixed numeric parameter ownership, not another equation.
       case 'coincident': constraint({ id, type: 'p2p_coincident', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
       case 'horizontal': constraint({ id, type: 'horizontal_pp', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;

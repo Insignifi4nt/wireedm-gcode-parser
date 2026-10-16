@@ -15,6 +15,24 @@ export function needsCadSketchPreparation(document: CadDocument, edits: readonly
     || edits.some(edit => edit.kind === 'append-sketch-entities' || edit.kind === 'offset-sketch-loop' || edit.kind === 'copy-sketch-profile' || edit.kind === 'use-sketch-entity' || (edit.kind === 'add-feature' || edit.kind === 'update-feature') && edit.feature.kind === 'sketch' && edit.feature.graph);
 }
 
+function changesReferenceDimensions(document: CadDocument, edit: CadEdit): boolean {
+  if (edit.kind === 'append-sketch-entities') return edit.geometry.relations.some(relation => relation.kind === 'reference-dimension');
+  const sketchId = edit.kind === 'update-feature' ? edit.feature.id : 'sketchId' in edit ? edit.sketchId : null;
+  const sketch = document.features.find(feature => feature.id === sketchId);
+  const references = sketch?.kind === 'sketch' ? sketch.graph?.relations.filter(relation => relation.kind === 'reference-dimension') ?? [] : [];
+  if (edit.kind === 'set-sketch-relation') return edit.relation.kind === 'reference-dimension' || references.some(relation => relation.id === edit.relation.id);
+  if (edit.kind === 'remove-sketch-relation') return references.some(relation => relation.id === edit.relationId);
+  if (edit.kind === 'delete-sketch-elements') return references.some(relation => edit.relationIds.includes(relation.id));
+  return edit.kind === 'update-feature' && edit.feature.kind === 'sketch'
+    && !Value.Equal(references, edit.feature.graph?.relations.filter(relation => relation.kind === 'reference-dimension') ?? []);
+}
+
+/** Comparison only: accepted and candidate records keep every authored descriptor. */
+function withoutReferenceDimensions(document: CadDocument): CadDocument {
+  return { ...document, features: document.features.map(feature => feature.kind === 'sketch' && feature.graph
+    ? { ...feature, graph: { ...feature.graph, relations: feature.graph.relations.filter(relation => relation.kind !== 'reference-dimension') } } : feature) };
+}
+
 /** Reduce intent, solve numeric copies, then validate the whole part before a session can commit it. */
 export async function prepareCadEdits(document: CadDocument, edits: readonly CadEdit[], solver: Pick<CadSketchSolverClient, 'solve'>, signal?: AbortSignal) {
   validateCadEditBatch(edits);
@@ -67,6 +85,20 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
   }
   for (const edit of captured) {
     signal?.throwIfAborted();
+    if (changesReferenceDimensions(candidate, edit)) {
+      await flush();
+      const target = reduceCadEditIntents(candidate, [edit]);
+      if (Value.Equal(candidate, target)) continue;
+      if (Value.Equal(withoutReferenceDimensions(candidate), withoutReferenceDimensions(target))) {
+        candidate = target;
+        // Passive metadata cannot move even a later linked sketch. Reuse the
+        // complete-prefix certificate through the final graph, not its edited owner.
+        const sketchId = candidate.features.reduce((id, feature) => feature.kind === 'sketch' && feature.graph ? feature.id : id, '');
+        await solve(undefined, { sketchId, error: () => new CadError('sketch-reference-dimension-intent',
+          'Saving or removing a reference dimension cannot change sketch geometry. Resolve its constraints before trying again.') });
+        continue;
+      }
+    }
     if (edit.kind === 'translate-sketch-geometry' || edit.kind === 'split-sketch-entity' || edit.kind === 'trim-sketch-entity' || edit.kind === 'extend-sketch-entity' || edit.kind === 'offset-sketch-loop' || edit.kind === 'mirror-sketch-geometry' || edit.kind === 'copy-sketch-profile') {
       await flush();
       const target = reduceCadEditIntents(candidate, [edit]);

@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CloseIcon, ConfirmIcon, LinkIcon, MeasureIcon } from '@wire-edm/icons-react';
 import type { CadDocument, CadScalar, CadSketchFeature } from '@/domain/cad/cadDocument';
-import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation, CadSketchReferenceDimension } from '@/domain/cad/cadSketchGraph';
+import { cadSketchReferenceDimensionToDriving, measureCadSketchReferenceDimension, resolveCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
 import { cadSketchRelationPointIds, mapCadSketchRelationScalars } from '@/domain/cad/cadSketchGraphReferences';
 import { cadSketchExternalReferenceForSelection, cadSketchExternalReferenceLockReason } from '@/domain/cad/cadSketchExternalReferences';
 import { reduceCadEditIntents, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
@@ -24,12 +25,33 @@ import './cad-sketch-profile.css';
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
 const relationLabels = {
-  'fixed-point': 'Fixed point', distance: 'Length', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', 'external-reference': 'Linked reference',
+  'reference-dimension': 'Reference dimension', 'fixed-point': 'Fixed point', distance: 'Length', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', 'external-reference': 'Linked reference',
   parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', 'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer'
 } satisfies Record<Exclude<CadSketchGraphRelation['kind'], 'fixed-axis' | 'radial-size' | 'axis-distance'>, string>;
 const relationLabel = (relation: CadSketchGraphRelation): string => relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
   : relation.kind === 'axis-distance' ? relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance'
     : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relationLabels[relation.kind];
+function matchingReference(graph: CadSketchGraph, measurement: CadSketchReferenceDimension['measurement']) {
+  return graph.relations.find((r): r is CadSketchReferenceDimension => r.kind === 'reference-dimension' && (r.measurement.kind === 'point-distance'
+    ? measurement.kind === 'point-distance' && r.measurement.pointIds.every(id => measurement.pointIds.includes(id))
+    : measurement.kind !== 'point-distance' && r.measurement.kind === measurement.kind && r.measurement.entityId === measurement.entityId
+      && (r.measurement.kind !== 'radial-size' || measurement.kind === 'radial-size' && r.measurement.quantity === measurement.quantity)));
+}
+function referenceDrivingLock(graph: CadSketchGraph, relation: CadSketchReferenceDimension): string | null {
+  const target = resolveCadSketchReferenceDimension(graph, relation);
+  if (target.kind === 'distance') {
+    const linked = relation.measurement.kind === 'line-length' ? cadSketchExternalReferenceLockReason(graph, {kind:'entity',id:relation.measurement.entityId}) : null;
+    if (linked) return linked;
+    if (distanceForPair(graph, target.pointIds)) return 'An existing dimension already drives this distance. Edit that dimension instead.';
+  } else {
+    const linked = cadSketchExternalReferenceLockReason(graph, { kind:'entity', id:target.entityId });
+    if (linked) return linked;
+    if (radialRelationForEntity(graph, target.entityId)) return 'An existing dimension already drives this curve. Edit that dimension instead.';
+    const entity = graph.entities.find(e => e.id === target.entityId);
+    if (entity?.kind === 'circle' && typeof entity.radius === 'string') return 'The circle radius is driven by its source expression. Edit that expression instead.';
+  }
+  return null;
+}
 const samePair = (relation: CadSketchGraphRelation, pointIds: readonly [string, string]) => 'pointIds' in relation
   && relation.pointIds.includes(pointIds[0]) && relation.pointIds.includes(pointIds[1]);
 const selectedPointPair = (selection: readonly CadSketchGraphSelection[]): readonly [string, string] | null => selection.length === 2
@@ -207,6 +229,11 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const relevantPoints = new Set(selection.flatMap(atom => atom.kind === 'point' ? [atom.id] : draft.entities.filter(entity => entity.id === atom.id).flatMap(entityPoints)));
   const relations = draft.relations.filter(relation => cadSketchRelationPointIds(draft, relation).some(id => relevantPoints.has(id)));
   const activeRelation = relations.find(relation => relation.id === activeRelationId);
+  const passiveMeasurement: CadSketchReferenceDimension['measurement'] | null = pointPair ? {kind:'point-distance', pointIds:pointPair}
+    : selectedEntity?.kind === 'line' ? {kind:'line-length', entityId:selectedEntity.id}
+      : selectedEntity ? {kind:'radial-size', entityId:selectedEntity.id, quantity:selectedEntity.kind === 'circle' ? 'diameter' : 'radius'} : null;
+  const passiveLabel = passiveMeasurement?.kind === 'radial-size' ? passiveMeasurement.quantity : pointPair ? 'distance' : 'length';
+  const drivingLock = activeRelation?.kind === 'reference-dimension' ? referenceDrivingLock(draft, activeRelation) : null;
   const pointRoles = activeRelation?.kind === 'axis-distance' ? activeRelation.pointIds : pointPair;
   const angleOwner = linePair && draft.relations.find(relation => relation.kind === 'line-angle' && sameEntityPair(relation, linePair));
   const orientationOwner = linePair && draft.relations.find(relation => (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear') && sameEntityPair(relation, linePair));
@@ -284,6 +311,24 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       if (relation) { changeRelation(relation); setActiveRelationId(relation.id); }
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to read this curve size.'); }
   };
+  const addReference = () => {
+    if (!passiveMeasurement) return;
+    const relation = matchingReference(draft, passiveMeasurement) ?? matchingReference(source.graph, passiveMeasurement)
+      ?? {id:initialDimension && !source.graph.relations.some(r => r.id === initialDimension.id) ? initialDimension.id : crypto.randomUUID(),
+        kind:'reference-dimension' as const, measurement:passiveMeasurement};
+    if (initialDimension && initialDimension.id !== relation.id && !source.graph.relations.some(r => r.id === initialDimension.id)) removeRelation(initialDimension.id);
+    changeRelation(relation); setActiveRelationId(relation.id);
+  };
+  const makeDriving = () => {
+    if (activeRelation?.kind !== 'reference-dimension' || drivingLock || !measurementDocument || !measurementGraph) return;
+    try { changeRelation(cadSketchReferenceDimensionToDriving(measurementGraph, measurementDocument.parameters, activeRelation)); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to drive this measurement.'); }
+  };
+  const referenceValue = (relation: CadSketchReferenceDimension) => {
+    if (!measurementDocument || !measurementGraph) return '—';
+    try { return relationQuantity(measureCadSketchReferenceDimension(measurementGraph, measurementDocument.parameters, relation), measurementDocument.parameters); }
+    catch { return '—'; }
+  };
   const addAngle = () => {
     if (!linePair || orientationOwner) return;
     try {
@@ -346,6 +391,9 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   useLayoutEffect(() => () => { callbacks.current.onPendingChange(false); callbacks.current.onPreviewDocument?.(null); callbacks.current.onInspectRelation?.(null); callbacks.current.onInspectSubject?.(null); }, []);
   useEffect(() => { if (source.document !== cadDocument && !pending) reset(); }, [source.document, cadDocument, pending, reset]);
   const prepared = useCadPreparedPreview(cadDocument, candidate.edits, onPrepareEdits, Boolean(onPrepareEdits && changed && !scalarPending && !submission.applying && !interactionLocked));
+  const measurementDocument = prepared.kind === 'ready' ? prepared.document : !changed ? source.document : null;
+  const measurementSketch = measurementDocument?.features.find(f => f.id === sketch.id);
+  const measurementGraph = measurementSketch?.kind === 'sketch' ? measurementSketch.graph : null;
   useLayoutEffect(() => {
     onPreviewDocument?.(prepared.kind === 'ready' ? prepared.document : null);
     return () => onPreviewDocument?.(null);
@@ -364,6 +412,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const relationList = <ul className="cad-sketch-constraint-list" aria-label="Sketch relations">{relations.map(relation => <li key={relation.id}>
           <Button type="button" aria-label={`Inspect ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} aria-pressed={activeRelationId === relation.id} onClick={() => { setInspectedFailure(null); setActiveRelationId(current => current === relation.id ? null : relation.id); }}>
             {labelRelation(relation)}{(relation.kind === 'distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size' || relation.kind === 'line-angle') && <span>{relationQuantity(relation.value, parameters, relation.kind === 'line-angle' ? 'deg' : 'mm')}</span>}
+            {relation.kind === 'reference-dimension' && <span>({referenceValue(relation)})</span>}
             {relation.kind === 'chamfer-corner' && <span>{relation.values.map(value => relationQuantity(value, parameters)).join(' / ')}</span>}
           </Button><Button type="button" aria-label={relation.kind === 'external-reference' ? 'Detach reference' : `Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title={relation.kind === 'external-reference' ? 'Detach this source link and retain the current geometry' : 'Remove this relation and retain the current geometry'} onClick={() => removeRelation(relation.id)}><CloseIcon size={12} /></Button>
         </li>)}</ul>;
@@ -393,6 +442,8 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       {move ? <div className="cad-placement-row"><label><span>ΔX</span><Input aria-label="Move X" autoFocus value={move.x} onChange={event => { setError(null); setGeometryDraft({ ...move, x: event.target.value }); }} /></label>
         <label><span>ΔY</span><Input aria-label="Move Y" value={move.y} onChange={event => { setError(null); setGeometryDraft({ ...move, y: event.target.value }); }} /></label><small>mm</small></div> : <>
       {selection.length > 1 && <div className="text-xs text-muted-foreground">{pointRoles ? pointRoles.map((id, index) => `${index ? 'To' : 'From'} Point ${graph.points.findIndex(point => point.id === id) + 1}`).join(' → ') : entityPair ? entityPair.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label).join(' · ') : pointLine ? `Point ${graph.points.findIndex(point => point.id === pointLine.pointId) + 1} · ${describeCadSketchConstraintSource(graph, { kind: 'entity', id: pointLine.lineId }).label}` : `${selection.filter(atom => atom.kind === 'point').length} points · ${selection.filter(atom => atom.kind === 'entity').length} edges`}</div>}
+      {passiveMeasurement && <div className="cad-sketch-profile-actions"><Button type="button" onClick={addReference}><MeasureIcon size={13} /> Reference {passiveLabel}</Button>
+        <CadContextHelp label="Reference dimension">Save a measurement on the sketch. It follows the geometry and does not constrain or move it. Use Make driving to set its size deliberately.</CadContextHelp></div>}
       {selectedEntity?.kind === 'line' && dimensionPair && <div className="cad-sketch-profile-actions">
         {(['horizontal', 'vertical'] as const).map(kind => <label key={kind} className="cad-check"><Input type="checkbox" aria-label={kind === 'horizontal' ? 'Horizontal' : 'Vertical'}
           disabled={Boolean(selectedReference)} title={referenceLock ?? undefined} checked={draft.relations.some(relation => relation.kind === kind && samePair(relation, dimensionPair))} onChange={event => toggleLineAxis(kind, event.target.checked)} />{kind === 'horizontal' ? 'Horizontal' : 'Vertical'}</label>)}
@@ -452,6 +503,14 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
           ? <details className="cad-sketch-relations-disclosure" open={Boolean(activeRelation)}><summary>Relations <span>{relations.length}</span></summary>{relationList}</details>
           : relationList)}
         {activeRelation && (activeRelation.kind === 'distance' || activeRelation.kind === 'axis-distance' || activeRelation.kind === 'fixed-axis' || activeRelation.kind === 'line-angle') && <ScalarField fieldKey={`${activeRelation.id}/value`} label={labelRelation(activeRelation)} unit={activeRelation.kind === 'line-angle' ? 'deg' : 'mm'} value={activeRelation.value} parameters={parameters} onChange={value => changeRelation({ ...activeRelation, value })} />}
+        {activeRelation?.kind === 'reference-dimension' && <>
+          {activeRelation.measurement.kind === 'radial-size' && <SelectField label="Dimension quantity" value={activeRelation.measurement.quantity}
+            options={[{value:'radius',label:'Radius'},{value:'diameter',label:'Diameter'}]} onChange={quantity => {
+              if (activeRelation.measurement.kind === 'radial-size') changeRelation({...activeRelation,measurement:{...activeRelation.measurement,quantity}});
+            }} />}
+          <dl className="cad-measurements cad-selection-measurements"><div><dt>Reference {activeRelation.measurement.kind === 'radial-size' ? activeRelation.measurement.quantity : 'distance'}</dt><dd aria-label="Reference dimension value">{referenceValue(activeRelation)}</dd></div></dl>
+          <Button type="button" disabled={Boolean(drivingLock) || !measurementGraph} title={drivingLock ?? 'Convert this measurement into a dimension that drives geometry'} onClick={makeDriving}>Make driving</Button>
+        </>}
         {activeRelation?.kind === 'radial-size' && <>
           {!source.graph.relations.some(relation => relation.id === activeRelation.id) && <SelectField label="Dimension quantity" value={activeRelation.quantity}
             options={[{ value: 'radius', label: 'Radius' }, { value: 'diameter', label: 'Diameter' }]} onChange={quantity => {

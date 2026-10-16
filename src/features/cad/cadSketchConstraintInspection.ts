@@ -1,6 +1,7 @@
 import type { CadDocument, CadScalar } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
 import { createCadSketchMeasurementReader } from '@/domain/cad/cadSketchMeasurements';
+import { measureCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
@@ -62,6 +63,7 @@ export async function inspectCadSketchConstraints(document: CadDocument, sketchI
 }
 
 const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
+  'reference-dimension': 'Measures current geometry without driving it or adding a native equation.',
   coincident: 'Keeps two distinct source points at the same location.', horizontal: 'Keeps two points at the same Y coordinate.',
   midpoint: 'Keeps one distinct graph point halfway between a graph line’s endpoints, including construction lines. Does not join material boundaries.',
   'external-reference': 'Linked construction geometry follows a stable preceding sketch edge along the shared plane normal. Detach explicitly to retain its current numeric shape without the source link.',
@@ -112,7 +114,9 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
   return page(graph?.relations ?? [], input, source => ({ source, meaning: relationMeanings[source.kind], diagnostics: diagnosticState(source.id),
     points: graph ? cadSketchRelationPointIds(graph, source).map(point) : [],
     ...(cadSketchRelationEntityIds(source).length ? { entityIds: cadSketchRelationEntityIds(source) } : {}),
-    ...(source.kind === 'line-angle' ? { value: { scalar: source.value, valueDegrees: evaluateCadScalar(source.value, inspection.parameters), unit: 'deg' as const,
+    ...(source.kind === 'reference-dimension' && graph ? { measurement: { coordinateSystem: 'sketch-local' as const,
+      valueMm: measureCadSketchReferenceDimension(graph, inspection.parameters, source), role: 'reference-measurement' as const } }
+      : source.kind === 'line-angle' ? { value: { scalar: source.value, valueDegrees: evaluateCadScalar(source.value, inspection.parameters), unit: 'deg' as const,
       role: typeof source.value === 'string' ? 'expression-driver' as const : 'constant-driver' as const } }
       : source.kind === 'distance' || source.kind === 'axis-distance' || source.kind === 'fixed-axis' || source.kind === 'fillet-corner' || source.kind === 'radial-size' ? { value: scalar(source.value, true) }
       : source.kind === 'fixed-point' ? { position: source.position.map(value => scalar(value, true)) }

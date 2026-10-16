@@ -305,3 +305,19 @@ describe('native graph corner dimension layout', () => {
     expect(layouts[0].relation).toMatchObject({ values: [' a ', ' b '] });
   });
 });
+
+
+describe('saved reference annotation geometry', () => {
+  it('uses current support measurements, actual reference records and truthful zero-distance arrows', () => {
+    const graph=parseCadSketchGraph({points:[{id:'a',position:[0,0]},{id:'b',position:['span',10]},{id:'o',position:[40,0]},{id:'same',position:[0,0]}],
+      entities:[{id:'line',kind:'line',startPointId:'a',endPointId:'b',construction:false},{id:'circle',kind:'circle',centerPointId:'o',radius:'bore / 2',construction:false}],
+      relations:[{id:'length',kind:'reference-dimension',measurement:{kind:'line-length',entityId:'line'}},
+        {id:'diameter',kind:'reference-dimension',measurement:{kind:'radial-size',entityId:'circle',quantity:'diameter'}},
+        {id:'zero',kind:'reference-dimension',measurement:{kind:'point-distance',pointIds:['a','same']}}]});
+    const exact=JSON.stringify(graph), layouts=linearDimensions(graph,{span:10,bore:6},.1);
+    expect(layouts.map(d=>[d.kind,d.valueMm,d.relation])).toEqual([['distance',Math.sqrt(200),graph.relations[0]],['diameter',6,graph.relations[1]],['distance',0,graph.relations[2]]]);
+    expect(layouts[2].arrows).toEqual([]);
+    expect(linearDimensions(graph,{span:20,bore:8},.1).map(d=>d.valueMm)).toEqual([Math.sqrt(500),8,0]);
+    expect(JSON.stringify(graph)).toBe(exact);
+  });
+});

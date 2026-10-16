@@ -13,6 +13,7 @@ import { CAD_GEAR_V2_PLUGIN } from './plugins/cadPlugins';
 import { importCadDxfSketch } from './cadDxfImport';
 import { importCadDxfCurve } from './cadCurveDxf';
 import { cadDocumentPath, listCadDocuments, loadCadDocument, saveCadDocument } from './cadStorage';
+import { measureCadSketchReferenceDimension } from './cadSketchReferenceDimensions';
 import { CAD_FORMER_DOCUMENT_BYTES } from './__tests__/cadBudgetFixture';
 import { graphCellSelectionAt, intersectingCircleSketch } from './__tests__/cadIntersectingCellFixtures';
 import { pairedBoreMirrorPart, mirrorBoreRequest } from './__tests__/cadSketchMirrorFixtures';
@@ -27,6 +28,23 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     localStorage.clear();
     adapter = kind === 'browser-cache' ? createBrowserCacheAdapter(localStorage)
       : createBrowserDirectoryAdapter(new FakeDirectoryHandle('cad-test') as unknown as FileSystemDirectoryHandle);
+  });
+  it('reopens passive dimension descriptors exactly and recomputes them after parameter changes', async () => {
+    const source=parseCadDocument({...createCadDocument('Reference annotations','reference-dimensions'),schemaVersion:2,parameters:{span:20,bore:6},features:[{
+      id:'sketch',kind:'sketch',name:'Sketch',suppressed:false,plane:'XY',offset:0,profiles:[],graph:{
+        points:[{id:'a',position:[' 0.00 ',0]},{id:'b',position:[' span ',10]},{id:'o',position:[40,0]}],
+        entities:[{id:'line',kind:'line',startPointId:'a',endPointId:'b',construction:true},{id:'bore',kind:'circle',centerPointId:'o',radius:' bore / 2 ',construction:false}],
+        relations:[{id:'length',kind:'reference-dimension',measurement:{kind:'line-length',entityId:'line'}},
+          {id:'pair',kind:'reference-dimension',measurement:{kind:'point-distance',pointIds:['b','a']}},
+          {id:'size',kind:'reference-dimension',measurement:{kind:'radial-size',entityId:'bore',quantity:'diameter'}}]}
+    }]});
+    const first=await saveCadDocument(adapter,source,{expectedSavedVersion:null});expect((await loadCadDocument(adapter,source.id)).document).toEqual(source);
+    const changed=applyCadEdits(source,[{kind:'set-parameter',name:'span',value:30},{kind:'set-parameter',name:'bore',value:8}]);
+    const saved=await saveCadDocument(adapter,changed,{expectedSavedVersion:first.savedVersion}), reopened=await loadCadDocument(adapter,source.id);
+    expect(reopened).toEqual(saved);expect(reopened.document.features).toEqual(source.features);
+    const sketch=reopened.document.features[0];if(sketch.kind!=='sketch'||!sketch.graph)throw Error('Missing reference graph');
+    const graph=sketch.graph, values=graph.relations.filter(r=>r.kind==='reference-dimension').map(r=>measureCadSketchReferenceDimension(graph,reopened.document.parameters,r));
+    expect(values[0]).toBeCloseTo(Math.sqrt(1000),12);expect(values[1]).toBeCloseTo(Math.sqrt(1000),12);expect(values[2]).toBe(8);
   });
   it('round trips exact reference witnesses and numeric snapshots and refuses a stale or forged cache before writes', async () => {
     const old = lineReferencePart(false, true), first = await saveCadDocument(adapter, old, { expectedSavedVersion: null });

@@ -15,6 +15,7 @@ import { checkCadSketchEqualRelation, resolveCadSketchRadiusPair } from './cadSk
 import { checkCadSketchAngleRelation, resolveCadSketchAngleRays } from './cadSketchAngleRelations';
 import { resolveCadSketchMidpointOperands } from './cadSketchMidpointRelations';
 import { validateCadSketchExternalReference } from './cadSketchExternalReferences';
+import { resolveCadSketchReferenceDimension } from './cadSketchReferenceDimensions';
 
 const strict = { additionalProperties: false };
 const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
@@ -29,6 +30,11 @@ export const CadSketchGraphSchema = Type.Object({
     Type.Object({ ...entity, kind: Type.Literal('circle'), centerPointId: id, radius: CadScalarSchema }, strict)
   ])),
   relations: Type.Array(Type.Union([
+    Type.Object({ id, kind: Type.Literal('reference-dimension'), measurement: Type.Union([
+      Type.Object({ kind: Type.Literal('line-length'), entityId: id }, strict),
+      Type.Object({ kind: Type.Literal('point-distance'), pointIds: pair }, strict),
+      Type.Object({ kind: Type.Literal('radial-size'), entityId: id, quantity: Type.Union([Type.Literal('radius'), Type.Literal('diameter')]) }, strict)
+    ]) }, strict),
     Type.Object({ id, kind: Type.Literal('external-reference'), entityId: id, sourceSketchId: id, source: Type.Union([
       Type.Object({ kind: Type.Literal('line'), entityId: id, startPointId: id, endPointId: id }, strict),
       Type.Object({ kind: Type.Literal('circle'), entityId: id, centerPointId: id }, strict)
@@ -55,6 +61,7 @@ export type CadSketchGraph = Immutable<Static<typeof CadSketchGraphSchema>>;
 export type CadSketchGraphPoint = CadSketchGraph['points'][number];
 export type CadSketchGraphEntity = CadSketchGraph['entities'][number];
 export type CadSketchGraphRelation = CadSketchGraph['relations'][number];
+export type CadSketchReferenceDimension = Extract<CadSketchGraphRelation, { kind: 'reference-dimension' }>;
 export type CadSketchExternalReference = Extract<CadSketchGraphRelation, { kind: 'external-reference' }>;
 export type CadSketchCornerRelation = Extract<CadSketchGraphRelation, { kind: 'fillet-corner' | 'chamfer-corner' }>;
 export type CadSketchLineRelation = Extract<CadSketchGraphRelation, { kind: 'parallel' | 'perpendicular' | 'collinear' }>;
@@ -91,6 +98,7 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   };
   for (const item of graph.entities) references(item.id, cadSketchEntityPointIds(item));
   for (const item of graph.relations) {
+    if (item.kind === 'reference-dimension') resolveCadSketchReferenceDimension(graph, item);
     if (item.kind === 'external-reference') validateCadSketchExternalReference(graph, item);
     if (item.kind === 'fillet-corner' || item.kind === 'chamfer-corner') resolveCadSketchCornerTopology(graph, item);
     if (item.kind === 'parallel' || item.kind === 'perpendicular' || item.kind === 'collinear' || item.kind === 'equal-length') resolveCadSketchLinePair(graph, item.lineIds);
@@ -148,6 +156,7 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
   for (const relation of graph.relations) {
     const source = { kind: 'relation', id: relation.id } as const;
     try {
+      if (relation.kind === 'reference-dimension') continue; // Passive intent; geometry checks above remain authoritative.
       if (relation.kind === 'external-reference') {
         try { validateCadSketchExternalReference(graph, relation); }
         catch (error) { report(source, 'relation-residual', error instanceof Error ? error.message : 'Invalid reference ownership.'); }

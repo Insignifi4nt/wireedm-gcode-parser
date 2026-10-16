@@ -23,6 +23,32 @@ const source = () => parseCadDocument({ ...createCadDocument('Line', 'line'), sc
 }] });
 
 describe('accepted sketch constraint inspection', () => {
+  it('discovers scalar-free saved measurements and reads linked/expression geometry without inventing driving values', async () => {
+    const document = applyCadEdits(parseCadDocument({ ...createCadDocument('Measured references'), schemaVersion: 2, parameters: { radius: 3 }, features: [
+      { id: 'layout', name: 'Layout', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'center', position: ['4.000', '6'] }], entities: [{ id: 'circle', kind: 'circle', construction: true, centerPointId: 'center', radius: ' radius ' }], relations: [] } },
+      { id: 'target', name: 'Target', kind: 'sketch', suppressed: false, plane: 'XY', offset: 5, profiles: [] }
+    ] }), [{ kind: 'use-sketch-entity', sketchId: 'target', sourceSketchId: 'layout', sourceEntityId: 'circle', idPrefix: 'used' }]);
+    const set = CadToolEditDefinitions.find(schema => schema.properties.kind.const === 'set-sketch-relation');
+    if (!set) throw new Error('Missing relation discovery.');
+    const annotated = applyCadEdits(document, ['layout', 'target'].map(sketchId => ({ kind: 'set-sketch-relation', sketchId, relation: {
+      id: 'read-diameter', kind: 'reference-dimension', measurement: { kind: 'radial-size', entityId: sketchId === 'layout' ? 'circle' : 'used_e0', quantity: 'diameter' }
+    } })));
+    const exact = JSON.stringify(annotated);
+    for (const sketchId of ['layout', 'target']) {
+      const inspection = await inspectCadSketchConstraints(annotated, sketchId, async () => solver);
+      expect(inspection.analysis).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 0 } });
+      const row = pageCadSketchConstraints(inspection, { section: 'relations' }).items.find(item => 'source' in item && item.source.id === 'read-diameter');
+      if (!row || !('source' in row)) throw new Error('Missing measured relation row.');
+      expect(row).toMatchObject({ source: { id: 'read-diameter', kind: 'reference-dimension' },
+        measurement: { coordinateSystem: 'sketch-local', valueMm: 6, role: 'reference-measurement' } });
+      expect(row).not.toHaveProperty('value');
+      const edit = { kind: 'set-sketch-relation', sketchId, relation: row.source };
+      expect(Value.Check(set, edit)).toBe(true);
+      expect(Value.Check(set, { ...edit, relation: { ...row.source, value: 6 } })).toBe(false);
+    }
+    expect(JSON.stringify(annotated)).toBe(exact);
+  });
   it('exposes numeric reference snapshots as linked values with their actual source identity', async () => {
     const document = applyCadEdits(parseCadDocument({ ...createCadDocument('Reference'), schemaVersion: 2, parameters: { size: 3 }, features: [
       { id: 'layout', name: 'Layout', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

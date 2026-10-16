@@ -12,6 +12,22 @@ const require = createRequire(import.meta.url);
 const initialize = () => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href);
 
 describe('real PlaneGCS sketch solving', () => {
+  it('preserves scalar-free measurements without native equations or a change in freedom', async () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [20, 0] }, { id: 'center', position: [50, 0] }],
+      entities: [{ id: 'line', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },
+        { id: 'circle', kind: 'circle', construction: false, centerPointId: 'center', radius: ' radius ' }], relations: [] });
+    const measured = parseCadSketchGraph({ ...graph, relations: [
+      { id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'line' } },
+      { id: 'pair', kind: 'reference-dimension', measurement: { kind: 'point-distance', pointIds: ['center', 'b'] } },
+      { id: 'diameter', kind: 'reference-dimension', measurement: { kind: 'radial-size', entityId: 'circle', quantity: 'diameter' } }
+    ] });
+    const runtime = createCadSketchSolverRuntime(initialize), baseline = await runtime.solve({ graph, parameters: { radius: 3 } });
+    const result = await runtime.solve({ graph: measured, parameters: { radius: 3 } });
+    expect(baseline.kind).toBe('solved'); expect(result.kind).toBe('solved');
+    if (baseline.kind !== 'solved' || result.kind !== 'solved') throw new Error('Expected real native solves.');
+    expect(result.diagnostics).toEqual(baseline.diagnostics); expect(result.diagnostics.degreesOfFreedom).toBe(4);
+    expect(result.graph).toEqual(measured); expect(result.graph.points).toEqual(baseline.graph.points);
+  });
   it('solves numeric copies and reports the fixed horizontal line degrees of freedom', async () => {
     const graph = parseCadSketchGraph({
       points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [18, 4] }],
