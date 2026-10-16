@@ -23,6 +23,7 @@ import type { CadSketchRegionProposal } from '@/domain/cad/cadSketchRegionInspec
 import { needsCadSketchPreparation, prepareCadEdits } from './cadEditPreparation';
 import type { CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
 import type { CadSketchConstraintInspection } from './cadSketchConstraintInspection';
+import { useCadSketchEditing } from './useCadSketchEditing';
 
 type App = Pick<ReturnType<typeof useWorkbenchAppController>, 'connectedWorkbench' | 'workbenchInteractionLocked' | 'runAgentWorkbenchOperation'>;
 type Kernel = ReturnType<typeof import('./kernel/cadKernelClient').createCadKernelClient>;
@@ -78,6 +79,9 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   const kernel = useRef<Promise<Kernel> | null>(null);
   const buildAbort = useRef<AbortController | null>(null);
   const boundAdapter = useRef(app.connectedWorkbench?.adapter);
+  const sketchEditing = useCadSketchEditing({ session, storage: app.connectedWorkbench?.adapter ?? null, open,
+    locked: storageBusy || app.workbenchInteractionLocked, prepare: prepareDocument, inspect: readSketchConstraintInspection,
+    commit: (edits, version, signal) => edit(edits, version, false, signal) });
   const featurePreviewCoordinator = useMemo(() => createCadFeaturePreviewCoordinator({
     assertCurrent(expectedVersion) {
       const workbench = connected(); editable(expectedVersion); session.assertWorkflowClosed('editor');
@@ -105,6 +109,19 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     sketchSolver.current = pending;
     void pending.catch(() => { if (sketchSolver.current === pending) sketchSolver.current = null; });
     return pending;
+  }
+  async function prepareDocument(document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) {
+    return needsCadSketchPreparation(document, edits)
+      ? (await prepareCadEdits(document, edits, await getSketchSolver(), signal)).document : applyCadEdits(document, edits);
+  }
+  async function readSketchConstraintInspection(source: CadDocument, sketchId: string, signal?: AbortSignal) {
+    let inspection = constraintInspections.current.get(source)?.get(sketchId);
+    if (!inspection) {
+      const { inspectCadSketchConstraints } = await import('./cadSketchConstraintInspection'); signal?.throwIfAborted();
+      inspection = await inspectCadSketchConstraints(source, sketchId, getSketchSolver, signal);
+      signal?.throwIfAborted();
+    }
+    return inspection;
   }
   function publishBuild(result: CadBuildResult, version: string) {
     const state = result.diagnostics.length ? 'error' : 'ready';
@@ -208,8 +225,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     signal.throwIfAborted(); editable(snapshot.version); session.assertWorkflowClosed('editor');
     validateCadEditBatch(edits);
     const captured = structuredClone(edits), source = session.getSnapshot().document, workbench = connected();
-    const candidate = needsCadSketchPreparation(source, captured)
-      ? (await prepareCadEdits(source, captured, await getSketchSolver(), signal)).document : applyCadEdits(source, captured);
+    const candidate = await prepareDocument(source, captured, signal);
     signal.throwIfAborted(); editable(snapshot.version); session.assertWorkflowClosed('editor');
     if (session.getSnapshot().document !== source || current.current.app.connectedWorkbench !== workbench)
       throw new ToolError('STALE_STATE', 'The CAD workspace changed while preparing this preview.');
@@ -477,12 +493,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   async function inspectSketchConstraints(sketchId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
     const source = session.getSnapshot().document, workbench = connected();
-    let inspection = constraintInspections.current.get(source)?.get(sketchId);
-    if (!inspection) {
-      const { inspectCadSketchConstraints } = await import('./cadSketchConstraintInspection');
-      signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
-      inspection = await inspectCadSketchConstraints(source, sketchId, getSketchSolver, signal);
-    }
+    const inspection = await readSketchConstraintInspection(source, sketchId, signal);
     signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
     if (session.getSnapshot().document !== source || current.current.app.connectedWorkbench !== workbench)
       throw new ToolError('STALE_STATE', 'The CAD workspace changed while inspecting sketch constraints.');
@@ -755,7 +766,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   }
   function back() { connected(); session.assertWorkflowClosed(); changeOpen(false); }
   const isBusy = () => busy.current || preparing.current !== null;
-  return { session, snapshot, open, enter, edit, preparePreviewEdits, save, list, projectActions, plugins, installPlugin, showLibrary, library, libraryLoading, libraryDiagnostic, closeLibrary,
+  return { session, snapshot, sketchEditing, open, enter, edit, preparePreviewEdits, save, list, projectActions, plugins, installPlugin, showLibrary, library, libraryLoading, libraryDiagnostic, closeLibrary,
     openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, inspectSketchConstraints, inspectSketchHandles, measureCurve, inspectSketchRegions, readSketchRegionReference, inspectPlugin, inspectParameters, inspectPlane, inspectLoft, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, exportSectionDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
     setViewportControls, readViewport: (expectedVersion: string) => getViewport(expectedVersion).getState(), changeViewport, captureViewport, previewArtifact,
     inspectTopology: topology.inspect, resolveTopologyPicks: topology.resolve,

@@ -350,3 +350,62 @@ test('solves a saved entity sketch through WebMCP, rejects conflicts and exports
   expect(reopened).toMatchObject({ documentId: current.documentId, dirty: false });
   expect((await call(page, 'cad_get_feature', { expectedVersion: reopened.version, featureId: 'outline' })).feature).toEqual(accepted.feature);
 });
+
+test('edits a consumed sketch privately with local history, rejected Finish, exact Cancel and one final part undo', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'add-feature', feature: { id: 'outline', kind: 'sketch', name: 'Outline', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }, { id: 'd', position: [0, 10] }],
+      entities: [
+        { id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+        { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+        { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+        { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' }
+      ], relations: []
+    } } },
+    { kind: 'add-feature', feature: { id: 'pad', kind: 'extrude', name: 'Pad', suppressed: false, sketchId: 'outline', distance: 5, symmetric: false, operation: 'new', targetId: null } }
+  ] });
+  const base = await context(page), original = (await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: 'outline' })).feature;
+  await call(page, 'cad_build', { expectedVersion: base.version });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: base.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: base.version } } });
+  const openEdit = async () => {
+    await page.getByRole('button', { name: 'Select Outline in history', exact: true }).dblclick();
+    await expect(page.getByRole('button', { name: 'Cancel sketch edits', exact: true })).toBeVisible();
+  };
+  await openEdit();
+  expect(await context(page)).toMatchObject({ version: base.version, workflowOpen: true });
+  expect((await rawCall(page, 'cad_edit_document', { expectedVersion: base.version, edits: [{ kind: 'rename-document', name: 'Concurrent agent' }] })).ok).toBe(false);
+  expect(await page.getByRole('button', { name: 'Save', exact: true }).isEnabled()).toBe(false);
+  await page.getByRole('textbox', { name: 'Plane offset mm', exact: true }).fill('2');
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: 'outline' })).feature).toEqual(original);
+  await page.getByRole('button', { name: 'Line 2 in Outline', exact: true }).press('Delete');
+  await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(3);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: 'outline' })).feature).toEqual(original);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Cancel sketch edits', exact: true })).toBeVisible();
+  expect(await context(page)).toMatchObject({ version: base.version, workflowOpen: true });
+  await page.keyboard.press('Control+z'); await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(4);
+  await page.getByRole('button', { name: 'Point 2 in Outline', exact: true }).press('ArrowRight');
+  await expect(page.locator('[data-cad-sketch-point="b"] title')).toHaveText(/25, 0 mm/);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: 'outline' })).feature).toEqual(original);
+  await page.getByRole('button', { name: 'Cancel sketch edits', exact: true }).click();
+  await expect(page.getByLabel('3D model viewport')).toBeVisible();
+  await expect.poll(() => context(page)).toMatchObject({ version: base.version, workflowOpen: false });
+  expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: 'outline' })).feature).toEqual(original);
+  await openEdit(); await page.getByRole('button', { name: 'Point 2 in Outline', exact: true }).press('ArrowRight');
+  await expect(page.locator('[data-cad-sketch-point="b"] title')).toHaveText(/25, 0 mm/);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect(page.getByLabel('3D model viewport')).toBeVisible();
+  await expect.poll(async () => (await context(page)).version).not.toBe(base.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  const changed = await context(page), built = await call(page, 'cad_build', { expectedVersion: changed.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo(1125, 7);
+  await page.keyboard.press('Control+z');
+  const undone = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: undone.version, featureId: 'outline' })).feature).toEqual(original);
+});

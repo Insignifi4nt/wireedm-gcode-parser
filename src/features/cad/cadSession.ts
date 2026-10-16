@@ -22,7 +22,7 @@ export function hasUnsavedCadDraft(snapshot: Pick<CadSessionSnapshot, 'dirty' | 
   return snapshot.dirty && (snapshot.savedVersion !== null || hasCadDraftContent(snapshot.document));
 }
 interface HistoryEntry { readonly document: CadDocument; readonly textLength: number }
-type CadWorkflowScope = 'editor' | 'section' | 'import' | 'dxf-export' | 'library' | 'preparation';
+type CadWorkflowScope = 'editor' | 'section' | 'import' | 'dxf-export' | 'library' | 'preparation' | 'sketch-edit';
 const MAX_HISTORY_STEPS = 50;
 const MAX_HISTORY_CHARACTERS = 8 * 1024 * 1024;
 

@@ -134,16 +134,19 @@ function WorkbenchApp({ services }: AppProps) {
           onFailure={() => { cad.cancelImport(); closeCadSection(); closeCadDxfExport(); }}>
         <Suspense fallback={<p className="p-4 text-xs" role="status">Opening CAD workspace…</p>}>
           <CadWorkbench
-            document={cad.snapshot.document} documentVersion={cad.snapshot.version} build={cad.build} buildVersion={cad.buildVersion} buildState={cad.buildState}
-            featurePreview={cad.featurePreview} onFeaturePreview={cad.previewFeature}
-            dirty={cad.snapshot.dirty} canUndo={cad.snapshot.canUndo} canRedo={cad.snapshot.canRedo}
+            document={cad.sketchEditing.snapshot.document} documentVersion={cad.sketchEditing.snapshot.version} build={cad.build} buildVersion={cad.buildVersion} buildState={cad.buildState}
+            featurePreview={cad.featurePreview} onFeaturePreview={cad.sketchEditing.sketchId ? undefined : cad.previewFeature}
+            dirty={cad.sketchEditing.snapshot.dirty} canUndo={cad.sketchEditing.snapshot.canUndo} canRedo={cad.sketchEditing.snapshot.canRedo}
             errorMessage={cad.errorMessage} onStatusMessage={app.showStatusToast} storageBusy={cad.storageBusy || app.workbenchInteractionLocked}
-            onEdit={(edit, signal) => cad.edit([edit], undefined, false, signal)} onUndo={() => cad.undo()} onRedo={() => cad.redo()}
-            onEditMany={(edits, signal) => cad.edit(edits, undefined, false, signal)}
-            onPrepareEdits={cad.preparePreviewEdits}
-            onInspectSketchConstraints={cad.inspectSketchConstraints}
-            sketchAnalysisReady={!cad.snapshot.workflowOpen}
-            onWorkflowChange={cadSession.setWorkflowOpen}
+            onEdit={(edit, signal) => cad.sketchEditing.sketchId ? cad.sketchEditing.edit([edit], signal) : cad.edit([edit], undefined, false, signal)}
+            onUndo={() => cad.sketchEditing.sketchId ? cad.sketchEditing.undo() : cad.undo()} onRedo={() => cad.sketchEditing.sketchId ? cad.sketchEditing.redo() : cad.redo()}
+            onEditMany={(edits, signal) => cad.sketchEditing.sketchId ? cad.sketchEditing.edit(edits, signal) : cad.edit(edits, undefined, false, signal)}
+            onPrepareEdits={cad.sketchEditing.sketchId ? cad.sketchEditing.prepare : cad.preparePreviewEdits}
+            onInspectSketchConstraints={cad.sketchEditing.sketchId ? cad.sketchEditing.inspect : cad.inspectSketchConstraints}
+            sketchAnalysisReady={cad.sketchEditing.analysisReady}
+            onWorkflowChange={cad.sketchEditing.setWorkflowOpen}
+            onBeginSketchEdit={cad.sketchEditing.begin}
+            sketchEdit={cad.sketchEditing.sketchId ? { sketchId: cad.sketchEditing.sketchId, finish: cad.sketchEditing.finish, cancel: cad.sketchEditing.cancel } : undefined}
             onBack={cad.back} onSave={async () => { await cad.save(); }}
             onOpenDocument={() => { void cad.showLibrary().catch(error => cad.setErrorMessage(String(error))); }}
             onNewDocument={() => { cad.newDocument(); }} onImportDocument={async file => { await cad.importDocument(file); }}

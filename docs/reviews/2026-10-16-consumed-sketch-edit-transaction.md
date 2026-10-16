@@ -1,6 +1,22 @@
 # Owned editing of consumed sketches
 
-Date: 2026-10-16. Status: read-only architecture proposal. No production changes or new runtime verification accompany this note.
+Date: 2026-10-16. Status: the initial owned-edit slice is implemented locally. The proposal below records its design; the implementation notes distinguish delivered behavior and remaining work.
+
+## Implementation notes
+
+`CadSketchEditDraft` wraps the existing bounded session and strict prefix validation. `useCadSketchEditing` connects it to the human workbench, reusing the controller's solver preparation. Human history-tree entry for a consumed sketch claims a distinct main workflow. Local graph edits, shared numeric parameters, previews, analysis and Undo/Redo use the private revision. Finish composes one minimal full-part batch; rejection preserves the edit. Cancel also aborts a pending Finish. Ordinary controller versions and source/storage/workflow guards remain unchanged.
+
+The workbench receives a rolled-back view projection while the controller, public reads, save/export, build and agent operations retain the accepted full part. File/Save, unrelated tree commands and global parameter management are unavailable during ownership. The checkmark finishes; the adjacent Cancel discards the sketch edit. Public `cad_set_viewport` sketch entry remains view-only, allowing agents to use the existing atomic batch operation. The public guide explains this distinction.
+
+Plane/offset fields validate through private preparation on Apply. They do not submit private revisions to the main full-part native preview coordinator. Full-part final preview and deliberate consumer area-reselection UI remain future work. The core accepts explicitly staged direct Pad/Pocket region repairs, but the human inspector does not expose that repair flow yet; a stale explicit region reference still rejects Finish honestly. New drawing also still needs existing-point snapping/reuse to complete a delete-and-reconnect journey without exact API authoring.
+
+### Independent integration review
+
+Reviewed the integration after checkpoint `66b0a7f`: exact accepted source and local-version pins, owner/adapter identity, combined cancellation signals, late preparation and Finish results, local no-op/history/redo behavior, complete-part acceptance, command routing and Finish/Cancel reachability. Main save/export/agent mutation/history guards remain in force. No unresolved actionable finding remains in this bounded review.
+
+The single confirmed finding was the Plane offset route: generic sketch fields sent a private version to the main native preview coordinator, whose correct stale-version rejection permanently blocked Apply. The reviewer rechecked `App.tsx`: it now omits that callback during owned editing. Private preparation still validates Apply, and main version/workflow checks remain unchanged.
+
+Root reports **240 focused cases passed**, including pending Finish cancellation, plus **nine production journeys passed in Chromium and Firefox**. The consumed-sketch journey applies Plane offset `2` locally while checking the exact accepted source is unchanged, then exercises edge deletion, rejected Finish, local Undo, nudge and Cancel. A reopened edit verifies successful Finish, volume `1125` and one global Undo. Root also reports the production build, documentation/source checks and shared UI guard passed. The reviewer did not repeat these gates or change production during this review.
 
 ## Recommendation
 
@@ -74,4 +90,4 @@ Agents can continue using one atomic `cad_edit_document` batch to replace geomet
 | Save/export/agent edit/global Undo while owned; local Undo from toolbar/hotkey | External operations remain guarded; local history is used only inside the owned editor. Native text-field Undo remains native. |
 | Existing immediate sketch entry, completed contour then Escape, no-op Finish | Existing committed contour survives; Finish still adds no history. This remains covered while the owned path is staged separately. |
 
-The proposal relies on source inspection and the official documentation above. New transaction tests, browser checks, storage checks and implementation remain outstanding.
+The proposal and acceptance table preserve the original design investigation. Current delivered scope, verification and remaining work are recorded in the implementation notes above.

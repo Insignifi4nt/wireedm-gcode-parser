@@ -1,0 +1,254 @@
+// @vitest-environment node
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { describe, expect, it, vi } from 'vitest';
+import type { CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
+import type { CadEdit } from '@/domain/cad/cadOperations';
+import { applyCadEdits } from '@/domain/cad/cadOperations';
+import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
+import { CAD_STAR_PLUGIN, createCadPluginProfile } from '@/domain/cad/plugins/cadPlugins';
+import { dxf } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
+import { prepareCadEdits } from './cadEditPreparation';
+import { CadSession } from './cadSession';
+import { CadSketchEditDraft } from './cadSketchEditDraft';
+import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
+import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
+
+const require = createRequire(import.meta.url);
+const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const prepare = async (document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) => (await prepareCadEdits(document, edits, solver, signal)).document;
+const sketchOf = (document: CadDocument, id = 'sketch') => {
+  const feature = document.features.find(feature => feature.id === id);
+  if (feature?.kind !== 'sketch') throw new Error('Missing fixture sketch'); return feature;
+};
+function source(explicit = false, earlierGraph = false) {
+  const sketch: CadSketchFeature = { id: 'sketch', kind: 'sketch', name: 'Consumed sketch', suppressed: false, plane: 'XY', offset: 0,
+    source: { format: 'dxf', fileName: 'exact.dxf', text: dxf, units: 'mm' }, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [' span ', 0] }, { id: 'c', position: [' span ', 10] }, { id: 'd', position: [0, 10] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+        { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+        { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+        { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' }], relations: [] } };
+  const parameters = { span: 20 };
+  return parseCadDocument({ ...createCadDocument('Consumed part', 'consumed-part'), schemaVersion: 2, parameters,
+    parameterGroups: [{ id: 'sizes', name: 'Sizes' }], parameterMetadata: { span: { groupId: 'sizes', source: { kind: 'manual' } } },
+    features: [...(earlierGraph ? [{ id: 'earlier', kind: 'sketch', name: 'Earlier driver', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'origin', position: ['0', '0'] }, { id: 'tip', position: [20, 0] }], entities: [], relations: [
+        { id: 'horizontal', kind: 'horizontal', pointIds: ['origin', 'tip'] }, { id: 'length', kind: 'distance', pointIds: ['origin', 'tip'], value: ' span ' }] } }] : []), sketch,
+    { id: 'pad', name: 'Pad', kind: 'extrude', sketchId: 'sketch', distance: ' span / 2 ', symmetric: false, operation: 'new', targetId: null,
+      suppressed: false, ...(explicit ? { regionSelection: prepareCadSketchCells(sketch, parameters).cells.map(cell => cell.reference) } : {}) },
+    { id: 'later', kind: 'sketch', name: 'Later plugin', suppressed: false, plane: 'XY', offset: 0,
+      profiles: [{ id: 'plugin', name: 'Exact plugin', construction: false, geometry: createCadPluginProfile(CAD_STAR_PLUGIN) }] }] });
+}
+const removeEdge: CadEdit = { kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: [], entityIds: ['bc'], relationIds: [], cascade: false };
+
+describe('owned consumed-sketch draft', () => {
+  it('edits an open prefix, keeps the valid full part exact, and reuses local bounded undo/redo', async () => {
+    const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    expect(draft.getSnapshot().document.features.map(feature => feature.id)).toEqual(['sketch']);
+    expect(() => applyCadEdits(base.document, [removeEdge])).toThrow();
+    await draft.editPrepared([removeEdge], prepare);
+    expect(sketchOf(draft.getSnapshot().document).graph?.entities.map(entity => entity.id)).toEqual(['ab', 'cd', 'da']);
+    expect(main.getSnapshot()).toBe(base); expect(parseCadDocument(base.document)).toBe(base.document);
+    const open = draft.getSnapshot(); draft.undo();
+    expect(draft.getSnapshot().document).toEqual(draft.initialDocument);
+    expect(draft.getSnapshot().canRedo).toBe(true); draft.redo(); expect(draft.getSnapshot().document).toBe(open.document);
+    expect(main.getSnapshot()).toBe(base);
+    const retained = draft.getSnapshot(), finish = draft.finishEdits(base);
+    await expect(prepare(base.document, finish.edits)).rejects.toThrow();
+    expect(draft.getSnapshot()).toBe(retained); expect(main.getSnapshot()).toBe(base);
+  });
+
+  it('finishes a reconnected sketch as one atomic source snapshot instead of replaying local commands', async () => {
+    const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    await draft.editPrepared([removeEdge], prepare);
+    await draft.editPrepared([{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: { points: [], relations: [], entities: [
+      { id: 'replacement', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }] } }], prepare);
+    const finish = draft.finishEdits(base);
+    expect(finish).toMatchObject({ baseVersion: base.version, localVersion: draft.getSnapshot().version, noOp: false });
+    expect(finish.edits.map(edit => edit.kind)).toEqual(['update-feature']);
+    await main.editPrepared(base.version, document => prepare(document, finish.edits), undefined, () => draft.assertCurrent(main.getSnapshot(), finish.localVersion));
+    const accepted = main.getSnapshot(); expect(accepted.canUndo).toBe(true);
+    expect(sketchOf(accepted.document).graph?.entities.some(entity => entity.id === 'replacement')).toBe(true);
+    expect(accepted.document.features.slice(1)).toEqual(base.document.features.slice(1));
+    main.undo(); expect(main.getSnapshot().document).toBe(base.document); expect(main.getSnapshot().canUndo).toBe(false);
+    main.redo(); expect(main.getSnapshot().document).toBe(accepted.document);
+  });
+
+  it('requires explicit new area witnesses when a consumed contour identity changes', async () => {
+    const main = new CadSession(source(true)), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    await draft.editPrepared([removeEdge], prepare);
+    await draft.editPrepared([{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: { points: [], relations: [], entities: [
+      { id: 'replacement', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }] } }], prepare);
+    await expect(prepare(base.document, draft.finishEdits(base).edits)).rejects.toThrow();
+    const pad = base.document.features.find(feature => feature.id === 'pad'); if (pad?.kind !== 'extrude') throw new Error('Missing pad');
+    const regionSelection = prepareCadSketchCells(sketchOf(draft.getSnapshot().document), draft.getSnapshot().document.parameters).cells.map(cell => cell.reference);
+    const finish = draft.finishEdits(base, [{ kind: 'update-feature', feature: { ...pad, regionSelection } }]);
+    const result = await prepare(base.document, finish.edits);
+    expect(result.features[1]).toMatchObject({ regionSelection }); expect(main.getSnapshot()).toBe(base);
+  });
+
+  it('keeps solved earlier numeric graphs when linked parameters change, without weakening exact drivers or suffix source', async () => {
+    const main = new CadSession(source(false, true)), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    await draft.editPrepared([{ kind: 'set-parameter', name: 'span', value: 30 },
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] } }], prepare);
+    expect(sketchOf(draft.getSnapshot().document, 'earlier').graph?.points[1].position).toEqual([30, 0]);
+    const finish = draft.finishEdits(base);
+    expect(finish.edits.map(edit => edit.kind === 'update-feature' ? edit.feature.id : edit.kind)).toEqual(['set-parameter', 'earlier', 'sketch']);
+    const final = await prepare(base.document, finish.edits);
+    expect(sketchOf(final, 'earlier').graph?.points[0].position).toEqual(['0', '0']);
+    expect(sketchOf(final, 'earlier').graph?.relations[1]).toMatchObject({ value: ' span ' });
+    expect(sketchOf(final).graph?.points[1].position).toEqual([' span ', 0]);
+    expect(final.parameterMetadata).toEqual(base.document.parameterMetadata);
+    expect(final.parameterGroups).toEqual(base.document.parameterGroups);
+    expect(final.features.slice(2)).toEqual(base.document.features.slice(2));
+    expect(sketchOf(final).source).toEqual(sketchOf(base.document).source); expect(main.getSnapshot()).toBe(base);
+  });
+
+  it('does not touch main redo on Cancel or an unchanged Finish, including restored local geometry', async () => {
+    const main = new CadSession(source()); main.edit([{ kind: 'rename-document', name: 'Keep redo' }]); main.undo();
+    const base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    await draft.editPrepared([removeEdge], prepare); draft.undo();
+    expect(draft.finishEdits(base)).toMatchObject({ noOp: true, edits: [] });
+    expect(main.getSnapshot()).toBe(base); expect(main.getSnapshot().canRedo).toBe(true);
+    draft.cancel(); expect(main.getSnapshot()).toBe(base); expect(main.getSnapshot().canRedo).toBe(true);
+    await expect(draft.editPrepared([removeEdge], prepare)).rejects.toMatchObject({ code: 'SKETCH_DRAFT_CLOSED' });
+    expect(() => draft.finishEdits(base)).toThrow(); main.redo(); expect(main.getSnapshot().document.name).toBe('Keep redo');
+  });
+
+  it('derives a no-op from restored final values even when local action history remains', async () => {
+    const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    await draft.editPrepared([{ kind: 'set-parameter', name: 'span', value: 30 }], prepare);
+    await draft.editPrepared([{ kind: 'set-parameter', name: 'span', value: 20 }], prepare);
+    expect(draft.getSnapshot().canUndo).toBe(true);
+    expect(draft.finishEdits(base)).toMatchObject({ noOp: true, edits: [] }); expect(main.getSnapshot()).toBe(base);
+  });
+
+  it('keeps local history behind pending field ownership and rejects preparation after that ownership changes', async () => {
+    const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    await draft.editPrepared([removeEdge], prepare);
+    draft.setWorkflowOpen(true);
+    const pendingUndo = draft.getSnapshot();
+    expect(() => draft.undo()).toThrow(expect.objectContaining({ code: 'WORKFLOW_OPEN' }));
+    expect(draft.getSnapshot()).toBe(pendingUndo);
+    draft.setWorkflowOpen(false); draft.undo(); draft.setWorkflowOpen(true);
+    const pendingRedo = draft.getSnapshot();
+    expect(() => draft.redo()).toThrow(expect.objectContaining({ code: 'WORKFLOW_OPEN' }));
+    expect(draft.getSnapshot()).toBe(pendingRedo);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const preparation = draft.editPrepared([{ kind: 'set-parameter', name: 'span', value: 30 }], async (document, edits, signal) => {
+      await gate; return prepare(document, edits, signal);
+    });
+    draft.setWorkflowOpen(false); const retained = draft.getSnapshot(); release();
+    await expect(preparation).rejects.toMatchObject({ code: 'WORKFLOW_CHANGED' });
+    expect(draft.getSnapshot()).toBe(retained); expect(main.getSnapshot()).toBe(base);
+    draft.redo(); expect(draft.getSnapshot().document.parameters.span).toBe(20);
+    draft.cancel(); expect(() => draft.setWorkflowOpen(true)).toThrow(expect.objectContaining({ code: 'SKETCH_DRAFT_CLOSED' }));
+  });
+
+  it('pins the local revision of Finish and preserves parameter provenance referring to a later plugin', async () => {
+    const original = source(), document = parseCadDocument({ ...original, parameterMetadata: { span: { groupId: 'sizes', source: {
+      kind: 'plugin', featureId: 'later', profileId: 'plugin', inputName: 'radius', packageId: CAD_STAR_PLUGIN.id, packageVersion: CAD_STAR_PLUGIN.version } } } });
+    const main = new CadSession(document), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    expect(draft.initialDocument.parameterMetadata).toEqual(base.document.parameterMetadata);
+    const finish = draft.finishEdits(base);
+    await draft.editPrepared([removeEdge], prepare);
+    expect(() => draft.assertCurrent(base, finish.localVersion)).toThrow(expect.objectContaining({ code: 'STALE_STATE' }));
+    expect(() => draft.assertSource({ ...base, version: 'replacement-version' })).toThrow();
+    expect(main.getSnapshot()).toBe(base);
+  });
+
+  it('refuses an invalid intent batch atomically before calling preparation', async () => {
+    const main = new CadSession(source(false, true)), draft = new CadSketchEditDraft(main.getSnapshot(), 'sketch'), before = draft.getSnapshot();
+    const prepared = vi.fn(prepare);
+    const invalid: CadEdit[] = [{ kind: 'rename-document', name: 'No' }, { kind: 'delete-feature', featureId: 'pad', cascade: true },
+      { kind: 'move-feature', featureId: 'sketch', beforeId: null }, { kind: 'remove-parameter', name: 'span' },
+      { kind: 'set-parameter-group', group: { id: 'other', name: 'Other' } },
+      { kind: 'update-feature', feature: { ...sketchOf(before.document, 'earlier'), name: 'No' } },
+      { kind: 'set-sketch-relation', sketchId: 'earlier', relation: { id: 'other', kind: 'fixed-axis', pointId: 'tip', axis: 'y', value: 0 } }];
+    for (const edit of invalid) await expect(draft.editPrepared([{ kind: 'set-parameter', name: 'span', value: 30 }, edit], prepared)).rejects.toMatchObject({ code: 'SKETCH_DRAFT_SCOPE' });
+    expect(prepared).not.toHaveBeenCalled(); expect(draft.getSnapshot()).toBe(before);
+  });
+
+  it.each(['name', 'driver', 'relation', 'metadata', 'source'] as const)('rejects unexpected %s mutations from a prepared prefix', async kind => {
+    const main = new CadSession(source(false, true)), draft = new CadSketchEditDraft(main.getSnapshot(), 'sketch'), before = draft.getSnapshot();
+    const prepareUnexpected = async () => {
+      const earlier = sketchOf(before.document, 'earlier'); if (!earlier.graph) throw new Error('Missing graph');
+      return parseCadDocument(kind === 'metadata' ? { ...before.document, parameterGroups: [{ id: 'sizes', name: 'Changed' }] }
+        : kind === 'source' ? { ...before.document, features: before.document.features.map(feature => feature.id === 'sketch' && feature.kind === 'sketch'
+          ? { ...feature, source: { ...feature.source, text: `${dxf} ` } } : feature) }
+          : { ...before.document, features: [{ ...earlier, ...(kind === 'name' ? { name: 'Changed' } : { graph: { ...earlier.graph,
+            ...(kind === 'driver' ? { points: [{ ...earlier.graph.points[0], position: [' 0 ', '0'] }, earlier.graph.points[1]] }
+              : { relations: earlier.graph.relations.slice(0, 1) }) } }) }, ...before.document.features.slice(1)] });
+    };
+    await expect(draft.editPrepared([], prepareUnexpected)).rejects.toMatchObject({ code: 'SKETCH_DRAFT_SCOPE' });
+    expect(draft.getSnapshot()).toBe(before);
+  });
+
+  it('refuses unrelated consumer changes and never automatically removes explicit selections', () => {
+    const main = new CadSession(source(true)), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    const pad = base.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad');
+    for (const edit of [{ kind: 'update-feature' as const, feature: { ...pad, distance: 15 } },
+      { kind: 'update-feature' as const, feature: { ...pad, id: 'other' } }, { kind: 'rename-document' as const, name: 'No' }])
+      expect(() => draft.finishEdits(base, [edit])).toThrow();
+    expect(draft.finishEdits(base)).toMatchObject({ noOp: true, edits: [] }); expect(main.getSnapshot()).toBe(base);
+  });
+
+  it('captures complete intent before lazy preparation and keeps new numeric parameter metadata explicit', async () => {
+    const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const parameter = { kind: 'set-parameter' as const, name: 'newSize', value: 30 }, edits: CadEdit[] = [parameter];
+    const pending = draft.editPrepared(edits, async (document, captured, signal) => { await gate; return prepare(document, captured, signal); });
+    parameter.value = 99; edits.push({ kind: 'rename-document', name: 'Unreviewed' }); release(); await pending;
+    expect(draft.getSnapshot().document.parameters.newSize).toBe(30);
+    expect(draft.getSnapshot().document.parameterMetadata?.newSize).toEqual({ source: { kind: 'manual' } });
+    const finish = draft.finishEdits(base);
+    expect(finish.edits).toEqual([{ kind: 'set-parameter', name: 'newSize', value: 30 }]);
+    expect((await prepare(base.document, finish.edits)).parameterMetadata?.newSize).toEqual({ source: { kind: 'manual' } });
+    expect(main.getSnapshot()).toBe(base);
+  });
+
+  it('retains the normal atomic Finish limit instead of splitting an accumulated local draft', async () => {
+    const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    await draft.editPrepared(Array.from({ length: 256 }, (_, index) => ({ kind: 'set-parameter', name: `p${index}`, value: index })), prepare);
+    expect(draft.finishEdits(base).edits).toHaveLength(256);
+    await draft.editPrepared([{ kind: 'set-parameter', name: 'another', value: 1 }], prepare);
+    expect(() => draft.finishEdits(base)).toThrow(expect.objectContaining({ code: 'edit-limit' }));
+    expect(draft.getSnapshot().document.parameters.another).toBe(1); expect(main.getSnapshot()).toBe(base);
+  });
+
+  it('preserves an owned embedded package and exact expression/source bytes while refusing package replacement', async () => {
+    const original = source(), owned = sketchOf(original);
+    const packageProfile = { id: 'plugin', name: 'Construction plugin', construction: true, geometry: createCadPluginProfile(CAD_STAR_PLUGIN) };
+    const document = parseCadDocument({ ...original, features: original.features.map(feature => feature.id === 'sketch' ? { ...owned, profiles: [packageProfile] } : feature) });
+    const main = new CadSession(document), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    await draft.editPrepared([{ kind: 'set-sketch-construction', sketchId: 'sketch', entityIds: ['bc'], construction: true }], prepare);
+    const local = sketchOf(draft.getSnapshot().document);
+    expect(JSON.stringify(local.profiles[0].geometry)).toBe(JSON.stringify(packageProfile.geometry));
+    expect(local.source?.text).toBe(dxf); expect(local.graph?.points[1].position[0]).toBe(' span ');
+    const changedPackage = { ...packageProfile.geometry.package, name: 'Replaced package' };
+    await expect(draft.editPrepared([{ kind: 'update-feature', feature: { ...local, profiles: [{ ...packageProfile,
+      geometry: { ...packageProfile.geometry, package: changedPackage } }] } }], prepare)).rejects.toMatchObject({ code: 'SKETCH_DRAFT_SCOPE' });
+    expect(sketchOf(draft.getSnapshot().document)).toBe(local); expect(main.getSnapshot()).toBe(base);
+  });
+
+  it.each(['cancel', 'undo', 'base-version', 'base-document'] as const)('rejects a late local result after %s without accepting its candidate', async cause => {
+    const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    await draft.editPrepared([removeEdge], prepare);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let current = base;
+    const pending = draft.editPrepared([{ kind: 'set-parameter', name: 'span', value: 30 }], async (document, edits, signal) => {
+      await gate; return prepare(document, edits, signal);
+    }, draft.getSnapshot().version, undefined, () => draft.assertSource(current));
+    if (cause === 'cancel') draft.cancel();
+    if (cause === 'undo') draft.undo();
+    if (cause === 'base-version') current = { ...base, version: 'different-version' };
+    if (cause === 'base-document') current = { ...base, document: parseCadDocument({ ...base.document, name: 'New source' }) };
+    const retained = draft.getSnapshot(); release();
+    await expect(pending).rejects.toThrow(); expect(draft.getSnapshot()).toBe(retained); expect(main.getSnapshot()).toBe(base);
+  });
+});
