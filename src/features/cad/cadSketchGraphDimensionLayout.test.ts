@@ -15,10 +15,44 @@ function rectangle() {
     { id: 'right', kind: 'distance', pointIds: ['b', 'c'], value: 10 }
   ] });
 }
+
+describe('declared angular dimension layout', () => {
+  it.each(['ccw', 'cw'] as const)('draws the saved %s obtuse sector with tangent arrowheads and a degree-valued label', sense => {
+    const sign = sense === 'ccw' ? 1 : -1;
+    const graph = parseCadSketchGraph({ points: [{ id: 'v', position: [' 0 ', '0'] }, { id: 'a', position: [10, 0] },
+      { id: 'b', position: [-5, sign * Math.sqrt(75)] }], entities: [
+      { id: 'incoming', kind: 'line', construction: false, startPointId: 'a', endPointId: 'v' },
+      { id: 'outgoing', kind: 'line', construction: true, startPointId: 'v', endPointId: 'b' }
+    ], relations: [{ id: 'corner', kind: 'line-angle', rays: [{ lineId: 'incoming', towardPointId: 'a' },
+      { lineId: 'outgoing', towardPointId: 'b' }], sense, value: ' cornerAngle ' }] });
+    const before = JSON.stringify(graph), dimension = layoutCadSketchGraphDimensions(graph, { cornerAngle: 120 }, .1)[0];
+    if (dimension?.kind !== 'angle') throw new Error('Angular annotation missing.');
+    expect(dimension.valueDegrees).toBe(120); expect(dimension.relation).toBe(graph.relations[0]);
+    expect(dimension.arc.clockwise).toBe(sense === 'cw'); expect(dimension.arc.center).toEqual([0, 0]);
+    expect(dimension.arc.start[1]).toBeCloseTo(0, 12); expect(dimension.arc.end[0]).toBeCloseTo(-dimension.arc.radius / 2, 12);
+    expect(dimension.label[0]).toBeGreaterThan(0); expect(dimension.label[1] * sign).toBeGreaterThan(0);
+    for (const [index, arrow] of dimension.arrows.entries()) {
+      const tip = index === 0 ? dimension.arc.start : dimension.arc.end;
+      expect(arrow[0]).toEqual(tip);
+      const radial = [tip[0], tip[1]], base = [(arrow[1][0] + arrow[2][0]) / 2 - tip[0], (arrow[1][1] + arrow[2][1]) / 2 - tip[1]];
+      expect(radial[0] * base[0] + radial[1] * base[1]).toBeCloseTo(0, 12);
+      expect((radial[0] * base[1] - radial[1] * base[0]) * sign * (index === 0 ? 1 : -1)).toBeGreaterThan(0);
+    }
+    expect(cadSketchGraphDimensionLabel(dimension.valueDegrees, 'angle').quantity).toBe('120°');
+    expect(JSON.stringify(graph)).toBe(before);
+  });
+});
+function linearDimensions(...args: Parameters<typeof layoutCadSketchGraphDimensions>) {
+  return layoutCadSketchGraphDimensions(...args).map(layout => {
+    if (layout.kind === 'angle') throw new Error('Expected a linear dimension.');
+    return layout;
+  });
+}
+
 describe('explicit graph distance layout', () => {
   it('places bottom, top and vertical dimensions twenty screen pixels outward from graph bounds', () => {
     const graph = rectangle(), before = JSON.stringify(graph);
-    const layouts = layoutCadSketchGraphDimensions(graph, { width: 20 }, .1);
+    const layouts = linearDimensions(graph, { width: 20 }, .1);
     expect(layouts.map(layout => layout.line)).toEqual([
       [[0, -2], [20, -2]], [[0, 12], [20, 12]], [[-2, 0], [-2, 10]], [[22, 0], [22, 10]]
     ]);
@@ -36,8 +70,8 @@ describe('explicit graph distance layout', () => {
     for (const end of [[10, 0], [0, 10]]) {
       const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: end }], entities: [],
         relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 10 }] });
-      const first = layoutCadSketchGraphDimensions(graph, {}, .1)[0];
-      const reversed = layoutCadSketchGraphDimensions(parseCadSketchGraph({ ...graph,
+      const first = linearDimensions(graph, {}, .1)[0];
+      const reversed = linearDimensions(parseCadSketchGraph({ ...graph,
         relations: [{ id: 'length', kind: 'distance', pointIds: ['b', 'a'], value: 10 }] }), {}, .1)[0];
       expect(reversed.line).toEqual([...first.line].reverse()); expect(reversed.label).toEqual(first.label);
       expect(reversed.arrows).toEqual([...first.arrows].reverse());
@@ -48,7 +82,7 @@ describe('explicit graph distance layout', () => {
   it('keeps oblique arrow tips on their guides with bases inside the measured span', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [3, 4] }], entities: [],
       relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 5 }] });
-    const layout = layoutCadSketchGraphDimensions(graph, {}, .1)[0];
+    const layout = linearDimensions(graph, {}, .1)[0];
     expect(layout.line).toEqual([[expect.closeTo(1.6, 12), expect.closeTo(-1.2, 12)], [expect.closeTo(4.6, 12), expect.closeTo(2.8, 12)]]);
     expect(layout.label).toEqual([expect.closeTo(3.1, 12), expect.closeTo(.8, 12)]);
     expect(layout.arrows.map(arrow => arrow[0])).toEqual(layout.line);
@@ -66,11 +100,11 @@ describe('explicit graph distance layout', () => {
       { id: 'degenerate', kind: 'distance', pointIds: ['a', 'same'], value: 1 },
       { id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }
     ] });
-    const result = layoutCadSketchGraphDimensions(graph, { size: 1e-9 }, 1e-10);
+    const result = linearDimensions(graph, { size: 1e-9 }, 1e-10);
     expect(result).toHaveLength(1); expect(result[0].relation.id).toBe('small'); expect(result[0].valueMm).toBe(1e-9);
     expect(result[0].label[0]).toBeCloseTo(1.5e-9, 22); expect(result[0].label[1]).toBeCloseTo(0, 22);
-    expect(layoutCadSketchGraphDimensions(parseCadSketchGraph({ ...graph, relations: [] }), {}, 1)).toEqual([]);
-    expect(layoutCadSketchGraphDimensions(graph, { size: 1e-9 }, 0)).toEqual([]);
+    expect(linearDimensions(parseCadSketchGraph({ ...graph, relations: [] }), {}, 1)).toEqual([]);
+    expect(linearDimensions(graph, { size: 1e-9 }, 0)).toEqual([]);
   });
 
   it('uses the actual major-arc bounds for the outward side at a far origin', () => {
@@ -79,7 +113,7 @@ describe('explicit graph distance layout', () => {
       { id: 'center', position: [100000000, 100000010] }, { id: 'start', position: [100000010, 100000010] }, { id: 'end', position: [100000000, 100000020] }
     ], entities: [{ id: 'major-arc', kind: 'arc', construction: false, centerPointId: 'center', startPointId: 'start', endPointId: 'end', direction: 'cw' }],
     relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 4 }] });
-    const result = layoutCadSketchGraphDimensions(graph, {}, .1)[0];
+    const result = linearDimensions(graph, {}, .1)[0];
     // The major sweep reaches y=100000000. Point-only bounds would choose the wrong side.
     expect(result.line).toEqual([[99999998, 100000014], [100000002, 100000014]]);
     expect(result.label).toEqual([100000000, 100000014]);
@@ -102,14 +136,14 @@ describe('native graph corner dimension layout', () => {
       { id: 'arc', kind: 'arc', centerPointId: 'origin', startPointId: 'start', endPointId: 'end', direction: 'cw', construction: false }
     ], relations: [{ id: 'diameter', kind: 'radial-size', entityId: 'circle', quantity: 'diameter', value: ' size * 2 ' },
       { id: 'radius', kind: 'radial-size', entityId: 'arc', quantity: 'radius', value: ' size ' }] });
-    const layouts = layoutCadSketchGraphDimensions(source, { size: 5 }, .1);
+    const layouts = linearDimensions(source, { size: 5 }, .1);
     expect(layouts).toMatchObject([{ kind: 'diameter', valueMm: 10 }, { kind: 'radius', valueMm: 5 }]);
     expect(layouts[0].arrows[0][0]).toEqual([expect.closeTo(13.535533905932738, 12), expect.closeTo(23.535533905932738, 12)]);
     expect(layouts[1].arrows[0][0]).toEqual([expect.closeTo(-3.5355339059327373, 12), expect.closeTo(-3.5355339059327378, 12)]);
     expect(layouts.map(layout => layout.relation)).toEqual(source.relations);
     const reversed = parseCadSketchGraph({ ...source, entities: source.entities.map(entity => entity.kind === 'arc'
       ? { ...entity, startPointId: 'end', endPointId: 'start', direction: 'ccw' } : entity) });
-    const second = layoutCadSketchGraphDimensions(reversed, { size: 5 }, .1)[1];
+    const second = linearDimensions(reversed, { size: 5 }, .1)[1];
     expect(second.arrows[0][0][0]).toBeCloseTo(layouts[1].arrows[0][0][0], 12);
     expect(second.arrows[0][0][1]).toBeCloseTo(layouts[1].arrows[0][0][1], 12);
   });
@@ -117,7 +151,7 @@ describe('native graph corner dimension layout', () => {
   it('attaches a radial leader to the actual fillet arc and retains the exact radius driver', () => {
     const { graph } = createCadSketchCornerTreatment({ graph: corner().graph, parameters: { diameter: 4 }, pointId: 'vertex',
       treatment: { kind: 'fillet', radius: ' diameter / 2 ' }, createId: ids() }), before = JSON.stringify(graph);
-    const layouts = layoutCadSketchGraphDimensions(graph, { diameter: 4 }, .1);
+    const layouts = linearDimensions(graph, { diameter: 4 }, .1);
     expect(layouts).toHaveLength(1); const layout = layouts[0];
     expect(layout.kind).toBe('radius'); expect(layout.relation).toBe(graph.relations[0]); expect(layout.valueMm).toBe(2);
     expect(layout.line[0]).toEqual([expect.closeTo(2, 12), expect.closeTo(2, 12)]);
@@ -134,7 +168,7 @@ describe('native graph corner dimension layout', () => {
     const { graph } = createCadSketchCornerTreatment({ graph: source, parameters: {}, pointId: 'vertex', treatment: { kind: 'fillet', radius: 2 }, createId: ids() });
     const reversed = parseCadSketchGraph({ ...graph, points: [...graph.points].reverse(), entities: [...graph.entities].reverse().map(entity => entity.kind === 'arc'
       ? { ...entity, startPointId: entity.endPointId, endPointId: entity.startPointId, direction: entity.direction === 'cw' ? 'ccw' : 'cw' } : entity) });
-    const first = layoutCadSketchGraphDimensions(graph, {}, .1)[0], second = layoutCadSketchGraphDimensions(reversed, {}, .1)[0];
+    const first = linearDimensions(graph, {}, .1)[0], second = linearDimensions(reversed, {}, .1)[0];
     const expected = rotate([2 - Math.SQRT2, 2 - Math.SQRT2]);
     expect(first.arrows[0][0]).toEqual([expect.closeTo(expected[0], 12), expect.closeTo(expected[1], 12)]);
     for (const axis of [0, 1]) { expect(second.arrows[0][0][axis]).toBeCloseTo(first.arrows[0][0][axis], 12); expect(second.label[axis]).toBeCloseTo(first.label[axis], 12); }
@@ -143,7 +177,7 @@ describe('native graph corner dimension layout', () => {
   it.each([3 * Math.PI / 4, 3 * Math.PI / 4 + .015, 0])('keeps the radius arrow outside the actual label rectangle at support rotation %s', angle => {
     const { graph } = createCadSketchCornerTreatment({ graph: corner(angle).graph, parameters: {}, pointId: 'vertex',
       treatment: { kind: 'fillet', radius: 3 }, createId: ids() });
-    const scale = .1, layout = layoutCadSketchGraphDimensions(graph, {}, scale)[0], tip = layout.arrows[0][0];
+    const scale = .1, layout = linearDimensions(graph, {}, scale)[0], tip = layout.arrows[0][0];
     const { width, height } = cadSketchGraphDimensionLabel(layout.valueMm, layout.kind);
     const labelDelta = [(layout.label[0] - tip[0]) / scale, (layout.label[1] - tip[1]) / scale];
     expect(Math.abs(labelDelta[0]) < width / 2 && Math.abs(labelDelta[1]) < height / 2).toBe(false);
@@ -156,7 +190,7 @@ describe('native graph corner dimension layout', () => {
   it('dimensions each chamfer setback against the retained vertex and its own canonical source line', () => {
     const { graph } = createCadSketchCornerTreatment({ graph: corner().graph, parameters: { first: 2, second: 3 }, pointId: 'vertex',
       treatment: { kind: 'chamfer', setbacks: [' first ', 'second'] }, createId: ids() }), before = JSON.stringify(graph);
-    const layouts = layoutCadSketchGraphDimensions(graph, { first: 2, second: 3 }, .1);
+    const layouts = linearDimensions(graph, { first: 2, second: 3 }, .1);
     expect(layouts).toHaveLength(2);
     expect(layouts).toMatchObject([{ kind: 'setback', side: 0, lineId: 'line-a', valueMm: 2, line: [[0, -2], [2, -2]], label: [1, -2] },
       { kind: 'setback', side: 1, lineId: 'line-b', valueMm: 3, line: [[-2, 0], [-2, 3]], label: [-2, 1.5] }]);
@@ -169,7 +203,7 @@ describe('native graph corner dimension layout', () => {
     const { graph } = createCadSketchCornerTreatment({ graph: source, parameters: { a: 2, b: 3 }, pointId: 'vertex', treatment: { kind: 'chamfer', setbacks: [' a ', ' b '] }, createId: ids() });
     const reversed = parseCadSketchGraph({ ...graph, entities: [...graph.entities].reverse().map(entity => entity.kind === 'line'
       ? { ...entity, startPointId: entity.endPointId, endPointId: entity.startPointId } : entity) });
-    const layouts = layoutCadSketchGraphDimensions(reversed, { a: 2, b: 3 }, .1);
+    const layouts = linearDimensions(reversed, { a: 2, b: 3 }, .1);
     for (const [side, expectedLabel] of [[0, rotate([1, -2])], [1, rotate([-2, 1.5])]] as const) {
       const layout = layouts[side]; expect(layout.kind).toBe('setback');
       if (layout.kind !== 'setback') throw new Error('Expected setback');

@@ -1,6 +1,6 @@
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphIssue, CadSketchLineRelation } from './cadSketchGraph';
 import { CadError } from './cadError';
-import { cadPathClosureTolerance } from './cadAnalyticSegments';
+import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import type { Point2 } from '@/domain/path-intel/types';
 
 type Line = Extract<CadSketchGraphEntity, { kind: 'line' }>;
@@ -30,7 +30,7 @@ export function checkCadSketchLineRelation(graph: CadSketchGraph, relation: CadS
     const lines = resolveCadSketchLinePair(graph, relation.lineIds), a = cadSketchLineDirection(lines[0], points), b = cadSketchLineDirection(lines[1], points);
     if (!a || !b) return [];
     const q = Math.abs(relation.kind === 'parallel' ? a.x * b.y - a.y * b.x : a.x * b.x + a.y * b.y);
-    const residualMm = q * Math.max(a.length, b.length), tolerance = cadPathClosureTolerance([a.start, a.end, b.start, b.end]);
+    const residualMm = q * Math.max(a.length, b.length), tolerance = cadSketchDriverTolerance([a.start, a.end, b.start, b.end]);
     // A separate dimensionless accuracy contract: <=1e-12 transverse error per
     // unit direction. World-origin roundoff must never license a large angle.
     // This tightens the existing world-mm gate; neither native thresholds nor

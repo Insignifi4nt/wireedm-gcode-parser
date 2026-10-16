@@ -300,6 +300,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const graphSelection = graphSelections.length === 1 ? graphSelections[0] : null;
   const graphPointPair = graphSelections.length === 2 && graphSelections.every(selection => selection.kind === 'point');
   const graphEntities = sketch?.graph?.entities.filter(entity => isCadSketchGraphSelected(graphSelections, { kind: 'entity', id: entity.id })) ?? [];
+  const graphLinePair = graphSelections.length === 2 && graphEntities.length === 2 && graphEntities.every(entity => entity.kind === 'line');
   const selectedGraphEntity = graphSelection?.kind === 'entity' ? sketch?.graph?.entities.find(entity => entity.id === graphSelection.id) : null;
   const sketchCornerAvailable = useMemo(() => {
     if (graphSelection?.kind !== 'point' || !sketch?.graph) return false;
@@ -329,7 +330,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       const entity = sketch.graph.entities.find(item => item.kind === 'line' && relation.pointIds.includes(item.startPointId) && relation.pointIds.includes(item.endPointId));
       if (entity) selectGraph({ kind: 'entity', id: entity.id });
       else selectGraphSet(relation.pointIds.map(id => ({ kind: 'point', id })));
-    } else selectGraph({ kind: 'entity', id: relation.kind === 'radial-size' ? relation.entityId : relation.kind === 'fillet-corner' ? relation.arcId : relation.chamferId });
+    } else if (relation.kind === 'line-angle') selectGraphSet(relation.rays.map(ray => ({ kind: 'entity', id: ray.lineId })));
+    else selectGraph({ kind: 'entity', id: relation.kind === 'radial-size' ? relation.entityId : relation.kind === 'fillet-corner' ? relation.arcId : relation.chamferId });
     setGraphRelationCommand({ kind: 'inspect', relationId: relation.id, token: crypto.randomUUID() }); setInspectorCollapsed(false);
   }, [sketch, selectGraph, selectGraphSet]);
   useEffect(() => setGraphPick(null), [document.id, sketchId]);
@@ -758,8 +760,9 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const sketchDimensionAvailable = profile && cadSketchDimensionQuantities(profile.geometry).some(quantity => !inspectCadSketchDimensions(profile, document.parameters).some(dimension => dimension.field === (quantity === 'diameter' ? 'radius' : quantity)));
   const circleSourceDriven = selectedGraphEntity?.kind === 'circle' && typeof selectedGraphEntity.radius === 'string'
     && !sketch?.graph?.relations.some(relation => relation.kind === 'radial-size' && relation.entityId === selectedGraphEntity.id);
-  const graphDimensionAvailable = Boolean(selectedGraphEntity && !circleSourceDriven);
+  const graphDimensionAvailable = graphLinePair || Boolean(selectedGraphEntity && !circleSourceDriven);
   const beginSketchDimension = () => {
+    if (graphLinePair) { setTool('select'); setGraphRelationCommand({ kind: 'line-angle', token: crypto.randomUUID() }); setInspectorCollapsed(false); return; }
     if (graphPointPair) { setTool('select'); setGraphRelationCommand({ kind: 'distance', token: crypto.randomUUID() }); setInspectorCollapsed(false); return; }
     if (!selectedGraphEntity) { beginProfileCommand('dimension'); return; }
     setTool('select'); setGraphRelationCommand({ kind: selectedGraphEntity.kind === 'line' ? 'length' : 'radial-size', token: crypto.randomUUID() }); setInspectorCollapsed(false);

@@ -1,6 +1,6 @@
 # Sketch precision policy review
 
-Investigation only, 2026-10-16, against the frozen Split checkpoint and the existing angle preflight. No tests, probes, builds, native changes, production edits or remote writes were performed. The pinned native source archive was read in place. This proposal does not authorize changing acceptance yet.
+Initial investigation, 2026-10-16, against the frozen Split checkpoint and the existing angle preflight. The investigation read the pinned native source archive in place and made no implementation changes or new experiments. Root subsequently approved the bounded local implementation recorded below, after Split checkpoint `5cdda60`.
 
 ## Finding
 
@@ -36,4 +36,27 @@ The proposed floor is 1000 times smaller than the app's `1e-7` mm native placeme
 
 Approve the named physical driver contract first, then implement a small shared predicate and affected call sites. The bounded proof should reuse the existing ordinary 120-degree case, wrong-sector/all-fixed rejection and source-expression checks; add only meaningful boundary cases around the declared budget and one translated/disparate-length case. Existing strict joint, arc-structure and exact Move/Split regressions must remain strict. Ordinary arc failures may remain because their structural representation has a different contract; this proposal does not promise to solve them.
 
-More residual-bearing saved graphs could become valid under a changed driver policy, while older readers still reject them. Record that compatibility consequence and preserve exact saved originals under existing storage rules. Never silently solve, normalize, heal or relabel native diagnostics on load. No policy or compatibility behavior has changed in this investigation.
+More residual-bearing saved graphs could become valid under a changed driver policy, while older readers still reject them. Record that compatibility consequence and preserve exact saved originals under existing storage rules. Never silently solve, normalize, heal or relabel native diagnostics on load.
+
+## Approved local implementation
+
+The bounded implementation adds [one driver-budget helper](../../src/domain/cad/cadSketchPrecision.ts), `cadSketchDriverTolerance(operands) = max(1e-10 mm, cadPathClosureTolerance(operands))`. The graph's H/V, distance and fixed-point/axis predicates, equal sizes, radial dimensions and line-pair physical deflections now use it. The existing normalized direction cap remains `1e-12`. Circle-radius operands still exclude unrelated center coordinates, and translated point operands retain their existing arithmetic uncertainty allowance.
+
+Coincidence relations, complete coincidence classes, endpoint-arc structural radius equality, source bounds, nondegeneracy, material compilation, analytic path/export encoding and complete exact Move/Split candidate checks are unchanged. Runtime verification, full document parsing and worker reply verification still reach the same shared graph checker. No alternate worker-only tolerance or solve-on-load path was added.
+
+All hybrid corner checks remain unchanged in [cadSketchCornerGeometry.ts](../../src/domain/cad/cadSketchCornerGeometry.ts):
+
+| Corner check | Classification retained in this slice |
+| --- | --- |
+| Incident entity/trim/reference ownership | Exact topology, no retargeting. |
+| Trim point on original support and retained finite interval | Structural construction with arithmetic roundoff and existing nondegeneracy guards. |
+| Fillet radius-to-driver and chamfer setbacks-to-drivers | Scalar drivers inside a coupled construction; deliberately retain their stricter existing predicate pending a separate reviewed change. |
+| Fillet tangency, intended sign and minor branch | Structural support/branch conditions, unchanged. |
+
+This avoids partially relaxing a corner while its coupled support checks retain another contract. Some ordinary native corner or arc attempts can therefore still reject. No general native-acceptance improvement is claimed for those cases.
+
+Meaningful new tests first reproduced the rejected physical boundary and the recorded 120-degree solve's `2.042810365310288e-12` mm distance residual. A second red-first check reproduced equal-size and line-deflection rejection under the old predicate. The final focused run passes 64 cases across the directly affected domain checks, existing structural/corner/Split tests, pinned native-runtime regressions and the new document/worker boundary tests. It covers exact/in excess physical limits, longer-line and dimensionless rejection, distant scalar radii, translated operands, strict coincidence/whole-class/arc preservation and exact source-driver retention. Evidence: `tmp/sketch-driver-precision-red.log`, `tmp/sketch-driver-precision-size-red.log`, `tmp/sketch-driver-precision-focused.log`. One initial new corner fixture used the wrong treatment field and was corrected to the existing `setbacks` contract; it did not require a production change.
+
+Compatibility changes only numerical driver acceptance. Some schema-2 graphs previously rejected for tiny driver residuals now load and save unchanged; older app versions can reject them. No schema, source record, saved driver, installed package or native binary is migrated or rewritten. This local implementation does not change exact exports, introduce coordinate repair, tune native settings or alter failure diagnostics. Production browser/build acceptance and the release compatibility record remain root-owned.
+
+Root integrated acceptance: final TypeScript/production build and all 23 sketch/region journeys pass in Chromium and Firefox against the same build. Exact parameter-linked angle editing, native solid volume, Cancel/Undo and save/reopen pass without coordinate correction or source rounding. The line-angle review and workspace checklist record final evidence and the older-reader compatibility limit. No release or remote action occurred.

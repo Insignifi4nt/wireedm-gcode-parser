@@ -42,6 +42,7 @@ async function mount(distance: CadScalar, nativePreview = false, replacement?: C
 
 it.each([1.23456789012345, '1.23456789012345', ' 1.23456789012345e1 '])('preserves the exact literal %j and full precision when its displayed quantity is re-entered', async distance => {
   const { session, before, preview, applied } = await mount(distance, true), displayed = String(Number(distance));
+  await act(async () => input().focus());
   expect(input().value).toBe(displayed);
   await type(` ${displayed} `);
   expect(input().value).toBe(` ${displayed} `);
@@ -50,12 +51,46 @@ it.each([1.23456789012345, '1.23456789012345', ' 1.23456789012345e1 '])('preserv
   expect(session.getSnapshot().document.features[1]).toMatchObject({ distance });
 });
 
+it('compacts only an idle readout while focus, raw edits and tiny values retain their exact numeric intent', async () => {
+  const h = await mount(120.00000000000001, true);
+  expect(input().value).toBe('120');
+  await act(async () => input().focus()); expect(input().value).toBe('120.00000000000001');
+  await act(async () => input().blur()); expect(input().value).toBe('120');
+  expect(h.session.getSnapshot()).toEqual(h.before); expect(h.applied).not.toHaveBeenCalled();
+  expect(h.preview.mock.calls.some(([command]) => command.kind === 'candidate')).toBe(false);
+  await act(async () => input().focus()); await type('10.0000');
+  await act(async () => input().blur()); expect(input().value).toBe('10.0000');
+  await act(async () => { input().setSelectionRange(1, 3); input().focus(); });
+  expect(input().selectionStart).toBe(1); expect(input().selectionEnd).toBe(3);
+  expect(h.candidate().edits).toContainEqual(expect.objectContaining({ kind: 'update-feature', feature: expect.objectContaining({ distance: 10 }) }));
+  await act(async () => button('Cancel').click()); expect(h.session.getSnapshot()).toEqual(h.before);
+  const tiny = await mount(10, true, { id: 'move', name: 'Move', kind: 'transform', suppressed: false, sourceId: 'pad', translation: [1e-12, 0, 0], rotation: [0, 0, 0] });
+  expect(input('Translation X mm').value).toBe('1e-12');
+  await act(async () => input('Translation X mm').focus()); expect(input('Translation X mm').value).toBe('1e-12');
+  await act(async () => input('Translation X mm').blur());
+  expect(input('Translation X mm').value).toBe('1e-12');
+  expect(tiny.session.getSnapshot()).toEqual(tiny.before); expect(tiny.applied).not.toHaveBeenCalled();
+  expect(tiny.preview.mock.calls.some(([command]) => command.kind === 'candidate')).toBe(false);
+});
+
+it.each(['before', 'after'] as const)('preserves a whole-value selection made %s focus so immediate replacement reaches Apply', async order => {
+  const h = await mount(3.9457667151162816);
+  const control = input();
+  await act(async () => { if (order === 'before') control.select(); control.focus(); if (order === 'after') control.select(); });
+  expect(control.selectionStart).toBe(0); expect(control.selectionEnd).toBe(control.value.length);
+  await act(async () => { control.setRangeText('4', control.selectionStart ?? 0, control.selectionEnd ?? 0, 'end'); control.dispatchEvent(new Event('input', { bubbles: true })); });
+  expect(control.value).toBe('4');
+  await act(async () => { control.blur(); button('Apply').click(); });
+  expect(h.session.getSnapshot().document.features[1]).toMatchObject({ distance: 4 });
+});
+
 it('updates all Move inputs sharing a named driver together while retaining their exact bindings and full precision', async () => {
   const move = { id: 'move', name: 'Move', kind: 'transform', suppressed: false, sourceId: 'pad', translation: [' depth ', 'depth', 'depth * 2'], rotation: [0, 0, 0] } satisfies CadFeature;
   const { session, before, applied } = await mount('depth', false, move);
   expect(input('Translation X mm').value).toBe('10'); expect(input('Translation Y mm').value).toBe('10'); expect(input('Translation Z mm').value).toBe('20'); expect(input('Translation Z mm').readOnly).toBe(true);
   await type('12.3456789012345', 'Translation X mm');
-  expect(input('Translation Y mm').value).toBe('12.3456789012345'); expect(input('Translation Z mm').value).toBe('24.691357802469');
+  await act(async () => input('Translation Y mm').focus()); expect(input('Translation Y mm').value).toBe('12.3456789012345');
+  await act(async () => input('Translation Z mm').focus()); expect(input('Translation Z mm').value).toBe('24.691357802469');
   await type('13', 'Translation Y mm'); expect(input('Translation X mm').value).toBe('13'); expect(input('Translation Z mm').value).toBe('26');
   expect(session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: false, workflowOpen: true });
   await act(async () => button('Apply').click());

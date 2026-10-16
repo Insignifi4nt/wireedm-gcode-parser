@@ -4,36 +4,37 @@ import { cadPathClosureTolerance } from '@/domain/cad/cadAnalyticSegments';
 import { createArcSegment } from '@/domain/path-intel/segments';
 import { resolveCadSketchCornerTopology } from '@/domain/cad/cadSketchCornerGeometry';
 import { resolveCadSketchRadialEntity } from '@/domain/cad/cadSketchRadialRelations';
+import { cadSketchLineAngleGeometry } from '@/domain/cad/cadSketchAngleRelations';
 import type { Point2 } from '@/domain/path-intel/types';
 import type { SketchPoint } from './cadSketchInteraction';
 import { formatCadQuantity } from './cadDisplayQuantity';
 
 export type CadSketchDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'distance' }>;
-export type CadSketchDimensionRelation = Extract<CadSketchGraphRelation, { kind: 'distance' | 'radial-size' | 'fillet-corner' | 'chamfer-corner' }>;
+export type CadSketchDimensionRelation = Extract<CadSketchGraphRelation, { kind: 'distance' | 'radial-size' | 'fillet-corner' | 'chamfer-corner' | 'line-angle' }>;
 type Pair = readonly [SketchPoint, SketchPoint];
 type Arrow = readonly [SketchPoint, SketchPoint, SketchPoint];
 interface DimensionGeometry {
-  readonly valueMm: number;
-  readonly line: Pair;
   readonly extensions: readonly Pair[];
   readonly arrows: readonly Arrow[];
   readonly label: SketchPoint;
 }
-export type CadSketchGraphDimensionLayout = DimensionGeometry & (
+interface LinearDimensionGeometry extends DimensionGeometry { readonly valueMm: number; readonly line: Pair }
+export type CadSketchGraphDimensionLayout = LinearDimensionGeometry & (
   { readonly kind: 'distance'; readonly relation: CadSketchDistanceRelation }
   | { readonly kind: 'radius'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'fillet-corner' | 'radial-size' }> }
   | { readonly kind: 'diameter'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'radial-size' }> }
   | { readonly kind: 'setback'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'chamfer-corner' }>; readonly side: 0 | 1; readonly lineId: string }
-);
+) | DimensionGeometry & { readonly kind: 'angle'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'line-angle' }>;
+  readonly valueDegrees: number; readonly arc: { readonly center: SketchPoint; readonly radius: number; readonly start: SketchPoint; readonly end: SketchPoint; readonly clockwise: boolean } };
 
 /** The layout and rendered label share one screen-pixel box. */
-export function cadSketchGraphDimensionLabel(valueMm: number, kind: CadSketchGraphDimensionLayout['kind']) {
-  const quantity = `${formatCadQuantity(valueMm)} mm`, text = kind === 'radius' ? `R ${quantity}` : kind === 'diameter' ? `Ø ${quantity}` : quantity;
+export function cadSketchGraphDimensionLabel(value: number, kind: CadSketchGraphDimensionLayout['kind']) {
+  const quantity = `${formatCadQuantity(value)}${kind === 'angle' ? '°' : ' mm'}`, text = kind === 'radius' ? `R ${quantity}` : kind === 'diameter' ? `Ø ${quantity}` : quantity;
   return { quantity, text, width: Math.max(42, text.length * 7 + 12), height: 18 };
 }
 
 /** Shared aligned dimension geometry; the caller chooses its geometric outward side. */
-function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixel: number): Omit<DimensionGeometry, 'valueMm'> {
+function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixel: number): Omit<LinearDimensionGeometry, 'valueMm'> {
   const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), ux = dx / length, uy = dy / length;
   const offset = (point: Point2, pixels: number): SketchPoint => [point.x + nx * pixels * mmPerPixel, point.y + ny * pixels * mmPerPixel];
   const line: Pair = [offset(a, 20), offset(b, 20)];
@@ -45,7 +46,7 @@ function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixe
     label: [a.x / 2 + b.x / 2 + nx * 20 * mmPerPixel, a.y / 2 + b.y / 2 + ny * 20 * mmPerPixel] };
 }
 
-function radialGeometry(center: Point2, radius: number, angle: number, valueMm: number, kind: 'radius' | 'diameter', mmPerPixel: number): Omit<DimensionGeometry, 'valueMm'> {
+function radialGeometry(center: Point2, radius: number, angle: number, valueMm: number, kind: 'radius' | 'diameter', mmPerPixel: number): Omit<LinearDimensionGeometry, 'valueMm'> {
   const ux = Math.cos(angle), uy = Math.sin(angle), tip: SketchPoint = [center.x + ux * radius, center.y + uy * radius];
   const box = cadSketchGraphDimensionLabel(valueMm, kind);
   const clearance = (Math.abs(ux) * box.width / 2 + Math.abs(uy) * box.height / 2 + 8) * mmPerPixel;
@@ -54,6 +55,30 @@ function radialGeometry(center: Point2, radius: number, angle: number, valueMm: 
   return { line: [[center.x, center.y], label], extensions: [], label,
     arrows: [[tip, [tip[0] + ux * headLength - uy * headWidth, tip[1] + uy * headLength + ux * headWidth],
       [tip[0] + ux * headLength + uy * headWidth, tip[1] + uy * headLength - ux * headWidth]]] };
+}
+
+function angularDimension(graph: CadSketchGraph, relation: Extract<CadSketchDimensionRelation, { kind: 'line-angle' }>,
+  points: ReadonlyMap<string, Point2>, parameters: Readonly<Record<string, number>>, mmPerPixel: number): readonly CadSketchGraphDimensionLayout[] {
+  try {
+    const geometry = cadSketchLineAngleGeometry(graph, relation, points), { vertex, first, second, signedSweepRadians: sweep } = geometry;
+    const valueDegrees = evaluateCadScalar(relation.value, parameters);
+    if (!Number.isFinite(valueDegrees) || valueDegrees <= 0 || valueDegrees >= 180 || !Number.isFinite(sweep) || Math.abs(sweep) >= Math.PI || sweep === 0) return [];
+    const radius = 40 * mmPerPixel, sign = relation.sense === 'ccw' ? 1 : -1;
+    const at = (direction: Point2, length: number): SketchPoint => [vertex.x + direction.x * length, vertex.y + direction.y * length];
+    const start = at(first.direction, radius), end = at(second.direction, radius);
+    const mid = Math.atan2(first.direction.y, first.direction.x) + sweep / 2, ux = Math.cos(mid), uy = Math.sin(mid);
+    const box = cadSketchGraphDimensionLabel(valueDegrees, 'angle');
+    const clearance = (Math.abs(ux) * box.width / 2 + Math.abs(uy) * box.height / 2 + 8) * mmPerPixel;
+    const headLength = Math.min(6 * mmPerPixel, radius * Math.abs(sweep) / 4), headWidth = Math.min(2.5 * mmPerPixel, headLength / 2);
+    const arrow = (tip: SketchPoint, direction: Point2, into: number): Arrow => [tip,
+      [tip[0] - direction.y * headLength * into + direction.x * headWidth, tip[1] + direction.x * headLength * into + direction.y * headWidth],
+      [tip[0] - direction.y * headLength * into - direction.x * headWidth, tip[1] + direction.x * headLength * into - direction.y * headWidth]];
+    return [{ kind: 'angle', relation, valueDegrees, arc: { center: [vertex.x, vertex.y], radius, start, end, clockwise: sign < 0 },
+      extensions: [[at(first.direction, 3 * mmPerPixel), at(first.direction, radius + 2 * mmPerPixel)],
+        [at(second.direction, 3 * mmPerPixel), at(second.direction, radius + 2 * mmPerPixel)]],
+      arrows: [arrow(start, first.direction, sign), arrow(end, second.direction, -sign)],
+      label: [vertex.x + ux * (radius + clearance), vertex.y + uy * (radius + clearance)] }];
+  } catch { return []; } // A remote or uncertain support intersection cannot safely place an annotation.
 }
 
 function radialDimension(graph: CadSketchGraph, relation: Extract<CadSketchDimensionRelation, { kind: 'radial-size' }>,
@@ -100,7 +125,7 @@ function cornerDimensions(graph: CadSketchGraph, relation: Extract<CadSketchDime
 
 /** Display-only declared dimensions. Scalar drivers and source IDs remain authoritative. */
 export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, mmPerPixel: number): readonly CadSketchGraphDimensionLayout[] {
-  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(relation => relation.kind === 'distance' || relation.kind === 'radial-size' || relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner')) return [];
+  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(relation => relation.kind === 'distance' || relation.kind === 'radial-size' || relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner' || relation.kind === 'line-angle')) return [];
   const points = new Map(graph.points.map(point => [point.id, {
     x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters)
   }]));
@@ -123,6 +148,7 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
     maxX: Math.max(box.maxX, point.x), maxY: Math.max(box.maxY, point.y) }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
   const center: SketchPoint = [bounds.minX / 2 + bounds.maxX / 2, bounds.minY / 2 + bounds.maxY / 2];
   return graph.relations.flatMap((relation): CadSketchGraphDimensionLayout[] => {
+    if (relation.kind === 'line-angle') return [...angularDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind === 'radial-size') return [...radialDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') return [...cornerDimensions(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind !== 'distance') return [];

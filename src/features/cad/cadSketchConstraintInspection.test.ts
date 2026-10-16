@@ -20,6 +20,23 @@ const source = () => parseCadDocument({ ...createCadDocument('Line', 'line'), sc
 }] });
 
 describe('accepted sketch constraint inspection', () => {
+  it('reports exact angle ray intent and degree drivers without a misleading millimeter value', async () => {
+    const document = parseCadDocument({ ...createCadDocument('Angle', 'angle'), schemaVersion: 2, parameters: { angle: 90 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Corner', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'v', position: ['0', '0'] }, { id: 'a', position: ['10', '0'] }, { id: 'b', position: [0, 10] }],
+        entities: [{ id: 'reference', kind: 'line', construction: true, startPointId: 'a', endPointId: 'v' },
+          { id: 'moving', kind: 'line', construction: false, startPointId: 'v', endPointId: 'b' }],
+        relations: [{ id: 'dimension', kind: 'line-angle', rays: [{ lineId: 'reference', towardPointId: 'a' }, { lineId: 'moving', towardPointId: 'b' }], sense: 'ccw', value: ' angle ' }]
+      }
+    }] }), before = JSON.stringify(document);
+    const inspection = await inspectCadSketchConstraints(document, 'sketch', async () => solver);
+    const page = pageCadSketchConstraints(inspection, { section: 'relations' });
+    expect(page.items[0]).toMatchObject({ source: { id: 'dimension', sense: 'ccw', value: ' angle ' }, entityIds: ['reference', 'moving'],
+      value: { scalar: ' angle ', valueDegrees: 90, unit: 'deg', role: 'expression-driver' } });
+    expect(page.items[0]).not.toHaveProperty('value.valueMm');
+    expect(JSON.stringify(document)).toBe(before);
+  });
+
   it('exposes equal-radius exact curve identities and deduplicated operands without a driving scalar', async () => {
     const document = parseCadDocument({ ...createCadDocument('Curves', 'equality'), schemaVersion: 2, parameters: { size: 20 }, features: [{
       id: 'sketch', kind: 'sketch', name: 'Curves', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

@@ -1,7 +1,7 @@
 import type { CadSketchGraph, CadSketchGraphIssue, CadSketchRadialRelation } from './cadSketchGraph';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
-import { cadPathClosureTolerance } from './cadAnalyticSegments';
+import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import type { Point2 } from '@/domain/path-intel/types';
 
 /** Source topology only: a changed dimension may have unsolved numeric geometry. */
@@ -40,7 +40,7 @@ export function checkCadSketchRadialRelation(graph: CadSketchGraph, relation: Ca
     }
     if (actual.some(radius => !validRadius(radius))) return [{ source, code: 'invalid-radius', message: 'Radial geometry is outside the supported radius range.' }];
     const residualMm = Math.max(...actual.map(radius => Math.abs(radius - target)));
-    return residualMm > cadPathClosureTolerance(operands) ? [{ source, code: 'relation-residual', message: 'Sketch geometry does not satisfy its radial dimension.', residualMm }] : [];
+    return residualMm > cadSketchDriverTolerance(operands) ? [{ source, code: 'relation-residual', message: 'Sketch geometry does not satisfy its radial dimension.', residualMm }] : [];
   } catch (error) {
     return [{ source, code: error instanceof CadError && error.code === 'invalid-radius' ? 'invalid-radius' : 'invalid-expression',
       message: error instanceof Error ? error.message : 'Invalid radial dimension.' }];

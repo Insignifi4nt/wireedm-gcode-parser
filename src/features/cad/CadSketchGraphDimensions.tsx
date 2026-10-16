@@ -21,14 +21,14 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
     x2={points[1][0] - center[0]} y2={points[1][1] - center[1]} vectorEffect="non-scaling-stroke" />;
   return <g className="cad-sketch-graph-dimensions" role="group" aria-label="Sketch dimensions">
     {dimensions.map(dimension => {
-      const { quantity, text, width, height } = cadSketchGraphDimensionLabel(dimension.valueMm, dimension.kind);
-      const name = dimension.kind === 'radius' || dimension.kind === 'diameter' ? dimension.kind : dimension.kind === 'setback' ? `chamfer setback ${dimension.side + 1}` : 'distance';
+      const { quantity, text, width, height } = cadSketchGraphDimensionLabel(dimension.kind === 'angle' ? dimension.valueDegrees : dimension.valueMm, dimension.kind);
+      const name = dimension.kind === 'radius' || dimension.kind === 'diameter' || dimension.kind === 'angle' ? dimension.kind : dimension.kind === 'setback' ? `chamfer setback ${dimension.side + 1}` : 'distance';
       return <g key={`${dimension.relation.id}/${dimension.kind === 'setback' ? dimension.side : dimension.kind}`} data-cad-sketch-dimension={dimension.relation.id}
         data-cad-dimension-kind={dimension.kind} data-cad-dimension-side={dimension.kind === 'setback' ? dimension.side : undefined}
         style={{ color: selectedRelationId === dimension.relation.id ? 'var(--primary)' : 'var(--muted-foreground)' }}>
         <g fill="none" stroke="currentColor" strokeWidth={1} pointerEvents="none">
           {dimension.extensions.map((extension, index) => <g key={index} opacity={0.6}>{line(extension)}</g>)}
-          {line(dimension.line)}
+          {dimension.kind === 'angle' ? <path d={`M ${dimension.arc.start[0] - center[0]} ${dimension.arc.start[1] - center[1]} A ${dimension.arc.radius} ${dimension.arc.radius} 0 0 ${dimension.arc.clockwise ? 0 : 1} ${dimension.arc.end[0] - center[0]} ${dimension.arc.end[1] - center[1]}`} vectorEffect="non-scaling-stroke" /> : line(dimension.line)}
           {dimension.arrows.map((arrow, index) => <polygon key={index} fill="currentColor" stroke="none"
             points={arrow.map(point => `${point[0] - center[0]},${point[1] - center[1]}`).join(' ')} />)}
         </g>

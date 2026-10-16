@@ -12,6 +12,7 @@ import { cadSketchLineDirection, resolveCadSketchLinePair } from '../../../domai
 import type { Point2 } from '../../../domain/path-intel/types';
 import { cadSketchRadialTarget, resolveCadSketchRadialEntity } from '../../../domain/cad/cadSketchRadialRelations';
 import { resolveCadSketchRadiusPair } from '../../../domain/cad/cadSketchEqualRelations';
+import { cadSketchAngleTarget, resolveCadSketchAngleRays } from '../../../domain/cad/cadSketchAngleRelations';
 
 function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] {
   switch (status) {
@@ -55,6 +56,12 @@ function compile(input: CadSketchSolveInput) {
       case 'coincident': constraint({ id, type: 'p2p_coincident', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
       case 'horizontal': constraint({ id, type: 'horizontal_pp', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
       case 'vertical': constraint({ id, type: 'vertical_pp', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
+      case 'line-angle': {
+        const [a, b] = resolveCadSketchAngleRays(graph, relation.rays);
+        for (const ray of [a, b]) if (!cadSketchLineDirection(ray.line, numericPoints)) throw new Error('A sketch ray has no numeric endpoints.');
+        constraint({ id, type: 'l2l_angle_pppp', l1p1_id: a.fromPointId, l1p2_id: a.towardPointId,
+          l2p1_id: b.fromPointId, l2p2_id: b.towardPointId, angle: cadSketchAngleTarget(relation, input.parameters).signedRadians }, id); break;
+      }
       case 'parallel': case 'perpendicular': case 'equal-length':
         for (const line of resolveCadSketchLinePair(graph, relation.lineIds)) {
           if (!cadSketchLineDirection(line, numericPoints)) throw new Error('A sketch line has no numeric endpoints.');

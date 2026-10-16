@@ -63,6 +63,53 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it('dimensions the conventional obtuse corner despite incoming source order, cancels privately and accepts one undoable relation', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Corner angle', 'corner-angle'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'v', position: [' 0.00 ', '0'] }, { id: 'a', position: ['10', '0'] }, { id: 'b', position: [-5, Math.sqrt(75)] }],
+        entities: [{ id: 'incoming', kind: 'line', construction: false, startPointId: 'a', endPointId: 'v' },
+          { id: 'outgoing', kind: 'line', construction: true, startPointId: 'v', endPointId: 'b' }], relations: []
+      }
+    }] });
+    const h = await mount(source, [{ kind: 'entity', id: 'incoming' }, { kind: 'entity', id: 'outgoing' }], { initialCommand: { kind: 'line-angle' } });
+    expect(Number(field('Angle deg').value)).toBeCloseTo(120, 10); expect(h.pending).toHaveBeenLastCalledWith(true);
+    expect(h.session.getSnapshot().document).toBe(source); await click('Cancel'); expect(h.edit).not.toHaveBeenCalled();
+    await click('Add angle'); await act(async () => field('Angle deg').focus()); await input('Angle deg', '120'); await click('Apply');
+    const accepted = h.session.getSnapshot().document.features[0];
+    expect(accepted).toMatchObject({ graph: { points: source.features[0].kind === 'sketch' ? source.features[0].graph?.points : [],
+      relations: [{ kind: 'line-angle', rays: [{ lineId: 'incoming', towardPointId: 'a' }, { lineId: 'outgoing', towardPointId: 'b' }], sense: 'ccw', value: 120 }] } });
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toBe(source);
+  });
+
+  it('requires a deliberate sector for crossing lines and restores an existing angle with its exact reversed tuple and expression', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Crossing angle', 'crossing-angle'), schemaVersion: 2, parameters: { cornerAngle: 90 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [-10, 0] }, { id: 'b', position: [10, 0] }, { id: 'c', position: [0, -10] }, { id: 'd', position: [0, 10] }],
+        entities: [{ id: 'first', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },
+          { id: 'second', kind: 'line', construction: true, startPointId: 'c', endPointId: 'd' }], relations: []
+      }
+    }] });
+    const h = await mount(source, [{ kind: 'entity', id: 'first' }, { kind: 'entity', id: 'second' }], { initialCommand: { kind: 'line-angle' } });
+    const choices = container.querySelectorAll<HTMLButtonElement>('[data-cad-angle-sector]'); expect(choices).toHaveLength(4);
+    expect(button('Apply').disabled).toBe(true); expect(h.pending).toHaveBeenLastCalledWith(true);
+    await act(async () => choices[0].click()); expect(Number(field('Angle deg').value)).toBe(90); await click('Cancel');
+    expect(h.session.getSnapshot().document).toBe(source); expect(h.edit).not.toHaveBeenCalled();
+    await click('Add angle'); expect(container.querySelectorAll('[data-cad-angle-sector]')).toHaveLength(4);
+    await act(async () => field('Perpendicular').click());
+    expect(container.querySelectorAll('[data-cad-angle-sector]')).toHaveLength(0);
+    expect(button('Add angle').disabled).toBe(true);
+    await click('Apply');
+    expect(h.session.getSnapshot().document.features[0]).toMatchObject({ graph: { relations: [{ kind: 'perpendicular', lineIds: ['first', 'second'] }] } });
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toBe(source);
+    const sketch = source.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph unavailable.');
+    const relation = { id: 'angle', kind: 'line-angle' as const, rays: [{ lineId: 'second', towardPointId: 'd' }, { lineId: 'first', towardPointId: 'b' }] as const, sense: 'cw' as const, value: ' cornerAngle ' };
+    const saved = parseCadDocument({ ...source, features: [{ ...sketch, graph: { ...sketch.graph, relations: [relation] } }] });
+    const existing = await mount(saved, [{ kind: 'entity', id: 'first' }, { kind: 'entity', id: 'second' }], { initialCommand: { kind: 'line-angle' } });
+    expect(field('Angle deg').value).toBe('90'); expect(existing.pending).toHaveBeenLastCalledWith(false);
+    await clickRelation('Remove', 'Angle', 1); await click('Add angle'); expect(existing.pending).toHaveBeenLastCalledWith(false);
+    expect(existing.session.getSnapshot().document).toBe(saved); expect(existing.edit).not.toHaveBeenCalled();
+  });
+
   it('owns a whole-selection Move from zero displacement, previews privately and accepts one exact translation', async () => {
     const source = parseCadDocument({ ...createCadDocument('Move edges', 'move-edges'), schemaVersion: 2, features: [{
       id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

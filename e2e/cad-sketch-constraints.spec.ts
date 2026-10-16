@@ -2,6 +2,63 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('drives an obtuse corner in degrees through its real annotation, retains its expression and edits the consumed part privately', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const sketch = { id: 'triangle', kind: 'sketch', name: 'Angled plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'v', position: [' 0.00 ', '0'] }, { id: 'a', position: ['10', '0'] }, { id: 'b', position: [-5, Math.sqrt(75)] }],
+    entities: [{ id: 'incoming', kind: 'line', construction: false, startPointId: 'a', endPointId: 'v' },
+      { id: 'outgoing', kind: 'line', construction: false, startPointId: 'v', endPointId: 'b' },
+      { id: 'closing', kind: 'line', construction: false, startPointId: 'b', endPointId: 'a' }],
+    relations: [{ id: 'side-length', kind: 'distance', pointIds: ['v', 'b'], value: ' 10 ' }]
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'set-parameter', name: 'cornerAngle', value: 120 }, { kind: 'add-feature', feature: sketch }] });
+  let current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: sketch.id } });
+  await page.locator('[data-cad-sketch-entity="incoming"]').press('Enter');
+  await page.locator('[data-cad-sketch-entity="outgoing"]').press('Shift+Enter');
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  const degrees = page.getByRole('textbox', { name: 'Angle deg', exact: true });
+  await expect.poll(async () => Number(await degrees.inputValue())).toBeCloseTo(120, 10);
+  await page.getByRole('button', { name: 'Edit Angle relation', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Angle expression', exact: true }).fill(' cornerAngle ');
+  await page.getByRole('button', { name: 'Keep relation', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Angle relation help', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const angled = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  const angle = angled.graph.relations.find((relation: { kind: string }) => relation.kind === 'line-angle');
+  expect(angle).toMatchObject({ rays: [{ lineId: 'incoming', towardPointId: 'a' }, { lineId: 'outgoing', towardPointId: 'b' }], sense: 'ccw', value: ' cornerAngle ' });
+  expect(angled.graph.points.slice(0, 2)).toEqual(sketch.graph.points.slice(0, 2));
+  await page.getByRole('button', { name: /^Configure angle / }).click(); await degrees.fill('110');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect((await context(page)).version).toBe(current.version);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'pad', kind: 'extrude', name: 'Angled solid', suppressed: false, sketchId: sketch.id, distance: ' 5e0 ', symmetric: false, operation: 'new', targetId: null
+  } }] }); current = await context(page);
+  const built = await call(page, 'cad_build', { expectedVersion: current.version }); expect(built.diagnostics).toEqual([]);
+  expect(built.bodies[0].volumeMm3).toBeCloseTo(250 * Math.sin(120 * Math.PI / 180), 7);
+  await page.getByRole('button', { name: 'Select Angled plate in history', exact: true }).dblclick();
+  await page.getByRole('button', { name: /^Configure angle / }).click(); await degrees.fill('110');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  expect((await context(page)).version).toBe(current.version);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  expect(current.parameters.cornerAngle).toBe(110);
+  const changed = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(changed.graph.relations.find((relation: { kind: string }) => relation.kind === 'line-angle')).toEqual(angle);
+  expect(changed.graph.points.slice(0, 2)).toEqual(sketch.graph.points.slice(0, 2));
+  expect((await call(page, 'cad_build', { expectedVersion: current.version })).bodies[0].volumeMm3).toBeCloseTo(250 * Math.sin(110 * Math.PI / 180), 7);
+  await page.keyboard.press('Control+z'); current = await context(page);
+  expect(current.parameters.cornerAngle).toBe(120); expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(angled);
+  await page.keyboard.press('Control+Shift+z'); current = await context(page);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current.dirty).toBe(false); expect(current.parameters.cornerAngle).toBe(110);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(changed);
+});
+
 test('splits a consumed sketch edge at its cursor, repairs its selected area deliberately and restores the complete edit with one Undo', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const sketch = { id: 'outline', kind: 'sketch', name: 'Split outline', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

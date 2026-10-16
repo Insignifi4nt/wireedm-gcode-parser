@@ -1,7 +1,7 @@
 import type { CadSketchEqualRelation, CadSketchGraph, CadSketchGraphIssue } from './cadSketchGraph';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
-import { cadPathClosureTolerance } from './cadAnalyticSegments';
+import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import { cadSketchLineDirection, resolveCadSketchLinePair } from './cadSketchLineRelations';
 import { resolveCadSketchRadialEntity } from './cadSketchRadialRelations';
 import type { Point2 } from '@/domain/path-intel/types';
@@ -41,7 +41,7 @@ export function checkCadSketchEqualRelation(graph: CadSketchGraph, relation: Cad
         return [{ source, code: 'invalid-radius', message: 'Equal radii require supported nondegenerate circles or arcs.' }];
       residualMm = Math.max(...radii) - Math.min(...radii); operands = [...a.operands, ...b.operands];
     }
-    return residualMm > cadPathClosureTolerance(operands) ? [{ source, code: 'relation-residual',
+    return residualMm > cadSketchDriverTolerance(operands) ? [{ source, code: 'relation-residual',
       message: relation.kind === 'equal-length' ? 'Sketch lines do not have equal lengths.' : 'Sketch curves do not have equal radii.', residualMm }] : [];
   } catch (error) {
     return [{ source, code: error instanceof CadError && error.code === 'invalid-sketch-line-pair' ? 'relation-residual' : 'invalid-expression',

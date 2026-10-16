@@ -1225,6 +1225,7 @@ describe('CAD controller asynchronous guards', () => {
     if (!context || !edit) throw new Error('CAD context/edit tools missing.');
     const summary = await context.execute({}) as { ok: boolean; data: { diagnostics: { message: string; messageTruncated?: boolean }[]; omittedDiagnostics: number } };
     expect(summary.ok).toBe(true);
+    expect(summary).toMatchObject({ data: { supported: { sketchEntities: { relations: expect.arrayContaining(['line-angle']) } } } });
     expect(summary.data.diagnostics.length).toBeGreaterThan(0);
     expect(summary.data.diagnostics.every(diagnostic => diagnostic.messageTruncated && diagnostics[0].message.length > diagnostic.message.length)).toBe(true);
     expect(summary.data.omittedDiagnostics + summary.data.diagnostics.length).toBe(256);

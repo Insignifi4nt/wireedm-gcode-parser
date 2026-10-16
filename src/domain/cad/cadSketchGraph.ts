@@ -5,16 +5,19 @@ import { isCadImportData } from './cadImportData';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
+import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import type { Point2 } from '@/domain/path-intel/types';
 import { cadSketchEntityPointIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
 import { checkCadSketchCornerRelation, resolveCadSketchCornerTopology } from './cadSketchCornerGeometry';
 import { checkCadSketchLineRelation, resolveCadSketchLinePair } from './cadSketchLineRelations';
 import { checkCadSketchRadialRelation, resolveCadSketchRadialEntity } from './cadSketchRadialRelations';
 import { checkCadSketchEqualRelation, resolveCadSketchRadiusPair } from './cadSketchEqualRelations';
+import { checkCadSketchAngleRelation, resolveCadSketchAngleRays } from './cadSketchAngleRelations';
 
 const strict = { additionalProperties: false };
 const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
 const entity = { id, construction: Type.Boolean() };
+const angleRay = Type.Object({ lineId: id, towardPointId: id }, strict);
 export const CadSketchGraphSchema = Type.Object({
   points: Type.Array(Type.Object({ id, position: CadPoint2Schema }, strict)),
   entities: Type.Array(Type.Union([
@@ -29,6 +32,7 @@ export const CadSketchGraphSchema = Type.Object({
     Type.Object({ id, kind: Type.Literal('perpendicular'), lineIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('equal-length'), lineIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('equal-radius'), curveIds: pair }, strict),
+    Type.Object({ id, kind: Type.Literal('line-angle'), rays: Type.Tuple([angleRay, angleRay]), sense: Type.Union([Type.Literal('cw'), Type.Literal('ccw')]), value: CadScalarSchema }, strict),
     Type.Object({ id, kind: Type.Literal('radial-size'), entityId: id, quantity: Type.Union([Type.Literal('radius'), Type.Literal('diameter')]), value: CadScalarSchema }, strict),
     Type.Object({ id, kind: Type.Literal('fixed-point'), pointId: id, position: CadPoint2Schema }, strict),
     Type.Object({ id, kind: Type.Literal('fixed-axis'), pointId: id, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), value: CadScalarSchema }, strict),
@@ -46,6 +50,7 @@ export type CadSketchCornerRelation = Extract<CadSketchGraphRelation, { kind: 'f
 export type CadSketchLineRelation = Extract<CadSketchGraphRelation, { kind: 'parallel' | 'perpendicular' }>;
 export type CadSketchRadialRelation = Extract<CadSketchGraphRelation, { kind: 'radial-size' }>;
 export type CadSketchEqualRelation = Extract<CadSketchGraphRelation, { kind: 'equal-length' | 'equal-radius' }>;
+export type CadSketchAngleRelation = Extract<CadSketchGraphRelation, { kind: 'line-angle' }>;
 const issueCodes = ['invalid-expression', 'invalid-coordinate', 'degenerate-entity', 'invalid-radius', 'arc-radius-mismatch', 'invalid-distance', 'relation-residual'] as const;
 export const CadSketchGraphIssueSchema = Type.Object({
   source: Type.Object({ kind: Type.Union([Type.Literal('point'), Type.Literal('entity'), Type.Literal('relation')]), id }, strict),
@@ -77,6 +82,7 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
     if (item.kind === 'fillet-corner' || item.kind === 'chamfer-corner') resolveCadSketchCornerTopology(graph, item);
     if (item.kind === 'parallel' || item.kind === 'perpendicular' || item.kind === 'equal-length') resolveCadSketchLinePair(graph, item.lineIds);
     if (item.kind === 'equal-radius') resolveCadSketchRadiusPair(graph, item.curveIds);
+    if (item.kind === 'line-angle') resolveCadSketchAngleRays(graph, item.rays);
     if (item.kind === 'radial-size') {
       const entity = resolveCadSketchRadialEntity(graph, item.entityId);
       if (entity.kind === 'circle' && typeof entity.radius === 'string')
@@ -128,6 +134,7 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
   for (const relation of graph.relations) {
     const source = { kind: 'relation', id: relation.id } as const;
     try {
+      if (relation.kind === 'line-angle') { issues.push(...checkCadSketchAngleRelation(graph, relation, points, parameters)); continue; }
       if (relation.kind === 'equal-length' || relation.kind === 'equal-radius') {
         issues.push(...checkCadSketchEqualRelation(graph, relation, points, parameters)); continue;
       }
@@ -161,7 +168,8 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
           : { ...point, [relation.axis]: scalar(relation.value) };
         operands = [point, target]; residual = Math.hypot(point.x - target.x, point.y - target.y);
       }
-      if (residual > cadPathClosureTolerance(operands)) report(source, 'relation-residual', 'Sketch geometry does not satisfy its driving relation.', residual);
+      const tolerance = relation.kind === 'coincident' ? cadPathClosureTolerance(operands) : cadSketchDriverTolerance(operands);
+      if (residual > tolerance) report(source, 'relation-residual', 'Sketch geometry does not satisfy its driving relation.', residual);
     } catch (error) { report(source, 'invalid-expression', error instanceof Error ? error.message : 'Invalid relation expression.'); }
   }
   freezeData(issues);
