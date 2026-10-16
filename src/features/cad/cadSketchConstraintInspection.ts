@@ -61,6 +61,7 @@ export async function inspectCadSketchConstraints(document: CadDocument, sketchI
 
 const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
   coincident: 'Keeps two distinct source points at the same location.', horizontal: 'Keeps two points at the same Y coordinate.',
+  midpoint: 'Keeps one distinct graph point halfway between a graph line’s endpoints, including construction lines. Does not join material boundaries.',
   vertical: 'Keeps two points at the same X coordinate.', 'fixed-point': 'Fixes a point at its driving X and Y coordinates.',
   parallel: 'Keeps two line directions parallel.', perpendicular: 'Keeps two line directions at a right angle.',
   collinear: 'Keeps two lines on the same infinite supporting line without joining endpoints or fixing lengths.',

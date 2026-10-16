@@ -3,8 +3,8 @@ import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import type { CadSketchGraph } from './cadSketchGraph';
 import type { Point2 } from '@/domain/path-intel/types';
 
-/** Transient connectivity of validated source identities; never substitutes a point's coordinates. */
-export function resolveCadSketchGraphJoints(graph: CadSketchGraph, points: ReadonlyMap<string, Point2>): (pointId: string) => string {
+/** Declared source identities only; numeric intent may still be unsolved. */
+export function resolveCadSketchPointIdentities(graph: CadSketchGraph): (pointId: string) => string {
   if (!graph.relations.some(relation => relation.kind === 'coincident')) return id => id;
   const parents = new Map(graph.points.map(point => [point.id, point.id]));
   const parentOf = (id: string): string => {
@@ -22,6 +22,12 @@ export function resolveCadSketchGraphJoints(graph: CadSketchGraph, points: Reado
     const a = root(relation.pointIds[0]), b = root(relation.pointIds[1]);
     if (a !== b) parents.set(a < b ? b : a, a < b ? a : b);
   }
+  return root;
+}
+
+/** Transient connectivity of validated source identities; never substitutes a point's coordinates. */
+export function resolveCadSketchGraphJoints(graph: CadSketchGraph, points: ReadonlyMap<string, Point2>): (pointId: string) => string {
+  const root = resolveCadSketchPointIdentities(graph);
   const groups = new Map<string, Point2[]>();
   for (const [id, point] of points) {
     const key = root(id), group = groups.get(key) ?? [];

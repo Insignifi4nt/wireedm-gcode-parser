@@ -8,6 +8,8 @@ import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRun
 import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
 import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTreatment';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { Value } from '@sinclair/typebox/value';
+import { CadToolEditDefinitions } from './cadToolSchemas';
 
 const require = createRequire(import.meta.url);
 const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
@@ -20,6 +22,29 @@ const source = () => parseCadDocument({ ...createCadDocument('Line', 'line'), sc
 }] });
 
 describe('accepted sketch constraint inspection', () => {
+  it('discovers a scalar-free midpoint and inspects its selected point, finite line and exact endpoint drivers', async () => {
+    const relation = { id: 'middle-of-ab', kind: 'midpoint', pointId: 'middle', lineId: 'ab' };
+    const set = CadToolEditDefinitions.find(schema => schema.properties.kind.const === 'set-sketch-relation');
+    const remove = CadToolEditDefinitions.find(schema => schema.properties.kind.const === 'remove-sketch-relation');
+    if (!set || !remove) throw new Error('Missing relation edit discovery');
+    const edit = { kind: 'set-sketch-relation', sketchId: 'sketch', relation };
+    expect(Value.Check(set, edit)).toBe(true); expect(Value.Check(set, { ...edit, relation: { ...relation, value: 1 } })).toBe(false);
+    expect(Value.Check(remove, { kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: relation.id })).toBe(true);
+    const document = parseCadDocument({ ...createCadDocument('Midpoint bore'), schemaVersion: 2, parameters: { span: 22, boreRadius: 3 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Located bore', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: ['2.000', '-4.00'] }, { id: 'b', position: [' span ', '6.000'] }, { id: 'middle', position: ['(2 + span) / 2', '1.000'] }],
+        entities: [{ id: 'ab', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },
+          { id: 'bore', kind: 'circle', construction: false, centerPointId: 'middle', radius: ' boreRadius ' }], relations: [relation]
+      }
+    }] }), exact = JSON.stringify(document);
+    const inspection = await inspectCadSketchConstraints(document, 'sketch', async () => solver);
+    const row = pageCadSketchConstraints(inspection, { section: 'relations' }).items[0];
+    expect(row).toMatchObject({ source: relation, entityIds: ['ab'], points: [
+      { id: 'middle', position: [{ scalar: '(2 + span) / 2', role: 'expression-driver' }, { scalar: '1.000', role: 'expression-driver' }] },
+      { id: 'a', position: [{ scalar: '2.000' }, { scalar: '-4.00' }] }, { id: 'b', position: [{ scalar: ' span ' }, { scalar: '6.000' }] }
+    ] });
+    expect(row).not.toHaveProperty('value'); expect(JSON.stringify(document)).toBe(exact);
+  });
   it('reports signed axis values and exact ordered center/reference operands without modifying accepted source', async () => {
     const document = parseCadDocument({ ...createCadDocument('Bore', 'axis-bore'), schemaVersion: 2,
       parameters: { left: -30, rise: 20 }, features: [{ id: 'sketch', name: 'Bore', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

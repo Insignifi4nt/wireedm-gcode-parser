@@ -23,7 +23,7 @@ interface PreparationFailureInput {
 }
 
 const relationNames: Record<CadSketchGraphRelation['kind'], string> = {
-  coincident: 'Coincident', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', distance: 'Distance', 'axis-distance': 'Axis distance',
+  coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', distance: 'Distance', 'axis-distance': 'Axis distance',
   'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle',
   'fixed-point': 'Fixed point', 'fixed-axis': 'Fixed axis', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer', 'radial-size': 'Radial size'
 };
@@ -49,7 +49,8 @@ export function describeCadSketchConstraintSource(graph: CadSketchGraph, source:
     const index = graph.relations.findIndex(relation => relation.id === source.id), relation = graph.relations[index];
     if (relation) {
       pointIds = cadSketchRelationPointIds(graph, relation); entityIds = cadSketchRelationEntityIds(relation);
-      const operands = relation.kind === 'line-angle' ? relation.rays.map(ray => describeCadSketchConstraintSource(graph, { kind: 'entity', id: ray.lineId }).label)
+      const operands = relation.kind === 'midpoint' ? [pointLabel(relation.pointId), describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.lineId }).label]
+        : relation.kind === 'line-angle' ? relation.rays.map(ray => describeCadSketchConstraintSource(graph, { kind: 'entity', id: ray.lineId }).label)
         : relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear' || relation.kind === 'equal-length'
         ? relation.lineIds.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label)
         : relation.kind === 'equal-radius' ? relation.curveIds.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label)

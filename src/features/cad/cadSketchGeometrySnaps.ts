@@ -74,12 +74,17 @@ export function prepareCadSketchGeometrySnaps(source?: {
   const sourcePoints = new Map(candidates.flatMap(candidate => candidate.kind === 'point' ? [[candidate.pointId, candidate.point] as const] : []));
   const joint = source ? resolveCadSketchGraphJoints(source.graph, new Map([...sourcePoints].map(([id, point]) => [id, { x: point[0], y: point[1] }]))) : (id: string) => id;
   const joints = new Map([...sourcePoints.keys()].map(id => [id, joint(id)]));
+  const midpointOwners = new Map<string, string[]>();
+  for (const relation of source?.graph.relations ?? []) if (relation.kind === 'midpoint') {
+    const owners = midpointOwners.get(relation.lineId) ?? [];
+    owners.push(relation.pointId); midpointOwners.set(relation.lineId, owners);
+  }
   for (const segment of source?.segments ?? []) {
     const entity = entities.get(segment.id);
     if (!entity || segment.kind === 'circle') continue;
     const point = segment.kind === 'line' ? { x: segment.start.x + (segment.end.x - segment.start.x) / 2, y: segment.start.y + (segment.end.y - segment.start.y) / 2 }
       : pointOnArcAtParameter(segment, { segmentId: segment.id, reversed: false }, .5);
-    candidates.push({ kind: 'midpoint', entityId: entity.id, point: copyPoint([point.x, point.y]), pointIds: [...cadSketchEntityPointIds(entity)] });
+    candidates.push({ kind: 'midpoint', entityId: entity.id, point: copyPoint([point.x, point.y]), pointIds: [...cadSketchEntityPointIds(entity), ...(midpointOwners.get(entity.id) ?? [])] });
   }
   return ({ cursor, mmPerPixel, tolerancePx = 6, excludePointIds = [], excludeEntityIds = [], kinds, draftStart }) => {
     if (!cursor.every(Number.isFinite) || !mmPerPixel.every(value => Number.isFinite(value) && value > 0)

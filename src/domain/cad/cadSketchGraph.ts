@@ -13,6 +13,7 @@ import { checkCadSketchLineRelation, resolveCadSketchLinePair } from './cadSketc
 import { checkCadSketchRadialRelation, resolveCadSketchRadialEntity } from './cadSketchRadialRelations';
 import { checkCadSketchEqualRelation, resolveCadSketchRadiusPair } from './cadSketchEqualRelations';
 import { checkCadSketchAngleRelation, resolveCadSketchAngleRays } from './cadSketchAngleRelations';
+import { resolveCadSketchMidpointOperands } from './cadSketchMidpointRelations';
 
 const strict = { additionalProperties: false };
 const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
@@ -31,6 +32,7 @@ export const CadSketchGraphSchema = Type.Object({
     Type.Object({ id, kind: Type.Literal('parallel'), lineIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('perpendicular'), lineIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('collinear'), lineIds: pair }, strict),
+    Type.Object({ id, kind: Type.Literal('midpoint'), pointId: id, lineId: id }, strict),
     Type.Object({ id, kind: Type.Literal('equal-length'), lineIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('equal-radius'), curveIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('line-angle'), rays: Type.Tuple([angleRay, angleRay]), sense: Type.Union([Type.Literal('cw'), Type.Literal('ccw')]), value: CadScalarSchema }, strict),
@@ -54,6 +56,7 @@ export type CadSketchRadialRelation = Extract<CadSketchGraphRelation, { kind: 'r
 export type CadSketchEqualRelation = Extract<CadSketchGraphRelation, { kind: 'equal-length' | 'equal-radius' }>;
 export type CadSketchAngleRelation = Extract<CadSketchGraphRelation, { kind: 'line-angle' }>;
 export type CadSketchAxisDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'axis-distance' }>;
+export type CadSketchMidpointRelation = Extract<CadSketchGraphRelation, { kind: 'midpoint' }>;
 const issueCodes = ['invalid-expression', 'invalid-coordinate', 'degenerate-entity', 'invalid-radius', 'arc-radius-mismatch', 'invalid-distance', 'relation-residual'] as const;
 export const CadSketchGraphIssueSchema = Type.Object({
   source: Type.Object({ kind: Type.Union([Type.Literal('point'), Type.Literal('entity'), Type.Literal('relation')]), id }, strict),
@@ -86,6 +89,7 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
     if (item.kind === 'parallel' || item.kind === 'perpendicular' || item.kind === 'collinear' || item.kind === 'equal-length') resolveCadSketchLinePair(graph, item.lineIds);
     if (item.kind === 'equal-radius') resolveCadSketchRadiusPair(graph, item.curveIds);
     if (item.kind === 'line-angle') resolveCadSketchAngleRays(graph, item.rays);
+    if (item.kind === 'midpoint') resolveCadSketchMidpointOperands(graph, item);
     if (item.kind === 'radial-size') {
       const entity = resolveCadSketchRadialEntity(graph, item.entityId);
       if (entity.kind === 'circle' && typeof entity.radius === 'string')
@@ -151,7 +155,13 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
         issues.push(...checkCadSketchCornerRelation(graph, relation, points, parameters)); continue;
       }
       let residual: number, operands: Point2[];
-      if ('pointIds' in relation) {
+      if (relation.kind === 'midpoint') {
+        const { line } = resolveCadSketchMidpointOperands(graph, relation);
+        const a = points.get(line.startPointId), b = points.get(line.endPointId), point = points.get(relation.pointId);
+        if (!a || !b || !point) continue;
+        const target = { x: a.x + (b.x - a.x) / 2, y: a.y + (b.y - a.y) / 2 };
+        operands = [a, b, point, target]; residual = Math.hypot(point.x - target.x, point.y - target.y);
+      } else if ('pointIds' in relation) {
         const a = points.get(relation.pointIds[0]), b = points.get(relation.pointIds[1]); if (!a || !b) continue;
         operands = [a, b];
         switch (relation.kind) {

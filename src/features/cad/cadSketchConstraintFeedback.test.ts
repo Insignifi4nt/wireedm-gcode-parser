@@ -10,6 +10,18 @@ const graph = () => parseCadSketchGraph({ points: [{ id: 'a', position: [' 0 ', 
   relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: proposedId, kind: 'distance', pointIds: ['a', 'b'], value: ' 3 * 4 ' }] });
 
 describe('candidate-owned sketch constraint feedback', () => {
+  it('keeps a midpoint rejection attached to its exact point and line operands', () => {
+    const candidate = parseCadSketchGraph({ points: [{ id: 'start', position: ['0', '0'] }, { id: 'end', position: ['20', '10'] }, { id: 'center', position: [10, 5] }],
+      entities: [{ id: 'guide', kind: 'line', startPointId: 'start', endPointId: 'end', construction: true }],
+      relations: [{ id: proposedId, kind: 'midpoint', pointId: 'center', lineId: 'guide' }] });
+    const error = new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Bore', graph: candidate, rejection: {
+      kind: 'rejected', reason: 'conflicting', message: 'Incompatible center driver.', diagnostics: {
+        status: 'success', degreesOfFreedom: 0, conflictingIds: [proposedId], redundantIds: [], partiallyRedundantIds: [], issues: []
+      }
+    } });
+    expect(error.feedback.subjects).toMatchObject([{ source: { kind: 'relation', id: proposedId }, category: 'conflicting',
+      pointIds: ['center', 'start', 'end'], entityIds: ['guide'] }]);
+  });
   it('keeps signed axis subjects in their saved from/to order with human direction labels', () => {
     const candidate = parseCadSketchGraph({ points: [{ id: 'from', position: [10, 7] }, { id: 'to', position: [-20, 27] }], entities: [], relations: [
       { id: proposedId, kind: 'axis-distance', pointIds: ['to', 'from'], axis: 'y', value: ' -rise ' },

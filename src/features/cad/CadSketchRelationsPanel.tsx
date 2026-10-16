@@ -22,7 +22,7 @@ import './cad-sketch-profile.css';
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
 const relationLabels = {
-  'fixed-point': 'Fixed point', distance: 'Length', coincident: 'Coincident', horizontal: 'Horizontal', vertical: 'Vertical',
+  'fixed-point': 'Fixed point', distance: 'Length', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical',
   parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', 'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer'
 } satisfies Record<Exclude<CadSketchGraphRelation['kind'], 'fixed-axis' | 'radial-size' | 'axis-distance'>, string>;
 const relationLabel = (relation: CadSketchGraphRelation): string => relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
@@ -32,6 +32,12 @@ const samePair = (relation: CadSketchGraphRelation, pointIds: readonly [string, 
   && relation.pointIds.includes(pointIds[0]) && relation.pointIds.includes(pointIds[1]);
 const selectedPointPair = (selection: readonly CadSketchGraphSelection[]): readonly [string, string] | null => selection.length === 2
   && selection[0].kind === 'point' && selection[1].kind === 'point' && selection[0].id !== selection[1].id ? [selection[0].id, selection[1].id] : null;
+function selectedPointLine(selection: readonly CadSketchGraphSelection[], graph: CadSketchGraph): { readonly pointId: string; readonly lineId: string } | null {
+  if (selection.length !== 2) return null;
+  const point = selection.find(atom => atom.kind === 'point'), edge = selection.find(atom => atom.kind === 'entity');
+  const line = edge && graph.entities.find(entity => entity.id === edge.id);
+  return point && line?.kind === 'line' && point.id !== line.startPointId && point.id !== line.endPointId ? { pointId: point.id, lineId: line.id } : null;
+}
 const selectedEntityPair = (selection: readonly CadSketchGraphSelection[], graph: CadSketchGraph, kind: 'line' | 'curve'): readonly [string, string] | null => selection.length === 2
   && selection.every(atom => atom.kind === 'entity' && graph.entities.some(entity => entity.id === atom.id && (kind === 'line' ? entity.kind === 'line' : entity.kind !== 'line')))
   && selection[0].id !== selection[1].id ? [selection[0].id, selection[1].id] : null;
@@ -112,6 +118,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const submission = useCadEditSubmission();
   const singleton = selection.length === 1 ? selection[0] : null;
   const pointPair = selectedPointPair(selection);
+  const pointLine = selectedPointLine(selection, graph);
   const linePair = selectedEntityPair(selection, graph, 'line'), curvePair = selectedEntityPair(selection, graph, 'curve');
   const entityPair = linePair ?? curvePair;
   const [angleId] = useState(() => crypto.randomUUID());
@@ -249,6 +256,13 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       setError(null); setDraft(current => ({ ...current, relations: current.relations.filter(relation => relation.kind !== kind || !sameEntityPair(relation, pair)) }));
     }
   };
+  const toggleMidpoint = (enabled: boolean) => {
+    if (!pointLine) return;
+    const existing = draft.relations.find(relation => relation.kind === 'midpoint' && relation.pointId === pointLine.pointId && relation.lineId === pointLine.lineId);
+    if (enabled) changeRelation(source.graph.relations.find(relation => relation.kind === 'midpoint' && relation.pointId === pointLine.pointId && relation.lineId === pointLine.lineId)
+      ?? { id: crypto.randomUUID(), kind: 'midpoint', ...pointLine });
+    else if (existing) { setError(null); setDraft(current => ({ ...current, relations: current.relations.filter(relation => relation.id !== existing.id) })); }
+  };
   const addLength = (axis?: 'x' | 'y') => {
     if (!dimensionPair) return;
     try {
@@ -356,12 +370,13 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       {move && <CadContextHelp label="Move selection">Translate the selected points and edges together without changing their sizes. Shared endpoints also change their incident edges. Outside points and existing dimensions stay in place; a blocked move rejects instead of stretching the selection or releasing constraints.</CadContextHelp>}
       {corner && <CadContextHelp label="Corner treatment">The original corner stays as a reference, preserving its dimensions. Fillet radius rounds this corner tangentially. Chamfer setbacks measure from the original corner along the two incident lines.</CadContextHelp>}
       {!move && pointPair && <CadContextHelp label="Point pair dimensions">Aligned measures straight-line distance. Horizontal measures ΔX; Vertical measures ΔY, from the first point to the second. Positive X is right and positive Y is up; negative values reverse the direction. These dimensions keep the separation, leaving the reference free until you fix it. Horizontal/Vertical checkboxes align points without setting a size.</CadContextHelp>}
+      {!move && pointLine && <CadContextHelp label="Midpoint">Keeps this point halfway between the line’s endpoints as they change. Construction lines work too. The guide itself remains free until you constrain it. Remove Midpoint to keep the current point position without attachment.</CadContextHelp>}
       {!move && linePair && <CadContextHelp label="Line pair relations">Angle drives the displayed corner in degrees. Parallel keeps directions aligned; Perpendicular keeps a right angle. Equal length keeps finite lengths equal. Lines may share a joint or be separate; construction lines also work. Existing drivers stay in force.</CadContextHelp>}
       {!move && curvePair && <CadContextHelp label="Equal radius">Keeps the actual radii of these circles or arcs equal. Arc sweep and position remain independent. Add a radius or diameter dimension to control their shared size; two free curves still have a size freedom. Existing drivers stay in force.</CadContextHelp>}</div>
     <fieldset key={resetVersion} className="cad-feature-fields" disabled={interactionLocked || submission.applying}>
       {move ? <div className="cad-placement-row"><label><span>ΔX</span><Input aria-label="Move X" autoFocus value={move.x} onChange={event => { setError(null); setGeometryDraft({ ...move, x: event.target.value }); }} /></label>
         <label><span>ΔY</span><Input aria-label="Move Y" value={move.y} onChange={event => { setError(null); setGeometryDraft({ ...move, y: event.target.value }); }} /></label><small>mm</small></div> : <>
-      {selection.length > 1 && <div className="text-xs text-muted-foreground">{pointRoles ? pointRoles.map((id, index) => `${index ? 'To' : 'From'} Point ${graph.points.findIndex(point => point.id === id) + 1}`).join(' → ') : entityPair ? entityPair.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label).join(' · ') : `${selection.filter(atom => atom.kind === 'point').length} points · ${selection.filter(atom => atom.kind === 'entity').length} edges`}</div>}
+      {selection.length > 1 && <div className="text-xs text-muted-foreground">{pointRoles ? pointRoles.map((id, index) => `${index ? 'To' : 'From'} Point ${graph.points.findIndex(point => point.id === id) + 1}`).join(' → ') : entityPair ? entityPair.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label).join(' · ') : pointLine ? `Point ${graph.points.findIndex(point => point.id === pointLine.pointId) + 1} · ${describeCadSketchConstraintSource(graph, { kind: 'entity', id: pointLine.lineId }).label}` : `${selection.filter(atom => atom.kind === 'point').length} points · ${selection.filter(atom => atom.kind === 'entity').length} edges`}</div>}
       {selectedEntity?.kind === 'line' && dimensionPair && <div className="cad-sketch-profile-actions">
         {(['horizontal', 'vertical'] as const).map(kind => <label key={kind} className="cad-check"><Input type="checkbox" aria-label={kind === 'horizontal' ? 'Horizontal' : 'Vertical'}
           checked={draft.relations.some(relation => relation.kind === kind && samePair(relation, dimensionPair))} onChange={event => toggleLineAxis(kind, event.target.checked)} />{kind === 'horizontal' ? 'Horizontal' : 'Vertical'}</label>)}
@@ -374,6 +389,9 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         <Button type="button" autoFocus={initialCommand?.kind === 'point-dimensions'} onClick={() => addLength()}><MeasureIcon size={13} /> Aligned distance</Button>
         {(['x', 'y'] as const).map(axis => <Button type="button" key={axis} onClick={() => addLength(axis)}><MeasureIcon size={13} />{axis === 'x' ? 'Horizontal distance' : 'Vertical distance'}</Button>)}
       </div>}
+      {pointLine && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label="Midpoint"
+        checked={draft.relations.some(relation => relation.kind === 'midpoint' && relation.pointId === pointLine.pointId && relation.lineId === pointLine.lineId)}
+        onChange={event => toggleMidpoint(event.target.checked)} />Midpoint</label></div>}
       {linePair && <div className="cad-sketch-profile-actions cad-sketch-pair-actions">
         {(['parallel', 'perpendicular'] as const).map(kind => {
           const checked = draft.relations.some(relation => relation.kind === kind && sameEntityPair(relation, linePair));

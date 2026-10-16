@@ -63,6 +63,32 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it('keeps a deliberate point-to-line midpoint local until Apply and removes only that relation', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Centered bore', 'centered-bore'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Bore and guide', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [' 0.00 ', '0'] }, { id: 'b', position: ['20', '10'] }, { id: 'center', position: [10, 5] }],
+        entities: [{ id: 'guide', kind: 'line', startPointId: 'a', endPointId: 'b', construction: true },
+          { id: 'bore', kind: 'circle', centerPointId: 'center', radius: ' 2.00 ', construction: false }], relations: []
+      }
+    }] });
+    const h = await mount(source, [{ kind: 'point', id: 'center' }, { kind: 'entity', id: 'guide' }]);
+    await act(async () => field('Midpoint').click());
+    expect(h.session.getSnapshot().document).toBe(source);
+    await click('Cancel'); expect(h.edit).not.toHaveBeenCalled();
+    await act(async () => field('Midpoint').click()); await click('Apply');
+    const edit = h.edit.mock.calls[0][0][0];
+    expect(edit).toMatchObject({ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { kind: 'midpoint', pointId: 'center', lineId: 'guide' } });
+    if (edit.kind !== 'set-sketch-relation') throw new Error('Midpoint relation edit missing.');
+    const linked = h.session.getSnapshot().document, original = source.features[0];
+    if (original.kind !== 'sketch' || !original.graph) throw new Error('Bore fixture missing.');
+    expect(linked.features[0]).toEqual({ ...original, graph: { ...original.graph, relations: [edit.relation] } });
+    await h.render([{ kind: 'entity', id: 'guide' }, { kind: 'point', id: 'center' }]);
+    expect(field('Midpoint').checked).toBe(true);
+    await act(async () => field('Midpoint').click()); await click('Apply');
+    expect(h.edit).toHaveBeenLastCalledWith([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: edit.relation.id }], expect.any(AbortSignal));
+    expect(h.session.getSnapshot().document.features).toEqual(source.features);
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toBe(linked);
+  });
   it('keeps generated Collinear support authoritative until its deliberate removal is applied', async () => {
     const source = parseCadDocument({ ...createCadDocument('Trimmed line', 'trimmed-line'), schemaVersion: 2, features: [{
       id: 'sketch', kind: 'sketch', name: 'Survivors', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {

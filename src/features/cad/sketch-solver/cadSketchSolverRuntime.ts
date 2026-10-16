@@ -13,6 +13,7 @@ import type { Point2 } from '../../../domain/path-intel/types';
 import { cadSketchRadialTarget, resolveCadSketchRadialEntity } from '../../../domain/cad/cadSketchRadialRelations';
 import { resolveCadSketchRadiusPair } from '../../../domain/cad/cadSketchEqualRelations';
 import { cadSketchAngleTarget, resolveCadSketchAngleRays } from '../../../domain/cad/cadSketchAngleRelations';
+import { resolveCadSketchMidpointOperands } from '../../../domain/cad/cadSketchMidpointRelations';
 
 function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] {
   switch (status) {
@@ -56,6 +57,10 @@ function compile(input: CadSketchSolveInput) {
       case 'coincident': constraint({ id, type: 'p2p_coincident', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
       case 'horizontal': constraint({ id, type: 'horizontal_pp', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
       case 'vertical': constraint({ id, type: 'vertical_pp', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
+      case 'midpoint': {
+        const { line } = resolveCadSketchMidpointOperands(graph, relation);
+        constraint({ id, type: 'p2p_symmetric_ppp', p1_id: line.startPointId, p2_id: line.endPointId, p_id: relation.pointId }, id); break;
+      }
       case 'line-angle': {
         const [a, b] = resolveCadSketchAngleRays(graph, relation.rays);
         for (const ray of [a, b]) if (!cadSketchLineDirection(ray.line, numericPoints)) throw new Error('A sketch ray has no numeric endpoints.');

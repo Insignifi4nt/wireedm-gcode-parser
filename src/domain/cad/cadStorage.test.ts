@@ -78,6 +78,33 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     expect(await loadCadDocument(adapter, document.id)).toEqual(reopened);
     expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
   });
+  it('preserves old schema 2 and exact midpoint drivers through ordinary saves and rejects a non-line owner before writes', async () => {
+    const old = parseCadDocument({ ...createCadDocument('Located bore', 'cad_midpoint'), schemaVersion: 2, parameters: { span: 22, boreRadius: 3 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Located bore', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+        points: [{ id: 'a', position: ['2.000', '-4.00'] }, { id: 'b', position: [' span ', '6.000'] }, { id: 'middle', position: ['(2 + span) / 2', '1.000'] }],
+        entities: [{ id: 'ab', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },
+          { id: 'bore', kind: 'circle', construction: false, centerPointId: 'middle', radius: ' boreRadius ' }], relations: []
+      }
+    }] });
+    const first = await saveCadDocument(adapter, old, { expectedSavedVersion: null });
+    expect((await loadCadDocument(adapter, old.id)).document).toEqual(old);
+    const related = applyCadEdits(old, [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'middle-of-ab', kind: 'midpoint', pointId: 'middle', lineId: 'ab' } }]);
+    const second = await saveCadDocument(adapter, related, { expectedSavedVersion: first.savedVersion });
+    expect((await loadCadDocument(adapter, old.id)).document).toEqual(related);
+    const changed = applyCadEdits(related, [{ kind: 'set-parameter', name: 'span', value: 24 }]);
+    const saved = await saveCadDocument(adapter, changed, { expectedSavedVersion: second.savedVersion });
+    const reopened = await loadCadDocument(adapter, old.id), oldSketch = old.features[0];
+    if (oldSketch.kind !== 'sketch' || !oldSketch.graph) throw new Error('Missing midpoint source');
+    expect(reopened.document.schemaVersion).toBe(2); expect(reopened.document.features[0]).toEqual({ ...oldSketch,
+      graph: { ...oldSketch.graph, relations: [{ id: 'middle-of-ab', kind: 'midpoint', pointId: 'middle', lineId: 'ab' }] } });
+    const path = cadDocumentPath(old.id), raw = await adapter.readExactText?.(path), writes = vi.spyOn(adapter, 'writeText');
+    const malformed = structuredClone(reopened.document), sketch = malformed.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing midpoint graph');
+    Reflect.set(sketch.graph.relations[0], 'lineId', 'bore');
+    await expect(saveCadDocument(adapter, malformed, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow();
+    expect(writes).not.toHaveBeenCalled(); expect(await adapter.readExactText?.(path)).toBe(raw);
+    expect(await loadCadDocument(adapter, old.id)).toEqual(reopened);
+  });
   it('preserves explicit sketch dimensions and rejects invalid constraint revisions before storage writes', async () => {
     const original = parseCadDocument({ ...createCadDocument('Dimensioned section', 'cad_dimensioned'), parameters: { width: 20 }, features: [
       { id: 'sketch', kind: 'sketch', name: 'Section', suppressed: false, plane: 'XY', offset: 0, profiles: [

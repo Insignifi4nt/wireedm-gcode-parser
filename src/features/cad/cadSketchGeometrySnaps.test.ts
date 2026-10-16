@@ -148,6 +148,20 @@ describe('prepared sketch geometry snaps', () => {
     expect(snap({ cursor: [40, 0], mmPerPixel: [.01, .01], excludePointIds: ['a'] })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'point', pointId: 'other' } } });
   });
 
+  it('excludes a dragged midpoint owner and its declared alias from their own guide midpoint magnet', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] },
+      { id: 'middle', position: [10, 0] }, { id: 'alias', position: [10, 0] }, { id: 'c', position: [0, 20] }, { id: 'd', position: [20, 20] }],
+      entities: [{ id: 'guide', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },
+        { id: 'other', kind: 'line', construction: true, startPointId: 'c', endPointId: 'd' }],
+      relations: [{ id: 'join', kind: 'coincident', pointIds: ['middle', 'alias'] }, { id: 'centered', kind: 'midpoint', pointId: 'middle', lineId: 'guide' }] });
+    const snap = prepareCadSketchGraphInteraction(graph, {}).snap;
+    for (const pointId of ['middle', 'alias']) {
+      expect(snap({ cursor: [10, 0], mmPerPixel: [.01, .01], excludePointIds: [pointId] })).toEqual({ kind: 'none' });
+      expect(snap({ cursor: [10, 20], mmPerPixel: [.01, .01], excludePointIds: [pointId] })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'midpoint', entityId: 'other' } } });
+      expect(snap({ cursor: [0, 0], mmPerPixel: [.01, .01], excludePointIds: [pointId] })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'endpoint', pointId: 'a' } } });
+    }
+  });
+
   it('filters source memberships and target roles before distance ranking, retaining a shared point through an eligible owner', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }], entities: [
       { id: 'line', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },
