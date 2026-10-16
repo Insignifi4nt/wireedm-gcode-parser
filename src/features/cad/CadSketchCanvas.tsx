@@ -1,3 +1,5 @@
+import { flushSync } from 'react-dom';
+import { cadSketchLinearPatternForSelection } from '@/domain/cad/cadSketchLinearPattern';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -29,6 +31,7 @@ import { cadSketchHandleKey, moveCadSketchHandle, type CadSketchHandle } from '@
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
 import { cadSketchExternalReferenceForSelection } from '@/domain/cad/cadSketchExternalReferences';
+import { CadSketchLinearPatternPreview } from './CadSketchLinearPatternPreview';
 import { CadSketchGraphLayer, type CadSketchGraphControls } from './CadSketchGraphLayer';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { cadArcSvgPath } from './cadSketchSvg';
@@ -438,7 +441,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     const projection = projectSelection(event), rect = svg.current?.getBoundingClientRect();
     if (!sourceGraph || !graphControls || !projection || !rect?.height || tool !== 'select' || isPreview || interactionLocked) return false;
     const candidates = graphPicks(projection.point, span / rect.height);
-    const focused = focusedEntityId && trigger === 'keyboard' && (geometryPick ? geometryPick.eligibleEntityIds.includes(focusedEntityId) : pickFilter !== 'points' && sourceGraph.graph.entities.some(entity => entity.id === focusedEntityId && (entity.kind !== 'circle' || cadSketchExternalReferenceForSelection(sourceGraph.graph, { kind: 'entity', id: entity.id }))))
+    const focused = focusedEntityId && trigger === 'keyboard' && (geometryPick ? geometryPick.eligibleEntityIds.includes(focusedEntityId) : pickFilter !== 'points' && sourceGraph.graph.entities.some(entity => entity.id === focusedEntityId && (entity.kind !== 'circle' || cadSketchLinearPatternForSelection(sourceGraph.graph, {kind:'entity',id:entity.id}) || cadSketchExternalReferenceForSelection(sourceGraph.graph, { kind: 'entity', id: entity.id }))))
       ? { kind: 'entity' as const, id: focusedEntityId } : undefined;
     if (!candidates.length && !focused) return false;
     const selected = graphControls.selection.length === 1 ? graphControls.selection[0] : null;
@@ -476,11 +479,20 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (projectSelection(owned)?.frame === owned.frame) graphControls.onSelect({ kind: 'point', id: edit.extend.endPointId });
         }, 'Unable to extend this line.');
       } })) : [];
+  const patternOwner = sourceGraph && overlapTarget ? cadSketchLinearPatternForSelection(sourceGraph.graph,overlapTarget) : null;
+  const actOnPattern = (action: () => void) => {
+    if (!currentOverlap || projectSelection(currentOverlap)?.frame !== currentOverlap.frame || baseInteractionLocked) return;
+    flushSync(() => { closeOverlap(); pendingChange.current(false); }); action();
+  };
   const referenceOwner = sourceGraph && overlapTarget ? cadSketchExternalReferenceForSelection(sourceGraph.graph, overlapTarget) : undefined;
   const overlapItems: readonly CadContextMenuItem[] = currentOverlap && geometryPick ? (overlapTarget ? [overlapTarget] : currentOverlap.candidates).map(atom => ({
     label: overlapTarget ? geometryPick.label : `${geometryPick.label} · ${atom.kind === 'point' ? 'Point' : ({ line: 'Line', arc: 'Arc', circle: 'Circle' })[sourceGraph?.graph.entities.find(entity => entity.id === atom.id)?.kind ?? 'line']} ${(atom.kind === 'point' ? sourceGraph?.points.findIndex(point => point.id === atom.id) ?? -1 : sourceGraph?.geometry.segments.findIndex(entity => entity.id === atom.id) ?? -1) + 1}`,
     onHighlight: () => setPickHighlight(atom), onSelect: () => selectOverlap(atom)
-  })) : currentOverlap && overlapTarget ? [
+  })) : currentOverlap && overlapTarget && patternOwner ? [
+    {label:'Edit pattern',onSelect:()=>actOnPattern(()=>graphControls?.onEditPattern?.(patternOwner.relation.id))},
+    {label:'Select seed',onSelect:()=>actOnPattern(()=>graphControls?.onSelect({kind:'entity',id:patternOwner.relation.seed.entityId}))},
+    ...(patternOwner.index > 0 ? [{label:'Exclude occurrence',onSelect:()=>actOnPattern(()=>graphControls?.onDelete?.(overlapTarget))}] : [])
+  ] : currentOverlap && overlapTarget ? [
     ...(referenceOwner ? [{ label: 'Detach reference', help: 'Keep this geometry and its local relations, and release its source link.', onSelect: () => {
       const owned = currentOverlap;
       if (projectSelection(owned)?.frame !== owned.frame || baseInteractionLocked || !graphControls || sourceSketch.kind !== 'sketch') return;
@@ -912,6 +924,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           center={center} scaleX={width / (viewportSize.width || 800)} scaleY={span / (viewportSize.height || 600)} gridStep={gridStep} snap={snap} active={tool === 'select'}
           filter={graphPickFilter} highlighted={snapHighlight ?? pickHighlight} pickAt={event => { const point = getRawPoint(event), rect = svg.current?.getBoundingClientRect(); return point && rect?.height ? graphPicks(point, span / rect.height)[0] ?? null : null; }}
           locked={externalInteractionLocked || submission.applying || points.length > 0 || pathPending || dragPreview !== null || boxPending || overlapPending || choicePending} cancelSignal={cancelSignal} onPendingChange={publishGraphPending} onError={onError} />}
+        {graphControls?.patternInteraction && sourceSketch.kind === 'sketch' && (previewSketch ?? sourceSketch).graph && <CadSketchLinearPatternPreview graph={(previewSketch ?? sourceSketch).graph!} parameters={parameters} interaction={graphControls.patternInteraction} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {currentOverlap?.action === 'split' && currentOverlap.split?.kind === 'ready' && <CadSketchSplitPreview preview={currentOverlap.split} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {currentOverlap?.action === 'trim' && currentOverlap.trim?.kind === 'ready' && <CadSketchTrimPreview preview={currentOverlap.trim} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {currentOverlap?.action === 'extend' && activeExtend?.kind === 'ready' && <CadSketchExtendPreview preview={activeExtend} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}

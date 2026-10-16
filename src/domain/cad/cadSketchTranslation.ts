@@ -8,6 +8,7 @@ import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import { signedSweep } from '@/domain/path-intel/segments';
 import type { Point2 } from '@/domain/path-intel/types';
 import { cadSketchExternalReferenceLockReason } from './cadSketchExternalReferences';
+import { cadSketchLinearPatternLockReason, reconcileCadSketchLinearPattern } from './cadSketchLinearPattern';
 
 function position(points: ReadonlyMap<string, Point2>, id: string): Point2 {
   const point = points.get(id);
@@ -25,7 +26,7 @@ export function translateCadSketchGraph({ graph, selections, translation, parame
   const delta = translation.map(value => evaluateCadScalar(value, parameters));
   if (delta.every(value => value === 0)) return graph;
   for (const selection of selected) {
-    const reason = cadSketchExternalReferenceLockReason(graph, selection);
+    const reason = cadSketchLinearPatternLockReason(graph, selection) ?? cadSketchExternalReferenceLockReason(graph, selection);
     if (reason) throw new CadError('referenced-sketch-geometry', reason);
   }
   const points = new Set(selected.filter(item => item.kind === 'point').map(item => item.id));
@@ -42,7 +43,7 @@ export function translateCadSketchGraph({ graph, selections, translation, parame
       && (relation.kind === 'fixed-point' ? delta.some(value => value !== 0) : delta[relation.axis === 'x' ? 0 : 1] !== 0))
       throw new CadError('driven-sketch-position', `${label(relation.pointId)} has a fixed coordinate. Release its driver before moving that axis.`);
   }
-  const translated = parseCadSketchGraph({ ...graph, points: graph.points.map(point => {
+  let translated = parseCadSketchGraph({ ...graph, points: graph.points.map(point => {
     if (!points.has(point.id)) return point;
     const coordinate = (axis: 0 | 1) => {
       const value = point.position[axis], step = delta[axis];
@@ -55,6 +56,8 @@ export function translateCadSketchGraph({ graph, selections, translation, parame
     };
     return { ...point, position: [coordinate(0), coordinate(1)] };
   }) });
+  for (const relation of graph.relations) if (relation.kind === 'linear-pattern' && points.has(relation.seed.centerPointId))
+    translated = reconcileCadSketchLinearPattern({ graph: translated, parameters, relation, previous: relation });
   const resolve = (graph: CadSketchGraph) => new Map(graph.points.map(point => [point.id,
     { x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters) }]));
   const before = resolve(graph), after = resolve(translated);

@@ -2,9 +2,11 @@ import type { CadSketchFeature } from './cadDocument';
 import { CadError } from './cadError';
 import { parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
 import { cadSketchEntityPointIds, cadSketchRelationEntityIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
+import { cadSketchLinearPatternForSelection } from './cadSketchLinearPattern';
 
 /** Structural intent only. The shared preparation stage solves before complete-part acceptance. */
 export function appendCadSketchEntities({ sketch, geometry }: { sketch: CadSketchFeature; geometry: CadSketchGraph }): CadSketchFeature {
+  if (geometry.relations.some(relation => relation.kind === 'linear-pattern')) throw new CadError('invalid-sketch-pattern', 'Create a linear pattern with its set-relation operation.');
   const profileIds = new Set(sketch.profiles.map(profile => profile.id));
   for (const item of [...geometry.points, ...geometry.entities, ...geometry.relations]) {
     if (profileIds.has(item.id)) throw new CadError('duplicate-sketch-id', `Sketch identity "${item.id}" already belongs to a legacy profile.`);
@@ -33,6 +35,10 @@ export function deleteCadSketchElements({ sketch, pointIds, entityIds, relationI
 }): CadSketchFeature {
   const graph = requireGraph(sketch), points = selectedIds(graph.points, pointIds, 'point');
   const entities = selectedIds(graph.entities, entityIds, 'entity'), relations = selectedIds(graph.relations, relationIds, 'relation');
+  if (entityIds.some(id => cadSketchLinearPatternForSelection(graph, { kind: 'entity', id }))
+    || pointIds.some(id => cadSketchLinearPatternForSelection(graph, { kind: 'point', id }))
+    || graph.relations.some(relation => relation.kind === 'linear-pattern' && relations.has(relation.id)))
+    throw new CadError('owned-sketch-pattern', 'Omit the complete occurrence through its pattern, or detach the pattern before deleting its geometry.');
   const remove = (id: string, selected: Set<string>) => {
     if (!cascade && !selected.has(id)) throw new CadError('dependent-sketch-element', `Sketch element "${id}" depends on selected geometry. Select it explicitly or use cascade deletion.`);
     selected.add(id);

@@ -9,6 +9,7 @@ import { Value } from '@sinclair/typebox/value';
 import { cadFeatureInputs } from '@/domain/cad/cadFeatureInputs';
 import { assertCadSketchExternalReferences, refreshCadSketchExternalReferences } from '@/domain/cad/cadSketchExternalReferences';
 import { cadSketchSolutionMatchesInput } from './sketch-solver/cadSketchSolverProtocol';
+import { cadSketchPatternSnapshotNeedsExact, cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 
 export function needsCadSketchPreparation(document: CadDocument, edits: readonly CadEdit[]): boolean {
   return document.features.some(feature => feature.kind === 'sketch' && feature.graph)
@@ -85,6 +86,28 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
   }
   for (const edit of captured) {
     signal?.throwIfAborted();
+    const editedId = edit.kind === 'update-feature' ? edit.feature.id : 'sketchId' in edit ? edit.sketchId : null;
+    const pendingFeature = [...pending].reverse().find(earlier => (earlier.kind === 'add-feature' || earlier.kind === 'update-feature') && earlier.feature.id === editedId);
+    const editedSketch = candidate.features.find(feature => feature.id === editedId)
+      ?? (pendingFeature && 'feature' in pendingFeature ? pendingFeature.feature : undefined);
+    const patternEdit = edit.kind === 'set-sketch-relation' && edit.relation.kind === 'linear-pattern'
+      || edit.kind === 'remove-sketch-relation' && editedSketch?.kind === 'sketch' && editedSketch.graph?.relations.some(relation => relation.id === edit.relationId && relation.kind === 'linear-pattern')
+      || edit.kind === 'update-feature' && edit.feature.kind === 'sketch' && editedSketch?.kind === 'sketch' && cadSketchPatternSnapshotNeedsExact(editedSketch, edit.feature);
+    if (patternEdit) {
+      await flush();
+      const previous = candidate.features.find(feature => feature.id === editedId);
+      const target = reduceCadEditIntents(candidate, [edit]);
+      if (Value.Equal(candidate, target)) continue;
+      candidate = target;
+      const updated = edit.kind === 'update-feature' && edit.feature.kind === 'sketch' ? edit.feature : undefined;
+      const detached = edit.kind === 'remove-sketch-relation' || updated && previous?.kind === 'sketch'
+        && previous.graph?.relations.some(relation => relation.kind === 'linear-pattern'
+          && !updated.graph?.relations.some(next => next.id === relation.id && next.kind === 'linear-pattern'));
+      const sketchId = detached ? candidate.features.reduce((id, feature) => feature.kind === 'sketch' && feature.graph ? feature.id : id, '')
+        : edit.kind === 'update-feature' ? edit.feature.id : 'sketchId' in edit ? edit.sketchId : '';
+      await solve(undefined, { sketchId, error: () => new CadError('sketch-pattern-intent', 'The constraints cannot preserve this exact linear pattern edit. Adjust its seed or relations before trying again.') });
+      continue;
+    }
     if (changesReferenceDimensions(candidate, edit)) {
       await flush();
       const target = reduceCadEditIntents(candidate, [edit]);
@@ -125,6 +148,8 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
       const sketch = candidate.features.find(feature => feature.id === edit.sketchId);
       const point = sketch?.kind === 'sketch' ? sketch.graph?.points.find(point => point.id === edit.pointId) : undefined;
       if (!point) throw new CadError('missing-sketch-point', 'The selected sketch point no longer exists.');
+      const reason = sketch?.kind === 'sketch' && sketch.graph ? cadSketchLinearPatternLockReason(sketch.graph, { kind: 'point', id: edit.pointId }) : null;
+      if (reason) throw new CadError('owned-sketch-pattern', reason);
       const position = point.position.map((value, index) => evaluateCadScalar(value, candidate.parameters) + evaluateCadScalar(edit.translation[index], candidate.parameters));
       await solve({ sketchId: edit.sketchId, pointId: edit.pointId, position: [position[0], position[1]] });
     } else {

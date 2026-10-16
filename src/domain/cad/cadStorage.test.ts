@@ -1,3 +1,4 @@
+import { circleRow, circleRowPart, rowSketch } from './__tests__/cadSketchLinearPatternFixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
 import { createBrowserDirectoryAdapter } from '@/domain/storage/browserDirectoryAdapter';
@@ -28,6 +29,20 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     localStorage.clear();
     adapter = kind === 'browser-cache' ? createBrowserCacheAdapter(localStorage)
       : createBrowserDirectoryAdapter(new FakeDirectoryHandle('cad-test') as unknown as FileSystemDirectoryHandle);
+  });
+  it('preserves circle-row identities, exclusions and detached geometry through successive saves',async()=>{
+    const source=applyCadEdits(circleRowPart(),[{kind:'set-sketch-relation',sketchId:'sketch',relation:{...circleRow,omittedInstances:[2]}}]);
+    const first=await saveCadDocument(adapter,source,{expectedSavedVersion:null});expect((await loadCadDocument(adapter,source.id)).document).toEqual(source);
+    const shrunk=applyCadEdits(source,[{kind:'set-sketch-relation',sketchId:'sketch',relation:{...circleRow,count:2,omittedInstances:[2]}}]);
+    const second=await saveCadDocument(adapter,shrunk,{expectedSavedVersion:first.savedVersion});expect((await loadCadDocument(adapter,source.id)).document).toEqual(shrunk);
+    const regrown=applyCadEdits(shrunk,[{kind:'set-sketch-relation',sketchId:'sketch',relation:{...circleRow,spacing:' 16.00 ',omittedInstances:[2]}}]);
+    const third=await saveCadDocument(adapter,regrown,{expectedSavedVersion:second.savedVersion}), reopened=(await loadCadDocument(adapter,source.id)).document;
+    expect(reopened).toEqual(regrown);expect(rowSketch(reopened).graph.points.slice(1).map(p=>p.position)).toEqual([[26,10],[58,10]]);
+    const graph=rowSketch(regrown).graph,path=cadDocumentPath(source.id),raw=await adapter.readExactText?.(path),writes=vi.spyOn(adapter,'writeText');
+    const forged={...regrown,features:[{...rowSketch(regrown),graph:{...graph,entities:graph.entities.map(e=>e.id==='holes_i1_e0'&&e.kind==='circle'?{...e,radius:4}:e)}}]};
+    await expect(saveCadDocument(adapter,forged,{expectedSavedVersion:third.savedVersion})).rejects.toThrow();expect(writes).not.toHaveBeenCalled();expect(await adapter.readExactText?.(path)).toBe(raw);
+    const detached=applyCadEdits(reopened,[{kind:'remove-sketch-relation',sketchId:'sketch',relationId:'row'}]);await saveCadDocument(adapter,detached,{expectedSavedVersion:third.savedVersion});
+    const final=(await loadCadDocument(adapter,source.id)).document;expect(final).toEqual(detached);expect(rowSketch(final).graph).toEqual({...graph,relations:[]});
   });
   it('reopens passive dimension descriptors exactly and recomputes them after parameter changes', async () => {
     const source=parseCadDocument({...createCadDocument('Reference annotations','reference-dimensions'),schemaVersion:2,parameters:{span:20,bore:6},features:[{

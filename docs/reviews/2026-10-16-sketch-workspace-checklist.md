@@ -17,6 +17,12 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: persistent circle rows
+
+Accepted the bounded first [sketch pattern scope](2026-10-16-sketch-linear-pattern-plan.md): one material circle repeated along local ±X/±Y, count1–32, exact linked pitch and stable omitted occurrences. Copies follow seed size/position, stay selectable and are edited through their owner or explicit Detach. A compact editor and numbered canvas toggles replace an occurrence list. API/schema/native preparation, private Finish, inspection metadata, guarded member operations and both storage adapters share the same contract.
+
+Domain/native feasibility and regression gates, focused integration, complete Chromium/Firefox plate journeys, shared controls and full build pass. Independent review found and closed two ordered Detach/certificate gaps, linked-point Dimension entry and premature member editing after pending Detach. Native pointer plus WebMCP proof retains the accepted source until Finish, then yields fourRadius4 holes atX10/26/42/58 on a70×20plate, Pad5 volume5994.690350851267 mm³, one solid, zero freedom/diagnostics and exact Undo/Redo. Temporary draft restored empty and closed without Save. See tmp/sketch-linear-pattern-native-proof.json and matching PNGs. General line/arc, two-axis and circular sketch patterns remain unfinished; this is not completion of S19 or sketch mode.
+
 ## Checkpoint: Dimension-first point picking
 
 Dimension now accepts one edge or two sequential points, with the first point highlighted and an explicit second-point prompt. It can also start from one selected point. The existing point-pair editor supplies Aligned/Horizontal/Vertical and Reference choices; fixed/linked points can anchor a free partner. Escape restores previous tool/selection without history. Typed point/entity eligibility replaces the old edge-only picker for Dimension, Mirror and Use; the latter commands keep entity-only lists. Picking cannot drag, resize, delete or select a closed profile. Source/version and overlap ownership remain guarded.

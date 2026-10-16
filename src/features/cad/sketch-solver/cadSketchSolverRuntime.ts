@@ -15,6 +15,7 @@ import { cadSketchRadialTarget, resolveCadSketchRadialEntity } from '../../../do
 import { resolveCadSketchRadiusPair } from '../../../domain/cad/cadSketchEqualRelations';
 import { cadSketchAngleTarget, resolveCadSketchAngleRays } from '../../../domain/cad/cadSketchAngleRelations';
 import { resolveCadSketchMidpointOperands } from '../../../domain/cad/cadSketchMidpointRelations';
+import { cadSketchLinearPatternInstances } from '../../../domain/cad/cadSketchLinearPattern';
 
 function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] {
   switch (status) {
@@ -55,6 +56,16 @@ function compile(input: CadSketchSolveInput) {
   for (const relation of graph.relations) {
     const id = relation.id;
     switch (relation.kind) {
+      case 'linear-pattern': {
+        const axis = relation.direction.endsWith('x') ? 'x' : 'y', sign = relation.direction.startsWith('-') ? -1 : 1;
+        for (const member of cadSketchLinearPatternInstances(relation).filter(member => member.active)) {
+          for (const coordinate of ['x', 'y'] as const) constraint({ id: `$pattern-${coordinate}:${id}:${member.index}`, type: 'difference',
+            param1: { o_id: relation.seed.centerPointId, prop: coordinate }, param2: { o_id: member.pointId, prop: coordinate },
+            difference: coordinate === axis ? sign * member.index * scalar(relation.spacing) : 0 }, id);
+          constraint({ id: `$pattern-radius:${id}:${member.index}`, type: 'equal_radius_cc', c1_id: relation.seed.entityId, c2_id: member.entityId }, id);
+        }
+        break;
+      }
       case 'reference-dimension': break; // Saved measurement identity has no native equation or fixed variable.
       case 'external-reference': break; // Source authority is fixed numeric parameter ownership, not another equation.
       case 'coincident': constraint({ id, type: 'p2p_coincident', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;

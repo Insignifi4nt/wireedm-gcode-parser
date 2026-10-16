@@ -21,6 +21,7 @@ import { CadSketchOffsetRequestSchema, prepareCadSketchOffset, type CadSketchOff
 import { CadSketchMirrorRequestSchema, prepareCadSketchMirror, type CadSketchMirrorRequest } from './cadSketchMirror';
 import { CadSketchProfileCopyRequestSchema, prepareCadSketchProfileCopy, type CadSketchProfileCopyRequest } from './cadSketchProfileCopy';
 import { CadSketchUseEntityRequestSchema, prepareCadSketchUseEntity, cadSketchExternalReferenceLockReason, type CadSketchUseEntityRequest } from './cadSketchExternalReferences';
+import { prepareCadSketchPatternSnapshot, reconcileCadSketchLinearPattern, cadSketchLinearPatternLockReason } from './cadSketchLinearPattern';
 
 export type CadEdit =
   | { readonly kind: 'add-feature'; readonly feature: CadFeature; readonly beforeId?: string }
@@ -125,7 +126,14 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
         const index = edit.beforeId === undefined ? features.length : indexOf(edit.beforeId);
         features.splice(index, 0, edit.feature); break;
       }
-      case 'update-feature': features[indexOf(edit.feature.id)] = edit.feature; break;
+      case 'update-feature': {
+        const index = indexOf(edit.feature.id), previous = features[index];
+        if (previous.kind === 'sketch' && previous.graph?.relations.some(relation => relation.kind === 'linear-pattern') && edit.feature.kind !== 'sketch')
+          throw new CadError('owned-sketch-pattern', 'Detach the pattern before replacing its sketch source.');
+        features[index] = previous.kind === 'sketch' && edit.feature.kind === 'sketch'
+          ? prepareCadSketchPatternSnapshot(previous, edit.feature, parameters) : edit.feature;
+        break;
+      }
       case 'delete-feature': {
         indexOf(edit.featureId);
         const deleted = new Set([edit.featureId]);
@@ -278,7 +286,7 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
         let graph = feature.graph;
         if (edit.kind === 'move-sketch-point') {
           if (!graph.points.some(point => point.id === edit.pointId)) throw new CadError('missing-sketch-point', 'The selected sketch point no longer exists.');
-          const reason = cadSketchExternalReferenceLockReason(graph, { kind: 'point', id: edit.pointId });
+          const reason = cadSketchLinearPatternLockReason(graph, { kind: 'point', id: edit.pointId }) ?? cadSketchExternalReferenceLockReason(graph, { kind: 'point', id: edit.pointId });
           if (reason) throw new CadError('referenced-sketch-geometry', reason);
           const delta = edit.translation.map(value => evaluateCadScalar(value, parameters));
           graph = { ...graph, points: graph.points.map(point => point.id !== edit.pointId ? point : { ...point, position: [
@@ -286,7 +294,12 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
             typeof point.position[1] === 'number' ? point.position[1] + delta[1] : point.position[1]
           ] }) };
         } else if (edit.kind === 'set-sketch-relation') {
-          graph = { ...graph, relations: graph.relations.some(relation => relation.id === edit.relation.id)
+          const previous = graph.relations.find(relation => relation.id === edit.relation.id);
+          if (previous?.kind === 'linear-pattern' && edit.relation.kind !== 'linear-pattern') throw new CadError('owned-sketch-pattern', 'Detach the linear pattern before replacing its owner.');
+          if (edit.relation.kind === 'linear-pattern') {
+            if (previous && previous.kind !== 'linear-pattern') throw new CadError('duplicate-sketch-id', 'Choose a fresh identity for the linear pattern.');
+            graph = Value.Equal(previous, edit.relation) ? graph : reconcileCadSketchLinearPattern({ graph, parameters, relation: edit.relation, previous });
+          } else graph = { ...graph, relations: graph.relations.some(relation => relation.id === edit.relation.id)
             ? graph.relations.map(relation => relation.id === edit.relation.id ? edit.relation : relation) : [...graph.relations, edit.relation] };
         } else {
           if (!graph.relations.some(relation => relation.id === edit.relationId)) throw new CadError('missing-sketch-relation', 'The selected sketch relation no longer exists.');

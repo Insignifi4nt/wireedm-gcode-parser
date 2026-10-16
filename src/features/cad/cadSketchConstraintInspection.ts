@@ -5,6 +5,7 @@ import { measureCadSketchReferenceDimension } from '@/domain/cad/cadSketchRefere
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import { cadSketchLinearPatternForSelection, cadSketchLinearPatternInstances } from '@/domain/cad/cadSketchLinearPattern';
 import { cadSketchExternalReferenceComponents } from '@/domain/cad/cadSketchExternalReferences';
 import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
 import { page } from '@/features/webmcp/siteTools';
@@ -63,6 +64,7 @@ export async function inspectCadSketchConstraints(document: CadDocument, sketchI
 }
 
 const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
+  'linear-pattern': 'Owns a row of circles. Copies follow the seed center and radius at the declared signed axis pitch. Edit this owner to change count, direction or exclusions; detach before independent copy edits.',
   'reference-dimension': 'Measures current geometry without driving it or adding a native equation.',
   coincident: 'Keeps two distinct source points at the same location.', horizontal: 'Keeps two points at the same Y coordinate.',
   midpoint: 'Keeps one distinct graph point halfway between a graph line’s endpoints, including construction lines. Does not join material boundaries.',
@@ -95,17 +97,22 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
   const referenceComponents = graph ? cadSketchExternalReferenceComponents(graph) : null;
   const scalar = (value: CadScalar, driving = false, linked = false) => ({ scalar: value, valueMm: evaluateCadScalar(value, inspection.parameters),
     role: linked ? 'linked-reference' : typeof value === 'string' ? 'expression-driver' : driving ? 'constant-driver' : 'solver-variable' });
+  const pattern = (kind: 'point' | 'entity', id: string) => {
+    const owner = graph && cadSketchLinearPatternForSelection(graph, { kind, id });
+    return owner ? { pattern: { relationId: owner.relation.id, index: owner.index, seedEntityId: owner.relation.seed.entityId,
+      role: owner.index === 0 ? 'seed' as const : 'generated' as const } } : {};
+  };
   const point = (id: string) => {
     const source = points.get(id); if (!source) throw new CadError('missing-sketch-point', 'The inspected point no longer exists.');
     const entities = adjacency.get(id) ?? [];
-    return { id, position: source.position.map(value => scalar(value, false, referenceComponents?.pointIds.has(id))), diagnostics: diagnosticState(id), entityIds: entities.slice(0, 8), entityCount: entities.length,
+    return { id, ...pattern('point', id), position: source.position.map(value => scalar(value, false, referenceComponents?.pointIds.has(id))), diagnostics: diagnosticState(id), entityIds: entities.slice(0, 8), entityCount: entities.length,
       omittedEntityCount: Math.max(0, entities.length - 8) };
   };
   if (input.section === 'points') return page(graph?.points ?? [], input, source => point(source.id));
   if (input.section === 'entities') {
     const reader = graph ? createCadSketchMeasurementReader(graph, inspection.parameters) : null;
     return page(graph?.entities ?? [], input, source => {
-      const row = { source, diagnostics: diagnosticState(source.id), points: entityPoints(source).map(point),
+      const row = { source, ...pattern('entity', source.id), diagnostics: diagnosticState(source.id), points: entityPoints(source).map(point),
         ...(source.kind === 'circle' ? { radius: scalar(source.radius, false, referenceComponents?.circleIds.has(source.id)) } : {}) };
       try { return { ...row, measurement: reader ? { coordinateSystem: 'sketch-local' as const, ...reader.entity(source.id) } : null }; }
       catch (error) { return { ...row, measurement: null, measurementDiagnostic: summarizeMessage(error instanceof Error ? error.message : 'Unable to measure this edge.') }; }
@@ -114,7 +121,9 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
   return page(graph?.relations ?? [], input, source => ({ source, meaning: relationMeanings[source.kind], diagnostics: diagnosticState(source.id),
     points: graph ? cadSketchRelationPointIds(graph, source).map(point) : [],
     ...(cadSketchRelationEntityIds(source).length ? { entityIds: cadSketchRelationEntityIds(source) } : {}),
-    ...(source.kind === 'reference-dimension' && graph ? { measurement: { coordinateSystem: 'sketch-local' as const,
+    ...(source.kind === 'linear-pattern' ? { pattern: { seed: source.seed, count: source.count, direction: source.direction,
+      pitch: scalar(source.spacing, true), instances: cadSketchLinearPatternInstances(source) } }
+      : source.kind === 'reference-dimension' && graph ? { measurement: { coordinateSystem: 'sketch-local' as const,
       valueMm: measureCadSketchReferenceDimension(graph, inspection.parameters, source), role: 'reference-measurement' as const } }
       : source.kind === 'line-angle' ? { value: { scalar: source.value, valueDegrees: evaluateCadScalar(source.value, inspection.parameters), unit: 'deg' as const,
       role: typeof source.value === 'string' ? 'expression-driver' as const : 'constant-driver' as const } }

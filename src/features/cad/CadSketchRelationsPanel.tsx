@@ -7,6 +7,7 @@ import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation, CadS
 import { cadSketchReferenceDimensionToDriving, measureCadSketchReferenceDimension, resolveCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
 import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 import { cadSketchRelationPointIds, mapCadSketchRelationScalars } from '@/domain/cad/cadSketchGraphReferences';
+import { cadSketchLinearPatternForSelection, cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { cadSketchExternalReferenceForSelection, cadSketchExternalReferenceLockReason } from '@/domain/cad/cadSketchExternalReferences';
 import { reduceCadEditIntents, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
@@ -26,7 +27,7 @@ import './cad-sketch-profile.css';
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
 const relationLabels = {
-  'reference-dimension': 'Reference dimension', 'fixed-point': 'Fixed point', distance: 'Length', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', 'external-reference': 'Linked reference',
+  'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', 'fixed-point': 'Fixed point', distance: 'Length', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', 'external-reference': 'Linked reference',
   parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', 'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer'
 } satisfies Record<Exclude<CadSketchGraphRelation['kind'], 'fixed-axis' | 'radial-size' | 'axis-distance'>, string>;
 const relationLabel = (relation: CadSketchGraphRelation): string => relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
@@ -40,6 +41,8 @@ function matchingReference(graph: CadSketchGraph, measurement: CadSketchReferenc
 }
 function referenceDrivingLock(graph: CadSketchGraph, relation: CadSketchReferenceDimension): string | null {
   const target = resolveCadSketchReferenceDimension(graph, relation);
+  const selections = target.kind === 'distance' ? target.pointIds.map(id => ({kind:'point' as const,id})) : [{kind:'entity' as const,id:target.entityId}];
+  const owned = selections.map(atom => cadSketchLinearPatternLockReason(graph,atom)).find(Boolean); if (owned) return owned;
   if (target.kind === 'distance') {
     const linked = relation.measurement.kind === 'line-length' ? cadSketchExternalReferenceLockReason(graph, {kind:'entity',id:relation.measurement.entityId}) : null;
     if (linked) return linked;
@@ -128,6 +131,8 @@ export interface CadSketchRelationsPanelProps {
   onInspectRelation?(relation: CadSketchGraphRelation | null): void;
   onInspectSubject?(subject: CadSketchConstraintFeedbackSubject | null): void;
   onCornerAccepted?(entityId: string, relationId: string): void;
+  onEditPattern?(relationId: string, detach?: true): void;
+  onSelectPatternSeed?(entityId: string): void;
   interactionLocked: boolean;
   cancelSignal: number;
 }
@@ -139,7 +144,7 @@ export function CadSketchRelationsPanel(props: CadSketchRelationsPanelProps) {
   return <RelationsForm key={JSON.stringify([props.document.id, props.sketch.id, props.selection, props.cancelSignal])} {...props} graph={graph} />;
 }
 
-function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onInspectSubject, onCornerAccepted, interactionLocked }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
+function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onInspectSubject, onCornerAccepted, onEditPattern, onSelectPatternSeed, interactionLocked }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
   const submission = useCadEditSubmission();
   const singleton = selection.length === 1 ? selection[0] : null;
   const pointPair = selectedPointPair(selection);
@@ -217,6 +222,8 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const centerRelation = centerPair && draft.relations.find(r => r.kind === 'coincident' && samePair(r, centerPair));
   const centerIdentity = centerPair && resolveCadSketchPointIdentities(draft);
   const sharedCenter = Boolean(centerPair && !centerRelation && centerIdentity && centerIdentity(centerPair[0]) === centerIdentity(centerPair[1]));
+  const selectedPattern = singleton ? cadSketchLinearPatternForSelection(draft,singleton) : null;
+  const patternLock = selection.map(atom => cadSketchLinearPatternLockReason(draft,atom)).find(Boolean) ?? null;
   const selectedReference = singleton ? cadSketchExternalReferenceForSelection(draft, singleton) : undefined;
   const referenceLock = singleton ? cadSketchExternalReferenceLockReason(draft, singleton) : null;
   const referenceSourceName = selectedReference ? source.document.features.find(feature => feature.id === selectedReference.sourceSketchId)?.name : null;
@@ -417,11 +424,11 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const scalarContext = { parameters, acceptedScalars, relationEdits, valueDrafts, setValueDraft, setIssue,
     setRelationPending: setBindingPending, markRelationEdited, changeParameter };
   const relationList = <ul className="cad-sketch-constraint-list" aria-label="Sketch relations">{relations.map(relation => <li key={relation.id}>
-          <Button type="button" aria-label={`Inspect ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} aria-pressed={activeRelationId === relation.id} onClick={() => { setInspectedFailure(null); setActiveRelationId(current => current === relation.id ? null : relation.id); }}>
+          <Button type="button" aria-label={`Inspect ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} aria-pressed={activeRelationId === relation.id} onClick={() => { if(relation.kind === 'linear-pattern') { if (!pending) onEditPattern?.(relation.id); return; } setInspectedFailure(null); setActiveRelationId(current => current === relation.id ? null : relation.id); }}>
             {labelRelation(relation)}{(relation.kind === 'distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size' || relation.kind === 'line-angle') && <span>{relationQuantity(relation.value, parameters, relation.kind === 'line-angle' ? 'deg' : 'mm')}</span>}
             {relation.kind === 'reference-dimension' && <span>({referenceValue(relation)})</span>}
             {relation.kind === 'chamfer-corner' && <span>{relation.values.map(value => relationQuantity(value, parameters)).join(' / ')}</span>}
-          </Button><Button type="button" aria-label={relation.kind === 'external-reference' ? 'Detach reference' : `Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title={relation.kind === 'external-reference' ? 'Detach this source link and retain the current geometry' : 'Remove this relation and retain the current geometry'} onClick={() => removeRelation(relation.id)}><CloseIcon size={12} /></Button>
+          </Button><Button type="button" aria-label={relation.kind === 'linear-pattern' ? 'Detach pattern' : relation.kind === 'external-reference' ? 'Detach reference' : `Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title={relation.kind === 'linear-pattern' ? 'Detach all occurrences and retain their current geometry' : relation.kind === 'external-reference' ? 'Detach this source link and retain the current geometry' : 'Remove this relation and retain the current geometry'} disabled={relation.kind === 'linear-pattern' && (pending || !onEditPattern)} onClick={() => { if (relation.kind === 'linear-pattern') onEditPattern?.(relation.id,true); else removeRelation(relation.id); }}><CloseIcon size={12} /></Button>
         </li>)}</ul>;
   return <form className="cad-property-form cad-sketch-profile-panel" aria-label="Sketch relations" aria-busy={submission.applying || undefined}
     onKeyDown={event => { if (event.key === 'Escape' && pending && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); reset(); } }}
@@ -441,6 +448,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       {!move && linePair && <CadContextHelp label="Line pair relations">Angle drives the displayed corner in degrees. Parallel keeps directions aligned; Perpendicular keeps a right angle. Equal length keeps finite lengths equal. Lines may share a joint or be separate; construction lines also work. Existing drivers stay in force.</CadContextHelp>}
       {!move && curvePair && <CadContextHelp label="Equal radius">Keeps the actual radii of these circles or arcs equal. Arc sweep and position remain independent. Add a radius or diameter dimension to control their shared size; two free curves still have a size freedom. Existing drivers stay in force.</CadContextHelp>}</div>
     <fieldset key={resetVersion} className="cad-feature-fields" disabled={interactionLocked || submission.applying}>
+      {selectedPattern && <div className="cad-sketch-profile-actions"><span>{selectedPattern.index === 0 ? 'Pattern seed' : `Pattern occurrence ${selectedPattern.index + 1}`}</span><Button type="button" disabled={pending || !onEditPattern} onClick={() => onEditPattern?.(selectedPattern.relation.id)}>Edit pattern</Button>{selectedPattern.index > 0 && <Button type="button" disabled={pending || !onSelectPatternSeed} onClick={() => onSelectPatternSeed?.(selectedPattern.relation.seed.entityId)}>Select seed</Button>}<CadContextHelp label="Pattern ownership">Copies follow the seed and pitch. Edit the pattern to omit or restore copies; detach before moving or resizing one independently.</CadContextHelp></div>}
       {!pending && sketch.graph && <CadSketchSelectionMeasurements graph={sketch.graph} parameters={cadDocument.parameters} selection={selection} pointPair={pointRoles} />}
       {selectedReference && <div className="cad-sketch-profile-heading"><LinkIcon size={13} /><span className="min-w-0 truncate">{referenceSourceName}</span>
         <CadContextHelp label="Linked reference">This construction edge follows its source sketch. Its position and size are read-only; use it for snaps or to constrain other geometry. Detach retains the current shape and local relations.</CadContextHelp>
@@ -456,14 +464,14 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
           disabled={Boolean(selectedReference)} title={referenceLock ?? undefined} checked={draft.relations.some(relation => relation.kind === kind && samePair(relation, dimensionPair))} onChange={event => toggleLineAxis(kind, event.target.checked)} />{kind === 'horizontal' ? 'Horizontal' : 'Vertical'}</label>)}
         <Button type="button" title={referenceLock ?? undefined} disabled={Boolean(selectedReference) || draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, dimensionPair))} onClick={() => addLength()}><MeasureIcon size={13} /> Add length</Button>
       </div>}
-      {pointPair && <div className="cad-sketch-profile-actions cad-sketch-pair-actions">
+      {pointPair && !patternLock && <div className="cad-sketch-profile-actions cad-sketch-pair-actions">
         {(['coincident', 'horizontal', 'vertical'] as const).map(kind => <label key={kind} className="cad-check"><Input type="checkbox" aria-label={kind[0].toUpperCase() + kind.slice(1)}
           title={kind === 'coincident' ? 'Keeps the selected points together as a shared sketch joint.' : undefined}
           checked={draft.relations.some(relation => relation.kind === kind && samePair(relation, pointPair))} onChange={event => togglePairRelation(kind, event.target.checked)} />{kind[0].toUpperCase() + kind.slice(1)}</label>)}
         <Button type="button" autoFocus={initialCommand?.kind === 'point-dimensions'} onClick={() => addLength()}><MeasureIcon size={13} /> Aligned distance</Button>
         {(['x', 'y'] as const).map(axis => <Button type="button" key={axis} onClick={() => addLength(axis)}><MeasureIcon size={13} />{axis === 'x' ? 'Horizontal distance' : 'Vertical distance'}</Button>)}
       </div>}
-      {pointLine && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label="Midpoint"
+      {pointLine && !patternLock && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label="Midpoint"
         checked={draft.relations.some(relation => relation.kind === 'midpoint' && relation.pointId === pointLine.pointId && relation.lineId === pointLine.lineId)}
         onChange={event => toggleMidpoint(event.target.checked)} />Midpoint</label></div>}
       {linePair && <div className="cad-sketch-profile-actions cad-sketch-pair-actions">
@@ -478,14 +486,14 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         <Button type="button" disabled={Boolean(orientationOwner)} title={orientationOwner ? `Remove ${relationLabel(orientationOwner)} before adding Angle.` : 'Drive the actual corner angle'} onClick={addAngle}><MeasureIcon size={13} /> {angleOwner ? 'Edit angle' : 'Add angle'}</Button>
       </div>}
       {choosingAngle && angleChoices && <CadSketchAngleSectors sectors={angleChoices} onChoose={relation => { changeRelation(relation); setActiveRelationId(relation.id); setChoosingAngle(false); }} />}
-      {centerPair && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label="Concentric"
+      {centerPair && !patternLock && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label="Concentric"
         checked={sharedCenter || Boolean(centerRelation)} disabled={sharedCenter} title={sharedCenter ? 'These centers already share a point or connected coincidence relations.' : undefined}
         onChange={event => togglePairRelation('coincident', event.target.checked, centerPair)} />Concentric</label>
         <CadContextHelp label="Concentric">Aligns arc and circle centers independently of their sizes. Existing dimensions remain in force; free geometry follows the sketch constraints. Uses a coincidence between their exact center points. Centers that already share a point or connecting relations remain concentric; edit those relations to change the connection.</CadContextHelp></div>}
-      {entityPair && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label={linePair ? 'Equal length' : 'Equal radius'}
+      {entityPair && !patternLock && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label={linePair ? 'Equal length' : 'Equal radius'}
         checked={draft.relations.some(relation => relation.kind === (linePair ? 'equal-length' : 'equal-radius') && sameEntityPair(relation, entityPair))}
         onChange={event => toggleEntityPairRelation(linePair ? 'equal-length' : 'equal-radius', event.target.checked)} />{linePair ? 'Equal length' : 'Equal radius'}</label></div>}
-      {selectedEntity && selectedEntity.kind !== 'line' && !radialOwner && !selectedReference && <div className="cad-sketch-profile-actions">
+      {selectedEntity && selectedEntity.kind !== 'line' && !radialOwner && !selectedReference && !patternLock && <div className="cad-sketch-profile-actions">
         <Button type="button" disabled={selectedEntity.kind === 'circle' && typeof selectedEntity.radius === 'string'}
           title={selectedEntity.kind === 'circle' && typeof selectedEntity.radius === 'string' ? 'Radius already follows an expression. Edit or release it with fx.' : 'Add a driving radial dimension'} onClick={addRadialSize}>
           <MeasureIcon size={13} /> {acceptedRadial ? 'Restore' : 'Add'} {acceptedRadial?.quantity ?? (selectedEntity.kind === 'circle' ? 'diameter' : 'radius')}
@@ -495,8 +503,8 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         const fixed = draft.relations.some(relation => relation.kind === 'fixed-point' && relation.pointId === selectedPoint.id);
         const own = draft.relations.some(relation => relation.kind === 'fixed-axis' && relation.pointId === selectedPoint.id && relation.axis === axis);
         const driven = typeof selectedPoint.position[axis === 'x' ? 0 : 1] === 'string';
-        return <label key={axis} className="cad-check"><Input type="checkbox" aria-label={`Fix ${axis.toUpperCase()}`} checked={fixed || own || driven || Boolean(selectedReference)} disabled={fixed || driven || Boolean(selectedReference)}
-          title={referenceLock ?? (fixed ? 'Remove the fixed-point relation to release either axis.' : driven ? 'This coordinate already follows an exact expression.' : undefined)} onChange={event => togglePointAxis(axis, event.target.checked)} />Fix {axis.toUpperCase()}</label>;
+        return <label key={axis} className="cad-check"><Input type="checkbox" aria-label={`Fix ${axis.toUpperCase()}`} checked={fixed || own || driven || Boolean(selectedReference)} disabled={fixed || driven || Boolean(selectedReference) || Boolean(patternLock)}
+          title={patternLock ?? referenceLock ?? (fixed ? 'Remove the fixed-point relation to release either axis.' : driven ? 'This coordinate already follows an exact expression.' : undefined)} onChange={event => togglePointAxis(axis, event.target.checked)} />Fix {axis.toUpperCase()}</label>;
       })}</div>}
       <CadScalarEditContext.Provider value={scalarContext}>
         {corner?.kind === 'fillet' && <ScalarField fieldKey="corner/value" label="Fillet radius" value={corner.radius} parameters={parameters} onChange={radius => setGeometryDraft({ kind: 'fillet', radius })} />}
@@ -507,7 +515,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
             setError(null); setDraft(current => ({ ...current, points: current.points.map(point => point.id === selectedPoint.id
               ? { ...point, position: axis === 'x' ? [value, point.position[1]] : [point.position[0], value] } : point) }));
           }} /> : null)}
-        {selectedEntity?.kind === 'circle' && !radialOwner && !selectedReference && <ScalarField fieldKey="radius" label="Radius" value={selectedEntity.radius} parameters={parameters} onChange={radius => {
+        {selectedEntity?.kind === 'circle' && !radialOwner && !selectedReference && !patternLock && <ScalarField fieldKey="radius" label="Radius" value={selectedEntity.radius} parameters={parameters} onChange={radius => {
           setError(null); setDraft(current => ({ ...current, entities: current.entities.map(entity => entity.id === selectedEntity.id && entity.kind === 'circle' ? { ...entity, radius } : entity) }));
         }} />}
         {!corner && relations.length > 0 && (relations.length > 4

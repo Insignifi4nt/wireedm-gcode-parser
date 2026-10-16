@@ -4,6 +4,7 @@ import { CadSketchGraphIssueSchema, CadSketchGraphSchema, checkCadSketchGraph, p
 import { CadIdentifierSchema, CadNumberSchema } from '../../../domain/cad/cadPrimitives';
 import { isCadImportData } from '../../../domain/cad/cadImportData';
 import { cadSketchExternalReferenceComponents } from '../../../domain/cad/cadSketchExternalReferences';
+import { cadSketchLinearPatternLockReason } from '../../../domain/cad/cadSketchLinearPattern';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
 
 const inputSchema = Type.Object({ graph: CadSketchGraphSchema, parameters: Type.Record(Type.String(), CadNumberSchema),
@@ -29,6 +30,7 @@ export function parseCadSketchSolveInput(value: unknown): CadSketchSolveInput {
   const graph = parseCadSketchGraph(value.graph);
   if (value.drag && !graph.points.some(point => point.id === value.drag?.pointId)) throw new Error('The sketch drag point does not exist.');
   if (value.drag && cadSketchExternalReferenceComponents(graph).pointIds.has(value.drag.pointId)) throw new Error('Detach the sketch reference before dragging its geometry.');
+  if (value.drag && cadSketchLinearPatternLockReason(graph, { kind: 'point', id: value.drag.pointId })) throw new Error('Edit the seed or detach the linear pattern before dragging generated geometry.');
   return Object.freeze({ graph, parameters: Object.freeze({ ...value.parameters }), ...(value.drag ? { drag: Object.freeze({ pointId: value.drag.pointId,
     position: Object.freeze([value.drag.position[0], value.drag.position[1]] satisfies [number, number]) }) } : {}) });
 }

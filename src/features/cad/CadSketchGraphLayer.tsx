@@ -16,6 +16,7 @@ import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmis
 import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { cadSketchGeometryPickAllows, type CadSketchGeometryPick, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import type { CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
+import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
 
 type Prepared = ReturnType<typeof prepareCadSketchGraphInteraction>;
@@ -27,6 +28,8 @@ export interface CadSketchGraphControls {
   readonly degreesOfFreedom?: number | null;
   readonly showDimensions?: boolean;
   readonly geometryPick?: CadSketchGeometryPick;
+  readonly patternInteraction?: import('./CadSketchLinearPatternEditor').CadSketchLinearPatternInteraction;
+  onEditPattern?(relationId: string): void;
   onSelect(selection: CadSketchGraphSelection | null, additive?: boolean): void;
   onSelectSet?(selections: readonly CadSketchGraphSelection[]): void;
   onDelete?(selection: CadSketchGraphSelection): void;
@@ -237,8 +240,8 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
       const original = sourcePoints.get(point.id) ?? point;
       // Numeric coordinates allow a move request; they do not establish this point's freedom.
       const coordinateDriven = !original.freeAxes.some(Boolean), canRequestMove = controls.degreesOfFreedom !== 0 && !coordinateDriven;
-      const movementHint = coordinateDriven ? 'Coordinates follow dimensions or expressions' : controls.degreesOfFreedom === 0
-        ? 'Fully constrained by dimensions and relations' : `Movement follows dimensions and relations${original.freeAxes.every(Boolean) ? '' : ` · ${original.freeAxes[0] ? 'Y' : 'X'} coordinate is driven`}`;
+      const movementHint = cadSketchLinearPatternLockReason(prepared.graph, {kind:'point',id:point.id}) ?? (coordinateDriven ? 'Coordinates follow dimensions or expressions' : controls.degreesOfFreedom === 0
+        ? 'Fully constrained by dimensions and relations' : `Movement follows dimensions and relations${original.freeAxes.every(Boolean) ? '' : ` · ${original.freeAxes[0] ? 'Y' : 'X'} coordinate is driven`}`);
       const pointInteractive = pointsInteractive && (!controls.geometryPick || controls.geometryPick.eligiblePointIds.includes(point.id));
       const referenceCorner = referenceCorners.has(point.id), x = point.position[0] - center[0], y = point.position[1] - center[1];
       const snapTarget = snapCandidate?.target;

@@ -34,3 +34,14 @@
 .cad-sketch-relations-disclosure { margin-bottom: 10px; }
 .cad-sketch-relations-disclosure > summary { cursor: pointer; padding: 6px 0; font-size: 10px; }
 .cad-sketch-relations-disclosure > summary span { margin-left: 5px; font-variant-numeric: tabular-nums; }
+
+.cad-sketch-pattern-preview { fill: none; stroke: var(--cad-accent); }
+.cad-sketch-pattern-axis { opacity: .55; }
+.cad-sketch-pattern-seed { stroke-width: 2; vector-effect: non-scaling-stroke; }
+.cad-sketch-pattern-instance { cursor: pointer; outline: none; }
+.cad-sketch-pattern-instance-hit { stroke: transparent; fill: transparent; pointer-events: all; }
+.cad-sketch-pattern-ghost { opacity: .65; pointer-events: none; }
+.cad-sketch-pattern-index { fill: var(--card); stroke: var(--border); }
+.cad-sketch-pattern-instance text { fill: var(--foreground); stroke: none; pointer-events: none; }
+.cad-sketch-pattern-instance:hover .cad-sketch-pattern-index, .cad-sketch-pattern-instance:focus-visible .cad-sketch-pattern-index { stroke: var(--cad-accent); }
+.cad-sketch-pattern-instance.is-omitted .cad-sketch-pattern-index { fill: var(--background); stroke-dasharray: 2 2; }

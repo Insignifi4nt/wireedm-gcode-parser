@@ -173,7 +173,19 @@ export class CadSketchEditDraft {
     const snapshot = this.local.getSnapshot(), candidate = snapshot.document;
     this.assertOwnedPrefix(candidate);
     const edits = this.parameterEdits(candidate);
-    for (const [index, feature] of candidate.features.entries()) if (!same(feature, this.initialDocument.features[index])) edits.push({ kind: 'update-feature', feature });
+    for (const [index, feature] of candidate.features.entries()) {
+      const original = this.initialDocument.features[index];
+      if (same(feature, original)) continue;
+      if (original.kind === 'sketch' && feature.kind === 'sketch') for (const relation of original.graph?.relations ?? []) {
+        if (relation.kind !== 'linear-pattern') continue;
+        const retained = feature.graph?.relations.find(value => value.id === relation.id);
+        // The trusted private draft already performed this explicit release. Replay
+        // the ownership boundary before publishing later independent member edits.
+        if (retained?.kind !== 'linear-pattern' || retained.idPrefix !== relation.idPrefix || !same(retained.seed, relation.seed))
+          edits.push({ kind: 'remove-sketch-relation', sketchId: feature.id, relationId: relation.id });
+      }
+      edits.push({ kind: 'update-feature', feature });
+    }
     const repaired = new Set<string>();
     for (const edit of structuredClone(consumerRepairs)) {
       if (edit.kind !== 'update-feature' || edit.feature.kind !== 'extrude' && edit.feature.kind !== 'pocket') throw scopeError();

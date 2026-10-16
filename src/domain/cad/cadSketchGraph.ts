@@ -6,6 +6,7 @@ import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
+import { validateCadSketchLinearPattern, checkCadSketchLinearPattern } from './cadSketchLinearPattern';
 import type { Point2 } from '@/domain/path-intel/types';
 import { cadSketchEntityPointIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
 import { checkCadSketchCornerRelation, resolveCadSketchCornerTopology } from './cadSketchCornerGeometry';
@@ -30,6 +31,10 @@ export const CadSketchGraphSchema = Type.Object({
     Type.Object({ ...entity, kind: Type.Literal('circle'), centerPointId: id, radius: CadScalarSchema }, strict)
   ])),
   relations: Type.Array(Type.Union([
+    Type.Object({ id, kind: Type.Literal('linear-pattern'), seed: Type.Object({ kind: Type.Literal('circle'), entityId: id, centerPointId: id }, strict),
+      idPrefix: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' }), direction: Type.Union((['+x', '-x', '+y', '-y'] as const).map(direction => Type.Literal(direction))),
+      count: Type.Integer({ minimum: 1, maximum: 32 }), spacing: CadScalarSchema,
+      omittedInstances: Type.Array(Type.Integer({ minimum: 1, maximum: 31 }), { uniqueItems: true, maxItems: 31 }) }, strict),
     Type.Object({ id, kind: Type.Literal('reference-dimension'), measurement: Type.Union([
       Type.Object({ kind: Type.Literal('line-length'), entityId: id }, strict),
       Type.Object({ kind: Type.Literal('point-distance'), pointIds: pair }, strict),
@@ -61,6 +66,7 @@ export type CadSketchGraph = Immutable<Static<typeof CadSketchGraphSchema>>;
 export type CadSketchGraphPoint = CadSketchGraph['points'][number];
 export type CadSketchGraphEntity = CadSketchGraph['entities'][number];
 export type CadSketchGraphRelation = CadSketchGraph['relations'][number];
+export type CadSketchLinearPattern = Extract<CadSketchGraphRelation, { kind: 'linear-pattern' }>;
 export type CadSketchReferenceDimension = Extract<CadSketchGraphRelation, { kind: 'reference-dimension' }>;
 export type CadSketchExternalReference = Extract<CadSketchGraphRelation, { kind: 'external-reference' }>;
 export type CadSketchCornerRelation = Extract<CadSketchGraphRelation, { kind: 'fillet-corner' | 'chamfer-corner' }>;
@@ -98,6 +104,7 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   };
   for (const item of graph.entities) references(item.id, cadSketchEntityPointIds(item));
   for (const item of graph.relations) {
+    if (item.kind === 'linear-pattern') validateCadSketchLinearPattern(graph, item);
     if (item.kind === 'reference-dimension') resolveCadSketchReferenceDimension(graph, item);
     if (item.kind === 'external-reference') validateCadSketchExternalReference(graph, item);
     if (item.kind === 'fillet-corner' || item.kind === 'chamfer-corner') resolveCadSketchCornerTopology(graph, item);
@@ -156,6 +163,7 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
   for (const relation of graph.relations) {
     const source = { kind: 'relation', id: relation.id } as const;
     try {
+      if (relation.kind === 'linear-pattern') { issues.push(...checkCadSketchLinearPattern(graph, parameters, relation)); continue; }
       if (relation.kind === 'reference-dimension') continue; // Passive intent; geometry checks above remain authoritative.
       if (relation.kind === 'external-reference') {
         try { validateCadSketchExternalReference(graph, relation); }

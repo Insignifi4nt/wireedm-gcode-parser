@@ -1,3 +1,4 @@
+import { circleRowPart, rowSketch } from '@/domain/cad/__tests__/cadSketchLinearPatternFixtures';
 import { act, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { AppRailProvider, useAppRail } from '@/app/AppRailContext';
 import { createRoot, type Root } from 'react-dom/client';
@@ -1947,4 +1948,45 @@ describe('CAD sketch interaction', () => {
     expect(sketch.kind === 'sketch' && sketch.profiles[0]).toMatchObject({ name: 'Renamed contour', geometry });
     expect(measureCadSketch(currentDocument, 'path-sketch').materialAreaMm2).toBeCloseTo(Math.PI * 50, 6);
   });
+});
+
+
+it('owns circle-row preview, Cancel, copy omission and detach through the contextual sketch command', async () => {
+  const initial=circleRowPart(true); await mount(initial);
+  await act(async()=>viewport().apply({kind:'edit-sketch',sketchId:'sketch'}));
+  await act(async()=>viewport().apply({kind:'select-sketch-geometry',selection:{kind:'entity',id:'seed'}}));
+  await click('Pattern'); await click('Linear pattern');
+  await input(field('Pitch'),'15');
+  const occurrence=()=>container.querySelector<SVGGElement>('[data-cad-pattern-instance="2"]')!;
+  await act(async()=>occurrence().dispatchEvent(new MouseEvent('click',{bubbles:true})));
+  expect(occurrence().getAttribute('aria-checked')).toBe('false'); expect(currentDocument).toBe(initial);
+  await click('Cancel'); expect(currentDocument).toBe(initial);
+  await click('Pattern'); await click('Linear pattern'); await input(field('Pitch'),'15'); await click('Apply');
+  let row=rowSketch(currentDocument),owner=row.graph.relations.find(r=>r.kind==='linear-pattern');
+  if(owner?.kind!=='linear-pattern')throw Error('Missing owner');
+  expect(owner).toMatchObject({count:4,spacing:15,direction:'+x',omittedInstances:[]});
+  const member=owner.idPrefix+'_i2_e0';
+  await act(async()=>viewport().apply({kind:'select-sketch-geometry',selection:{kind:'entity',id:member}}));
+  expect(button('Move selection').disabled).toBe(true);
+  const construction=container.querySelector<HTMLInputElement>('.cad-sketch-options input');expect(construction?.disabled).toBe(true);
+  await click('Edit pattern'); await act(async()=>occurrence().dispatchEvent(new MouseEvent('click',{bubbles:true}))); await click('Apply');
+  row=rowSketch(currentDocument); expect(row.graph.entities.some(e=>e.id===member)).toBe(false);
+  await click('Edit pattern'); expect(occurrence().getAttribute('aria-checked')).toBe('false');
+  await act(async()=>occurrence().dispatchEvent(new MouseEvent('click',{bubbles:true})));await click('Apply');
+  row=rowSketch(currentDocument);expect(row.graph.entities.some(e=>e.id===member)).toBe(true);
+  const linked=row.graph; await click('Detach pattern'); expect(field('Pitch').matches(':disabled')).toBe(true);await click('Apply');
+  row=rowSketch(currentDocument);expect(row.graph.relations).toEqual([]);expect(row.graph.entities).toEqual(linked.entities);expect(row.graph.points).toEqual(linked.points);
+  await act(async()=>viewport().apply({kind:'select-sketch-geometry',selection:{kind:'entity',id:member}})); expect(button('Move selection').disabled).toBe(false);
+});
+
+
+it('keeps a linked Use endpoint available as the first Dimension point and as a fixed point-pair anchor',async()=>{
+  const base=parseCadDocument({...createCadDocument(),schemaVersion:2,features:[
+    {id:'layout',kind:'sketch',name:'Layout',plane:'XY',offset:0,suppressed:false,profiles:[],graph:{points:[{id:'a',position:['0','0']},{id:'b',position:['20','0']}],entities:[{id:'edge',kind:'line',construction:true,startPointId:'a',endPointId:'b'}],relations:[]}},
+    {id:'target',kind:'sketch',name:'Target',plane:'XY',offset:0,suppressed:false,profiles:[],graph:{points:[{id:'o',position:[10,8]}],entities:[{id:'hole',kind:'circle',centerPointId:'o',radius:'2',construction:false}],relations:[]}}]});
+  const source=applyCadEdits(base,[{kind:'use-sketch-entity',sketchId:'target',sourceSketchId:'layout',sourceEntityId:'edge',idPrefix:'guide'}]);await mount(source);
+  await act(async()=>viewport().apply({kind:'edit-sketch',sketchId:'target'}));await act(async()=>viewport().apply({kind:'select-sketch-geometry',selection:{kind:'point',id:'guide_p0'}}));
+  expect(button('Dimension').disabled).toBe(false);await click('Dimension');
+  const target=container.querySelector<SVGGElement>('[data-cad-sketch-point="o"]')!;await act(async()=>target.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));
+  expect(button('Horizontal distance').disabled).toBe(false);expect(button('Vertical distance').disabled).toBe(false);expect(currentDocument).toBe(source);
 });

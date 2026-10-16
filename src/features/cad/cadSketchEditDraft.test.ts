@@ -471,3 +471,24 @@ describe('owned consumed-sketch draft', () => {
     await expect(pending).rejects.toThrow(); expect(draft.getSnapshot()).toBe(retained); expect(main.getSnapshot()).toBe(base);
   });
 });
+
+// A private Finish publishes snapshots; explicit owner release must precede later independent member edits.
+it.each(['move', 'delete'] as const)('finishes a deliberate pattern detach followed by member %s without weakening shared snapshot guards', async action => {
+  const initial = await prepare(source(), [
+    { kind: 'append-sketch-entities', sketchId: 'sketch', geometry: { points: [{ id: 'seed_center', position: ['3', '5'] }],
+      entities: [{ id: 'seed', kind: 'circle', centerPointId: 'seed_center', radius: ' 1.5 ', construction: false }], relations: [] } },
+    { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'holes', kind: 'linear-pattern',
+      seed: { kind: 'circle', entityId: 'seed', centerPointId: 'seed_center' }, idPrefix: 'row', direction: '+x', count: 3, spacing: ' 5.00 ', omittedInstances: [] } }
+  ]);
+  const main = new CadSession(initial), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+  const detach: CadEdit = { kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'holes' };
+  await draft.editPrepared([detach], prepare);
+  const edit: CadEdit = action === 'move' ? { kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'row_i1_p0', translation: [0, 1] }
+    : { kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: ['row_i1_p0'], entityIds: ['row_i1_e0'], relationIds: [], cascade: false };
+  await draft.editPrepared([edit], prepare);
+  const local = sketchOf(draft.getSnapshot().document), finish = draft.finishEdits(base);
+  expect(finish.edits[0]).toEqual(detach); expect(main.getSnapshot()).toBe(base);
+  await main.editPrepared(base.version, document => prepare(document, finish.edits));
+  expect(sketchOf(main.getSnapshot().document)).toEqual(local); expect(main.getSnapshot().document.features.slice(1)).toEqual(base.document.features.slice(1));
+  main.undo(); expect(main.getSnapshot().document).toEqual(base.document); draft.cancel();
+});

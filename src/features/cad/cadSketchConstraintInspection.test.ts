@@ -1,3 +1,4 @@
+import { circleRow, circleRowPart } from '@/domain/cad/__tests__/cadSketchLinearPatternFixtures';
 // @vitest-environment node
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
@@ -293,4 +294,17 @@ describe('accepted sketch constraint inspection', () => {
     expect(new TextEncoder().encode(JSON.stringify(summary)).byteLength).toBeLessThan(8 * 1024);
     expect(inspection.analysis.diagnostics.conflictingIds).toEqual(ids);
   });
+});
+
+
+it('exposes actual pattern ownership and stable omitted mappings without changing accepted source',async()=>{
+  const document=applyCadEdits(circleRowPart(),[{kind:'set-sketch-relation',sketchId:'sketch',relation:{...circleRow,omittedInstances:[2]}}]);
+  const exact=JSON.stringify(document), inspection=await inspectCadSketchConstraints(document,'sketch',async()=>solver);
+  expect(inspection.analysis).toMatchObject({kind:'solved',diagnostics:{degreesOfFreedom:0}});
+  const rows=pageCadSketchConstraints(inspection,{section:'entities'}).items;
+  expect(rows.find(row=>'source'in row&&row.source.id==='seed')).toMatchObject({pattern:{relationId:'row',index:0,seedEntityId:'seed',role:'seed'}});
+  expect(rows.find(row=>'source'in row&&row.source.id==='holes_i3_e0')).toMatchObject({pattern:{relationId:'row',index:3,seedEntityId:'seed',role:'generated'},radius:{valueMm:3}});
+  const owner=pageCadSketchConstraints(inspection,{section:'relations'}).items[0];
+  expect(owner).toMatchObject({source:{id:'row'},pattern:{count:4,direction:'+x',pitch:{scalar:' pitch ',valueMm:15,role:'expression-driver'},instances:expect.arrayContaining([{index:2,pointId:'holes_i2_p0',entityId:'holes_i2_e0',inRange:true,omitted:true,active:false}])}});
+  expect(JSON.stringify(document)).toBe(exact);
 });

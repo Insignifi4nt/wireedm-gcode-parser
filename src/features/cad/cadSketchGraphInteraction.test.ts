@@ -1,3 +1,4 @@
+import { circleRow, circleRowPart, rowSketch } from '@/domain/cad/__tests__/cadSketchLinearPatternFixtures';
 import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchFeature } from '@/domain/cad/cadDocument';
@@ -230,5 +231,21 @@ describe('stable sketch point and entity interaction', () => {
     expect(cadSketchGraphPointTranslation(prepared.points[1], [20, 12])).toEqual([0, 0]);
     expect(cadSketchGraphPointTranslation(prepared.points[2], [20, 12])).toEqual([0, 3]);
     expect(graph.points[0].position).toEqual([' offset ', 7]);
+  });
+});
+
+
+describe('pattern copy interaction ownership', () => {
+  it('keeps copies selectable but locks their center and radius grips until detach, while the free seed stays movable', () => {
+    const document = applyCadEdits(circleRowPart(true), [{kind:'set-sketch-relation', sketchId:'sketch',relation:circleRow}]);
+    const sketch = rowSketch(document), view = prepareCadSketchGraphInteraction(sketch.graph, document.parameters);
+    expect(view.points.find(p=>p.id==='center')?.freeAxes).toEqual([true,true]);
+    expect(view.points.find(p=>p.id==='holes_i1_p0')?.freeAxes).toEqual([false,false]);
+    expect(cadSketchGraphCircleControl(sketch.graph,document.parameters,'holes_i1_e0').lockedReason).toContain('pattern');
+    expect(()=>cadSketchGraphCircleRadiusEdit(sketch,document.parameters,'holes_i1_e0',4)).toThrow();
+    expect(view.pick([28,10],.1,'edges')).toContainEqual({kind:'entity',id:'holes_i1_e0'});
+    const detached=applyCadEdits(document,[{kind:'remove-sketch-relation',sketchId:'sketch',relationId:'row'}]), independent=rowSketch(detached);
+    expect(prepareCadSketchGraphInteraction(independent.graph,detached.parameters).points.find(p=>p.id==='holes_i1_p0')?.freeAxes).toEqual([true,true]);
+    expect(cadSketchGraphCircleControl(independent.graph,detached.parameters,'holes_i1_e0').lockedReason).toBeNull();
   });
 });
