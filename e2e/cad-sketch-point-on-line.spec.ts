@@ -18,7 +18,7 @@ test('slides a bore on an angled guide, locates it and follows guide edits throu
   await edit();await pick('point','center');await pick('entity','guide',true);await page.getByRole('checkbox',{name:'Point on line',exact:true}).check();
   await page.getByRole('button',{name:'Cancel',exact:true}).click();expect(await read(base.version)).toEqual(sketch);
   await page.getByRole('checkbox',{name:'Point on line',exact:true}).check();await apply();
-  await pick('point','center');const marker=page.locator('[data-cad-sketch-point="center"] .cad-sketch-point-mark'),box=await marker.boundingBox();if(!box)throw Error('Missing bore grip');
+  const marker=page.locator('[data-cad-sketch-point="center"] .cad-sketch-point-mark'),box=await marker.boundingBox();if(!box)throw Error('Missing bore grip');
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+80,box.y+box.height/2-60,{steps:5});await page.mouse.up();
   const position=()=>marker.evaluate(el=>{const origin=el.closest('svg')?.querySelector('[data-cad-sketch-point="guide-a"] .cad-sketch-point-mark');if(!origin)throw Error('Missing guide origin');return ['cx','cy'].map(axis=>Number(el.getAttribute(axis))-Number(origin.getAttribute(axis)));});
   await expect.poll(async()=>{const p=await position();return Math.abs(p[1]-p[0]/2);}).toBeLessThan(1e-9);

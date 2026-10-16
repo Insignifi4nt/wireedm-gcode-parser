@@ -255,7 +255,7 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
           event.stopPropagation(); if (event.isPrimary === false || drag.current || !interactive) return;
           event.preventDefault(); focusTarget(event.currentTarget, target); choose(target, event.shiftKey);
           if (controls.geometryPick || target.kind !== 'point' || target.id !== point.id) return;
-          if (event.shiftKey || controls.selection.length > 1 || !canRequestMove) return;
+          if (event.shiftKey || !canRequestMove) return; // A plain pick above replaces the old set with this point.
           callbacks.current.onPendingChange(true);
           drag.current = { kind: 'point', point: original, pointerId: event.pointerId, element: event.currentTarget, clientX: event.clientX, clientY: event.clientY, step: gridStep, snap, scaleX, scaleY,
             prepared, cursor: original.position, suppressed: event.ctrlKey || event.metaKey, moved: false, translation: [0, 0], candidate: null };

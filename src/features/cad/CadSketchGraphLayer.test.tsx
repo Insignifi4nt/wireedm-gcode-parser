@@ -328,18 +328,22 @@ describe('graph point interaction ownership', () => {
     expect(h.parentPointer).not.toHaveBeenCalled();
   });
 
-  it('highlights the complete set and requires a singleton before a point gesture can move geometry', async () => {
+  it('replaces a selected set and drags only the clicked point in the same gesture', async () => {
     const h = await fixture();
     await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }] } });
     expect(h.point('a').getAttribute('aria-pressed')).toBe('true');
     expect(h.point('b').getAttribute('aria-pressed')).toBe('true');
     await h.key(h.point('b'), 'ArrowRight');
+    expect(h.edited).not.toHaveBeenCalled();
     await h.pointer(h.point('b'), 'pointerdown');
+    expect(h.capture).toHaveBeenCalledExactlyOnceWith('b',11);
+    await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'point', id: 'b' }] } });
     await h.pointer(h.point('b'), 'pointermove', { clientX: 150 });
     await h.pointer(h.point('b'), 'pointerup', { clientX: 150 });
     expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: 'b' });
-    expect(h.capture).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
-    await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'point', id: 'b' }] } });
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'b', translation: [50, 0] }], expect.any(AbortSignal));
+    expect(h.document.features[0]).toMatchObject({graph:{points:[{id:'a',position:[0,0]},{id:'b',position:[10,5]},{id:'mixed',position:[' x ',7]}]}});
+    h.edited.mockClear();
     await h.key(h.point('b'), 'ArrowRight');
     expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'b', translation: [5, 0] }], expect.any(AbortSignal));
   });

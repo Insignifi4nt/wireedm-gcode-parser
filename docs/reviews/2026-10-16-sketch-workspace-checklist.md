@@ -17,6 +17,12 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: single-gesture point movement
+
+The guided-bore native walkthrough reproduced a plain drag being discarded solely because the preceding selection contained several items. Updated the existing mounted behavior test first; it fails on missing pointer capture. Removing that old selection-count guard retains Shift-only selection, exact set Move, source/pending ownership and all existing movement constraints. Both interaction suites pass82 cases. The strengthened complete guided-bore journey now drags directly from the point+guide selection and passes Chromium/Firefox, including private Finish, native Pad, exact history, agent parity and save/reload. Production/docs/source packaging passes; this boolean guard changes no types or saved contract.
+
+One native drag from the mixed selection moves the constrained center[20.581377674149945,10.29068883707497]→[30,15], retaining all other point records, entities and relations exactly. One Undo restores the complete original. Temporary draft restored empty/closed without Save. Proof: tmp/sketch-point-single-gesture-native{-proof.json,.png}; screenshot records the drag preview. No schema, solver/native/tolerance, version or remote change. The remaining sketch audit is still open.
+
 ## Checkpoint: sliding point on line
 
 Point on line now uses the ordinary point+line relation editor and guarded API. It retains one sliding freedom on the infinite support, without endpoint identity, midpoint, radius or coordinate drivers. Shared source/dependency/owner checks, one existing native equation and an independent physical residual preserve exact source and linked authority. The bounded five-solve prereq,38 foundation checks and124 integration checks pass, plus full types/build/docs/source/shared controls. Independent review is clean after correcting an overbroad size-help claim.
