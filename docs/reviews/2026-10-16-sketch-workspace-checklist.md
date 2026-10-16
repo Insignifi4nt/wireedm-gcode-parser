@@ -17,6 +17,12 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: measurement scope and agent body identity
+
+Circle Trim is accepted local checkpoint `9947e31`. Its native walkthrough exposed an ambiguous measurement heading: whole-sketch automatic material can be zero while deliberate intersecting areas remain usable. The shared card/help now names that scope; all four existing numeric display/mapping checks pass (`tmp/sketch-measurement-scope.log`), without new copy tests or altered math/API behavior. Native section authoring also exposed an unclear body identity handoff: the build description/public agent guide now explicitly map each `bodies[].featureId` to downstream `bodyId`, without changing fields or validation.
+
+Full build/types/docs/source distributions and shared UI checks pass (`tmp/sketch-measurement-scope-{build,ui-standard}.log`). A fresh native browser verifies the heading/help on the original intersecting circle/chord case and the build mapping through actual WebMCP discovery. Proof: `tmp/sketch-measurement-scope.png`. Its disposable source is undone to an empty baseline and the tab is closed, without saving user records. No migration, release bump or remote action. Middle-arc Trim is the next bounded plan, gated on native preflight before implementation; sketch mode and the goal remain incomplete.
+
 ## Checkpoint: circle span Trim
 
 Midpoint is local checkpoint `bbdefd4`. The [reviewed circle Trim plan](2026-10-16-sketch-circle-trim-plan.md) extends the existing pointer-owned Trim command to a free numeric-radius graph circle. Two real transverse contacts bound the removed span; the complementary analytic arc keeps the original entity and center identities. Drivers remain explicit, ambiguous contacts reject, and consumed selections require deliberate repair. No new standalone tool, sampled geometry, constraint transfer or precision change.
