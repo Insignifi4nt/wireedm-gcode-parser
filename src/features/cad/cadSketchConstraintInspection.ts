@@ -1,5 +1,6 @@
 import type { CadDocument, CadScalar } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
+import { createCadSketchMeasurementReader } from '@/domain/cad/cadSketchMeasurements';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
@@ -99,8 +100,15 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
       omittedEntityCount: Math.max(0, entities.length - 8) };
   };
   if (input.section === 'points') return page(graph?.points ?? [], input, source => point(source.id));
-  if (input.section === 'entities') return page(graph?.entities ?? [], input, source => ({ source, diagnostics: diagnosticState(source.id), points: entityPoints(source).map(point),
-    ...(source.kind === 'circle' ? { radius: scalar(source.radius, false, referenceComponents?.circleIds.has(source.id)) } : {}) }));
+  if (input.section === 'entities') {
+    const reader = graph ? createCadSketchMeasurementReader(graph, inspection.parameters) : null;
+    return page(graph?.entities ?? [], input, source => {
+      const row = { source, diagnostics: diagnosticState(source.id), points: entityPoints(source).map(point),
+        ...(source.kind === 'circle' ? { radius: scalar(source.radius, false, referenceComponents?.circleIds.has(source.id)) } : {}) };
+      try { return { ...row, measurement: reader ? { coordinateSystem: 'sketch-local' as const, ...reader.entity(source.id) } : null }; }
+      catch (error) { return { ...row, measurement: null, measurementDiagnostic: summarizeMessage(error instanceof Error ? error.message : 'Unable to measure this edge.') }; }
+    });
+  }
   return page(graph?.relations ?? [], input, source => ({ source, meaning: relationMeanings[source.kind], diagnostics: diagnosticState(source.id),
     points: graph ? cadSketchRelationPointIds(graph, source).map(point) : [],
     ...(cadSketchRelationEntityIds(source).length ? { entityIds: cadSketchRelationEntityIds(source) } : {}),

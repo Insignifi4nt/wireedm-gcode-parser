@@ -362,7 +362,7 @@ export function cadSiteTools(getController: () => CadController) {
       const { expectedVersion, ...request } = input;
       return cad.resolveTopologyPicks(request, expectedVersion, signal);
     }),
-    tool('cad_inspect_sketch_constraints', 'Read graph freedom/status and paged source relations, points or entities with exact drivers. Does not apply a solve or change history. Requires a current version and closed workflows.', CadToolSketchConstraintsQuerySchema, async (cad, input, signal) => {
+    tool('cad_inspect_sketch_constraints', 'Read graph freedom/status and paged source relations, points or entities with exact drivers and analytic local measurements. Does not apply a solve or change history. Requires a current version and closed workflows.', CadToolSketchConstraintsQuerySchema, async (cad, input, signal) => {
       const inspection = await cad.inspectSketchConstraints(input.sketchId, input.expectedVersion, signal);
       return { version: input.expectedVersion, persisted: false, sketchId: inspection.sketchId, section: input.section ?? 'relations',
         pointCount: inspection.pointCount, entityCount: inspection.entityCount, relationCount: inspection.relationCount,

@@ -17,6 +17,7 @@ import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPre
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { CadContextHelp } from './CadContextHelp';
 import { CadSketchAngleSectors } from './CadSketchAngleSectors';
+import { CadSketchSelectionMeasurements } from './CadSketchSelectionMeasurements';
 import { CadSketchPreparationError, describeCadSketchConstraintSource, type CadSketchConstraintFeedback, type CadSketchConstraintFeedbackSubject } from './cadSketchConstraintFeedback';
 import './cad-sketch-profile.css';
 
@@ -360,6 +361,12 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   }, [inspectedSubject, onInspectSubject]);
   const scalarContext = { parameters, acceptedScalars, relationEdits, valueDrafts, setValueDraft, setIssue,
     setRelationPending: setBindingPending, markRelationEdited, changeParameter };
+  const relationList = <ul className="cad-sketch-constraint-list" aria-label="Sketch relations">{relations.map(relation => <li key={relation.id}>
+          <Button type="button" aria-label={`Inspect ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} aria-pressed={activeRelationId === relation.id} onClick={() => { setInspectedFailure(null); setActiveRelationId(current => current === relation.id ? null : relation.id); }}>
+            {labelRelation(relation)}{(relation.kind === 'distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size' || relation.kind === 'line-angle') && <span>{relationQuantity(relation.value, parameters, relation.kind === 'line-angle' ? 'deg' : 'mm')}</span>}
+            {relation.kind === 'chamfer-corner' && <span>{relation.values.map(value => relationQuantity(value, parameters)).join(' / ')}</span>}
+          </Button><Button type="button" aria-label={relation.kind === 'external-reference' ? 'Detach reference' : `Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title={relation.kind === 'external-reference' ? 'Detach this source link and retain the current geometry' : 'Remove this relation and retain the current geometry'} onClick={() => removeRelation(relation.id)}><CloseIcon size={12} /></Button>
+        </li>)}</ul>;
   return <form className="cad-property-form cad-sketch-profile-panel" aria-label="Sketch relations" aria-busy={submission.applying || undefined}
     onKeyDown={event => { if (event.key === 'Escape' && pending && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); reset(); } }}
     onSubmit={event => {
@@ -378,6 +385,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       {!move && linePair && <CadContextHelp label="Line pair relations">Angle drives the displayed corner in degrees. Parallel keeps directions aligned; Perpendicular keeps a right angle. Equal length keeps finite lengths equal. Lines may share a joint or be separate; construction lines also work. Existing drivers stay in force.</CadContextHelp>}
       {!move && curvePair && <CadContextHelp label="Equal radius">Keeps the actual radii of these circles or arcs equal. Arc sweep and position remain independent. Add a radius or diameter dimension to control their shared size; two free curves still have a size freedom. Existing drivers stay in force.</CadContextHelp>}</div>
     <fieldset key={resetVersion} className="cad-feature-fields" disabled={interactionLocked || submission.applying}>
+      {!pending && sketch.graph && <CadSketchSelectionMeasurements graph={sketch.graph} parameters={cadDocument.parameters} selection={selection} pointPair={pointRoles} />}
       {selectedReference && <div className="cad-sketch-profile-heading"><LinkIcon size={13} /><span className="min-w-0 truncate">{referenceSourceName}</span>
         <CadContextHelp label="Linked reference">This construction edge follows its source sketch. Its position and size are read-only; use it for snaps or to constrain other geometry. Detach retains the current shape and local relations.</CadContextHelp>
         {selectedEntity?.kind === 'circle' && <span>R {formatCadQuantity(evaluateCadScalar(selectedEntity.radius, parameters))} mm</span>}
@@ -440,12 +448,9 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         {selectedEntity?.kind === 'circle' && !radialOwner && !selectedReference && <ScalarField fieldKey="radius" label="Radius" value={selectedEntity.radius} parameters={parameters} onChange={radius => {
           setError(null); setDraft(current => ({ ...current, entities: current.entities.map(entity => entity.id === selectedEntity.id && entity.kind === 'circle' ? { ...entity, radius } : entity) }));
         }} />}
-        {!corner && relations.length > 0 && <ul className="cad-sketch-constraint-list" aria-label="Sketch relations">{relations.map(relation => <li key={relation.id}>
-          <Button type="button" aria-label={`Inspect ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} aria-pressed={activeRelationId === relation.id} onClick={() => { setInspectedFailure(null); setActiveRelationId(current => current === relation.id ? null : relation.id); }}>
-            {labelRelation(relation)}{(relation.kind === 'distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size' || relation.kind === 'line-angle') && <span>{relationQuantity(relation.value, parameters, relation.kind === 'line-angle' ? 'deg' : 'mm')}</span>}
-            {relation.kind === 'chamfer-corner' && <span>{relation.values.map(value => relationQuantity(value, parameters)).join(' / ')}</span>}
-          </Button><Button type="button" aria-label={relation.kind === 'external-reference' ? 'Detach reference' : `Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title={relation.kind === 'external-reference' ? 'Detach this source link and retain the current geometry' : 'Remove this relation and retain the current geometry'} onClick={() => removeRelation(relation.id)}><CloseIcon size={12} /></Button>
-        </li>)}</ul>}
+        {!corner && relations.length > 0 && (relations.length > 4
+          ? <details className="cad-sketch-relations-disclosure" open={Boolean(activeRelation)}><summary>Relations <span>{relations.length}</span></summary>{relationList}</details>
+          : relationList)}
         {activeRelation && (activeRelation.kind === 'distance' || activeRelation.kind === 'axis-distance' || activeRelation.kind === 'fixed-axis' || activeRelation.kind === 'line-angle') && <ScalarField fieldKey={`${activeRelation.id}/value`} label={labelRelation(activeRelation)} unit={activeRelation.kind === 'line-angle' ? 'deg' : 'mm'} value={activeRelation.value} parameters={parameters} onChange={value => changeRelation({ ...activeRelation, value })} />}
         {activeRelation?.kind === 'radial-size' && <>
           {!source.graph.relations.some(relation => relation.id === activeRelation.id) && <SelectField label="Dimension quantity" value={activeRelation.quantity}

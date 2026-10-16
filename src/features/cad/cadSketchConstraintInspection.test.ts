@@ -32,6 +32,7 @@ describe('accepted sketch constraint inspection', () => {
     const exact = JSON.stringify(document), inspection = await inspectCadSketchConstraints(document, 'target', async () => solver);
     expect(inspection.analysis.diagnostics.degreesOfFreedom).toBe(0);
     const entity = pageCadSketchConstraints(inspection, { section: 'entities' }).items[0];
+    expect(entity).toMatchObject({ measurement: { coordinateSystem: 'sketch-local', kind: 'circle', radiusMm: 3, diameterMm: 6, circumferenceMm: 6 * Math.PI } });
     expect(entity).toMatchObject({ radius: { scalar: 3, valueMm: 3, role: 'linked-reference' }, points: [
       { position: [{ scalar: 4, role: 'linked-reference' }, { scalar: 6, role: 'linked-reference' }] }
     ] });
@@ -190,8 +191,16 @@ describe('accepted sketch constraint inspection', () => {
     expect(pageCadSketchConstraints(inspection, { section: 'points', offset: 1, limit: 1 })).toMatchObject({ total: 2, nextOffset: null,
       items: [{ id: 'b', entityIds: ['edge'], entityCount: 1, omittedEntityCount: 0 }] });
     expect(pageCadSketchConstraints(inspection, { section: 'entities' })).toMatchObject({ total: 1, nextOffset: null,
-      items: [{ source: { id: 'edge', startPointId: 'a', endPointId: 'b' }, points: [{ id: 'a' }, { id: 'b' }] }] });
+      items: [{ source: { id: 'edge', startPointId: 'a', endPointId: 'b' }, points: [{ id: 'a' }, { id: 'b' }], measurement: { kind: 'line', lengthMm: 20, deltaMm: [20, 0] } }] });
     expect(pageCadSketchConstraints(inspection, { offset: 2 })).toEqual({ items: [], total: 2, nextOffset: null });
+    const original = document.features[0]; if (original.kind !== 'sketch' || !original.graph) throw Error('Missing graph');
+    const originalGraph = original.graph;
+    const diagnosed = await inspectCadSketchConstraints(document, 'sketch', async () => ({ solve: async () => ({ kind: 'solved',
+      graph: { ...originalGraph, points: originalGraph.points.map(p => p.id === 'b' ? { ...p, position: [15, 0] } : p) }, diagnostics: inspection.analysis.diagnostics }) }));
+    expect(diagnosed.analysis.kind).toBe('solved');
+    expect(pageCadSketchConstraints(diagnosed, { section: 'entities' }).items[0]).toMatchObject({ measurement: { lengthMm: 20, deltaMm: [20, 0] } });
+    expect(JSON.stringify(document)).toBe(exact);
+
   });
 
   it('reports redundant native relation identities without repairing accepted source', async () => {

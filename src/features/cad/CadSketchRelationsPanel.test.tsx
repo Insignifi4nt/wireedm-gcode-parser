@@ -63,6 +63,38 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it('inspects point separation without edits and keeps a long constraint list deliberate while dimensions remain directly editable', async () => {
+    const source=parseCadDocument({ ...createCadDocument('Measured plate','measured-plate'), schemaVersion:2, features:[{
+      id:'sketch',kind:'sketch',name:'Plate',suppressed:false,plane:'XY',offset:0,profiles:[],graph:{
+        points:[{id:'a',position:[' 0.00 ',0]},{id:'b',position:[50,0]},{id:'c',position:[50,25]},{id:'d',position:[0,25]},{id:'center',position:[25,12.5]}],
+        entities:[{id:'ab',kind:'line',startPointId:'a',endPointId:'b',construction:false},{id:'bc',kind:'line',startPointId:'b',endPointId:'c',construction:false},
+          {id:'cd',kind:'line',startPointId:'c',endPointId:'d',construction:false},{id:'da',kind:'line',startPointId:'d',endPointId:'a',construction:false},
+          {id:'bore',kind:'circle',centerPointId:'center',radius:3,construction:false}],
+        relations:[{id:'h0',kind:'horizontal',pointIds:['a','b']},{id:'v0',kind:'vertical',pointIds:['b','c']},{id:'h1',kind:'horizontal',pointIds:['c','d']},{id:'v1',kind:'vertical',pointIds:['d','a']},
+          {id:'ax',kind:'fixed-axis',pointId:'a',axis:'x',value:0},{id:'ay',kind:'fixed-axis',pointId:'a',axis:'y',value:0},
+          {id:'width',kind:'distance',pointIds:['a','b'],value:50},{id:'height',kind:'distance',pointIds:['a','d'],value:25},
+          {id:'diameter',kind:'radial-size',entityId:'bore',quantity:'diameter',value:6},
+          {id:'x',kind:'axis-distance',pointIds:['a','center'],axis:'x',value:25},{id:'y',kind:'axis-distance',pointIds:['a','center'],axis:'y',value:12.5}]
+      }
+    }] });
+    const h=await mount(source,[{kind:'point',id:'a'},{kind:'point',id:'center'}]), accepted=h.session.getSnapshot();
+    const values=()=>[...container.querySelectorAll('[aria-label="Selected geometry measurements"] dd')].map(e=>e.textContent);
+    expect(values()).toEqual(['27.95085 mm','25 mm','12.5 mm']);
+    const disclosure=container.querySelector<HTMLDetailsElement>('details.cad-sketch-relations-disclosure');
+    expect(disclosure?.open).toBe(false);
+    await act(async()=>{if(!disclosure)throw Error('Missing relation disclosure');disclosure.open=true;disclosure.dispatchEvent(new Event('toggle'));});
+    await clickRelation('Inspect','Horizontal distance',10);
+    expect(field('Horizontal distance mm').value).toBe('25');
+    expect(h.session.getSnapshot().document).toBe(accepted.document); expect(h.edit).not.toHaveBeenCalled();
+    await input('Horizontal distance mm','26'); expect(values()).toEqual([]);
+    await click('Cancel'); expect(values()).toEqual(['27.95085 mm','25 mm','12.5 mm']);
+    await h.render([{kind:'point',id:'center'},{kind:'point',id:'a'}]); expect(values()).toEqual(['27.95085 mm','-25 mm','-12.5 mm']);
+    await clickRelation('Inspect','Horizontal distance',10);
+    expect(values()).toEqual(['27.95085 mm','25 mm','12.5 mm']);
+    await h.render({kind:'entity',id:'ab'}); expect(values()[0]).toBe('50 mm');
+    expect(h.edit).not.toHaveBeenCalled(); expect(h.session.getSnapshot()).toEqual(accepted);
+  });
+
   it('keeps a deliberate point-to-line midpoint local until Apply and removes only that relation', async () => {
     const source = parseCadDocument({ ...createCadDocument('Centered bore', 'centered-bore'), schemaVersion: 2, features: [{
       id: 'sketch', kind: 'sketch', name: 'Bore and guide', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

@@ -17,6 +17,12 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: compact selected geometry inspection
+
+The [inspection plan](2026-10-16-sketch-selection-inspection-plan.md) addresses the observed blank-plate friction: passive analytic sizes and a compact incident-relation list. Production acceptance is complete for this bounded slice.
+
+One pure analytic reader now supplies passive point/edge/point-pair values and existing agent entity measurements. Readouts follow accepted geometry and displayed From/To roles, without drivers, native analysis or history edits; pending form edits hide them. Long incident lists use the existing disclosure interaction and retain all highlight/edit/remove operations. Source review is clean. Focused four-suite checks pass148 cases, plus full types/build/docs/source/sharedUI checks; four complete journeys pass in each Chromium and Firefox. The native reopened plate shows nine relations folded and truthful offsets, previews26 then Cancel restores25 and exact complete source. Native solid remains6108.628330588458 mm³, no diagnostics; disposable draft undone empty without Save. [Plan, review and acceptance](2026-10-16-sketch-selection-inspection-plan.md). This is passive inspection, not completion of persistent reference dimensions or the full sketch inventory.
+
 ## Checkpoint: start Dimension before selecting its edge
 
 Linked references are accepted local checkpoint `2bf808e`. The [fresh workflow assessment](2026-10-16-sketch-next-workflows-after-reference.md) puts blank-canvas usability ahead of another boundary-policy micro-fix. Root's entirely human-drawn 50×25 plate with centered Ø6 bore has zero freedoms and one 6108.628330588458 mm³ native Pad 5 solid; read-only inspection follows authoring, and ten Undo steps restore the disposable draft empty. The existing route works. The [bounded Dimension plan](2026-10-16-sketch-dimension-picking-plan.md) addresses the confirmed requirement for preselection, reusing the existing edge picker and dimension editor. Sequential point-pair picking, reference dimensions, patterns and Tangent remain separate work. No new feature is accepted by this plan.

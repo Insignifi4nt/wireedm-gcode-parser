@@ -86,6 +86,8 @@ test('locates a bore with signed relative X/Y drivers, preserves cancelled edits
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: sketch.id } });
   const pair = [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'hole' }];
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry-set', selections: pair } });
+  const selectedMeasurements = page.getByLabel('Selected geometry measurements', { exact: true }).locator('dd');
+  await expect(selectedMeasurements).toHaveText(['36.055513 mm', '30 mm', '20 mm']);
   const bind = async (label: string, expression: string) => {
     await page.getByRole('button', { name: `Edit ${label} relation`, exact: true }).click();
     await page.getByRole('textbox', { name: `${label} expression`, exact: true }).fill(expression);
@@ -116,8 +118,10 @@ test('locates a bore with signed relative X/Y drivers, preserves cancelled edits
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
   await page.keyboard.press('Control+Shift+z'); current = await context(page);
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry-set', selections: [...pair].reverse() } });
+  await expect(selectedMeasurements).toHaveText(['40.311289 mm', '-35 mm', '-20 mm']);
   await page.getByRole('button', { name: 'Horizontal distance', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Horizontal distance mm', exact: true })).toHaveValue('35');
+  await expect(selectedMeasurements).toHaveText(['40.311289 mm', '35 mm', '20 mm']);
   expect(await context(page)).toMatchObject({ version: current.version, workflowOpen: false });
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await call(page, 'cad_history', { expectedVersion: current.version, direction: 'undo' }); current = await context(page);

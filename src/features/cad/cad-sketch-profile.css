@@ -28,3 +28,9 @@
 .cad-sketch-profile-panel .cad-placement-row input { width: 100%; min-width: 0; font-size: 11px; }
 .cad-sketch-relation { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
 .cad-workbench .cad-sketch-relation > button { font-size: 9px; padding: 3px 4px; }
+
+.cad-measurements.cad-selection-measurements { padding: 0; border: 0; display: flex; align-items: flex-start; gap: 6px; margin-bottom: 10px; }
+.cad-selection-measurements dl { flex: 1; }
+.cad-sketch-relations-disclosure { margin-bottom: 10px; }
+.cad-sketch-relations-disclosure > summary { cursor: pointer; padding: 6px 0; font-size: 10px; }
+.cad-sketch-relations-disclosure > summary span { margin-left: 5px; font-variant-numeric: tabular-nums; }
