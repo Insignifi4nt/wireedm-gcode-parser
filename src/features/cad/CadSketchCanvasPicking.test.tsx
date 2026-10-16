@@ -63,6 +63,73 @@ describe('sketch canvas profile picking', () => {
     const checkbox = container.querySelector<HTMLInputElement>('[aria-label="Create coincident relations"]');
     if (!checkbox) throw new Error('Missing relation inference control'); return checkbox;
   };
+  const ambiguousSketch = () => ({ ...graphSketch, graph: { ...graphSketch.graph, points: [...graphSketch.graph.points,
+    { id: 'ghost-a', position: [2.1, 3.2] as const }, { id: 'ghost-b', position: [22.1, 3.2] as const }] } });
+  const snapChoice = (point: number) => {
+    const menu = document.querySelector('[aria-label="Choose snap target actions"]');
+    const item = [...menu?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []].find(button => new RegExp(`^Point ${point}(?:\\D|$)`).test(button.textContent ?? ''));
+    if (!item) throw new Error(`Missing snap choice ${point}.`); return item;
+  };
+  it('requires the chosen exact Path identity and preserves its first point when an ambiguous endpoint is dismissed', async () => {
+    const onAddPath = vi.fn(), source = ambiguousSketch(), h = await fixture([], { sketch: source, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    const before = h.frame(); await h.click(2.2, 3.3);
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull(); expect(h.pending).toHaveBeenLastCalledWith(true);
+    // Workbench locks camera navigation while this canvas owns a pending drawing.
+    await h.render({ viewLocked: true });
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull();
+    expect(h.frame()).not.toBe(before); expect(container.querySelector('[aria-label="Finish path"]')).toBeNull();
+    await act(async () => snapChoice(1).focus()); expect(container.querySelector('[data-cad-drawing-snap-owner="line"]')).not.toBeNull();
+    await act(async () => snapChoice(4).focus()); expect(container.querySelector('[data-cad-sketch-snap="ghost-a"]')).not.toBeNull();
+    await act(async () => snapChoice(4).click()); await h.click(22.2, 3.3);
+    await act(async () => snapChoice(2).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(document.activeElement).toBe(h.svg); expect(h.pending).toHaveBeenLastCalledWith(true); expect(onAddPath).not.toHaveBeenCalled();
+    await h.click(22.2, 3.3); await act(async () => snapChoice(2).click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]')!.click());
+    expect(onAddPath).toHaveBeenCalledWith(expect.objectContaining({ start: [2.1, 3.2], startPointId: 'ghost-a', segments: [
+      expect.objectContaining({ kind: 'line', end: [22.1, 3.2], endPointId: 'b' })
+    ] }), false, expect.any(AbortSignal)); expect(h.error).not.toHaveBeenCalled();
+  });
+
+  it('drops an ambiguous choice after source replacement or actual SVG-frame movement without placing or outside-click fallback', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), documentVersion: 'one', parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    await h.click(2.2, 3.3); expect(snapChoice(1)).toBeDefined();
+    await h.render({ sketch: ambiguousSketch(), documentVersion: 'two' });
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull(); expect(h.pending).toHaveBeenLastCalledWith(false);
+    await h.click(2.2, 3.3); const held = snapChoice(1);
+    Object.assign(h.svg, { getBoundingClientRect: () => ({ left: 30, top: 20, width: 800, height: 600 }) });
+    await act(async () => held.click()); expect(container.querySelector('[aria-label="Finish path"]')).toBeNull();
+    Object.assign(h.svg, { getBoundingClientRect: () => ({ left: 10, top: 20, width: 800, height: 600 }) });
+    await h.click(2.2, 3.3);
+    await h.pointer('pointerdown', { ...h.position(50, 50), button: 0, buttons: 1 }); await h.click(50, 50);
+    expect(container.querySelector('[aria-label="Finish path"]')).toBeNull(); expect(onAddPath).not.toHaveBeenCalled();
+    expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
+
+  it('keeps chosen Circle centers opt-in, radius choices position-only and Ctrl acceptance independent', async () => {
+    const onAddFreshSketch = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'circle', onAddFreshSketch });
+    await h.click(2.2, 3.3); await act(async () => snapChoice(4).click());
+    await h.click(22.2, 3.3); await act(async () => snapChoice(2).click());
+    expect(onAddFreshSketch).toHaveBeenNthCalledWith(1, { kind: 'circle', center: { kind: 'position', point: [2.1, 3.2] }, radius: 20 }, expect.any(AbortSignal));
+    await act(async () => inference().click());
+    await h.click(2.2, 3.3); await act(async () => snapChoice(1).click());
+    await h.click(22.2, 3.3); await act(async () => snapChoice(5).click());
+    expect(onAddFreshSketch).toHaveBeenNthCalledWith(2, { kind: 'circle', center: { kind: 'coincident', point: [2.1, 3.2], sourcePointId: 'a', relationId: expect.any(String) }, radius: 20 }, expect.any(AbortSignal));
+    await h.click(2.2, 3.3, h.svg, { ctrlKey: true }); expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull();
+    await h.click(7.2, 3.3, h.svg, { ctrlKey: true });
+    expect(onAddFreshSketch).toHaveBeenNthCalledWith(3, { kind: 'circle', center: { kind: 'position', point: [expect.closeTo(2.2, 10), expect.closeTo(3.3, 10)] }, radius: expect.closeTo(5, 10) }, expect.any(AbortSignal));
+  });
+
+  it('pages every ambiguous point with bounded rendering and retains canvas focus ownership through dismissal', async () => {
+    const source = { ...graphSketch, graph: { points: Array.from({ length: 30 }, (_, index) => ({ id: `point_${String(index + 1).padStart(2, '0')}`, position: [2.1, 3.2] as const })), entities: [], relations: [] } };
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: source, tool: 'path', onAddPath }); await h.click(2.2, 3.3);
+    const next = () => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === 'Next candidates')!;
+    expect(document.querySelectorAll('[role="menuitem"]').length).toBeLessThanOrEqual(14);
+    await act(async () => next().click()); expect(document.activeElement).toBe(snapChoice(13));
+    await act(async () => next().click()); expect(document.activeElement).toBe(snapChoice(25));
+    await act(async () => snapChoice(30).click()); expect(document.activeElement).toBe(h.svg);
+    await h.click(30, 30); await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]')!.click());
+    expect(onAddPath.mock.calls[0][0]).toMatchObject({ startPointId: 'point_30', start: [2.1, 3.2] });
+  });
   it('retains deliberate first/opposite attachment roles while drawing a rectangle in reverse', async () => {
     const onAddFreshSketch = vi.fn(), original = structuredClone(graphSketch);
     const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'rectangle', onAddFreshSketch });

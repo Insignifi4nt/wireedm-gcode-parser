@@ -99,6 +99,14 @@ Native in-app browser drew an actual 40×20 rectangle, confirmed its four genera
 
 Next: explicit choice when drawing onto coincident distinct saved points, and keyboard-owned Extend end selection. Relative X/Y dimensions and legacy-profile/reference interoperability remain everyday workflow gaps alongside the broader inventory. No schema/storage migration, native rebuild, installed post/machine change, app version bump or remote action. The isolated arrangement stays unwired. Sketch mode and the overall local-only goal remain incomplete.
 
+## Checkpoint: deliberate ambiguous drawing snaps
+
+Tied snap identities now survive acceptance and open a shared, paginated Choose snap target menu instead of grid fallback. Nothing is placed until a deliberate choice; Escape/dismissal preserves unfinished geometry. Existing drawing/Path operations and opt-in fresh coincidence remain, with source/version/frame/tool/draft/cancel ownership and pending workflow guards. Highlighting shows the candidate and its owners without changing accepted selection. The complete journey uses distinct saved points at both off-grid ends of a missing plate side, checks cancellation/foreign-edit blocking, then exact joins, native Pad, agent parity and saved reopen. Original and first-integration builds reproduce the missing chooser; the latter exposed and repaired an own-pending/camera-lock feedback bug.
+
+Evidence: 85 focused Canvas/picking/Path cases, scoped types, app TypeScript/build, public docs/discovery/source distributions, UI standard and icon integration pass. The complete new journey passes in Chromium and Firefox. Native browser choices retain all six original points/three relations, create one 200 mm² cell, and match native WebMCP structurally; an explicit-area ` 5e0 ` Pad produces one 1000 mm³ solid with no diagnostics. Two Undo operations restore the empty test draft; no user record was saved. [Bounded review, failures and acceptance](2026-10-16-sketch-drawing-snap-chooser-review.md). No persistent schema, new geometry algorithm, solver tuning, version bump or remote action.
+
+Next is [keyboard-owned line Extend](2026-10-16-sketch-keyboard-extend-seams.md). Relative X/Y dimensions, shared legacy/plugin references and the broader relation/topology inventory remain open. This checkpoint does not close sketch mode or the overall goal.
+
 ## Initial findings
 
 The canvas picker initially returned a profile ID. Selecting/dragging a boundary therefore translated its whole profile. The initial constraint module recorded explicit dimensions for primitive profile sizes and preserved expressions, but had no general point/segment relationship solver. Paths and polygons exposed no dimension quantities. These were model and interaction gaps, not styling issues.

@@ -349,6 +349,64 @@ test('extends the chosen line end to its exact boundary joint, matches the agent
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: pad.id })).feature).toEqual(pad);
 });
 
+test('chooses exact stacked snap identities, preserves a cancelled path attempt and saves the same human and agent solid', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const sketch = { id: 'stacked', kind: 'sketch', name: 'Stacked endpoints', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [2.1, 3.2] }, { id: 'b', position: [22.1, 3.2] }, { id: 'c', position: [22.1, 13.2] }, { id: 'd', position: [2.1, 13.2] },
+      { id: 'other-a', position: [2.1, 3.2] }, { id: 'other-b', position: [22.1, 3.2] }],
+    entities: [{ id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+      { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+      { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' }], relations: [
+      { id: 'right', kind: 'vertical', pointIds: ['b', 'c'] }, { id: 'top', kind: 'horizontal', pointIds: ['c', 'd'] }, { id: 'left', kind: 'vertical', pointIds: ['d', 'a'] }]
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
+  let current = await context(page); const initialVersion = current.version;
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: sketch.id } });
+  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  const openChoice = async (id: string) => {
+    const bounds = await page.locator(`[data-cad-sketch-point="${id}"]`).boundingBox(); if (!bounds) throw new Error('Stacked source point unavailable.');
+    await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    await expect(page.getByRole('menu')).toBeVisible();
+  };
+  await openChoice('a');
+  await expect.poll(() => context(page)).toMatchObject({ version: initialVersion, workflowOpen: true });
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: initialVersion, edits: [{ kind: 'rename-document', name: 'Foreign edit' }] }))
+    .toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  await page.keyboard.press('Escape'); await expect.poll(() => context(page)).toMatchObject({ version: initialVersion, workflowOpen: false });
+  expect((await call(page, 'cad_get_feature', { expectedVersion: initialVersion, featureId: sketch.id })).feature).toEqual(sketch);
+  await openChoice('a'); await page.getByRole('menuitem', { name: /^Point 1\b/ }).click();
+  await openChoice('b'); await page.keyboard.press('Escape');
+  expect((await context(page))).toMatchObject({ version: initialVersion, workflowOpen: true });
+  await expect(page.getByRole('button', { name: 'Finish path', exact: true })).toBeDisabled();
+  await openChoice('b'); await page.getByRole('menuitem', { name: /^Point 2\b/ }).click();
+  await page.getByRole('button', { name: 'Finish path', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const human = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(human.graph.points).toEqual(sketch.graph.points); expect(human.graph.relations).toEqual(sketch.graph.relations);
+  expect(human.graph.entities.slice(0, 3)).toEqual(sketch.graph.entities); expect(human.graph.entities).toHaveLength(4);
+  const connector = human.graph.entities[3]; expect(connector).toMatchObject({ kind: 'line', startPointId: 'a', endPointId: 'b', construction: false });
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await call(page, 'cad_history', { expectedVersion: current.version, direction: 'undo' }); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
+  const regions = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id, proposal: { sketch: human } });
+  expect(regions.items).toHaveLength(1); expect(regions.items[0].areaMm2).toBeCloseTo(200, 8);
+  const pad = { id: 'pad', kind: 'extrude', name: 'Joined plate', suppressed: false, sketchId: sketch.id, distance: ' 5e0 ',
+    symmetric: false, operation: 'new', targetId: null, regionSelection: [regions.items[0].reference] };
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [
+    { kind: 'append-sketch-entities', sketchId: sketch.id, geometry: { points: [], entities: [connector], relations: [] } }, { kind: 'add-feature', feature: pad }
+  ] }); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  const built = await call(page, 'cad_build', { expectedVersion: current.version }); expect(built.diagnostics).toEqual([]);
+  expect(built.bodies).toHaveLength(1); expect(built.bodies[0].volumeMm3).toBeCloseTo(1000, 7);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current.dirty).toBe(false);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: pad.id })).feature).toEqual(pad);
+});
+
 test('attaches reversed rectangle picks deliberately, follows their drivers and detaches through the ordinary relation editor', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const feature = { id: 'attached', kind: 'sketch', name: 'Attached rectangle', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

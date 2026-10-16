@@ -16,6 +16,7 @@ import { createCadSketchHandlePicker, createCadSketchProfilePicker, type CadSket
 import { cadPathDraftEndpoint, closeCadPathDraft, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, updateCadPathDraft, type CadPathDraft, type CadPathDrawingAction } from './cadPathDrawing';
 import { prepareCadSketchGeometrySnaps, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
+import { CadSketchSnapChooser } from './CadSketchSnapChooser';
 import { CadPathDraftGeometry, CadPathSegmentGeometry } from './CadPathDraftGeometry';
 import { cadProfileReferenceGeometry } from './cadViewportReferences';
 import { CadGearInspectionOverlay } from './CadGearInspectionOverlay';
@@ -40,7 +41,15 @@ import { CadSketchTrimPreview, prepareCadSketchTrimPreview, type CadSketchTrimPr
 
 const NO_PROFILES: readonly CadSketchProfile[] = Object.freeze([]);
 const snapDraftStart = prepareCadSketchGeometrySnaps();
-interface DrawingPick { readonly point: SketchPoint; readonly existingPointId?: string; readonly candidate?: CadSketchSnapCandidate }
+type DrawingPick = { readonly point: SketchPoint } & (
+  | { readonly candidates: readonly CadSketchSnapCandidate[]; readonly existingPointId?: never; readonly candidate?: never }
+  | { readonly existingPointId?: string; readonly candidate?: CadSketchSnapCandidate; readonly candidates?: never }
+);
+interface DrawingSnapChoice {
+  readonly owner: object;
+  readonly candidates: readonly CadSketchSnapCandidate[];
+  readonly clientX: number; readonly clientY: number; readonly frame: string;
+}
 interface DrawingCursor { readonly point: SketchPoint; readonly mode: 'pointer' | 'position'; readonly suppressed: boolean }
 export interface CadSketchContextMenuRequest {
   readonly clientX: number;
@@ -118,9 +127,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const [pickFilter, setPickFilter] = useState<CadSketchGraphPickFilter>('auto');
   const [overlap, setOverlap] = useState<CadSketchOverlapPick | null>(null);
   const [pickHighlight, setPickHighlight] = useState<CadSketchGraphSelection | null>(null);
+  const [snapChoice, setSnapChoice] = useState<DrawingSnapChoice | null>(null);
+  const [choiceHighlight, setChoiceHighlight] = useState<CadSketchSnapCandidate | null>(null);
   const baseInteractionLocked = externalInteractionLocked || submission.applying || graphPending;
   const overlapPending = overlap !== null;
-  const interactionLocked = baseInteractionLocked || overlapPending;
+  const choicePending = snapChoice !== null;
+  const interactionLocked = baseInteractionLocked || overlapPending || choicePending;
   const svg = useRef<SVGSVGElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const instructionsId = useId();
@@ -232,6 +244,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   }, [documentVersion, sketch, profiles, handlePicker]);
   useEffect(() => { edgeSubmission.current = null; submission.cancel(); setHoverHandle(null); setDetailSelection({ kind: 'profile' }); ownedHandleEdit.current = null; setDragPreview(null); }, [sketch.id, tool, cancelSignal, submission.cancel]);
   const width = span * aspect;
+  const drawingCandidate = (candidate: CadSketchSnapCandidate): DrawingPick => {
+    const target = candidate.target;
+    const existingPointId = tool === 'path' && sourceSketch.kind === 'sketch' && onAddPath && pathDraft.kind !== 'arc-through'
+      ? 'pointId' in target ? target.pointId : target.kind === 'draft-start' && pathDraft.kind !== 'idle' ? pathDraft.startPointId : undefined : undefined;
+    return { point: candidate.point, candidate, ...(existingPointId === undefined ? {} : { existingPointId }) };
+  };
   const resolveDrawingPick = (raw: SketchPoint, suppressed: boolean, mode: DrawingCursor['mode'], mmPerPixel: SketchPoint = [width / viewportSize.width, span / viewportSize.height]): DrawingPick => {
     if (suppressed || mode === 'position') return { point: raw };
     const draftStart = tool === 'path' && pathDraft.kind !== 'idle' && pathDraft.kind !== 'arc-through'
@@ -245,12 +263,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (closure.kind === 'hit') return { point: closure.candidate.point, candidate: closure.candidate };
       }
       const result = (snap && sourceGraph ? sourceGraph.snap : snapDraftStart)({ cursor: raw, mmPerPixel, draftStart });
-      if (result.kind === 'hit') {
-        const candidate = result.candidate, target = candidate.target;
-        const existingPointId = tool === 'path' && sourceSketch.kind === 'sketch' && onAddPath && pathDraft.kind !== 'arc-through'
-          ? 'pointId' in target ? target.pointId : target.kind === 'draft-start' && pathDraft.kind !== 'idle' ? pathDraft.startPointId : undefined : undefined;
-        return { point: candidate.point, candidate, ...(existingPointId === undefined ? {} : { existingPointId }) };
-      }
+      if (result.kind === 'hit') return drawingCandidate(result.candidate);
+      if (result.kind === 'ambiguous') return { point: raw, candidates: result.candidates };
     }
     return { point: snapSketchPoint(raw, gridStep, snap) };
   };
@@ -306,7 +320,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   }, []);
   const renderedPlane = useMemo(() => typeof sketch.plane === 'string' ? sketch.plane : Object.freeze({ ...sketch.plane }), [sketch.plane]);
   const viewRevision = useRef({ signature: '', revision: 0 });
-  const viewSignature = JSON.stringify([sketch.plane, center, span, aspect, grid, snap, gridStep, pickFilter, boxPending, graphPending, pickHighlight,
+  const viewSignature = JSON.stringify([sketch.plane, center, span, aspect, grid, snap, gridStep, pickFilter, boxPending, graphPending, pickHighlight, choicePending,
+    choiceHighlight ? [choiceHighlight.target, choiceHighlight.point, choiceHighlight.entityIds] : null,
     overlap ? [overlap.clientX, overlap.clientY, overlap.target, overlap.split, overlap.trim, overlap.extend, overlap.action] : null, tool !== 'select' ? [cursor, picks, pathDraft] : null,
     snapHint ? [snapHint.target, snapHint.point, snapLabel] : null, previewProfile?.geometry, previewSketch ? [previewSketch.profiles, previewSketch.graph] : null,
     graphControls ? [graphControls.selection, graphControls.relation, graphControls.inspection, graphControls.degreesOfFreedom, graphControls.showDimensions] : null, inspection, dragPreview?.translation]);
@@ -349,13 +364,13 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   useEffect(() => { setPicks([]); setPathDraft(createCadPathDraft()); }, [sketch.id, tool, cancelSignal]);
   useLayoutEffect(() => { setCursorInput(current => ({ ...current, mode: 'position' })); }, [sourceSketch, graphSourceParameters, tool, cancelSignal, center, span, aspect]);
   const pathPending = tool === 'path' && pathDraft.kind !== 'idle';
-  useLayoutEffect(() => { onPendingChange(points.length > 0 || pathPending || dragPreview !== null || submission.applying || graphPending || boxPending || overlapPending); }, [points.length, pathPending, dragPreview !== null, submission.applying, graphPending, boxPending, overlapPending, onPendingChange]);
+  useLayoutEffect(() => { onPendingChange(points.length > 0 || pathPending || dragPreview !== null || submission.applying || graphPending || boxPending || overlapPending || choicePending); }, [points.length, pathPending, dragPreview !== null, submission.applying, graphPending, boxPending, overlapPending, choicePending, onPendingChange]);
   const publishGraphPending = useCallback((value: boolean) => {
-    setGraphPending(value); pendingChange.current(value || points.length > 0 || pathPending || dragPreview !== null || submission.applying || boxPending || overlapPending);
-  }, [points.length, pathPending, dragPreview !== null, submission.applying, boxPending, overlapPending]);
+    setGraphPending(value); pendingChange.current(value || points.length > 0 || pathPending || dragPreview !== null || submission.applying || boxPending || overlapPending || choicePending);
+  }, [points.length, pathPending, dragPreview !== null, submission.applying, boxPending, overlapPending, choicePending]);
   const publishBoxPending = useCallback((value: boolean) => {
-    setBoxPending(value); pendingChange.current(value || points.length > 0 || pathPending || dragPreview !== null || submission.applying || graphPending || overlapPending);
-  }, [points.length, pathPending, dragPreview !== null, submission.applying, graphPending, overlapPending]);
+    setBoxPending(value); pendingChange.current(value || points.length > 0 || pathPending || dragPreview !== null || submission.applying || graphPending || overlapPending || choicePending);
+  }, [points.length, pathPending, dragPreview !== null, submission.applying, graphPending, overlapPending, choicePending]);
   const getRawPoint = (event: { clientX: number; clientY: number }): SketchPoint | null => {
     const rect = svg.current?.getBoundingClientRect();
     if (!rect || rect.width === 0 || rect.height === 0) return null;
@@ -366,6 +381,20 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     const point = getRawPoint(event), rect = svg.current?.getBoundingClientRect();
     return point && rect ? { point, frame: JSON.stringify([renderedPlane, center, span, rect.left, rect.top, rect.width, rect.height]) } : null;
   };
+  // Identity pins the complete accepted source, unfinished drawing and camera.
+  // Cursor movement over the menu does not change the captured drawing intent.
+  const drawingOwner = useMemo(() => ({ sourceSketch, sourceGraph, parameters: graphSourceParameters, document: graphControls?.document,
+    documentVersion, tool, picks, pathDraft, inferCoincidence, snap, gridStep, cancelSignal, spatialFrameKey,
+    pathAvailable: Boolean(onAddPath), freshAvailable: Boolean(onAddFreshSketch) }),
+  [sourceSketch, sourceGraph, graphSourceParameters, graphControls?.document, documentVersion, tool, picks, pathDraft, inferCoincidence, snap, gridStep, cancelSignal, spatialFrameKey, Boolean(onAddPath), Boolean(onAddFreshSketch)]);
+  const choiceEnvironment = useRef({ owner: drawingOwner, locked: false });
+  choiceEnvironment.current = { owner: drawingOwner, locked: baseInteractionLocked || overlapPending || isPreview };
+  const choiceIsCurrent = (choice: DrawingSnapChoice) => choice.owner === choiceEnvironment.current.owner && !choiceEnvironment.current.locked
+    && projectSelection(choice)?.frame === choice.frame;
+  const currentSnapChoice = snapChoice && choiceIsCurrent(snapChoice) ? snapChoice : null;
+  const choicePointId = choiceHighlight && 'pointId' in choiceHighlight.target ? choiceHighlight.target.pointId : undefined;
+  const closeSnapChoice = useCallback(() => { setSnapChoice(null); setChoiceHighlight(null); svg.current?.focus({ preventScroll: true }); }, []);
+  useLayoutEffect(() => { if (snapChoice && !currentSnapChoice) closeSnapChoice(); }, [snapChoice, currentSnapChoice, closeSnapChoice]);
   useLayoutEffect(() => {
     const owned = edgeSubmission.current;
     if (owned && (externalInteractionLocked || isPreview || owned.frameKey !== spatialFrameKey || projectSelection(owned)?.frame !== owned.frame)) cancelEdgeSubmission();
@@ -502,6 +531,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     if (focus) svg.current?.focus();
   };
   const cancelDrawing = () => {
+    closeSnapChoice();
     edgeSubmission.current = null; submission.cancel(); ownedHandleEdit.current = null;
     setDragPreview(null); setPicks([]); setPathDraft(createCadPathDraft()); setCursorInput(current => ({ ...current, mode: 'position' }));
     if (curveCreation) onCancelCurve?.();
@@ -603,6 +633,21 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       }
       catch (error) { onError(error instanceof Error ? error.message : 'Unable to draw this profile.'); }
     } else appendPick(authoredPick());
+  };
+  // CadContextMenu closes synchronously before invoking a chosen item. Use the
+  // post-close handler so normal foreign-workflow and submission guards remain active.
+  const placeChosen = useRef<(candidate: CadSketchSnapCandidate) => void>(() => undefined);
+  placeChosen.current = candidate => { const pick = drawingCandidate(candidate); placePoint(pick.point, pick.existingPointId, pick.candidate); };
+  const acceptDrawingPick = (pick: DrawingPick, anchor?: { clientX: number; clientY: number }) => {
+    if (interactionLocked) return;
+    if (!pick.candidates) { placePoint(pick.point, pick.existingPointId, pick.candidate); return; }
+    const bounds = svg.current?.getBoundingClientRect();
+    if (!sourceGraph || !bounds?.width || !bounds.height || !attachedSourceCurrent()) return;
+    const at = anchor ?? { clientX: bounds.left + bounds.width / 2 + (pick.point[0] - center[0]) / width * bounds.width,
+      clientY: bounds.top + bounds.height / 2 - (pick.point[1] - center[1]) / span * bounds.height };
+    const projected = projectSelection(at); if (!projected) return;
+    pendingChange.current(true);
+    setSnapChoice({ owner: drawingOwner, candidates: pick.candidates, ...at, frame: projected.frame });
   };
   const dimensionProfile = dragPreview?.profile ?? (sketch.kind === 'sketch' ? sketch.profiles.find(profile => profile.id === selectedProfileId) : undefined);
   const dimensionBounds = useMemo(() => {
@@ -746,7 +791,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           event.preventDefault();
           if (event.key === 'Enter' && tool === 'path' && pathDraft.kind === 'ready') finishPath(true);
           else if (event.key === 'Enter' && tool === 'polygon' && points.length >= 3) close();
-          else placePoint(cursor, cursorPick.existingPointId, cursorPick.candidate);
+          else acceptDrawingPick(cursorPick);
         } else if (tool === 'path' && pathPending && (event.key === 'Backspace' || event.key === 'Escape')) { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }); }
         else if (event.key === 'Backspace' && points.length) { event.preventDefault(); setPicks((current) => current.slice(0, -1)); }
         else if (event.key === 'Escape' && points.length) { event.preventDefault(); setPicks([]); }
@@ -768,7 +813,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             setActiveHandle(grip);
             onSelectProfile(grip?.profileId ?? profilePicker.pick(point, span / rect.height));
           }
-        } else { const pick = getDrawingPick(event); placePoint(pick.point, pick.existingPointId, pick.candidate); }
+        } else acceptDrawingPick(getDrawingPick(event), event);
       }}>
       <defs><pattern id="cad-sketch-grid" x={-center[0] % gridStep} y={center[1] % gridStep} width={gridStep} height={gridStep} patternUnits="userSpaceOnUse"><path d={`M ${gridStep} 0 H 0 V ${gridStep}`} fill="none" stroke="#29373f" strokeWidth={span / 1000} /></pattern></defs>
       {grid && span / gridStep < 2000 && <rect x={-width / 2} y={-span / 2} width={width} height={span} fill="url(#cad-sketch-grid)" />}
@@ -814,7 +859,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         {graphControls && sourceSketch.kind === 'sketch' && sourceGraph && <CadSketchGraphLayer controls={boxSelection.box ? { ...graphControls, selection: boxSelection.box.selections } : graphControls} sketch={sourceSketch} version={documentVersion} prepared={sourceGraph} visual={visualGraph ?? undefined}
           center={center} scaleX={width / (viewportSize.width || 800)} scaleY={span / (viewportSize.height || 600)} gridStep={gridStep} snap={snap} active={tool === 'select'}
           filter={pickFilter} highlighted={snapHighlight ?? pickHighlight} pickAt={event => { const point = getRawPoint(event), rect = svg.current?.getBoundingClientRect(); return point && rect?.height ? sourceGraph.pick(point, span / rect.height, pickFilter)[0] ?? null : null; }}
-          locked={externalInteractionLocked || submission.applying || points.length > 0 || pathPending || dragPreview !== null || boxPending || overlapPending} cancelSignal={cancelSignal} onPendingChange={publishGraphPending} onError={onError} />}
+          locked={externalInteractionLocked || submission.applying || points.length > 0 || pathPending || dragPreview !== null || boxPending || overlapPending || choicePending} cancelSignal={cancelSignal} onPendingChange={publishGraphPending} onError={onError} />}
         {currentOverlap?.action === 'split' && currentOverlap.split?.kind === 'ready' && <CadSketchSplitPreview preview={currentOverlap.split} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {currentOverlap?.action === 'trim' && currentOverlap.trim?.kind === 'ready' && <CadSketchTrimPreview preview={currentOverlap.trim} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {currentOverlap?.action === 'extend' && currentOverlap.extend?.kind === 'ready' && <CadSketchExtendPreview preview={currentOverlap.extend} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
@@ -829,6 +874,17 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           {pathDraft.kind === 'arc-through' && <circle cx={pathDraft.end[0] - center[0]} cy={pathDraft.end[1] - center[1]} r={span / 170} className="cad-sketch-vertex" />}
         </>}
         {snapHint && viewportSize.height > 0 && <CadSketchSnapHint candidate={snapHint} center={center} scaleX={width / viewportSize.width} scaleY={span / viewportSize.height} label={snapLabel} />}
+        {currentSnapChoice && choiceHighlight && <g pointerEvents="none" aria-hidden="true">
+          {sourceGraph?.geometry.segments.filter(segment => choiceHighlight.entityIds.includes(segment.id)).map(segment => {
+            const boundary = cadSketchGraphBoundary(segment);
+            return <g key={segment.id} data-cad-drawing-snap-owner={segment.id} className="cad-profile cad-sketch-entity is-pick-highlighted" fill="none">
+              {boundary.type === 'line' ? <line x1={boundary.start.x - center[0]} y1={boundary.start.y - center[1]} x2={boundary.end.x - center[0]} y2={boundary.end.y - center[1]} />
+                : boundary.type === 'circle' ? <circle cx={boundary.center.x - center[0]} cy={boundary.center.y - center[1]} r={boundary.radius} />
+                  : <path d={cadArcSvgPath(boundary, center)} />}</g>;
+          })}
+          <CadSketchSnapHint candidate={choiceHighlight} center={center} scaleX={width / (viewportSize.width || 800)} scaleY={span / (viewportSize.height || 600)}
+            label={choicePointId === undefined ? 'Choose midpoint' : `Choose Point ${(sourceGraph?.graph.points.findIndex(point => point.id === choicePointId) ?? -1) + 1}`} />
+        </g>}
         {points.map(([x, y], index) => <circle key={index} cx={x - center[0]} cy={y - center[1]} r={span / 170} className="cad-sketch-vertex" />)}
         {picks.filter(pick => pick.kind === 'coincident').map(pick => <circle key={pick.relationId} data-cad-sketch-attachment={pick.sourcePointId}
           cx={pick.point[0] - center[0]} cy={pick.point[1] - center[1]} r={6 * span / (viewportSize.height || 600)} className="cad-sketch-snap-target"><title>Pending coincidence with Point {(sourceGraph?.graph.points.findIndex(point => point.id === pick.sourcePointId) ?? -1) + 1}</title></circle>)}
@@ -838,6 +894,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         x={Math.min(boxSelection.box.start[0], boxSelection.box.end[0]) - center[0]} y={center[1] - Math.max(boxSelection.box.start[1], boxSelection.box.end[1])}
         width={Math.abs(boxSelection.box.end[0] - boxSelection.box.start[0])} height={Math.abs(boxSelection.box.end[1] - boxSelection.box.start[1])} />}
     </svg>
+    {currentSnapChoice && sourceGraph && <CadSketchSnapChooser anchor={{ x: currentSnapChoice.clientX, y: currentSnapChoice.clientY }} candidates={currentSnapChoice.candidates} graph={sourceGraph.graph}
+      onClose={closeSnapChoice} onHighlight={candidate => { if (choiceIsCurrent(currentSnapChoice)) setChoiceHighlight(candidate); }}
+      onChoose={candidate => { if (choiceIsCurrent(currentSnapChoice)) placeChosen.current(candidate); }}
+      onOutsidePointerDown={event => { suppressProfileClick.current = true; event.preventDefault(); event.stopPropagation(); }} />}
     {currentOverlap && <CadContextMenu anchor={{ x: currentOverlap.clientX + (currentOverlap.target ? 12 : 0), y: currentOverlap.clientY + (currentOverlap.target ? 12 : 0) }} title={currentOverlap.target ? 'Sketch edge' : 'Select other'} items={overlapItems} onClose={closeOverlap}
       onOutsidePointerDown={event => { event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true; }} />}
     {dimensionControls && sketch.kind === 'sketch' && dimensionProfile && dimensionAnchor && tool === 'select' && !isPreview && <CadSketchDimensionControls {...dimensionControls} interactionLocked={dimensionControls.interactionLocked || submission.applying || dragPreview !== null} sketch={sketch} profile={dimensionProfile} parameters={parameters} anchor={dimensionAnchor} project={point => ({ x: (point[0] - center[0]) / width * viewportSize.width + viewportSize.width / 2, y: (center[1] - point[1]) / span * viewportSize.height + viewportSize.height / 2 })} cancelSignal={cancelSignal} />}
