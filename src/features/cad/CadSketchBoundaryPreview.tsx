@@ -53,7 +53,7 @@ export function prepareCadSketchTrimPreview(prepared: ReturnType<typeof prepareC
             ? 'One cut shares a boundary endpoint; the other is a numeric contact without attachment.' : 'Both cuts are numeric contacts without attachment.') + ' No radius constraint is added.'
         : target.boundaries.map((boundary, index) =>
         `${index ? 'End-side' : 'Start-side'} cut: ${boundary.endpointPointId ? 'shared boundary endpoint' : 'one-time numeric contact, no attachment'}.`).join(' ')
-        + ' Both survivors keep a Collinear relation.';
+        + (segment.kind === 'arc' ? ' Both survivors share their center and keep an Equal radius relation.' : ' Both survivors keep a Collinear relation.');
     return { kind: 'ready', edit: { kind: 'trim-sketch-entity', sketchId, trim }, geometry, help };
   } catch (cause) {
     return unavailable(prepared, cause, 'This edge cannot be trimmed here.');

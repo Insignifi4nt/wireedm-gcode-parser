@@ -102,7 +102,7 @@ describe('exact middle-line Trim', () => {
     expect(JSON.stringify(document)).toBe(before);
   });
 
-  it('refuses a degenerate middle gap and keeps arc middle removal outside the supported line operation', () => {
+  it('refuses a degenerate middle gap and uses the same finite event ownership for an open arc', () => {
     const original = fourCuts(), tight = parseCadSketchGraph({ ...original, points: original.points.map(point =>
       point.id === 'c2' || point.id === 'd2' ? { ...point, position: [10 + 1e-8, point.position[1]] } : point) });
     expect(() => prepareCadSketchTrim({ graph: tight, parameters, entityId: 'edge', parameter: (15 + 5e-9) / 35 }))
@@ -111,7 +111,7 @@ describe('exact middle-line Trim', () => {
       ...[5, -5].flatMap((x, index) => [{ id: `c${index}`, position: [x, 0] }, { id: `d${index}`, position: [x, 20] }])], entities: [
       { id: 'arc', kind: 'arc', construction: true, centerPointId: 'o', startPointId: 'a', endPointId: 'b', direction: 'ccw' },
       ...[0, 1].map(index => ({ id: `fence${index}`, kind: 'line', construction: true, startPointId: `c${index}`, endPointId: `d${index}` }))], relations: [] });
-    expect(() => prepareCadSketchTrim({ graph: arc, parameters: {}, entityId: 'arc', parameter: .5 }))
-      .toThrowError(expect.objectContaining({ code: 'unsupported-sketch-trim-middle' }));
+    expect(prepareCadSketchTrim({ graph: arc, parameters: {}, entityId: 'arc', parameter: .5 }))
+      .toMatchObject({ target: { kind: 'middle' }, removed: { kind: 'arc' }, survivors: [{ kind: 'arc' }, { kind: 'arc' }] });
   });
 });

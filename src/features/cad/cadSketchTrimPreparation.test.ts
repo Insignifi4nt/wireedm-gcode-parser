@@ -12,12 +12,42 @@ import { middleTrim, middleTrimPart } from '@/domain/cad/__tests__/cadSketchTrim
 import { circleTrimPart } from '@/domain/cad/__tests__/cadSketchCircleTrimFixtures';
 import { CadSession } from './cadSession';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
+import { middleArcTrimPart, middleArcTrimTarget } from '@/domain/cad/__tests__/cadSketchMiddleArcTrimFixtures';
 
 const require = createRequire(import.meta.url);
 const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
   require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
 
 describe('real PlaneGCS exact end-Trim preparation', () => {
+  it.each([false, true])('preserves the complete middle-arc candidate with fixed endpoint drivers=%s', async fixed => {
+    const document = middleArcTrimPart(fixed), source = document.features[0];
+    if (source.kind !== 'sketch' || !source.graph) throw new Error('Middle arc source missing.');
+    const original = JSON.stringify(document), trim = middleArcTrimTarget(document);
+    const expected = trimCadSketchEntity({ graph: source.graph, parameters: document.parameters, trim });
+    const prepared = await prepareCadEdits(document, [{ kind: 'trim-sketch-entity', sketchId: 'sketch', trim }], runtime), sketch = prepared.document.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Prepared middle arc missing.');
+    expect(sketch.graph).toEqual(expected.graph); expect(sketch.graph.points).toEqual(source.graph.points);
+    expect(sketch.graph.entities.slice(0, 2)).toEqual([{ ...source.graph.entities[0], endPointId: 'p' },
+      { ...source.graph.entities[0], id: 'after', startPointId: 'q' }]);
+    expect(sketch.graph.entities.slice(2)).toEqual(source.graph.entities.slice(1));
+    expect(sketch.graph.relations).toEqual([{ id: 'common-radius', kind: 'equal-radius', curveIds: ['arc', 'after'] }]);
+    expect(prepared.sketchDiagnostics[0].diagnostics).toEqual({ status: 'success', degreesOfFreedom: fixed ? 0 : 5,
+      conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] });
+    expect(JSON.stringify(document)).toBe(original);
+  });
+
+  it('atomically rejects a middle-arc trim owned by an existing whole-arc radius instead of transferring it to a child', async () => {
+    const source = middleArcTrimPart(), sketch = source.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Middle arc source missing.');
+    const trim = middleArcTrimTarget(source), document = parseCadDocument({ ...source, features: [{ ...sketch, graph: { ...sketch.graph,
+      relations: [{ id: 'radius', kind: 'radial-size', entityId: 'arc', quantity: 'radius', value: 10 }] } }] });
+    const session = new CadSession(document), before = session.getSnapshot();
+    await expect(session.editPrepared(before.version, async accepted => (await prepareCadEdits(accepted, [
+      { kind: 'set-parameter', name: 'retained', value: 99 }, { kind: 'trim-sketch-entity', sketchId: 'sketch', trim }
+    ], runtime)).document)).rejects.toMatchObject({ code: 'dependent-sketch-trim', relationIds: ['radius'], pointIds: [] });
+    expect(session.getSnapshot()).toBe(before); expect(session.getSnapshot().document.parameters).toEqual({ retained: 7 });
+  });
+
   it('preserves the complete circle-to-major-arc candidate and atomically rejects a later incompatible radius driver', async () => {
     const document = circleTrimPart(), source = document.features[0];
     if (source.kind !== 'sketch' || !source.graph) throw new Error('Circle source missing.');

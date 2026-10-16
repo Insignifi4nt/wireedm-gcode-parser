@@ -431,6 +431,34 @@ describe('graph spatial selection', () => {
       { id: 'rim', kind: 'arc', centerPointId: 'center', startPointId: 'a', endPointId: 'b', direction: 'ccw', construction: false }, feature.graph!.entities[1]
     ] } });
   });
+  it('previews both circular survivors and keeps their common center and radius through the ordinary middle Trim edit', async () => {
+    const h = await spatialFixture();
+    const feature: CadSketchFeature = { ...h.feature, graph: {
+      points: [{ id: 'center', position: [' 0.00 ', '0'] }, { id: 'a', position: [-8, 6] }, { id: 'b', position: [8, 6] },
+        { id: 'p', position: [-6, -8] }, { id: 'q', position: [6, -8] }, { id: 'left', position: ['-6', '0'] }, { id: 'right', position: ['6', '0'] }],
+      entities: [{ id: 'rim', kind: 'arc', centerPointId: 'center', startPointId: 'a', endPointId: 'b', direction: 'ccw', construction: false },
+        { id: 'top', kind: 'line', startPointId: 'b', endPointId: 'a', construction: false },
+        { id: 'bottom', kind: 'line', startPointId: 'p', endPointId: 'q', construction: false },
+        { id: 'left-guide', kind: 'line', startPointId: 'p', endPointId: 'left', construction: true },
+        { id: 'right-guide', kind: 'line', startPointId: 'q', endPointId: 'right', construction: true }], relations: []
+    } };
+    await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });
+    await h.pointer('pointerdown', 0, -10, false, 7, 2); await h.pointer('pointerup', 0, -10, false, 7, 2);
+    const trim = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Trim here');
+    expect(trim?.disabled).toBe(false); await act(async () => trim?.focus());
+    const preview = container.querySelector('[aria-label="Trim preview"]');
+    expect(preview?.querySelectorAll('path.is-retained')).toHaveLength(2); expect(preview?.querySelectorAll('path.is-removed')).toHaveLength(1);
+    expect([...preview!.querySelectorAll('[data-cad-sketch-trim-point]')].map(point => point.getAttribute('data-cad-sketch-trim-point'))).toEqual(['p', 'q']);
+    expect(h.edited).not.toHaveBeenCalled(); await act(async () => trim?.click());
+    const edit = h.edited.mock.calls[0][0][0];
+    if (edit.kind !== 'trim-sketch-entity' || edit.trim.kind !== 'middle') throw new Error('Expected ordinary middle Trim.');
+    expect(edit.trim).toMatchObject({ entityId: 'rim', parameter: expect.closeTo(.5, 12), cutPointIds: ['p', 'q'] });
+    const accepted = applyCadEdits(h.props().graphControls!.document, [edit]).features[0];
+    expect(accepted).toEqual({ ...feature, graph: { ...feature.graph, entities: [
+      { ...feature.graph!.entities[0], endPointId: 'p' },
+      { ...feature.graph!.entities[0], id: edit.trim.newEntityId, startPointId: 'q' }, ...feature.graph!.entities.slice(1)
+    ], relations: [{ id: edit.trim.supportRelationId, kind: 'equal-radius', curveIds: ['rim', edit.trim.newEntityId] }] } });
+  });
   async function middleTrimFixture() {
     const h = await spatialFixture(), graph = h.feature.graph!;
     const feature: CadSketchFeature = { ...h.feature, graph: { ...graph,

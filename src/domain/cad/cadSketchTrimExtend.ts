@@ -54,13 +54,14 @@ export interface CadSketchEndTrimPreparation {
   readonly boundary: PathSegment | null;
   readonly point: readonly [number, number] | null;
 }
-export interface CadSketchMiddleTrimPreparation {
+interface MiddleTrimContacts {
   readonly target: Omit<CadSketchMiddleTrimTarget, 'cutPointIds' | 'newEntityId' | 'supportRelationId'>;
-  readonly removed: LinePathSegment;
-  readonly survivors: readonly [LinePathSegment, LinePathSegment];
   readonly cuts: readonly [{ readonly boundary: PathSegment; readonly point: readonly [number, number] },
     { readonly boundary: PathSegment; readonly point: readonly [number, number] }];
 }
+export type CadSketchMiddleTrimPreparation = MiddleTrimContacts & (
+  { readonly removed: LinePathSegment; readonly survivors: readonly [LinePathSegment, LinePathSegment] }
+  | { readonly removed: ArcPathSegment; readonly survivors: readonly [ArcPathSegment, ArcPathSegment] });
 export interface CadSketchCircleTrimPreparation {
   readonly target: Omit<CadSketchCircleTrimTarget, 'cutPointIds'>;
   readonly removed: ArcPathSegment;
@@ -210,6 +211,27 @@ function circlePieces(circle: CirclePathSegment, previous: Event, next: Event): 
   if (Math.abs(removed.sweepRadians + survivor.sweepRadians - fullTurn) * circle.radius > tolerance) throw precision();
   return [removed, survivor];
 }
+function checkMiddleArcPiece(source: ArcPathSegment, piece: ArcPathSegment, expected: number, tolerance: number): void {
+  const a = { x: piece.start.x - source.center.x, y: piece.start.y - source.center.y }, b = { x: piece.end.x - source.center.x, y: piece.end.y - source.center.y };
+  const direction = source.clockwise ? -1 : 1, cross = direction * (a.x * b.y - a.y * b.x), dot = a.x * b.x + a.y * b.y;
+  const sweep = direction * piece.sweepRadians;
+  if (!(direction * expected > 0 && direction * expected < fullTurn) || !(sweep > 0 && sweep < fullTurn) || piece.clockwise !== source.clockwise
+    || distance(piece.center, source.center) > tolerance || Math.abs(piece.radius - source.radius) > tolerance
+    || Math.abs(distance(piece.center, piece.start) - source.radius) > tolerance || Math.abs(distance(piece.center, piece.end) - source.radius) > tolerance
+    || Math.abs(piece.sweepRadians - expected) >= Math.PI || Math.abs(piece.sweepRadians - expected) * source.radius > tolerance
+    || cross > 0 && sweep >= Math.PI || cross < 0 && sweep <= Math.PI || cross === 0 && dot >= 0) throw precision();
+}
+function middleArcPieces(segment: ArcPathSegment, left: Event, right: Event) {
+  const make = (start: Point2, end: Point2) => createArcSegment({ id: segment.id, source: segment.source, center: segment.center,
+    clockwise: segment.clockwise, start, end });
+  const before = make(segment.start, left.point), removed = make(left.point, right.point), after = make(right.point, segment.end);
+  const expected = [segment.sweepRadians * left.witness.parameter, segment.sweepRadians * (right.witness.parameter - left.witness.parameter),
+    segment.sweepRadians * (1 - right.witness.parameter)];
+  const tolerance = cadPathClosureTolerance([segment.center, segment.start, left.point, right.point, segment.end]);
+  for (const [index, piece] of [before, removed, after].entries()) checkMiddleArcPiece(segment, piece, expected[index], tolerance);
+  if (Math.abs(before.sweepRadians + removed.sweepRadians + after.sweepRadians - segment.sweepRadians) * segment.radius > tolerance) throw precision();
+  return { removed, survivors: [before, after] as const };
+}
 
 function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, segments: readonly PathSegment[], query: BoundaryQuery): Event[] {
   const { segment } = query, operation = query.kind;
@@ -324,17 +346,18 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
   const first = unique[0], last = unique[unique.length - 1];
   const end = pick < first.witness.parameter ? 'start' : pick > last.witness.parameter ? 'end' : null;
   if (!end) {
-    if (segment.kind !== 'line' || entity.kind !== 'line') throw new CadError('unsupported-sketch-trim-middle', 'Middle trim supports lines. Split this arc explicitly before editing its surviving pieces.');
     const after = unique.findIndex(event => event.witness.parameter > pick), left = unique[after - 1], right = unique[after];
     assertEndpointRange(left.point, 'trim'); assertEndpointRange(right.point, 'trim'); assertMiddleDependencies(graph, entityId);
     const minimum = Math.max(1e-7, cadPathClosureTolerance([segment.start, left.point, right.point, segment.end]));
     if (distance(segment.start, left.point) <= minimum || distance(left.point, right.point) <= minimum || distance(right.point, segment.end) <= minimum) throw precision();
-    const result: CadSketchMiddleTrimPreparation = {
+    const contacts: MiddleTrimContacts = {
       target: { kind: 'middle', entityId, parameter: pick, boundaries: [left.witness, right.witness] },
-      removed: createLineSegment({ ...segment, start: left.point, end: right.point }),
-      survivors: [createLineSegment({ ...segment, end: left.point }), createLineSegment({ ...segment, start: right.point })],
       cuts: [{ boundary: left.boundary, point: [left.point.x, left.point.y] }, { boundary: right.boundary, point: [right.point.x, right.point.y] }]
     };
+    const result: CadSketchMiddleTrimPreparation = segment.kind === 'line' ? { ...contacts,
+      removed: createLineSegment({ ...segment, start: left.point, end: right.point }),
+      survivors: [createLineSegment({ ...segment, end: left.point }), createLineSegment({ ...segment, start: right.point })] }
+      : { ...contacts, ...middleArcPieces(segment, left, right) };
     freezeData(result); return result;
   }
   const event = end === 'start' ? first : last;
@@ -377,17 +400,28 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
       cutPointIds: Object.freeze([trim.cutPointIds[0], trim.cutPointIds[1]] satisfies [string, string]) });
   }
   if (trim.kind === 'middle') {
-    const line = graph.entities.find(entity => entity.id === trim.entityId);
-    if (!line || line.kind !== 'line') throw new CadError('invalid-sketch-trim-target', 'Middle trim supports an existing line.');
+    const source = graph.entities.find(entity => entity.id === trim.entityId);
+    if (!source || source.kind === 'circle') throw new CadError('invalid-sketch-trim-target', 'Middle trim needs an existing line or open arc.');
     for (const [index, witness] of trim.boundaries.entries()) if (witness.endpointPointId !== undefined && trim.cutPointIds[index] !== witness.endpointPointId)
       throw new CadError('invalid-sketch-trim-point', 'Use the exact witnessed boundary endpoint identity.');
+    if (source.kind === 'arc') {
+      const joint = resolveCadSketchPointIdentities(graph), outer = [source.centerPointId, source.startPointId, source.endPointId].map(joint);
+      const cuts = trim.boundaries.map((witness, index) => witness.endpointPointId === undefined ? trim.cutPointIds[index] : joint(trim.cutPointIds[index]));
+      if (cuts[0] === cuts[1] || cuts.some(cut => outer.includes(cut))) throw new CadError('invalid-sketch-trim-point', 'Arc cuts need distinct identities from the original center and endpoints.');
+    }
+    const support: CadSketchGraphRelation = source.kind === 'line' ? { id: trim.supportRelationId, kind: 'collinear', lineIds: [source.id, trim.newEntityId] }
+      : { id: trim.supportRelationId, kind: 'equal-radius', curveIds: [source.id, trim.newEntityId] };
     const candidate = parseCadSketchGraph({ ...graph,
       points: [...graph.points, ...trim.boundaries.flatMap((witness, index) => witness.endpointPointId === undefined ? [{ id: trim.cutPointIds[index], position: witness.position }] : [])],
-      entities: graph.entities.flatMap(entity => entity.id === line.id ? [{ ...line, endPointId: trim.cutPointIds[0] },
-        { ...line, id: trim.newEntityId, startPointId: trim.cutPointIds[1] }] : [entity]),
-      relations: [...graph.relations, { id: trim.supportRelationId, kind: 'collinear', lineIds: [line.id, trim.newEntityId] }] });
-    compileCadSketchGraph(candidate, parameters);
-    return Object.freeze({ graph: candidate, retainedEntityId: line.id, removedEntityId: null,
+      entities: graph.entities.flatMap(entity => entity.id === source.id ? [{ ...source, endPointId: trim.cutPointIds[0] },
+        { ...source, id: trim.newEntityId, startPointId: trim.cutPointIds[1] }] : [entity]), relations: [...graph.relations, support] });
+    const compiled = compileCadSketchGraph(candidate, parameters);
+    if (source.kind === 'arc' && 'survivors' in prepared) for (const [index, expected] of prepared.survivors.entries()) {
+      const actual = compiled.segments.find(segment => segment.id === (index === 0 ? source.id : trim.newEntityId));
+      if (expected.kind !== 'arc' || actual?.kind !== 'arc') throw precision();
+      checkMiddleArcPiece(expected, actual, expected.sweepRadians, cadPathClosureTolerance([expected.center, expected.start, expected.end]));
+    }
+    return Object.freeze({ graph: candidate, retainedEntityId: source.id, removedEntityId: null,
       cutPointIds: Object.freeze([trim.cutPointIds[0], trim.cutPointIds[1]] satisfies [string, string]), newEntityId: trim.newEntityId });
   }
   const candidate = replaceEndpoint(graph, parameters, trim.entityId, trim.end, trim.boundary, trim.cutPointId, 'trim');

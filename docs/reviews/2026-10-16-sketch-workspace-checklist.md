@@ -17,6 +17,14 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: middle-arc Trim
+
+The [bounded plan](2026-10-16-sketch-next-boundary-plan.md) and independent design review reuse the existing middle-Trim target, shared center and ordinary Equal radius support. The actual pinned-native preflight passes the unchanged complete candidate: equality reduces freedom from 6 to 5; the fixed-endpoint variant remains exact at 0 freedoms without invented redundancy IDs; a later ordinary R12 edit moves both children to R12. Evidence: ignored `tmp/sketch-middle-arc-native-preflight.{mts,json,log}`. No native/tolerance change is authorized.
+
+The Canvas case and complete production journey reproduce the disabled command before implementation. Final domain checks pass 46 cases, integrated checks pass 76 and Canvas passes 45, with overlapping existing regressions. Full production build/types, public docs/source distributions, shared UI and icons pass. Six distinct complete journeys pass in both Chromium and Firefox. Independent source review found no remaining actionable issue. [Review and root acceptance](2026-10-16-sketch-middle-arc-review.md).
+
+The native private D → clipped-D walkthrough confirms preview, Cancel, deliberate extrusion-area repair, one whole-part Undo and exact human/WebMCP source parity. The 5 mm plate changes from 1347.1487177940903 to 1265.3981633974483 mm³, with one solid and no diagnostics. Its native section keeps two lines and two R10 quarter arcs. Proofs: `tmp/sketch-middle-arc-{preview,solid}.png`. The disposable draft is undone empty and closed without saving user records. Existing target fields, schema, native mapping and tolerances stay unchanged; the production Trim module adds roughly 45 net lines. Arc Extend, retained-support owner policies, Tangent, source reuse and transforms remain open. No release bump or remote action; sketch mode and the goal are incomplete.
+
 ## Checkpoint: measurement scope and agent body identity
 
 Circle Trim is accepted local checkpoint `9947e31`. Its native walkthrough exposed an ambiguous measurement heading: whole-sketch automatic material can be zero while deliberate intersecting areas remain usable. The shared card/help now names that scope; all four existing numeric display/mapping checks pass (`tmp/sketch-measurement-scope.log`), without new copy tests or altered math/API behavior. Native section authoring also exposed an unclear body identity handoff: the build description/public agent guide now explicitly map each `bodies[].featureId` to downstream `bodyId`, without changing fields or validation.
