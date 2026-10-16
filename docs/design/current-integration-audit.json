@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T00:00:16.196Z",
+  "generatedAt": "2026-10-16T00:20:06.959Z",
   "baseline": {
     "path": "docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json",
     "publishedCheckpoint": "6e2113fa0151ef7d0b378ad3de7635664b2fab82",
@@ -3559,7 +3559,7 @@
       "scoutActualSymbol": "FitViewIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 512,
+        "line": 540,
         "column": 280,
         "symbol": "FitViewIcon",
         "exportedSymbol": "FitViewIcon",
@@ -3582,7 +3582,7 @@
       "scoutActualSymbol": "GridIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 512,
+        "line": 540,
         "column": 427,
         "symbol": "GridIcon",
         "exportedSymbol": "GridIcon",
@@ -3605,7 +3605,7 @@
       "scoutActualSymbol": "SnapIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 512,
+        "line": 540,
         "column": 573,
         "symbol": "SnapIcon",
         "exportedSymbol": "SnapIcon",
@@ -3628,7 +3628,7 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 519,
+        "line": 547,
         "column": 434,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -3651,7 +3651,7 @@
       "scoutActualSymbol": "UndoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 519,
+        "line": 547,
         "column": 664,
         "symbol": "UndoIcon",
         "exportedSymbol": "UndoIcon",
@@ -3674,7 +3674,7 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 519,
+        "line": 547,
         "column": 795,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
@@ -3697,7 +3697,7 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 521,
+        "line": 549,
         "column": 106,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -3720,7 +3720,7 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 521,
+        "line": 549,
         "column": 215,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",

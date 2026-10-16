@@ -6,12 +6,12 @@ import type { PathSegment, Point2 } from '@/domain/path-intel/types';
 import type { SketchPoint } from './cadSketchInteraction';
 import { inspectCadSketchHandles, type CadSketchHandleDescriptor } from '@/domain/cad/cadSketchHandles';
 
-export interface CadSketchHandlePick extends CadSketchHandleDescriptor { readonly profileId: string }
+export interface CadSketchHandlePick extends CadSketchHandleDescriptor { readonly profileId: string; readonly profileName: string }
 
 /** Grip eligibility precedes contour picking, so a vertex never falls through to a whole-profile move. */
 export function createCadSketchHandlePicker(profiles: readonly CadSketchProfile[], parameters: Readonly<Record<string, number>>) {
   const handles = profiles.flatMap(profile => {
-    try { return inspectCadSketchHandles(profile, parameters).map(handle => ({ ...handle, profileId: profile.id })); }
+    try { return inspectCadSketchHandles(profile, parameters).map(handle => ({ ...handle, profileId: profile.id, profileName: profile.name })); }
     catch { return []; }
   });
   return {

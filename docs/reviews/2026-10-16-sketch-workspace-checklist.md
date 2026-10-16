@@ -43,3 +43,13 @@ This is a first slice, not completion of the selection or sketch goal. Remaining
 
 The solver reference recommends a bounded PlaneGCS trial rather than a handwritten nonlinear solver. Research/trial evidence is in `2026-10-16-sketch-solver-options.md`; no production dependency has been added yet.
 Final grip checkpoint gates: full production build, documentation/source distribution checks and Firefox gesture/Undo/Save/reload journey pass. Firefox initially exposed an early test command before the versioned viewport was ready; the journey now awaits the public ready-reference signal, matching the documented agent contract. It also awaits the actual reopened workbench before reading its draft. No fixed delays or production guard bypasses were introduced. Both independent overlap findings are resolved.
+
+## Checkpoint: arc joints, slot controls and point selection
+
+Numeric arc joints now refit through their original analytic midpoint while preserving traversal and the major/minor branch. Shared line/arc and arc/arc endpoints stay closed; invalid or branch-changing edits reject atomically. Full-circle paths expose center/radius grips. Slots expose independent center, length, width and angle grips with symmetric local-axis sizing and existing expression/dimension drivers intact. Expression-driven arc refits remain explicitly unavailable until the general relation solver can preserve those drivers.
+
+An owned point edit retains that point selection; Undo or an external revision clears the detail selection rather than switching to the entire contour. A hovered grip on another contour is visible before targeting. The cursor readout uses the existing precise quantity formatter, preserving small nonzero coordinates.
+
+Evidence: 81 focused domain, picking and gesture cases; TypeScript and shared UI checks; complete production build including docs/source distributions. Two realistic Chromium and two Firefox journeys pass: point drag/cancel/Undo/keyboard/Save/reload, and slot sizing plus analytic arc-joint edit/Undo. Native in-app WebMCP seeded a disposable unsaved curve/slot sketch; a human-style keyboard grip edit verified changed size, point-only selection and measurement updates. Screenshot `tmp/sketch-slot-grips.png`; temporary tab closed without saving user data. No remote actions.
+
+Constraint implementation now follows the graph-first integration plan, replacing the initial parallel-ID draft. A pinned PlaneGCS dependency and source packaging are prepared separately; browser worker, graph persistence, async ownership and user-facing relation tools are still in progress. Do not treat these foundations as completed sketch mode.

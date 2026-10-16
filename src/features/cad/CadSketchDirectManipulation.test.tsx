@@ -85,8 +85,11 @@ describe('direct sketch contour manipulation', () => {
     expect(h.reshaped).toHaveBeenCalledExactlyOnceWith('profile', { kind: 'vertex', index: 1 }, [5, -5]);
     expect(h.translated).not.toHaveBeenCalled();
     expect(h.profile().geometry).toEqual({ kind: 'polygon', points: [[0, 0], [25, -5], [20, 10], [0, 10]] });
+    expect(container.querySelector('[aria-label="Point 2 of Profile"]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(container.querySelector('[aria-label="Select Profile profile"]')?.getAttribute('aria-pressed')).toBe('false');
     await act(async () => h.session.undo());
     expect(h.session.getSnapshot().document).toEqual(initial.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+    expect(container.querySelector('[aria-label="Select Profile profile"]')?.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('never falls through from a locked point to whole-profile translation', async () => {

@@ -20,6 +20,7 @@ import { CadSketchDimensionControls, type CadSketchDimensionControlsProps } from
 import { readCadFitArea, type CadFitAreaReader } from './cadFitArea';
 import { translateCadSketchProfile } from '@/domain/cad/cadSketchConstraints';
 import { cadSketchHandleKey, moveCadSketchHandle, type CadSketchHandle } from '@/domain/cad/cadSketchHandles';
+import { formatCadQuantity } from './cadDisplayQuantity';
 
 const NO_PROFILES: readonly CadSketchProfile[] = Object.freeze([]);
 export interface CadSketchContextMenuRequest {
@@ -46,6 +47,7 @@ interface CadSketchProfileDrag {
   moved: boolean;
   translation: SketchPoint;
 }
+type CadSketchDetailSelection = { readonly kind: 'none' | 'profile' } | { readonly kind: 'handle'; readonly target: CadSketchHandlePick };
 
 export function CadSketchCanvas({ sketch, parameters, documentVersion, placementLabel, tool, selectedProfileId, onSelectProfile, onAddProfile, onTranslateProfile, onMoveHandle, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onError, cancelSignal, interactionLocked = false, onControlsReady, viewLocked = false, navigationMode = 'mouse', onContextMenu, previewProfile, inspection, dimensionControls, getFitArea }: {
   sketch: CadSketchFeature | CadCurveFeature;
@@ -90,7 +92,11 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
   const [gridStep, setGridStep] = useState(5);
   const profileDrag = useRef<CadSketchProfileDrag | null>(null);
   const [dragPreview, setDragPreview] = useState<{ profile: CadSketchProfile; translation: SketchPoint; handle: CadSketchHandle | null } | null>(null);
-  const [activeHandle, setActiveHandle] = useState<CadSketchHandlePick | null>(null);
+  const [detailSelection, setDetailSelection] = useState<CadSketchDetailSelection>({ kind: 'profile' });
+  const activeHandle = detailSelection.kind === 'handle' ? detailSelection.target : null;
+  const setActiveHandle = (target: CadSketchHandlePick | null) => setDetailSelection(target ? { kind: 'handle', target } : { kind: 'profile' });
+  const ownedHandleEdit = useRef<{ readonly profileId: string; readonly handle: CadSketchHandle; readonly expectedText: string } | null>(null);
+  const selectionRevision = useRef({ version: documentVersion, sketch });
   const [hoverHandle, setHoverHandle] = useState<CadSketchHandlePick | null>(null);
   const suppressProfileClick = useRef(false);
   const pendingChange = useRef(onPendingChange);
@@ -134,13 +140,25 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
   const handleProfile = dragPreview?.profile ?? profiles.find(profile => profile.id === selectedProfileId);
   const previewHandlePicker = useMemo(() => dragPreview ? createCadSketchHandlePicker([dragPreview.profile], parameters) : handlePicker, [dragPreview, parameters, handlePicker]);
   const visibleHandles = previewHandlePicker.handles.filter(handle => handle.profileId === handleProfile?.id);
+  const displayHandles = hoverHandle && hoverHandle.profileId !== handleProfile?.id ? [...visibleHandles, hoverHandle] : visibleHandles;
   useLayoutEffect(() => { finishPan(); }, [documentVersion, interactionLocked, cancelSignal, sketch.id, profilePicker, finishPan]);
   useLayoutEffect(() => { finishProfileDrag(); }, [documentVersion, sketch, parameters, tool, interactionLocked, cancelSignal, previewProfile, center, span, aspect, snap, gridStep, navigationMode, finishProfileDrag]);
   useLayoutEffect(() => {
     if (profileDrag.current && profileDrag.current.profile.id !== selectedProfileId) finishProfileDrag();
-    setActiveHandle(current => current?.profileId === selectedProfileId ? current : null);
+    setDetailSelection(current => current.kind === 'handle' && current.target.profileId === selectedProfileId ? current : { kind: 'profile' });
   }, [selectedProfileId, finishProfileDrag]);
-  useEffect(() => { setHoverHandle(null); setActiveHandle(null); }, [documentVersion, sketch.id, tool, cancelSignal]);
+  useLayoutEffect(() => {
+    const previous = selectionRevision.current;
+    if (previous.version === documentVersion && previous.sketch === sketch) return;
+    selectionRevision.current = { version: documentVersion, sketch };
+    const owned = ownedHandleEdit.current;
+    ownedHandleEdit.current = null; setHoverHandle(null);
+    const profile = owned && profiles.find(profile => profile.id === owned.profileId);
+    const next = owned && profile && JSON.stringify(profile) === owned.expectedText
+      ? handlePicker.handles.find(grip => grip.profileId === owned.profileId && cadSketchHandleKey(grip.handle) === cadSketchHandleKey(owned.handle)) : null;
+    setDetailSelection(next ? { kind: 'handle', target: next } : { kind: 'none' });
+  }, [documentVersion, sketch, profiles, handlePicker]);
+  useEffect(() => { setHoverHandle(null); setDetailSelection({ kind: 'profile' }); ownedHandleEdit.current = null; }, [sketch.id, tool, cancelSignal]);
   const width = span * aspect;
   const navigation = useRef({ center, span, aspect, viewLocked, navigationMode });
   navigation.current = { center, span, aspect, viewLocked, navigationMode };
@@ -225,6 +243,15 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
     const key = event.target instanceof Element ? event.target.closest('[data-cad-sketch-grip]')?.getAttribute('data-cad-sketch-grip') : null;
     const owned = key ? handlePicker.handles.find(grip => `${grip.profileId}/${cadSketchHandleKey(grip.handle)}` === key) : null;
     return owned ?? handlePicker.pick(point, millimetersPerPixel, selectedProfileId);
+  };
+  const commitHandle = (profileId: string, handle: CadSketchHandle, translation: SketchPoint) => {
+    const profile = profiles.find(profile => profile.id === profileId);
+    if (!profile || !onMoveHandle) return;
+    const expected = moveCadSketchHandle({ profile, handle, translation, parameters });
+    if (JSON.stringify(profile) === JSON.stringify(expected)) return;
+    ownedHandleEdit.current = { profileId, handle, expectedText: JSON.stringify(expected) };
+    try { onMoveHandle(profileId, handle, translation); }
+    catch (error) { ownedHandleEdit.current = null; throw error; }
   };
   const moveProfile = (event: { pointerId: number; clientX: number; clientY: number }) => {
     const active = profileDrag.current;
@@ -380,7 +407,7 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
           const active = finishProfileDrag(event.pointerId);
           if (event.button === 0 && active?.moved && (active.translation[0] !== 0 || active.translation[1] !== 0)) {
             try {
-              if (active.handle) onMoveHandle?.(active.profile.id, active.handle, active.translation);
+              if (active.handle) commitHandle(active.profile.id, active.handle, active.translation);
               else onTranslateProfile?.(active.profile.id, active.translation);
             }
             catch (error) { onError(error instanceof Error ? error.message : 'Unable to move this contour.'); }
@@ -465,13 +492,13 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
       {Math.abs(center[0]) <= width / 2 && <path d={`M ${-center[0]} ${-span / 2} V ${span / 2}`} className="cad-axis-y" strokeWidth={span / 700} />}
       <g transform="scale(1,-1)" strokeWidth={span / 450}>
         {savedCurve && <g className="cad-profile is-selected"><CadPathDraftGeometry segments={savedCurve.segments} preview={false} viewCenter={center} /></g>}
-        {profiles.map((profile) => <g key={profile.id} role="button" aria-label={`Select ${profile.name} profile`} aria-pressed={profile.id === selectedProfileId && !activeHandle} transform={dragPreview?.profile.id === profile.id && !dragPreview.handle ? `translate(${dragPreview.translation[0]} ${dragPreview.translation[1]})` : undefined} tabIndex={tool === 'select' && !interactionLocked ? 0 : -1} data-cad-parameter-highlight={inspection?.profileIds.includes(profile.id) ? profile.id : undefined} className={`cad-profile ${profile.construction ? 'is-construction' : ''} ${profile.id === selectedProfileId && !activeHandle ? 'is-selected' : ''} ${inspection?.profileIds.includes(profile.id) ? 'is-parameter-highlighted' : ''}`} strokeDasharray={profile.construction ? `${span / 80} ${span / 120}` : undefined} onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && tool === 'select' && !interactionLocked) { event.preventDefault(); event.stopPropagation(); setActiveHandle(null); onSelectProfile(profile.id); } }} onClick={(event) => { if (event.detail === 0 && event.button === 0 && tool === 'select' && !interactionLocked) { event.stopPropagation(); setActiveHandle(null); onSelectProfile(profile.id); } }}><CadSketchProfileGeometry geometry={dragPreview?.handle && dragPreview.profile.id === profile.id ? dragPreview.profile.geometry : profile.geometry} parameters={parameters} viewCenter={center} /></g>)}
+        {profiles.map((profile) => <g key={profile.id} role="button" aria-label={`Select ${profile.name} profile`} aria-pressed={profile.id === selectedProfileId && detailSelection.kind === 'profile'} transform={dragPreview?.profile.id === profile.id && !dragPreview.handle ? `translate(${dragPreview.translation[0]} ${dragPreview.translation[1]})` : undefined} tabIndex={tool === 'select' && !interactionLocked ? 0 : -1} data-cad-parameter-highlight={inspection?.profileIds.includes(profile.id) ? profile.id : undefined} className={`cad-profile ${profile.construction ? 'is-construction' : ''} ${profile.id === selectedProfileId && detailSelection.kind === 'profile' ? 'is-selected' : ''} ${inspection?.profileIds.includes(profile.id) ? 'is-parameter-highlighted' : ''}`} strokeDasharray={profile.construction ? `${span / 80} ${span / 120}` : undefined} onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && tool === 'select' && !interactionLocked) { event.preventDefault(); event.stopPropagation(); setActiveHandle(null); onSelectProfile(profile.id); } }} onClick={(event) => { if (event.detail === 0 && event.button === 0 && tool === 'select' && !interactionLocked) { event.stopPropagation(); setActiveHandle(null); onSelectProfile(profile.id); } }}><CadSketchProfileGeometry geometry={dragPreview?.handle && dragPreview.profile.id === profile.id ? dragPreview.profile.geometry : profile.geometry} parameters={parameters} viewCenter={center} /></g>)}
         {tool === 'select' && onMoveHandle && !previewProfile && !interactionLocked && <g className="cad-sketch-handles">
-          {(handleProfile ? visibleHandles.map(handle => ({ ...handle, profileId: handleProfile.id })) : hoverHandle ? [hoverHandle] : []).map(grip => {
+          {displayHandles.map(grip => {
             const key = `${grip.profileId}/${cadSketchHandleKey(grip.handle)}`;
             const selected = activeHandle?.profileId === grip.profileId && cadSketchHandleKey(activeHandle.handle) === cadSketchHandleKey(grip.handle);
             return <circle key={key} data-cad-sketch-grip={key} cx={grip.point[0] - center[0]} cy={grip.point[1] - center[1]} r={4 * span / (viewportSize.height || 600)}
-              role="button" tabIndex={0} aria-label={`${grip.label} of ${handleProfile?.name ?? 'profile'}${grip.draggable ? '' : ', constrained'}`} aria-pressed={selected} aria-disabled={!grip.draggable}
+              role="button" tabIndex={0} aria-label={`${grip.label} of ${grip.profileName}${grip.draggable ? '' : grip.unavailableReason ? ', unavailable' : ', constrained'}`} aria-pressed={selected} aria-disabled={!grip.draggable}
               className={`cad-sketch-handle${selected ? ' is-active' : ''}${grip.draggable ? '' : ' is-locked'}`}
               onClick={event => { if (event.detail === 0) { event.stopPropagation(); setActiveHandle(grip); onSelectProfile(grip.profileId); } }}
               onKeyDown={event => {
@@ -484,10 +511,11 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
                 if (!delta) return;
                 event.preventDefault(); event.stopPropagation();
                 if (!grip.draggable) return;
-                try { onMoveHandle(grip.profileId, grip.handle, delta); }
+                setActiveHandle(grip); onSelectProfile(grip.profileId);
+                try { commitHandle(grip.profileId, grip.handle, delta); }
                 catch (error) { onError(error instanceof Error ? error.message : 'Unable to edit this point.'); }
               }}>
-              <title>{grip.label}{grip.draggable ? ' · Drag to edit, or use arrow keys' : ' · Controlled by dimensions or expressions'}</title>
+              <title>{grip.label}{grip.draggable ? ' · Drag to edit, or use arrow keys' : ` · ${grip.unavailableReason ?? 'Controlled by dimensions or expressions'}`}</title>
             </circle>;
           })}
         </g>}
@@ -519,6 +547,6 @@ export function CadSketchCanvas({ sketch, parameters, documentVersion, placement
         {pathPending && <><Button aria-label={sketch.kind === 'curve' ? 'Finish curve' : 'Close profile'} title={sketch.kind === 'curve' ? 'Validate and save the open curve without a closing edge' : pathNeedsClosingLine ? 'Close the profile by adding a straight line to its start' : 'Validate and save the closed profile'} disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={closePath}><ConfirmIcon size={13} />{sketch.kind === 'curve' ? 'Finish curve' : pathNeedsClosingLine ? 'Close with line' : 'Close profile'}</Button><Button disabled={interactionLocked} onClick={() => changePath({ kind: 'undo-last' }, true)}><UndoIcon size={13} /> Undo last</Button><Button disabled={interactionLocked} onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button></>}
       </>}
       {tool === 'polygon' && points.length >= 3 && <Button disabled={interactionLocked} onClick={close}><ConfirmIcon size={13} /> Close profile</Button>}{points.length > 0 && <Button onClick={() => setPoints([])}><CloseIcon size={13} /> Cancel drawing</Button>}</div>}
-    <div className="cad-view-caption">{cursor[0].toFixed(2)}, {cursor[1].toFixed(2)} mm</div>
+    <div className="cad-view-caption">{formatCadQuantity(cursor[0])}, {formatCadQuantity(cursor[1])} mm</div>
   </div>;
 }
