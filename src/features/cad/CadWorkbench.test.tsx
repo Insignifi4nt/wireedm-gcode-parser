@@ -78,7 +78,7 @@ function PreviousEditorHeader() {
   return <div>Previous editor content</div>;
 }
 
-async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onWorkflowChange' | 'sketchEdit'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
+async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onEditMany' | 'onWorkflowChange' | 'sketchEdit'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
   const session = new CadSession(initial);
   currentSession = session;
   function Harness() {
@@ -98,7 +98,7 @@ async function mount(initial: CadDocument = createCadDocument(), buildProps: Pic
     const props: CadWorkbenchProps = {
       document, documentVersion: snapshot.version, buildVersion: buildState === 'ready' ? snapshot.version : null, ...buildProps, build, buildState, featurePreview, dirty: true, canUndo: true, canRedo: true,
       onEdit: buildProps.onEdit ?? (edit => { session.edit([edit]); }),
-      onEditMany(edits) { session.edit(edits); },
+      onEditMany: buildProps.onEditMany ?? (edits => session.edit(edits)),
       onStatusMessage: statusMessage,
       onUndo: undo, onRedo: vi.fn(), onSave: save, onBack: vi.fn(), onWorkflowChange: buildProps.onWorkflowChange ?? ((open) => { workflow(open); session.setWorkflowOpen(open); }),
       onSendToCam: sendToCam, onOpenDocument: vi.fn(), onNewDocument: vi.fn(),
@@ -197,6 +197,29 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('reports an unchanged authoritative point move without inferring permanent mobility, and ignores cancelled receipts', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Constrained points', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+      points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [50, 20] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+      relations: [{ id: 'h', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'd', kind: 'distance', pointIds: ['a', 'b'], value: 40 }]
+    } }] });
+    const edit = vi.fn<NonNullable<CadWorkbenchProps['onEditMany']>>(() => currentSession.getSnapshot());
+    await mount(source, { build: null, buildState: 'idle', onEditMany: edit });
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const point = container.querySelector<SVGGElement>('[data-cad-sketch-point="b"]'); if (!point) throw new Error('Missing point.');
+    await act(async () => point.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
+    expect(edit).toHaveBeenCalledOnce(); expect(statusMessage).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('constrained'), 'info');
+    expect(currentSession.getSnapshot()).toMatchObject({ document: source, canUndo: false, workflowOpen: false });
+    let accept: (value: ReturnType<CadSession['getSnapshot']>) => void = () => { throw new Error('No pending move.'); };
+    edit.mockImplementationOnce(() => new Promise(resolve => { accept = resolve; }));
+    await act(async () => point.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })));
+    const signal = edit.mock.calls[1]?.[1]; expect(signal?.aborted).toBe(false);
+    await act(async () => point.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(signal?.aborted).toBe(true);
+    await act(async () => accept(currentSession.getSnapshot()));
+    expect(statusMessage).toHaveBeenCalledOnce(); expect(currentSession.getSnapshot()).toMatchObject({ document: source, canUndo: false, workflowOpen: false });
+  });
+
   it('prunes removed graph targets from selection before a later source can reuse their IDs', async () => {
     const initial = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Source selection', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
       points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }],

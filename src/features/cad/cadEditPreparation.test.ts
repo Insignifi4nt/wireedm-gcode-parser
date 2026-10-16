@@ -8,6 +8,7 @@ import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolver
 import { needsCadSketchPreparation, prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
 import type { CadEdit } from '@/domain/cad/cadOperations';
+import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 
 const require = createRequire(import.meta.url);
 const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
@@ -56,10 +57,16 @@ describe('shared CAD edit preparation with the real sketch solver', () => {
 
   it('rejects a conflicting relation batch without changing accepted geometry, parameters or history', async () => {
     const session = new CadSession(source()), before = session.getSnapshot();
-    await expect(session.editPrepared(before.version, async document => (await prepareCadEdits(document, [
+    const failure: unknown = await session.editPrepared(before.version, async document => (await prepareCadEdits(document, [
       { kind: 'rename-document', name: 'Unaccepted' },
       { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'otherLength', kind: 'distance', pointIds: ['a', 'b'], value: 10 } }
-    ], solver)).document)).rejects.toThrow('conflict');
+    ], solver)).document).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(CadSketchPreparationError);
+    if (!(failure instanceof CadSketchPreparationError)) throw new Error('Expected structured rejection.');
+    expect(failure.code).toBe('sketch-conflicting');
+    expect(failure.feedback.subjects).toContainEqual(expect.objectContaining({ source: { kind: 'relation', id: 'otherLength' }, label: 'Distance relation 3 · Point 1 and Point 2', pointIds: ['a', 'b'], category: 'conflicting' }));
+    expect(failure.diagnostics.conflictingIds).toContain('otherLength');
+    expect(failure.message).not.toContain('otherLength');
     expect(session.getSnapshot()).toBe(before);
   });
 

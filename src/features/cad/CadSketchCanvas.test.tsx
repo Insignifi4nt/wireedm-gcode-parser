@@ -228,6 +228,14 @@ describe('graph spatial selection', () => {
     await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true })));
     expect(h.deleted).toHaveBeenCalledExactlyOnceWith({ kind: 'entity', id: 'ab' });
   });
+  it('invalidates an in-flight capture when diagnostic operand highlighting changes', async () => {
+    const h = await spatialFixture();
+    const pending = deferred<EditorPreviewCapture>(); rasterize.mockReturnValue(pending.promise);
+    const capture = currentControls().capture(new AbortController().signal);
+    await h.show({ graphControls: { ...h.props().graphControls!, inspection: { pointIds: ['a', 'b'], entityIds: ['ab'] } } });
+    pending.resolve(image); await expect(capture).rejects.toMatchObject({ code: 'STALE_VIEW' });
+    expect(h.selectedSet).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+  });
   it('uses right-to-left crossing and toggles against the captured base only once', async () => {
     const h = await spatialFixture();
     await h.show({ graphControls: { ...h.props().graphControls!, selection: [{ kind: 'point', id: 'a' }] } });

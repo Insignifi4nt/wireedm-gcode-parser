@@ -20,6 +20,7 @@ import { CadPluginPackageSchema, fingerprintCadPluginPackage } from '@/domain/ca
 import type { CadController } from './useCadController';
 import { CadToolDocumentEnvelope, CadToolEditDefinitions, CadToolEditEnvelope, CadToolPluginPackageEnvelope, CadToolSketchEnvelope, CadToolSketchConstraintsQuerySchema } from './cadToolSchemas';
 import { pageCadSketchConstraints, summarizeCadSketchConstraintAnalysis } from './cadSketchConstraintInspection';
+import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { CadSketchRegionProposalSchema } from '@/domain/cad/cadSketchRegionInspection';
 import { CadConstructionPointSchema, CadPathConstructionStepSchema, createCadPathProfile, createCadOpenCurveSegments } from '@/domain/cad/cadPathConstruction';
 import { cadAnalyticPathMetrics, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
@@ -93,6 +94,8 @@ export function cadSiteTools(getController: () => CadController) {
     const operation = siteTool(name, description, schema, async (input, signal) => {
       try { return await execute(getController(), input, signal); }
       catch (error) {
+        if (error instanceof CadSketchPreparationError) throw new ToolError(error.code, error.message, { feedback: error.feedback,
+          analysis: summarizeCadSketchConstraintAnalysis({ kind: 'rejected', reason: error.feedback.reason, message: error.solverMessage, diagnostics: error.diagnostics }) });
         if (error instanceof CadError || error instanceof CadSessionError || error instanceof CadStorageError) throw new ToolError(error.code, error.message);
         throw error;
       }

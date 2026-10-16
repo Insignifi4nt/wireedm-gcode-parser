@@ -13,6 +13,7 @@ import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmis
 import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { CadContextHelp } from './CadContextHelp';
+import { CadSketchPreparationError, describeCadSketchConstraintSource, type CadSketchConstraintFeedback, type CadSketchConstraintFeedbackSubject } from './cadSketchConstraintFeedback';
 
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
@@ -51,6 +52,7 @@ export interface CadSketchRelationsPanelProps {
   onPrepareEdits?: CadPrepareEdits;
   onPreviewDocument?(document: CadDocument | null): void;
   onInspectRelation?(relation: CadSketchGraphRelation | null): void;
+  onInspectSubject?(subject: CadSketchConstraintFeedbackSubject | null): void;
   onCornerAccepted?(entityId: string, relationId: string): void;
   interactionLocked: boolean;
   cancelSignal: number;
@@ -63,7 +65,7 @@ export function CadSketchRelationsPanel(props: CadSketchRelationsPanelProps) {
   return <RelationsForm key={JSON.stringify([props.document.id, props.sketch.id, props.selection, props.cancelSignal])} {...props} graph={graph} />;
 }
 
-function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onCornerAccepted, interactionLocked }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
+function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onInspectSubject, onCornerAccepted, interactionLocked }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
   const submission = useCadEditSubmission();
   const singleton = selection.length === 1 ? selection[0] : null;
   const pointPair = selectedPointPair(selection);
@@ -84,13 +86,15 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const [fieldIssues, setFieldIssues] = useState<Readonly<Record<string, string>>>({});
   const [relationPending, setRelationPending] = useState<Readonly<Record<string, boolean>>>({});
   const [relationEdits, setRelationEdits] = useState<Readonly<Record<string, boolean>>>({});
-  const [error, setError] = useState<string | null>(null), [resetVersion, setResetVersion] = useState(0);
+  const [error, setError] = useState<string | CadSketchConstraintFeedback | null>(null), [resetVersion, setResetVersion] = useState(0);
+  const [inspectedFailure, setInspectedFailure] = useState<{ feedback: CadSketchConstraintFeedback; subject: CadSketchConstraintFeedbackSubject } | null>(null);
   const [activeRelationId, setActiveRelationId] = useState<string | null>(initialCommand?.kind === 'inspect' ? initialCommand.relationId : initialDimension?.id ?? null);
-  const callbacks = useRef({ onPendingChange, onPreviewDocument, onInspectRelation }); callbacks.current = { onPendingChange, onPreviewDocument, onInspectRelation };
+  const callbacks = useRef({ onPendingChange, onPreviewDocument, onInspectRelation, onInspectSubject }); callbacks.current = { onPendingChange, onPreviewDocument, onInspectRelation, onInspectSubject };
   const reset = useCallback(() => {
     submission.cancel(); setSource(latest.current); setDraft(latest.current.graph); setCorner(null);
     setParameterEdits({}); setValueDrafts({}); setFieldIssues({}); setRelationPending({}); setRelationEdits({}); setError(null);
     setActiveRelationId(null);
+    setInspectedFailure(null);
     setResetVersion(version => version + 1);
   }, [submission.cancel]);
   const setValueDraft = useCallback((key: string, value: CadScalarValueDraft | null) => {
@@ -217,7 +221,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const changed = Boolean(candidate.edits?.length) || candidate.issue !== null;
   const pending = changed || scalarPending || submission.applying;
   useLayoutEffect(() => { onPendingChange(pending); }, [pending, onPendingChange]);
-  useLayoutEffect(() => () => { callbacks.current.onPendingChange(false); callbacks.current.onPreviewDocument?.(null); callbacks.current.onInspectRelation?.(null); }, []);
+  useLayoutEffect(() => () => { callbacks.current.onPendingChange(false); callbacks.current.onPreviewDocument?.(null); callbacks.current.onInspectRelation?.(null); callbacks.current.onInspectSubject?.(null); }, []);
   useEffect(() => { if (source.document !== cadDocument && !pending) reset(); }, [source.document, cadDocument, pending, reset]);
   const prepared = useCadPreparedPreview(cadDocument, candidate.edits, onPrepareEdits, Boolean(onPrepareEdits && changed && !scalarPending && !submission.applying && !interactionLocked));
   useLayoutEffect(() => {
@@ -225,7 +229,14 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
     return () => onPreviewDocument?.(null);
   }, [prepared, onPreviewDocument]);
   const blockingIssue = candidate.issue ?? (prepared.kind === 'error' ? prepared.message : null);
-  const issue = error ?? blockingIssue;
+  const feedback = source.document === cadDocument ? typeof error === 'object' && error !== null ? error : prepared.kind === 'error' ? prepared.feedback : undefined : undefined;
+  const issue = typeof error === 'string' ? error : feedback?.message ?? blockingIssue;
+  const canInspectFeedback = feedback?.sketchId === sketch.id;
+  const inspectedSubject = canInspectFeedback && inspectedFailure && inspectedFailure.feedback === feedback ? inspectedFailure.subject : null;
+  useLayoutEffect(() => {
+    onInspectSubject?.(inspectedSubject);
+    return () => onInspectSubject?.(null);
+  }, [inspectedSubject, onInspectSubject]);
   const scalarContext = { parameters, acceptedScalars, relationEdits, valueDrafts, setValueDraft, setIssue,
     setRelationPending: setBindingPending, markRelationEdited, changeParameter };
   return <form className="cad-property-form cad-sketch-profile-panel" aria-label="Sketch relations" aria-busy={submission.applying || undefined}
@@ -236,7 +247,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       setError(null);
       submission.submit(signal => onEditMany(candidate.edits ?? [], signal), () => {
         reset(); if (candidate.created) onCornerAccepted?.(candidate.created.entityId, candidate.created.relationId);
-      }, cause => setError(cause instanceof Error ? cause.message : 'Unable to apply this sketch relation.'));
+      }, cause => setError(cause instanceof CadSketchPreparationError ? cause.feedback : cause instanceof Error ? cause.message : 'Unable to apply this sketch relation.'));
     }}>
     <div className="cad-property-title">{corner ? corner.kind === 'fillet' ? 'Sketch fillet' : 'Sketch chamfer' : pointPair ? 'Point pair' : selection.length > 1 ? `${selection.length} selected` : selectedPoint ? 'Point' : selectedEntity?.kind === 'circle' ? 'Circle' : selectedEntity?.kind === 'line' ? 'Line' : 'Arc'}
       {corner && <CadContextHelp label="Corner treatment">The original corner stays as a reference, preserving its dimensions. Fillet radius rounds this corner tangentially. Chamfer setbacks measure from the original corner along the two incident lines.</CadContextHelp>}</div>
@@ -272,10 +283,10 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
           setError(null); setDraft(current => ({ ...current, entities: current.entities.map(entity => entity.id === selectedEntity.id && entity.kind === 'circle' ? { ...entity, radius } : entity) }));
         }} />}
         {!corner && relations.length > 0 && <ul className="cad-sketch-constraint-list" aria-label="Sketch relations">{relations.map(relation => <li key={relation.id}>
-          <Button type="button" aria-label={`Inspect ${labelRelation(relation)} relation ${relation.id}`} aria-pressed={activeRelationId === relation.id} onClick={() => setActiveRelationId(current => current === relation.id ? null : relation.id)}>
+          <Button type="button" aria-label={`Inspect ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} aria-pressed={activeRelationId === relation.id} onClick={() => { setInspectedFailure(null); setActiveRelationId(current => current === relation.id ? null : relation.id); }}>
             {labelRelation(relation)}{(relation.kind === 'distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner') && <span>{relationQuantity(relation.value, parameters)}</span>}
             {relation.kind === 'chamfer-corner' && <span>{relation.values.map(value => relationQuantity(value, parameters)).join(' / ')}</span>}
-          </Button><Button type="button" aria-label={`Remove ${labelRelation(relation)} relation ${relation.id}`} title="Remove this relation and retain the current geometry" onClick={() => removeRelation(relation.id)}><CloseIcon size={12} /></Button>
+          </Button><Button type="button" aria-label={`Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title="Remove this relation and retain the current geometry" onClick={() => removeRelation(relation.id)}><CloseIcon size={12} /></Button>
         </li>)}</ul>}
         {activeRelation && (activeRelation.kind === 'distance' || activeRelation.kind === 'fixed-axis') && <ScalarField fieldKey={`${activeRelation.id}/value`} label={labelRelation(activeRelation)} value={activeRelation.value} parameters={parameters} onChange={value => changeRelation({ ...activeRelation, value })} />}
         {activeRelation?.kind === 'fillet-corner' && <ScalarField fieldKey={`${activeRelation.id}/value`} label="Fillet radius" value={activeRelation.value} parameters={parameters} onChange={value => changeRelation({ ...activeRelation, value })} />}
@@ -285,6 +296,12 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       </CadScalarEditContext.Provider>
     </fieldset>
     {issue && <p className="cad-error" role="alert">{issue}</p>}
+    {feedback && feedback.subjects.length > 0 && <ul className="cad-sketch-diagnostic-list" aria-label="Constraint issues">{feedback.subjects.map((subject, index) => <li key={`${subject.category}/${subject.source.kind}/${subject.source.id}/${index}`}>
+      <Button type="button" data-cad-diagnostic-source={subject.source.id} aria-pressed={inspectedSubject === subject} disabled={interactionLocked || submission.applying || !canInspectFeedback} title={!canInspectFeedback ? 'Finish or cancel this edit before opening the affected sketch.' : subject.category === 'issue' ? subject.detail : 'Highlight the geometry involved in this constraint issue'}
+        onClick={() => setInspectedFailure(current => current?.feedback === feedback && current.subject === subject ? null : { feedback, subject })}>
+        <span>{subject.label}</span><small>{subject.category === 'partially-redundant' ? 'Partly redundant' : subject.category === 'issue' ? 'Geometry issue' : subject.category === 'conflicting' ? 'Conflict' : 'Redundant'}</small>
+      </Button>
+    </li>)}{feedback.omittedSubjectCount > 0 && <li className="text-xs text-muted-foreground">{feedback.omittedSubjectCount} more affected items</li>}</ul>}
     {pending && <div className="cad-form-actions"><Button type="button" onClick={reset}><CloseIcon size={13} /> Cancel</Button><Button variant="primary" type="submit" disabled={interactionLocked || submission.applying || scalarPending || !candidate.edits?.length || Boolean(blockingIssue)}><ConfirmIcon size={13} /> Apply</Button></div>}
   </form>;
 }

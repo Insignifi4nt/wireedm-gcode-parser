@@ -94,10 +94,23 @@ test('selects point pairs directly for alignment and linked distance without imp
   expect(constrained.graph.points[1].position).toEqual([40, 0]); expect(constrained.graph.points[2].position).toEqual([50, 10]);
   expect(constrained.graph.relations).toContainEqual(expect.objectContaining({ kind: 'horizontal' }));
   expect(constrained.graph.relations).toContainEqual(expect.objectContaining({ kind: 'distance', value: ' spacing ' }));
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Distance mm', exact: true }).fill('40.0000');
   await page.getByRole('checkbox', { name: 'Vertical', exact: true }).check();
-  await expect(page.getByRole('form', { name: 'Sketch relations', exact: true }).getByRole('alert')).toBeVisible();
+  const relationForm = page.getByRole('form', { name: 'Sketch relations', exact: true });
+  await expect(relationForm.getByRole('alert')).toBeVisible();
+  const diagnostic = relationForm.locator('[data-cad-diagnostic-source]').first();
+  await expect(diagnostic).toBeEnabled(); await diagnostic.click();
+  await expect(page.locator('.cad-sketch-graph-point.is-relation-highlighted').first()).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Distance mm', exact: true })).toHaveValue('40.0000');
+  expect((await context(page)).version).toBe(current.version);
   await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'pair-sketch' })).feature).toEqual(constrained);
+  const rejection = await rawCall(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'set-sketch-relation', sketchId: 'pair-sketch',
+    relation: { id: 'attempted-vertical', kind: 'vertical', pointIds: ['a', 'b'] } }] });
+  expect(rejection).toMatchObject({ ok: false, error: { code: 'sketch-conflicting', details: { feedback: { sketchId: 'pair-sketch', reason: 'conflicting',
+    subjects: expect.arrayContaining([expect.objectContaining({ category: 'conflicting', pointIds: ['a', 'b'] })]) } } } });
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'pair-sketch' })).feature).toEqual(constrained);
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry-set', selections: [...pair].reverse() } });
   expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometrySet).toEqual([...pair].reverse());

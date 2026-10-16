@@ -2,10 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { needsCadSketchPreparation } from './cadEditPreparation';
+import { CadSketchPreparationError, type CadSketchConstraintFeedback } from './cadSketchConstraintFeedback';
 
 export type CadPrepareEdits = (edits: readonly CadEdit[], signal: AbortSignal) => Promise<CadDocument>;
 type Preview = { readonly kind: 'idle' | 'waiting' } | { readonly kind: 'ready'; readonly document: CadDocument }
-  | { readonly kind: 'error'; readonly message: string };
+  | { readonly kind: 'error'; readonly message: string; readonly feedback?: CadSketchConstraintFeedback };
+
+function previewError(error: unknown, fallback: string): Extract<Preview, { kind: 'error' }> {
+  return { kind: 'error', message: error instanceof Error ? error.message : fallback,
+    ...(error instanceof CadSketchPreparationError ? { feedback: error.feedback } : {}) };
+}
 
 /** Keep solved sketch candidates disposable and discard late results from a different input. */
 export function useCadPreparedPreview(source: CadDocument, edits: readonly CadEdit[] | null, prepare: CadPrepareEdits | undefined, enabled: boolean, debounceMs = 100): Preview {
@@ -14,7 +20,7 @@ export function useCadPreparedPreview(source: CadDocument, edits: readonly CadEd
     if (!enabled || !edits?.length) return { kind: 'idle' };
     if (asynchronous) return { kind: 'waiting' };
     try { return { kind: 'ready', document: applyCadEdits(source, edits) }; }
-    catch (error) { return { kind: 'error', message: error instanceof Error ? error.message : 'This sketch edit is not valid.' }; }
+    catch (error) { return previewError(error, 'This sketch edit is not valid.'); }
   }, [source, edits, enabled, asynchronous]);
   const [resolved, setResolved] = useState<{ source: CadDocument; edits: readonly CadEdit[]; prepare: CadPrepareEdits; preview: Preview } | null>(null);
   useEffect(() => {
@@ -24,7 +30,7 @@ export function useCadPreparedPreview(source: CadDocument, edits: readonly CadEd
       void Promise.resolve().then(() => { controller.signal.throwIfAborted(); return prepare(edits, controller.signal); }).then(document => {
         if (!controller.signal.aborted) setResolved({ source, edits, prepare, preview: { kind: 'ready', document } });
       }, error => {
-        if (!controller.signal.aborted) setResolved({ source, edits, prepare, preview: { kind: 'error', message: error instanceof Error ? error.message : 'This sketch edit could not be solved.' } });
+        if (!controller.signal.aborted) setResolved({ source, edits, prepare, preview: previewError(error, 'This sketch edit could not be solved.') });
       });
     }, debounceMs);
     return () => { clearTimeout(timer); controller.abort(); };

@@ -8,6 +8,7 @@ import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { CadSession } from './cadSession';
 import { CadSketchRelationsPanel, type CadSketchRelationsPanelProps } from './CadSketchRelationsPanel';
 import type { CadSketchGraphSelection } from './cadSketchGraphInteraction';
+import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 
 let container: HTMLDivElement, root: Root;
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
@@ -15,7 +16,7 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 
 const selectionSet = (selection: CadSketchGraphSelection | readonly CadSketchGraphSelection[]) => 'kind' in selection ? [selection] : selection;
 async function mount(document: CadDocument, initial: CadSketchGraphSelection | readonly CadSketchGraphSelection[], overrides: Partial<Pick<CadSketchRelationsPanelProps, 'onEditMany' | 'onPrepareEdits' | 'initialCommand'>> = {}) {
-  const session = new CadSession(document), preview = vi.fn(), inspect = vi.fn(), pending = vi.fn((open: boolean) => session.setWorkflowOpen(open));
+  const session = new CadSession(document), preview = vi.fn(), inspect = vi.fn(), inspectSubject = vi.fn(), pending = vi.fn((open: boolean) => session.setWorkflowOpen(open));
   let selection = selectionSet(initial);
   const edit = vi.fn<NonNullable<CadSketchRelationsPanelProps['onEditMany']>>((edits, signal) => { signal?.throwIfAborted(); return session.edit(edits); });
   const prepare = vi.fn<NonNullable<CadSketchRelationsPanelProps['onPrepareEdits']>>(async (edits, signal) => { signal.throwIfAborted(); return applyCadEdits(session.getSnapshot().document, edits); });
@@ -23,17 +24,22 @@ async function mount(document: CadDocument, initial: CadSketchGraphSelection | r
     const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot), sketch = snapshot.document.features[0];
     if (sketch.kind !== 'sketch') throw new Error('Sketch fixture missing.');
     return <CadSketchRelationsPanel document={snapshot.document} sketch={sketch} selection={selection} onEditMany={edit} onPrepareEdits={prepare}
-      onPreviewDocument={preview} onInspectRelation={inspect} onPendingChange={pending} interactionLocked={false} cancelSignal={0} {...overrides} />;
+      onPreviewDocument={preview} onInspectRelation={inspect} onInspectSubject={inspectSubject} onPendingChange={pending} interactionLocked={false} cancelSignal={0} {...overrides} />;
   }
   const render = async (next: CadSketchGraphSelection | readonly CadSketchGraphSelection[] = selection) => { selection = selectionSet(next); await act(async () => root.render(<Harness />)); };
   await render();
-  return { session, preview, inspect, pending, edit, prepare, render };
+  return { session, preview, inspect, inspectSubject, pending, edit, prepare, render };
 }
 function button(name: string) {
   const found = [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.getAttribute('aria-label') === name || button.textContent?.trim() === name);
   if (!found) throw new Error(`Missing button ${name}`); return found;
 }
 async function click(name: string) { await act(async () => button(name).click()); }
+async function clickRelation(action: 'Inspect' | 'Remove', label: string, ordinal: number) {
+  const control = [...container.querySelectorAll<HTMLButtonElement>('button')].find(control => control.getAttribute('aria-label')?.startsWith(`${action} ${label} relation ${ordinal} · `));
+  if (!control) throw new Error(`Missing ${action} ${label} relation ${ordinal}`);
+  await act(async () => control.click());
+}
 function field(name: string) { const found = document.querySelector<HTMLInputElement>(`input[aria-label="${name}"]`); if (!found) throw new Error(`Missing input ${name}`); return found; }
 async function input(name: string, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
@@ -57,6 +63,46 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it.each(['cancel', 'source change', 'other sketch'] as const)('inspects rejected candidate operands without changing the exact draft, and handles %s', async ending => {
+    const source = lineDocument(), sketch = source.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing graph.');
+    const graph = sketch.graph;
+    const prepare = vi.fn<NonNullable<CadSketchRelationsPanelProps['onPrepareEdits']>>(async edits => {
+      const edit = edits.find(edit => edit.kind === 'set-sketch-relation');
+      if (edit?.kind !== 'set-sketch-relation') throw new Error('Missing attempted relation.');
+      throw new CadSketchPreparationError({ sketchId: ending === 'other sketch' ? 'other-sketch' : sketch.id, sketchName: sketch.name, graph: { ...graph, relations: [...graph.relations, edit.relation] },
+        rejection: { kind: 'rejected', reason: 'conflicting', message: `Failure in ${edit.relation.id}`, diagnostics: {
+          status: 'failed', degreesOfFreedom: null, conflictingIds: [edit.relation.id], redundantIds: [], partiallyRedundantIds: [], issues: []
+        } } });
+    });
+    const h = await mount(source, { kind: 'entity', id: 'line' }, { initialCommand: { kind: 'length' }, onPrepareEdits: prepare });
+    await input('Length mm', '12.5000');
+    await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
+    const subject = container.querySelector<HTMLButtonElement>('[data-cad-diagnostic-source]');
+    expect(subject).not.toBeNull();
+    if (ending === 'other sketch') {
+      expect(subject!.disabled).toBe(true); await act(async () => subject!.click());
+      expect(h.inspectSubject).toHaveBeenLastCalledWith(null); expect(field('Length mm').value).toBe('12.5000');
+      await click('Cancel'); expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+      return;
+    }
+    await act(async () => subject!.click());
+    expect(h.inspectSubject).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'conflicting', source: { kind: 'relation', id: expect.any(String) }, pointIds: ['a', 'b'] }));
+    expect(field('Length mm').value).toBe('12.5000'); expect(button('Apply').disabled).toBe(true);
+    expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false }); expect(h.edit).not.toHaveBeenCalled();
+    if (ending === 'source change') {
+      await act(async () => h.session.edit([{ kind: 'rename-document', name: 'Current source' }]));
+      expect(h.inspectSubject).toHaveBeenLastCalledWith(null); expect(container.querySelector('[data-cad-diagnostic-source]')).toBeNull();
+      expect(h.session.getSnapshot().document.name).toBe('Current source');
+      await click('Cancel');
+      expect(h.session.getSnapshot().document.features).toEqual(source.features);
+      return;
+    }
+    await click('Cancel');
+    expect(h.inspectSubject).toHaveBeenLastCalledWith(null); expect(container.querySelector('[data-cad-diagnostic-source]')).toBeNull();
+    expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+  });
+
   it('aborts the old pair owner on selection change without clearing a mixed selection relation draft', async () => {
     let resolve: () => void = () => { throw new Error('No pending pair application.'); };
     const pending = new Promise<void>(accept => { resolve = accept; });
@@ -69,9 +115,9 @@ describe('selected sketch entity relations', () => {
     expect(signal?.aborted).toBe(false);
     await h.render([{ kind: 'point', id: 'a' }, { kind: 'entity', id: 'line' }]);
     expect(signal?.aborted).toBe(true);
-    await click('Inspect Vertical relation vertical');
+    await clickRelation('Inspect', 'Vertical', 1);
     expect(h.inspect).toHaveBeenLastCalledWith({ id: 'vertical', kind: 'vertical', pointIds: ['a', 'b'] });
-    await click('Remove Vertical relation vertical');
+    await clickRelation('Remove', 'Vertical', 1);
     await act(async () => resolve());
     expect(h.pending).toHaveBeenLastCalledWith(true); expect(button('Apply').disabled).toBe(false);
     expect(container.querySelector('input[aria-label="Distance mm"]')).toBeNull();
@@ -139,7 +185,7 @@ describe('selected sketch entity relations', () => {
     const relation = sketch.graph.relations[0];
     expect(sketch.graph.points).toEqual([{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: ['span', '0'] }]);
     await h.render([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }]);
-    await click(`Remove Distance relation ${relation.id}`); await click('Add distance');
+    await clickRelation('Remove', 'Distance', 1); await click('Add distance');
     expect(h.inspect).toHaveBeenLastCalledWith(relation);
     expect(h.pending).toHaveBeenLastCalledWith(false);
     expect(h.edit).toHaveBeenCalledTimes(1);
@@ -255,7 +301,7 @@ describe('selected sketch entity relations', () => {
     }] });
     const h = await mount(source, { kind: 'point', id: 'a' });
     expect(field('Fix X').disabled).toBe(true); expect(field('Fix Y').checked).toBe(true);
-    await click('Inspect Fix Y relation fixY');
+    await clickRelation('Inspect', 'Fix Y', 2);
     expect(h.inspect).toHaveBeenLastCalledWith({ id: 'fixY', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: ' height ' });
     expect(field('Fix Y mm').value).toBe('4');
     await act(async () => field('Fix Y').click());
@@ -279,7 +325,7 @@ describe('selected sketch entity relations', () => {
       relations: [...sketch.graph.relations, { id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: ' plateWidth ' }]
     } }] });
     const h = await mount(source, { kind: 'entity', id: 'line' });
-    await click('Remove Length relation length'); await click('Add length');
+    await clickRelation('Remove', 'Distance', 2); await click('Add length');
     expect(h.inspect).toHaveBeenLastCalledWith({ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: ' plateWidth ' });
     expect(h.pending).toHaveBeenLastCalledWith(false);
     expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false, workflowOpen: false });

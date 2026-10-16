@@ -60,6 +60,39 @@ async function fixture(overrides: Partial<Props> = {}) {
 }
 
 describe('graph point interaction ownership', () => {
+  it('highlights candidate diagnostic operands independently of accepted relation identity and selection', async () => {
+    const h = await fixture();
+    await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'point', id: 'mixed' }], inspection: { pointIds: ['a', 'b'], entityIds: [] } } });
+    expect(h.point('a').classList.contains('is-relation-highlighted')).toBe(true);
+    expect(h.point('b').classList.contains('is-relation-highlighted')).toBe(true);
+    expect(h.edge().classList.contains('is-relation-highlighted')).toBe(true);
+    expect(h.point('mixed').getAttribute('aria-pressed')).toBe('true'); expect(h.selected).not.toHaveBeenCalled();
+    expect(h.edited).not.toHaveBeenCalled(); expect(h.pending).not.toHaveBeenCalledWith(true);
+    await h.render({ controls: { ...h.props().controls, inspection: null } });
+    expect(h.edge().classList.contains('is-relation-highlighted')).toBe(false);
+    expect(h.point('mixed').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('does not infer point freedom from unrelated sketch freedom and keeps driven coordinates protected', async () => {
+    const h = await fixture();
+    const document = parseCadDocument({ ...h.document, features: [{ ...h.document.features[0], graph: {
+      points: [{ id: 'a', position: [' 0 ', ' 0 '] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [50, 20] }],
+      entities: [{ id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+      relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'distance', kind: 'distance', pointIds: ['a', 'b'], value: 40 }]
+    } }] });
+    await h.source(document);
+    await h.render({ controls: { ...h.props().controls, degreesOfFreedom: 2 } });
+    expect(h.point('a').classList.contains('is-locked')).toBe(true);
+    expect(h.point('b').classList.contains('is-locked')).toBe(false);
+    expect(h.point('b').querySelector('title')?.textContent).toContain('Movement follows dimensions and relations');
+    await h.key(h.point('a'), 'ArrowRight'); expect(h.edited).not.toHaveBeenCalled();
+    await h.key(h.point('b'), 'ArrowRight');
+    expect(h.edited).toHaveBeenLastCalledWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'b', translation: [5, 0] }], expect.any(AbortSignal));
+    await h.render({ controls: { ...h.props().controls, degreesOfFreedom: null } });
+    await h.key(h.point('c'), 'ArrowUp');
+    expect(h.edited).toHaveBeenLastCalledWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'c', translation: [0, 5] }], expect.any(AbortSignal));
+  });
+
   it('uses the prepared hit ranking rather than the SVG target, without dragging a different point implicitly', async () => {
     const pickAt = vi.fn(() => ({ kind: 'point' as const, id: 'mixed' }));
     const h = await fixture({ pickAt });

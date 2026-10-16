@@ -9,6 +9,10 @@
 .cad-sketch-constraint-list li > button:first-child { flex: 1; justify-content: flex-start; padding: 7px 0; font-size: 10px; }
 .cad-sketch-constraint-list button span { margin-left: auto; font-variant-numeric: tabular-nums; }
 .cad-sketch-constraint-list li > button:last-child:not(:first-child) { padding: 3px; }
+.cad-sketch-diagnostic-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.cad-sketch-diagnostic-list button { width: 100%; min-width: 0; height: auto; min-height: var(--control-height); display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; text-align: left; white-space: normal; }
+.cad-sketch-diagnostic-list button > span { min-width: 0; }
+.cad-sketch-diagnostic-list small { color: var(--muted-foreground); font-size: var(--text-caption); white-space: nowrap; }
 .cad-sketch-intent-editor > .cad-feature-fields > label { display: grid; grid-template-columns: minmax(70px, 1fr) minmax(0, 140px) auto; align-items: center; gap: 7px; margin: 8px 0; }
 .cad-sketch-intent-editor > .cad-feature-fields > label > span { display: flex; align-items: center; gap: 4px; }
 .cad-sketch-intent-editor > .cad-feature-fields > label > :is(input, .ui-select, strong) { width: 100%; min-width: 0; font-size: 11px; }

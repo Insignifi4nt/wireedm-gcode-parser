@@ -4,6 +4,7 @@ import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { reduceCadEditIntents, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchSolveDiagnostics, CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
+import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 
 export function needsCadSketchPreparation(document: CadDocument, edits: readonly CadEdit[]): boolean {
   return document.features.some(feature => feature.kind === 'sketch' && feature.graph)
@@ -26,8 +27,8 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
       signal?.throwIfAborted();
       diagnostics.set(feature.id, result.diagnostics);
       if (result.kind !== 'solved') {
-        const ids = [...result.diagnostics.conflictingIds, ...result.diagnostics.redundantIds, ...result.diagnostics.partiallyRedundantIds];
-        throw new CadError(`sketch-${result.reason}`, `${feature.name}: ${result.message}${ids.length ? ` Relations: ${ids.join(', ')}.` : ''}`);
+        throw new CadSketchPreparationError({ sketchId: feature.id, sketchName: feature.name, graph: feature.graph, rejection: result,
+          ...(drag?.sketchId === feature.id ? { dragPointId: drag.pointId } : {}) });
       }
       features.push({ ...feature, graph: result.graph });
     }
