@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadBuildResult, CadDocument, CadSketchPlane } from '@/domain/cad/cadDocument';
 import type { CadTopologyDescriptor, CadTopologyResolvePicksResult } from '@/domain/cad/cadTopology';
-import { applyCadEdits } from '@/domain/cad/cadOperations';
+import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
@@ -1184,6 +1184,46 @@ describe('CAD sketch interaction', () => {
     expect(currentSession.getSnapshot().workflowOpen).toBe(false);
     await click('Select');
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph.entities[0].id }]);
+  });
+
+  it('appends a fresh inferred circle atomically after acceptance and aborts a cancelled attachment without clearing redo', async () => {
+    const original = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters: { anchorX: 0 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Anchored sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [],
+      graph: { points: [{ id: 'anchor', position: [' anchorX ', ' 0 '] }], entities: [], relations: [] }
+    }] });
+    const pending: { edit: Extract<CadEdit, { kind: 'append-sketch-entities' }>; signal?: AbortSignal; accept(): void }[] = [];
+    await mount(original, { build: null, buildState: 'idle', onEdit: (edit, signal) => {
+      if (edit.kind !== 'append-sketch-entities') { currentSession.edit([edit]); return; }
+      return new Promise<void>((resolve, reject) => pending.push({ edit, signal, accept: () => {
+        if (signal?.aborted) { reject(signal.reason); return; }
+        currentSession.edit([edit]); resolve();
+      } }));
+    } });
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' })); await click('Circle');
+    const infer = container.querySelector<HTMLInputElement>('input[aria-label="Create coincident relations"]');
+    if (!infer) throw new Error('Coincident drawing control missing.');
+    expect(infer.checked).toBe(false); await act(async () => infer.click());
+    await canvasClick(300, 200); await canvasClick(450, 200);
+    expect(pending).toHaveLength(1); expect(currentDocument).toBe(original);
+    expect(currentSession.getSnapshot().workflowOpen).toBe(true);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    const payload = pending[0].edit.geometry, center = payload.points[0], entity = payload.entities[0];
+    expect(payload.points).toHaveLength(1); expect(center.id).not.toBe('anchor');
+    expect(center.position).toEqual([0, 0]);
+    expect(payload.relations).toEqual([{ id: expect.any(String), kind: 'coincident', pointIds: [center.id, 'anchor'] }]);
+    await act(async () => pending[0].accept());
+    const accepted = currentDocument;
+    expect(currentDocument.features[0]).toMatchObject({ graph: { points: [{ id: 'anchor', position: [' anchorX ', ' 0 '] }, center], relations: payload.relations } });
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: entity.id }]);
+    await act(async () => currentSession.undo()); expect(currentDocument).toBe(original);
+    await act(async () => currentSession.redo()); expect(currentDocument).toBe(accepted);
+    await act(async () => currentSession.undo()); const before = currentSession.getSnapshot();
+    await canvasClick(300, 200); await canvasClick(390, 200);
+    expect(pending).toHaveLength(2); expect(pending[1].edit.geometry.relations[0]).toMatchObject({ kind: 'coincident', pointIds: [expect.any(String), 'anchor'] });
+    await canvasKey('Escape'); expect(pending[1].signal?.aborted).toBe(true);
+    await act(async () => pending[1].accept());
+    expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: before.canUndo, canRedo: true, workflowOpen: false });
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
   });
 
   it('keeps a multi-click polygon provisional and Escape cancels it without changing saved geometry', async () => {

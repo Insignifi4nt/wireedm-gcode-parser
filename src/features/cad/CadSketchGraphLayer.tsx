@@ -195,7 +195,7 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
         {active && <g className="cad-sketch-entity-hit" strokeWidth={12 * scaleY}><Boundary boundary={boundary} center={center} /></g>}
       </g>;
     })}
-    {active && displayed.points.map((point, index) => {
+    {displayed.points.map((point, index) => {
       const original = sourcePoints.get(point.id) ?? point;
       // Numeric coordinates allow a move request; they do not establish this point's freedom.
       const coordinateDriven = !original.freeAxes.some(Boolean), canRequestMove = controls.degreesOfFreedom !== 0 && !coordinateDriven;
@@ -204,7 +204,7 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
       const referenceCorner = referenceCorners.has(point.id), x = point.position[0] - center[0], y = point.position[1] - center[1];
       const snapTarget = intent?.snap?.target;
       const snapHighlighted = snapTarget && 'pointId' in snapTarget && snapTarget.pointId === point.id;
-      return <g key={point.id} data-cad-sketch-point={point.id} data-cad-reference-corner={referenceCorner || undefined} role="button" aria-label={`${referenceCorner ? 'Reference corner' : 'Point'} ${index + 1} in ${sketch.name}`} aria-pressed={selected('point', point.id)} aria-disabled={!pointsInteractive || undefined}
+      return <g key={point.id} data-cad-sketch-point={point.id} data-cad-reference-corner={referenceCorner || undefined} role="button" aria-label={`${referenceCorner ? 'Reference corner' : 'Point'} ${index + 1} in ${sketch.name}`} aria-pressed={selected('point', point.id)} aria-disabled={!pointsInteractive || undefined} pointerEvents={active ? undefined : 'none'}
         tabIndex={pointsInteractive ? 0 : -1} className={`cad-sketch-graph-point${selected('point', point.id) ? ' is-active' : ''}${relatedPoints.has(point.id) ? ' is-relation-highlighted' : ''}${snapHighlighted || highlighted?.kind === 'point' && highlighted.id === point.id ? ' is-pick-highlighted' : ''}${canRequestMove ? '' : ' is-locked'}`}
         onPointerDown={event => {
           if (event.button !== 0 || !active) return;

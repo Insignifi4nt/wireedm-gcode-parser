@@ -59,6 +59,72 @@ describe('sketch canvas profile picking', () => {
     points: [{ id: 'a', position: ['anchor', 3.2] as const }, { id: 'b', position: [22.1, 3.2] as const }, { id: 'c', position: [12.1, 13.2] as const }],
     entities: [{ id: 'line', kind: 'line' as const, startPointId: 'a', endPointId: 'b', construction: false }, { id: 'circle', kind: 'circle' as const, centerPointId: 'c', radius: 3.4, construction: false }], relations: []
   } };
+  const inference = () => {
+    const checkbox = container.querySelector<HTMLInputElement>('[aria-label="Create coincident relations"]');
+    if (!checkbox) throw new Error('Missing relation inference control'); return checkbox;
+  };
+  it('retains deliberate first/opposite attachment roles while drawing a rectangle in reverse', async () => {
+    const onAddFreshSketch = vi.fn(), original = structuredClone(graphSketch);
+    const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'rectangle', onAddFreshSketch });
+    expect(inference().checked).toBe(false); await act(async () => inference().click());
+    await h.click(12.2, 13.3); expect(container.querySelector('[data-cad-sketch-attachment="c"]')).not.toBeNull();
+    await h.click(2.2, 3.3);
+    expect(onAddFreshSketch).toHaveBeenCalledWith({ kind: 'rectangle',
+      first: { kind: 'coincident', point: [12.1, 13.2], sourcePointId: 'c', relationId: expect.any(String) },
+      opposite: { kind: 'coincident', point: [2.1, 3.2], sourcePointId: 'a', relationId: expect.any(String) }
+    }, expect.any(AbortSignal));
+    expect(h.added).not.toHaveBeenCalled(); expect(graphSketch).toEqual(original);
+    expect(onAddFreshSketch.mock.calls[0][0].first.relationId).not.toBe(onAddFreshSketch.mock.calls[0][0].opposite.relationId);
+  });
+  it('applies inference only to future picks and explicitly clears pending links when switched off', async () => {
+    const onAddFreshSketch = vi.fn();
+    const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'polygon', onAddFreshSketch });
+    await h.click(2.2, 3.3); await act(async () => inference().click()); await h.click(12.2, 13.3);
+    expect(container.querySelector('[data-cad-sketch-attachment="a"]')).toBeNull(); expect(container.querySelector('[data-cad-sketch-attachment="c"]')).not.toBeNull();
+    await act(async () => inference().click()); expect(container.querySelector('[data-cad-sketch-attachment="c"]')).toBeNull();
+    await h.click(22.2, 3.3); await h.click(2.2, 3.3);
+    expect(onAddFreshSketch).toHaveBeenCalledWith({ kind: 'polygon', vertices: [
+      { kind: 'position', point: [2.1, 3.2] }, { kind: 'position', point: [12.1, 13.2] }, { kind: 'position', point: [22.1, 3.2] }
+    ] }, expect.any(AbortSignal)); expect(h.added).not.toHaveBeenCalled();
+  });
+  it('attaches only a circle center while radius and midpoint picks remain position-only', async () => {
+    const onAddFreshSketch = vi.fn(); const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'circle', onAddFreshSketch });
+    await act(async () => inference().click()); await h.click(12.2, 13.3); await h.click(2.2, 3.3);
+    expect(onAddFreshSketch).toHaveBeenNthCalledWith(1, { kind: 'circle',
+      center: { kind: 'coincident', point: [12.1, 13.2], sourcePointId: 'c', relationId: expect.any(String) }, radius: Math.sqrt(200)
+    }, expect.any(AbortSignal));
+    await h.click(12.2, 3.3); await h.click(17.1, 3.2, h.svg, { ctrlKey: true });
+    expect(onAddFreshSketch).toHaveBeenNthCalledWith(2, { kind: 'circle', center: { kind: 'position', point: [12.1, 3.2] }, radius: expect.closeTo(5, 10) }, expect.any(AbortSignal));
+  });
+  it('refuses to silently drop a pending attachment if the fresh editor becomes unavailable', async () => {
+    const onAddFreshSketch = vi.fn(); const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'rectangle', onAddFreshSketch });
+    await act(async () => inference().click()); await h.click(12.2, 13.3); await h.render({ onAddFreshSketch: undefined }); await h.click(2.2, 3.3);
+    expect(onAddFreshSketch).not.toHaveBeenCalled(); expect(h.added).not.toHaveBeenCalled(); expect(h.error).toHaveBeenCalledOnce();
+    expect(container.querySelector('[data-cad-sketch-attachment="c"]')).not.toBeNull();
+  });
+  it.each(['sketch', 'version', 'parameters'] as const)('pins an earlier attached pick across a same-position %s replacement until its links are released', async changed => {
+    const onAddFreshSketch = vi.fn();
+    const h = await fixture([], { sketch: graphSketch, documentVersion: 'one', parameters: { anchor: 2.1 }, tool: 'circle', onAddFreshSketch });
+    await act(async () => inference().click()); await h.click(2.2, 3.3);
+    await h.render(changed === 'sketch' ? { sketch: structuredClone(graphSketch) } : changed === 'version' ? { documentVersion: 'two' } : { parameters: { anchor: 2.1 } });
+    await h.click(12.2, 13.3);
+    expect(onAddFreshSketch).not.toHaveBeenCalled(); expect(h.added).not.toHaveBeenCalled(); expect(h.error).toHaveBeenCalledOnce();
+    expect(container.querySelector('[data-cad-sketch-attachment="a"]')).not.toBeNull();
+    await act(async () => inference().click()); await h.click(12.2, 13.3);
+    expect(onAddFreshSketch).toHaveBeenCalledOnce();
+    expect(onAddFreshSketch.mock.calls[0][0]).toMatchObject({ kind: 'circle', center: { kind: 'position', point: [2.1, 3.2] } });
+  });
+  it('accepts its own deferred attachment result after the accepted source renders without reporting stale ownership', async () => {
+    let resolve: () => void = () => { throw new Error('Pending append missing.'); };
+    const onAddFreshSketch = vi.fn(() => new Promise<void>(accept => { resolve = accept; }));
+    const h = await fixture([], { sketch: graphSketch, documentVersion: 'one', parameters: { anchor: 2.1 }, tool: 'circle', onAddFreshSketch });
+    await act(async () => inference().click()); await h.click(2.2, 3.3); await h.click(12.2, 13.3);
+    expect(onAddFreshSketch).toHaveBeenCalledOnce();
+    await h.render({ sketch: structuredClone(graphSketch), documentVersion: 'two' });
+    await act(async () => resolve());
+    expect(h.error).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect(container.querySelector('[data-cad-sketch-attachment]')).toBeNull();
+  });
   it('places rectangle corners on actual endpoint and center targets without borrowing graph identities', async () => {
     const original = structuredClone(graphSketch);
     const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'rectangle' });

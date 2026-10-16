@@ -12,6 +12,7 @@ import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { translateCadSketchGraph } from '@/domain/cad/cadSketchTranslation';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTreatment';
+import { createCadFreshSketchDrawing } from '@/domain/cad/cadFreshSketchGraph';
 
 const require = createRequire(import.meta.url);
 const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
@@ -37,6 +38,51 @@ function graphOf(document: CadDocument) {
 const move: CadEdit = { kind: 'translate-sketch-geometry', sketchId: 'sketch', selections: ['a', 'b', 'c', 'd'].map(id => ({ kind: 'entity', id: `edge-${id}` })), translation: [7, -3] };
 
 describe('shared CAD edit preparation with the real sketch solver', () => {
+  it('propagates inferred fresh attachments, removes them without moving geometry and rejects an incompatible append atomically', async () => {
+    const original = parseCadDocument({ ...createCadDocument('Attachments', 'attachments'), schemaVersion: 2, parameters: { anchorX: 10 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [],
+      graph: { points: [{ id: 'anchor', position: [' anchorX ', ' 7 '] }], entities: [], relations: [] }
+    }] });
+    let n = 0;
+    const circle = createCadFreshSketchDrawing({ drawing: { kind: 'circle', center: { kind: 'coincident', point: [10, 7], sourcePointId: 'anchor', relationId: 'circle-link' }, radius: 3 },
+      construction: false, createId: () => `circle-${++n}`, existingGraph: graphOf(original), parameters: original.parameters });
+    if (circle.kind !== 'circle') throw new Error('Circle constructor result missing.');
+    const rectangle = createCadFreshSketchDrawing({ drawing: { kind: 'rectangle', first: { kind: 'coincident', point: [10, 7], sourcePointId: 'anchor', relationId: 'rectangle-link' },
+      opposite: { kind: 'position', point: [25, 19] } }, construction: true, createId: () => `rectangle-${++n}`, existingGraph: graphOf(original), parameters: original.parameters });
+    if (rectangle.kind !== 'rectangle') throw new Error('Rectangle constructor result missing.');
+    const session = new CadSession(original), initial = session.getSnapshot();
+    const accept = (edits: readonly CadEdit[]) => session.editPrepared(session.getSnapshot().version, async source => (await prepareCadEdits(source, edits, solver)).document);
+    const attached = await accept([circle.geometry, rectangle.geometry].map(geometry => ({ kind: 'append-sketch-entities', sketchId: 'sketch', geometry })));
+    expect(graphOf(attached.document).points.find(point => point.id === 'anchor')).toEqual(graphOf(original).points[0]);
+    expect(graphOf(attached.document).relations.filter(relation => relation.kind === 'coincident')).toEqual([
+      { id: 'circle-link', kind: 'coincident', pointIds: [circle.centerPointId, 'anchor'] },
+      { id: 'rectangle-link', kind: 'coincident', pointIds: [rectangle.pointIds.first, 'anchor'] }
+    ]);
+    session.undo(); expect(session.getSnapshot().document).toBe(initial.document);
+    session.redo(); expect(session.getSnapshot().document).toBe(attached.document);
+    const moved = await accept([{ kind: 'set-parameter', name: 'anchorX', value: 20 }]);
+    for (const id of [circle.centerPointId, rectangle.pointIds.first]) {
+      const point = graphOf(moved.document).points.find(point => point.id === id);
+      expect(point?.position[0]).toBeCloseTo(20, 10); expect(point?.position[1]).toBeCloseTo(7, 10);
+    }
+    expect(graphOf(moved.document).points[0].position).toEqual([' anchorX ', ' 7 ']);
+    const removed = await accept(['circle-link', 'rectangle-link'].map(relationId => ({ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId })));
+    expect(graphOf(removed.document).points).toEqual(graphOf(moved.document).points);
+    const detached = await accept([{ kind: 'set-parameter', name: 'anchorX', value: 30 }]);
+    expect(graphOf(detached.document).points).toEqual(graphOf(removed.document).points);
+    const before = session.getSnapshot();
+    const impossible = createCadFreshSketchDrawing({ drawing: { kind: 'circle', center: { kind: 'coincident', point: [30, 7], sourcePointId: 'anchor', relationId: 'conflict-link' }, radius: 2 },
+      construction: true, createId: () => `conflict-${++n}`, existingGraph: graphOf(before.document), parameters: before.document.parameters });
+    if (impossible.kind !== 'circle') throw new Error('Circle constructor result missing.');
+    const failure: unknown = await accept([{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: impossible.geometry },
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'incompatible-axis', kind: 'fixed-axis', pointId: impossible.centerPointId, axis: 'x', value: 40 } }
+    ]).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(CadSketchPreparationError);
+    if (!(failure instanceof CadSketchPreparationError)) throw new Error('Expected structured rejection.');
+    expect(failure.diagnostics.conflictingIds).toEqual(expect.arrayContaining(['conflict-link', 'incompatible-axis']));
+    expect(session.getSnapshot()).toBe(before);
+  });
+
   it('accepts one exact selected-set move and keeps zero motion from clearing global redo', async () => {
     const session = new CadSession(moveSource()), before = session.getSnapshot();
     const accepted = await session.editPrepared(before.version, async document => (await prepareCadEdits(document, [move], solver)).document);

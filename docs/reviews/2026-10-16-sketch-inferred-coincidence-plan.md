@@ -1,6 +1,6 @@
 # Deliberate coincidence while creating fresh shapes
 
-Investigation only, 2026-10-16, source at `d705840` plus the pending shared-snap integration. No production/test changes, builds or solver experiments. This follows the [geometry snap plan](2026-10-16-sketch-geometry-snaps-plan.md); it does not change the frozen snap resolver.
+Design investigated on 2026-10-16 at `d705840` plus the then-pending shared-snap integration. The bounded fresh domain constructor was subsequently authorized at `54fed37`; implementation evidence is recorded below. This follows the [geometry snap plan](2026-10-16-sketch-geometry-snaps-plan.md) and does not change its resolver.
 
 ## Recommended scope
 
@@ -125,3 +125,21 @@ Consequently no separate inference tool or serialized pixel target is needed. Up
 | Existing public append | The example payload and equivalent human payload use the same accepted graph/driver rules. Stale `expectedVersion`, active external workflow and invalid existing source IDs reject. Owned sketch local history and full-part Finish remain the established operation path. |
 
 Domain ownership can cover the fresh authoring constructor, its meaningful tests and the smallest shared allocator extraction. Root owns Canvas/Workbench draft picks, checkbox/hints, public guide and browser proof. Native/runtime work is unnecessary unless a concrete existing failure is found. Arrangement integration, associative midpoint, inferred dragging, legacy promotion and changing Path reuse are separate scopes.
+
+## Implemented domain evidence at 54fed37
+
+[cadFreshSketchGraph.ts](../../src/domain/cad/cadFreshSketchGraph.ts) now exports the exact proposed `CadFreshSketchPick`, `CadFreshSketchDrawing`, `CadFreshSketchCreated` types and `createCadFreshSketchDrawing({drawing,construction,createId,existingGraph?,parameters?})`. The original normalized helper keeps its return contract and allocation order, with two small private circle/closed-line allocators shared by both entry points. No public edit, schema, native/preparation/protocol or storage behavior changed.
+
+The authored constructor checks explicit source IDs and both exact evaluated coordinates before allocating graph IDs. It builds rectangle corners from original axis values, adds removable `[freshPointId, sourcePointId]` relations to the same payload, validates the combined source graph and returns only frozen new records plus a frozen role map. It never copies borrowed source points into the append or rewrites source scalars/IDs. This geometric/source validation does not certify future solvability after additional parameter/driver edits; the existing prepared edit still owns that decision.
+
+The first four-direction constructor cases failed because the export was absent, then passed. Circle and polygon cases failed before their implementations. The final focused command passed **2 suites / 38 tests**, including **16 new authored-pick cases** and all **22 existing helper cases**:
+
+```powershell
+& 'C:/Users/cristian/.codex/worktrees/cad-shared-controls/Wire_EDM/tmp/node24/node.exe' node_modules/vitest/vitest.mjs run --project pure-domain src/domain/cad/__tests__/cadFreshSketchDrawing.test.ts src/domain/cad/__tests__/cadFreshSketchGraph.test.ts
+```
+
+[New domain tests](../../src/domain/cad/__tests__/cadFreshSketchDrawing.test.ts) cover four rectangle directions through real append/material measurement, exact cancellation-prone axes, circle center attachment with untouched source expressions, polygon reversal and near-adjacent distinct identities, numeric-only picks at existing coordinates without inferred joins, missing/changed/nearly-equal source references before allocation, source/new/relation ID collisions and degenerate input before allocation. Scoped syntactic/semantic TypeScript diagnostics on the two owned paths and their diff checks passed.
+
+The integration owner independently ran the existing pinned native solver through `cadEditPreparation.test.ts`. Its new coherent example appends a circle and construction rectangle linked to source `[' anchorX ', ' 7 ']`, changes `anchorX` from 10 to 20, removes the links, confirms later source motion to 30 leaves those fresh points detached, and checks exact Undo/Redo. An incompatible append-plus-fixed-axis batch rejects with real diagnostic IDs while preserving the complete accepted snapshot. All 14 preparation cases passed; the integration owner's local log is `tmp/sketch-inference-preparation-final.log`. These are actual shared-path results, not a stronger new solver guarantee.
+
+Root's polygon closure policy is a deliberate finish intent: the owned start can take precedence through the empty-source closure resolver within six pixels, with Ctrl/Cmd suppression, even when an external saved point has the same numeric position. The closure action does not borrow that external ID, add a duplicate polygon vertex or tolerance-weld geometry. Its UI tests belong to the root integration slice. This domain slice did not modify UI or the frozen snap resolver, run a build, commit or use remotes.

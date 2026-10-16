@@ -2,6 +2,58 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('attaches reversed rectangle picks deliberately, follows their drivers and detaches through the ordinary relation editor', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const feature = { id: 'attached', kind: 'sketch', name: 'Attached rectangle', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [' anchor ', '3.2'] }, { id: 'c', position: ['22.1', '13.2'] }], entities: [], relations: []
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'set-parameter', name: 'anchor', value: 2.1 }, { kind: 'add-feature', feature }] });
+  let current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: feature.id } });
+  await page.getByRole('button', { name: 'Rectangle', exact: true }).click();
+  const infer = page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }); await expect(infer).not.toBeChecked(); await infer.check();
+  const canvas = page.getByLabel('Sketch drawing canvas');
+  for (const [x, y] of [[22.2, 13.3], [2.2, 3.3]]) {
+    const state = await call(page, 'cad_get_viewport', { expectedVersion: current.version });
+    const box = await canvas.boundingBox(); if (!box) throw new Error('Sketch projection unavailable.');
+    await page.mouse.click(box.x + box.width / 2 + (x - state.view.centerMm[0]) * box.height / state.view.heightSpanMm,
+      box.y + box.height / 2 - (y - state.view.centerMm[1]) * box.height / state.view.heightSpanMm);
+  }
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const attached = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature;
+  expect(attached.graph.points.slice(0, 2)).toEqual(feature.graph.points);
+  const links = attached.graph.relations.filter((relation: { kind: string }) => relation.kind === 'coincident'); expect(links).toHaveLength(2);
+  expect(links.map((relation: { pointIds: string[] }) => relation.pointIds[1])).toEqual(['c', 'a']);
+  const link = links.find((relation: { pointIds: string[] }) => relation.pointIds[1] === 'a');
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'set-parameter', name: 'anchor', value: 4.1 }] }); current = await context(page);
+  const following = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature;
+  const followingPosition = following.graph.points.find((point: { id: string }) => point.id === link.pointIds[0]).position;
+  expect(followingPosition[0]).toBeCloseTo(4.1, 12); expect(followingPosition[1]).toBeCloseTo(3.2, 12);
+  expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: feature.id })).materialAreaMm2).toBeCloseTo(180, 8);
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry-set', selections: [{ kind: 'point', id: link.pointIds[0] }, { kind: 'point', id: 'a' }] } });
+  const coincidence = page.getByRole('checkbox', { name: 'Coincident', exact: true }); await expect(coincidence).toBeChecked(); await coincidence.uncheck();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const detached = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature;
+  expect(detached.graph.points).toEqual(following.graph.points); expect(detached.graph.relations).toEqual(following.graph.relations.filter((relation: { id: string }) => relation.id !== link.id));
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'set-parameter', name: 'anchor', value: 6.1 }] }); current = await context(page);
+  const movedSource = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature;
+  expect(movedSource.graph.points.find((point: { id: string }) => point.id === link.pointIds[0]).position).toEqual(followingPosition);
+  await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z'); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(following);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'pad', kind: 'extrude', name: 'Attached plate', suppressed: false, sketchId: feature.id, distance: 5, symmetric: false, operation: 'new', targetId: null
+  } }] });
+  current = await context(page); const built = await call(page, 'cad_build', { expectedVersion: current.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo(900, 7);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current.dirty).toBe(false); expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(following);
+});
+
 test('places a plate and bore from off-grid geometry snaps, then extrudes and reopens their exact independent source', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const feature = { id: 'snapped', kind: 'sketch', name: 'Snap references', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

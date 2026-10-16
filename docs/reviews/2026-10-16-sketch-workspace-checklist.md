@@ -27,6 +27,16 @@ Native in-app browser proof created a rectangle from off-grid endpoint targets, 
 
 Persistent inferred coincidence is next, using the separately recorded `2026-10-16-sketch-inferred-coincidence-plan.md`. Midpoint association, topology tools and the broader acceptance audit remain unfinished. No storage/schema/native or installed-post change, version bump or remote action.
 
+## Checkpoint: deliberate fresh-shape attachments
+
+Opt-in inferred coincidence during fresh rectangle/circle/polygon drawing retains explicit first/opposite/center/vertex roles and source identity, with one existing atomic append carrying ordinary removable relations. Direct corner-axis construction avoids losing picked coordinates through origin-plus-width cancellation. A gesture-local source pin rejects replaced references without discarding the attempt. Switching inference off releases pending links; Ctrl/Cmd suppresses only the current pick. Midpoints and radius picks remain position-only. Reference points remain visible and read-only during drawing.
+
+Evidence: 38 domain constructor cases, 39 Canvas picking cases, 27 graph-layer cases, 9 focused Workbench cases and 14 real preparation cases pass, alongside related suites and an overlapping independent 40-case review. The initial integrated run passed seven files/208 cases; its remaining file could not import icons while a concurrent prebuild refreshed their distribution. That file passed separately after the build. Future builds and test execution stay sequential. Final production build, TypeScript, documentation/source distribution, shared UI and icon integration pass. All 21 production sketch/region journeys pass in Chromium and Firefox; the three drawing journeys also pass against the final read-only-reference fix.
+
+Native in-app browser independently verifies both visible reference points, the named pending attachment, reverse-corner drawing with two distinct new point IDs and ordinary coincidence relations, exact original scalar strings, and parameter propagation from 2.1 to 4.1. The rectangle becomes 180 mm² and extrudes into one 900 mm³ solid without diagnostics. Four Undo steps restore the empty original disposable draft; no user record was saved. Proof: `tmp/sketch-inferred-attachment.png`, `tmp/sketch-inferred-solid.png`. [Independent review and acceptance](2026-10-16-sketch-inferred-coincidence-review.md).
+
+Next: [exact line/arc splitting](2026-10-16-sketch-exact-split-plan.md), followed by the remaining topology tools, associative midpoint and full sketch acceptance inventory. The isolated arrangement module remains unwired. No persisted schema/storage migration, native change, installed machine/post change, version bump or remote action. Sketch mode and the overall goal remain incomplete.
+
 ## Initial findings
 
 The canvas picker currently returns a profile ID. Selecting/dragging a boundary therefore translates its whole profile. The constraint module records explicit dimensions for primitive profile sizes and preserves expressions, but has no general point/segment relationship solver. Paths and polygons expose no dimension quantities. These are model and interaction gaps, not styling issues.

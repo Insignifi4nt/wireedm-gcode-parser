@@ -60,6 +60,23 @@ async function fixture(overrides: Partial<Props> = {}) {
 }
 
 describe('graph point interaction ownership', () => {
+  it('keeps an orphan snap reference visible while drawing without taking pointer or keyboard ownership', async () => {
+    const h = await fixture({ active: false, highlighted: { kind: 'point', id: 'mixed' } });
+    const reference = h.point('mixed');
+    expect(reference.querySelector('.cad-sketch-point-mark')?.getAttribute('cx')).toBe('3');
+    expect(reference.querySelector('.cad-sketch-point-mark')?.getAttribute('cy')).toBe('7');
+    expect(reference.getAttribute('aria-disabled')).toBe('true'); expect(reference.getAttribute('tabindex')).toBe('-1');
+    expect(reference.classList.contains('is-pick-highlighted')).toBe(true);
+    await h.pointer(reference, 'pointerdown');
+    await h.pointer(reference, 'pointermove', { clientX: 140, clientY: 90 });
+    await h.pointer(reference, 'pointerup', { clientX: 140, clientY: 90 });
+    await act(async () => reference.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1, button: 0 })));
+    for (const key of ['Enter', 'ArrowUp', 'Delete']) await h.key(reference, key);
+    expect(h.parentPointer).toHaveBeenCalledOnce(); expect(h.parentClick).toHaveBeenCalledOnce();
+    expect(h.capture).not.toHaveBeenCalled(); expect(h.selected).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+    expect(h.pending).not.toHaveBeenCalledWith(true);
+  });
+
   it('snaps a captured drag to accepted geometry before grid and rechecks key-only suppression and final release', async () => {
     const h = await fixture({ snap: true });
     await h.pointer(h.point(), 'pointerdown');

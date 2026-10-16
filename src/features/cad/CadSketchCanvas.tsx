@@ -33,6 +33,7 @@ import { useCadSketchBoxSelection } from './useCadSketchBoxSelection';
 import type { CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import { CadContextMenu, type CadContextMenuItem } from './CadContextMenu';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
+import type { CadFreshSketchDrawing, CadFreshSketchPick } from '@/domain/cad/cadFreshSketchGraph';
 
 const NO_PROFILES: readonly CadSketchProfile[] = Object.freeze([]);
 const snapDraftStart = prepareCadSketchGeometrySnaps();
@@ -69,7 +70,7 @@ interface CadSketchOverlapPick {
   readonly clientX: number; readonly clientY: number; readonly toggle: boolean; readonly candidates: readonly CadSketchGraphSelection[];
 }
 
-export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVersion, placementLabel, tool, selectedProfileId, onSelectProfile, onAddProfile, onAddPath, onTranslateProfile, onMoveHandle, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onError, cancelSignal, interactionLocked: externalInteractionLocked = false, onControlsReady, viewLocked = false, navigationMode = 'mouse', onContextMenu, previewProfile, previewSketch, graphControls, inspection, dimensionControls, getFitArea }: {
+export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVersion, placementLabel, tool, selectedProfileId, onSelectProfile, onAddProfile, onAddFreshSketch, onAddPath, onTranslateProfile, onMoveHandle, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onError, cancelSignal, interactionLocked: externalInteractionLocked = false, onControlsReady, viewLocked = false, navigationMode = 'mouse', onContextMenu, previewProfile, previewSketch, graphControls, inspection, dimensionControls, getFitArea }: {
   sketch: CadSketchFeature | CadCurveFeature;
   parameters: Readonly<Record<string, number>>;
   documentVersion?: string;
@@ -78,6 +79,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   selectedProfileId: string | null;
   onSelectProfile(id: string | null): void;
   onAddProfile(geometry: CadProfile, signal?: AbortSignal): CadEditCompletion;
+  onAddFreshSketch?(drawing: CadFreshSketchDrawing, signal?: AbortSignal): CadEditCompletion;
   onAddPath?(draft: CadPathDraft, closed: boolean, signal?: AbortSignal): CadEditCompletion;
   onTranslateProfile?(profileId: string, translation: SketchPoint, signal?: AbortSignal): CadEditCompletion;
   onMoveHandle?(profileId: string, handle: CadSketchHandle, translation: SketchPoint, signal?: AbortSignal): CadEditCompletion;
@@ -113,7 +115,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const svg = useRef<SVGSVGElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const instructionsId = useId();
-  const [points, setPoints] = useState<readonly SketchPoint[]>([]);
+  const [picks, setPicks] = useState<readonly CadFreshSketchPick[]>([]);
+  const points = useMemo(() => picks.map(pick => pick.point), [picks]);
+  const [inferCoincidence, setInferCoincidence] = useState(false);
   const [pathDraft, setPathDraft] = useState(createCadPathDraft);
   const [cursorInput, setCursorInput] = useState<DrawingCursor>({ point: [0, 0], mode: 'position', suppressed: false });
   const [center, setCenter] = useState<SketchPoint>([0, 0]);
@@ -167,6 +171,15 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   }, [finishPan]);
   const profiles = useMemo(() => sketch.kind === 'sketch' ? sketch.profiles.map(profile => previewProfile?.id === profile.id ? previewProfile : profile) : NO_PROFILES, [sketch, previewProfile]);
   const graphSourceParameters = graphControls?.document.parameters ?? parameters;
+  const attachedSource = useRef<{ readonly sketch: typeof sourceSketch; readonly version: typeof documentVersion;
+    readonly parameters: typeof graphSourceParameters; readonly document: CadSketchGraphControls['document'] | undefined } | null>(null);
+  useLayoutEffect(() => { if (!picks.some(pick => pick.kind === 'coincident')) attachedSource.current = null; }, [picks]);
+  const attachedSourceCurrent = () => {
+    const owned = attachedSource.current;
+    if (!owned || owned.sketch === sourceSketch && owned.version === documentVersion && owned.parameters === graphSourceParameters && owned.document === graphControls?.document) return true;
+    onError('The sketch changed. Cancel this drawing or release its pending relations before continuing.');
+    return false;
+  };
   const sourceGraph = useMemo(() => sourceSketch.kind === 'sketch' && sourceSketch.graph ? prepareCadSketchGraphInteraction(sourceSketch.graph, graphSourceParameters) : null, [sourceSketch, graphSourceParameters]);
   const visualGraph = useMemo(() => sketch === sourceSketch && parameters === graphSourceParameters ? sourceGraph
     : sketch.kind === 'sketch' && sketch.graph ? prepareCadSketchGraphInteraction(sketch.graph, parameters) : null, [sketch, sourceSketch, parameters, graphSourceParameters, sourceGraph]);
@@ -207,6 +220,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       ? { point: pathDraft.start, ...(pathDraft.startPointId === undefined ? {} : { pointId: pathDraft.startPointId }) }
       : tool === 'polygon' && points.length >= 3 ? { point: points[0] } : undefined;
     if (tool !== 'select') {
+      if (tool === 'polygon' && draftStart) {
+        // Closing an owned draft is explicit topology intent, independent of
+        // other saved points at that same position. It never borrows their IDs.
+        const closure = snapDraftStart({ cursor: raw, mmPerPixel, draftStart });
+        if (closure.kind === 'hit') return { point: closure.candidate.point, candidate: closure.candidate };
+      }
       const result = (snap && sourceGraph ? sourceGraph.snap : snapDraftStart)({ cursor: raw, mmPerPixel, draftStart });
       if (result.kind === 'hit') {
         const candidate = result.candidate, target = candidate.target;
@@ -220,7 +239,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const cursorPick = resolveDrawingPick(cursorInput.point, cursorInput.suppressed, cursorInput.mode);
   const cursor = cursorPick.point;
   const snapHint = tool !== 'select' && !interactionLocked ? cursorPick.candidate : undefined;
-  const snapLabel = snapHint ? snapHint.target.kind === 'draft-start' ? 'Path start'
+  const freshDrawing = sourceSketch.kind === 'sketch' && (tool === 'rectangle' || tool === 'circle' || tool === 'polygon');
+  const canInfer = freshDrawing && Boolean(onAddFreshSketch);
+  const inferencePoint = canInfer && inferCoincidence && !(tool === 'circle' && picks.length) && snapHint && 'pointId' in snapHint.target ? snapHint.target.pointId : undefined;
+  const snapLabel = inferencePoint ? `Coincident with Point ${(sourceGraph?.graph.points.findIndex(point => point.id === inferencePoint) ?? -1) + 1}`
+    : snapHint ? snapHint.target.kind === 'draft-start' ? tool === 'polygon' ? 'Close profile' : 'Path start'
     : cursorPick.existingPointId ? `Join ${snapHint.target.kind}` : `${snapHint.target.kind[0].toUpperCase()}${snapHint.target.kind.slice(1)} position · No relation` : '';
   const snapHighlight: CadSketchGraphSelection | null = snapHint && 'pointId' in snapHint.target ? { kind: 'point', id: snapHint.target.pointId }
     : snapHint?.target.kind === 'midpoint' ? { kind: 'entity', id: snapHint.target.entityId } : null;
@@ -265,7 +288,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   }, []);
   const renderedPlane = useMemo(() => typeof sketch.plane === 'string' ? sketch.plane : Object.freeze({ ...sketch.plane }), [sketch.plane]);
   const viewRevision = useRef({ signature: '', revision: 0 });
-  const viewSignature = JSON.stringify([sketch.plane, center, span, aspect, grid, snap, gridStep, pickFilter, boxPending, graphPending, pickHighlight, tool !== 'select' ? [cursor, points, pathDraft] : null, snapHint ? [snapHint.target, snapHint.point, snapLabel] : null, previewProfile?.geometry, previewSketch ? [previewSketch.profiles, previewSketch.graph] : null, graphControls ? [graphControls.selection, graphControls.relation, graphControls.inspection, graphControls.degreesOfFreedom, graphControls.showDimensions] : null, inspection, dragPreview?.translation]);
+  const viewSignature = JSON.stringify([sketch.plane, center, span, aspect, grid, snap, gridStep, pickFilter, boxPending, graphPending, pickHighlight, tool !== 'select' ? [cursor, picks, pathDraft] : null, snapHint ? [snapHint.target, snapHint.point, snapLabel] : null, previewProfile?.geometry, previewSketch ? [previewSketch.profiles, previewSketch.graph] : null, graphControls ? [graphControls.selection, graphControls.relation, graphControls.inspection, graphControls.degreesOfFreedom, graphControls.showDimensions] : null, inspection, dragPreview?.translation]);
   if (viewRevision.current.signature !== viewSignature) { viewRevision.current = { signature: viewSignature, revision: viewRevision.current.revision + 1 }; }
   const currentView = useRef<CadRenderedViewState>({ mode: sketch.kind, available: false, plane: renderedPlane, gridVisible: grid, snapEnabled: snap, gridStepMm: gridStep, centerMm: center, heightSpanMm: span, revision: viewRevision.current.revision });
   currentView.current = Object.freeze({ mode: sketch.kind, available: Boolean(svg.current), plane: renderedPlane, gridVisible: grid, snapEnabled: snap, gridStepMm: gridStep, centerMm: Object.freeze([...center] satisfies [number, number]), heightSpanMm: span, revision: viewRevision.current.revision, ...(sketch.kind === 'sketch' ? { sketchPickFilter: pickFilter } : {}) });
@@ -302,7 +325,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     onControlsReady?.(controls);
     return () => onControlsReady?.(null, controls);
   }, [onControlsReady]);
-  useEffect(() => { setPoints([]); setPathDraft(createCadPathDraft()); }, [sketch.id, tool, cancelSignal]);
+  useEffect(() => { setPicks([]); setPathDraft(createCadPathDraft()); }, [sketch.id, tool, cancelSignal]);
   useLayoutEffect(() => { setCursorInput(current => ({ ...current, mode: 'position' })); }, [sourceSketch, graphSourceParameters, tool, cancelSignal, center, span, aspect]);
   const pathPending = tool === 'path' && pathDraft.kind !== 'idle';
   useLayoutEffect(() => { onPendingChange(points.length > 0 || pathPending || dragPreview !== null || submission.applying || graphPending || boxPending || overlapPending); }, [points.length, pathPending, dragPreview !== null, submission.applying, graphPending, boxPending, overlapPending, onPendingChange]);
@@ -405,7 +428,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   };
   const cancelDrawing = () => {
     submission.cancel(); ownedHandleEdit.current = null;
-    setDragPreview(null); setPoints([]); setPathDraft(createCadPathDraft()); setCursorInput(current => ({ ...current, mode: 'position' }));
+    setDragPreview(null); setPicks([]); setPathDraft(createCadPathDraft()); setCursorInput(current => ({ ...current, mode: 'position' }));
     if (curveCreation) onCancelCurve?.();
   };
   const finishPath = (closed: boolean) => {
@@ -425,12 +448,16 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     catch (error) { onError(error instanceof Error ? error.message : 'Unable to close this path.'); }
     svg.current?.focus();
   };
-  const add = (geometry: CadProfile) => {
-    try { submitEdit(signal => onAddProfile(geometry, signal), () => setPoints([]), 'Unable to add this profile.'); }
+  const add = (geometry: CadProfile, drawing?: CadFreshSketchDrawing) => {
+    try {
+      if (!attachedSourceCurrent()) return;
+      if (drawing && !onAddFreshSketch && picks.some(pick => pick.kind === 'coincident')) throw new Error('The attached drawing cannot be saved by this editor. Cancel or release its pending relations.');
+      submitEdit(signal => drawing && onAddFreshSketch ? onAddFreshSketch(drawing, signal) : onAddProfile(geometry, signal), () => setPicks([]), 'Unable to add this profile.');
+    }
     catch (error) { onError(error instanceof Error ? error.message : 'Unable to add this profile.'); }
   };
   const close = () => {
-    try { add(closeSketchPolygon(points)); }
+    try { add(closeSketchPolygon(points), { kind: 'polygon', vertices: picks }); }
     catch (error) { onError(error instanceof Error ? error.message : 'Unable to close this profile.'); }
   };
   const fit = () => {
@@ -478,17 +505,29 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   if (first && (tool === 'rectangle' || tool === 'circle' || tool === 'slot')) {
     try { preview = twoPointSketchProfile(tool, first, cursor); } catch { /* The preview starts at zero size. */ }
   }
-  const placePoint = (point: SketchPoint, existingPointId?: string) => {
+  const placePoint = (point: SketchPoint, existingPointId?: string, candidate?: CadSketchSnapCandidate) => {
     if (interactionLocked) return;
     if (tool === 'select') { onSelectProfile(null); return; }
     if (tool === 'path') { changePath({ kind: 'point', point, ...(existingPointId === undefined ? {} : { existingPointId }) }); return; }
+    if (!attachedSourceCurrent()) return;
+    const authoredPick = (): CadFreshSketchPick => canInfer && inferCoincidence && candidate && 'pointId' in candidate.target
+      ? Object.freeze({ kind: 'coincident', point, sourcePointId: candidate.target.pointId, relationId: crypto.randomUUID() })
+      : Object.freeze({ kind: 'position', point });
+    const appendPick = (pick: CadFreshSketchPick) => {
+      if (pick.kind === 'coincident' && !attachedSource.current) attachedSource.current = { sketch: sourceSketch, version: documentVersion, parameters: graphSourceParameters, document: graphControls?.document };
+      setPicks([...picks, pick]);
+    };
     if (tool === 'polygon') {
       if (first && points.length >= 3 && point[0] === first[0] && point[1] === first[1]) { close(); return; }
-      if (!points.some(([x, y]) => x === point[0] && y === point[1])) setPoints([...points, point]);
+      if (!points.some(([x, y]) => x === point[0] && y === point[1])) appendPick(authoredPick());
     } else if (first) {
-      try { add(twoPointSketchProfile(tool, first, point)); }
+      try {
+        const geometry = twoPointSketchProfile(tool, first, point);
+        add(geometry, tool === 'rectangle' ? { kind: 'rectangle', first: picks[0], opposite: authoredPick() }
+          : tool === 'circle' && geometry.kind === 'circle' && typeof geometry.radius === 'number' ? { kind: 'circle', center: picks[0], radius: geometry.radius } : undefined);
+      }
       catch (error) { onError(error instanceof Error ? error.message : 'Unable to draw this profile.'); }
-    } else setPoints([point]);
+    } else appendPick(authoredPick());
   };
   const dimensionProfile = dragPreview?.profile ?? (sketch.kind === 'sketch' ? sketch.profiles.find(profile => profile.id === selectedProfileId) : undefined);
   const dimensionBounds = useMemo(() => {
@@ -628,10 +667,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           event.preventDefault();
           if (event.key === 'Enter' && tool === 'path' && pathDraft.kind === 'ready') finishPath(true);
           else if (event.key === 'Enter' && tool === 'polygon' && points.length >= 3) close();
-          else placePoint(cursor, cursorPick.existingPointId);
+          else placePoint(cursor, cursorPick.existingPointId, cursorPick.candidate);
         } else if (tool === 'path' && pathPending && (event.key === 'Backspace' || event.key === 'Escape')) { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }); }
-        else if (event.key === 'Backspace' && points.length) { event.preventDefault(); setPoints((current) => current.slice(0, -1)); }
-        else if (event.key === 'Escape' && points.length) { event.preventDefault(); setPoints([]); }
+        else if (event.key === 'Backspace' && points.length) { event.preventDefault(); setPicks((current) => current.slice(0, -1)); }
+        else if (event.key === 'Escape' && points.length) { event.preventDefault(); setPicks([]); }
         else if (event.key === 'Escape' && tool === 'select' && graphControls?.selection.length) { event.preventDefault(); event.stopPropagation(); graphControls.onSelect(null); }
         else if (event.key.toLowerCase() === 'f' && !viewLocked) { event.preventDefault(); fit(); }
       }}
@@ -650,7 +689,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             setActiveHandle(grip);
             onSelectProfile(grip?.profileId ?? profilePicker.pick(point, span / rect.height));
           }
-        } else { const pick = getDrawingPick(event); placePoint(pick.point, pick.existingPointId); }
+        } else { const pick = getDrawingPick(event); placePoint(pick.point, pick.existingPointId, pick.candidate); }
       }}>
       <defs><pattern id="cad-sketch-grid" x={-center[0] % gridStep} y={center[1] % gridStep} width={gridStep} height={gridStep} patternUnits="userSpaceOnUse"><path d={`M ${gridStep} 0 H 0 V ${gridStep}`} fill="none" stroke="#29373f" strokeWidth={span / 1000} /></pattern></defs>
       {grid && span / gridStep < 2000 && <rect x={-width / 2} y={-span / 2} width={width} height={span} fill="url(#cad-sketch-grid)" />}
@@ -709,6 +748,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         </>}
         {snapHint && viewportSize.height > 0 && <CadSketchSnapHint candidate={snapHint} center={center} scaleX={width / viewportSize.width} scaleY={span / viewportSize.height} label={snapLabel} />}
         {points.map(([x, y], index) => <circle key={index} cx={x - center[0]} cy={y - center[1]} r={span / 170} className="cad-sketch-vertex" />)}
+        {picks.filter(pick => pick.kind === 'coincident').map(pick => <circle key={pick.relationId} data-cad-sketch-attachment={pick.sourcePointId}
+          cx={pick.point[0] - center[0]} cy={pick.point[1] - center[1]} r={6 * span / (viewportSize.height || 600)} className="cad-sketch-snap-target"><title>Pending coincidence with Point {(sourceGraph?.graph.points.findIndex(point => point.id === pick.sourcePointId) ?? -1) + 1}</title></circle>)}
         {tool !== 'select' && <g className="cad-crosshair"><path d={`M ${cursor[0] - center[0] - span / 70} ${cursor[1] - center[1]} h ${span / 35} M ${cursor[0] - center[0]} ${cursor[1] - center[1] - span / 70} v ${span / 35}`} /></g>}
       </g>
       {boxSelection.box && <rect className={`cad-sketch-selection-box is-${boxSelection.box.mode}`} pointerEvents="none"
@@ -728,6 +769,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       if (tool !== 'path' || !pathPending || interactionLocked || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key === 'Backspace' || event.key === 'Escape') { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }, true); }
     }}><span>{instruction}</span>
+      {canInfer && <label className="cad-check"><Input type="checkbox" aria-label="Create coincident relations" checked={inferCoincidence} disabled={interactionLocked}
+        title="Attach future snapped endpoints or centers with removable coincidence relations. Switching off releases pending attachments; accepted geometry is unchanged. Path uses its own shared-point joins."
+        onChange={event => { const enabled = event.target.checked; setInferCoincidence(enabled); if (!enabled) setPicks(current => current.map(pick => ({ kind: 'position', point: pick.point }))); }} />Create relations</label>}
+      {picks.some(pick => pick.kind === 'coincident') && <span aria-label="Pending coincident relations">{picks.filter(pick => pick.kind === 'coincident').length} attached</span>}
       {tool === 'path' && <>
         <div className="cad-path-modes" role="group" aria-label="Path segment mode"><Button disabled={interactionLocked || pathDraft.kind === 'arc-through'} aria-pressed={pathMode === 'line'} onClick={() => changePath({ kind: 'mode', mode: 'line' }, true)}>Line</Button><Button disabled={interactionLocked || pathDraft.kind === 'arc-through'} aria-pressed={pathMode === 'arc'} onClick={() => changePath({ kind: 'mode', mode: 'arc' }, true)}>3-point Arc</Button></div>
         {pathPending && <>{sketch.kind === 'sketch' && onAddPath && <Button aria-label="Finish path" title="Keep this path open without adding a closing edge" disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(false)}><ConfirmIcon size={13} /> Finish path</Button>}<Button aria-label={sketch.kind === 'curve' ? 'Finish curve' : 'Close profile'} title={sketch.kind === 'curve' ? 'Validate and save the open curve without a closing edge' : pathNeedsClosingLine ? 'Close the profile by adding a straight line to its start' : 'Validate and save the closed profile'} disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(true)}><ConfirmIcon size={13} />{sketch.kind === 'curve' ? 'Finish curve' : pathNeedsClosingLine ? 'Close with line' : 'Close profile'}</Button><Button disabled={interactionLocked} onClick={() => changePath({ kind: 'undo-last' }, true)}><UndoIcon size={13} /> Undo last</Button><Button onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button></>}
