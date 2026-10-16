@@ -42,7 +42,7 @@ async function readRaw(adapter: WorkbenchStorageAdapter, path: string, signal?: 
   return raw;
 }
 async function parseSaved(raw: string, id: string): Promise<SavedCadDocument> {
-  const value: unknown = JSON.parse(raw);
+  const value: unknown = JSON.parse(raw.replace(/^\uFEFF/, ''));
   if (!value || typeof value !== 'object' || !('format' in value) || value.format !== 'wireedm-cad-save' ||
       !('schemaVersion' in value) || value.schemaVersion !== 1 || !('document' in value) ||
       !('updatedAt' in value) || typeof value.updatedAt !== 'string' || !Number.isFinite(Date.parse(value.updatedAt)) ||
@@ -142,15 +142,33 @@ export async function saveCadDocument(adapter: WorkbenchStorageAdapter, document
   return withWorkbenchMutationLock(adapter, async () => {
     options.signal?.throwIfAborted();
     const existing = await readRaw(adapter, path, options.signal);
-    if ((existing === null ? null : await fingerprint(existing)) !== options.expectedSavedVersion) {
+    const previous = existing === null ? null : await parseSaved(existing, validated.id);
+    if ((previous?.savedVersion ?? null) !== options.expectedSavedVersion) {
       throw new CadStorageError('SAVED_DOCUMENT_CHANGED', 'This CAD document changed in storage. Export your draft, then reopen the saved document before editing.');
     }
+    const changes = [];
+    if (existing !== null && previous !== null) {
+      if (previous.document.schemaVersion < validated.schemaVersion) {
+        const originalPath = `cad/originals/${validated.id}/schema-${previous.document.schemaVersion}-${previous.savedVersion}.cad.json`;
+        const original = await readRaw(adapter, originalPath, options.signal);
+        if (original !== null && original !== existing) {
+          throw new CadStorageError('ORIGINAL_BACKUP_CONFLICT', 'The original CAD format backup contains different data. Preserve both files; the saved CAD document was not changed.');
+        }
+        // Verify and retain the exact older save before publishing its replacement.
+        // A matching original stays in the journal so capture/readback also checks retries.
+        changes.push({ path: originalPath, contents: existing, expectedPrevious: original });
+      }
+    }
+    changes.push({ path, contents: raw, expectedPrevious: existing });
     try {
-      await commitWorkbenchFileTransaction(adapter, [{ path, contents: raw, expectedPrevious: existing }], () => {
+      await commitWorkbenchFileTransaction(adapter, changes, () => {
         options.signal?.throwIfAborted(); options.beforeWrite?.();
       });
     } catch (error) {
-      if (error instanceof WorkbenchFileConflictError) throw new CadStorageError('SAVED_DOCUMENT_CHANGED', 'This CAD document changed in storage. Export your draft, then reopen the saved document before editing.');
+      if (error instanceof WorkbenchFileConflictError) {
+        if (error.path !== path) throw new CadStorageError('ORIGINAL_BACKUP_CONFLICT', 'The original CAD format backup changed before saving. Preserve both files; the saved CAD document was not changed.');
+        throw new CadStorageError('SAVED_DOCUMENT_CHANGED', 'This CAD document changed in storage. Export your draft, then reopen the saved document before editing.');
+      }
       throw error;
     }
     return { document: validated, updatedAt, savedVersion };

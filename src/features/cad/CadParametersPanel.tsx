@@ -9,13 +9,14 @@ import type { CadEdit } from '@/domain/cad/cadOperations';
 import { inspectCadParameters, type CadParameterUsage } from '@/domain/cad/cadParameters';
 import { CadContextHelp } from './CadContextHelp';
 import { formatCadLocalizedQuantity } from './cadDisplayQuantity';
+import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import './cad-parameters.css';
 
 type Editor = { kind: 'parameter'; originalName: string | null; name: string; value: string; groupId: string; error: string }
   | { kind: 'group'; originalId: string | null; name: string; error: string };
 export interface CadParametersPanelProps {
   document: CadDocument;
-  onEditMany(edits: readonly CadEdit[]): void;
+  onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
   onInspectParameter(name: string | null): void;
   onInspectUsage?(usage: Pick<CadParameterUsage, 'featureId' | 'profileId' | 'inputName'>): void;
   onPendingChange(pending: boolean): void;
@@ -26,12 +27,13 @@ const numericValue = (value: number) => formatCadLocalizedQuantity(value, 8, fal
 export function CadParametersPanel({ document: cadDocument, onEditMany, onInspectParameter, onInspectUsage, onPendingChange, interactionLocked, cancelSignal }: CadParametersPanelProps) {
   const inspection = useMemo(() => inspectCadParameters(cadDocument), [cadDocument]);
   const [editor, setEditor] = useState<Editor | null>(null);
+  const submission = useCadEditSubmission();
   const [position, setPosition] = useState({ left: 240, top: 100, width: 310 });
   const host = useRef<HTMLDivElement>(null), floating = useRef<HTMLDivElement>(null), previous = useRef<HTMLElement | null>(null);
   const editorDocument = useRef<CadDocument | null>(null);
   const pendingCallback = useRef(onPendingChange);
   const previousCancel = useRef(cancelSignal);
-  const close = () => { setEditor(null); editorDocument.current = null; onInspectParameter(null); };
+  const close = () => { submission.cancel(); setEditor(null); editorDocument.current = null; onInspectParameter(null); };
   useLayoutEffect(() => { pendingCallback.current = onPendingChange; onPendingChange(editor !== null); if (!editor) { previous.current?.focus(); previous.current = null; } }, [editor !== null, onPendingChange]);
   useEffect(() => () => pendingCallback.current(false), []);
   useEffect(() => { if (cancelSignal !== previousCancel.current) { previousCancel.current = cancelSignal; close(); } }, [cancelSignal]);
@@ -58,7 +60,7 @@ export function CadParametersPanel({ document: cadDocument, onEditMany, onInspec
   const report = (error: unknown) => update({ error: error instanceof Error ? error.message : 'Unable to apply this change.' });
   const assertCurrent = () => { if (editorDocument.current !== cadDocument) throw new Error('The part changed while this editor was open. Cancel and reopen it to edit the current values.'); };
   const apply = () => {
-    if (!editor || interactionLocked) return;
+    if (!editor || interactionLocked || submission.applying) return;
     try {
       assertCurrent();
       const edits: CadEdit[] = [];
@@ -77,10 +79,19 @@ export function CadParametersPanel({ document: cadDocument, onEditMany, onInspec
         const originalGroupId = editor.originalName ? inspection.parameters.find(parameter => parameter.name === editor.originalName)?.groupId ?? '' : '';
         if (originalGroupId !== editor.groupId) edits.push({ kind: 'move-parameter', name, groupId: editor.groupId || null });
       }
-      onEditMany(edits); close();
+      submission.submit(signal => onEditMany(edits, signal), close, report);
     } catch (error) { report(error); }
   };
   const selected = editor?.kind === 'parameter' ? inspection.parameters.find(parameter => parameter.name === editor.originalName) : undefined;
+  const remove = () => {
+    if (!editor || interactionLocked || submission.applying) return;
+    try {
+      assertCurrent();
+      const edit: CadEdit | null = editor.kind === 'group' && editor.originalId ? { kind: 'remove-parameter-group', groupId: editor.originalId }
+        : editor.kind === 'parameter' && editor.originalName ? { kind: 'remove-parameter', name: editor.originalName } : null;
+      if (edit) submission.submit(signal => onEditMany([edit], signal), close, report);
+    } catch (error) { report(error); }
+  };
   const pluginLabel = (parameter: typeof inspection.parameters[number]) => {
     if (parameter.source.kind !== 'plugin') return parameter.name;
     const source = parameter.source;
@@ -103,14 +114,14 @@ export function CadParametersPanel({ document: cadDocument, onEditMany, onInspec
     </div>
     {editor && createPortal(<div ref={floating} className="cad-parameter-editor" role="dialog" aria-label={editor.kind === 'group' ? editor.originalId ? 'Edit parameter group' : 'New parameter group' : editor.originalName ? `Edit ${editor.originalName}` : 'New parameter'} style={{ ...position, maxHeight: window.innerHeight - position.top - 12 }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
       <header><strong>{editor.kind === 'group' ? 'Parameter group' : selected ? pluginLabel(selected) : editor.kind === 'parameter' && editor.originalName ? editor.originalName : 'New parameter'}</strong><Button type="button" aria-label="Close parameter editor" onClick={close}><CloseIcon size={14} /></Button></header>
-      <form onSubmit={event => { event.preventDefault(); apply(); }}>
-        <fieldset disabled={interactionLocked}>
+      <form aria-busy={submission.applying || undefined} onSubmit={event => { event.preventDefault(); apply(); }}>
+        <fieldset disabled={interactionLocked || submission.applying}>
           <label><span>{editor.kind === 'group' ? 'Group name' : 'Name'}</span><Input aria-label={editor.kind === 'group' ? 'Group name' : 'Parameter name'} value={editor.name} spellCheck={false} autoComplete="off" onChange={event => update({ name: event.target.value, error: '' })} /></label>
           {editor.kind === 'parameter' && <><label><span>Value</span><Input aria-label="Parameter value" inputMode="decimal" value={editor.value} onChange={event => setEditor(current => current?.kind === 'parameter' ? { ...current, value: event.target.value, error: '' } : current)} /></label><label><span>Group</span><Select aria-label="Parameter group" value={editor.groupId} onChange={event => setEditor(current => current?.kind === 'parameter' ? { ...current, groupId: event.target.value, error: '' } : current)}><option value="">Ungrouped</option>{inspection.groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</Select></label></>}
           {selected && <details className="cad-parameter-usage" open><summary>{selected.usages.length ? `Used by ${selected.usages.length} dimension${selected.usages.length === 1 ? '' : 's'}` : 'Unused'}</summary>{selected.usages.map((usage, index) => <div key={`${usage.featureId}/${usage.path}/${index}`} className={usage.active ? '' : 'is-inactive'}><Button type="button" disabled={!onInspectUsage} aria-label={`Inspect ${usage.featureName}${usage.inputName ? ` ${usage.inputName}` : ''}`} onClick={() => onInspectUsage?.(usage)}>{usage.featureName}{usage.inputName ? ` · ${usage.inputName}` : ''}</Button><code>{usage.expression}</code>{!usage.active && <small>{usage.reason ?? 'Inactive'}</small>}</div>)}</details>}
           {editor.error && <p className="cad-parameter-error" role="alert">{editor.error}</p>}
-          <footer>{(editor.kind === 'parameter' && editor.originalName || editor.kind === 'group' && editor.originalId) && <Button variant="danger" type="button" className="cad-parameter-delete" aria-label={editor.kind === 'group' ? 'Remove parameter group' : 'Remove parameter'} disabled={editor.kind === 'parameter' && Boolean(selected?.usages.length)} title={selected?.usages.length ? 'This parameter is referenced. Remove its links before deleting it.' : editor.kind === 'group' ? 'Keeps values and moves them to Ungrouped' : 'Remove this unused value'} onClick={() => { try { assertCurrent(); if (editor.kind === 'group' && editor.originalId) onEditMany([{ kind: 'remove-parameter-group', groupId: editor.originalId }]); else if (editor.kind === 'parameter' && editor.originalName) onEditMany([{ kind: 'remove-parameter', name: editor.originalName }]); close(); } catch (error) { report(error); } }}><DeleteIcon size={12} /></Button>}<Button type="button" onClick={close}>Cancel</Button><Button variant="primary" type="submit" className="cad-parameter-apply"><ConfirmIcon size={12} /> Apply</Button></footer>
         </fieldset>
+        <footer>{(editor.kind === 'parameter' && editor.originalName || editor.kind === 'group' && editor.originalId) && <Button variant="danger" type="button" className="cad-parameter-delete" aria-label={editor.kind === 'group' ? 'Remove parameter group' : 'Remove parameter'} disabled={interactionLocked || submission.applying || editor.kind === 'parameter' && Boolean(selected?.usages.length)} title={selected?.usages.length ? 'This parameter is referenced. Remove its links before deleting it.' : editor.kind === 'group' ? 'Keeps values and moves them to Ungrouped' : 'Remove this unused value'} onClick={remove}><DeleteIcon size={12} /></Button>}<Button type="button" onClick={close}>Cancel</Button><Button variant="primary" type="submit" className="cad-parameter-apply" disabled={interactionLocked || submission.applying}><ConfirmIcon size={12} /> Apply</Button></footer>
       </form>
     </div>, document.body)}
   </div>;

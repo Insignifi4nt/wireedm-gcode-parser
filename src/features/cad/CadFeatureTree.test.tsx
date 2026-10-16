@@ -116,7 +116,7 @@ describe('unified feature history and dependency tree', () => {
     expect(button('Select Pad in history').disabled).toBe(true);
     await inputName('Feature name', '  Gear and bore  ');
     await click('Apply name');
-    expect(onRename).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'sketch', name: 'Outline' }), 'Gear and bore', undefined);
+    expect(onRename).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'sketch', name: 'Outline' }), 'Gear and bore', undefined, expect.any(AbortSignal));
     expect(callbacks.onSelect).not.toHaveBeenCalled();
     expect(callbacks.onEditSketch).not.toHaveBeenCalled();
     expect(onPendingChange).toHaveBeenLastCalledWith(false);
@@ -135,7 +135,7 @@ describe('unified feature history and dependency tree', () => {
     await menuAction('Rename profile');
     await inputName('Profile name', 'Shaft bore');
     await click('Apply name');
-    expect(onRename).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'sketch' }), 'Shaft bore', 'rectangle');
+    expect(onRename).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'sketch' }), 'Shaft bore', 'rectangle', expect.any(AbortSignal));
     expect(callbacks.onSelectProfile).not.toHaveBeenCalled();
     expect(callbacks.onEditSketch).not.toHaveBeenCalled();
   });
@@ -159,6 +159,30 @@ describe('unified feature history and dependency tree', () => {
     await click('Apply name');
     expect(onRename).toHaveBeenCalledTimes(1);
     expect(container.querySelector('input')).toBeNull();
+  });
+  it('keeps an async rename draft on rejection and prevents a cancelled result from closing a new editor', async () => {
+    let reject: (error: Error) => void = () => { throw new Error('No rename'); };
+    let resolve: () => void = () => { throw new Error('No retry'); };
+    const first = new Promise<void>((_accept, fail) => { reject = fail; });
+    const retry = new Promise<void>(accept => { resolve = accept; });
+    void first.catch(() => undefined);
+    const onRename = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(retry);
+    const callbacks = props({ onRename });
+    await act(async () => root.render(<CadFeatureTree {...callbacks} />));
+    await act(async () => button('Select Guide in history').dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true })));
+    await inputName('Feature name', 'Rail'); await click('Apply name');
+    expect(renameInput('Feature name').value).toBe('Rail');
+    await act(async () => reject(new Error('Relation preparation failed.')));
+    expect(renameInput('Feature name').value).toBe('Rail');
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('Relation preparation failed.');
+    await click('Apply name');
+    const signal: unknown = onRename.mock.calls[1]?.[3];
+    await click('Cancel rename');
+    expect(signal instanceof AbortSignal && signal.aborted).toBe(true);
+    await act(async () => button('Select Guide in history').dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true })));
+    await inputName('Feature name', 'New owner');
+    await act(async () => resolve());
+    expect(renameInput('Feature name').value).toBe('New owner');
   });
   it.each(['document', 'lock', 'reference picker', 'cancel'] as const)('cancels a stale rename when the %s owner changes', async ownership => {
     const callbacks = props({ selectedId: 'sketch' }), onRename = vi.fn(), onPendingChange = vi.fn();

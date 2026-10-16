@@ -5,6 +5,7 @@ import { CadError } from './cadError';
 import { cadFeatureDependencies } from './cadFeatureInputs';
 import { evaluateCadScalar } from './cadExpression';
 import { createCadPluginProfile, inspectCadPluginProfile, type CadPluginPackage } from './plugins/cadPlugins';
+import type { CadSketchGraph } from './cadSketchGraph';
 
 const strict = { additionalProperties: false };
 export const CadParameterNameSchema = Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]{0,63}$' });
@@ -42,6 +43,14 @@ export function cadScalarParameterNames(value: CadScalar): readonly string[] {
 type ScalarMapper = (value: CadScalar, path: string) => CadScalar;
 function point2(point: CadPoint2, path: string, map: ScalarMapper): CadPoint2 { return [map(point[0], `${path}.0`), map(point[1], `${path}.1`)]; }
 function point3(point: CadPoint3, path: string, map: ScalarMapper): CadPoint3 { return [map(point[0], `${path}.0`), map(point[1], `${path}.1`), map(point[2], `${path}.2`)]; }
+function graphScalars(graph: CadSketchGraph, map: ScalarMapper): CadSketchGraph {
+  return { ...graph,
+    points: graph.points.map((point, index) => ({ ...point, position: point2(point.position, `graph.points.${index}.position`, map) })),
+    entities: graph.entities.map((entity, index) => entity.kind === 'circle' ? { ...entity, radius: map(entity.radius, `graph.entities.${index}.radius`) } : entity),
+    relations: graph.relations.map((relation, index) => relation.kind === 'fixed-point' ? { ...relation, position: point2(relation.position, `graph.relations.${index}.position`, map) }
+      : relation.kind === 'fixed-axis' || relation.kind === 'distance' ? { ...relation, value: map(relation.value, `graph.relations.${index}.value`) } : relation)
+  };
+}
 function segment(segment: CadPathSegment, path: string, map: ScalarMapper): CadPathSegment {
   return segment.kind === 'line' ? { ...segment, start: point2(segment.start, `${path}.start`, map), end: point2(segment.end, `${path}.end`, map) }
     : { ...segment, center: point2(segment.center, `${path}.center`, map), radius: map(segment.radius, `${path}.radius`), startAngle: map(segment.startAngle, `${path}.startAngle`), sweep: map(segment.sweep, `${path}.sweep`) };
@@ -83,7 +92,7 @@ function facePredicate(predicate: CadFacePredicate, path: string, map: ScalarMap
 export function mapCadFeatureScalars(feature: CadFeature, map: ScalarMapper): CadFeature {
   switch (feature.kind) {
     case 'datum-plane': return { ...feature, definition: { ...feature.definition, origin: point3(feature.definition.origin, 'definition.origin', map), rotation: point3(feature.definition.rotation, 'definition.rotation', map) } };
-    case 'sketch': return { ...feature, offset: map(feature.offset, 'offset'), profiles: feature.profiles.map((profile, index) => ({ ...profile, geometry: profileScalars(profile.geometry, `profiles.${index}.geometry`, map) })) };
+    case 'sketch': return { ...feature, offset: map(feature.offset, 'offset'), profiles: feature.profiles.map((profile, index) => ({ ...profile, geometry: profileScalars(profile.geometry, `profiles.${index}.geometry`, map) })), ...(feature.graph ? { graph: graphScalars(feature.graph, map) } : {}) };
     case 'curve': return { ...feature, offset: map(feature.offset, 'offset'), segments: feature.segments.map((entry, index) => segment(entry, `segments.${index}`, map)) };
     case 'extrude': return { ...feature, distance: map(feature.distance, 'distance') };
     case 'revolve': return { ...feature, angle: map(feature.angle, 'angle') };

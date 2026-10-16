@@ -8,6 +8,7 @@ import { angleIsOnSweep, pathBounds, signedAreaOfPath } from '@/domain/path-inte
 import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
 import { cadAnalyticSegments, cadPathClosureTolerance, resolveCadPathSegments, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 import { selectCadSketchRegions, type CadSketchCellReference } from './cadSketchRegionSelection';
+import { compileCadSketchGeometry, type CadCompiledSketchProfile } from './compileCadSketchGeometry';
 export { cadPathClosureTolerance, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 
 export type ResolvedCadProfile =
@@ -117,7 +118,7 @@ export function cadSketchToEntities(sketch: CadSketchFeature, parameters: Readon
   const regions = resolveCadSketchRegions(sketch, parameters);
   const contours = new Map(regions.flatMap(region => [region.boundary, ...region.voids]).map(contour => [contour.profile.id, contour]));
   // Keep original contour order for existing exact DXF/CAM handoffs.
-  return sketch.profiles.filter(profile => !profile.construction).flatMap(profile => {
+  return compileCadSketchGeometry(sketch, parameters).profiles.filter(profile => !profile.construction).flatMap(profile => {
     const contour = contours.get(profile.id);
     if (!contour) throw new CadError('invalid-profile', 'The sketch contour has no resolved material region.');
     return cadProfileToEntities(contour.geometry, contour.depth % 2 === 0 ? 'CAD_OUTER' : 'CAD_HOLE');
@@ -125,7 +126,7 @@ export function cadSketchToEntities(sketch: CadSketchFeature, parameters: Readon
 }
 
 export interface CadResolvedSketchContour {
-  readonly profile: CadSketchProfile; readonly geometry: ResolvedCadProfile;
+  readonly profile: CadCompiledSketchProfile; readonly geometry: ResolvedCadProfile;
   readonly depth: number; readonly parentId: string | null; readonly point: DxfPoint;
   /** Reuses this resolution's prepared analytic path during physical area picking. */
   readonly containsPoint: (point: DxfPoint) => boolean;
@@ -281,7 +282,7 @@ export function cadProfileContainsPoint(profile: ResolvedCadProfile, point: DxfP
 
 /** Infer regions from exact analytic contours, independent of authored orientation or CAM. */
 export function resolveCadSketchContours(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): readonly CadResolvedSketchContour[] {
-  const profiles = sketch.profiles.map(profile => ({ profile, geometry: resolveCadProfile(profile.geometry, parameters) }));
+  const profiles = compileCadSketchGeometry(sketch, parameters).profiles.map(profile => ({ profile, geometry: resolveCadProfile(profile.geometry, parameters) }));
   // Preparation belongs to this resolution only: parameter edits always rebuild
   // the exact curves, but containment comparisons reuse them within this call.
   const prepared = profiles.map(({ profile, geometry }) => {

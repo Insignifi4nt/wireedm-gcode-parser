@@ -5,6 +5,7 @@ import type { CadPluginProfile } from './plugins/cadPlugins';
 import type { CadParameterGroup, CadParameterMetadata } from './cadParameters';
 import type { CadSketchDimensionConstraint } from './cadSketchConstraints';
 import type { CadSketchCellReference } from './cadSketchRegionSelection';
+import type { CadSketchGraph } from './cadSketchGraph';
 
 /** Millimetres and degrees. Strings are arithmetic expressions over named parameters. */
 export type CadScalar = number | string;
@@ -43,6 +44,8 @@ export interface CadSketchFeature extends CadFeatureBase {
   readonly kind: 'sketch'; readonly plane: CadSketchPlane; readonly offset: CadScalar; readonly profiles: readonly CadSketchProfile[];
   /** Original import lineage remains exact even after editable geometry changes. */
   readonly source?: CadDxfImportSource;
+  /** Schema 2 source for stable open/closed entities. Legacy profiles remain separate owners. */
+  readonly graph?: CadSketchGraph;
 }
 /** Ordered open reference geometry. It produces no material or solid body. */
 export interface CadCurveFeature extends CadFeatureBase {
@@ -76,7 +79,7 @@ export type CadFeature = CadDatumPlaneFeature | CadSketchFeature | CadCurveFeatu
 
 export interface CadDocument {
   readonly format: 'wireedm-cad';
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 1 | 2;
   readonly id: string;
   readonly name: string;
   readonly units: 'mm';

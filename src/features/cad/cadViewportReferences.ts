@@ -7,6 +7,8 @@ import { cadFeatureDependencies, cadFeatureProducesBody } from '@/domain/cad/cad
 import { cadProfileToEntities, resolveCadProfile, type CadAnalyticBoundary } from '@/domain/cad/cadSketchGeometry';
 import { arcBounds, boundsFromPoints, emptyBounds, mergeBounds } from '@/domain/path-intel/segments';
 import type { Bounds2 } from '@/domain/path-intel/types';
+import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
+import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 
 interface CadViewportReferenceGeometry {
   readonly referenceId: string;
@@ -66,7 +68,7 @@ export function prepareCadViewportReferences(features: readonly CadFeature[], pa
         frame: resolveCadSketchPlacement(feature, parameters, frames).frame, offset: result.curve.offset, entities: result.curve.entities, bounds: result.curve.worldBounds }] : [];
     }
     if (feature.kind !== 'sketch') return [];
-    return feature.profiles.flatMap<ReferenceSource>(profile => {
+    const legacy = feature.profiles.flatMap<ReferenceSource>(profile => {
       try {
         const geometry = cadProfileReferenceGeometry(profile.geometry, parameters); const placement = resolveCadSketchPlacement(feature, parameters, frames); const offset = placement.offsetMm;
         if (!geometry.entities.length) return [];
@@ -74,6 +76,16 @@ export function prepareCadViewportReferences(features: readonly CadFeature[], pa
           frame: placement.frame, offset, entities: geometry.entities, bounds: typeof feature.plane === 'string' ? worldBounds(feature.plane, offset, geometry.bounds) : cadFrameEntityBounds(geometry.entities, placement.frame, offset) }];
       } catch { return []; } // Invalid sources retain their feature/editor diagnostics.
     });
+    if (!feature.graph) return legacy;
+    try {
+      const graph = compileCadSketchGraph(feature.graph, parameters), construction = new Set(feature.graph.entities.filter(entity => entity.construction).map(entity => entity.id));
+      const placement = resolveCadSketchPlacement(feature, parameters, frames), offset = placement.offsetMm;
+      return [...legacy, ...graph.segments.map((segment): ReferenceSource => {
+        const entities = [cadSketchGraphBoundary(segment)];
+        return { referenceId: `${feature.id}/${segment.id}`, featureId: feature.id, featureKind: 'sketch', name: feature.name, construction: construction.has(segment.id),
+          frame: placement.frame, offset, entities, bounds: typeof feature.plane === 'string' ? worldBounds(feature.plane, offset, segment.bounds) : cadFrameEntityBounds(entities, placement.frame, offset) };
+      })];
+    } catch { return legacy; }
   });
   return Object.freeze([...glyphs, ...sources.map(source => {
     const positions: number[] = [];

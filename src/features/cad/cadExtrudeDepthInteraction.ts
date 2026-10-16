@@ -65,7 +65,7 @@ export function inspectCadExtrudeDepth(document: CadDocument, feature: CadFeatur
   const index = document.features.findIndex(entry => entry.id === feature.id);
   const preceding = index < 0 ? document.features : document.features.slice(0, index);
   const sketch = preceding.find(entry => entry.id === feature.sketchId);
-  if (sketch?.kind !== 'sketch' || cadSketchSourceIssue(sketch, 'extrude')) return null;
+  if (sketch?.kind !== 'sketch' || cadSketchSourceIssue(sketch, 'extrude', document.parameters)) return null;
   const binding = inspectCadScalarValue(feature.distance, document.parameters);
   if (binding.kind === 'invalid') return null;
   const materialBoundsMm = materialBounds(sketch, document.parameters, feature.regionSelection);

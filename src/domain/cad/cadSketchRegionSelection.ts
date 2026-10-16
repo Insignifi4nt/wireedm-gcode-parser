@@ -4,6 +4,7 @@ import { CadError } from './cadError';
 import { isCadImportData } from './cadImportData';
 import { CadIdentifierSchema } from './cadPrimitives';
 import type { CadResolvedSketchContour, CadSketchRegion } from './cadSketchGeometry';
+import type { CadSketchGraphSourceRef } from './cadSketchGraphGeometry';
 
 /** A bounded cell of the complete contour forest, not a profile or a native face key. */
 export interface CadSketchCellReference {
@@ -11,10 +12,15 @@ export interface CadSketchCellReference {
   readonly voidProfileIds: readonly string[];
   /** Complete ordered path from outermost containing contour to direct parent. */
   readonly ancestorProfileIds: readonly string[];
+  /** Exact graph cycles participating in this cell. Legacy-only references omit it. */
+  readonly graphContours?: readonly { readonly profileId: string; readonly sourceRefs: readonly CadSketchGraphSourceRef[] }[];
 }
 export const CadSketchCellReferenceSchema = Type.Object({ boundaryProfileId: { ...CadIdentifierSchema, description: 'Stable boundary profile ID of one bounded cell from the complete validated sketch forest.' },
   voidProfileIds: Type.Array(CadIdentifierSchema, { uniqueItems: true, description: 'Every immediate nonconstruction child profile ID, sorted lexically. Use the exact inspected reference.' }),
   ancestorProfileIds: Type.Array(CadIdentifierSchema, { uniqueItems: true, description: 'Complete containing profile IDs in outermost-to-direct-parent order. Use the exact inspected reference.' }),
+  graphContours: Type.Optional(Type.Array(Type.Object({ profileId: CadIdentifierSchema,
+    sourceRefs: Type.Array(Type.Object({ entityId: CadIdentifierSchema, reversed: Type.Boolean() }, { additionalProperties: false }), { minItems: 1 })
+  }, { additionalProperties: false }), { minItems: 1 })),
 }, { additionalProperties: false });
 export const CadSketchRegionSelectionSchema = Type.Array(CadSketchCellReferenceSchema, { minItems: 1, uniqueItems: true,
   description: 'Explicit bounded cells; obtain exact current references with cad_inspect_sketch_regions. Missing field retains whole-sketch automatic holes. Empty, duplicate or changed cell references reject.' });
@@ -53,8 +59,13 @@ export function createCadSketchCellIndex(contours: readonly CadResolvedSketchCon
       if (!parent) throw new CadError('invalid-profile', 'The resolved sketch containment forest is incomplete.');
       parentId = parent.parentId;
     }
-    return Object.freeze({ boundaryProfileId, voidProfileIds: Object.freeze((children.get(boundaryProfileId) ?? []).map(child => child.profile.id).sort()),
-      ancestorProfileIds: Object.freeze(ancestors.reverse()) });
+    const voidProfileIds = Object.freeze((children.get(boundaryProfileId) ?? []).map(child => child.profile.id).sort());
+    const graphContours = [boundaryProfileId, ...voidProfileIds, ...ancestors].sort().flatMap(profileId => {
+      const sourceRefs = byId.get(profileId)?.profile.graphSourceRefs;
+      return sourceRefs ? [Object.freeze({ profileId, sourceRefs })] : [];
+    });
+    return Object.freeze({ boundaryProfileId, voidProfileIds, ancestorProfileIds: Object.freeze(ancestors.reverse()),
+      ...(graphContours.length ? { graphContours: Object.freeze(graphContours) } : {}) });
   }
   return { byId, children, reference };
 }
@@ -69,8 +80,9 @@ export function selectCadSketchRegions(contours: readonly CadResolvedSketchConto
   for (const cell of selection) {
     const current = index.reference(cell.boundaryProfileId);
     if (JSON.stringify(current.voidProfileIds) !== JSON.stringify(cell.voidProfileIds)
-        || JSON.stringify(current.ancestorProfileIds) !== JSON.stringify(cell.ancestorProfileIds))
-      throw new CadError('stale-sketch-region', `Sketch region "${cell.boundaryProfileId}" changed its holes or nesting. Choose its area again.`);
+        || JSON.stringify(current.ancestorProfileIds) !== JSON.stringify(cell.ancestorProfileIds)
+        || JSON.stringify(current.graphContours) !== JSON.stringify(cell.graphContours))
+      throw new CadError('stale-sketch-region', `Sketch region "${cell.boundaryProfileId}" changed its boundary, holes or nesting. Choose its area again.`);
     selected.add(cell.boundaryProfileId);
   }
   const additions = new Set<string>();

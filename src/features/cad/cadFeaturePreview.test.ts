@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CadBuildResult, CadDocument } from '@/domain/cad/cadDocument';
 import { createCadDocument } from '@/domain/cad/cadSchema';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
+import { applyCadEdits } from '@/domain/cad/cadOperations';
 import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
 import { CadSession } from './cadSession';
 import { createCadFeaturePreviewCoordinator, type CadFeaturePreviewState } from './cadFeaturePreview';
@@ -17,12 +18,12 @@ function deferred<T>() {
   const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve };
 }
 const built = (buildId: string): CadBuildResult => ({ buildId, meshes: [], diagnostics: [], durationMs: 8 });
-function fixture(input = document) {
+function fixture(input = document, prepare?: Parameters<typeof createCadFeaturePreviewCoordinator>[0]['prepare']) {
   const session = new CadSession(input), before = session.getSnapshot();
   let storage = createBrowserCacheAdapter(localStorage, { namespace: 'feature-preview-test' }), open = true;
   const kernel = { build: vi.fn<(document: CadDocument, signal?: AbortSignal) => Promise<CadBuildResult>>(), dispose: vi.fn() }, createKernel = vi.fn(async () => kernel);
   const states: CadFeaturePreviewState[] = [];
-  const preview = createCadFeaturePreviewCoordinator({ createKernel, onChange: state => states.push(state), assertCurrent(version) {
+  const preview = createCadFeaturePreviewCoordinator({ createKernel, prepare, onChange: state => states.push(state), assertCurrent(version) {
     if (!open) throw new Error('CAD closed'); session.assertVersion(version); session.assertWorkflowClosed('editor');
     return { document: session.getSnapshot().document, storage };
   } });
@@ -32,6 +33,19 @@ function fixture(input = document) {
   }
   return { session, before, preview, states, kernel, createKernel, candidate, close: () => { open = false; }, switchStorage: () => { storage = createBrowserCacheAdapter(localStorage, { namespace: 'other-preview-store' }); } };
 }
+it('waits for a prepared candidate and discards a cancelled solve before starting native work', async () => {
+  const prepared = deferred<CadDocument>();
+  const prepare = vi.fn<NonNullable<Parameters<typeof createCadFeaturePreviewCoordinator>[0]['prepare']>>(() => prepared.promise), h = fixture(document, prepare);
+  h.candidate('depth * 2'); await vi.advanceTimersByTimeAsync(200);
+  expect(prepare).toHaveBeenCalledOnce(); expect(h.kernel.build).not.toHaveBeenCalled();
+  const [source, edits, signal] = prepare.mock.calls[0];
+  h.preview.update({ kind: 'clear', owner: 'editor_1' });
+  expect(signal?.aborted).toBe(true);
+  prepared.resolve(applyCadEdits(source, edits)); await vi.advanceTimersByTimeAsync(0);
+  expect(h.kernel.build).not.toHaveBeenCalled(); expect(h.states.at(-1)).toEqual({ kind: 'idle' });
+  expect(h.session.getSnapshot()).toBe(h.before); h.preview.dispose();
+});
+
 it('previews one correlated parameter/feature batch through the entire document while preserving every binding and accepted history', async () => {
   const outline = document.features[0], pad = document.features[1];
   if (outline.kind !== 'sketch' || pad.kind !== 'extrude') throw new Error('Expected fixture inputs');

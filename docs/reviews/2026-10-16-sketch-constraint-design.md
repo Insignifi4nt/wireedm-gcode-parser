@@ -1,0 +1,17 @@
+# Sketch constraint implementation decisions
+
+This is the next local implementation slice after `37942cf`. It is not a completion claim.
+
+Keep accepted geometry and parameter expressions authoritative. Use a point/entity graph for newly authored open and closed geometry, with sketch-owned relation records referring to stable identities. Do not keep a second mutable copy of document coordinates inside the solver. Rectangle, circle and slot profiles remain parameterized legacy groups until an explicit promotion can preserve their drivers.
+
+The independent integration review rejected parallel identity arrays as the final model: they cannot represent open/branched geometry, and a coordinate reorder can silently retarget relations. Points therefore own coordinates, lines reference points, arcs reference center/start/end plus direction, and circles own a radius and reference their center. Compiled closed paths are disposable derived geometry. Topology operations preserve surviving identities and explicitly reject or cascade references to deleted elements. They never match a deleted point to a nearby replacement. Untouched legacy profiles remain byte-equivalent JSON. The detailed implementation sequence and caller traps are recorded in [the integration plan](2026-10-16-sketch-constraint-integration-plan.md).
+
+Use PlaneGCS through one application-owned solving module. Its input is an immutable sketch, evaluated parameters and an optional temporary drag target. Its result is either a validated candidate plus current diagnosis, or a failure with implicated relation IDs. Numerical geometry lives only in a copied solve candidate. Expression-driven components become hard numeric drivers for that evaluation; write-back preserves their original strings. Primitive structural relations remain implicit and cannot be deleted as if they were user constraints.
+
+Start with coincidence, horizontal/vertical alignment, fixed point, point distances and coordinates. Add line/curve relations only alongside their actual geometry mapping, independent residual checks and diagnostic behavior. Do not publish unsupported relation buttons or a fake DOF count. Radius/diameter continue to share one size driver.
+
+The existing synchronous edit/session path remains valid for documents without geometric relations. A relation-bearing edit needs a prepared candidate before final whole-document validation, since parameter changes can temporarily make formerly connected points inconsistent. The solving coordinator must pin the accepted version, own cancellation, reject stale results and commit once through the session. The same coordinator must serve human and agent edits; no tool may bypass an active editor or commit an unchecked solver result. Async preparation must preserve failed form inputs and cannot silently close an editor before acceptance.
+
+Import and reopen validate relation references and residuals without rewriting saved data or automatically deleting conflicts. Saving remains storage-adapter independent. New topology metadata is created only by an intentional edit, never by loading an old file.
+
+Browser initialization, worker cancellation and size-dependent responsiveness still require measurement. The tiny Node/WASM trial is evidence of solver functionality, not a browser performance guarantee. The model also still needs open sketch entities, granular selection sets, topology editing and the full sketch acceptance inventory; the present closed-profile structures do not satisfy those requirements by themselves.

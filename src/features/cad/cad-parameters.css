@@ -30,7 +30,8 @@
 .cad-parameter-editor button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 7px; font: inherit; }
 .cad-parameter-editor input { width: 100%; min-width: 0; box-sizing: border-box; padding: 5px 7px; font: inherit; }
 .cad-parameter-editor select { width: 100%; padding: 5px 7px; }
-.cad-parameter-editor fieldset { margin: 0; padding: 10px; border: 0; min-width: 0; }
+.cad-parameter-editor form { padding: 10px; }
+.cad-parameter-editor fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .cad-parameter-editor label { display: grid; grid-template-columns: 66px minmax(0, 1fr); align-items: center; gap: 7px; margin: 0 0 8px; }
 .cad-parameter-editor label > span { color: var(--muted-foreground); font-size: 10px; }
 .cad-parameter-editor footer { display: flex; justify-content: flex-end; gap: 5px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border); }

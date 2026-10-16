@@ -2,7 +2,8 @@ import { act, useSyncExternalStore } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadDocument, CadSketchProfile } from '@/domain/cad/cadDocument';
-import { createCadDocument } from '@/domain/cad/cadSchema';
+import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import type { CadEdit } from '@/domain/cad/cadOperations';
 import { CadSession } from './cadSession';
 import { CadSketchProfilePanel } from './CadSketchProfilePanel';
 
@@ -33,6 +34,30 @@ async function input(label: string, value: string) {
 }
 function profile(session: CadSession) { const sketch = session.getSnapshot().document.features[0]; if (sketch.kind !== 'sketch') throw new Error('Missing sketch'); return sketch.profiles[0]; }
 describe('explicit sketch intent panel', () => {
+  it('previews the complete solved candidate and discards a cancelled input without touching the draft', async () => {
+    const source = parseCadDocument({ ...makeDocument({ ...rectangle, constraints: [{ id: 'width-size', kind: 'dimension', quantity: 'width' }],
+      geometry: { kind: 'rectangle', x: 10, y: 20, width: 'size', height: 15, cornerRadius: 0 } }, { size: 30 }), schemaVersion: 2,
+      features: [{ ...makeDocument(rectangle).features[0], profiles: [{ ...rectangle, constraints: [{ id: 'width-size', kind: 'dimension', quantity: 'width' }], geometry: { kind: 'rectangle', x: 10, y: 20, width: 'size', height: 15, cornerRadius: 0 } }],
+        graph: { points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [30, 0] }], entities: [{ id: 'line', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+          relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 'size' }] } }] });
+    const sketch = source.features[0]; if (sketch.kind !== 'sketch') throw new Error('Missing sketch');
+    const session = new CadSession(source), before = session.getSnapshot(), preview = vi.fn(), legacyPreview = vi.fn();
+    const requests: { signal: AbortSignal; resolve: (document: CadDocument) => void }[] = [];
+    const prepare = vi.fn((_edits: readonly CadEdit[], signal: AbortSignal) => new Promise<CadDocument>(resolve => requests.push({ signal, resolve })));
+    await act(async () => root.render(<CadSketchProfilePanel document={source} sketch={sketch} profile={sketch.profiles[0]}
+      onEditMany={edits => session.edit(edits)} onPendingChange={() => undefined} onPrepareEdits={prepare} onPreviewDocument={preview}
+      onPreviewProfile={legacyPreview} interactionLocked={false} cancelSignal={0} />));
+    await click('Configure Width dimension'); await input('Dimension value', '35');
+    await act(async () => { await vi.waitFor(() => expect(requests).toHaveLength(1)); });
+    await input('Dimension value', '36'); expect(requests[0].signal.aborted).toBe(true);
+    await act(async () => { await vi.waitFor(() => expect(requests).toHaveLength(2)); });
+    const solved = (size: number) => parseCadDocument({ ...source, parameters: { size }, features: [{ ...sketch, graph: { ...sketch.graph!, points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [size, 0] }] } }] });
+    await act(async () => requests[0].resolve(solved(35))); expect(preview.mock.calls.some(([value]) => value !== null)).toBe(false);
+    const current = solved(36); await act(async () => requests[1].resolve(current)); expect(preview).toHaveBeenLastCalledWith(current);
+    expect(legacyPreview.mock.calls.some(([value]) => value !== null)).toBe(false); expect(session.getSnapshot()).toBe(before);
+    await click('Cancel'); expect(preview).toHaveBeenLastCalledWith(null); expect(session.getSnapshot()).toBe(before);
+  });
+
   it('keeps an accepted tiny named width visible in its constraint list and exact through unchanged Apply and Cancel', async () => {
     const profile: CadSketchProfile = { ...rectangle, constraints: [{ id: 'tiny', kind: 'dimension', quantity: 'width' }],
       geometry: { kind: 'rectangle', x: 0, y: 0, width: ' size ', height: 20, cornerRadius: 0 } };

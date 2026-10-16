@@ -1,0 +1,79 @@
+// @vitest-environment node
+import { describe, expect, it, vi } from 'vitest';
+import { parseCadSketchGraph } from '../../../domain/cad/cadSketchGraph';
+import { CAD_SKETCH_SOLVE_TIMEOUT_MS, createCadSketchSolverClient, type CadSketchSolverTransport } from './cadSketchSolverClient';
+import type { CadSketchSolverRequest } from './cadSketchSolverProtocol';
+
+class Transport implements CadSketchSolverTransport {
+  onmessage: CadSketchSolverTransport['onmessage'] = null;
+  onerror: CadSketchSolverTransport['onerror'] = null;
+  onmessageerror: CadSketchSolverTransport['onmessageerror'] = null;
+  messages: CadSketchSolverRequest[] = [];
+  terminated = false;
+  postMessage(message: CadSketchSolverRequest) { this.messages.push(message); }
+  terminate() { this.terminated = true; }
+}
+const graph = parseCadSketchGraph({ points: [{ id: 'point', position: [0, 0] }], entities: [], relations: [] });
+const result = { kind: 'solved', graph, diagnostics: { status: 'success', degreesOfFreedom: 2, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } };
+
+describe('sketch solver worker lifetime', () => {
+  it('starts lazily, cancels an active solve, and ignores its stale reply after restart', async () => {
+    const transports: Transport[] = [], client = createCadSketchSolverClient(() => { const worker = new Transport(); transports.push(worker); return worker; });
+    expect(transports).toHaveLength(0);
+    const signal = new AbortController(), canceled = client.solve({ graph, parameters: {} }, signal.signal);
+    const rejected = expect(canceled).rejects.toMatchObject({ name: 'AbortError' });
+    const stale = transports[0].onmessage;
+    signal.abort(); await rejected;
+    expect(transports[0].terminated).toBe(true);
+    const next = client.solve({ graph, parameters: {} });
+    stale?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result } }));
+    transports[1].onmessage?.(new MessageEvent('message', { data: { id: 2, kind: 'result', result } }));
+    expect(await next).toEqual(result);
+    client.dispose(); expect(transports[1].terminated).toBe(true);
+  });
+  it('bounds queued work and rejects every outstanding request on disposal', async () => {
+    const worker = new Transport(), client = createCadSketchSolverClient(() => worker);
+    const pending = Array.from({ length: 5 }, () => client.solve({ graph, parameters: {} }));
+    await expect(client.solve({ graph, parameters: {} })).rejects.toThrow('queue is full');
+    expect(worker.messages).toHaveLength(1);
+    client.dispose();
+    const settled = await Promise.allSettled(pending);
+    expect(settled.every(result => result.status === 'rejected' && result.reason instanceof Error && result.reason.name === 'AbortError')).toBe(true);
+    expect(worker.terminated).toBe(true);
+    await expect(client.solve({ graph, parameters: {} })).rejects.toThrow('disposed');
+  });
+  it('terminates a timed-out worker and only retries through a new explicit request', async () => {
+    vi.useFakeTimers();
+    const workers: Transport[] = [], client = createCadSketchSolverClient(() => { const worker = new Transport(); workers.push(worker); return worker; });
+    try {
+      const pending = client.solve({ graph, parameters: {} }), rejected = expect(pending).rejects.toThrow('time limit');
+      await vi.advanceTimersByTimeAsync(CAD_SKETCH_SOLVE_TIMEOUT_MS); await rejected;
+      expect(workers).toHaveLength(1); expect(workers[0].terminated).toBe(true);
+      const retry = client.solve({ graph, parameters: {} });
+      workers[1].onmessage?.(new MessageEvent('message', { data: { id: 2, kind: 'result', result } }));
+      expect(await retry).toEqual(result); expect(vi.getTimerCount()).toBe(0);
+    } finally { client.dispose(); vi.useRealTimers(); }
+  });
+  it('rejects a changed expression driver at the worker boundary and restarts after worker errors', async () => {
+    const workers: Transport[] = [], client = createCadSketchSolverClient(() => { const worker = new Transport(); workers.push(worker); return worker; });
+    const driven = parseCadSketchGraph({ ...graph, points: [{ id: 'point', position: ['x', 0] }] });
+    const pending = client.solve({ graph: driven, parameters: { x: 4 } }), rejected = expect(pending).rejects.toThrow('does not match');
+    workers[0].onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result: { ...result,
+      graph: { ...driven, points: [{ id: 'point', position: [4, 0] }] } } } }));
+    await rejected; expect(workers[0].terminated).toBe(true);
+    const retry = client.solve({ graph, parameters: {} }), stopped = expect(retry).rejects.toThrow('worker stopped');
+    workers[1].onerror?.(Object.assign(new Event('error'), { message: 'stopped', filename: '', lineno: 0, colno: 0, error: new Error('stopped') })); await stopped;
+    expect(workers).toHaveLength(2); expect(workers[1].terminated).toBe(true);
+    client.dispose();
+  });
+  it('cancels a waiting solve without disturbing the active worker', async () => {
+    const worker = new Transport(), client = createCadSketchSolverClient(() => worker);
+    const active = client.solve({ graph, parameters: {} });
+    const controller = new AbortController(), waiting = client.solve({ graph, parameters: {} }, controller.signal);
+    const canceled = expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort(); await canceled;
+    expect(worker.terminated).toBe(false); expect(worker.messages).toHaveLength(1);
+    worker.onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result } }));
+    expect(await active).toEqual(result); client.dispose();
+  });
+});

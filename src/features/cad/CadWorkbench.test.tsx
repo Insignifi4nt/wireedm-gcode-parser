@@ -77,7 +77,7 @@ function PreviousEditorHeader() {
   return <div>Previous editor content</div>;
 }
 
-async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
+async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onWorkflowChange'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
   const session = new CadSession(initial);
   currentSession = session;
   function Harness() {
@@ -96,10 +96,10 @@ async function mount(initial: CadDocument = createCadDocument(), buildProps: Pic
     replaceDocument = (replacement) => session.replace(replacement);
     const props: CadWorkbenchProps = {
       document, documentVersion: snapshot.version, buildVersion: buildState === 'ready' ? snapshot.version : null, ...buildProps, build, buildState, featurePreview, dirty: true, canUndo: true, canRedo: true,
-      onEdit(edit) { session.edit([edit]); },
+      onEdit: buildProps.onEdit ?? (edit => { session.edit([edit]); }),
       onEditMany(edits) { session.edit(edits); },
       onStatusMessage: statusMessage,
-      onUndo: undo, onRedo: vi.fn(), onSave: save, onBack: vi.fn(), onWorkflowChange: (open) => { workflow(open); session.setWorkflowOpen(open); },
+      onUndo: undo, onRedo: vi.fn(), onSave: save, onBack: vi.fn(), onWorkflowChange: buildProps.onWorkflowChange ?? ((open) => { workflow(open); session.setWorkflowOpen(open); }),
       onSendToCam: sendToCam, onOpenDocument: vi.fn(), onNewDocument: vi.fn(),
       onImportDocument: async () => undefined, onExportDocument: vi.fn(), onExportSolid: async () => undefined, onOpenDxfExport: async () => undefined,
       onViewportControlsReady: (controls) => { currentViewport = controls; },
@@ -191,6 +191,65 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('releases a clean command workflow when suppression rejects because a dependent solid still needs its source', async () => {
+    const initial = applyCadEdits(solidDocument(), [{ kind: 'add-feature', feature: {
+      id: 'rounded', name: 'Rounded plate', kind: 'fillet', targetId: 'pad', radius: 1, suppressed: false
+    } }]);
+    const onWorkflowChange = (open: boolean) => { workflow(open); currentSession.setWorkflowOpen(open); };
+    await mount(initial, { build: null, buildState: 'idle', onWorkflowChange });
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    const before = currentSession.getSnapshot();
+    const suppress = [...container.querySelectorAll('label')].find(label => label.textContent?.trim() === 'Suppress feature')?.querySelector<HTMLInputElement>('input');
+    if (!suppress) throw new Error('Suppress control missing.');
+    await act(async () => suppress.click());
+    expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: false, canUndo: false });
+    expect(workflow).toHaveBeenLastCalledWith(false);
+    expect(suppress.checked).toBe(false);
+  });
+  it('retains actual name-edit ownership after a synchronous command rejection', async () => {
+    const onWorkflowChange = (open: boolean) => { workflow(open); currentSession.setWorkflowOpen(open); };
+    await mount(solidDocument(), { build: null, buildState: 'idle', onWorkflowChange });
+    const before = currentSession.getSnapshot(), name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]');
+    if (!name) throw new Error('Part name missing.');
+    await act(async () => name.focus()); await input(name, '   '); await act(async () => name.blur());
+    expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: true, canUndo: false });
+    expect(name.value).toBe('   '); expect(workflow).toHaveBeenLastCalledWith(true);
+    await act(async () => name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(currentSession.getSnapshot().workflowOpen).toBe(false);
+  });
+  it('waits for sketch creation acceptance, preserves a rejected plane, and ignores a cancelled late creation', async () => {
+    let rejectFirst: (error: Error) => void = () => { throw new Error('No first edit'); };
+    let resolveRetry: () => void = () => { throw new Error('No retry edit'); };
+    const first = new Promise<void>((_accept, reject) => { rejectFirst = reject; });
+    const retry = new Promise<void>(accept => { resolveRetry = accept; });
+    void first.catch(() => undefined);
+    const signals: AbortSignal[] = []; let attempts = 0;
+    await mount(createCadDocument(), { build: null, buildState: 'idle', onEdit: (edit, signal) => {
+      if (signal) signals.push(signal);
+      const wait = ++attempts === 1 ? first : attempts === 2 ? retry : null;
+      currentSession.setWorkflowOpen(true, 'preparation');
+      return currentSession.editPrepared(currentSession.getSnapshot().version, async source => {
+        await wait; return applyCadEdits(source, [edit]);
+      }, signal).finally(() => currentSession.setWorkflowOpen(false, 'preparation'));
+    } });
+    await startSketch();
+    expect(currentDocument.features).toHaveLength(0);
+    expect(container.querySelector('[aria-label="Sketch drawing canvas"]')).toBeNull();
+    expect(currentSession.getSnapshot().workflowOpen).toBe(true);
+    await act(async () => rejectFirst(new Error('The new sketch conflicts.')));
+    expect(viewport().getState().selectedReferencePlane).toBe('XY');
+    await click('Sketch');
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(signals[1]?.aborted).toBe(true);
+    await act(async () => viewport().apply({ kind: 'select-reference-plane', plane: 'XZ' }));
+    await click('Sketch');
+    const accepted = currentDocument;
+    await act(async () => resolveRetry());
+    expect(currentDocument).toBe(accepted);
+    expect(currentDocument.features).toMatchObject([{ kind: 'sketch', plane: 'XZ' }]);
+    expect(viewport().getState()).toMatchObject({ sketchId: currentDocument.features[0].id });
+  });
+
   it.each(['solid', 'sketch'] as const)('keeps the %s context while editing a shared value and navigates only through explicit Inspect', async context => {
     const initial = parseCadDocument({ ...createCadDocument('Tapered outlet', 'parameter_context'), parameters: { height: 20, baseRadius: 10 }, features: [
       { id: 'base', name: 'Base section', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,

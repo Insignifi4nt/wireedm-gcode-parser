@@ -20,6 +20,13 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 const rectangle = { kind: 'rectangle', x: 0, y: 0, width: 'size', height: 10, cornerRadius: 0 } satisfies CadProfile;
+function deferredEdit() {
+  let resolve: () => void = () => { throw new Error('Deferred edit unavailable'); };
+  let reject: (error: Error) => void = () => { throw new Error('Deferred edit unavailable'); };
+  const promise = new Promise<void>((accept, fail) => { resolve = accept; reject = fail; });
+  void promise.catch(() => undefined);
+  return { promise, resolve, reject };
+}
 async function harness(geometry: CadProfile = rectangle, overrides: Partial<ComponentProps<typeof CadSketchCanvas>> = {}) {
   let controls: CadRenderedViewControls | null = null;
   const session = new CadSession(parseCadDocument({ ...createCadDocument('Move', 'move'), parameters: { size: 20 }, features: [{
@@ -73,6 +80,82 @@ async function harness(geometry: CadProfile = rectangle, overrides: Partial<Comp
 }
 
 describe('direct sketch contour manipulation', () => {
+  it('releases an invalid keyboard radius edit without leaving a geometry workflow open', async () => {
+    const h = await harness({ kind: 'circle', x: 0, y: 0, radius: 5 });
+    await h.render({ onMoveHandle: h.reshaped });
+    const before = h.session.getSnapshot(), radius = container.querySelector('[aria-label="Radius of Profile"]');
+    if (!radius) throw new Error('Radius grip missing.');
+    await act(async () => radius.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true })));
+    expect(h.error).toHaveBeenCalledWith('The radius must remain positive.');
+    expect(h.reshaped).not.toHaveBeenCalled();
+    expect(h.session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: false, canUndo: false });
+    expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
+
+  it('retains unfinished drawing ownership when inserting its contour rejects synchronously', async () => {
+    const h = await harness({ kind: 'circle', x: 0, y: 0, radius: 5 }, { tool: 'circle' });
+    await h.render({ onAddProfile: geometry => {
+      const sketch = h.session.getSnapshot().document.features[0]; if (sketch.kind !== 'sketch') throw new Error('Missing sketch');
+      return h.session.edit([{ kind: 'update-feature', feature: { ...sketch,
+        profiles: [...sketch.profiles, { id: 'overlap', name: 'Overlapping contour', construction: false, geometry }] } }]);
+    } });
+    const before = h.session.getSnapshot();
+    await h.click([0, 0]); await h.click([5, 0]);
+    expect(h.error).toHaveBeenCalledOnce();
+    expect(h.session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: true, canUndo: false });
+    expect(h.pending).toHaveBeenLastCalledWith(true);
+    expect(container.querySelectorAll('.cad-sketch-vertex')).toHaveLength(1);
+    await act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(h.session.getSnapshot().workflowOpen).toBe(false);
+  });
+
+  it('retains drawing input after an asynchronous rejection and cancels a late retry before a new drawing starts', async () => {
+    const first = deferredEdit(), retry = deferredEdit();
+    const add = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(retry.promise);
+    const h = await harness(undefined, { tool: 'circle', onAddProfile: add });
+    await h.click([0, 0]); await h.click([5, 0]);
+    expect(container.querySelectorAll('.cad-sketch-vertex')).toHaveLength(1);
+    await act(async () => first.reject(new Error('Conflicting sketch relation.')));
+    expect(h.error).toHaveBeenCalledWith('Conflicting sketch relation.');
+    expect(container.querySelectorAll('.cad-sketch-vertex')).toHaveLength(1);
+    await h.click([10, 0]);
+    const signal: unknown = add.mock.calls[1]?.[1];
+    expect(signal).toBeInstanceOf(AbortSignal);
+    const cancel = [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.includes('Cancel drawing'));
+    if (!cancel) throw new Error('Drawing cancellation missing.');
+    await act(async () => cancel.click());
+    expect(signal instanceof AbortSignal && signal.aborted).toBe(true);
+    await h.click([15, 0]);
+    await act(async () => retry.resolve());
+    expect(container.querySelectorAll('.cad-sketch-vertex')).toHaveLength(1);
+    expect(add).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a released grip edit owned until its asynchronous result rejects', async () => {
+    const operation = deferredEdit(), retry = deferredEdit();
+    const move = vi.fn().mockReturnValueOnce(operation.promise).mockReturnValueOnce(retry.promise);
+    const h = await harness({ kind: 'polygon', points: [[0, 0], [20, 0], [20, 10], [0, 10]] }, { onMoveHandle: move });
+    const initial = h.session.getSnapshot().document;
+    await h.pointer('pointerdown', [20, 0]); await h.pointer('pointermove', [25, -5]); await h.pointer('pointerup', [25, -5]);
+    expect(h.session.getSnapshot().workflowOpen).toBe(true);
+    expect(h.session.getSnapshot().document).toBe(initial);
+    await act(async () => operation.reject(new Error('The accepted part changed.')));
+    expect(h.error).toHaveBeenCalledWith('The accepted part changed.');
+    expect(h.session.getSnapshot().workflowOpen).toBe(false);
+    expect(h.session.getSnapshot().document).toBe(initial);
+    const grip = container.querySelector<SVGCircleElement>('[aria-label="Point 2 of Profile"]');
+    if (!grip) throw new Error('Point grip missing.');
+    await act(async () => { grip.focus(); grip.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })); });
+    expect(document.activeElement).toBe(grip);
+    expect(grip.getAttribute('aria-disabled')).toBe('true');
+    await act(async () => grip.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    const signal: unknown = move.mock.calls[1]?.[3];
+    expect(signal instanceof AbortSignal && signal.aborted).toBe(true);
+    await act(async () => retry.resolve());
+    expect(h.session.getSnapshot().document).toBe(initial);
+    expect(h.session.getSnapshot().workflowOpen).toBe(false);
+  });
+
   it('drags a free vertex independently, previews without persistence and commits one undoable point edit', async () => {
     const h = await harness({ kind: 'polygon', points: [[0, 0], [20, 0], [20, 10], [0, 10]] });
     await h.render({ onMoveHandle: h.reshaped });
@@ -82,7 +165,7 @@ describe('direct sketch contour manipulation', () => {
     expect(h.session.getSnapshot().workflowOpen).toBe(true);
     expect(container.querySelector('[aria-label="Select Profile profile"] polygon')?.getAttribute('points')).toBe('-12.5,-2.5 12.5,-7.5 7.5,7.5 -12.5,7.5');
     await h.pointer('pointerup', [25, -5]);
-    expect(h.reshaped).toHaveBeenCalledExactlyOnceWith('profile', { kind: 'vertex', index: 1 }, [5, -5]);
+    expect(h.reshaped).toHaveBeenCalledExactlyOnceWith('profile', { kind: 'vertex', index: 1 }, [5, -5], expect.any(AbortSignal));
     expect(h.translated).not.toHaveBeenCalled();
     expect(h.profile().geometry).toEqual({ kind: 'polygon', points: [[0, 0], [25, -5], [20, 10], [0, 10]] });
     expect(container.querySelector('[aria-label="Point 2 of Profile"]')?.getAttribute('aria-pressed')).toBe('true');
@@ -110,7 +193,7 @@ describe('direct sketch contour manipulation', () => {
     Object.defineProperties(event, { pointerId: { value: 11 }, isPrimary: { value: true } });
     await act(async () => radius.dispatchEvent(event));
     await h.pointer('pointermove', [6, 0]); await h.pointer('pointerup', [6, 0]);
-    expect(h.reshaped).toHaveBeenCalledExactlyOnceWith('profile', { kind: 'radius' }, [5, 0]);
+    expect(h.reshaped).toHaveBeenCalledExactlyOnceWith('profile', { kind: 'radius' }, [5, 0], expect.any(AbortSignal));
     expect(h.profile().geometry).toEqual({ kind: 'circle', x: 0, y: 0, radius: 10 });
     expect(h.translated).not.toHaveBeenCalled();
   });
@@ -124,7 +207,7 @@ describe('direct sketch contour manipulation', () => {
     await h.pointer('pointerup', [26, 3]);
     expect(h.session.getSnapshot()).toEqual(initial); expect(h.reshaped).not.toHaveBeenCalled();
     await h.pointer('pointerdown', [22, 2]); await h.pointer('pointermove', [26, 3]); await h.pointer('pointerup', [26, 3]);
-    expect(h.reshaped).toHaveBeenCalledExactlyOnceWith('profile', { kind: 'vertex', index: 1 }, [3, 3]);
+    expect(h.reshaped).toHaveBeenCalledExactlyOnceWith('profile', { kind: 'vertex', index: 1 }, [3, 3], expect.any(AbortSignal));
     expect(h.profile().geometry).toMatchObject({ points: [[0, 0], [25, 5], [20, 20], [0, 20]] });
     const point = container.querySelector<SVGCircleElement>('[aria-label="Point 2 of Profile"]');
     if (!point) throw new Error('Point grip missing.');
@@ -142,7 +225,7 @@ describe('direct sketch contour manipulation', () => {
     expect(container.querySelector('[aria-label="Select Profile profile"]')?.getAttribute('transform')).toBe('translate(5 0)');
     expect(h.translated).not.toHaveBeenCalled();
     await h.pointer('pointerup', [8, 5]);
-    expect(h.translated).toHaveBeenCalledExactlyOnceWith('profile', [5, 0]);
+    expect(h.translated).toHaveBeenCalledExactlyOnceWith('profile', [5, 0], expect.any(AbortSignal));
     expect(h.profile()).toMatchObject({ geometry: { ...rectangle, x: 5 }, constraints: [{ id: 'height', kind: 'dimension', quantity: 'height' }] });
     expect(h.session.getSnapshot()).toMatchObject({ canUndo: true, workflowOpen: false });
     await act(async () => h.session.undo());
@@ -174,7 +257,7 @@ describe('direct sketch contour manipulation', () => {
     const snap = container.querySelector<HTMLButtonElement>('button[aria-label="Toggle grid snapping"]'); if (!snap) throw new Error('Snap toggle missing.');
     await act(async () => snap.click());
     await h.pointer('pointerdown', [4, 3]); await h.pointer('pointermove', [9.2, 1.9]); await h.pointer('pointerup', [9.2, 1.9]);
-    expect(h.translated).toHaveBeenCalledExactlyOnceWith('profile', [expect.closeTo(5.2, 12), expect.closeTo(-1.1, 12)]);
+    expect(h.translated).toHaveBeenCalledExactlyOnceWith('profile', [expect.closeTo(5.2, 12), expect.closeTo(-1.1, 12)], expect.any(AbortSignal));
     expect(h.profile().geometry).toMatchObject({ x: expect.closeTo(5.2, 12), y: expect.closeTo(-1.1, 12), width: 'size', height: 10 });
   });
 
@@ -244,7 +327,7 @@ describe('direct sketch contour manipulation', () => {
     await h.pointer('pointerup', [9, 3], {}, 22); expect(h.release).not.toHaveBeenCalled();
     await h.pointer('pointermove', [9, 3]);
     await h.pointer('lostpointercapture', [9, 3], {}, 22); expect(h.session.getSnapshot().workflowOpen).toBe(true);
-    await h.pointer('pointerup', [9, 3]); expect(h.translated).toHaveBeenCalledExactlyOnceWith('profile', [5, 0]);
+    await h.pointer('pointerup', [9, 3]); expect(h.translated).toHaveBeenCalledExactlyOnceWith('profile', [5, 0], expect.any(AbortSignal));
   });
 
   it('cancels when the initiating left button disappears before release', async () => {

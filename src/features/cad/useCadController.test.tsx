@@ -22,14 +22,20 @@ import { importCadDxfSketch, type CadDxfImportInput, type CadDxfImportResult } f
 import { importCadDxfCurve, type CadDxfCurveImportInput, type CadDxfCurveImportResult } from '@/domain/cad/cadCurveDxf';
 import { parseDxf } from '@/domain/dxf/parseDxf';
 import { part as regionPart, refs as regionRefs, sketch as regionSketch, pad as regionPad } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
+import type { CadEdit } from '@/domain/cad/cadOperations';
+import type { CadSketchSolveInput } from './sketch-solver/cadSketchSolverTypes';
 
 const kernel = vi.hoisted(() => ({ build: vi.fn(), section: vi.fn(), export: vi.fn(), importSolid: vi.fn(), importDxf: vi.fn(), importDxfCurve: vi.fn(), inspectTopology: vi.fn(), resolveTopologyPicks: vi.fn(), dispose: vi.fn() }));
 const createClient = vi.hoisted(() => vi.fn());
 vi.mock('./kernel/cadKernelClient', () => ({ createCadKernelClient: createClient }));
+const sketchSolver = vi.hoisted(() => ({ solve: vi.fn(), dispose: vi.fn() }));
+const createSketchClient = vi.hoisted(() => vi.fn());
+vi.mock('./sketch-solver/cadSketchSolverClient', () => ({ createCadSketchSolverClient: createSketchClient }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
-beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); createClient.mockReset().mockReturnValue(kernel); });
+beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); createClient.mockReset().mockReturnValue(kernel);
+  createSketchClient.mockReset().mockReturnValue(sketchSolver); sketchSolver.solve.mockReset(); });
 afterEach(() => { act(() => root?.unmount()); container?.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function deferred<T>() {
@@ -111,6 +117,27 @@ function completeViewport(h: Awaited<ReturnType<typeof harness>>) {
 }
 
 describe('CAD controller asynchronous guards', () => {
+  it('captures the complete edit batch before cold and warm asynchronous solver preparation', async () => {
+    const h = await harness();
+    await act(async () => h.session.replace(parseCadDocument({ ...createCadDocument('Source', 'cad_capture'), schemaVersion: 2, features: [
+      { id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [],
+        graph: { points: [{ id: 'point', position: [1, 2] }], entities: [], relations: [] } }
+    ] })));
+    sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => ({ kind: 'solved', graph: input.graph,
+      diagnostics: { status: 'success', degreesOfFreedom: 2, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } }));
+    for (const name of ['Cold initialization', 'Warm initialization']) {
+      const rename = { kind: 'rename-document' as const, name }, edits: CadEdit[] = [rename];
+      await act(async () => {
+        const pending = h.cad().edit(edits, h.session.getSnapshot().version);
+        rename.name = 'Changed outside the submitted operation';
+        edits.push({ kind: 'set-parameter', name: 'unreviewed', value: 1 });
+        await pending;
+      });
+      expect(h.session.getSnapshot().document.name).toBe(name);
+      expect(h.session.getSnapshot().document.parameters).not.toHaveProperty('unreviewed');
+    }
+    expect(createSketchClient).toHaveBeenCalledOnce();
+  });
   it('synchronizes a canonical saved rename, retains Undo, and rejects archiving an unsaved retained draft', async () => {
     const h = await harness();
     await act(async () => { await h.cad().save(); h.cad().back(); });

@@ -138,8 +138,9 @@ function WorkbenchApp({ services }: AppProps) {
             featurePreview={cad.featurePreview} onFeaturePreview={cad.previewFeature}
             dirty={cad.snapshot.dirty} canUndo={cad.snapshot.canUndo} canRedo={cad.snapshot.canRedo}
             errorMessage={cad.errorMessage} onStatusMessage={app.showStatusToast} storageBusy={cad.storageBusy || app.workbenchInteractionLocked}
-            onEdit={edit => { cad.edit([edit]); }} onUndo={() => cad.undo()} onRedo={() => cad.redo()}
-            onEditMany={edits => { cad.edit(edits); }}
+            onEdit={(edit, signal) => cad.edit([edit], undefined, false, signal)} onUndo={() => cad.undo()} onRedo={() => cad.redo()}
+            onEditMany={(edits, signal) => cad.edit(edits, undefined, false, signal)}
+            onPrepareEdits={cad.preparePreviewEdits}
             onWorkflowChange={cadSession.setWorkflowOpen}
             onBack={cad.back} onSave={async () => { await cad.save(); }}
             onOpenDocument={() => { void cad.showLibrary().catch(error => cad.setErrorMessage(String(error))); }}

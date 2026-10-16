@@ -16,11 +16,11 @@ export function CadSketchSourceField({ document, sketches, purpose, sketchId, on
 }) {
   const choices = sketches.filter(option => {
     const source = document.features.find(feature => feature.id === option.value);
-    return !option.disabled && source?.kind === 'sketch' && cadSketchSourceIssue(source, purpose) === null;
+    return !option.disabled && source?.kind === 'sketch' && cadSketchSourceIssue(source, purpose, document.parameters) === null;
   });
   const available = choices.some(option => option.value === sketchId);
   const source = document.features.find(feature => feature.id === sketchId);
-  const issue = source?.kind === 'sketch' ? cadSketchSourceIssue(source, purpose) : null;
+  const issue = source?.kind === 'sketch' ? cadSketchSourceIssue(source, purpose, document.parameters) : null;
   const options = available ? choices : [{ value: sketchId, label: sketchId ? `${source?.name ?? 'Sketch'} (${issue ? issueLabels[issue] : 'unavailable'})` : 'Choose sketch', disabled: true }, ...choices];
   const description = available ? undefined : purpose === 'pocket'
     ? 'Choose an active sketch with closed material contours on XY, XZ or YZ before this feature.'

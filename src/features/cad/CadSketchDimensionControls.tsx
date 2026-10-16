@@ -3,12 +3,14 @@ import { Input } from '@/components/ui/input';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CloseIcon, ConfirmIcon, LinkIcon, LockedIcon } from '@wire-edm/icons-react';
 import type { CadDocument, CadProfile, CadScalar, CadSketchFeature, CadSketchProfile } from '@/domain/cad/cadDocument';
-import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
+import { applyCadEdits, reduceCadEditIntents, type CadEdit } from '@/domain/cad/cadOperations';
+import { needsCadSketchPreparation } from './cadEditPreparation';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { inspectCadPluginProfile } from '@/domain/cad/plugins/cadPlugins';
 import { inspectCadSketchDimensions, type CadSketchDimensionQuantity } from '@/domain/cad/cadSketchConstraints';
 import { cadSketchDimensionAnnotation, type CadAnnotationPoint } from './cadSketchDimensionAnnotations';
 import { formatCadQuantity } from './cadDisplayQuantity';
+import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import './cad-sketch-dimensions.css';
 
 type Dimension = { name: 'radius' | 'width' | 'height' | 'length' | 'angle' | 'module' | 'teeth'; label: string; symbol: string; unit: string; scalar: CadScalar; scale: number; integer: boolean; enabled: boolean; quantity?: CadSketchDimensionQuantity; constraintId?: string | null };
@@ -20,7 +22,7 @@ export interface CadSketchDimensionControlsProps {
   parameters: Readonly<Record<string, number>>;
   anchor: { x: number; y: number };
   project?(point: readonly [number, number]): CadAnnotationPoint;
-  onEditMany(edits: readonly CadEdit[]): void;
+  onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
   onPendingChange(pending: boolean): void;
   interactionLocked: boolean;
   cancelSignal: number;
@@ -60,10 +62,15 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
   const arrowId = useId();
   const dimensions = useMemo(() => profileDimensions(profile, parameters), [profile, parameters]);
   const [editor, setEditor] = useState<{ name: Dimension['name']; value: string; error: string } | null>(null);
+  const submission = useCadEditSubmission();
   const [placement, setPlacement] = useState(anchor);
   const root = useRef<HTMLDivElement>(null), editorDocument = useRef<CadDocument | null>(null), previous = useRef<HTMLElement | null>(null), pendingCallback = useRef(onPendingChange), previousCancel = useRef(cancelSignal);
   const previousProfile = useRef({ profileId: profile.id, sketchId: sketch.id });
-  const close = () => { setEditor(null); editorDocument.current = null; onInspectInput?.(null); };
+  const close = () => { submission.cancel(); setEditor(null); editorDocument.current = null; onInspectInput?.(null); };
+  const commit = (edits: readonly CadEdit[]) => submission.submit(signal => {
+    if (editorDocument.current !== cadDocument) throw new Error('The part changed. Cancel and reopen this dimension.');
+    return edits.length ? onEditMany(edits, signal) : undefined;
+  }, close, error => setEditor(current => current ? { ...current, error: error instanceof Error ? error.message : 'Unable to change this dimension.' } : current));
   const active = dimensions.find(dimension => dimension.name === editor?.name);
   const binding = active ? bindingFor(active.scalar, parameters) : null;
   const annotations = dimensions.map(dimension => ({ dimension, annotation: project && dimension.quantity ? cadSketchDimensionAnnotation(profile.geometry, parameters, dimension.quantity, project) : null }));
@@ -89,7 +96,8 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
       const edit: CadEdit = binding.kind === 'parameter' ? { kind: 'set-parameter', name: binding.name, value: scalarValue }
         : active.constraintId ? { kind: 'set-sketch-dimension', sketchId: sketch.id, profileId: profile.id, dimensionId: active.constraintId, value }
         : { kind: 'update-feature', feature: { ...sketch, profiles: sketch.profiles.map(entry => entry.id === profile.id ? { ...entry, geometry: changeDimension(entry.geometry, active.name, scalarValue) } : entry) } };
-      applyCadEdits(cadDocument, [edit]);
+      if (needsCadSketchPreparation(cadDocument, [edit])) reduceCadEditIntents(cadDocument, [edit]);
+      else applyCadEdits(cadDocument, [edit]);
       return { edits: [edit], issue: null };
     } catch (error) { return { edits: null, issue: error instanceof Error ? error.message : 'Invalid dimension.' }; }
   }, [editor?.value, editor?.name, active, binding, cadDocument, sketch, profile.id]);
@@ -119,16 +127,16 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
         setEditor({ name: dimension.name, value: String(resolved), error: '' }); onInspectInput?.(dimension.name);
       }}><span>{dimension.symbol}</span><strong>{valueText(resolved)}</strong>{dimension.unit && <small>{dimension.unit}</small>}{dimensionBinding.kind === 'parameter' ? <LinkIcon size={10} /> : dimensionBinding.kind === 'expression' || !dimension.enabled ? <LockedIcon size={10} /> : null}</Button>;
     })}</div>
-    {editor && active && binding && <form className="cad-dimension-edit" style={annotated ? { left: placement.x, top: placement.y } : undefined} role="dialog" aria-label={`${active.label} dimension`} onSubmit={event => {
-      event.preventDefault(); if (interactionLocked || !candidate.edits) return;
-      try { if (candidate.edits.length) onEditMany(candidate.edits); close(); } catch (error) { setEditor({ ...editor, error: error instanceof Error ? error.message : 'Unable to change this dimension.' }); }
+    {editor && active && binding && <form className="cad-dimension-edit" aria-busy={submission.applying || undefined} style={annotated ? { left: placement.x, top: placement.y } : undefined} role="dialog" aria-label={`${active.label} dimension`} onSubmit={event => {
+      event.preventDefault(); if (interactionLocked || submission.applying || !candidate.edits) return;
+      commit(candidate.edits);
     }}>
       <header><strong>{active.label}</strong><Button type="button" aria-label="Close dimension editor" onClick={close}><CloseIcon size={12} /></Button></header>
       {binding.kind === 'expression' || !active.enabled ? <><p className="cad-dimension-link"><LockedIcon size={11} /> {binding.kind === 'expression' ? binding.expression : 'Controlled by the profile'}</p><p>This dimension follows its linked configuration. Edit the referenced parameters or profile to change it.</p>{onConfigure && <Button type="button" className="cad-dimension-configure" onClick={() => { close(); onConfigure(active.name); }}>Profile configuration</Button>}</> : <>
-        <label><span>{active.label}</span><Input aria-label={`${active.label} value`} inputMode={active.integer ? 'numeric' : 'decimal'} value={editor.value} disabled={interactionLocked} spellCheck={false} aria-invalid={Boolean(candidate.issue) || undefined} onChange={event => setEditor({ ...editor, value: event.target.value, error: '' })} /><small>{active.unit}</small></label>
+        <label><span>{active.label}</span><Input aria-label={`${active.label} value`} inputMode={active.integer ? 'numeric' : 'decimal'} value={editor.value} disabled={interactionLocked || submission.applying} spellCheck={false} aria-invalid={Boolean(candidate.issue) || undefined} onChange={event => setEditor({ ...editor, value: event.target.value, error: '' })} /><small>{active.unit}</small></label>
         {binding.kind === 'parameter' && <p className="cad-dimension-link"><LinkIcon size={11} /> Updates {binding.name}{active.scale !== 1 ? ` (${active.label.toLowerCase()} ÷ ${active.scale})` : ''}</p>}
         {(editor.error || candidate.issue) && <p className="cad-dimension-error" role="alert">{editor.error || candidate.issue}</p>}
-        <footer>{active.constraintId && <Button type="button" title="Release this dimension without changing the contour" disabled={interactionLocked} onClick={() => { try { if (editorDocument.current !== cadDocument) throw new Error('The part changed. Cancel and reopen this dimension.'); onEditMany([{ kind: 'remove-sketch-dimension', sketchId: sketch.id, profileId: profile.id, dimensionId: active.constraintId! }]); close(); } catch (error) { setEditor({ ...editor, error: error instanceof Error ? error.message : 'Unable to release this dimension.' }); } }}>Remove dimension</Button>}<Button type="button" onClick={close}>Cancel</Button><Button variant="primary" type="submit" className="cad-dimension-apply" disabled={interactionLocked || !candidate.edits}><ConfirmIcon size={11} /> Apply</Button></footer>
+        <footer>{active.constraintId && <Button type="button" title="Release this dimension without changing the contour" disabled={interactionLocked || submission.applying} onClick={() => commit([{ kind: 'remove-sketch-dimension', sketchId: sketch.id, profileId: profile.id, dimensionId: active.constraintId! }])}>Remove dimension</Button>}<Button type="button" onClick={close}>Cancel</Button><Button variant="primary" type="submit" className="cad-dimension-apply" disabled={interactionLocked || submission.applying || !candidate.edits}><ConfirmIcon size={11} /> Apply</Button></footer>
       </>}
     </form>}
   </div>;

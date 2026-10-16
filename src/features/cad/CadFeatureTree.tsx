@@ -7,6 +7,7 @@ import { cadFeatureDependencies } from '@/domain/cad/cadFeatureInputs';
 import { featureLabels } from './CadFeatureEditor';
 import { CadContextMenu, type CadContextMenuAnchor, type CadContextMenuItem } from './CadContextMenu';
 import { CadTreeRename } from './CadTreeRename';
+import type { CadEditCompletion } from './useCadEditSubmission';
 import './cad-feature-tree.css';
 
 const icons: Record<CadFeature['kind'], WorkbenchIconComponent> = {
@@ -40,7 +41,7 @@ export interface CadFeatureTreeProps {
   onUpdateProfile?(sketch: CadSketchFeature, profile: CadSketchProfile): void;
   onDeleteProfile?(sketch: CadSketchFeature, profileId: string): void;
   onContextMenuOpenChange?(open: boolean): void;
-  onRename?(feature: CadFeature, name: string, profileId?: string): void;
+  onRename?(feature: CadFeature, name: string, profileId?: string, signal?: AbortSignal): CadEditCompletion;
   onRenamePendingChange?(pending: boolean): void;
   cancelSignal?: number;
   onCreateSketch?(plane: CadPlane): void;
@@ -108,10 +109,14 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
     setMenu(null); setRename({ document, cancelSignal, target });
   };
   const renameEditor = (feature: CadFeature, profile?: CadSketchProfile) => <CadTreeRename kind={profile ? 'profile' : 'feature'} initialName={profile?.name ?? feature.name}
-    onCancel={() => setRename(null)} onAccept={name => {
+    onCancel={() => setRename(null)} onAccept={(name, signal) => {
       if (!renameCurrent || !onRename) return;
-      if (name !== (profile?.name ?? feature.name)) onRename(feature, name, profile?.id);
-      setRename(null);
+      const owner = renameCurrent;
+      const completion = name !== (profile?.name ?? feature.name) ? onRename(feature, name, profile?.id, signal) : undefined;
+      return Promise.resolve(completion).then(() => {
+        signal?.throwIfAborted();
+        setRename(current => current === owner ? null : current);
+      });
     }} />;
   const openMenu = (event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>, featureId: string, profileId?: string) => {
     if ('key' in event && event.key === 'F2' && onRename) {

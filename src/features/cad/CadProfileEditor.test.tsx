@@ -62,6 +62,23 @@ async function click(label: string) {
   await act(async () => button.click());
 }
 describe('imported analytic profile editing', () => {
+  it('previews the accepted owning sketch when another sketch uses the same local profile ID', async () => {
+    const document = parseCadDocument({ ...createCadDocument('Shared profile IDs', 'cad_shared_profile_ids'), features: [
+      { id: 'first', name: 'First', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+        profiles: [{ id: 'circle', name: 'First circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 2 } }] },
+      { id: 'second', name: 'Second', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+        profiles: [{ id: 'circle', name: 'Second circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 3 } }] }
+    ] });
+    const second = document.features[1]; if (second.kind !== 'sketch') throw new Error('Missing second sketch');
+    const preview = vi.fn<(candidate: CadDocument | null) => void>();
+    await act(async () => root.render(<CadProfileEditor document={document} profile={second.profiles[0]} onApply={() => undefined}
+      onPendingChange={() => undefined} onCancel={() => undefined} onPreviewDocument={preview} />));
+    await input(field('Radius'), '7');
+    expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [document.features[0],
+      { ...second, profiles: [{ ...second.profiles[0], geometry: { ...second.profiles[0].geometry, radius: '7' } }] }
+    ] }));
+    expect(second.profiles[0].geometry).toMatchObject({ radius: 3 });
+  });
   it('navigates one bounded line/arc editor without starting a geometry workflow', async () => {
     await mount(); const before = session.getSnapshot();
     expect(field('Start X').value).toBe('0'); expect(field('End X').value).toBe('20'); expect(container.querySelectorAll('input')).toHaveLength(7);

@@ -4,7 +4,7 @@ import type { CadBuildResult, CadDocument } from '@/domain/cad/cadDocument';
 import { cadFeatureProducesBody, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { archiveCadDocument, listCadDocuments, loadCadDocument, renameCadDocument, restoreCadDocument, saveCadDocument, type CadLibraryEntry } from '@/domain/cad/cadStorage';
 import { readExactUtf8Blob } from '@/domain/storage/exactTextStream';
-import type { CadEdit } from '@/domain/cad/cadOperations';
+import { applyCadEdits, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { isCadSectionResult, parseCadSectionRequest, type CadSectionRequest } from '@/domain/cad/cadSection';
 import type { DraftReadSnapshot } from '@/features/webmcp/workbenchSiteTools';
 import { ToolError } from '@/features/webmcp/siteTools';
@@ -20,6 +20,8 @@ import type { DxfUnitDeclaration } from '@/domain/dxf/types';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { createCadFeaturePreviewCoordinator, type CadFeaturePreviewState } from './cadFeaturePreview';
 import type { CadSketchRegionProposal } from '@/domain/cad/cadSketchRegionInspection';
+import { needsCadSketchPreparation, prepareCadEdits } from './cadEditPreparation';
+import type { CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
 
 type App = Pick<ReturnType<typeof useWorkbenchAppController>, 'connectedWorkbench' | 'workbenchInteractionLocked' | 'runAgentWorkbenchOperation'>;
 type Kernel = ReturnType<typeof import('./kernel/cadKernelClient').createCadKernelClient>;
@@ -69,6 +71,8 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   const proposedRegionReferenceTexts = useRef<{ document: CadDocument; sketchId: string; proposalKey: string; texts: Map<string, string> } | null>(null);
   const setViewportControls = useCallback((controls: CadWorkbenchViewportControls | null) => { viewport.current = controls; }, []);
   const busy = useRef(false);
+  const preparing = useRef<AbortController | null>(null);
+  const sketchSolver = useRef<Promise<CadSketchSolverClient> | null>(null);
   const current = useRef({ app, open }); current.current = { app, open };
   const kernel = useRef<Promise<Kernel> | null>(null);
   const buildAbort = useRef<AbortController | null>(null);
@@ -79,6 +83,8 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       return { document: session.getSnapshot().document, storage: workbench.adapter };
     },
     createKernel: async () => (await import('./kernel/cadKernelClient')).createCadKernelClient(),
+    prepare: async (document, edits, signal) => needsCadSketchPreparation(document, edits)
+      ? (await prepareCadEdits(document, edits, await getSketchSolver(), signal)).document : applyCadEdits(document, edits),
     onChange: setFeaturePreview
   }), [session]);
   useLayoutEffect(() => { featurePreviewCoordinator.invalidate(); }, [featurePreviewCoordinator, snapshot.version, app.connectedWorkbench?.adapter, open, app.workbenchInteractionLocked, storageBusy]);
@@ -91,6 +97,13 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   function getKernel() {
     kernel.current ??= import('./kernel/cadKernelClient').then(module => module.createCadKernelClient());
     return kernel.current;
+  }
+  function getSketchSolver() {
+    if (sketchSolver.current) return sketchSolver.current;
+    const pending = import('./sketch-solver/cadSketchSolverClient').then(module => module.createCadSketchSolverClient());
+    sketchSolver.current = pending;
+    void pending.catch(() => { if (sketchSolver.current === pending) sketchSolver.current = null; });
+    return pending;
   }
   function publishBuild(result: CadBuildResult, version: string) {
     const state = result.diagnostics.length ? 'error' : 'ready';
@@ -117,6 +130,8 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     setLibrary(null); setLibraryDiagnostic(null); setBuild(null); setBuildVersion(null); setErrorMessage(null);
   }, [app.connectedWorkbench?.adapter, session]);
   useEffect(() => () => {
+    preparing.current?.abort();
+    void sketchSolver.current?.then(client => client.dispose(), () => undefined);
     libraryAbort.current?.abort(); session.setWorkflowOpen(false, 'library');
     importAbort.current?.abort();
     buildAbort.current?.abort();
@@ -146,7 +161,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   }, [open, snapshot.document, app.connectedWorkbench?.adapter]);
 
   function connected() {
-    if (busy.current || current.current.app.workbenchInteractionLocked) throw new ToolError('BUSY', 'A workbench operation is running.');
+    if (busy.current || preparing.current || current.current.app.workbenchInteractionLocked) throw new ToolError('BUSY', 'A workbench operation is running.');
     const workbench = current.current.app.connectedWorkbench;
     if (!workbench) throw new ToolError('WORKBENCH_UNAVAILABLE', 'Wait for the workbench to open.');
     return workbench;
@@ -188,9 +203,38 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       if (current.current.app.connectedWorkbench !== workbench) throw new ToolError('STALE_STATE', 'Workbench changed before plugin installation.');
     } }));
   }
-  function edit(edits: readonly CadEdit[], expectedVersion?: string, fromAgent = false) {
+  const preparePreviewEdits = useCallback(async (edits: readonly CadEdit[], signal: AbortSignal) => {
+    signal.throwIfAborted(); editable(snapshot.version); session.assertWorkflowClosed('editor');
+    validateCadEditBatch(edits);
+    const captured = structuredClone(edits), source = session.getSnapshot().document, workbench = connected();
+    const candidate = needsCadSketchPreparation(source, captured)
+      ? (await prepareCadEdits(source, captured, await getSketchSolver(), signal)).document : applyCadEdits(source, captured);
+    signal.throwIfAborted(); editable(snapshot.version); session.assertWorkflowClosed('editor');
+    if (session.getSnapshot().document !== source || current.current.app.connectedWorkbench !== workbench)
+      throw new ToolError('STALE_STATE', 'The CAD workspace changed while preparing this preview.');
+    return candidate;
+  }, [session, snapshot.version]);
+  function edit(edits: readonly CadEdit[], expectedVersion?: string, fromAgent = false, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     editable(expectedVersion, fromAgent); setErrorMessage(null);
-    return session.edit(edits, expectedVersion);
+    validateCadEditBatch(edits);
+    const captured = structuredClone(edits);
+    const source = session.getSnapshot();
+    if (needsCadSketchPreparation(source.document, captured)) {
+      const workbench = current.current.app.connectedWorkbench;
+      const owner = new AbortController(); preparing.current = owner;
+      const combined = signal ? AbortSignal.any([signal, owner.signal]) : owner.signal;
+      session.setWorkflowOpen(true, 'preparation');
+      const solver = getSketchSolver();
+      return session.editPrepared(expectedVersion ?? source.version, async (document, signal) =>
+        (await prepareCadEdits(document, captured, await solver, signal)).document, combined, () => {
+        if (!current.current.open || current.current.app.connectedWorkbench !== workbench || current.current.app.workbenchInteractionLocked)
+          throw new ToolError('STALE_STATE', 'The CAD workspace changed while the sketch was being solved.');
+      }).finally(() => {
+        if (preparing.current === owner) { preparing.current = null; session.setWorkflowOpen(false, 'preparation'); }
+      });
+    }
+    return session.edit(captured, expectedVersion);
   }
   async function persistReviewed(workbench: NonNullable<App['connectedWorkbench']>, expectedVersion: string, signal?: AbortSignal) {
     const reviewed = session.getSnapshot();
@@ -691,8 +735,8 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     } };
   }
   function back() { connected(); session.assertWorkflowClosed(); changeOpen(false); }
-  const isBusy = () => busy.current;
-  return { session, snapshot, open, enter, edit, save, list, projectActions, plugins, installPlugin, showLibrary, library, libraryLoading, libraryDiagnostic, closeLibrary,
+  const isBusy = () => busy.current || preparing.current !== null;
+  return { session, snapshot, open, enter, edit, preparePreviewEdits, save, list, projectActions, plugins, installPlugin, showLibrary, library, libraryLoading, libraryDiagnostic, closeLibrary,
     openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, inspectSketchHandles, measureCurve, inspectSketchRegions, readSketchRegionReference, inspectPlugin, inspectParameters, inspectPlane, inspectLoft, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, exportSectionDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
     setViewportControls, readViewport: (expectedVersion: string) => getViewport(expectedVersion).getState(), changeViewport, captureViewport, previewArtifact,
     inspectTopology: topology.inspect, resolveTopologyPicks: topology.resolve,

@@ -396,6 +396,7 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     const document = createCadDocument('Backed up', 'cad_backup');
     await saveCadDocument(adapter, document, { expectedSavedVersion: null });
     const retained = [
+      { path: 'cad/originals/cad_backup/schema-1-original.cad.json', text: '\ufeff{ exact pre-upgrade save }\r\n' },
       { path: 'cad/plugins/user.gear/1.0.0.cad-plugin.json', text: '{ preserved plugin original }\r\n' },
       { path: 'cad/documents/cad_broken.cad.json', text: '\ufeff{broken original\r\n' },
       { path: 'CAD/recovery/part.cad.json', text: 'unindexed original\r\n' }

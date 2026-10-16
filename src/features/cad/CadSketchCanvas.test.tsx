@@ -120,7 +120,7 @@ describe('saved Sketch initial fit', () => {
     const feature = imported(); const added = vi.fn(); await mount(feature); await mount(feature, {}, 'circle', added);
     const svg = container.querySelector('svg.cad-sketch-canvas'); if (!svg) throw new Error('Canvas missing');
     for (const key of [' ', 'ArrowRight', ' ']) await act(async () => svg.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })));
-    expect(added).toHaveBeenCalledWith({ kind: 'circle', x: 100000050, y: 100000005, radius: 5 }); expect(feature.source?.text).toBe(original);
+    expect(added).toHaveBeenCalledWith({ kind: 'circle', x: 100000050, y: 100000005, radius: 5 }, expect.any(AbortSignal)); expect(feature.source?.text).toBe(original);
   });
   it('retains the view and keyboard cursor on dimension changes, resize and manual Fit', async () => {
     const feature: CadSketchFeature = { ...sketch, profiles: [{ id: 'rectangle', name: 'Rectangle', construction: false,
@@ -132,7 +132,7 @@ describe('saved Sketch initial fit', () => {
     await act(async () => currentControls().fit()); expect(currentControls().getState()).toMatchObject({ centerMm: [100000200, 100000005] });
     const svg = container.querySelector('svg.cad-sketch-canvas'); if (!svg) throw new Error('Canvas missing');
     for (const key of [' ', 'ArrowRight', ' ']) await act(async () => svg.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })));
-    expect(added).toHaveBeenCalledWith({ kind: 'circle', x: 100000010, y: 100000005, radius: 5 });
+    expect(added).toHaveBeenCalledWith({ kind: 'circle', x: 100000010, y: 100000005, radius: 5 }, expect.any(AbortSignal));
   });
   it('keeps new empty sketches at the original view when their first contour is accepted', async () => {
     await mount(); const before = currentControls().getState();

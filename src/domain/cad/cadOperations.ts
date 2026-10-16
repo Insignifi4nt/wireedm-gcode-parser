@@ -10,6 +10,7 @@ import { addCadSketchDimension, cadSketchDimensionScalar, CadSketchDimensionCons
 import { CadPoint2Schema, CadScalarSchema } from './cadPrimitives';
 import { evaluateCadScalar } from './cadExpression';
 import { CadSketchHandleSchema, moveCadSketchHandle, type CadSketchHandle } from './cadSketchHandles';
+import { CadSketchGraphSchema, type CadSketchGraphRelation } from './cadSketchGraph';
 
 export type CadEdit =
   | { readonly kind: 'add-feature'; readonly feature: CadFeature; readonly beforeId?: string }
@@ -28,6 +29,9 @@ export type CadEdit =
   | { readonly kind: 'remove-sketch-dimension'; readonly sketchId: string; readonly profileId: string; readonly dimensionId: string }
   | { readonly kind: 'translate-sketch-profiles'; readonly sketchId: string; readonly profileIds: readonly string[]; readonly translation: CadPoint2 }
   | { readonly kind: 'move-sketch-handle'; readonly sketchId: string; readonly profileId: string; readonly handle: CadSketchHandle; readonly translation: CadPoint2 }
+  | { readonly kind: 'move-sketch-point'; readonly sketchId: string; readonly pointId: string; readonly translation: CadPoint2 }
+  | { readonly kind: 'set-sketch-relation'; readonly sketchId: string; readonly relation: CadSketchGraphRelation }
+  | { readonly kind: 'remove-sketch-relation'; readonly sketchId: string; readonly relationId: string }
   | { readonly kind: 'rename-document'; readonly name: string };
 
 const identifier = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' });
@@ -50,13 +54,26 @@ export const CadEditSchema = Type.Union([
   Type.Object({ kind: Type.Literal('remove-sketch-dimension'), sketchId: identifier, profileId: identifier, dimensionId: identifier }, strict),
   Type.Object({ kind: Type.Literal('translate-sketch-profiles'), sketchId: identifier, profileIds: Type.Array(identifier, { minItems: 1, maxItems: 256, uniqueItems: true }), translation: CadPoint2Schema }, strict),
   Type.Object({ kind: Type.Literal('move-sketch-handle'), sketchId: identifier, profileId: identifier, handle: CadSketchHandleSchema, translation: CadPoint2Schema }, strict),
+  Type.Object({ kind: Type.Literal('move-sketch-point'), sketchId: identifier, pointId: identifier, translation: CadPoint2Schema }, strict),
+  Type.Object({ kind: Type.Literal('set-sketch-relation'), sketchId: identifier, relation: CadSketchGraphSchema.properties.relations.items }, strict),
+  Type.Object({ kind: Type.Literal('remove-sketch-relation'), sketchId: identifier, relationId: identifier }, strict),
   Type.Object({ kind: Type.Literal('rename-document'), name: Type.String({ minLength: 1, maxLength: 160, pattern: '\\S' }) }, strict)
 ]);
 
 /** Validates the complete final document once; a failed batch never mutates the input. */
 export function applyCadEdits(document: CadDocument, edits: readonly CadEdit[]): CadDocument {
+  return parseCadDocument(reduceCadEditIntents(document, edits));
+}
+
+export function validateCadEditBatch(edits: readonly CadEdit[]): void {
   if (!isCadImportData(edits) || !Array.isArray(edits)) throw new CadError('invalid-edit', 'CAD edits must contain their own complete JSON data fields.');
   if (edits.length > 256) throw new CadError('edit-limit', 'An edit batch may contain at most 256 edits.');
+  for (const edit of edits) if (!Value.Check(CadEditSchema, edit)) throw new CadError('invalid-edit', 'Malformed CAD edit.');
+}
+
+/** Internal unsolved intent stage. Only parseCadDocument may accept its result. */
+export function reduceCadEditIntents(document: CadDocument, edits: readonly CadEdit[]): CadDocument {
+  validateCadEditBatch(edits);
   let features = [...document.features];
   let parameters = { ...document.parameters };
   let parameterGroups = document.parameterGroups ? [...document.parameterGroups] : undefined;
@@ -68,7 +85,6 @@ export function applyCadEdits(document: CadDocument, edits: readonly CadEdit[]):
     return index;
   };
   for (const edit of edits) {
-    if (!Value.Check(CadEditSchema, edit)) throw new CadError('invalid-edit', 'Malformed CAD edit.');
     switch (edit.kind) {
       case 'add-feature': {
         if (features.some(feature => feature.id === edit.feature.id)) throw new CadError('duplicate-id', `Feature "${edit.feature.id}" already exists.`);
@@ -168,6 +184,26 @@ export function applyCadEdits(document: CadDocument, edits: readonly CadEdit[]):
         features[index] = { ...feature, profiles: feature.profiles.map(profile => profile.id === edit.profileId ? moveCadSketchHandle({ profile, handle: edit.handle, translation, parameters }) : profile) };
         break;
       }
+      case 'move-sketch-point': case 'set-sketch-relation': case 'remove-sketch-relation': {
+        const index = indexOf(edit.sketchId), feature = features[index];
+        if (feature.kind !== 'sketch' || !feature.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
+        let graph = feature.graph;
+        if (edit.kind === 'move-sketch-point') {
+          if (!graph.points.some(point => point.id === edit.pointId)) throw new CadError('missing-sketch-point', 'The selected sketch point no longer exists.');
+          const delta = edit.translation.map(value => evaluateCadScalar(value, parameters));
+          graph = { ...graph, points: graph.points.map(point => point.id !== edit.pointId ? point : { ...point, position: [
+            typeof point.position[0] === 'number' ? point.position[0] + delta[0] : point.position[0],
+            typeof point.position[1] === 'number' ? point.position[1] + delta[1] : point.position[1]
+          ] }) };
+        } else if (edit.kind === 'set-sketch-relation') {
+          graph = { ...graph, relations: graph.relations.some(relation => relation.id === edit.relation.id)
+            ? graph.relations.map(relation => relation.id === edit.relation.id ? edit.relation : relation) : [...graph.relations, edit.relation] };
+        } else {
+          if (!graph.relations.some(relation => relation.id === edit.relationId)) throw new CadError('missing-sketch-relation', 'The selected sketch relation no longer exists.');
+          graph = { ...graph, relations: graph.relations.filter(relation => relation.id !== edit.relationId) };
+        }
+        features[index] = { ...feature, graph }; break;
+      }
       case 'translate-sketch-profiles': {
         const index = indexOf(edit.sketchId), feature = features[index];
         if (feature.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose an existing sketch for translation.');
@@ -180,5 +216,6 @@ export function applyCadEdits(document: CadDocument, edits: readonly CadEdit[]):
       default: { const exhaustive: never = edit; throw exhaustive; }
     }
   }
-  return parseCadDocument({ ...document, name, parameters, features, ...(parameterGroups ? { parameterGroups } : {}), ...(parameterMetadata ? { parameterMetadata } : {}) });
+  const schemaVersion = features.some(feature => feature.kind === 'sketch' && feature.graph) ? 2 : document.schemaVersion;
+  return { ...document, schemaVersion, name, parameters, features, ...(parameterGroups ? { parameterGroups } : {}), ...(parameterMetadata ? { parameterMetadata } : {}) };
 }

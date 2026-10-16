@@ -1,0 +1,140 @@
+import { CadError } from './cadError';
+import { evaluateCadScalar } from './cadExpression';
+import { cadAnalyticSegments, cadPathClosureTolerance, type ResolvedCadPathSegment } from './cadAnalyticSegments';
+import { checkCadSketchGraph, type CadSketchGraph, type CadSketchGraphEntity } from './cadSketchGraph';
+import { createArcSegment, createCircleSegment, createLineSegment } from '@/domain/path-intel/segments';
+import { classifyPathSegmentIntersection, expandBounds, spatialCellSizeForSegments } from '@/domain/path-intel/intersections';
+import { SpatialHash } from '@/domain/path-intel/spatialIndex';
+import type { PathSegment, Point2 } from '@/domain/path-intel/types';
+
+export interface CadSketchGraphSourceRef { readonly entityId: string; readonly reversed: boolean }
+export interface CadSketchGraphCycle {
+  readonly sourceRefs: readonly CadSketchGraphSourceRef[];
+  readonly path: readonly ResolvedCadPathSegment[];
+  readonly construction: boolean;
+}
+export interface CadSketchGraphGeometry {
+  readonly segments: readonly PathSegment[];
+  readonly cycles: readonly CadSketchGraphCycle[];
+  readonly openEntityIds: readonly string[];
+  readonly branchedEntityIds: readonly string[];
+  /** Intersections/overlaps require arrangement work; these entities never create fake cells. */
+  readonly arrangementEntityIds: readonly string[];
+}
+interface Prepared { readonly entity: CadSketchGraphEntity; readonly segment: PathSegment }
+type Edge = Prepared & { readonly entity: Exclude<CadSketchGraphEntity, { kind: 'circle' }> };
+
+function pathSegment(segment: PathSegment, reversed: boolean): ResolvedCadPathSegment {
+  if (segment.kind === 'line') {
+    const start = reversed ? segment.end : segment.start, end = reversed ? segment.start : segment.end;
+    return { kind: 'line', start: [start.x, start.y], end: [end.x, end.y] };
+  }
+  return { kind: 'arc', center: [segment.center.x, segment.center.y], radius: segment.radius,
+    startAngle: segment.kind === 'circle' ? 0 : (segment.startAngleRadians + (reversed ? segment.sweepRadians : 0)) * 180 / Math.PI,
+    sweep: segment.kind === 'circle' ? 360 : (reversed ? -segment.sweepRadians : segment.sweepRadians) * 180 / Math.PI };
+}
+function endpoints(entity: CadSketchGraphEntity): readonly string[] {
+  return entity.kind === 'circle' ? [] : [entity.startPointId, entity.endPointId];
+}
+function extentPoints(segment: PathSegment): Point2[] {
+  return [{ x: segment.bounds.minX, y: segment.bounds.minY }, { x: segment.bounds.maxX, y: segment.bounds.maxY }];
+}
+function checkCycleEncoding(path: readonly ResolvedCadPathSegment[]): void {
+  const encoded = cadAnalyticSegments(path).segments;
+  for (let index = 0; index < encoded.length; index++) {
+    const end = encoded[index].end, start = encoded[(index + 1) % encoded.length].start;
+    if (Math.hypot(end.x - start.x, end.y - start.y) > cadPathClosureTolerance([end, start])) {
+      throw new CadError('sketch-graph-precision', 'The analytic cycle cannot reproduce its joints within saved path precision.');
+    }
+  }
+}
+function freezeData(value: unknown): void {
+  if (value === null || typeof value !== 'object') return;
+  for (const child of Object.values(value)) freezeData(child);
+  Object.freeze(value);
+}
+
+/** Simple identity cycles only. No endpoint healing, coordinate merging or implicit graph edits. */
+export function compileCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>): CadSketchGraphGeometry {
+  const issues = checkCadSketchGraph(graph, parameters);
+  if (issues.length) throw new CadError('invalid-sketch-graph-geometry', `${issues[0].source.id}: ${issues[0].message}`);
+  const points = new Map(graph.points.map(point => [point.id, { x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters) }]));
+  const point = (id: string) => {
+    const value = points.get(id);
+    if (!value) throw new CadError('missing-sketch-point', `Sketch point "${id}" is missing.`);
+    return value;
+  };
+  const prepared: Prepared[] = [...graph.entities].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map((entity, index) => {
+    const source = { sourceEntityIndex: index, sourceEntityType: entity.kind, layer: null, exact: true };
+    const common = { id: entity.id, source };
+    const segment = entity.kind === 'line' ? createLineSegment({ ...common, start: point(entity.startPointId), end: point(entity.endPointId) })
+      : entity.kind === 'circle' ? createCircleSegment({ ...common, center: point(entity.centerPointId), radius: evaluateCadScalar(entity.radius, parameters) })
+        : createArcSegment({ ...common, center: point(entity.centerPointId), start: point(entity.startPointId), end: point(entity.endPointId), clockwise: entity.direction === 'cw' });
+    return { entity, segment };
+  });
+  const segments = prepared.map(item => item.segment), cycles: CadSketchGraphCycle[] = [], open: string[] = [], branched: string[] = [];
+  for (const construction of [false, true]) {
+    const adjacency = new Map<string, Edge[]>(), edges: Edge[] = [];
+    for (const item of prepared) {
+      if (item.entity.construction !== construction) continue;
+      if (item.entity.kind === 'circle') {
+        cycles.push({ construction, sourceRefs: [{ entityId: item.entity.id, reversed: false }], path: [pathSegment(item.segment, false)] });
+        continue;
+      }
+      const edge: Edge = { entity: item.entity, segment: item.segment }; edges.push(edge);
+      for (const id of endpoints(edge.entity)) {
+        const list = adjacency.get(id) ?? []; list.push(edge); adjacency.set(id, list);
+      }
+    }
+    const visited = new Set<string>();
+    for (const first of edges) {
+      if (visited.has(first.entity.id)) continue;
+      const component: Edge[] = [], vertices = new Set<string>(), queue = [first];
+      visited.add(first.entity.id);
+      for (let cursor = 0; cursor < queue.length; cursor++) {
+        const edge = queue[cursor]; component.push(edge);
+        for (const id of endpoints(edge.entity)) {
+          if (vertices.has(id)) continue;
+          vertices.add(id);
+          for (const next of adjacency.get(id) ?? []) if (!visited.has(next.entity.id)) { visited.add(next.entity.id); queue.push(next); }
+        }
+      }
+      if ([...vertices].some(id => (adjacency.get(id)?.length ?? 0) > 2)) { branched.push(...component.map(item => item.entity.id)); continue; }
+      if ([...vertices].some(id => adjacency.get(id)?.length !== 2)) { open.push(...component.map(item => item.entity.id)); continue; }
+      const start = first.entity.startPointId < first.entity.endPointId ? first.entity.startPointId : first.entity.endPointId;
+      let current = start, edge = first;
+      const sourceRefs: CadSketchGraphSourceRef[] = [], path: ResolvedCadPathSegment[] = [];
+      for (let count = 0; count < component.length; count++) {
+        const reversed = edge.entity.startPointId !== current;
+        sourceRefs.push({ entityId: edge.entity.id, reversed }); path.push(pathSegment(edge.segment, reversed));
+        current = reversed ? edge.entity.startPointId : edge.entity.endPointId;
+        const next = adjacency.get(current)?.find(item => item.entity.id !== edge.entity.id);
+        if (!next) throw new CadError('invalid-sketch-cycle', 'The identity-connected cycle is incomplete.');
+        edge = next;
+      }
+      if (current !== start) throw new CadError('invalid-sketch-cycle', 'The identity-connected cycle did not close.');
+      cycles.push({ construction, sourceRefs, path });
+    }
+  }
+  const arrangement = new Set<string>();
+  const broadTolerance = cadPathClosureTolerance(segments.flatMap(extentPoints));
+  const spatial = new SpatialHash<Prepared>({ cellSize: spatialCellSizeForSegments(segments, broadTolerance) });
+  for (const item of prepared) {
+    for (const other of spatial.queryBounds(expandBounds(item.segment.bounds, broadTolerance))) {
+      if (item.entity.construction !== other.entity.construction) continue;
+      const epsilon = cadPathClosureTolerance([...extentPoints(item.segment), ...extentPoints(other.segment)]);
+      const intersection = classifyPathSegmentIntersection(item.segment, other.segment, epsilon);
+      if (intersection.kind === 'none') continue;
+      const shared = endpoints(item.entity).filter(id => endpoints(other.entity).includes(id)).map(point);
+      if (intersection.kind === 'points' && intersection.points.every(hit => shared.some(joint => Math.hypot(hit.x - joint.x, hit.y - joint.y) <= epsilon))) continue;
+      arrangement.add(item.entity.id); arrangement.add(other.entity.id);
+    }
+    spatial.insertBounds(item.segment.bounds, item);
+  }
+  const result: CadSketchGraphGeometry = { segments, cycles: cycles.filter(cycle => cycle.sourceRefs.every(ref => !arrangement.has(ref.entityId)))
+    .sort((a, b) => a.sourceRefs[0].entityId < b.sourceRefs[0].entityId ? -1 : a.sourceRefs[0].entityId > b.sourceRefs[0].entityId ? 1 : 0),
+    openEntityIds: open.sort(), branchedEntityIds: branched.sort(), arrangementEntityIds: [...arrangement].sort() };
+  for (const cycle of result.cycles) checkCycleEncoding(cycle.path);
+  freezeData(result);
+  return result;
+}

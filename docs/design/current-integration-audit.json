@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T00:20:06.959Z",
+  "generatedAt": "2026-10-16T01:13:44.740Z",
   "baseline": {
     "path": "docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json",
     "publishedCheckpoint": "6e2113fa0151ef7d0b378ad3de7635664b2fab82",
@@ -8,7 +8,7 @@
     "originalContextPreserved": true
   },
   "currentSource": {
-    "scannedProductionTsFiles": 461,
+    "scannedProductionTsFiles": 476,
     "catalogImports": 262,
     "currentImportedSymbolReferences": 314,
     "catalogExportsParsed": 227,
@@ -140,87 +140,87 @@
     "datum-plane": {
       "symbol": "DatumPlaneIcon",
       "catalogId": "datum-plane",
-      "line": 13
+      "line": 14
     },
     "sketch": {
       "symbol": "SketchIcon",
       "catalogId": "sketch",
-      "line": 13
+      "line": 14
     },
     "curve": {
       "symbol": "CurveIcon",
       "catalogId": "curve",
-      "line": 13
+      "line": 14
     },
     "imported": {
       "symbol": "ImportedBodyIcon",
       "catalogId": "imported-body",
-      "line": 13
+      "line": 14
     },
     "extrude": {
       "symbol": "PadIcon",
       "catalogId": "pad",
-      "line": 13
+      "line": 14
     },
     "pocket": {
       "symbol": "PocketIcon",
       "catalogId": "pocket",
-      "line": 13
+      "line": 14
     },
     "revolve": {
       "symbol": "RevolveIcon",
       "catalogId": "revolve",
-      "line": 13
+      "line": 14
     },
     "loft": {
       "symbol": "LoftIcon",
       "catalogId": "loft",
-      "line": 14
+      "line": 15
     },
     "sweep": {
       "symbol": "SweepIcon",
       "catalogId": "sweep",
-      "line": 14
+      "line": 15
     },
     "fillet": {
       "symbol": "FilletIcon",
       "catalogId": "fillet",
-      "line": 14
+      "line": 15
     },
     "chamfer": {
       "symbol": "ChamferIcon",
       "catalogId": "chamfer",
-      "line": 14
+      "line": 15
     },
     "shell": {
       "symbol": "ShellIcon",
       "catalogId": "shell",
-      "line": 14
+      "line": 15
     },
     "boolean": {
       "symbol": "BooleanIcon",
       "catalogId": "boolean",
-      "line": 14
+      "line": 15
     },
     "transform": {
       "symbol": "Move3dIcon",
       "catalogId": "move-3d",
-      "line": 14
+      "line": 15
     },
     "linear-pattern": {
       "symbol": "LinearPatternIcon",
       "catalogId": "linear-pattern",
-      "line": 15
+      "line": 16
     },
     "circular-pattern": {
       "symbol": "CircularPatternIcon",
       "catalogId": "circular-pattern",
-      "line": 15
+      "line": 16
     },
     "mirror": {
       "symbol": "MirrorIcon",
       "catalogId": "mirror",
-      "line": 15
+      "line": 16
     }
   },
   "dynamicSlots": [
@@ -242,103 +242,103 @@
           "featureKind": "datum-plane",
           "actualSymbol": "DatumPlaneIcon",
           "actualCatalogId": "datum-plane",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "sketch",
           "actualSymbol": "SketchIcon",
           "actualCatalogId": "sketch",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "curve",
           "actualSymbol": "CurveIcon",
           "actualCatalogId": "curve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "imported",
           "actualSymbol": "ImportedBodyIcon",
           "actualCatalogId": "imported-body",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "extrude",
           "actualSymbol": "PadIcon",
           "actualCatalogId": "pad",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "pocket",
           "actualSymbol": "PocketIcon",
           "actualCatalogId": "pocket",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "revolve",
           "actualSymbol": "RevolveIcon",
           "actualCatalogId": "revolve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "loft",
           "actualSymbol": "LoftIcon",
           "actualCatalogId": "loft",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "sweep",
           "actualSymbol": "SweepIcon",
           "actualCatalogId": "sweep",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "fillet",
           "actualSymbol": "FilletIcon",
           "actualCatalogId": "fillet",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "chamfer",
           "actualSymbol": "ChamferIcon",
           "actualCatalogId": "chamfer",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "shell",
           "actualSymbol": "ShellIcon",
           "actualCatalogId": "shell",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "boolean",
           "actualSymbol": "BooleanIcon",
           "actualCatalogId": "boolean",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "transform",
           "actualSymbol": "Move3dIcon",
           "actualCatalogId": "move-3d",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "linear-pattern",
           "actualSymbol": "LinearPatternIcon",
           "actualCatalogId": "linear-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "circular-pattern",
           "actualSymbol": "CircularPatternIcon",
           "actualCatalogId": "circular-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "mirror",
           "actualSymbol": "MirrorIcon",
           "actualCatalogId": "mirror",
-          "line": 15
+          "line": 16
         }
       ]
     },
@@ -360,103 +360,103 @@
           "featureKind": "datum-plane",
           "actualSymbol": "DatumPlaneIcon",
           "actualCatalogId": "datum-plane",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "sketch",
           "actualSymbol": "SketchIcon",
           "actualCatalogId": "sketch",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "curve",
           "actualSymbol": "CurveIcon",
           "actualCatalogId": "curve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "imported",
           "actualSymbol": "ImportedBodyIcon",
           "actualCatalogId": "imported-body",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "extrude",
           "actualSymbol": "PadIcon",
           "actualCatalogId": "pad",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "pocket",
           "actualSymbol": "PocketIcon",
           "actualCatalogId": "pocket",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "revolve",
           "actualSymbol": "RevolveIcon",
           "actualCatalogId": "revolve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "loft",
           "actualSymbol": "LoftIcon",
           "actualCatalogId": "loft",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "sweep",
           "actualSymbol": "SweepIcon",
           "actualCatalogId": "sweep",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "fillet",
           "actualSymbol": "FilletIcon",
           "actualCatalogId": "fillet",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "chamfer",
           "actualSymbol": "ChamferIcon",
           "actualCatalogId": "chamfer",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "shell",
           "actualSymbol": "ShellIcon",
           "actualCatalogId": "shell",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "boolean",
           "actualSymbol": "BooleanIcon",
           "actualCatalogId": "boolean",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "transform",
           "actualSymbol": "Move3dIcon",
           "actualCatalogId": "move-3d",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "linear-pattern",
           "actualSymbol": "LinearPatternIcon",
           "actualCatalogId": "linear-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "circular-pattern",
           "actualSymbol": "CircularPatternIcon",
           "actualCatalogId": "circular-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "mirror",
           "actualSymbol": "MirrorIcon",
           "actualCatalogId": "mirror",
-          "line": 15
+          "line": 16
         }
       ]
     },
@@ -478,103 +478,103 @@
           "featureKind": "datum-plane",
           "actualSymbol": "DatumPlaneIcon",
           "actualCatalogId": "datum-plane",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "sketch",
           "actualSymbol": "SketchIcon",
           "actualCatalogId": "sketch",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "curve",
           "actualSymbol": "CurveIcon",
           "actualCatalogId": "curve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "imported",
           "actualSymbol": "ImportedBodyIcon",
           "actualCatalogId": "imported-body",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "extrude",
           "actualSymbol": "PadIcon",
           "actualCatalogId": "pad",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "pocket",
           "actualSymbol": "PocketIcon",
           "actualCatalogId": "pocket",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "revolve",
           "actualSymbol": "RevolveIcon",
           "actualCatalogId": "revolve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "loft",
           "actualSymbol": "LoftIcon",
           "actualCatalogId": "loft",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "sweep",
           "actualSymbol": "SweepIcon",
           "actualCatalogId": "sweep",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "fillet",
           "actualSymbol": "FilletIcon",
           "actualCatalogId": "fillet",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "chamfer",
           "actualSymbol": "ChamferIcon",
           "actualCatalogId": "chamfer",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "shell",
           "actualSymbol": "ShellIcon",
           "actualCatalogId": "shell",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "boolean",
           "actualSymbol": "BooleanIcon",
           "actualCatalogId": "boolean",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "transform",
           "actualSymbol": "Move3dIcon",
           "actualCatalogId": "move-3d",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "linear-pattern",
           "actualSymbol": "LinearPatternIcon",
           "actualCatalogId": "linear-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "circular-pattern",
           "actualSymbol": "CircularPatternIcon",
           "actualCatalogId": "circular-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "mirror",
           "actualSymbol": "MirrorIcon",
           "actualCatalogId": "mirror",
-          "line": 15
+          "line": 16
         }
       ]
     },
@@ -587,7 +587,7 @@
       "mapPropertyExpression": "<Icon size={14} />",
       "currentRenderers": [
         {
-          "line": 202,
+          "line": 207,
           "expression": "<Icon size={14} />"
         }
       ],
@@ -596,103 +596,103 @@
           "featureKind": "datum-plane",
           "actualSymbol": "DatumPlaneIcon",
           "actualCatalogId": "datum-plane",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "sketch",
           "actualSymbol": "SketchIcon",
           "actualCatalogId": "sketch",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "curve",
           "actualSymbol": "CurveIcon",
           "actualCatalogId": "curve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "imported",
           "actualSymbol": "ImportedBodyIcon",
           "actualCatalogId": "imported-body",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "extrude",
           "actualSymbol": "PadIcon",
           "actualCatalogId": "pad",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "pocket",
           "actualSymbol": "PocketIcon",
           "actualCatalogId": "pocket",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "revolve",
           "actualSymbol": "RevolveIcon",
           "actualCatalogId": "revolve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "loft",
           "actualSymbol": "LoftIcon",
           "actualCatalogId": "loft",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "sweep",
           "actualSymbol": "SweepIcon",
           "actualCatalogId": "sweep",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "fillet",
           "actualSymbol": "FilletIcon",
           "actualCatalogId": "fillet",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "chamfer",
           "actualSymbol": "ChamferIcon",
           "actualCatalogId": "chamfer",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "shell",
           "actualSymbol": "ShellIcon",
           "actualCatalogId": "shell",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "boolean",
           "actualSymbol": "BooleanIcon",
           "actualCatalogId": "boolean",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "transform",
           "actualSymbol": "Move3dIcon",
           "actualCatalogId": "move-3d",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "linear-pattern",
           "actualSymbol": "LinearPatternIcon",
           "actualCatalogId": "linear-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "circular-pattern",
           "actualSymbol": "CircularPatternIcon",
           "actualCatalogId": "circular-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "mirror",
           "actualSymbol": "MirrorIcon",
           "actualCatalogId": "mirror",
-          "line": 15
+          "line": 16
         }
       ]
     },
@@ -705,7 +705,7 @@
       "mapPropertyExpression": "<Icon size={15} strokeWidth={1.5} />",
       "currentRenderers": [
         {
-          "line": 581,
+          "line": 620,
           "expression": "<Icon size={15} />"
         }
       ],
@@ -714,103 +714,103 @@
           "featureKind": "datum-plane",
           "actualSymbol": "DatumPlaneIcon",
           "actualCatalogId": "datum-plane",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "sketch",
           "actualSymbol": "SketchIcon",
           "actualCatalogId": "sketch",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "curve",
           "actualSymbol": "CurveIcon",
           "actualCatalogId": "curve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "imported",
           "actualSymbol": "ImportedBodyIcon",
           "actualCatalogId": "imported-body",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "extrude",
           "actualSymbol": "PadIcon",
           "actualCatalogId": "pad",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "pocket",
           "actualSymbol": "PocketIcon",
           "actualCatalogId": "pocket",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "revolve",
           "actualSymbol": "RevolveIcon",
           "actualCatalogId": "revolve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "loft",
           "actualSymbol": "LoftIcon",
           "actualCatalogId": "loft",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "sweep",
           "actualSymbol": "SweepIcon",
           "actualCatalogId": "sweep",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "fillet",
           "actualSymbol": "FilletIcon",
           "actualCatalogId": "fillet",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "chamfer",
           "actualSymbol": "ChamferIcon",
           "actualCatalogId": "chamfer",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "shell",
           "actualSymbol": "ShellIcon",
           "actualCatalogId": "shell",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "boolean",
           "actualSymbol": "BooleanIcon",
           "actualCatalogId": "boolean",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "transform",
           "actualSymbol": "Move3dIcon",
           "actualCatalogId": "move-3d",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "linear-pattern",
           "actualSymbol": "LinearPatternIcon",
           "actualCatalogId": "linear-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "circular-pattern",
           "actualSymbol": "CircularPatternIcon",
           "actualCatalogId": "circular-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "mirror",
           "actualSymbol": "MirrorIcon",
           "actualCatalogId": "mirror",
-          "line": 15
+          "line": 16
         }
       ]
     },
@@ -832,103 +832,103 @@
           "featureKind": "datum-plane",
           "actualSymbol": "DatumPlaneIcon",
           "actualCatalogId": "datum-plane",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "sketch",
           "actualSymbol": "SketchIcon",
           "actualCatalogId": "sketch",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "curve",
           "actualSymbol": "CurveIcon",
           "actualCatalogId": "curve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "imported",
           "actualSymbol": "ImportedBodyIcon",
           "actualCatalogId": "imported-body",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "extrude",
           "actualSymbol": "PadIcon",
           "actualCatalogId": "pad",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "pocket",
           "actualSymbol": "PocketIcon",
           "actualCatalogId": "pocket",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "revolve",
           "actualSymbol": "RevolveIcon",
           "actualCatalogId": "revolve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "loft",
           "actualSymbol": "LoftIcon",
           "actualCatalogId": "loft",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "sweep",
           "actualSymbol": "SweepIcon",
           "actualCatalogId": "sweep",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "fillet",
           "actualSymbol": "FilletIcon",
           "actualCatalogId": "fillet",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "chamfer",
           "actualSymbol": "ChamferIcon",
           "actualCatalogId": "chamfer",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "shell",
           "actualSymbol": "ShellIcon",
           "actualCatalogId": "shell",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "boolean",
           "actualSymbol": "BooleanIcon",
           "actualCatalogId": "boolean",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "transform",
           "actualSymbol": "Move3dIcon",
           "actualCatalogId": "move-3d",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "linear-pattern",
           "actualSymbol": "LinearPatternIcon",
           "actualCatalogId": "linear-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "circular-pattern",
           "actualSymbol": "CircularPatternIcon",
           "actualCatalogId": "circular-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "mirror",
           "actualSymbol": "MirrorIcon",
           "actualCatalogId": "mirror",
-          "line": 15
+          "line": 16
         }
       ]
     },
@@ -950,103 +950,103 @@
           "featureKind": "datum-plane",
           "actualSymbol": "DatumPlaneIcon",
           "actualCatalogId": "datum-plane",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "sketch",
           "actualSymbol": "SketchIcon",
           "actualCatalogId": "sketch",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "curve",
           "actualSymbol": "CurveIcon",
           "actualCatalogId": "curve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "imported",
           "actualSymbol": "ImportedBodyIcon",
           "actualCatalogId": "imported-body",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "extrude",
           "actualSymbol": "PadIcon",
           "actualCatalogId": "pad",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "pocket",
           "actualSymbol": "PocketIcon",
           "actualCatalogId": "pocket",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "revolve",
           "actualSymbol": "RevolveIcon",
           "actualCatalogId": "revolve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "loft",
           "actualSymbol": "LoftIcon",
           "actualCatalogId": "loft",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "sweep",
           "actualSymbol": "SweepIcon",
           "actualCatalogId": "sweep",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "fillet",
           "actualSymbol": "FilletIcon",
           "actualCatalogId": "fillet",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "chamfer",
           "actualSymbol": "ChamferIcon",
           "actualCatalogId": "chamfer",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "shell",
           "actualSymbol": "ShellIcon",
           "actualCatalogId": "shell",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "boolean",
           "actualSymbol": "BooleanIcon",
           "actualCatalogId": "boolean",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "transform",
           "actualSymbol": "Move3dIcon",
           "actualCatalogId": "move-3d",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "linear-pattern",
           "actualSymbol": "LinearPatternIcon",
           "actualCatalogId": "linear-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "circular-pattern",
           "actualSymbol": "CircularPatternIcon",
           "actualCatalogId": "circular-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "mirror",
           "actualSymbol": "MirrorIcon",
           "actualCatalogId": "mirror",
-          "line": 15
+          "line": 16
         }
       ]
     },
@@ -1068,103 +1068,103 @@
           "featureKind": "datum-plane",
           "actualSymbol": "DatumPlaneIcon",
           "actualCatalogId": "datum-plane",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "sketch",
           "actualSymbol": "SketchIcon",
           "actualCatalogId": "sketch",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "curve",
           "actualSymbol": "CurveIcon",
           "actualCatalogId": "curve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "imported",
           "actualSymbol": "ImportedBodyIcon",
           "actualCatalogId": "imported-body",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "extrude",
           "actualSymbol": "PadIcon",
           "actualCatalogId": "pad",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "pocket",
           "actualSymbol": "PocketIcon",
           "actualCatalogId": "pocket",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "revolve",
           "actualSymbol": "RevolveIcon",
           "actualCatalogId": "revolve",
-          "line": 13
+          "line": 14
         },
         {
           "featureKind": "loft",
           "actualSymbol": "LoftIcon",
           "actualCatalogId": "loft",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "sweep",
           "actualSymbol": "SweepIcon",
           "actualCatalogId": "sweep",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "fillet",
           "actualSymbol": "FilletIcon",
           "actualCatalogId": "fillet",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "chamfer",
           "actualSymbol": "ChamferIcon",
           "actualCatalogId": "chamfer",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "shell",
           "actualSymbol": "ShellIcon",
           "actualCatalogId": "shell",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "boolean",
           "actualSymbol": "BooleanIcon",
           "actualCatalogId": "boolean",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "transform",
           "actualSymbol": "Move3dIcon",
           "actualCatalogId": "move-3d",
-          "line": 14
+          "line": 15
         },
         {
           "featureKind": "linear-pattern",
           "actualSymbol": "LinearPatternIcon",
           "actualCatalogId": "linear-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "circular-pattern",
           "actualSymbol": "CircularPatternIcon",
           "actualCatalogId": "circular-pattern",
-          "line": 15
+          "line": 16
         },
         {
           "featureKind": "mirror",
           "actualSymbol": "MirrorIcon",
           "actualCatalogId": "mirror",
-          "line": 15
+          "line": 16
         }
       ]
     }
@@ -1210,7 +1210,7 @@
     },
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 18,
+      "line": 19,
       "symbol": "SlotIcon",
       "catalogId": "slot",
       "context": "slot: SlotIcon",
@@ -1218,7 +1218,7 @@
     },
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 18,
+      "line": 19,
       "symbol": "ClosedPathIcon",
       "catalogId": "closed-path",
       "context": "polygon: ClosedPathIcon",
@@ -1226,7 +1226,7 @@
     },
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 18,
+      "line": 19,
       "symbol": "ClosedPathIcon",
       "catalogId": "closed-path",
       "context": "path: ClosedPathIcon",
@@ -1234,7 +1234,7 @@
     },
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 18,
+      "line": 19,
       "symbol": "PluginIcon",
       "catalogId": "plugin",
       "context": "plugin: PluginIcon",
@@ -1242,7 +1242,7 @@
     },
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 203,
+      "line": 208,
       "symbol": "WarningIcon",
       "catalogId": "warning",
       "context": "<Button type=\"button\" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)} aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${diagnostic.message}` : ''}`} onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)} onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); }}> <Icon size={14} /><span className=\"cad-feature-name\">{feature.name}</span> {diagnostic && <span className=\"cad-tree-error\" aria-label={diagnostic.message}><WarningIcon size={12} /></span>}{feature.suppressed && <span className=\"cad-tree-muted\">off</span>} </Button>",
@@ -2110,7 +2110,7 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureEditor.tsx",
-        "line": 318,
+        "line": 322,
         "column": 243,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
@@ -2133,13 +2133,13 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureEditor.tsx",
-        "line": 326,
-        "column": 157,
+        "line": 405,
+        "column": 127,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 349.5,
-        "context": "<Button type=\"button\" onClick={onCancel}><CloseIcon size={13} /> Cancel</Button>"
+        "confidenceScore": 339.78,
+        "context": "<Button type=\"button\" onClick={() => { submission.cancel(); onCancel(); }}><CloseIcon size={13} /> Cancel</Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "CloseIcon",
@@ -2156,13 +2156,13 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureEditor.tsx",
-        "line": 326,
-        "column": 388,
+        "line": 330,
+        "column": 409,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
         "catalogId": "confirm",
-        "confidenceScore": 347,
-        "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-primary\" disabled={!isNew && !changed || scalarPending || waitingForPreview || Boolean(pickCurrent) || staleDraft || depthGestureActive}><ConfirmIcon size={13} /> Apply</Button>"
+        "confidenceScore": 339.27,
+        "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-primary\" disabled={!isNew && !changed || scalarPending || waitingForPreview || Boolean(pickCurrent) || staleDraft || depthGestureActive || submission.applying}><ConfirmIcon size={13} /> Apply</Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "ConfirmIcon",
@@ -2179,13 +2179,13 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureEditor.tsx",
-        "line": 388,
-        "column": 93,
+        "line": 330,
+        "column": 155,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 349.5,
-        "context": "<Button type=\"button\" onClick={onCancel}><CloseIcon size={13} /> Cancel</Button>"
+        "confidenceScore": 337,
+        "context": "<Button type=\"button\" onClick={cancel}><CloseIcon size={13} /> Cancel</Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "CloseIcon",
@@ -2202,13 +2202,13 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureEditor.tsx",
-        "line": 388,
-        "column": 261,
+        "line": 405,
+        "column": 318,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
         "catalogId": "confirm",
-        "confidenceScore": 344.35,
-        "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-primary\" disabled={!changed || bindingPending || pluginIssues.length > 0}><ConfirmIcon size={13} /> Apply</Button>"
+        "confidenceScore": 335.68,
+        "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-primary\" disabled={!changed || bindingPending || pluginIssues.length > 0 || submission.applying}><ConfirmIcon size={13} /> Apply</Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "ConfirmIcon",
@@ -2225,12 +2225,12 @@
       "scoutActualSymbol": "DatumPlaneIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 13,
+        "line": 14,
         "column": 18,
         "symbol": "DatumPlaneIcon",
         "exportedSymbol": "DatumPlaneIcon",
         "catalogId": "datum-plane",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "'datum-plane': DatumPlaneIcon"
       },
       "resolution": "resolved",
@@ -2248,12 +2248,12 @@
       "scoutActualSymbol": "SketchIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 13,
+        "line": 14,
         "column": 42,
         "symbol": "SketchIcon",
         "exportedSymbol": "SketchIcon",
         "catalogId": "sketch",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "sketch: SketchIcon"
       },
       "resolution": "resolved",
@@ -2271,12 +2271,12 @@
       "scoutActualSymbol": "CurveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 13,
+        "line": 14,
         "column": 61,
         "symbol": "CurveIcon",
         "exportedSymbol": "CurveIcon",
         "catalogId": "curve",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "curve: CurveIcon"
       },
       "resolution": "resolved",
@@ -2294,12 +2294,12 @@
       "scoutActualSymbol": "ImportedBodyIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 13,
+        "line": 14,
         "column": 82,
         "symbol": "ImportedBodyIcon",
         "exportedSymbol": "ImportedBodyIcon",
         "catalogId": "imported-body",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "imported: ImportedBodyIcon"
       },
       "resolution": "resolved",
@@ -2317,12 +2317,12 @@
       "scoutActualSymbol": "PadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 13,
+        "line": 14,
         "column": 109,
         "symbol": "PadIcon",
         "exportedSymbol": "PadIcon",
         "catalogId": "pad",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "extrude: PadIcon"
       },
       "resolution": "resolved",
@@ -2340,12 +2340,12 @@
       "scoutActualSymbol": "PocketIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 13,
+        "line": 14,
         "column": 126,
         "symbol": "PocketIcon",
         "exportedSymbol": "PocketIcon",
         "catalogId": "pocket",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "pocket: PocketIcon"
       },
       "resolution": "resolved",
@@ -2363,12 +2363,12 @@
       "scoutActualSymbol": "RevolveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 13,
+        "line": 14,
         "column": 147,
         "symbol": "RevolveIcon",
         "exportedSymbol": "RevolveIcon",
         "catalogId": "revolve",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "revolve: RevolveIcon"
       },
       "resolution": "resolved",
@@ -2386,12 +2386,12 @@
       "scoutActualSymbol": "LoftIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 14,
+        "line": 15,
         "column": 9,
         "symbol": "LoftIcon",
         "exportedSymbol": "LoftIcon",
         "catalogId": "loft",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "loft: LoftIcon"
       },
       "resolution": "resolved",
@@ -2409,12 +2409,12 @@
       "scoutActualSymbol": "SweepIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 14,
+        "line": 15,
         "column": 26,
         "symbol": "SweepIcon",
         "exportedSymbol": "SweepIcon",
         "catalogId": "sweep",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "sweep: SweepIcon"
       },
       "resolution": "resolved",
@@ -2432,12 +2432,12 @@
       "scoutActualSymbol": "FilletIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 14,
+        "line": 15,
         "column": 45,
         "symbol": "FilletIcon",
         "exportedSymbol": "FilletIcon",
         "catalogId": "fillet",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "fillet: FilletIcon"
       },
       "resolution": "resolved",
@@ -2455,12 +2455,12 @@
       "scoutActualSymbol": "ChamferIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 14,
+        "line": 15,
         "column": 66,
         "symbol": "ChamferIcon",
         "exportedSymbol": "ChamferIcon",
         "catalogId": "chamfer",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "chamfer: ChamferIcon"
       },
       "resolution": "resolved",
@@ -2478,12 +2478,12 @@
       "scoutActualSymbol": "ShellIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 14,
+        "line": 15,
         "column": 86,
         "symbol": "ShellIcon",
         "exportedSymbol": "ShellIcon",
         "catalogId": "shell",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "shell: ShellIcon"
       },
       "resolution": "resolved",
@@ -2501,12 +2501,12 @@
       "scoutActualSymbol": "BooleanIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 14,
+        "line": 15,
         "column": 106,
         "symbol": "BooleanIcon",
         "exportedSymbol": "BooleanIcon",
         "catalogId": "boolean",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "boolean: BooleanIcon"
       },
       "resolution": "resolved",
@@ -2524,12 +2524,12 @@
       "scoutActualSymbol": "Move3dIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 14,
+        "line": 15,
         "column": 130,
         "symbol": "Move3dIcon",
         "exportedSymbol": "Move3dIcon",
         "catalogId": "move-3d",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "transform: Move3dIcon"
       },
       "resolution": "resolved",
@@ -2547,12 +2547,12 @@
       "scoutActualSymbol": "LinearPatternIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 15,
+        "line": 16,
         "column": 21,
         "symbol": "LinearPatternIcon",
         "exportedSymbol": "LinearPatternIcon",
         "catalogId": "linear-pattern",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "'linear-pattern': LinearPatternIcon"
       },
       "resolution": "resolved",
@@ -2570,12 +2570,12 @@
       "scoutActualSymbol": "CircularPatternIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 15,
+        "line": 16,
         "column": 60,
         "symbol": "CircularPatternIcon",
         "exportedSymbol": "CircularPatternIcon",
         "catalogId": "circular-pattern",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "'circular-pattern': CircularPatternIcon"
       },
       "resolution": "resolved",
@@ -2593,12 +2593,12 @@
       "scoutActualSymbol": "MirrorIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 15,
+        "line": 16,
         "column": 89,
         "symbol": "MirrorIcon",
         "exportedSymbol": "MirrorIcon",
         "catalogId": "mirror",
-        "confidenceScore": 397,
+        "confidenceScore": 394.5,
         "context": "mirror: MirrorIcon"
       },
       "resolution": "resolved",
@@ -2616,12 +2616,12 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 162,
+        "line": 167,
         "column": 8,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
         "catalogId": "expand-right",
-        "confidenceScore": 796.05,
+        "confidenceScore": 783.55,
         "context": "<Button type=\"button\" className=\"cad-tree-document\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('part') ? 'Collapse' : 'Expand'} part ${document.name}`} aria-expanded={branches.has('part')} aria-controls={branches.has('part') ? `${treeId}-part` : undefined} onClick={() => toggleBranch('part')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><FileBodyIcon size={15} /><span>{document.name}</span> </Button>"
       },
       "resolution": "resolved",
@@ -2639,12 +2639,12 @@
       "scoutActualSymbol": "FileBodyIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 162,
+        "line": 167,
         "column": 75,
         "symbol": "FileBodyIcon",
         "exportedSymbol": "FileBodyIcon",
         "catalogId": "file-body",
-        "confidenceScore": 796.05,
+        "confidenceScore": 783.55,
         "context": "<Button type=\"button\" className=\"cad-tree-document\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('part') ? 'Collapse' : 'Expand'} part ${document.name}`} aria-expanded={branches.has('part')} aria-controls={branches.has('part') ? `${treeId}-part` : undefined} onClick={() => toggleBranch('part')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><FileBodyIcon size={15} /><span>{document.name}</span> </Button>"
       },
       "resolution": "resolved",
@@ -2662,12 +2662,12 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 167,
+        "line": 172,
         "column": 10,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
         "catalogId": "expand-right",
-        "confidenceScore": 795.8,
+        "confidenceScore": 783.3,
         "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('reference') ? 'Collapse' : 'Expand'} Reference`} aria-expanded={branches.has('reference')} aria-controls={branches.has('reference') ? `${treeId}-reference` : undefined} onClick={() => toggleBranch('reference')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><DatumPlaneIcon size={13} /><span>Reference</span> </Button>"
       },
       "resolution": "resolved",
@@ -2685,12 +2685,12 @@
       "scoutActualSymbol": "DatumPlaneIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 167,
+        "line": 172,
         "column": 77,
         "symbol": "DatumPlaneIcon",
         "exportedSymbol": "DatumPlaneIcon",
         "catalogId": "datum-plane",
-        "confidenceScore": 795.8,
+        "confidenceScore": 783.3,
         "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('reference') ? 'Collapse' : 'Expand'} Reference`} aria-expanded={branches.has('reference')} aria-controls={branches.has('reference') ? `${treeId}-reference` : undefined} onClick={() => toggleBranch('reference')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><DatumPlaneIcon size={13} /><span>Reference</span> </Button>"
       },
       "resolution": "resolved",
@@ -2708,12 +2708,12 @@
       "scoutActualSymbol": "DatumPlaneIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 171,
+        "line": 176,
         "column": 181,
         "symbol": "DatumPlaneIcon",
         "exportedSymbol": "DatumPlaneIcon",
         "catalogId": "datum-plane",
-        "confidenceScore": 759.5,
+        "confidenceScore": 747,
         "context": "<Button type=\"button\" className={`cad-tree-row${selectedReferencePlane === plane ? ' is-selected' : ''}`} aria-label={`Select ${plane} plane`} aria-pressed={selectedReferencePlane === plane} disabled={locked || selectionOnly && !allowPrincipalPlaneSelection || Boolean(renameCurrent) || !onSelectReferencePlane} onClick={() => onSelectReferencePlane?.(plane)}><DatumPlaneIcon size={12} /><span>{plane} plane</span></Button>"
       },
       "resolution": "resolved",
@@ -2731,12 +2731,12 @@
       "scoutActualSymbol": "SketchIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 172,
+        "line": 177,
         "column": 139,
         "symbol": "SketchIcon",
         "exportedSymbol": "SketchIcon",
         "catalogId": "sketch",
-        "confidenceScore": 748.07,
+        "confidenceScore": 735.57,
         "context": "<Button type=\"button\" disabled={locked || selectionOnly || Boolean(renameCurrent)} aria-label={`Create sketch on ${plane} plane`} title={`Create sketch on ${plane} plane`} onClick={() => onCreateSketch(plane)}><SketchIcon size={12} /></Button>"
       },
       "resolution": "resolved",
@@ -2754,12 +2754,12 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 177,
+        "line": 182,
         "column": 12,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
         "catalogId": "expand-right",
-        "confidenceScore": 792.36,
+        "confidenceScore": 779.86,
         "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('parameters') ? 'Collapse' : 'Expand'} Parameters`} aria-expanded={branches.has('parameters')} aria-controls={branches.has('parameters') ? `${treeId}-parameters` : undefined} onClick={() => toggleBranch('parameters')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><AdjustIcon size={13} /><span>Parameters</span> </Button>"
       },
       "resolution": "resolved",
@@ -2777,12 +2777,12 @@
       "scoutActualSymbol": "AdjustIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 177,
+        "line": 182,
         "column": 79,
         "symbol": "AdjustIcon",
         "exportedSymbol": "AdjustIcon",
         "catalogId": "adjust",
-        "confidenceScore": 792.36,
+        "confidenceScore": 779.86,
         "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('parameters') ? 'Collapse' : 'Expand'} Parameters`} aria-expanded={branches.has('parameters')} aria-controls={branches.has('parameters') ? `${treeId}-parameters` : undefined} onClick={() => toggleBranch('parameters')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><AdjustIcon size={13} /><span>Parameters</span> </Button>"
       },
       "resolution": "resolved",
@@ -2800,12 +2800,12 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 183,
+        "line": 188,
         "column": 10,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
         "catalogId": "expand-right",
-        "confidenceScore": 793.25,
+        "confidenceScore": 780.75,
         "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('model') ? 'Collapse' : 'Expand'} Model`} aria-expanded={branches.has('model')} aria-controls={branches.has('model') ? `${treeId}-model` : undefined} onClick={() => toggleBranch('model')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><LayersIcon size={13} /><span>Model</span><small aria-label={`${document.features.length} features`}>{document.features.length}</small> </Button>"
       },
       "resolution": "resolved",
@@ -2823,12 +2823,12 @@
       "scoutActualSymbol": "LayersIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 183,
+        "line": 188,
         "column": 77,
         "symbol": "LayersIcon",
         "exportedSymbol": "LayersIcon",
         "catalogId": "layers",
-        "confidenceScore": 793.25,
+        "confidenceScore": 780.75,
         "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('model') ? 'Collapse' : 'Expand'} Model`} aria-expanded={branches.has('model')} aria-controls={branches.has('model') ? `${treeId}-model` : undefined} onClick={() => toggleBranch('model')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><LayersIcon size={13} /><span>Model</span><small aria-label={`${document.features.length} features`}>{document.features.length}</small> </Button>"
       },
       "resolution": "resolved",
@@ -2846,12 +2846,12 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 196,
+        "line": 201,
         "column": 291,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
         "catalogId": "expand-right",
-        "confidenceScore": 728.61,
+        "confidenceScore": 716.11,
         "context": "<Button type=\"button\" className=\"cad-feature-disclosure\" disabled={locked || Boolean(renameCurrent)} aria-label={`${open ? 'Collapse' : 'Expand'} ${feature.name}`} aria-expanded={open} aria-controls={open ? detailsId : undefined} onClick={() => toggle(feature.id)}><ExpandRightIcon size={12} /></Button>"
       },
       "resolution": "resolved",
@@ -2869,7 +2869,7 @@
       "scoutActualSymbol": "CircleIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 18,
+        "line": 19,
         "column": 37,
         "symbol": "CircleIcon",
         "exportedSymbol": "CircleIcon",
@@ -2892,7 +2892,7 @@
       "scoutActualSymbol": "RectangleIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 18,
+        "line": 19,
         "column": 14,
         "symbol": "RectangleIcon",
         "exportedSymbol": "RectangleIcon",
@@ -3030,12 +3030,12 @@
       "scoutActualSymbol": "PluginIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadParametersPanel.tsx",
-        "line": 92,
+        "line": 103,
         "column": 85,
         "symbol": "PluginIcon",
         "exportedSymbol": "PluginIcon",
         "catalogId": "plugin",
-        "confidenceScore": 786.75,
+        "confidenceScore": 759.25,
         "context": "<Button type=\"button\" key={parameter.name} className={`cad-parameter-list-row ${editor?.kind === 'parameter' && editor.originalName === parameter.name ? 'is-selected' : ''} ${activeUses ? '' : 'is-unused'}`} aria-label={`Edit parameter ${parameter.name}`} aria-pressed={editor?.kind === 'parameter' && editor.originalName === parameter.name} disabled={interactionLocked || editor !== null} title={`${parameter.name}: ${activeUses} active dimensions, ${parameter.usages.length} stored references${parameter.source.kind === 'plugin' ? '; plugin origin' : '; document parameter'}`} onClick={() => begin({ kind: 'parameter', originalName: parameter.name, name: parameter.name, value: String(parameter.value), groupId: parameter.groupId ?? '', error: '' })}> <span className=\"cad-parameter-origin\">{parameter.source.kind === 'plugin' ? <PluginIcon size={11} /> : <LinkIcon size={11} />}</span><span className=\"cad-parameter-row-name\">{pluginLabel(parameter)}</span><span className=\"cad-parameter-use-count\" aria-label={`${activeUses} active uses`}>{activeUses || (parameter.usages.length ? 'Inactive' : 'Unused')}</span><output>{numericValue(parameter.value)}</output> </Button>"
       },
       "resolution": "resolved",
@@ -3053,12 +3053,12 @@
       "scoutActualSymbol": "LinkIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadParametersPanel.tsx",
-        "line": 92,
+        "line": 103,
         "column": 112,
         "symbol": "LinkIcon",
         "exportedSymbol": "LinkIcon",
         "catalogId": "link",
-        "confidenceScore": 786.75,
+        "confidenceScore": 759.25,
         "context": "<Button type=\"button\" key={parameter.name} className={`cad-parameter-list-row ${editor?.kind === 'parameter' && editor.originalName === parameter.name ? 'is-selected' : ''} ${activeUses ? '' : 'is-unused'}`} aria-label={`Edit parameter ${parameter.name}`} aria-pressed={editor?.kind === 'parameter' && editor.originalName === parameter.name} disabled={interactionLocked || editor !== null} title={`${parameter.name}: ${activeUses} active dimensions, ${parameter.usages.length} stored references${parameter.source.kind === 'plugin' ? '; plugin origin' : '; document parameter'}`} onClick={() => begin({ kind: 'parameter', originalName: parameter.name, name: parameter.name, value: String(parameter.value), groupId: parameter.groupId ?? '', error: '' })}> <span className=\"cad-parameter-origin\">{parameter.source.kind === 'plugin' ? <PluginIcon size={11} /> : <LinkIcon size={11} />}</span><span className=\"cad-parameter-row-name\">{pluginLabel(parameter)}</span><span className=\"cad-parameter-use-count\" aria-label={`${activeUses} active uses`}>{activeUses || (parameter.usages.length ? 'Inactive' : 'Unused')}</span><output>{numericValue(parameter.value)}</output> </Button>"
       },
       "resolution": "resolved",
@@ -3076,12 +3076,12 @@
       "scoutActualSymbol": "FolderPlusIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadParametersPanel.tsx",
-        "line": 97,
+        "line": 108,
         "column": 586,
         "symbol": "FolderPlusIcon",
         "exportedSymbol": "FolderPlusIcon",
         "catalogId": "folder-plus",
-        "confidenceScore": 797.45,
+        "confidenceScore": 769.95,
         "context": "<Button type=\"button\" aria-label=\"Add parameter group\" title=\"New group\" disabled={interactionLocked || editor !== null} onClick={() => begin({ kind: 'group', originalId: null, name: '', error: '' })}><FolderPlusIcon size={13} /></Button>"
       },
       "resolution": "resolved",
@@ -3099,12 +3099,12 @@
       "scoutActualSymbol": "AddIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadParametersPanel.tsx",
-        "line": 97,
+        "line": 108,
         "column": 852,
         "symbol": "AddIcon",
         "exportedSymbol": "AddIcon",
         "catalogId": "add",
-        "confidenceScore": 797.65,
+        "confidenceScore": 770.15,
         "context": "<Button type=\"button\" aria-label=\"Add parameter\" title=\"New parameter\" disabled={interactionLocked || editor !== null} onClick={() => begin({ kind: 'parameter', originalName: null, name: '', value: '', groupId: '', error: '' })}><AddIcon size={14} /></Button>"
       },
       "resolution": "resolved",
@@ -3122,12 +3122,12 @@
       "scoutActualSymbol": "PluginIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadParametersPanel.tsx",
-        "line": 99,
+        "line": 110,
         "column": 224,
         "symbol": "PluginIcon",
         "exportedSymbol": "PluginIcon",
         "catalogId": "plugin",
-        "confidenceScore": 379.27,
+        "confidenceScore": 351.77,
         "context": "<summary>{inspection.parameters.some(parameter => parameter.groupId === group.id && parameter.source.kind === 'plugin') && <PluginIcon size={10} aria-label=\"Plugin parameters\" />}<span>{group.name}</span><small>{inspection.parameters.filter(parameter => parameter.groupId === group.id).length}</small><Button type=\"button\" aria-label={`Rename parameter group ${group.name}`} disabled={interactionLocked || editor !== null} onClick={event => { event.preventDefault(); begin({ kind: 'group', originalId: group.id, name: group.name, error: '' }); }}><RenameIcon size={10} /></Button></summary>"
       },
       "resolution": "resolved",
@@ -3145,12 +3145,12 @@
       "scoutActualSymbol": "RenameIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadParametersPanel.tsx",
-        "line": 99,
+        "line": 110,
         "column": 648,
         "symbol": "RenameIcon",
         "exportedSymbol": "RenameIcon",
         "catalogId": "rename",
-        "confidenceScore": 752,
+        "confidenceScore": 724.5,
         "context": "<Button type=\"button\" aria-label={`Rename parameter group ${group.name}`} disabled={interactionLocked || editor !== null} onClick={event => { event.preventDefault(); begin({ kind: 'group', originalId: group.id, name: group.name, error: '' }); }}><RenameIcon size={10} /></Button>"
       },
       "resolution": "resolved",
@@ -3168,12 +3168,12 @@
       "scoutActualSymbol": "PluginIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadParametersPanel.tsx",
-        "line": 102,
+        "line": 113,
         "column": 583,
         "symbol": "PluginIcon",
         "exportedSymbol": "PluginIcon",
         "catalogId": "plugin",
-        "confidenceScore": 795.02,
+        "confidenceScore": 767.52,
         "context": "<Button type=\"button\" className=\"cad-local-input-row\" key={`${input.featureId}/${input.profileId}/${input.inputName}`} disabled={!onInspectUsage || interactionLocked || editor !== null} aria-label={`Inspect ${input.profileName} ${input.label}`} title={`${input.featureName} / ${input.profileName}. Configure this value in its profile.`} onClick={() => onInspectUsage?.(input)}><PluginIcon size={10} /><span>{input.label}<small>{input.profileName}</small></span><output>{input.appliedValue === undefined ? '—' : numericValue(input.appliedValue)}</output><small>{!input.effective ? 'auto' : !input.editable ? 'locked' : 'local'}</small></Button>"
       },
       "resolution": "resolved",
@@ -3191,12 +3191,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadParametersPanel.tsx",
-        "line": 105,
+        "line": 116,
         "column": 280,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 714.86,
+        "confidenceScore": 687.36,
         "context": "<Button type=\"button\" aria-label=\"Close parameter editor\" onClick={close}><CloseIcon size={14} /></Button>"
       },
       "resolution": "resolved",
@@ -3214,13 +3214,13 @@
       "scoutActualSymbol": "DeleteIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadParametersPanel.tsx",
-        "line": 112,
-        "column": 907,
+        "line": 124,
+        "column": 619,
         "symbol": "DeleteIcon",
         "exportedSymbol": "DeleteIcon",
         "catalogId": "delete",
-        "confidenceScore": 730.57,
-        "context": "<Button variant=\"danger\" type=\"button\" className=\"cad-parameter-delete\" aria-label={editor.kind === 'group' ? 'Remove parameter group' : 'Remove parameter'} disabled={editor.kind === 'parameter' && Boolean(selected?.usages.length)} title={selected?.usages.length ? 'This parameter is referenced. Remove its links before deleting it.' : editor.kind === 'group' ? 'Keeps values and moves them to Ungrouped' : 'Remove this unused value'} onClick={() => { try { assertCurrent(); if (editor.kind === 'group' && editor.originalId) onEditMany([{ kind: 'remove-parameter-group', groupId: editor.originalId }]); else if (editor.kind === 'parameter' && editor.originalName) onEditMany([{ kind: 'remove-parameter', name: editor.originalName }]); close(); } catch (error) { report(error); } }}><DeleteIcon size={12} /></Button>"
+        "confidenceScore": 693.43,
+        "context": "<Button variant=\"danger\" type=\"button\" className=\"cad-parameter-delete\" aria-label={editor.kind === 'group' ? 'Remove parameter group' : 'Remove parameter'} disabled={interactionLocked || submission.applying || editor.kind === 'parameter' && Boolean(selected?.usages.length)} title={selected?.usages.length ? 'This parameter is referenced. Remove its links before deleting it.' : editor.kind === 'group' ? 'Keeps values and moves them to Ungrouped' : 'Remove this unused value'} onClick={remove}><DeleteIcon size={12} /></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "DeleteIcon",
@@ -3237,13 +3237,13 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadParametersPanel.tsx",
-        "line": 112,
-        "column": 1066,
+        "line": 124,
+        "column": 830,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
         "catalogId": "confirm",
-        "confidenceScore": 310.57,
-        "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-parameter-apply\"><ConfirmIcon size={12} /> Apply</Button>"
+        "confidenceScore": 283.43,
+        "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-parameter-apply\" disabled={interactionLocked || submission.applying}><ConfirmIcon size={12} /> Apply</Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "ConfirmIcon",
@@ -3559,7 +3559,7 @@
       "scoutActualSymbol": "FitViewIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 540,
+        "line": 583,
         "column": 280,
         "symbol": "FitViewIcon",
         "exportedSymbol": "FitViewIcon",
@@ -3582,7 +3582,7 @@
       "scoutActualSymbol": "GridIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 540,
+        "line": 583,
         "column": 427,
         "symbol": "GridIcon",
         "exportedSymbol": "GridIcon",
@@ -3605,7 +3605,7 @@
       "scoutActualSymbol": "SnapIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 540,
+        "line": 583,
         "column": 573,
         "symbol": "SnapIcon",
         "exportedSymbol": "SnapIcon",
@@ -3628,7 +3628,7 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 547,
+        "line": 592,
         "column": 434,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -3651,7 +3651,7 @@
       "scoutActualSymbol": "UndoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 547,
+        "line": 592,
         "column": 664,
         "symbol": "UndoIcon",
         "exportedSymbol": "UndoIcon",
@@ -3674,13 +3674,13 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 547,
-        "column": 795,
+        "line": 592,
+        "column": 766,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 354.31,
-        "context": "<Button disabled={interactionLocked} onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button>"
+        "confidenceScore": 338.92,
+        "context": "<Button onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "CloseIcon",
@@ -3697,7 +3697,7 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 549,
+        "line": 594,
         "column": 106,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -3720,13 +3720,13 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 549,
-        "column": 215,
+        "line": 594,
+        "column": 209,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 349.5,
-        "context": "<Button onClick={() => setPoints([])}><CloseIcon size={13} /> Cancel drawing</Button>"
+        "confidenceScore": 337,
+        "context": "<Button onClick={cancelDrawing}><CloseIcon size={13} /> Cancel drawing</Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "CloseIcon",
@@ -3743,12 +3743,12 @@
       "scoutActualSymbol": "LinkIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchDimensionControls.tsx",
-        "line": 120,
+        "line": 128,
         "column": 172,
         "symbol": "LinkIcon",
         "exportedSymbol": "LinkIcon",
         "catalogId": "link",
-        "confidenceScore": 784.21,
+        "confidenceScore": 764.21,
         "context": "<Button variant=\"outline\" key={dimension.name} type=\"button\" style={annotation ? { left: annotation.label.x, top: annotation.label.y } : undefined} aria-label={`Edit ${dimension.label}`} aria-expanded={editor?.name === dimension.name} disabled={interactionLocked || Boolean(editor && editor.name !== dimension.name)} title={`${dimension.label}: ${valueText(resolved)} ${dimension.unit}${dimensionBinding.kind === 'parameter' ? ` · linked to ${dimensionBinding.name}` : dimensionBinding.kind === 'expression' ? ` · ${dimensionBinding.expression} (linked expression)` : ''}`} onClick={() => { if (interactionLocked || editor) return; editorDocument.current = cadDocument; previous.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setEditor({ name: dimension.name, value: String(resolved), error: '' }); onInspectInput?.(dimension.name); }}><span>{dimension.symbol}</span><strong>{valueText(resolved)}</strong>{dimension.unit && <small>{dimension.unit}</small>}{dimensionBinding.kind === 'parameter' ? <LinkIcon size={10} /> : dimensionBinding.kind === 'expression' || !dimension.enabled ? <LockedIcon size={10} /> : null}</Button>"
       },
       "resolution": "resolved",
@@ -3766,12 +3766,12 @@
       "scoutActualSymbol": "LockedIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchDimensionControls.tsx",
-        "line": 120,
+        "line": 128,
         "column": 260,
         "symbol": "LockedIcon",
         "exportedSymbol": "LockedIcon",
         "catalogId": "locked",
-        "confidenceScore": 784.21,
+        "confidenceScore": 764.21,
         "context": "<Button variant=\"outline\" key={dimension.name} type=\"button\" style={annotation ? { left: annotation.label.x, top: annotation.label.y } : undefined} aria-label={`Edit ${dimension.label}`} aria-expanded={editor?.name === dimension.name} disabled={interactionLocked || Boolean(editor && editor.name !== dimension.name)} title={`${dimension.label}: ${valueText(resolved)} ${dimension.unit}${dimensionBinding.kind === 'parameter' ? ` · linked to ${dimensionBinding.name}` : dimensionBinding.kind === 'expression' ? ` · ${dimensionBinding.expression} (linked expression)` : ''}`} onClick={() => { if (interactionLocked || editor) return; editorDocument.current = cadDocument; previous.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setEditor({ name: dimension.name, value: String(resolved), error: '' }); onInspectInput?.(dimension.name); }}><span>{dimension.symbol}</span><strong>{valueText(resolved)}</strong>{dimension.unit && <small>{dimension.unit}</small>}{dimensionBinding.kind === 'parameter' ? <LinkIcon size={10} /> : dimensionBinding.kind === 'expression' || !dimension.enabled ? <LockedIcon size={10} /> : null}</Button>"
       },
       "resolution": "resolved",
@@ -3789,12 +3789,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchDimensionControls.tsx",
-        "line": 126,
+        "line": 134,
         "column": 121,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 794.5,
+        "confidenceScore": 774.5,
         "context": "<Button type=\"button\" aria-label=\"Close dimension editor\" onClick={close}><CloseIcon size={12} /></Button>"
       },
       "resolution": "resolved",
@@ -3812,12 +3812,12 @@
       "scoutActualSymbol": "LockedIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchDimensionControls.tsx",
-        "line": 127,
+        "line": 135,
         "column": 96,
         "symbol": "LockedIcon",
         "exportedSymbol": "LockedIcon",
         "catalogId": "locked",
-        "confidenceScore": 394.5,
+        "confidenceScore": 374.5,
         "context": "return <div ref={root} className={`cad-sketch-dimension-controls${annotated ? ' has-annotations' : ''}`} style={annotated ? undefined : { left: placement.x, top: placement.y }} aria-label={profile.geometry.kind === 'plugin' ? 'Profile parameters' : 'Sketch dimensions'} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape' && editor) { event.preventDefault(); event.stopPropagation(); close(); } }}> {annotated && <svg className=\"cad-dimension-leaders\" aria-hidden=\"true\"><defs><marker id={arrowId} viewBox=\"0 0 8 6\" refX=\"0\" refY=\"3\" markerWidth=\"8\" markerHeight=\"6\" orient=\"auto-start-reverse\"><path d=\"M 0 3 L 8 0 L 8 6 Z\" /></marker></defs>{annotations.map(({ dimension, annotation }) => annotation && <g key={dimension.name} data-cad-dimension={dimension.quantity}>{annotation.extensions.map(([a, b], i) => <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className=\"cad-dimension-extension\" />)}{annotation.arc ? <path d={annotation.arc} markerStart={`url(#${arrowId})`} markerEnd={`url(#${arrowId})`} /> : <line x1={annotation.line[0].x} y1={annotation.line[0].y} x2={annotation.line[1].x} y2={annotation.line[1].y} markerStart={dimension.quantity === 'radius' ? undefined : `url(#${arrowId})`} markerEnd={`url(#${arrowId})`} />}</g>)}</svg>} <div className=\"cad-dimension-chips\">{annotations.map(({ dimension, annotation }) => { const dimensionBi"
       },
       "resolution": "resolved",
@@ -3835,12 +3835,12 @@
       "scoutActualSymbol": "LinkIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchDimensionControls.tsx",
-        "line": 129,
+        "line": 137,
         "column": 77,
         "symbol": "LinkIcon",
         "exportedSymbol": "LinkIcon",
         "catalogId": "link",
-        "confidenceScore": 394.5,
+        "confidenceScore": 374.5,
         "context": "return <div ref={root} className={`cad-sketch-dimension-controls${annotated ? ' has-annotations' : ''}`} style={annotated ? undefined : { left: placement.x, top: placement.y }} aria-label={profile.geometry.kind === 'plugin' ? 'Profile parameters' : 'Sketch dimensions'} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape' && editor) { event.preventDefault(); event.stopPropagation(); close(); } }}> {annotated && <svg className=\"cad-dimension-leaders\" aria-hidden=\"true\"><defs><marker id={arrowId} viewBox=\"0 0 8 6\" refX=\"0\" refY=\"3\" markerWidth=\"8\" markerHeight=\"6\" orient=\"auto-start-reverse\"><path d=\"M 0 3 L 8 0 L 8 6 Z\" /></marker></defs>{annotations.map(({ dimension, annotation }) => annotation && <g key={dimension.name} data-cad-dimension={dimension.quantity}>{annotation.extensions.map(([a, b], i) => <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className=\"cad-dimension-extension\" />)}{annotation.arc ? <path d={annotation.arc} markerStart={`url(#${arrowId})`} markerEnd={`url(#${arrowId})`} /> : <line x1={annotation.line[0].x} y1={annotation.line[0].y} x2={annotation.line[1].x} y2={annotation.line[1].y} markerStart={dimension.quantity === 'radius' ? undefined : `url(#${arrowId})`} markerEnd={`url(#${arrowId})`} />}</g>)}</svg>} <div className=\"cad-dimension-chips\">{annotations.map(({ dimension, annotation }) => { const dimensionBi"
       },
       "resolution": "resolved",
@@ -3858,13 +3858,13 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchDimensionControls.tsx",
-        "line": 131,
-        "column": 765,
+        "line": 139,
+        "column": 540,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
         "catalogId": "confirm",
-        "confidenceScore": 384.5,
-        "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-dimension-apply\" disabled={interactionLocked || !candidate.edits}><ConfirmIcon size={11} /> Apply</Button>"
+        "confidenceScore": 355.09,
+        "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-dimension-apply\" disabled={interactionLocked || submission.applying || !candidate.edits}><ConfirmIcon size={11} /> Apply</Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "ConfirmIcon",
@@ -3881,12 +3881,12 @@
       "scoutActualSymbol": "MeasureIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchProfilePanel.tsx",
-        "line": 127,
+        "line": 140,
         "column": 210,
         "symbol": "MeasureIcon",
         "exportedSymbol": "MeasureIcon",
         "catalogId": "measure",
-        "confidenceScore": 797,
+        "confidenceScore": 764.5,
         "context": "<Button type=\"button\" aria-label=\"Add dimension\" title=\"Constrain a size or angle\" disabled={blocked || !available.length} onClick={() => begin('dimension')}><MeasureIcon size={14} /> Dimension</Button>"
       },
       "resolution": "resolved",
@@ -3904,12 +3904,12 @@
       "scoutActualSymbol": "MoveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchProfilePanel.tsx",
-        "line": 127,
+        "line": 140,
         "column": 408,
         "symbol": "MoveIcon",
         "exportedSymbol": "MoveIcon",
         "catalogId": "move",
-        "confidenceScore": 797,
+        "confidenceScore": 764.5,
         "context": "<Button type=\"button\" aria-label=\"Move profile\" title=\"Move the contour without changing its dimensions\" disabled={blocked} onClick={() => begin('move')}><MoveIcon size={14} /> Move</Button>"
       },
       "resolution": "resolved",
@@ -3927,12 +3927,12 @@
       "scoutActualSymbol": "FilletIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchProfilePanel.tsx",
-        "line": 127,
+        "line": 140,
         "column": 617,
         "symbol": "FilletIcon",
         "exportedSymbol": "FilletIcon",
         "catalogId": "fillet",
-        "confidenceScore": 796.44,
+        "confidenceScore": 763.94,
         "context": "<Button type=\"button\" aria-label=\"Sketch fillet\" title=\"Round all four corners\" disabled={blocked} onClick={() => begin('fillet')}><FilletIcon size={14} /> Fillet</Button>"
       },
       "resolution": "resolved",
@@ -3950,12 +3950,12 @@
       "scoutActualSymbol": "LinkIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchProfilePanel.tsx",
-        "line": 128,
+        "line": 141,
         "column": 617,
         "symbol": "LinkIcon",
         "exportedSymbol": "LinkIcon",
         "catalogId": "link",
-        "confidenceScore": 765.83,
+        "confidenceScore": 733.33,
         "context": "<Button type=\"button\" aria-label={`Configure ${title(dimension.quantity)} dimension`} disabled={blocked} onClick={() => { captured.current = cadDocument; setEditor(dimensionEditor(dimension.quantity)); }}>{title(dimension.quantity)}<span>{formatCadQuantity(dimension.value)} {dimension.units === 'deg' ? '°' : 'mm'}</span>{dimension.source === 'expression' || typeof dimension.expression === 'string' && !Number.isFinite(Number(dimension.expression)) ? <LinkIcon size={11} /> : null}</Button>"
       },
       "resolution": "resolved",
@@ -3973,12 +3973,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchProfilePanel.tsx",
-        "line": 128,
+        "line": 141,
         "column": 864,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 740.3,
+        "confidenceScore": 707.8,
         "context": "<Button type=\"button\" aria-label={`Remove ${title(dimension.quantity)} dimension`} title=\"Release the dimension and retain the shape\" disabled={blocked} onClick={() => remove(dimension.id!)}><CloseIcon size={12} /></Button>"
       },
       "resolution": "resolved",
@@ -3996,13 +3996,13 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchProfilePanel.tsx",
-        "line": 138,
-        "column": 208,
+        "line": 153,
+        "column": 225,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
         "catalogId": "confirm",
-        "confidenceScore": 382,
-        "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-primary\" disabled={interactionLocked || !candidate.edits}><ConfirmIcon size={13} /> Apply</Button>"
+        "confidenceScore": 329.21,
+        "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-primary\" disabled={blocked || !candidate.edits || Boolean(candidateIssue)}><ConfirmIcon size={13} /> Apply</Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "ConfirmIcon",
@@ -4065,13 +4065,13 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadTreeRename.tsx",
-        "line": 27,
-        "column": 89,
+        "line": 30,
+        "column": 120,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
         "catalogId": "confirm",
-        "confidenceScore": 782,
-        "context": "<Button variant=\"primary\" type=\"submit\" aria-label=\"Apply name\" title=\"Apply name\"><ConfirmIcon size={13} /></Button>"
+        "confidenceScore": 759.5,
+        "context": "<Button variant=\"primary\" type=\"submit\" disabled={submission.applying} aria-label=\"Apply name\" title=\"Apply name\"><ConfirmIcon size={13} /></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "ConfirmIcon",
@@ -4088,13 +4088,13 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadTreeRename.tsx",
-        "line": 28,
-        "column": 96,
+        "line": 31,
+        "column": 94,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 797.91,
-        "context": "<Button type=\"button\" aria-label=\"Cancel rename\" title=\"Cancel rename\" onClick={onCancel}><CloseIcon size={13} /></Button>"
+        "confidenceScore": 781.32,
+        "context": "<Button type=\"button\" aria-label=\"Cancel rename\" title=\"Cancel rename\" onClick={cancel}><CloseIcon size={13} /></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "CloseIcon",
@@ -4180,12 +4180,12 @@
       "scoutActualSymbol": "NavigateBackIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 598,
+        "line": 637,
         "column": 138,
         "symbol": "ArrowLeft",
         "exportedSymbol": "ArrowLeft",
         "catalogId": "navigate-back",
-        "confidenceScore": 784.5,
+        "confidenceScore": 762,
         "context": "<Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button>"
       },
       "resolution": "resolved",
@@ -4203,12 +4203,12 @@
       "scoutActualSymbol": "ExpandDownIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 603,
+        "line": 642,
         "column": 211,
         "symbol": "ChevronDown",
         "exportedSymbol": "ChevronDown",
         "catalogId": "expand-down",
-        "confidenceScore": 377.36,
+        "confidenceScore": 354.86,
         "context": "<Button ref={fileMenuTrigger} disabled={locked} aria-haspopup=\"menu\" aria-expanded={fileMenu} aria-controls=\"cad-file-menu\" onClick={() => setFileMenu(!fileMenu)}>File <ChevronDown size={12} /></Button>"
       },
       "resolution": "resolved",
@@ -4226,13 +4226,13 @@
       "scoutActualSymbol": "FileNewIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 611,
+        "line": 650,
         "column": 220,
         "symbol": "FilePlus2",
         "exportedSymbol": "FilePlus2",
         "catalogId": "file-new",
-        "confidenceScore": 273.25,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) run(() => { try { props.onEdit({ kind: 'rename-document', name: nameDraft }); } finally { setNamePending(false); } }); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNameDraft(document.name); setNamePending(false); } }} /> <span className={`cad-save-state ${dirty ? 'is-dirty' : ''}`}"
+        "confidenceScore": 270.75,
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} /> <sp"
       },
       "resolution": "resolved",
       "actualSymbol": "FilePlus2",
@@ -4249,13 +4249,13 @@
       "scoutActualSymbol": "FolderOpenIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 611,
+        "line": 650,
         "column": 315,
         "symbol": "FolderOpen",
         "exportedSymbol": "FolderOpen",
         "catalogId": "folder-open",
-        "confidenceScore": 273.25,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) run(() => { try { props.onEdit({ kind: 'rename-document', name: nameDraft }); } finally { setNamePending(false); } }); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNameDraft(document.name); setNamePending(false); } }} /> <span className={`cad-save-state ${dirty ? 'is-dirty' : ''}`}"
+        "confidenceScore": 270.75,
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} /> <sp"
       },
       "resolution": "resolved",
       "actualSymbol": "FolderOpen",
@@ -4272,13 +4272,13 @@
       "scoutActualSymbol": "FolderOpenIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 611,
+        "line": 650,
         "column": 444,
         "symbol": "FolderOpen",
         "exportedSymbol": "FolderOpen",
         "catalogId": "folder-open",
-        "confidenceScore": 270.75,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) run(() => { try { props.onEdit({ kind: 'rename-document', name: nameDraft }); } finally { setNamePending(false); } }); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNameDraft(document.name); setNamePending(false); } }} /> <span className={`cad-save-state ${dirty ? 'is-dirty' : ''}`}"
+        "confidenceScore": 268.25,
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} /> <sp"
       },
       "resolution": "resolved",
       "actualSymbol": "FolderOpen",
@@ -4295,13 +4295,13 @@
       "scoutActualSymbol": "CameraCaptureIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 611,
+        "line": 650,
         "column": 737,
         "symbol": "CameraCaptureIcon",
         "exportedSymbol": "CameraCaptureIcon",
         "catalogId": "camera-capture",
-        "confidenceScore": 274.5,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) run(() => { try { props.onEdit({ kind: 'rename-document', name: nameDraft }); } finally { setNamePending(false); } }); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNameDraft(document.name); setNamePending(false); } }} /> <span className={`cad-save-state ${dirty ? 'is-dirty' : ''}`}"
+        "confidenceScore": 272,
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} /> <sp"
       },
       "resolution": "resolved",
       "actualSymbol": "CameraCaptureIcon",
@@ -4318,13 +4318,13 @@
       "scoutActualSymbol": "RefreshIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 611,
+        "line": 650,
         "column": 909,
         "symbol": "RefreshIcon",
         "exportedSymbol": "RefreshIcon",
         "catalogId": "refresh",
-        "confidenceScore": 274.5,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) run(() => { try { props.onEdit({ kind: 'rename-document', name: nameDraft }); } finally { setNamePending(false); } }); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNameDraft(document.name); setNamePending(false); } }} /> <span className={`cad-save-state ${dirty ? 'is-dirty' : ''}`}"
+        "confidenceScore": 272,
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} /> <sp"
       },
       "resolution": "resolved",
       "actualSymbol": "RefreshIcon",
@@ -4341,13 +4341,13 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 611,
+        "line": 650,
         "column": 1014,
         "symbol": "Download",
         "exportedSymbol": "Download",
         "catalogId": "download",
-        "confidenceScore": 274.5,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) run(() => { try { props.onEdit({ kind: 'rename-document', name: nameDraft }); } finally { setNamePending(false); } }); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNameDraft(document.name); setNamePending(false); } }} /> <span className={`cad-save-state ${dirty ? 'is-dirty' : ''}`}"
+        "confidenceScore": 272,
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} /> <sp"
       },
       "resolution": "resolved",
       "actualSymbol": "Download",
@@ -4364,13 +4364,13 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 611,
+        "line": 650,
         "column": 1155,
         "symbol": "Download",
         "exportedSymbol": "Download",
         "catalogId": "download",
-        "confidenceScore": 273.25,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) run(() => { try { props.onEdit({ kind: 'rename-document', name: nameDraft }); } finally { setNamePending(false); } }); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNameDraft(document.name); setNamePending(false); } }} /> <span className={`cad-save-state ${dirty ? 'is-dirty' : ''}`}"
+        "confidenceScore": 270.75,
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} /> <sp"
       },
       "resolution": "resolved",
       "actualSymbol": "Download",
@@ -4387,13 +4387,13 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 611,
+        "line": 650,
         "column": 1285,
         "symbol": "Download",
         "exportedSymbol": "Download",
         "catalogId": "download",
-        "confidenceScore": 273.25,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) run(() => { try { props.onEdit({ kind: 'rename-document', name: nameDraft }); } finally { setNamePending(false); } }); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNameDraft(document.name); setNamePending(false); } }} /> <span className={`cad-save-state ${dirty ? 'is-dirty' : ''}`}"
+        "confidenceScore": 270.75,
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} /> <sp"
       },
       "resolution": "resolved",
       "actualSymbol": "Download",
@@ -4410,13 +4410,13 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 611,
-        "column": 1616,
+        "line": 650,
+        "column": 1581,
         "symbol": "Download",
         "exportedSymbol": "Download",
         "catalogId": "download",
-        "confidenceScore": 275.75,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) run(() => { try { props.onEdit({ kind: 'rename-document', name: nameDraft }); } finally { setNamePending(false); } }); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNameDraft(document.name); setNamePending(false); } }} /> <span className={`cad-save-state ${dirty ? 'is-dirty' : ''}`}"
+        "confidenceScore": 273.25,
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} /> <sp"
       },
       "resolution": "resolved",
       "actualSymbol": "Download",
@@ -4433,13 +4433,13 @@
       "scoutActualSymbol": "SectionCamIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 611,
-        "column": 2225,
+        "line": 650,
+        "column": 2190,
         "symbol": "SectionCamIcon",
         "exportedSymbol": "SectionCamIcon",
         "catalogId": "section-cam",
-        "confidenceScore": 277,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) run(() => { try { props.onEdit({ kind: 'rename-document', name: nameDraft }); } finally { setNamePending(false); } }); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNameDraft(document.name); setNamePending(false); } }} /> <span className={`cad-save-state ${dirty ? 'is-dirty' : ''}`}"
+        "confidenceScore": 274.5,
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} /> <sp"
       },
       "resolution": "resolved",
       "actualSymbol": "SectionCamIcon",
@@ -4456,13 +4456,13 @@
       "scoutActualSymbol": "SendCamIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 611,
-        "column": 2457,
+        "line": 650,
+        "column": 2409,
         "symbol": "SendCamIcon",
         "exportedSymbol": "SendCamIcon",
         "catalogId": "send-cam",
-        "confidenceScore": 275.75,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) run(() => { try { props.onEdit({ kind: 'rename-document', name: nameDraft }); } finally { setNamePending(false); } }); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNameDraft(document.name); setNamePending(false); } }} /> <span className={`cad-save-state ${dirty ? 'is-dirty' : ''}`}"
+        "confidenceScore": 273.25,
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} /> <sp"
       },
       "resolution": "resolved",
       "actualSymbol": "SendCamIcon",
@@ -4479,12 +4479,12 @@
       "scoutActualSymbol": "UndoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 612,
+        "line": 651,
         "column": 122,
         "symbol": "Undo2",
         "exportedSymbol": "Undo2",
         "catalogId": "undo",
-        "confidenceScore": 764.5,
+        "confidenceScore": 762,
         "context": "<Button aria-label=\"Undo\" title=\"Undo · Ctrl+Z\" disabled={!canUndo || locked} onClick={() => run(props.onUndo)}><Undo2 size={15} /></Button>"
       },
       "resolution": "resolved",
@@ -4502,12 +4502,12 @@
       "scoutActualSymbol": "RedoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 612,
+        "line": 651,
         "column": 268,
         "symbol": "Redo2",
         "exportedSymbol": "Redo2",
         "catalogId": "redo",
-        "confidenceScore": 764.5,
+        "confidenceScore": 762,
         "context": "<Button aria-label=\"Redo\" title=\"Redo · Ctrl+Shift+Z\" disabled={!canRedo || locked} onClick={() => run(props.onRedo)}><Redo2 size={15} /></Button>"
       },
       "resolution": "resolved",
@@ -4525,12 +4525,12 @@
       "scoutActualSymbol": "SaveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 613,
+        "line": 652,
         "column": 70,
         "symbol": "Save",
         "exportedSymbol": "Save",
         "catalogId": "save",
-        "confidenceScore": 364.5,
+        "confidenceScore": 362,
         "context": "<Button disabled={locked} onClick={() => run(props.onSave)}><Save size={14} /> {storageBusy ? 'Working…' : 'Save'}</Button>"
       },
       "resolution": "resolved",
@@ -4548,12 +4548,12 @@
       "scoutActualSymbol": "SketchIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 620,
+        "line": 659,
         "column": 82,
         "symbol": "SketchIcon",
         "exportedSymbol": "SketchIcon",
         "catalogId": "sketch",
-        "confidenceScore": 434.5,
+        "confidenceScore": 432,
         "context": "toolButton('Sketch', SketchIcon, startSketch, locked)"
       },
       "resolution": "resolved",
@@ -4571,12 +4571,12 @@
       "scoutActualSymbol": "DatumPlaneIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 620,
+        "line": 659,
         "column": 136,
         "symbol": "DatumPlaneIcon",
         "exportedSymbol": "DatumPlaneIcon",
         "catalogId": "datum-plane",
-        "confidenceScore": 454.5,
+        "confidenceScore": 452,
         "context": "toolButton('Plane', DatumPlaneIcon, () => startFeature('datum-plane'), locked)"
       },
       "resolution": "resolved",
@@ -4594,12 +4594,12 @@
       "scoutActualSymbol": "CurveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 620,
+        "line": 659,
         "column": 216,
         "symbol": "CurveIcon",
         "exportedSymbol": "CurveIcon",
         "catalogId": "curve",
-        "confidenceScore": 434.5,
+        "confidenceScore": 432,
         "context": "toolButton('Curve', CurveIcon, () => startFeature('curve'), locked)"
       },
       "resolution": "resolved",
@@ -4617,12 +4617,12 @@
       "scoutActualSymbol": "AddIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 621,
+        "line": 660,
         "column": 62,
         "symbol": "AddIcon",
         "exportedSymbol": "AddIcon",
         "catalogId": "add",
-        "confidenceScore": 437.83,
+        "confidenceScore": 435.33,
         "context": "toolButton('Plugins', AddIcon, () => setPluginsOpen(true), locked)"
       },
       "resolution": "resolved",
@@ -4640,12 +4640,12 @@
       "scoutActualSymbol": "SelectIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 73,
         "symbol": "SelectIcon",
         "exportedSymbol": "SelectIcon",
         "catalogId": "select",
-        "confidenceScore": 437.83,
+        "confidenceScore": 435.33,
         "context": "toolButton('Select', SelectIcon, () => setTool('select'), locked, tool === 'select')"
       },
       "resolution": "resolved",
@@ -4663,12 +4663,12 @@
       "scoutActualSymbol": "RectangleIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 162,
         "symbol": "RectangleIcon",
         "exportedSymbol": "RectangleIcon",
         "catalogId": "rectangle",
-        "confidenceScore": 442,
+        "confidenceScore": 439.5,
         "context": "toolButton('Rectangle', RectangleIcon, () => { setTool('rectangle'); setProfileId(null); }, locked, tool === 'rectangle')"
       },
       "resolution": "resolved",
@@ -4686,12 +4686,12 @@
       "scoutActualSymbol": "CircleIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 282,
         "symbol": "CircleIcon",
         "exportedSymbol": "CircleIcon",
         "catalogId": "circle",
-        "confidenceScore": 440.21,
+        "confidenceScore": 437.71,
         "context": "toolButton('Circle', CircleIcon, () => { setTool('circle'); setProfileId(null); }, locked, tool === 'circle')"
       },
       "resolution": "resolved",
@@ -4709,12 +4709,12 @@
       "scoutActualSymbol": "SlotIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 391,
         "symbol": "SlotIcon",
         "exportedSymbol": "SlotIcon",
         "catalogId": "slot",
-        "confidenceScore": 442,
+        "confidenceScore": 439.5,
         "context": "toolButton('Slot', SlotIcon, () => { setTool('slot'); setProfileId(null); }, locked, tool === 'slot')"
       },
       "resolution": "resolved",
@@ -4732,12 +4732,12 @@
       "scoutActualSymbol": "PolylineIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 498,
         "symbol": "PolylineIcon",
         "exportedSymbol": "PolylineIcon",
         "catalogId": "polyline",
-        "confidenceScore": 443.39,
+        "confidenceScore": 440.89,
         "context": "toolButton('Polyline', PolylineIcon, () => { setTool('polygon'); setProfileId(null); }, locked, tool === 'polygon')"
       },
       "resolution": "resolved",
@@ -4755,12 +4755,12 @@
       "scoutActualSymbol": "ClosedPathIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 611,
         "symbol": "ClosedPathIcon",
         "exportedSymbol": "ClosedPathIcon",
         "catalogId": "closed-path",
-        "confidenceScore": 448.62,
+        "confidenceScore": 446.12,
         "context": "toolButton('Path', ClosedPathIcon, () => { setTool('path'); setProfileId(null); }, locked, tool === 'path', 'Draw a closed path with lines and three-point arcs')"
       },
       "resolution": "resolved",
@@ -4778,12 +4778,12 @@
       "scoutActualSymbol": "MeasureIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 817,
         "symbol": "MeasureIcon",
         "exportedSymbol": "MeasureIcon",
         "catalogId": "measure",
-        "confidenceScore": 437.83,
+        "confidenceScore": 435.33,
         "context": "toolButton('Dimension', MeasureIcon, () => beginProfileCommand('dimension'), locked || !sketchDimensionAvailable)"
       },
       "resolution": "resolved",
@@ -4801,12 +4801,12 @@
       "scoutActualSymbol": "MoveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 935,
         "symbol": "MoveIcon",
         "exportedSymbol": "MoveIcon",
         "catalogId": "move",
-        "confidenceScore": 445.41,
+        "confidenceScore": 442.91,
         "context": "toolButton('Move profile', MoveIcon, () => beginProfileCommand('move'), locked || !profile || profile.geometry.kind === 'plugin')"
       },
       "resolution": "resolved",
@@ -4824,12 +4824,12 @@
       "scoutActualSymbol": "PadPocketIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 1491,
         "symbol": "PadPocketIcon",
         "exportedSymbol": "PadPocketIcon",
         "catalogId": "pad-pocket",
-        "confidenceScore": 442,
+        "confidenceScore": 439.5,
         "context": "toolButton('Pad / Pocket', PadPocketIcon, () => startFeature('extrude'), locked || !hasSketch)"
       },
       "resolution": "resolved",
@@ -4847,12 +4847,12 @@
       "scoutActualSymbol": "RevolveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 1582,
         "symbol": "RevolveIcon",
         "exportedSymbol": "RevolveIcon",
         "catalogId": "revolve",
-        "confidenceScore": 437.83,
+        "confidenceScore": 435.33,
         "context": "toolButton('Revolve', RevolveIcon, () => startFeature('revolve'), locked || !hasSketch)"
       },
       "resolution": "resolved",
@@ -4870,12 +4870,12 @@
       "scoutActualSymbol": "LoftIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 1668,
         "symbol": "LoftIcon",
         "exportedSymbol": "LoftIcon",
         "catalogId": "loft",
-        "confidenceScore": 449.5,
+        "confidenceScore": 447,
         "context": "toolButton('Loft', LoftIcon, () => startFeature('loft'), locked || document.features.filter(feature => feature.kind === 'sketch' && !feature.suppressed).length < 2, false, 'Loft through ordered sketch sections')"
       },
       "resolution": "resolved",
@@ -4893,12 +4893,12 @@
       "scoutActualSymbol": "SweepIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 1882,
         "symbol": "SweepIcon",
         "exportedSymbol": "SweepIcon",
         "catalogId": "sweep",
-        "confidenceScore": 449.5,
+        "confidenceScore": 447,
         "context": "toolButton('Sweep', SweepIcon, () => startFeature('sweep'), locked || !activeSketches.some(hasMaterial) || !document.features.some(feature => feature.kind === 'curve' && !feature.suppressed), false, 'Sweep a profile along a reference Curve')"
       },
       "resolution": "resolved",
@@ -4916,12 +4916,12 @@
       "scoutActualSymbol": "ShellIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 2258,
         "symbol": "ShellIcon",
         "exportedSymbol": "ShellIcon",
         "catalogId": "shell",
-        "confidenceScore": 446.81,
+        "confidenceScore": 444.31,
         "context": "toolButton('Shell', ShellIcon, () => startFeature('shell'), locked || !topologyReady || !props.onResolveSelection || topologySelection?.picks[0]?.kind !== 'face')"
       },
       "resolution": "resolved",
@@ -4939,12 +4939,12 @@
       "scoutActualSymbol": "BooleanIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 2424,
         "symbol": "BooleanIcon",
         "exportedSymbol": "BooleanIcon",
         "catalogId": "boolean",
-        "confidenceScore": 442,
+        "confidenceScore": 439.5,
         "context": "toolButton('Boolean', BooleanIcon, () => startFeature('boolean'), locked || currentBodyIds.length < 2)"
       },
       "resolution": "resolved",
@@ -4962,12 +4962,12 @@
       "scoutActualSymbol": "Move3dIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 2563,
         "symbol": "Move3dIcon",
         "exportedSymbol": "Move3dIcon",
         "catalogId": "move-3d",
-        "confidenceScore": 440.21,
+        "confidenceScore": 437.71,
         "context": "toolButton('Move', Move3dIcon, () => startFeature('transform'), locked || !hasBody)"
       },
       "resolution": "resolved",
@@ -4985,12 +4985,12 @@
       "scoutActualSymbol": "MirrorIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 622,
+        "line": 661,
         "column": 2739,
         "symbol": "MirrorIcon",
         "exportedSymbol": "MirrorIcon",
         "catalogId": "mirror",
-        "confidenceScore": 437.83,
+        "confidenceScore": 435.33,
         "context": "toolButton('Mirror', MirrorIcon, () => startFeature('mirror'), locked || !hasBody)"
       },
       "resolution": "resolved",
@@ -5008,8 +5008,8 @@
       "scoutActualSymbol": "SketchIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 638,
-        "column": 1649,
+        "line": 677,
+        "column": 1679,
         "symbol": "PencilRuler",
         "exportedSymbol": "PencilRuler",
         "catalogId": "sketch",
@@ -5031,13 +5031,13 @@
       "scoutActualSymbol": "BusyIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 629,
+        "line": 668,
         "column": 89,
         "symbol": "Loader2",
         "exportedSymbol": "Loader2",
         "catalogId": "busy",
-        "confidenceScore": 267.1,
-        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} inspection={sketchInspection} key={`${document.id}/${canvasReference.id}`} sketch={canvasReference} documentVersion={props.documentVersion} parameters={previewParameters ?? document.parameters} placementLabel={cadPlacementLabel(canvasReference.plane, document.features)} tool={tool} selectedProfileId={profileId} onSelectProfile={canvasReference.kind === 'curve' ? ()"
+        "confidenceScore": 264.63,
+        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} inspection={sketchInspection} key={`${document.id}/${canvasReference.id}`} sketch={canvasReference} documentVersion={props.documentVersion} parameters={preparedSketchDocument?.parameters ?? previewParameters ?? document.parameters} placementLabel={cadPlacementLabel(canvasReference.plane, document.features"
       },
       "resolution": "resolved",
       "actualSymbol": "Loader2",
@@ -5054,12 +5054,12 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 633,
+        "line": 672,
         "column": 677,
         "symbol": "Check",
         "exportedSymbol": "Check",
         "catalogId": "confirm",
-        "confidenceScore": 753.97,
+        "confidenceScore": 751.47,
         "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" aria-label=\"Finish area selection\" title=\"Keep these areas\" onClick={currentRegionPick.onFinish}><Check size={16} /></Button>"
       },
       "resolution": "resolved",
@@ -5077,12 +5077,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 633,
+        "line": 672,
         "column": 822,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 757.83,
+        "confidenceScore": 755.33,
         "context": "<Button aria-label=\"Cancel area selection\" title=\"Restore previous area choice\" onClick={currentRegionPick.onCancel}><CloseIcon size={13} /></Button>"
       },
       "resolution": "resolved",
@@ -5100,12 +5100,12 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 633,
+        "line": 672,
         "column": 1018,
         "symbol": "Check",
         "exportedSymbol": "Check",
         "catalogId": "confirm",
-        "confidenceScore": 752,
+        "confidenceScore": 749.5,
         "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" aria-label=\"Finish sketch\" title=\"Finish sketch\" disabled={locked} onClick={finishSketch}><Check size={16} /></Button>"
       },
       "resolution": "resolved",
@@ -5123,12 +5123,12 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 633,
+        "line": 672,
         "column": 1233,
         "symbol": "Check",
         "exportedSymbol": "Check",
         "catalogId": "confirm",
-        "confidenceScore": 752.74,
+        "confidenceScore": 750.24,
         "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" aria-label=\"Finish curve editing\" title=\"Finish curve editing\" disabled={locked} onClick={finishCurve}><Check size={16} /></Button>"
       },
       "resolution": "resolved",
@@ -5146,12 +5146,12 @@
       "scoutActualSymbol": "ExpandDownIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 633,
+        "line": 672,
         "column": 1490,
         "symbol": "ChevronDown",
         "exportedSymbol": "ChevronDown",
         "catalogId": "expand-down",
-        "confidenceScore": 764.5,
+        "confidenceScore": 762,
         "context": "<Button aria-label={inspectorCollapsed ? 'Expand configuration' : 'Minimize configuration'} aria-expanded={!inspectorCollapsed} disabled={pending} onClick={() => setInspectorCollapsed(!inspectorCollapsed)}>{inspectorCollapsed ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</Button>"
       },
       "resolution": "resolved",
@@ -5169,12 +5169,12 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 633,
+        "line": 672,
         "column": 1518,
         "symbol": "ChevronRight",
         "exportedSymbol": "ChevronRight",
         "catalogId": "expand-right",
-        "confidenceScore": 764.5,
+        "confidenceScore": 762,
         "context": "<Button aria-label={inspectorCollapsed ? 'Expand configuration' : 'Minimize configuration'} aria-expanded={!inspectorCollapsed} disabled={pending} onClick={() => setInspectorCollapsed(!inspectorCollapsed)}>{inspectorCollapsed ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</Button>"
       },
       "resolution": "resolved",
@@ -5192,12 +5192,12 @@
       "scoutActualSymbol": "DeleteIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 633,
+        "line": 672,
         "column": 1694,
         "symbol": "Trash2",
         "exportedSymbol": "Trash2",
         "catalogId": "delete",
-        "confidenceScore": 764.5,
+        "confidenceScore": 762,
         "context": "<Button aria-label=\"Delete selected feature or profile\" disabled={locked} onClick={removeSelected}><Trash2 size={13} /></Button>"
       },
       "resolution": "resolved",
@@ -5215,13 +5215,13 @@
       "scoutActualSymbol": "BusyIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 636,
+        "line": 675,
         "column": 86,
         "symbol": "Loader2",
         "exportedSymbol": "Loader2",
         "catalogId": "busy",
-        "confidenceScore": 268.4,
-        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} inspection={sketchInspection} key={`${document.id}/${canvasReference.id}`} sketch={canvasReference} documentVersion={props.documentVersion} parameters={previewParameters ?? document.parameters} placementLabel={cadPlacementLabel(canvasReference.plane, document.features)} tool={tool} selectedProfileId={profileId} onSelectProfile={canvasReference.kind === 'curve' ? ()"
+        "confidenceScore": 265.95,
+        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} inspection={sketchInspection} key={`${document.id}/${canvasReference.id}`} sketch={canvasReference} documentVersion={props.documentVersion} parameters={preparedSketchDocument?.parameters ?? previewParameters ?? document.parameters} placementLabel={cadPlacementLabel(canvasReference.plane, document.features"
       },
       "resolution": "resolved",
       "actualSymbol": "Loader2",
@@ -5238,12 +5238,12 @@
       "scoutActualSymbol": "CurveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 638,
-        "column": 1470,
+        "line": 677,
+        "column": 1500,
         "symbol": "Spline",
         "exportedSymbol": "Spline",
         "catalogId": "curve",
-        "confidenceScore": 364.5,
+        "confidenceScore": 362,
         "context": "<Button disabled={locked || selected.suppressed} onClick={() => editCurve(selected)}><Spline size={13} /> Edit curve</Button>"
       },
       "resolution": "resolved",
@@ -5261,13 +5261,13 @@
       "scoutActualSymbol": "SketchIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 628,
+        "line": 667,
         "column": 89,
         "symbol": "PencilRuler",
         "exportedSymbol": "PencilRuler",
         "catalogId": "sketch",
-        "confidenceScore": 290.8,
-        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} inspection={sketchInspection} key={`${document.id}/${canvasReference.id}`} sketch={canvasReference} documentVersion={props.documentVersion} parameters={previewParameters ?? document.parameters} placementLabel={cadPlacementLabel(canvasReference.plane, document.features)} tool={tool} selectedProfileId={profileId} onSelectProfile={canvasReference.kind === 'curve' ? ()"
+        "confidenceScore": 263.32,
+        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} inspection={sketchInspection} key={`${document.id}/${canvasReference.id}`} sketch={canvasReference} documentVersion={props.documentVersion} parameters={preparedSketchDocument?.parameters ?? previewParameters ?? document.parameters} placementLabel={cadPlacementLabel(canvasReference.plane, document.features"
       },
       "resolution": "resolved",
       "actualSymbol": "PencilRuler",
@@ -5284,13 +5284,13 @@
       "scoutActualSymbol": "DeleteIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 642,
-        "column": 822,
+        "line": 681,
+        "column": 970,
         "symbol": "Trash2",
         "exportedSymbol": "Trash2",
         "catalogId": "delete",
-        "confidenceScore": 357.09,
-        "context": "<Button variant=\"danger\" className=\"cad-danger\" onClick={() => run(() => { props.onEdit({ kind: 'delete-feature', featureId: deleteFeature.id, cascade: dependentNames.length > 0 }); setDeleteFeature(null); setSelectedId(null); })}><Trash2 size={13} /> Delete{dependentNames.length ? ' with dependents' : ''}</Button>"
+        "confidenceScore": 337,
+        "context": "<Button variant=\"danger\" className=\"cad-danger\" disabled={commandSubmission.applying} onClick={() => submitEdit(signal => props.onEdit({ kind: 'delete-feature', featureId: deleteFeature.id, cascade: dependentNames.length > 0 }, signal), () => { setDeleteFeature(null); setSelectedId(current => current === deleteFeature.id ? null : current); })}><Trash2 size={13} /> Delete{dependentNames.length ? ' with dependents' : ''}</Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "Trash2",
@@ -7998,35 +7998,35 @@
     },
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 18,
+      "line": 19,
       "symbol": "SlotIcon",
       "catalogId": "slot",
       "context": "slot: SlotIcon"
     },
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 18,
+      "line": 19,
       "symbol": "ClosedPathIcon",
       "catalogId": "closed-path",
       "context": "polygon: ClosedPathIcon"
     },
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 18,
+      "line": 19,
       "symbol": "ClosedPathIcon",
       "catalogId": "closed-path",
       "context": "path: ClosedPathIcon"
     },
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 18,
+      "line": 19,
       "symbol": "PluginIcon",
       "catalogId": "plugin",
       "context": "plugin: PluginIcon"
     },
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 203,
+      "line": 208,
       "symbol": "WarningIcon",
       "catalogId": "warning",
       "context": "<Button type=\"button\" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)} aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${diagnostic.message}` : ''}`} onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)} onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); }}> <Icon size={14} /><span className=\"cad-feature-name\">{feature.name}</span> {diagnostic && <span className=\"cad-tree-error\" aria-label={diagnostic.message}><WarningIcon size={12} /></span>}{feature.suppressed && <span className=\"cad-tree-muted\">off</span>} </Button>"

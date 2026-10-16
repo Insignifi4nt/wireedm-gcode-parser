@@ -35,6 +35,35 @@ async function renderPanel(session = new CadSession(linkedDocument())) {
   await act(async () => root.render(<Harness />)); return { session, inspect, pending, edits };
 }
 describe('document parameter editing', () => {
+  it('retains a rejected asynchronous edit and cancels its old owner before another editor opens', async () => {
+    const session = new CadSession(linkedDocument()), pending = vi.fn();
+    let rejectEdit: (error: Error) => void = () => { throw new Error('Edit was not started.'); };
+    let acceptEdit: () => void = () => { throw new Error('Edit was not started.'); };
+    let activeSignal: AbortSignal | undefined;
+    const apply = vi.fn((batch: readonly CadEdit[], signal?: AbortSignal) => {
+      activeSignal = signal;
+      return new Promise<void>((resolve, reject) => { rejectEdit = reject; acceptEdit = () => { signal?.throwIfAborted(); session.edit(batch); resolve(); }; });
+    });
+    await act(async () => root.render(<CadParametersPanel document={session.getSnapshot().document} onEditMany={apply}
+      onInspectParameter={() => {}} onPendingChange={pending} interactionLocked={false} cancelSignal={0} />));
+    const before = session.getSnapshot();
+    await click('Edit parameter radius'); await input('Parameter value', '5'); await click('Apply');
+    expect(dialog().querySelector<HTMLInputElement>('input[aria-label="Parameter value"]')?.value).toBe('5');
+    expect(dialog().querySelector<HTMLInputElement>('input[aria-label="Parameter value"]')?.disabled || dialog().querySelector('fieldset')?.disabled).toBe(true);
+    expect(pending).toHaveBeenLastCalledWith(true);
+    await act(async () => rejectEdit(new Error('These constraints conflict.')));
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toContain('constraints conflict');
+    expect(dialog().querySelector<HTMLInputElement>('input[aria-label="Parameter value"]')?.value).toBe('5');
+    expect(session.getSnapshot()).toBe(before);
+    await click('Apply'); await click('Close parameter editor');
+    expect(activeSignal?.aborted).toBe(true);
+    await click('Edit parameter freeValue');
+    expect(() => acceptEdit()).toThrow();
+    await act(async () => rejectEdit(new DOMException('Cancelled', 'AbortError')));
+    expect(dialog().getAttribute('aria-label')).toBe('Edit freeValue');
+    expect(dialog().querySelector('[role="alert"]')).toBeNull();
+    expect(session.getSnapshot()).toBe(before);
+  });
   it.each([4e-9, -4e-9])('keeps the nonzero named angle %s visible while its raw editor and Cancel retain exact data', async angle => {
     const initial = { ...createCadDocument(), parameters: { tilt: angle, ordinary: 1234567.891234567 }, features: [{ id: 'slot', name: 'Slot', kind: 'sketch' as const,
       suppressed: false, plane: 'XY' as const, offset: 0, profiles: [{ id: 'profile', name: 'Slot', construction: false,

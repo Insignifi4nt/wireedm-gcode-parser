@@ -29,6 +29,9 @@ const editDescriptions: Partial<Record<CadEdit['kind'], string>> = {
   'remove-sketch-dimension': 'Remove explicit intent; retains the geometry scalar, including any driving expression.',
   'translate-sketch-profiles': 'Move contours in local XY mm; rejects nonzero motion on an expression-driven position axis.',
   'move-sketch-handle': 'Use a revision-scoped grip from cad_inspect_sketch_handles. Local-mm delta; projects onto free components, preserves drivers.',
+  'move-sketch-point': 'Move a stable graph point by local-mm delta. Solves temporary drag intent, retaining relations and exact expression drivers. No saved drag constraint.',
+  'set-sketch-relation': 'Add or replace a stable sketch-owned graph relation. Solve and validate atomically; conflicting/redundant relations reject the batch.',
+  'remove-sketch-relation': 'Remove one graph relation by exact ID, retaining its current geometry. Missing IDs reject.',
 };
 export const CadToolEditDefinitions = CadEditSchema.anyOf.map(edit => 'feature' in edit.properties
   ? Type.Object({ ...edit.properties, feature: featureEnvelope }, { additionalProperties: false })

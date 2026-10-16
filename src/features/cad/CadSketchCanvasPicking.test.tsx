@@ -114,7 +114,7 @@ describe('sketch canvas profile picking', () => {
     const h = await fixture([], { tool: 'rectangle' });
     await h.click(2, 2); expect(h.pending).toHaveBeenLastCalledWith(true);
     await h.click(12, 12);
-    expect(h.added).toHaveBeenCalledWith({ kind: 'rectangle', x: 0, y: 0, width: 10, height: 10, cornerRadius: 0 });
+    expect(h.added).toHaveBeenCalledWith({ kind: 'rectangle', x: 0, y: 0, width: 10, height: 10, cornerRadius: 0 }, expect.any(AbortSignal));
     expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.selected).not.toHaveBeenCalled();
     await h.render({ tool: 'select' }); await h.click(2, 2);
     expect(h.added).toHaveBeenCalledTimes(1); expect(h.selected).toHaveBeenLastCalledWith(null);
