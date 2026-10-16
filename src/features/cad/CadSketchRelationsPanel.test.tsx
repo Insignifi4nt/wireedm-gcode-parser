@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { applyCadEdits } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { CadSession } from './cadSession';
 import { CadSketchRelationsPanel, type CadSketchRelationsPanelProps } from './CadSketchRelationsPanel';
 import type { CadSketchGraphSelection } from './cadSketchGraphInteraction';
@@ -12,7 +13,7 @@ let container: HTMLDivElement, root: Root;
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
-async function mount(document: CadDocument, initial: CadSketchGraphSelection, overrides: Partial<Pick<CadSketchRelationsPanelProps, 'onEditMany' | 'onPrepareEdits'>> = {}) {
+async function mount(document: CadDocument, initial: CadSketchGraphSelection, overrides: Partial<Pick<CadSketchRelationsPanelProps, 'onEditMany' | 'onPrepareEdits' | 'initialCommand'>> = {}) {
   const session = new CadSession(document), preview = vi.fn(), inspect = vi.fn(), pending = vi.fn((open: boolean) => session.setWorkflowOpen(open));
   let selection = initial;
   const edit = vi.fn<NonNullable<CadSketchRelationsPanelProps['onEditMany']>>((edits, signal) => { signal?.throwIfAborted(); return session.edit(edits); });
@@ -55,6 +56,56 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it('sends linked parameter and corner intent to awaited preparation before inspecting unsolved geometry', async () => {
+    const document = parseCadDocument({ ...createCadDocument('Linked corner', 'linked-corner'), schemaVersion: 2, parameters: { size: 2 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'v', position: ['0', '0'] }, { id: 'a', position: [20, '0'] }, { id: 'b', position: ['0', '16'] }],
+        entities: [{ id: 'a-line', kind: 'line', construction: false, startPointId: 'v', endPointId: 'a' },
+          { id: 'b-line', kind: 'line', construction: false, startPointId: 'v', endPointId: 'b' }],
+        relations: [{ id: 'width', kind: 'distance', pointIds: ['v', 'a'], value: 'size * 10' }]
+      }
+    }] });
+    const prepare = vi.fn(async () => document);
+    const h = await mount(document, { kind: 'point', id: 'v' }, { initialCommand: { kind: 'fillet' }, onPrepareEdits: prepare });
+    await click('Edit Fillet radius relation'); await input('Fillet radius expression', ' size ');
+    await click('Keep relation'); await click('Close Fillet radius relation help');
+    await input('Fillet radius mm', '3');
+    await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
+    expect(prepare).toHaveBeenLastCalledWith([
+      { kind: 'set-parameter', name: 'size', value: 3 },
+      expect.objectContaining({ kind: 'create-sketch-corner', sketchId: 'sketch', pointId: 'v', treatment: expect.objectContaining({ kind: 'fillet', radius: ' size ' }) })
+    ], expect.any(AbortSignal));
+    expect(h.session.getSnapshot().document).toBe(document);
+    expect(button('Apply').disabled).toBe(false);
+  });
+
+  it.each(['fillet', 'chamfer'] as const)('prepares one selected %s corner without rewriting its original drivers and accepts one undoable change', async kind => {
+    const document = parseCadDocument({ ...createCadDocument('Plate', 'plate'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }, { id: 'd', position: [0, 10] }],
+        entities: [
+          { id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+          { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+          { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+          { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' }
+        ], relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }]
+      }
+    }] });
+    const h = await mount(document, { kind: 'point', id: 'a' }, { initialCommand: { kind } });
+    if (kind === 'fillet') await input('Fillet radius mm', '2');
+    else { await input('Setback 1 mm', '2'); await input('Setback 2 mm', '3'); }
+    expect(h.session.getSnapshot()).toMatchObject({ document, canUndo: false, workflowOpen: true });
+    await click('Apply');
+    expect(h.edit).toHaveBeenCalledTimes(1);
+    const accepted = h.session.getSnapshot().document, sketch = accepted.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Corner sketch missing.');
+    expect(sketch.graph.points[0]).toEqual({ id: 'a', position: [' 0 ', '0'] });
+    expect(sketch.graph.relations[0]).toEqual({ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] });
+    expect(sketch.graph.relations[1]).toMatchObject({ kind: `${kind}-corner`, pointId: 'a', lineIds: ['ab', 'da'] });
+    expect(measureCadSketch(accepted, sketch.id).materialAreaMm2).toBeCloseTo(kind === 'fillet' ? 196 + Math.PI : 197, 9);
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toBe(document);
+  });
+
   it('previews the whole candidate, retains a radius parameter link on numeric edits and changes formulas only through fx', async () => {
     const h = await mount(circleDocument(), { kind: 'entity', id: 'circle' }), accepted = h.session.getSnapshot().document;
     await input('Radius mm', '7.25');

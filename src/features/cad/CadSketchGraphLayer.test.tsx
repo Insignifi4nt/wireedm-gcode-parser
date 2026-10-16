@@ -60,6 +60,17 @@ async function fixture(overrides: Partial<Props> = {}) {
 }
 
 describe('graph point interaction ownership', () => {
+  it('keeps fully constrained points selectable for inspection and corner tools without advertising movement', async () => {
+    const h = await fixture();
+    await h.render({ controls: { ...h.props().controls, degreesOfFreedom: 0 } });
+    expect(h.point().getAttribute('aria-disabled')).not.toBe('true');
+    expect(h.point().classList.contains('is-locked')).toBe(true);
+    await h.pointer(h.point(), 'pointerdown'); await h.pointer(h.point(), 'pointerup');
+    await h.key(h.point(), 'Enter'); await h.key(h.point(), 'ArrowRight');
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: 'a' });
+    expect(h.capture).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+  });
+
   it('rejects secondary starts and preserves the initiating pointer through a competing primary pointer', async () => {
     const h = await fixture();
     await h.pointer(h.point('b'), 'pointerdown', {}, 22, false);

@@ -3,6 +3,7 @@ import { CadError } from '@/domain/cad/cadError';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
 import { page } from '@/features/webmcp/siteTools';
 import { summarizeMessage, summarizeDiagnostic } from '@/features/webmcp/diagnosticSummaries';
 import type { CadSketchSolveDiagnostics, CadSketchSolveResult, CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
@@ -61,7 +62,9 @@ export async function inspectCadSketchConstraints(document: CadDocument, sketchI
 const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
   coincident: 'Keeps two distinct source points at the same location.', horizontal: 'Keeps two points at the same Y coordinate.',
   vertical: 'Keeps two points at the same X coordinate.', 'fixed-point': 'Fixes a point at its driving X and Y coordinates.',
-  'fixed-axis': 'Fixes one point coordinate; the other axis can remain free.', distance: 'Keeps the straight-line distance between two points.'
+  'fixed-axis': 'Fixes one point coordinate; the other axis can remain free.', distance: 'Keeps the straight-line distance between two points.',
+  'fillet-corner': 'Keeps a tangent minor arc at the original reference corner, with a driving radius and finite trimmed sides.',
+  'chamfer-corner': 'Keeps two driving setbacks along the finite sides of the original reference corner.'
 };
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
@@ -89,9 +92,11 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
   if (input.section === 'entities') return page(graph?.entities ?? [], input, source => ({ source, diagnostics: diagnosticState(source.id), points: entityPoints(source).map(point),
     ...(source.kind === 'circle' ? { radius: scalar(source.radius) } : {}) }));
   return page(graph?.relations ?? [], input, source => ({ source, meaning: relationMeanings[source.kind], diagnostics: diagnosticState(source.id),
-    points: ('pointIds' in source ? source.pointIds : [source.pointId]).map(point),
-    ...(source.kind === 'distance' || source.kind === 'fixed-axis' ? { value: scalar(source.value, true) }
-      : source.kind === 'fixed-point' ? { position: source.position.map(value => scalar(value, true)) } : {}) }));
+    points: graph ? cadSketchRelationPointIds(graph, source).map(point) : [],
+    ...(cadSketchRelationEntityIds(source).length ? { entityIds: cadSketchRelationEntityIds(source) } : {}),
+    ...(source.kind === 'distance' || source.kind === 'fixed-axis' || source.kind === 'fillet-corner' ? { value: scalar(source.value, true) }
+      : source.kind === 'fixed-point' ? { position: source.position.map(value => scalar(value, true)) }
+      : source.kind === 'chamfer-corner' ? { values: source.values.map(value => scalar(value, true)) } : {}) }));
 }
 
 /** Do not duplicate unbounded native ID/message arrays beside a source page. */

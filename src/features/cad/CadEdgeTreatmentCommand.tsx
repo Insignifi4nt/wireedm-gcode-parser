@@ -9,7 +9,7 @@ import { cadToolbarPopupPosition } from './cadToolbarPopupPosition';
 type EdgeTreatmentKind = Extract<CadFeature['kind'], 'fillet' | 'chamfer'>;
 
 /** Keep edge treatments together, with the menu outside the scrolling toolbar. */
-export function CadEdgeTreatmentCommand({ disabled, onChoose, context = 'model' }: { disabled: boolean; onChoose(kind: EdgeTreatmentKind): void; context?: 'model' | 'sketch' }) {
+export function CadEdgeTreatmentCommand({ disabled, onChoose, context = 'model', chamferAvailable = context === 'model' }: { disabled: boolean; onChoose(kind: EdgeTreatmentKind): void; context?: 'model' | 'sketch'; chamferAvailable?: boolean }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0 });
   const trigger = useRef<HTMLButtonElement>(null);
@@ -40,7 +40,7 @@ export function CadEdgeTreatmentCommand({ disabled, onChoose, context = 'model' 
     };
   }, [open, disabled]);
   return <>
-    <Button ref={trigger} className="cad-tool" aria-label={context === 'sketch' ? 'Sketch corner tools' : 'Fillet / Chamfer'} title={context === 'sketch' ? 'Round supported sketch corners' : 'Round or bevel solid edges'} disabled={disabled} aria-haspopup="menu" aria-expanded={open && !disabled} aria-controls={open && !disabled ? id : undefined}
+    <Button ref={trigger} className="cad-tool" aria-label={context === 'sketch' ? 'Sketch corner tools' : 'Fillet / Chamfer'} title={context === 'sketch' ? 'Round or bevel supported sketch corners' : 'Round or bevel solid edges'} disabled={disabled} aria-haspopup="menu" aria-expanded={open && !disabled} aria-controls={open && !disabled ? id : undefined}
       onPointerDown={event => { if (open) event.preventDefault(); }}
       onClick={() => { if (open) close(true); else { initialFocus.current = 'first'; setOpen(true); } }}
       onKeyDown={event => {
@@ -66,7 +66,7 @@ export function CadEdgeTreatmentCommand({ disabled, onChoose, context = 'model' 
         commands[next]?.focus();
       }}>
       <MenuItem onClick={() => { close(); onChoose('fillet'); }}><FilletIcon size={14} /> Fillet</MenuItem>
-      {context === 'model' && <MenuItem onClick={() => { close(); onChoose('chamfer'); }}><ChamferIcon size={14} /> Chamfer</MenuItem>}
+      {chamferAvailable && <MenuItem onClick={() => { close(); onChoose('chamfer'); }}><ChamferIcon size={14} /> Chamfer</MenuItem>}
     </MenuSurface>, window.document.body)}
   </>;
 }

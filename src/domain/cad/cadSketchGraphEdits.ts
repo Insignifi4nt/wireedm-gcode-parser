@@ -1,6 +1,7 @@
 import type { CadSketchFeature } from './cadDocument';
 import { CadError } from './cadError';
-import { parseCadSketchGraph, type CadSketchGraph, type CadSketchGraphEntity, type CadSketchGraphRelation } from './cadSketchGraph';
+import { parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
+import { cadSketchEntityPointIds, cadSketchRelationEntityIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
 
 /** Structural intent only. The shared preparation stage solves before complete-part acceptance. */
 export function appendCadSketchEntities({ sketch, geometry }: { sketch: CadSketchFeature; geometry: CadSketchGraph }): CadSketchFeature {
@@ -26,30 +27,19 @@ function selectedIds(items: readonly { readonly id: string }[], requested: reado
   return new Set(requested);
 }
 
-function pointReferences(item: CadSketchGraphEntity | CadSketchGraphRelation): readonly string[] {
-  if ('pointIds' in item) return item.pointIds;
-  if ('pointId' in item) return [item.pointId];
-  switch (item.kind) {
-    case 'line': return [item.startPointId, item.endPointId];
-    case 'arc': return [item.centerPointId, item.startPointId, item.endPointId];
-    case 'circle': return [item.centerPointId];
-    default: { const exhaustive: never = item; throw exhaustive; }
-  }
-}
-
-/** Deleting an entity never deletes its points or relations between retained points. */
+/** Point-only relations survive entity deletion; entity-owned corner relations require explicit removal or cascade. */
 export function deleteCadSketchElements({ sketch, pointIds, entityIds, relationIds, cascade }: {
   sketch: CadSketchFeature; pointIds: readonly string[]; entityIds: readonly string[]; relationIds: readonly string[]; cascade: boolean;
 }): CadSketchFeature {
   const graph = requireGraph(sketch), points = selectedIds(graph.points, pointIds, 'point');
   const entities = selectedIds(graph.entities, entityIds, 'entity'), relations = selectedIds(graph.relations, relationIds, 'relation');
-  const removeDependents = (items: readonly (CadSketchGraphEntity | CadSketchGraphRelation)[], selected: Set<string>) => {
-    for (const item of items) if (pointReferences(item).some(id => points.has(id))) {
-      if (!cascade && !selected.has(item.id)) throw new CadError('dependent-sketch-element', `Sketch element "${item.id}" depends on a selected point. Select it explicitly or use cascade deletion.`);
-      selected.add(item.id);
-    }
+  const remove = (id: string, selected: Set<string>) => {
+    if (!cascade && !selected.has(id)) throw new CadError('dependent-sketch-element', `Sketch element "${id}" depends on selected geometry. Select it explicitly or use cascade deletion.`);
+    selected.add(id);
   };
-  removeDependents(graph.entities, entities); removeDependents(graph.relations, relations);
+  for (const entity of graph.entities) if (cadSketchEntityPointIds(entity).some(id => points.has(id))) remove(entity.id, entities);
+  for (const relation of graph.relations) if (cadSketchRelationPointIds(graph, relation).some(id => points.has(id))
+      || cadSketchRelationEntityIds(relation).some(id => entities.has(id))) remove(relation.id, relations);
   return { ...sketch, graph: parseCadSketchGraph({
     points: graph.points.filter(point => !points.has(point.id)),
     entities: graph.entities.filter(entity => !entities.has(entity.id)),

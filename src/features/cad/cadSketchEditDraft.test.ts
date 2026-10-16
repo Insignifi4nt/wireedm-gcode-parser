@@ -44,6 +44,24 @@ function source(explicit = false, earlierGraph = false) {
 const removeEdge: CadEdit = { kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: [], entityIds: ['bc'], relationIds: [], cascade: false };
 
 describe('owned consumed-sketch draft', () => {
+  it('creates a parametric corner locally and finishes it without changing the original DXF or downstream definitions', async () => {
+    const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    const edit: CadEdit = { kind: 'create-sketch-corner', sketchId: 'sketch', pointId: 'a', treatment: {
+      kind: 'fillet', radius: ' span / 10 ', trimPointIds: ['p', 'q'], centerPointId: 'center', entityId: 'arc', relationId: 'corner'
+    } };
+    expect(() => draft.validateEdits([{ ...edit, sketchId: 'later' }])).toThrow('sketch');
+    await draft.editPrepared([edit], prepare);
+    expect(main.getSnapshot()).toBe(base);
+    const local = sketchOf(draft.getSnapshot().document);
+    expect(local.source).toEqual(sketchOf(base.document).source);
+    expect(local.graph?.relations).toContainEqual(expect.objectContaining({ id: 'corner', kind: 'fillet-corner', value: ' span / 10 ' }));
+    const finish = draft.finishEdits(base);
+    await main.editPrepared(base.version, document => prepare(document, finish.edits));
+    expect(main.getSnapshot().document.features.slice(1)).toEqual(base.document.features.slice(1));
+    expect(sketchOf(main.getSnapshot().document).source).toEqual(sketchOf(base.document).source);
+    main.undo(); expect(main.getSnapshot().document).toBe(base.document);
+  });
+
   it('edits an open prefix, keeps the valid full part exact, and reuses local bounded undo/redo', async () => {
     const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
     expect(draft.getSnapshot().document.features.map(feature => feature.id)).toEqual(['sketch']);

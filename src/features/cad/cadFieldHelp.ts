@@ -25,6 +25,8 @@ export const cadFeatureHelp: Record<CadFeature['kind'], string> = {
 export function cadScalarHelp(label: string) {
   switch (label) {
     case 'Radius': return 'Distance from a circle center to its outline, or the radius of a rounded edge.';
+    case 'Fillet radius': return 'Radius of the circular arc tangent to both sides of the selected sketch corner. The original corner stays as a reference with its dimensions. The arc must fit inside both finite sides.';
+    case 'Setback 1': case 'Setback 2': return 'Distance from the original reference corner to the chamfer endpoint along this side. The on-part dimension identifies that side. The two setbacks can differ; both must leave a positive length of the original line.';
     case 'Corner radius': return 'Rounding at rectangle corners. Zero keeps square corners; it must fit inside the rectangle.';
     case 'Wall thickness': return 'Material left between the inner and outer walls of the shell. A value too large for the body is rejected.';
     case 'Angular extent': return 'The angle occupied by the circular pattern. A full turn distributes instances around 360 degrees.';

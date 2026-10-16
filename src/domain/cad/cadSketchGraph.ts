@@ -6,6 +6,8 @@ import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import type { Point2 } from '@/domain/path-intel/types';
+import { cadSketchEntityPointIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
+import { checkCadSketchCornerRelation, resolveCadSketchCornerTopology } from './cadSketchCornerGeometry';
 
 const strict = { additionalProperties: false };
 const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
@@ -22,7 +24,9 @@ export const CadSketchGraphSchema = Type.Object({
     ...(['coincident', 'horizontal', 'vertical'] as const).map(kind => Type.Object({ id, kind: Type.Literal(kind), pointIds: pair }, strict)),
     Type.Object({ id, kind: Type.Literal('fixed-point'), pointId: id, position: CadPoint2Schema }, strict),
     Type.Object({ id, kind: Type.Literal('fixed-axis'), pointId: id, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), value: CadScalarSchema }, strict),
-    Type.Object({ id, kind: Type.Literal('distance'), pointIds: pair, value: CadScalarSchema }, strict)
+    Type.Object({ id, kind: Type.Literal('distance'), pointIds: pair, value: CadScalarSchema }, strict),
+    Type.Object({ id, kind: Type.Literal('fillet-corner'), pointId: id, lineIds: pair, arcId: id, value: CadScalarSchema }, strict),
+    Type.Object({ id, kind: Type.Literal('chamfer-corner'), pointId: id, lineIds: pair, chamferId: id, values: Type.Tuple([CadScalarSchema, CadScalarSchema]) }, strict)
   ]))
 }, strict);
 type Immutable<T> = { readonly [K in keyof T]: Immutable<T[K]> };
@@ -30,6 +34,7 @@ export type CadSketchGraph = Immutable<Static<typeof CadSketchGraphSchema>>;
 export type CadSketchGraphPoint = CadSketchGraph['points'][number];
 export type CadSketchGraphEntity = CadSketchGraph['entities'][number];
 export type CadSketchGraphRelation = CadSketchGraph['relations'][number];
+export type CadSketchCornerRelation = Extract<CadSketchGraphRelation, { kind: 'fillet-corner' | 'chamfer-corner' }>;
 const issueCodes = ['invalid-expression', 'invalid-coordinate', 'degenerate-entity', 'invalid-radius', 'arc-radius-mismatch', 'invalid-distance', 'relation-residual'] as const;
 export const CadSketchGraphIssueSchema = Type.Object({
   source: Type.Object({ kind: Type.Union([Type.Literal('point'), Type.Literal('entity'), Type.Literal('relation')]), id }, strict),
@@ -56,9 +61,11 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
     if (new Set(refs).size !== refs.length) throw new CadError('invalid-sketch-reference', `Sketch graph "${owner}" needs distinct point references.`);
     for (const ref of refs) if (!points.has(ref)) throw new CadError('missing-sketch-point', `Sketch graph "${owner}" references missing point "${ref}".`);
   };
-  for (const item of graph.entities) references(item.id, item.kind === 'line' ? [item.startPointId, item.endPointId]
-    : item.kind === 'arc' ? [item.centerPointId, item.startPointId, item.endPointId] : [item.centerPointId]);
-  for (const item of graph.relations) references(item.id, 'pointIds' in item ? item.pointIds : [item.pointId]);
+  for (const item of graph.entities) references(item.id, cadSketchEntityPointIds(item));
+  for (const item of graph.relations) {
+    if (item.kind === 'fillet-corner' || item.kind === 'chamfer-corner') resolveCadSketchCornerTopology(graph, item);
+    references(item.id, cadSketchRelationPointIds(graph, item));
+  }
   freezeData(graph);
   return graph;
 }
@@ -103,6 +110,9 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
   for (const relation of graph.relations) {
     const source = { kind: 'relation', id: relation.id } as const;
     try {
+      if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') {
+        issues.push(...checkCadSketchCornerRelation(graph, relation, points, parameters)); continue;
+      }
       let residual: number, operands: Point2[];
       if ('pointIds' in relation) {
         const a = points.get(relation.pointIds[0]), b = points.get(relation.pointIds[1]); if (!a || !b) continue;

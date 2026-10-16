@@ -7,6 +7,7 @@ import { evaluateCadScalar } from '../../../domain/cad/cadExpression';
 import type { CadSketchSolverModule } from './cadSketchSolverModule';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
 import { parseCadSketchSolveInput } from './cadSketchSolverProtocol';
+import { compileCadSketchCornerConstraints } from './cadSketchCornerConstraints';
 
 function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] {
   switch (status) {
@@ -53,6 +54,9 @@ function compile(input: CadSketchSolveInput) {
       case 'fixed-axis': constraint(relation.axis === 'x'
         ? { id, type: 'coordinate_x', p_id: relation.pointId, x: scalar(relation.value) }
         : { id, type: 'coordinate_y', p_id: relation.pointId, y: scalar(relation.value) }, id); break;
+      case 'fillet-corner': case 'chamfer-corner':
+        for (const object of compileCadSketchCornerConstraints(graph, relation, input.parameters)) constraint(object, id);
+        break;
       default: { const exhaustive: never = relation; throw exhaustive; }
     }
   }

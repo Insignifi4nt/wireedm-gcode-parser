@@ -50,7 +50,7 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
       await solve({ sketchId: edit.sketchId, pointId: edit.pointId, position: [position[0], position[1]] });
     } else {
       // Geometry-dependent commands read the preceding solved candidate, never old coordinates.
-      if (edit.kind === 'move-sketch-handle' || edit.kind === 'translate-sketch-profiles' || edit.kind === 'set-sketch-dimension') await flush();
+      if (edit.kind === 'move-sketch-handle' || edit.kind === 'translate-sketch-profiles' || edit.kind === 'set-sketch-dimension' || edit.kind === 'create-sketch-corner') await flush();
       pending.push(edit);
     }
   }

@@ -38,6 +38,7 @@ const editDescriptions: Partial<Record<CadEdit['kind'], string>> = {
   'translate-sketch-profiles': 'Move contours in local XY mm; rejects nonzero motion on an expression-driven position axis.',
   'move-sketch-handle': 'Use a revision-scoped grip from cad_inspect_sketch_handles. Local-mm delta; projects onto free components, preserves drivers.',
   'append-sketch-entities': 'Append new graph IDs, allowing references to existing points. Never replaces IDs or merges nearby points. Solves and validates the complete part before acceptance.',
+  'create-sketch-corner': 'Round or bevel one shared degree-two line corner with explicit new topology IDs. Retains the original reference point and exact drivers. Fillets keep tangent minor arcs; chamfers keep two finite setbacks. Complete-part checks still apply.',
   'delete-sketch-elements': 'Delete exact graph point/entity/relation IDs. Without cascade, all dependent elements must be selected; cascade removes only incident entities/relations of selected points, retaining other points and CAD features.',
   'set-sketch-construction': 'Set construction on exact graph entity IDs while retaining their geometry and relations. Complete-part validation may reject loss of downstream material.',
   'move-sketch-point': 'Move a stable graph point by local-mm delta. Solves temporary drag intent, retaining relations and exact expression drivers. No saved drag constraint.',

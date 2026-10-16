@@ -2,6 +2,83 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('rounds and bevels constrained corners with linked drivers, native dimensions, exact extrusion and reopen', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'size', value: 2 },
+    { kind: 'add-feature', feature: { id: 'outline', kind: 'sketch', name: 'Corner plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [20, '0'] }, { id: 'c', position: ['size * 10', '10'] }, { id: 'd', position: ['0', '10'] }],
+      entities: [
+        { id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+        { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+        { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+        { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' }
+      ], relations: [{ id: 'width', kind: 'distance', pointIds: ['a', 'b'], value: 'size * 10' }]
+    } } }
+  ] });
+  let current = await context(page);
+  const original = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'outline' })).feature;
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: 'outline' } });
+  await page.getByRole('button', { name: 'Point 1 in Corner plate', exact: true }).click();
+  const openFillet = async () => {
+    await page.getByRole('button', { name: 'Sketch corner tools', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Fillet', exact: true }).click();
+  };
+  await openFillet();
+  await page.getByRole('textbox', { name: 'Fillet radius mm', exact: true }).fill('2');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect((await context(page)).version).toBe(current.version);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'outline' })).feature).toEqual(original);
+  await openFillet();
+  await page.getByRole('button', { name: 'Edit Fillet radius relation', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Fillet radius expression', exact: true }).fill(' size ');
+  await page.getByRole('button', { name: 'Keep relation', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Fillet radius relation help', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Fillet radius mm', exact: true }).fill('3');
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  current = await context(page);
+  const rounded = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'outline' })).feature;
+  expect(rounded.graph.points[0]).toEqual(original.graph.points[0]);
+  expect(rounded.graph.points[1].position).toEqual([30, '0']);
+  expect(rounded.graph.relations.at(-1)).toMatchObject({ kind: 'fillet-corner', value: ' size ' });
+  const roundedArea = 291 + 9 * Math.PI / 4;
+  expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: 'outline' })).materialAreaMm2).toBeCloseTo(roundedArea, 8);
+  await page.locator(`[data-cad-sketch-dimension="${rounded.graph.relations.at(-1).id}"] [role="button"]`).click();
+  await expect(page.getByRole('textbox', { name: 'Fillet radius mm', exact: true })).toHaveValue('3');
+  await page.getByRole('textbox', { name: 'Fillet radius mm', exact: true }).fill('4');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect((await context(page)).version).toBe(current.version);
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'create-sketch-corner', sketchId: 'outline', pointId: 'b', treatment: {
+    kind: 'chamfer', setbacks: [2, 3], trimPointIds: ['chamfer-a', 'chamfer-b'], entityId: 'chamfer', relationId: 'bevel'
+  } }] });
+  current = await context(page);
+  const accepted = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'outline' })).feature;
+  expect(accepted.graph.relations.at(-1)).toMatchObject({ id: 'bevel', kind: 'chamfer-corner', lineIds: ['ab', 'bc'], values: [2, 3] });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'fit' } });
+  await page.locator('[data-cad-sketch-dimension="bevel"] [role="button"]').first().click();
+  await expect(page.getByRole('textbox', { name: 'Setback 1 mm', exact: true })).toHaveValue('2');
+  await expect(page.getByRole('textbox', { name: 'Setback 2 mm', exact: true })).toHaveValue('3');
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'pad', kind: 'extrude', name: 'Corner plate thickness', suppressed: false, sketchId: 'outline', distance: 5, symmetric: false, operation: 'new', targetId: null
+  } }] });
+  current = await context(page);
+  const built = await call(page, 'cad_build', { expectedVersion: current.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo((roundedArea - 3) * 5, 6);
+  const downloading = page.waitForEvent('download'); await call(page, 'cad_export_solid', { expectedVersion: current.version, format: 'step' });
+  const path = await (await downloading).path(); if (!path) throw new Error('STEP download missing.');
+  expect((await readFile(path, 'utf8')).startsWith('ISO-10303-21;')).toBe(true);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible();
+  const reopened = await context(page); expect(reopened.dirty).toBe(false);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: reopened.version, featureId: 'outline' })).feature).toEqual(accepted);
+});
+
 test('draws and constrains fresh geometry through the UI, then extrudes, exports and reopens the exact sketch', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   let current = await context(page);
@@ -237,7 +314,7 @@ test('edits graph relations and linked circle radius through the shared inspecto
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
   current = await context(page);
   await expect(page.getByLabel('Sketch constraint status')).toHaveText('Fully constrained');
-  await expect(page.getByRole('button', { name: 'Point 3 in Outline', exact: true })).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.getByRole('button', { name: 'Point 3 in Outline', exact: true })).toHaveClass(/is-locked/);
   const inspection = await call(page, 'cad_inspect_sketch_constraints', { expectedVersion: current.version, sketchId: 'outline' });
   expect(inspection.analysis).toMatchObject({ kind: 'solved', degreesOfFreedom: 0 });
   const feature = await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'outline' });

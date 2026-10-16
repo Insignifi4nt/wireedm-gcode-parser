@@ -85,7 +85,7 @@ export class CadSketchEditDraft {
           break;
         case 'add-sketch-dimension': case 'set-sketch-dimension': case 'remove-sketch-dimension':
         case 'translate-sketch-profiles': case 'move-sketch-handle': case 'append-sketch-entities': case 'delete-sketch-elements':
-        case 'set-sketch-construction': case 'move-sketch-point': case 'set-sketch-relation': case 'remove-sketch-relation':
+        case 'set-sketch-construction': case 'move-sketch-point': case 'set-sketch-relation': case 'remove-sketch-relation': case 'create-sketch-corner':
           if (edit.sketchId !== this.pin.sketchId) throw scopeError();
           break;
         default: throw scopeError();

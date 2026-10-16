@@ -6,6 +6,8 @@ import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { inspectCadSketchConstraints, pageCadSketchConstraints, summarizeCadSketchConstraintAnalysis } from './cadSketchConstraintInspection';
 import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
+import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTreatment';
+import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 
 const require = createRequire(import.meta.url);
 const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
@@ -18,6 +20,27 @@ const source = () => parseCadDocument({ ...createCadDocument('Line', 'line'), sc
 }] });
 
 describe('accepted sketch constraint inspection', () => {
+  it.each(['fillet', 'chamfer'] as const)('exposes %s supports, generated geometry and exact driving quantities to agents', async kind => {
+    const base = source(), feature = base.features[0];
+    if (feature.kind !== 'sketch') throw new Error('Missing sketch fixture.');
+    const graph = parseCadSketchGraph({ points: [{ id: 'v', position: [' 0 ', '0'] }, { id: 'a', position: ['20', '0'] }, { id: 'b', position: ['0', '16'] }],
+      entities: [{ id: 'a-line', kind: 'line', construction: false, startPointId: 'v', endPointId: 'a' },
+        { id: 'b-line', kind: 'line', construction: false, startPointId: 'v', endPointId: 'b' }], relations: [] });
+    let id = 0;
+    const treated = createCadSketchCornerTreatment({ graph, parameters: { size: 2 }, pointId: 'v', createId: () => `new-${++id}`,
+      treatment: kind === 'fillet' ? { kind, radius: ' size ' } : { kind, setbacks: [' size ', 'size + 1'] } });
+    const document = parseCadDocument({ ...base, parameters: { size: 2 }, features: [{ ...feature, graph: treated.graph }] });
+    const exact = JSON.stringify(document), inspection = await inspectCadSketchConstraints(document, 'sketch', async () => solver);
+    expect(inspection.analysis.kind).toBe('solved');
+    const row = pageCadSketchConstraints(inspection, {}).items[0];
+    if (!('entityIds' in row) || !('points' in row)) throw new Error('Expected an entity-owned corner relation.');
+    expect(row.entityIds).toEqual(['a-line', 'b-line', treated.entityId]);
+    expect(new Set(row.points.map(point => point.id))).toEqual(new Set(treated.graph.points.map(point => point.id)));
+    if (kind === 'fillet') expect(row).toMatchObject({ value: { scalar: ' size ', valueMm: 2, role: 'expression-driver' } });
+    else expect(row).toMatchObject({ values: [{ scalar: ' size ', valueMm: 2, role: 'expression-driver' }, { scalar: 'size + 1', valueMm: 3, role: 'expression-driver' }] });
+    expect(JSON.stringify(document)).toBe(exact);
+  });
+
   it('reports native graph freedom and exact relation drivers without publishing a solved graph', async () => {
     const document = source(), exact = JSON.stringify(document);
     const inspection = await inspectCadSketchConstraints(document, 'sketch', async () => solver);

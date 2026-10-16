@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import type { CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import type { CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
 import type { CadAnalyticBoundary } from '@/domain/cad/cadSketchGeometry';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { cadSketchGraphPointTranslation, prepareCadSketchGraphInteraction, type CadSketchGraphPointControl, type CadSketchGraphSelection } from './cadSketchGraphInteraction';
@@ -9,6 +10,7 @@ import { snapSketchPoint, type SketchPoint } from './cadSketchInteraction';
 import { cadArcSvgPath } from './cadSketchSvg';
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { CadSketchGraphDimensions } from './CadSketchGraphDimensions';
+import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 
@@ -21,7 +23,7 @@ export interface CadSketchGraphControls {
   readonly showDimensions?: boolean;
   onSelect(selection: CadSketchGraphSelection | null): void;
   onDelete?(selection: CadSketchGraphSelection): void;
-  onConfigureRelation?(relation: Extract<CadSketchGraphRelation, { kind: 'distance' }>): void;
+  onConfigureRelation?(relation: CadSketchDimensionRelation): void;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
   readonly onPrepareEdits?: CadPrepareEdits;
   onPreviewDocument?(document: CadDocument | null): void;
@@ -89,7 +91,11 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
   const construction = useMemo(() => new Set(sketch.graph?.entities.filter(entity => entity.construction).map(entity => entity.id)), [sketch.graph]);
   const entities = useMemo(() => new Map(sketch.graph?.entities.map(entity => [entity.id, entity])), [sketch.graph]);
   const sourcePoints = useMemo(() => new Map(prepared.points.map(point => [point.id, point])), [prepared]);
-  const relatedPoints = new Set(controls.relation ? 'pointIds' in controls.relation ? controls.relation.pointIds : [controls.relation.pointId] : []);
+  // Undo and selection cleanup can render one frame with an old inspector relation.
+  const currentRelation = controls.relation && displayed.graph.relations.find(relation => relation.id === controls.relation?.id);
+  const relatedPoints = new Set(currentRelation ? cadSketchRelationPointIds(displayed.graph, currentRelation) : []);
+  const relatedEntities = new Set(currentRelation ? cadSketchRelationEntityIds(currentRelation) : []);
+  const referenceCorners = new Set(displayed.graph.relations.filter(relation => relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner').map(relation => relation.pointId));
   const choose = (selection: CadSketchGraphSelection) => { if (active && !locked && !submission.applying) controls.onSelect(selection); };
   const commit = (next: Intent) => {
     if (!next.translation.some(value => value !== 0)) { cancel(); return; }
@@ -115,7 +121,7 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
     {displayed.geometry.segments.map((segment, index) => {
       const boundary = cadSketchGraphBoundary(segment), isSelected = selected('entity', segment.id);
       const entity = entities.get(segment.id);
-      const related = entity?.kind === 'line' && relatedPoints.has(entity.startPointId) && relatedPoints.has(entity.endPointId);
+      const related = relatedEntities.has(segment.id) || entity?.kind === 'line' && relatedPoints.has(entity.startPointId) && relatedPoints.has(entity.endPointId);
       return <g key={segment.id} data-cad-sketch-entity={segment.id} className={`cad-profile cad-sketch-entity${isSelected ? ' is-selected' : ''}${related ? ' is-relation-highlighted' : ''}${construction.has(segment.id) ? ' is-construction' : ''}`}
         role="button" aria-label={`${segment.kind[0].toUpperCase()}${segment.kind.slice(1)} ${index + 1} in ${sketch.name}`} aria-pressed={isSelected} aria-disabled={!interactive || undefined} tabIndex={interactive ? 0 : -1}
         strokeDasharray={construction.has(segment.id) ? `${scaleY * 6} ${scaleY * 4}` : undefined}
@@ -132,7 +138,8 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
     })}
     {active && displayed.points.map((point, index) => {
       const original = sourcePoints.get(point.id) ?? point, free = controls.degreesOfFreedom !== 0 && original.freeAxes.some(Boolean);
-      return <g key={point.id} data-cad-sketch-point={point.id} role="button" aria-label={`Point ${index + 1} in ${sketch.name}`} aria-pressed={selected('point', point.id)} aria-disabled={!interactive || !free || undefined}
+      const referenceCorner = referenceCorners.has(point.id), x = point.position[0] - center[0], y = point.position[1] - center[1];
+      return <g key={point.id} data-cad-sketch-point={point.id} data-cad-reference-corner={referenceCorner || undefined} role="button" aria-label={`${referenceCorner ? 'Reference corner' : 'Point'} ${index + 1} in ${sketch.name}`} aria-pressed={selected('point', point.id)} aria-disabled={!interactive || undefined}
         tabIndex={interactive ? 0 : -1} className={`cad-sketch-graph-point${selected('point', point.id) ? ' is-active' : ''}${relatedPoints.has(point.id) ? ' is-relation-highlighted' : ''}${free ? '' : ' is-locked'}`}
         onPointerDown={event => {
           if (event.button !== 0 || !active) return;
@@ -162,8 +169,9 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
           if (free) commit({ point: original, translation: cadSketchGraphPointTranslation(original, [original.position[0] + delta[0], original.position[1] + delta[1]]) });
         }}>
         <circle cx={point.position[0] - center[0]} cy={point.position[1] - center[1]} r={7 * scaleY} className="cad-sketch-point-hit" />
-        <circle cx={point.position[0] - center[0]} cy={point.position[1] - center[1]} r={3 * scaleY} className="cad-sketch-point-mark" />
-        <title>{formatCadQuantity(point.position[0])}, {formatCadQuantity(point.position[1])} mm · {free ? 'Drag or use arrow keys' : controls.degreesOfFreedom === 0 ? 'Fully constrained by dimensions and relations' : 'Fixed coordinates'}</title>
+        {referenceCorner ? <path d={`M ${x} ${y + 4 * scaleY} L ${x + 4 * scaleX} ${y} L ${x} ${y - 4 * scaleY} L ${x - 4 * scaleX} ${y} Z`} className="cad-sketch-point-mark" />
+          : <circle cx={x} cy={y} r={3 * scaleY} className="cad-sketch-point-mark" />}
+        <title>{referenceCorner ? 'Original reference corner · ' : ''}{formatCadQuantity(point.position[0])}, {formatCadQuantity(point.position[1])} mm · {free ? 'Drag or use arrow keys' : controls.degreesOfFreedom === 0 ? 'Fully constrained by dimensions and relations' : 'Fixed coordinates'}</title>
       </g>;
     })}
     {active && controls.showDimensions !== false && <CadSketchGraphDimensions graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}

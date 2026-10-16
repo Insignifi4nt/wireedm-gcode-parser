@@ -6,6 +6,7 @@ import { cadFeatureDependencies } from './cadFeatureInputs';
 import { evaluateCadScalar } from './cadExpression';
 import { createCadPluginProfile, inspectCadPluginProfile, type CadPluginPackage } from './plugins/cadPlugins';
 import type { CadSketchGraph } from './cadSketchGraph';
+import { mapCadSketchRelationScalars } from './cadSketchGraphReferences';
 
 const strict = { additionalProperties: false };
 export const CadParameterNameSchema = Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]{0,63}$' });
@@ -47,8 +48,7 @@ function graphScalars(graph: CadSketchGraph, map: ScalarMapper): CadSketchGraph 
   return { ...graph,
     points: graph.points.map((point, index) => ({ ...point, position: point2(point.position, `graph.points.${index}.position`, map) })),
     entities: graph.entities.map((entity, index) => entity.kind === 'circle' ? { ...entity, radius: map(entity.radius, `graph.entities.${index}.radius`) } : entity),
-    relations: graph.relations.map((relation, index) => relation.kind === 'fixed-point' ? { ...relation, position: point2(relation.position, `graph.relations.${index}.position`, map) }
-      : relation.kind === 'fixed-axis' || relation.kind === 'distance' ? { ...relation, value: map(relation.value, `graph.relations.${index}.value`) } : relation)
+    relations: graph.relations.map((relation, index) => mapCadSketchRelationScalars(relation, (value, key) => map(value, `graph.relations.${index}.${key}`)))
   };
 }
 function segment(segment: CadPathSegment, path: string, map: ScalarMapper): CadPathSegment {
