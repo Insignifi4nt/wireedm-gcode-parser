@@ -20,6 +20,7 @@ import { CadSketchTrimTargetSchema, trimCadSketchEntity, type CadSketchTrimTarge
 import { CadSketchOffsetRequestSchema, prepareCadSketchOffset, type CadSketchOffsetRequest } from './cadSketchOffset';
 import { CadSketchMirrorRequestSchema, prepareCadSketchMirror, type CadSketchMirrorRequest } from './cadSketchMirror';
 import { CadSketchProfileCopyRequestSchema, prepareCadSketchProfileCopy, type CadSketchProfileCopyRequest } from './cadSketchProfileCopy';
+import { CadSketchUseEntityRequestSchema, prepareCadSketchUseEntity, cadSketchExternalReferenceLockReason, type CadSketchUseEntityRequest } from './cadSketchExternalReferences';
 
 export type CadEdit =
   | { readonly kind: 'add-feature'; readonly feature: CadFeature; readonly beforeId?: string }
@@ -47,6 +48,7 @@ export type CadEdit =
   | ({ readonly kind: 'offset-sketch-loop'; readonly sketchId: string } & CadSketchOffsetRequest)
   | ({ readonly kind: 'mirror-sketch-geometry'; readonly sketchId: string } & CadSketchMirrorRequest)
   | ({ readonly kind: 'copy-sketch-profile' } & CadSketchProfileCopyRequest)
+  | ({ readonly kind: 'use-sketch-entity' } & CadSketchUseEntityRequest)
   | { readonly kind: 'delete-sketch-elements'; readonly sketchId: string; readonly pointIds: readonly string[]; readonly entityIds: readonly string[]; readonly relationIds: readonly string[]; readonly cascade: boolean }
   | { readonly kind: 'set-sketch-construction'; readonly sketchId: string; readonly entityIds: readonly string[]; readonly construction: boolean }
   | { readonly kind: 'move-sketch-point'; readonly sketchId: string; readonly pointId: string; readonly translation: CadPoint2 }
@@ -83,6 +85,7 @@ export const CadEditSchema = Type.Union([
   Type.Object({ kind: Type.Literal('offset-sketch-loop'), sketchId: identifier, ...CadSketchOffsetRequestSchema.properties }, strict),
   Type.Object({ kind: Type.Literal('mirror-sketch-geometry'), sketchId: identifier, ...CadSketchMirrorRequestSchema.properties }, strict),
   Type.Object({ kind: Type.Literal('copy-sketch-profile'), ...CadSketchProfileCopyRequestSchema.properties }, strict),
+  Type.Object({ kind: Type.Literal('use-sketch-entity'), ...CadSketchUseEntityRequestSchema.properties }, strict),
   Type.Object({ kind: Type.Literal('delete-sketch-elements'), sketchId: identifier, pointIds: Type.Array(identifier, { uniqueItems: true }), entityIds: Type.Array(identifier, { uniqueItems: true }), relationIds: Type.Array(identifier, { uniqueItems: true }), cascade: Type.Boolean() }, strict),
   Type.Object({ kind: Type.Literal('set-sketch-construction'), sketchId: identifier, entityIds: Type.Array(identifier, { uniqueItems: true }), construction: Type.Boolean() }, strict),
   Type.Object({ kind: Type.Literal('move-sketch-point'), sketchId: identifier, pointId: identifier, translation: CadPoint2Schema }, strict),
@@ -227,6 +230,13 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
         features[index] = prepareCadSketchMirror({ sketch, parameters, entityIds: edit.entityIds, axisLineId: edit.axisLineId, idPrefix: edit.idPrefix }).sketch;
         break;
       }
+      case 'use-sketch-entity': {
+        const index = indexOf(edit.sketchId), sketch = features[index];
+        if (sketch.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose a graph sketch to receive the reference.');
+        features[index] = prepareCadSketchUseEntity({ sketch, parameters, previous: new Map(features.slice(0, index).map(feature => [feature.id, feature])),
+          sketchId: edit.sketchId, sourceSketchId: edit.sourceSketchId, sourceEntityId: edit.sourceEntityId, idPrefix: edit.idPrefix }).sketch;
+        break;
+      }
       case 'copy-sketch-profile': {
         if (features.some(feature => feature.id === edit.newSketchId)) throw new CadError('duplicate-id', 'The new sketch identity already belongs to another feature.');
         const source = features[indexOf(edit.sourceSketchId)];
@@ -268,6 +278,8 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
         let graph = feature.graph;
         if (edit.kind === 'move-sketch-point') {
           if (!graph.points.some(point => point.id === edit.pointId)) throw new CadError('missing-sketch-point', 'The selected sketch point no longer exists.');
+          const reason = cadSketchExternalReferenceLockReason(graph, { kind: 'point', id: edit.pointId });
+          if (reason) throw new CadError('referenced-sketch-geometry', reason);
           const delta = edit.translation.map(value => evaluateCadScalar(value, parameters));
           graph = { ...graph, points: graph.points.map(point => point.id !== edit.pointId ? point : { ...point, position: [
             typeof point.position[0] === 'number' ? point.position[0] + delta[0] : point.position[0],

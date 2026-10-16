@@ -10,6 +10,7 @@ import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTrea
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { Value } from '@sinclair/typebox/value';
 import { CadToolEditDefinitions } from './cadToolSchemas';
+import { applyCadEdits } from '@/domain/cad/cadOperations';
 
 const require = createRequire(import.meta.url);
 const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
@@ -22,6 +23,23 @@ const source = () => parseCadDocument({ ...createCadDocument('Line', 'line'), sc
 }] });
 
 describe('accepted sketch constraint inspection', () => {
+  it('exposes numeric reference snapshots as linked values with their actual source identity', async () => {
+    const document = applyCadEdits(parseCadDocument({ ...createCadDocument('Reference'), schemaVersion: 2, parameters: { size: 3 }, features: [
+      { id: 'layout', name: 'Layout', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'center', position: ['4', '6'] }], entities: [{ id: 'circle', kind: 'circle', construction: true, centerPointId: 'center', radius: ' size ' }], relations: [] } },
+      { id: 'target', name: 'Raised sketch', kind: 'sketch', suppressed: false, plane: 'XY', offset: 5, profiles: [] }
+    ] }), [{ kind: 'use-sketch-entity', sketchId: 'target', sourceSketchId: 'layout', sourceEntityId: 'circle', idPrefix: 'used' }]);
+    const exact = JSON.stringify(document), inspection = await inspectCadSketchConstraints(document, 'target', async () => solver);
+    expect(inspection.analysis.diagnostics.degreesOfFreedom).toBe(0);
+    const entity = pageCadSketchConstraints(inspection, { section: 'entities' }).items[0];
+    expect(entity).toMatchObject({ radius: { scalar: 3, valueMm: 3, role: 'linked-reference' }, points: [
+      { position: [{ scalar: 4, role: 'linked-reference' }, { scalar: 6, role: 'linked-reference' }] }
+    ] });
+    expect(pageCadSketchConstraints(inspection, { section: 'relations' }).items[0]).toMatchObject({ source: {
+      id: 'used_reference', kind: 'external-reference', entityId: 'used_e0', sourceSketchId: 'layout', source: { kind: 'circle', entityId: 'circle', centerPointId: 'center' }
+    }, entityIds: ['used_e0'] });
+    expect(JSON.stringify(document)).toBe(exact);
+  });
   it('discovers a scalar-free midpoint and inspects its selected point, finite line and exact endpoint drivers', async () => {
     const relation = { id: 'middle-of-ab', kind: 'midpoint', pointId: 'middle', lineId: 'ab' };
     const set = CadToolEditDefinitions.find(schema => schema.properties.kind.const === 'set-sketch-relation');

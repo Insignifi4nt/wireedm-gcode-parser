@@ -3,6 +3,7 @@ import { Value } from '@sinclair/typebox/value';
 import { CadSketchGraphIssueSchema, CadSketchGraphSchema, checkCadSketchGraph, parseCadSketchGraph } from '../../../domain/cad/cadSketchGraph';
 import { CadIdentifierSchema, CadNumberSchema } from '../../../domain/cad/cadPrimitives';
 import { isCadImportData } from '../../../domain/cad/cadImportData';
+import { cadSketchExternalReferenceComponents } from '../../../domain/cad/cadSketchExternalReferences';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
 
 const inputSchema = Type.Object({ graph: CadSketchGraphSchema, parameters: Type.Record(Type.String(), CadNumberSchema),
@@ -27,6 +28,7 @@ export function parseCadSketchSolveInput(value: unknown): CadSketchSolveInput {
   if (!isCadImportData(value) || !Value.Check(inputSchema, value)) throw new Error('Invalid sketch solver input.');
   const graph = parseCadSketchGraph(value.graph);
   if (value.drag && !graph.points.some(point => point.id === value.drag?.pointId)) throw new Error('The sketch drag point does not exist.');
+  if (value.drag && cadSketchExternalReferenceComponents(graph).pointIds.has(value.drag.pointId)) throw new Error('Detach the sketch reference before dragging its geometry.');
   return Object.freeze({ graph, parameters: Object.freeze({ ...value.parameters }), ...(value.drag ? { drag: Object.freeze({ pointId: value.drag.pointId,
     position: Object.freeze([value.drag.position[0], value.drag.position[1]] satisfies [number, number]) }) } : {}) });
 }
@@ -40,13 +42,14 @@ export function parseCadSketchSolverRequest(value: unknown): CadSketchSolverRequ
   return { id: value.id, kind: 'solve', input: parseCadSketchSolveInput(value.input) };
 }
 
-function candidateMatchesInput(input: CadSketchSolveInput, graph: CadSketchSolveInput['graph']) {
+export function cadSketchSolutionMatchesInput(input: CadSketchSolveInput, graph: CadSketchSolveInput['graph']) {
   if (graph.points.length !== input.graph.points.length || graph.entities.length !== input.graph.entities.length) return false;
+  const owned = cadSketchExternalReferenceComponents(input.graph);
   return Value.Equal({ ...graph, points: graph.points.map((point, index) => ({ ...point,
-    position: point.position.map((value, axis) => typeof input.graph.points[index].position[axis] === 'number' ? input.graph.points[index].position[axis] : value)
+    position: point.position.map((value, axis) => typeof input.graph.points[index].position[axis] === 'number' && !owned.pointIds.has(input.graph.points[index].id) ? input.graph.points[index].position[axis] : value)
   })), entities: graph.entities.map((entity, index) => {
     const original = input.graph.entities[index];
-    return entity.kind === 'circle' && original.kind === 'circle' && typeof original.radius === 'number' ? { ...entity, radius: original.radius } : entity;
+    return entity.kind === 'circle' && original.kind === 'circle' && typeof original.radius === 'number' && !owned.circleIds.has(original.id) ? { ...entity, radius: original.radius } : entity;
   }) }, input.graph);
 }
 
@@ -63,6 +66,6 @@ export function parseCadSketchSolverReply(value: unknown, input: CadSketchSolveI
   const graph = parseCadSketchGraph(result.graph);
   if ((diagnostics.status !== 'success' && diagnostics.status !== 'converged') || diagnostics.degreesOfFreedom === null || diagnostics.degreesOfFreedom < 0
     || diagnostics.conflictingIds.length || diagnostics.redundantIds.length || diagnostics.partiallyRedundantIds.length || diagnostics.issues.length
-    || !candidateMatchesInput(input, graph) || checkCadSketchGraph(graph, input.parameters).length) throw new Error('Sketch worker solution does not match its request or constraints.');
+    || !cadSketchSolutionMatchesInput(input, graph) || checkCadSketchGraph(graph, input.parameters).length) throw new Error('Sketch worker solution does not match its request or constraints.');
   return { id: value.id, kind: 'result', result: { kind: 'solved', graph, diagnostics } };
 }

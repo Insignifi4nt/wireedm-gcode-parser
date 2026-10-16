@@ -14,6 +14,7 @@ import { checkCadSketchRadialRelation, resolveCadSketchRadialEntity } from './ca
 import { checkCadSketchEqualRelation, resolveCadSketchRadiusPair } from './cadSketchEqualRelations';
 import { checkCadSketchAngleRelation, resolveCadSketchAngleRays } from './cadSketchAngleRelations';
 import { resolveCadSketchMidpointOperands } from './cadSketchMidpointRelations';
+import { validateCadSketchExternalReference } from './cadSketchExternalReferences';
 
 const strict = { additionalProperties: false };
 const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
@@ -28,6 +29,10 @@ export const CadSketchGraphSchema = Type.Object({
     Type.Object({ ...entity, kind: Type.Literal('circle'), centerPointId: id, radius: CadScalarSchema }, strict)
   ])),
   relations: Type.Array(Type.Union([
+    Type.Object({ id, kind: Type.Literal('external-reference'), entityId: id, sourceSketchId: id, source: Type.Union([
+      Type.Object({ kind: Type.Literal('line'), entityId: id, startPointId: id, endPointId: id }, strict),
+      Type.Object({ kind: Type.Literal('circle'), entityId: id, centerPointId: id }, strict)
+    ]) }, strict),
     ...(['coincident', 'horizontal', 'vertical'] as const).map(kind => Type.Object({ id, kind: Type.Literal(kind), pointIds: pair }, strict)),
     Type.Object({ id, kind: Type.Literal('parallel'), lineIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('perpendicular'), lineIds: pair }, strict),
@@ -50,6 +55,7 @@ export type CadSketchGraph = Immutable<Static<typeof CadSketchGraphSchema>>;
 export type CadSketchGraphPoint = CadSketchGraph['points'][number];
 export type CadSketchGraphEntity = CadSketchGraph['entities'][number];
 export type CadSketchGraphRelation = CadSketchGraph['relations'][number];
+export type CadSketchExternalReference = Extract<CadSketchGraphRelation, { kind: 'external-reference' }>;
 export type CadSketchCornerRelation = Extract<CadSketchGraphRelation, { kind: 'fillet-corner' | 'chamfer-corner' }>;
 export type CadSketchLineRelation = Extract<CadSketchGraphRelation, { kind: 'parallel' | 'perpendicular' | 'collinear' }>;
 export type CadSketchRadialRelation = Extract<CadSketchGraphRelation, { kind: 'radial-size' }>;
@@ -85,6 +91,7 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   };
   for (const item of graph.entities) references(item.id, cadSketchEntityPointIds(item));
   for (const item of graph.relations) {
+    if (item.kind === 'external-reference') validateCadSketchExternalReference(graph, item);
     if (item.kind === 'fillet-corner' || item.kind === 'chamfer-corner') resolveCadSketchCornerTopology(graph, item);
     if (item.kind === 'parallel' || item.kind === 'perpendicular' || item.kind === 'collinear' || item.kind === 'equal-length') resolveCadSketchLinePair(graph, item.lineIds);
     if (item.kind === 'equal-radius') resolveCadSketchRadiusPair(graph, item.curveIds);
@@ -141,6 +148,11 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
   for (const relation of graph.relations) {
     const source = { kind: 'relation', id: relation.id } as const;
     try {
+      if (relation.kind === 'external-reference') {
+        try { validateCadSketchExternalReference(graph, relation); }
+        catch (error) { report(source, 'relation-residual', error instanceof Error ? error.message : 'Invalid reference ownership.'); }
+        continue; // Cross-feature cache authority is checked by the document parser.
+      }
       if (relation.kind === 'line-angle') { issues.push(...checkCadSketchAngleRelation(graph, relation, points, parameters)); continue; }
       if (relation.kind === 'equal-length' || relation.kind === 'equal-radius') {
         issues.push(...checkCadSketchEqualRelation(graph, relation, points, parameters)); continue;

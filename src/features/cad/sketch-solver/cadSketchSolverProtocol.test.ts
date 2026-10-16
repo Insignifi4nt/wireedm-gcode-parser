@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { parseCadSketchSolveInput, parseCadSketchSolverReply } from './cadSketchSolverProtocol';
+import { circleReferencePart } from '@/domain/cad/__tests__/cadSketchExternalReferenceFixtures';
 
 const source = () => parseCadSketchGraph({ points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [10, 0] }],
   entities: [{ id: 'line', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
@@ -13,6 +14,16 @@ const replyWith = (graph: CadSketchGraph) => ({ id: 1, kind: 'result', result: {
   diagnostics: { status: 'success', degreesOfFreedom: 1, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } } });
 
 describe('shared sketch precision at document and worker boundaries', () => {
+  it.each(['position', 'radius'] as const)('rejects a forged numeric reference %s even when local equations remain valid', component => {
+    const document = circleReferencePart(true), target = document.features[1]; if (target.kind !== 'sketch' || !target.graph) throw new Error('Reference target missing.');
+    const graph = target.graph, input = parseCadSketchSolveInput({ graph, parameters: document.parameters });
+    const candidate = parseCadSketchGraph({ ...graph,
+      ...(component === 'position' ? { points: graph.points.map(point => ({ ...point, position: [Number(point.position[0]) + 1, point.position[1]] })) }
+        : { entities: graph.entities.map(entity => entity.kind === 'circle' ? { ...entity, radius: Number(entity.radius) + 1 } : entity) }) });
+    expect(() => parseCadSketchSolverReply(replyWith(candidate), input)).toThrow('request');
+    expect(() => parseCadSketchSolveInput({ graph, parameters: document.parameters, drag: { pointId: 'ref_c0', position: [12, 8] } })).toThrow();
+    expect(parseCadSketchSolveInput({ graph, parameters: document.parameters, drag: { pointId: 'bore-center', position: [12, 8] } }).drag?.pointId).toBe('bore-center');
+  });
   it('accepts a within-budget free numeric result through both boundaries without changing drivers or source', () => {
     const graph = source(), before = JSON.stringify(graph), input = parseCadSketchSolveInput({ graph, parameters: { span: 10 } });
     const candidate = parseCadSketchGraph({ ...graph, points: graph.points.map(point => point.id === 'b' ? { ...point, position: [10 + 5e-11, 0] } : point) });

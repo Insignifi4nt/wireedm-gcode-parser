@@ -13,6 +13,7 @@ import type { SketchPoint } from './cadSketchInteraction';
 import type { CadSketchGraphSelection } from './cadViewportControls';
 import type { CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import { prepareCadSketchGeometrySnaps } from './cadSketchGeometrySnaps';
+import { cadSketchExternalReferenceComponents, cadSketchExternalReferenceLockReason } from '@/domain/cad/cadSketchExternalReferences';
 
 export type { CadSketchGraphSelection } from './cadViewportControls';
 export type { CadSketchGraphPickFilter } from './cadSketchGraphSelection';
@@ -40,9 +41,9 @@ export function cadSketchGraphCircleControl(graph: CadSketchGraph, parameters: R
   if (circle?.kind !== 'circle') throw new CadError('missing-sketch-circle', 'Choose an existing sketch circle.');
   const center = graph.points.find(point => point.id === circle.centerPointId);
   if (!center) throw new CadError('missing-sketch-point', 'The circle center no longer exists.');
-  const lockedReason = typeof circle.radius === 'string' ? 'Radius follows an expression. Edit or release it with fx.'
+  const lockedReason = cadSketchExternalReferenceLockReason(graph, { kind: 'entity', id: entityId }) ?? (typeof circle.radius === 'string' ? 'Radius follows an expression. Edit or release it with fx.'
     : graph.relations.some(relation => relation.kind === 'radial-size' && relation.entityId === entityId) ? 'Radius follows a radial dimension. Edit that dimension instead.'
-      : graph.relations.some(relation => relation.kind === 'equal-radius' && relation.curveIds.includes(entityId)) ? 'Radius follows an equal-radius relation. Add or edit a radial dimension to control the shared size.' : null;
+      : graph.relations.some(relation => relation.kind === 'equal-radius' && relation.curveIds.includes(entityId)) ? 'Radius follows an equal-radius relation. Add or edit a radial dimension to control the shared size.' : null);
   return Object.freeze({ entityId: circle.id, center: Object.freeze([evaluateCadScalar(center.position[0], parameters),
     evaluateCadScalar(center.position[1], parameters)] satisfies [number, number]), radius: evaluateCadScalar(circle.radius, parameters), lockedReason });
 }
@@ -72,6 +73,7 @@ function boundsCorners(bounds: Readonly<Bounds2>): readonly Point2[] {
 export function prepareCadSketchGraphInteraction(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>) {
   const geometry = compileCadSketchGraph(graph, parameters);
   const fixed = new Map<string, Set<number>>();
+  for (const id of cadSketchExternalReferenceComponents(graph).pointIds) fixed.set(id, new Set([0, 1]));
   for (const relation of graph.relations) if (relation.kind === 'fixed-point' || relation.kind === 'fixed-axis') {
     const axes = fixed.get(relation.pointId) ?? new Set<number>();
     if (relation.kind === 'fixed-point') { axes.add(0); axes.add(1); } else axes.add(relation.axis === 'x' ? 0 : 1);

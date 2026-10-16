@@ -29,7 +29,8 @@ test('keeps a bore centered through line changes, deliberate detachment, exact h
   expect((await context(page)).version).toBe(initialVersion);
   await page.getByRole('checkbox', { name: 'Midpoint', exact: true }).check();
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
-  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click(); current = await context(page);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toHaveCount(0); current = await context(page);
   const linked = await readSketch();
   expect(linked.graph.points).toEqual(sketch.graph!.points); expect(linked.graph.entities).toEqual(sketch.graph!.entities);
   expect(linked.graph.relations).toEqual([{ id: expect.any(String), kind: 'midpoint', pointId: 'center', lineId: 'guide' }]);
@@ -46,7 +47,8 @@ test('keeps a bore centered through line changes, deliberate detachment, exact h
   } }] })).ok).toBe(false); expect((await context(page)).version).toBe(current.version); expect(await readSketch()).toEqual(widened);
   await page.getByRole('button', { name: 'Select Centered bore in history', exact: true }).dblclick();
   await selectPair(); await page.getByRole('checkbox', { name: 'Midpoint', exact: true }).uncheck();
-  await page.getByRole('button', { name: 'Apply', exact: true }).click(); await page.getByRole('button', { name: 'Finish sketch', exact: true }).click(); current = await context(page);
+  await page.getByRole('button', { name: 'Apply', exact: true }).click(); await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toHaveCount(0); current = await context(page);
   expect((await readSketch()).graph).toEqual({ ...widened.graph, relations: [] });
   await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'set-parameter', name: 'width', value: 80 }] }); current = await context(page);
   expect((await readSketch()).graph.points[4].position).toEqual(widened.graph.points[4].position);

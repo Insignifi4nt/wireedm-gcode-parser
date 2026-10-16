@@ -6,7 +6,8 @@ import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '.
 import { evaluateCadScalar } from '../../../domain/cad/cadExpression';
 import type { CadSketchSolverModule } from './cadSketchSolverModule';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
-import { parseCadSketchSolveInput } from './cadSketchSolverProtocol';
+import { cadSketchSolutionMatchesInput, parseCadSketchSolveInput } from './cadSketchSolverProtocol';
+import { cadSketchExternalReferenceComponents } from '../../../domain/cad/cadSketchExternalReferences';
 import { compileCadSketchCornerConstraints } from './cadSketchCornerConstraints';
 import { cadSketchLineDirection, resolveCadSketchLinePair } from '../../../domain/cad/cadSketchLineRelations';
 import type { Point2 } from '../../../domain/path-intel/types';
@@ -54,6 +55,7 @@ function compile(input: CadSketchSolveInput) {
   for (const relation of graph.relations) {
     const id = relation.id;
     switch (relation.kind) {
+      case 'external-reference': break; // Source authority is fixed numeric parameter ownership, not another equation.
       case 'coincident': constraint({ id, type: 'p2p_coincident', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
       case 'horizontal': constraint({ id, type: 'horizontal_pp', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
       case 'vertical': constraint({ id, type: 'vertical_pp', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
@@ -132,14 +134,15 @@ export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketch
     const module = await initialize(), wrapper = new GcsWrapper(new module.GcsSystem(), module);
     try {
       wrapper.push_primitives_and_params(compiled.objects);
-      // A string remains an exact driver even when its text happens to be numeric.
+      const owned = cadSketchExternalReferenceComponents(compiled.graph);
+      // Strings and evaluated external snapshots keep their exact source type.
       for (const point of compiled.graph.points) {
         const start = wrapper.p_param_index.get(point.id);
         if (start === undefined) throw new Error('A compiled sketch point has no native parameters.');
-        if (typeof point.position[0] === 'string') wrapper.gcs.set_p_param(start + property_offsets.point.x, evaluateCadScalar(point.position[0], input.parameters), true);
-        if (typeof point.position[1] === 'string') wrapper.gcs.set_p_param(start + property_offsets.point.y, evaluateCadScalar(point.position[1], input.parameters), true);
+        if (typeof point.position[0] === 'string' || owned.pointIds.has(point.id)) wrapper.gcs.set_p_param(start + property_offsets.point.x, evaluateCadScalar(point.position[0], input.parameters), true);
+        if (typeof point.position[1] === 'string' || owned.pointIds.has(point.id)) wrapper.gcs.set_p_param(start + property_offsets.point.y, evaluateCadScalar(point.position[1], input.parameters), true);
       }
-      for (const entity of compiled.graph.entities) if (entity.kind === 'circle' && typeof entity.radius === 'string') {
+      for (const entity of compiled.graph.entities) if (entity.kind === 'circle' && (typeof entity.radius === 'string' || owned.circleIds.has(entity.id))) {
         const start = wrapper.p_param_index.get(entity.id);
         if (start === undefined) throw new Error('A compiled circle has no native parameters.');
         wrapper.gcs.set_p_param(start + property_offsets.circle.radius, evaluateCadScalar(entity.radius, input.parameters), true);
@@ -164,6 +167,7 @@ export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketch
         return { ...point, position: [typeof point.position[0] === 'number' ? solved.x : point.position[0], typeof point.position[1] === 'number' ? solved.y : point.position[1]] };
       }), entities: compiled.graph.entities.map(entity => entity.kind === 'circle' && typeof entity.radius === 'number'
         ? { ...entity, radius: wrapper.sketch_index.get_sketch_circle(entity.id).radius } : entity) });
+      if (!cadSketchSolutionMatchesInput(input, graph)) return { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution changed fixed source geometry.', diagnostics };
       const issues = checkCadSketchGraph(graph, input.parameters);
       if (issues.length) return { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution does not satisfy its geometry and relations.', diagnostics: { ...diagnostics, issues } };
       return { kind: 'solved', graph, diagnostics };

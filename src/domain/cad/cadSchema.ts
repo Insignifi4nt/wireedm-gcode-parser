@@ -21,6 +21,7 @@ import { CadDatumPlaneFeatureSchema, resolveCadWorldDatum, resolveCadSketchPlace
 import { cadConsumedBodyIds, cadFeatureInputs, cadFeatureProducesBody } from './cadFeatureInputs';
 import { CadSketchDimensionConstraintSchema, validateCadSketchConstraints } from './cadSketchConstraints';
 import { CadSketchGraphSchema, parseCadSketchGraph } from './cadSketchGraph';
+import { assertCadSketchExternalReferences } from './cadSketchExternalReferences';
 export { cadConsumedBodyIds, cadFeatureDependencies, cadFeatureInputs, cadFeatureProducesBody, cadVisibleBodyIds, type CadBodyFeature } from './cadFeatureInputs';
 export { CadPathSegmentSchema } from './cadPrimitives';
 
@@ -163,6 +164,7 @@ export function parseCadDocument(value: unknown): CadDocument {
         if (feature.graph) {
           if (document.schemaVersion !== 2) throw new CadError('unsupported-sketch-format', 'Stable sketch entities require CAD schema 2. Preserve the schema 1 original when saving an upgrade.');
           parseCadSketchGraph(feature.graph);
+          assertCadSketchExternalReferences({ sketch: feature, parameters: document.parameters, previous });
         }
         if (feature.source) parseCadDxfImportSource(feature.source);
         const ids = new Set<string>();

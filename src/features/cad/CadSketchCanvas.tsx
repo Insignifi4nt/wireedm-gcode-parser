@@ -28,6 +28,7 @@ import { translateCadSketchProfile } from '@/domain/cad/cadSketchConstraints';
 import { cadSketchHandleKey, moveCadSketchHandle, type CadSketchHandle } from '@/domain/cad/cadSketchHandles';
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
+import { cadSketchExternalReferenceForSelection } from '@/domain/cad/cadSketchExternalReferences';
 import { CadSketchGraphLayer, type CadSketchGraphControls } from './CadSketchGraphLayer';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { cadArcSvgPath } from './cadSketchSvg';
@@ -434,7 +435,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     const projection = projectSelection(event), rect = svg.current?.getBoundingClientRect();
     if (!sourceGraph || !graphControls || !projection || !rect?.height || tool !== 'select' || isPreview || interactionLocked) return false;
     const candidates = graphPicks(projection.point, span / rect.height);
-    const focused = focusedEntityId && trigger === 'keyboard' && (entityPick ? entityPick.eligibleEntityIds.includes(focusedEntityId) : pickFilter !== 'points' && sourceGraph.graph.entities.some(entity => entity.id === focusedEntityId && entity.kind !== 'circle'))
+    const focused = focusedEntityId && trigger === 'keyboard' && (entityPick ? entityPick.eligibleEntityIds.includes(focusedEntityId) : pickFilter !== 'points' && sourceGraph.graph.entities.some(entity => entity.id === focusedEntityId && (entity.kind !== 'circle' || cadSketchExternalReferenceForSelection(sourceGraph.graph, { kind: 'entity', id: entity.id }))))
       ? { kind: 'entity' as const, id: focusedEntityId } : undefined;
     if (!candidates.length && !focused) return false;
     const selected = graphControls.selection.length === 1 ? graphControls.selection[0] : null;
@@ -442,7 +443,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       : selected?.kind === 'entity' && candidates.some(atom => atom.kind === 'entity' && atom.id === selected.id) ? selected : undefined : focused;
     setOverlap({ prepared: sourceGraph, document: graphControls.document, version: documentVersion, cancelSignal, filter: pickFilter, frameKey: spatialFrameKey, frame: projection.frame, entityPick,
       clientX: event.clientX, clientY: event.clientY, toggle: Boolean(event.shiftKey), candidates, target,
-      ...(entityPick ? {} : focused ? { action: 'extend', extendEnd: 'start', extendEnds: (['start', 'end'] as const).map(end => ({ end,
+      ...(entityPick ? {} : focused && sourceGraph.graph.entities.find(entity => entity.id === focused.id)?.kind === 'circle' ? { extendEnds: [] }
+        : focused ? { action: 'extend', extendEnd: 'start', extendEnds: (['start', 'end'] as const).map(end => ({ end,
         preview: prepareCadSketchExtendEndPreview(sourceGraph, sourceSketch.id, focused.id, end) })) }
         : target ? { action: 'split', split: prepareCadSketchSplitPreview(sourceGraph, sourceSketch.id, target.id, projection.point),
         trim: prepareCadSketchTrimPreview(sourceGraph, sourceSketch.id, target.id, projection.point),
@@ -471,10 +473,21 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (projectSelection(owned)?.frame === owned.frame) graphControls.onSelect({ kind: 'point', id: edit.extend.endPointId });
         }, 'Unable to extend this line.');
       } })) : [];
+  const referenceOwner = sourceGraph && overlapTarget ? cadSketchExternalReferenceForSelection(sourceGraph.graph, overlapTarget) : undefined;
   const overlapItems: readonly CadContextMenuItem[] = currentOverlap && entityPick ? (overlapTarget ? [overlapTarget] : currentOverlap.candidates).map(atom => ({
-    label: overlapTarget ? entityPick.label : `${entityPick.label} · Line ${(sourceGraph?.graph.entities.findIndex(entity => entity.id === atom.id) ?? -1) + 1}`,
+    label: overlapTarget ? entityPick.label : `${entityPick.label} · ${sourceGraph?.graph.entities.find(entity => entity.id === atom.id)?.kind === 'circle' ? 'Circle' : 'Line'} ${(sourceGraph?.geometry.segments.findIndex(entity => entity.id === atom.id) ?? -1) + 1}`,
     onHighlight: () => setPickHighlight(atom), onSelect: () => selectOverlap(atom)
   })) : currentOverlap && overlapTarget ? [
+    ...(referenceOwner ? [{ label: 'Detach reference', help: 'Keep this geometry and its local relations, and release its source link.', onSelect: () => {
+      const owned = currentOverlap;
+      if (projectSelection(owned)?.frame !== owned.frame || baseInteractionLocked || !graphControls || sourceSketch.kind !== 'sketch') return;
+      edgeSubmission.current = owned;
+      submitEdit(signal => graphControls.onEditMany([{ kind: 'remove-sketch-relation', sketchId: sourceSketch.id, relationId: referenceOwner.id }], signal), () => {
+        if (edgeSubmission.current !== owned) return;
+        edgeSubmission.current = null;
+        if (projectSelection(owned)?.frame === owned.frame) graphControls.onSelect(overlapTarget);
+      }, 'Unable to detach this reference.');
+    } }] : []),
     ...(currentOverlap.extendEnds ? [] : [
     { label: 'Split here', disabled: currentOverlap.split?.kind !== 'ready', help: currentOverlap.split?.kind === 'unavailable' ? currentOverlap.split.reason : undefined,
       onHighlight: () => highlightEdgeAction('split'), onSelect: () => {

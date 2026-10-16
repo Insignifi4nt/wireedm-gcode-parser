@@ -26,6 +26,23 @@ it('offers explicit graph-cell inspection and unique numeric receipt reads witho
 });
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('discovers strict reference creation and typed source witnesses without accepting caller snapshots', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid reference reached controller.'); });
+    const edit = cadSiteTools(controller).find(tool => tool.name === 'cad_edit_document');
+    const discovery = cadSiteTools(() => ({} as CadController)).find(tool => tool.name === 'cad_describe_edits');
+    if (!edit || !discovery) throw new Error('Edit tools missing.');
+    const request = { kind: 'use-sketch-entity', sketchId: 'target', sourceSketchId: 'layout', sourceEntityId: 'line', idPrefix: 'ref' };
+    expect(await discovery.execute({ kind: request.kind })).toMatchObject({ ok: true, data: { schema: { additionalProperties: false,
+      required: expect.arrayContaining(['sketchId', 'sourceSketchId', 'sourceEntityId', 'idPrefix']) } } });
+    expect(Value.Check(CadEditSchema, request)).toBe(true);
+    const relation = { id: 'ref_reference', kind: 'external-reference', entityId: 'ref_e0', sourceSketchId: 'layout',
+      source: { kind: 'line', entityId: 'line', startPointId: 'a', endPointId: 'b' } };
+    expect(Value.Check(CadEditSchema, { kind: 'set-sketch-relation', sketchId: 'target', relation })).toBe(true);
+    for (const invalid of [{ ...request, position: [0, 10] }, { ...request, source: relation.source }, { ...request, idPrefix: 'x'.repeat(65) },
+      { kind: 'set-sketch-relation', sketchId: 'target', relation: { ...relation, source: { ...relation.source, position: [0, 10] } } }])
+      expect(await edit.execute({ expectedVersion: 'current', edits: [invalid] })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(controller).not.toHaveBeenCalled();
+  });
   it('discovers the document-level profile copy edit and rejects caller geometry before controller access', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed profile copy reached controller.'); });
     const tools = cadSiteTools(controller), edit = tools.find(tool => tool.name === 'cad_edit_document');

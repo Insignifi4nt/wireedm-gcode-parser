@@ -4,7 +4,8 @@ import type { CadFeature } from './cadDocument';
 function operandInputs(feature: CadFeature): { readonly sketchIds: readonly string[]; readonly curveIds: readonly string[]; readonly bodyIds: readonly string[] } {
   const curveIds: readonly string[] = [];
   switch (feature.kind) {
-    case 'datum-plane': case 'sketch': case 'curve': case 'imported': return { sketchIds: [], curveIds, bodyIds: [] };
+    case 'sketch': return { sketchIds: [...new Set(feature.graph?.relations.flatMap(relation => relation.kind === 'external-reference' ? [relation.sourceSketchId] : []) ?? [])], curveIds, bodyIds: [] };
+    case 'datum-plane': case 'curve': case 'imported': return { sketchIds: [], curveIds, bodyIds: [] };
     case 'extrude': case 'revolve': return { sketchIds: [feature.sketchId], curveIds, bodyIds: feature.targetId === null ? [] : [feature.targetId] };
     case 'pocket': return { sketchIds: [feature.sketchId], curveIds, bodyIds: [feature.targetId] };
     case 'loft': return { sketchIds: feature.sketchIds, curveIds, bodyIds: feature.targetId === null ? [] : [feature.targetId] };

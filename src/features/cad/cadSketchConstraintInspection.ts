@@ -3,6 +3,7 @@ import { CadError } from '@/domain/cad/cadError';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import { cadSketchExternalReferenceComponents } from '@/domain/cad/cadSketchExternalReferences';
 import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
 import { page } from '@/features/webmcp/siteTools';
 import { summarizeMessage, summarizeDiagnostic } from '@/features/webmcp/diagnosticSummaries';
@@ -62,6 +63,7 @@ export async function inspectCadSketchConstraints(document: CadDocument, sketchI
 const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
   coincident: 'Keeps two distinct source points at the same location.', horizontal: 'Keeps two points at the same Y coordinate.',
   midpoint: 'Keeps one distinct graph point halfway between a graph line’s endpoints, including construction lines. Does not join material boundaries.',
+  'external-reference': 'Linked construction geometry follows a stable preceding sketch edge along the shared plane normal. Detach explicitly to retain its current numeric shape without the source link.',
   vertical: 'Keeps two points at the same X coordinate.', 'fixed-point': 'Fixes a point at its driving X and Y coordinates.',
   parallel: 'Keeps two line directions parallel.', perpendicular: 'Keeps two line directions at a right angle.',
   collinear: 'Keeps two lines on the same infinite supporting line without joining endpoints or fixing lengths.',
@@ -87,17 +89,18 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
   for (const entity of graph?.entities ?? []) for (const id of entityPoints(entity)) {
     const edges = adjacency.get(id) ?? []; edges.push(entity.id); adjacency.set(id, edges);
   }
-  const scalar = (value: CadScalar, driving = false) => ({ scalar: value, valueMm: evaluateCadScalar(value, inspection.parameters),
-    role: typeof value === 'string' ? 'expression-driver' : driving ? 'constant-driver' : 'solver-variable' });
+  const referenceComponents = graph ? cadSketchExternalReferenceComponents(graph) : null;
+  const scalar = (value: CadScalar, driving = false, linked = false) => ({ scalar: value, valueMm: evaluateCadScalar(value, inspection.parameters),
+    role: linked ? 'linked-reference' : typeof value === 'string' ? 'expression-driver' : driving ? 'constant-driver' : 'solver-variable' });
   const point = (id: string) => {
     const source = points.get(id); if (!source) throw new CadError('missing-sketch-point', 'The inspected point no longer exists.');
     const entities = adjacency.get(id) ?? [];
-    return { id, position: source.position.map(value => scalar(value)), diagnostics: diagnosticState(id), entityIds: entities.slice(0, 8), entityCount: entities.length,
+    return { id, position: source.position.map(value => scalar(value, false, referenceComponents?.pointIds.has(id))), diagnostics: diagnosticState(id), entityIds: entities.slice(0, 8), entityCount: entities.length,
       omittedEntityCount: Math.max(0, entities.length - 8) };
   };
   if (input.section === 'points') return page(graph?.points ?? [], input, source => point(source.id));
   if (input.section === 'entities') return page(graph?.entities ?? [], input, source => ({ source, diagnostics: diagnosticState(source.id), points: entityPoints(source).map(point),
-    ...(source.kind === 'circle' ? { radius: scalar(source.radius) } : {}) }));
+    ...(source.kind === 'circle' ? { radius: scalar(source.radius, false, referenceComponents?.circleIds.has(source.id)) } : {}) }));
   return page(graph?.relations ?? [], input, source => ({ source, meaning: relationMeanings[source.kind], diagnostics: diagnosticState(source.id),
     points: graph ? cadSketchRelationPointIds(graph, source).map(point) : [],
     ...(cadSketchRelationEntityIds(source).length ? { entityIds: cadSketchRelationEntityIds(source) } : {}),

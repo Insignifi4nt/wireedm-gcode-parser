@@ -592,6 +592,24 @@ describe('graph spatial selection', () => {
     }
     expect(h.selected).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
   });
+  it('detaches a focused linked circle by keyboard without borrowing a synthetic cut or extension point', async () => {
+    const h = await spatialFixture();
+    const document = applyCadEdits({ ...createCadDocument('Circle reference'), schemaVersion: 2, features: [
+      { ...sketch, id: 'layout', graph: { points: [{ id: 'center', position: [4, 6] }],
+        entities: [{ id: 'circle', kind: 'circle', construction: true, centerPointId: 'center', radius: 3 }], relations: [] } }, sketch
+    ] }, [{ kind: 'use-sketch-entity', sketchId: sketch.id, sourceSketchId: 'layout', sourceEntityId: 'circle', idPrefix: 'used' }]);
+    const target = document.features[1]; if (target.kind !== 'sketch') throw new Error('Target sketch missing.');
+    await h.show({ sketch: target, graphControls: { ...h.props().graphControls!, document, selection: [{ kind: 'entity', id: 'used_e0' }] } });
+    const edge = container.querySelector<SVGGElement>('[data-cad-sketch-entity="used_e0"]'); if (!edge) throw new Error('Linked circle missing.');
+    const open = async () => act(async () => { edge.focus(); edge.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+    const detach = () => [...window.document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Detach reference');
+    await open(); expect(detach()).toBeDefined();
+    expect([...window.document.querySelectorAll('[role="menuitem"]')].some(item => /^(Split here|Trim here|Extend)/.test(item.textContent ?? ''))).toBe(false);
+    await act(async () => window.document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(h.edited).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+    await open(); await act(async () => detach()?.click());
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'remove-sketch-relation', sketchId: sketch.id, relationId: 'used_reference' }], expect.any(AbortSignal));
+  });
   async function keyboardExtendFixture() {
     const h = await spatialFixture(), graph = h.feature.graph!;
     const feature: CadSketchFeature = { ...h.feature, graph: { ...graph,

@@ -7,6 +7,7 @@ import { cadSketchGraphSelectionSet, type CadSketchGraphSelection } from './cadS
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import { signedSweep } from '@/domain/path-intel/segments';
 import type { Point2 } from '@/domain/path-intel/types';
+import { cadSketchExternalReferenceLockReason } from './cadSketchExternalReferences';
 
 function position(points: ReadonlyMap<string, Point2>, id: string): Point2 {
   const point = points.get(id);
@@ -23,6 +24,10 @@ export function translateCadSketchGraph({ graph, selections, translation, parame
   if (!selected.length) throw new CadError('invalid-sketch-selection', 'Choose at least one sketch point or edge to move.');
   const delta = translation.map(value => evaluateCadScalar(value, parameters));
   if (delta.every(value => value === 0)) return graph;
+  for (const selection of selected) {
+    const reason = cadSketchExternalReferenceLockReason(graph, selection);
+    if (reason) throw new CadError('referenced-sketch-geometry', reason);
+  }
   const points = new Set(selected.filter(item => item.kind === 'point').map(item => item.id));
   const entities = new Set(selected.filter(item => item.kind === 'entity').map(item => item.id));
   for (const entity of graph.entities) if (entities.has(entity.id)) for (const id of cadSketchEntityPointIds(entity)) points.add(id);

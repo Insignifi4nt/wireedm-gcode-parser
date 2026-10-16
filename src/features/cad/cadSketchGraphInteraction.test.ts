@@ -25,6 +25,19 @@ function circleSketch(): CadSketchFeature & { readonly graph: CadSketchGraph } {
 }
 
 describe('owned graph circle radius control', () => {
+  it('keeps a linked numeric circle selectable for constraints while locking only its owned grip and radius', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'linked-center', position: [4, 6] }, { id: 'free-center', position: [30, 7] }],
+      entities: [{ id: 'linked-circle', kind: 'circle', construction: true, centerPointId: 'linked-center', radius: 3 },
+        { id: 'free-circle', kind: 'circle', construction: false, centerPointId: 'free-center', radius: 4 }],
+      relations: [{ id: 'link', kind: 'external-reference', entityId: 'linked-circle', sourceSketchId: 'layout', source: { kind: 'circle', entityId: 'source-circle', centerPointId: 'source-center' } }] });
+    const before = JSON.stringify(graph), prepared = prepareCadSketchGraphInteraction(graph, {});
+    expect(prepared.points.map(point => point.freeAxes)).toEqual([[false, false], [true, true]]);
+    expect(prepared.pick([7, 6], 0.01, 'edges')).toContainEqual({ kind: 'entity', id: 'linked-circle' });
+    expect(cadSketchGraphCircleControl(graph, {}, 'linked-circle').lockedReason).toMatch(/detach/i);
+    expect(cadSketchGraphCircleControl(graph, {}, 'free-circle').lockedReason).toBeNull();
+    expect(() => cadSketchGraphCircleRadiusEdit({ id: 'target', name: 'Target', kind: 'sketch', suppressed: false, plane: 'XY', offset: 5, profiles: [], graph }, {}, 'linked-circle', 4)).toThrow(/detach/i);
+    expect(JSON.stringify(graph)).toBe(before);
+  });
   it('resizes only a free numeric circle radius while keeping its fixed center and all other source exact', () => {
     const sketch = circleSketch(), parameters = { cx: 3, otherRadius: 2 }, before = JSON.stringify(sketch);
     const control = cadSketchGraphCircleControl(sketch.graph, parameters, 'bore');

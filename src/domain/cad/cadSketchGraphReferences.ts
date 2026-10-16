@@ -7,7 +7,7 @@ export function cadSketchEntityPointIds(entity: CadSketchGraphEntity): readonly 
     : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
 }
 export function cadSketchRelationEntityIds(relation: CadSketchGraphRelation): readonly string[] {
-  return relation.kind === 'midpoint' ? [relation.lineId] : relation.kind === 'line-angle' ? relation.rays.map(ray => ray.lineId) : relation.kind === 'radial-size' ? [relation.entityId]
+  return relation.kind === 'external-reference' ? [relation.entityId] : relation.kind === 'midpoint' ? [relation.lineId] : relation.kind === 'line-angle' ? relation.rays.map(ray => ray.lineId) : relation.kind === 'radial-size' ? [relation.entityId]
     : relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear' || relation.kind === 'equal-length' ? relation.lineIds
     : relation.kind === 'equal-radius' ? relation.curveIds
     : relation.kind === 'fillet-corner' ? [...relation.lineIds, relation.arcId]
@@ -28,7 +28,7 @@ export function mapCadSketchRelationScalars(relation: CadSketchGraphRelation, ma
     case 'fixed-point': return { ...relation, position: [map(relation.position[0], 'position.0'), map(relation.position[1], 'position.1')] };
     case 'fixed-axis': case 'distance': case 'axis-distance': case 'fillet-corner': case 'radial-size': case 'line-angle': return { ...relation, value: map(relation.value, 'value') };
     case 'chamfer-corner': return { ...relation, values: [map(relation.values[0], 'values.0'), map(relation.values[1], 'values.1')] };
-    case 'coincident': case 'horizontal': case 'vertical': case 'parallel': case 'perpendicular': case 'collinear': case 'equal-length': case 'equal-radius': case 'midpoint': return relation;
+    case 'external-reference': case 'coincident': case 'horizontal': case 'vertical': case 'parallel': case 'perpendicular': case 'collinear': case 'equal-length': case 'equal-radius': case 'midpoint': return relation;
     default: { const exhaustive: never = relation; return exhaustive; }
   }
 }

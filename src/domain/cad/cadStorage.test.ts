@@ -17,6 +17,7 @@ import { CAD_FORMER_DOCUMENT_BYTES } from './__tests__/cadBudgetFixture';
 import { graphCellSelectionAt, intersectingCircleSketch } from './__tests__/cadIntersectingCellFixtures';
 import { pairedBoreMirrorPart, mirrorBoreRequest } from './__tests__/cadSketchMirrorFixtures';
 import { profileCopySlotPart, slotProfileCopyRequest } from './__tests__/cadSketchProfileCopyFixtures';
+import { lineReferencePart, lineUseReference, lineMidpoint } from './__tests__/cadSketchExternalReferenceFixtures';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -26,6 +27,26 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     localStorage.clear();
     adapter = kind === 'browser-cache' ? createBrowserCacheAdapter(localStorage)
       : createBrowserDirectoryAdapter(new FakeDirectoryHandle('cad-test') as unknown as FileSystemDirectoryHandle);
+  });
+  it('round trips exact reference witnesses and numeric snapshots and refuses a stale or forged cache before writes', async () => {
+    const old = lineReferencePart(false, true), first = await saveCadDocument(adapter, old, { expectedSavedVersion: null });
+    const linked = applyCadEdits(old, [lineUseReference, lineMidpoint]), second = await saveCadDocument(adapter, linked, { expectedSavedVersion: first.savedVersion });
+    expect((await loadCadDocument(adapter, old.id)).document).toEqual(linked);
+    const target = linked.features[1]; if (target.kind !== 'sketch' || !target.graph) throw new Error('Reference target missing.');
+    const graph = target.graph;
+    const changed = parseCadDocument({ ...linked, parameters: { ...linked.parameters, span: 60 }, features: linked.features.map(feature => feature.id === 'plate'
+      ? { ...target, graph: { ...graph, points: graph.points.map(point => point.id === 'ref_p1' ? { ...point, position: [60, 10] }
+        : point.id === 'hole-center' ? { ...point, position: [30, 10] } : point) } } : feature) });
+    const saved = await saveCadDocument(adapter, changed, { expectedSavedVersion: second.savedVersion }), reopened = await loadCadDocument(adapter, old.id);
+    expect(reopened).toEqual(saved); expect(reopened.document.features[0]).toEqual(old.features[0]);
+    expect(reopened.document.features[1]).toMatchObject({ graph: { relations: graph.relations } });
+    const path = cadDocumentPath(old.id), raw = await adapter.readExactText?.(path), writes = vi.spyOn(adapter, 'writeText');
+    await expect(saveCadDocument(adapter, { ...changed, parameters: { ...changed.parameters, span: 61 } }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrowError(expect.objectContaining({ code: 'stale-sketch-reference' }));
+    const forged = structuredClone(changed), owner = forged.features[1]; if (owner.kind !== 'sketch' || !owner.graph) throw new Error('Owner missing.');
+    const reference = owner.graph.relations.find(relation => relation.kind === 'external-reference'); if (!reference || reference.source.kind !== 'line') throw new Error('Line witness missing.');
+    Reflect.set(reference.source, 'endPointId', 'replaced');
+    await expect(saveCadDocument(adapter, forged, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow();
+    expect(writes).not.toHaveBeenCalled(); expect(await adapter.readExactText?.(path)).toBe(raw); expect(await loadCadDocument(adapter, old.id)).toEqual(reopened);
   });
   it('saves an independent copied outline with its exact schema-1 original and keeps later source size/offset edits detached', async () => {
     const document = profileCopySlotPart(), first = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
