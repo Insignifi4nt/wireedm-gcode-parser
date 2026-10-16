@@ -2,6 +2,59 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('aligns selected material edges to a construction reference, then rebuilds and reopens the constrained plate', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const feature = { id: 'aligned', kind: 'sketch', name: 'Aligned plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: ['40', '0'] }, { id: 'c', position: [35, 15] },
+      { id: 'd', position: ['0', '20'] }, { id: 'e', position: ['60', '0'] }, { id: 'f', position: ['80', '0'] }],
+    entities: [{ id: 'ab', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false },
+      { id: 'bc', kind: 'line', startPointId: 'b', endPointId: 'c', construction: false },
+      { id: 'cd', kind: 'line', startPointId: 'c', endPointId: 'd', construction: false },
+      { id: 'da', kind: 'line', startPointId: 'd', endPointId: 'a', construction: false },
+      { id: 'reference', kind: 'line', startPointId: 'e', endPointId: 'f', construction: true }], relations: []
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature }] });
+  let current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: feature.id } });
+  await page.getByRole('button', { name: 'Line 3 in Aligned plate', exact: true }).click();
+  await page.getByRole('button', { name: 'Line 5 in Aligned plate', exact: true }).press('Shift+Enter');
+  await page.getByRole('checkbox', { name: 'Parallel', exact: true }).check();
+  await expect(page.getByRole('checkbox', { name: 'Perpendicular', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(feature);
+  await page.getByRole('checkbox', { name: 'Parallel', exact: true }).check();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const parallel = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature;
+  expect(parallel.graph.points.find((point: { id: string }) => point.id === 'c').position).toEqual([35, 20]);
+  expect(parallel.graph.relations).toContainEqual(expect.objectContaining({ kind: 'parallel', lineIds: ['cd', 'reference'] }));
+  await page.getByRole('button', { name: 'Line 2 in Aligned plate', exact: true }).click();
+  await page.getByRole('button', { name: 'Line 5 in Aligned plate', exact: true }).press('Shift+Enter');
+  await page.getByRole('checkbox', { name: 'Perpendicular', exact: true }).check();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const aligned = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature;
+  expect(aligned.graph.points.find((point: { id: string }) => point.id === 'c').position).toEqual([40, 20]);
+  expect(aligned.graph.points[0].position).toEqual([' 0 ', '0']);
+  expect(aligned.graph.relations).toEqual([...parallel.graph.relations, expect.objectContaining({ kind: 'perpendicular', lineIds: ['bc', 'reference'] })]);
+  await page.keyboard.press('Control+z'); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(parallel);
+  await page.keyboard.press('Control+Shift+z'); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(aligned);
+  expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: feature.id })).materialAreaMm2).toBeCloseTo(800, 9);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'pad', kind: 'extrude', name: 'Plate thickness', suppressed: false, sketchId: feature.id, distance: 5, symmetric: false, operation: 'new', targetId: null
+  } }] });
+  current = await context(page); const built = await call(page, 'cad_build', { expectedVersion: current.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo(4000, 7);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current.dirty).toBe(false); expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: feature.id })).feature).toEqual(aligned);
+});
+
 test('joins distinct sketch endpoints deliberately, then exports and saves their exact constrained extrusion', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const feature = { id: 'joined', kind: 'sketch', name: 'Joined plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

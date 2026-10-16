@@ -62,6 +62,7 @@ export async function inspectCadSketchConstraints(document: CadDocument, sketchI
 const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
   coincident: 'Keeps two distinct source points at the same location.', horizontal: 'Keeps two points at the same Y coordinate.',
   vertical: 'Keeps two points at the same X coordinate.', 'fixed-point': 'Fixes a point at its driving X and Y coordinates.',
+  parallel: 'Keeps two line directions parallel.', perpendicular: 'Keeps two line directions at a right angle.',
   'fixed-axis': 'Fixes one point coordinate; the other axis can remain free.', distance: 'Keeps the straight-line distance between two points.',
   'fillet-corner': 'Keeps a tangent minor arc at the original reference corner, with a driving radius and finite trimmed sides.',
   'chamfer-corner': 'Keeps two driving setbacks along the finite sides of the original reference corner.'

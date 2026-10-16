@@ -63,6 +63,39 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it.each(['parallel', 'perpendicular'] as const)('authors a %s line pair as one cancellable edit and restores its exact accepted relation', async kind => {
+    const source = parseCadDocument({ ...createCadDocument('Line pair', 'line-pair'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [20, 0] },
+          { id: 'c', position: kind === 'parallel' ? [0, 10] : [20, 10] }, { id: 'd', position: [20, 10] }],
+        entities: [{ id: 'first', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false },
+          { id: 'second', kind: 'line', startPointId: kind === 'parallel' ? 'c' : 'b', endPointId: kind === 'parallel' ? 'd' : 'c', construction: true }], relations: []
+      }
+    }] });
+    const label = kind === 'parallel' ? 'Parallel' : 'Perpendicular', opposite = kind === 'parallel' ? 'Perpendicular' : 'Parallel';
+    const h = await mount(source, [{ kind: 'entity', id: 'second' }, { kind: 'entity', id: 'first' }]);
+    await act(async () => field(label).click());
+    expect(field(opposite).disabled).toBe(true);
+    await click('Cancel'); expect(h.session.getSnapshot().document).toBe(source); expect(h.edit).not.toHaveBeenCalled();
+    await act(async () => field(label).click());
+    await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
+    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [expect.objectContaining({ graph: expect.objectContaining({
+      relations: [expect.objectContaining({ kind, lineIds: ['second', 'first'] })]
+    }) })] }));
+    await click('Apply');
+    const accepted = h.session.getSnapshot().document, sketch = accepted.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing accepted graph.');
+    const relation = sketch.graph.relations[0];
+    expect(h.edit).toHaveBeenLastCalledWith([{ kind: 'set-sketch-relation', sketchId: 'sketch', relation }], expect.any(AbortSignal));
+    expect(sketch.graph.points).toEqual(source.features[0].kind === 'sketch' ? source.features[0].graph?.points : undefined);
+    await clickRelation('Inspect', label, 1); expect(h.inspect).toHaveBeenLastCalledWith(relation);
+    await act(async () => field(label).click()); await act(async () => field(label).click());
+    expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.edit).toHaveBeenCalledOnce();
+    await act(async () => field(label).click()); expect(field(opposite).disabled).toBe(false); await click('Apply');
+    expect(h.session.getSnapshot().document.features[0]).toMatchObject({ graph: { relations: [] } });
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toBe(accepted);
+  });
+
   it('adds and releases declared coincidence without merging point identities, and restores the accepted relation exactly', async () => {
     const source = parseCadDocument({ ...createCadDocument('Joined points', 'joined-points'), schemaVersion: 2, features: [{
       id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

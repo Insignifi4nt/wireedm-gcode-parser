@@ -20,6 +20,24 @@ const source = () => parseCadDocument({ ...createCadDocument('Line', 'line'), sc
 }] });
 
 describe('accepted sketch constraint inspection', () => {
+  it.each(['parallel', 'perpendicular'] as const)('exposes %s line identities and exact deduplicated point operands without inventing a scalar', async kind => {
+    const document = parseCadDocument({ ...createCadDocument('Pair', 'pair'), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Pair',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: ['10', '0'] }, { id: 'c', position: kind === 'parallel' ? [8, 0] : [0, 8] }],
+        entities: [{ id: 'reference', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },
+          { id: 'moving', kind: 'line', construction: false, startPointId: 'a', endPointId: 'c' }],
+        relations: [{ id: 'direction', kind, lineIds: ['reference', 'moving'] }]
+      } }] }), exact = JSON.stringify(document);
+    const inspection = await inspectCadSketchConstraints(document, 'sketch', async () => solver);
+    expect(inspection.analysis).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 1 } });
+    const row = pageCadSketchConstraints(inspection, { section: 'relations' }).items[0];
+    expect(row).toMatchObject({ source: { id: 'direction', kind, lineIds: ['reference', 'moving'] },
+      entityIds: ['reference', 'moving'], meaning: kind === 'parallel' ? 'Keeps two line directions parallel.' : 'Keeps two line directions at a right angle.',
+      points: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] });
+    expect(row).not.toHaveProperty('value'); expect(row).not.toHaveProperty('values');
+    expect(JSON.stringify(document)).toBe(exact);
+  });
+
   it.each(['fillet', 'chamfer'] as const)('exposes %s supports, generated geometry and exact driving quantities to agents', async kind => {
     const base = source(), feature = base.features[0];
     if (feature.kind !== 'sketch') throw new Error('Missing sketch fixture.');

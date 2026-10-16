@@ -8,6 +8,8 @@ import type { CadSketchSolverModule } from './cadSketchSolverModule';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
 import { parseCadSketchSolveInput } from './cadSketchSolverProtocol';
 import { compileCadSketchCornerConstraints } from './cadSketchCornerConstraints';
+import { cadSketchLineDirection, resolveCadSketchLinePair } from '../../../domain/cad/cadSketchLineRelations';
+import type { Point2 } from '../../../domain/path-intel/types';
 
 function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] {
   switch (status) {
@@ -22,8 +24,12 @@ function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] 
 function compile(input: CadSketchSolveInput) {
   const graph = parseCadSketchGraph(input.graph), objects: SketchPrimitive[] = [];
   const sourceIds = new Map<string, string>();
+  const numericPoints = new Map<string, Point2>();
   const scalar = (value: number | string) => evaluateCadScalar(value, input.parameters);
-  for (const point of graph.points) objects.push({ id: point.id, type: 'point', x: scalar(point.position[0]), y: scalar(point.position[1]), fixed: false });
+  for (const point of graph.points) {
+    const position = { x: scalar(point.position[0]), y: scalar(point.position[1]) }; numericPoints.set(point.id, position);
+    objects.push({ id: point.id, type: 'point', ...position, fixed: false });
+  }
   for (const entity of graph.entities) {
     switch (entity.kind) {
       case 'line': objects.push({ id: entity.id, type: 'line', p1_id: entity.startPointId, p2_id: entity.endPointId }); break;
@@ -47,6 +53,11 @@ function compile(input: CadSketchSolveInput) {
       case 'coincident': constraint({ id, type: 'p2p_coincident', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
       case 'horizontal': constraint({ id, type: 'horizontal_pp', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
       case 'vertical': constraint({ id, type: 'vertical_pp', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1] }, id); break;
+      case 'parallel': case 'perpendicular':
+        for (const line of resolveCadSketchLinePair(graph, relation.lineIds)) {
+          if (!cadSketchLineDirection(line, numericPoints)) throw new Error('A sketch line has no numeric endpoints.');
+        }
+        constraint({ id, type: relation.kind === 'parallel' ? 'parallel' : 'perpendicular_ll', l1_id: relation.lineIds[0], l2_id: relation.lineIds[1] }, id); break;
       case 'distance': constraint({ id, type: 'p2p_distance', p1_id: relation.pointIds[0], p2_id: relation.pointIds[1], distance: scalar(relation.value) }, id); break;
       case 'fixed-point':
         constraint({ id: `$fixed-x:${id}`, type: 'coordinate_x', p_id: relation.pointId, x: scalar(relation.position[0]) }, id);

@@ -23,7 +23,7 @@ interface PreparationFailureInput {
 }
 
 const relationNames: Record<CadSketchGraphRelation['kind'], string> = {
-  coincident: 'Coincident', horizontal: 'Horizontal', vertical: 'Vertical', distance: 'Distance',
+  coincident: 'Coincident', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', distance: 'Distance',
   'fixed-point': 'Fixed point', 'fixed-axis': 'Fixed axis', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer'
 };
 const rejectionMessages: Record<Rejection['reason'], string> = {
@@ -48,9 +48,11 @@ export function describeCadSketchConstraintSource(graph: CadSketchGraph, source:
     const index = graph.relations.findIndex(relation => relation.id === source.id), relation = graph.relations[index];
     if (relation) {
       pointIds = cadSketchRelationPointIds(graph, relation); entityIds = cadSketchRelationEntityIds(relation);
-      const operands = 'pointIds' in relation ? relation.pointIds : [relation.pointId];
+      const operands = relation.kind === 'parallel' || relation.kind === 'perpendicular'
+        ? relation.lineIds.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label)
+        : ('pointIds' in relation ? relation.pointIds : [relation.pointId]).map(pointLabel);
       const name = relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}` : relationNames[relation.kind];
-      label = `${name} relation ${index + 1} · ${operands.map(pointLabel).join(' and ')}`;
+      label = `${name} relation ${index + 1} · ${operands.join(' and ')}`;
     } else label = 'Unavailable relation';
   } else if (source.kind === 'entity') {
     const entity = graph.entities.find(entity => entity.id === source.id);

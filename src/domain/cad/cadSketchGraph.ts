@@ -8,6 +8,7 @@ import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import type { Point2 } from '@/domain/path-intel/types';
 import { cadSketchEntityPointIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
 import { checkCadSketchCornerRelation, resolveCadSketchCornerTopology } from './cadSketchCornerGeometry';
+import { checkCadSketchLineRelation, resolveCadSketchLinePair } from './cadSketchLineRelations';
 
 const strict = { additionalProperties: false };
 const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
@@ -22,6 +23,8 @@ export const CadSketchGraphSchema = Type.Object({
   ])),
   relations: Type.Array(Type.Union([
     ...(['coincident', 'horizontal', 'vertical'] as const).map(kind => Type.Object({ id, kind: Type.Literal(kind), pointIds: pair }, strict)),
+    Type.Object({ id, kind: Type.Literal('parallel'), lineIds: pair }, strict),
+    Type.Object({ id, kind: Type.Literal('perpendicular'), lineIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('fixed-point'), pointId: id, position: CadPoint2Schema }, strict),
     Type.Object({ id, kind: Type.Literal('fixed-axis'), pointId: id, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), value: CadScalarSchema }, strict),
     Type.Object({ id, kind: Type.Literal('distance'), pointIds: pair, value: CadScalarSchema }, strict),
@@ -35,6 +38,7 @@ export type CadSketchGraphPoint = CadSketchGraph['points'][number];
 export type CadSketchGraphEntity = CadSketchGraph['entities'][number];
 export type CadSketchGraphRelation = CadSketchGraph['relations'][number];
 export type CadSketchCornerRelation = Extract<CadSketchGraphRelation, { kind: 'fillet-corner' | 'chamfer-corner' }>;
+export type CadSketchLineRelation = Extract<CadSketchGraphRelation, { kind: 'parallel' | 'perpendicular' }>;
 const issueCodes = ['invalid-expression', 'invalid-coordinate', 'degenerate-entity', 'invalid-radius', 'arc-radius-mismatch', 'invalid-distance', 'relation-residual'] as const;
 export const CadSketchGraphIssueSchema = Type.Object({
   source: Type.Object({ kind: Type.Union([Type.Literal('point'), Type.Literal('entity'), Type.Literal('relation')]), id }, strict),
@@ -64,6 +68,7 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   for (const item of graph.entities) references(item.id, cadSketchEntityPointIds(item));
   for (const item of graph.relations) {
     if (item.kind === 'fillet-corner' || item.kind === 'chamfer-corner') resolveCadSketchCornerTopology(graph, item);
+    if (item.kind === 'parallel' || item.kind === 'perpendicular') resolveCadSketchLinePair(graph, item.lineIds);
     references(item.id, cadSketchRelationPointIds(graph, item));
   }
   freezeData(graph);
@@ -110,6 +115,9 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
   for (const relation of graph.relations) {
     const source = { kind: 'relation', id: relation.id } as const;
     try {
+      if (relation.kind === 'parallel' || relation.kind === 'perpendicular') {
+        issues.push(...checkCadSketchLineRelation(graph, relation, points)); continue;
+      }
       if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') {
         issues.push(...checkCadSketchCornerRelation(graph, relation, points, parameters)); continue;
       }

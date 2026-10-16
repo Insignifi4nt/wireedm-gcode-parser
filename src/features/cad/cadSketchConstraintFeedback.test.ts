@@ -10,6 +10,16 @@ const graph = () => parseCadSketchGraph({ points: [{ id: 'a', position: [' 0 ', 
   relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: proposedId, kind: 'distance', pointIds: ['a', 'b'], value: ' 3 * 4 ' }] });
 
 describe('candidate-owned sketch constraint feedback', () => {
+  it.each(['parallel', 'perpendicular'] as const)('names %s line operands while retaining shared point and entity inspection identities', kind => {
+    const candidate = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }, { id: 'c', position: [0, 8] }],
+      entities: [{ id: 'z-edge', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },
+        { id: 'a-edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'c' }],
+      relations: [{ id: proposedId, kind, lineIds: ['z-edge', 'a-edge'] }] });
+    const subject = describeCadSketchConstraintSource(candidate, { kind: 'relation', id: proposedId });
+    expect(subject.label).toBe(`${kind === 'parallel' ? 'Parallel' : 'Perpendicular'} relation 1 · Line 2 and Line 1`);
+    expect(subject.pointIds).toEqual(['a', 'b', 'c']); expect(subject.entityIds).toEqual(['z-edge', 'a-edge']);
+  });
+
   it('preserves a proposed relation and exact operands while presenting a readable detached rejection', () => {
     const candidate = graph(), before = JSON.stringify(candidate);
     const diagnostics = { status: 'success' as const, degreesOfFreedom: 0, conflictingIds: [proposedId, 'horizontal'], redundantIds: [], partiallyRedundantIds: [], issues: [] };
