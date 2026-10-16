@@ -2,6 +2,9 @@ import type { CadDocument, CadFeature, CadScalar } from '@/domain/cad/cadDocumen
 import { cadFeatureInputs } from '@/domain/cad/cadFeatureInputs';
 import { validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
+import { CadError } from '@/domain/cad/cadError';
+import { prepareCadSketchCells, type CadPreparedSketchCells } from '@/domain/cad/cadSketchRegionInspection';
+import type { CadSketchCellReference } from '@/domain/cad/cadSketchRegionSelection';
 import { CadSession, CadSessionError, type CadSessionSnapshot } from './cadSession';
 
 export type CadSketchEditDraftSource = Pick<CadSessionSnapshot, 'document' | 'version'>;
@@ -11,6 +14,17 @@ export interface CadSketchEditDraftFinish {
   readonly localVersion: string;
   readonly edits: readonly CadEdit[];
   readonly noOp: boolean;
+}
+export type CadSketchAreaRepairFeature = Extract<CadFeature, { kind: 'extrude' | 'pocket' }>;
+export interface CadSketchAreaRepairInspection {
+  readonly sketchId: string;
+  readonly localVersion: string;
+  readonly cells: CadPreparedSketchCells;
+  readonly consumers: readonly { readonly feature: CadSketchAreaRepairFeature; readonly issue: string }[];
+}
+export interface CadSketchAreaRepairs {
+  readonly localVersion: string;
+  readonly selections: readonly { readonly featureId: string; readonly selection: readonly CadSketchCellReference[] }[];
 }
 const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 const scopeError = () => new CadSessionError('SKETCH_DRAFT_SCOPE', 'A sketch draft may change only its owned sketch, numeric parameters and solver-updated earlier graph values.');
@@ -128,6 +142,28 @@ export class CadSketchEditDraft {
   undo(expectedLocalVersion = this.local.getSnapshot().version) { this.assertOpen(); this.local.undo(expectedLocalVersion); }
   redo(expectedLocalVersion = this.local.getSnapshot().version) { this.assertOpen(); this.local.redo(expectedLocalVersion); }
   setWorkflowOpen(open: boolean) { this.assertOpen(); this.local.setWorkflowOpen(open, 'editor'); }
+  /** Inspect exact original active selectors against one current private cell preparation. */
+  inspectAreaRepairs(source: CadSketchEditDraftSource): CadSketchAreaRepairInspection | null {
+    this.assertSource(source);
+    const candidates = source.document.features.slice(this.sketchIndex + 1).filter((feature): feature is CadSketchAreaRepairFeature =>
+      (feature.kind === 'extrude' || feature.kind === 'pocket') && feature.sketchId === this.pin.sketchId && !feature.suppressed && feature.regionSelection !== undefined);
+    if (!candidates.length) return null;
+    const snapshot = this.local.getSnapshot(), sketch = snapshot.document.features[this.sketchIndex];
+    if (sketch.kind !== 'sketch') throw scopeError();
+    const cells = prepareCadSketchCells(sketch, snapshot.document.parameters);
+    if (!cells.cells.length) throw new CadSessionError('SKETCH_AREA_REPAIR_UNAVAILABLE', 'The edited sketch has no closed material areas. Close or repair its boundary before choosing replacement areas.');
+    const consumers: { feature: CadSketchAreaRepairFeature; issue: string }[] = [];
+    for (const feature of candidates) {
+      try { cells.resolve(feature.regionSelection); }
+      catch (error) {
+        if (!(error instanceof CadError)) throw error;
+        consumers.push({ feature, issue: error.message });
+      }
+    }
+    if (!consumers.length) return null;
+    const result = { sketchId: this.pin.sketchId, localVersion: snapshot.version, cells, consumers };
+    freezeData(result); return result;
+  }
   cancel() {
     if (this.owner.signal.aborted) return;
     this.owner.abort(); this.local.replace(this.initialDocument);

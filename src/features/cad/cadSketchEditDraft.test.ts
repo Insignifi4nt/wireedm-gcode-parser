@@ -8,7 +8,7 @@ import { applyCadEdits } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
 import { CAD_STAR_PLUGIN, createCadPluginProfile } from '@/domain/cad/plugins/cadPlugins';
-import { dxf } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
+import { dxf, stock } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
 import { CadSketchEditDraft } from './cadSketchEditDraft';
@@ -96,15 +96,39 @@ describe('owned consumed-sketch draft', () => {
 
   it('requires explicit new area witnesses when a consumed contour identity changes', async () => {
     const main = new CadSession(source(true)), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    expect(draft.inspectAreaRepairs(base)).toBeNull();
     await draft.editPrepared([removeEdge], prepare);
+    expect(() => draft.inspectAreaRepairs(base)).toThrow(expect.objectContaining({ code: 'SKETCH_AREA_REPAIR_UNAVAILABLE' }));
     await draft.editPrepared([{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: { points: [], relations: [], entities: [
       { id: 'replacement', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }] } }], prepare);
     await expect(prepare(base.document, draft.finishEdits(base).edits)).rejects.toThrow();
     const pad = base.document.features.find(feature => feature.id === 'pad'); if (pad?.kind !== 'extrude') throw new Error('Missing pad');
-    const regionSelection = prepareCadSketchCells(sketchOf(draft.getSnapshot().document), draft.getSnapshot().document.parameters).cells.map(cell => cell.reference);
+    const repair = draft.inspectAreaRepairs(base); if (!repair) throw new Error('Missing area repair');
+    expect(repair).toMatchObject({ sketchId: 'sketch', localVersion: draft.getSnapshot().version, consumers: [{ feature: pad, issue: expect.any(String) }] });
+    expect(repair.consumers[0].feature).toBe(pad);
+    const regionSelection = repair.cells.cells.map(cell => cell.reference);
+    expect(JSON.stringify(regionSelection)).toContain('replacement');
     const finish = draft.finishEdits(base, [{ kind: 'update-feature', feature: { ...pad, regionSelection } }]);
     const result = await prepare(base.document, finish.edits);
     expect(result.features[1]).toMatchObject({ regionSelection }); expect(main.getSnapshot()).toBe(base);
+  });
+
+  it('preserves valid, suppressed and whole-sketch consumers while inspecting only stale active explicit choices', async () => {
+    const original = source(true), sketch = sketchOf(original), pad = original.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad');
+    const mixed = { ...sketch, profiles: [{ id: 'separate', name: 'Separate', construction: false, geometry: { kind: 'circle' as const, x: 50, y: 0, radius: 2 } }] };
+    const unchangedSelection = prepareCadSketchCells(mixed, original.parameters).cells.filter(cell => cell.reference.boundaryProfileId === 'separate').map(cell => cell.reference);
+    const { regionSelection: _explicit, ...whole } = pad;
+    const document = parseCadDocument({ ...original, features: [...stock(), mixed, pad,
+      { id: 'pocket', name: 'Pocket', kind: 'pocket', suppressed: false, sketchId: 'sketch', targetId: 'stock', extent: { kind: 'through-all', direction: 'both' }, regionSelection: pad.regionSelection },
+      { ...pad, id: 'suppressed', suppressed: true },
+      { ...pad, id: 'valid', regionSelection: unchangedSelection }, { ...whole, id: 'whole' }, ...original.features.slice(2)] });
+    const main = new CadSession(document), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    await draft.editPrepared([removeEdge, { kind: 'append-sketch-entities', sketchId: 'sketch', geometry: { points: [], relations: [], entities: [
+      { id: 'replacement', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }] } }], prepare);
+    const local = draft.getSnapshot(), repair = draft.inspectAreaRepairs(base);
+    expect(repair?.consumers.map(consumer => consumer.feature.id)).toEqual(['pad', 'pocket']);
+    expect(repair?.cells.cells).toHaveLength(2); expect(draft.getSnapshot()).toBe(local); expect(main.getSnapshot()).toBe(base);
+    draft.cancel(); expect(() => draft.inspectAreaRepairs(base)).toThrow(expect.objectContaining({ code: 'SKETCH_DRAFT_CLOSED' }));
   });
 
   it('keeps solved earlier numeric graphs when linked parameters change, without weakening exact drivers or suffix source', async () => {

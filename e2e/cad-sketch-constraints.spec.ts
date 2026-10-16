@@ -502,3 +502,69 @@ test('edits a consumed sketch privately with local history, rejected Finish, exa
   const undone = await context(page);
   expect((await call(page, 'cad_get_feature', { expectedVersion: undone.version, featureId: 'outline' })).feature).toEqual(original);
 });
+
+test('reselects explicit extrusion areas after replacing a consumed boundary without changing the accepted part early', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: {
+    id: 'outline', kind: 'sketch', name: 'Selected outline', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [40, 20] }, { id: 'd', position: [0, 20] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+        { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+        { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+        { id: 'da', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' }], relations: []
+    }
+  } }] });
+  let current = await context(page);
+  const regions = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: 'outline' });
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: {
+    id: 'pad', kind: 'extrude', name: 'Selected pad', suppressed: false, sketchId: 'outline', regionSelection: [regions.items[0].reference],
+    distance: ' 5e0 ', symmetric: false, operation: 'new', targetId: null
+  } }] });
+  current = await context(page);
+  const originalSketch = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'outline' })).feature;
+  const originalPad = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'pad' })).feature;
+  await call(page, 'cad_build', { expectedVersion: current.version });
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await page.getByRole('button', { name: 'Select Selected outline in history', exact: true }).dblclick();
+  await expect(page.getByRole('button', { name: 'Cancel sketch edits', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Line 2 in Selected outline', exact: true }).press('Delete');
+  const endpoints = [];
+  for (const id of ['b', 'c']) {
+    const box = await page.locator(`[data-cad-sketch-point="${id}"]`).boundingBox(); if (!box) throw new Error('Endpoint unavailable.');
+    endpoints.push({ x: box.x + box.width / 2 + 1, y: box.y + box.height / 2 + 1 });
+  }
+  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  for (const point of endpoints) await page.mouse.click(point.x, point.y);
+  await page.getByRole('button', { name: 'Finish path', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect(page.getByRole('form', { name: 'Update dependent sketch areas', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toBeDisabled();
+  expect((await context(page)).version).toBe(current.version);
+  const chooseReplacement = async () => {
+    await page.getByRole('button', { name: 'Choose areas for Selected pad', exact: true }).click();
+    const canvas = page.getByLabel('3D model canvas'); await expect(canvas).toBeVisible();
+    const box = await canvas.boundingBox(); if (!box) throw new Error('Area canvas unavailable.');
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.getByRole('button', { name: 'Finish area selection', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toBeEnabled();
+  };
+  await chooseReplacement();
+  await page.getByRole('button', { name: 'Back to sketch', exact: true }).click();
+  await expect(page.getByLabel('Sketch drawing canvas')).toBeVisible();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'outline' })).feature).toEqual(originalSketch);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'pad' })).feature).toEqual(originalPad);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click(); await chooseReplacement();
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect(page.getByLabel('3D model viewport')).toBeVisible();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  const accepted = await context(page), changedPad = (await call(page, 'cad_get_feature', { expectedVersion: accepted.version, featureId: 'pad' })).feature;
+  expect({ ...changedPad, regionSelection: originalPad.regionSelection }).toEqual(originalPad);
+  expect(changedPad.regionSelection).not.toEqual(originalPad.regionSelection);
+  const built = await call(page, 'cad_build', { expectedVersion: accepted.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies[0].volumeMm3).toBeCloseTo(4000, 7);
+  await page.keyboard.press('Control+z'); const undone = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: undone.version, featureId: 'outline' })).feature).toEqual(originalSketch);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: undone.version, featureId: 'pad' })).feature).toEqual(originalPad);
+});

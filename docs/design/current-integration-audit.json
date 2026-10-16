@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T03:33:39.962Z",
+  "generatedAt": "2026-10-16T04:05:49.532Z",
   "baseline": {
     "path": "docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json",
     "publishedCheckpoint": "6e2113fa0151ef7d0b378ad3de7635664b2fab82",
@@ -8,9 +8,9 @@
     "originalContextPreserved": true
   },
   "currentSource": {
-    "scannedProductionTsFiles": 492,
-    "catalogImports": 265,
-    "currentImportedSymbolReferences": 320,
+    "scannedProductionTsFiles": 493,
+    "catalogImports": 267,
+    "currentImportedSymbolReferences": 323,
     "catalogExportsParsed": 227,
     "catalogEntriesParsed": 134,
     "exportsWithoutCatalogEntries": [],
@@ -23,7 +23,7 @@
     "uniquelyClaimedCurrentUses": 285,
     "resolvedOriginOccurrences": 285,
     "unresolvedOriginOccurrences": 0,
-    "unmatchedCurrentReferences": 35
+    "unmatchedCurrentReferences": 38
   },
   "currentUsageByCatalogId": {
     "add": 4,
@@ -38,9 +38,9 @@
     "circle": 2,
     "circle-center": 2,
     "circular-pattern": 2,
-    "close": 33,
+    "close": 34,
     "closed-path": 3,
-    "confirm": 18,
+    "confirm": 19,
     "curve": 3,
     "datum-plane": 4,
     "delete": 10,
@@ -113,7 +113,7 @@
     "save": 3,
     "search": 2,
     "section-cam": 1,
-    "select": 7,
+    "select": 8,
     "send-cam": 1,
     "settings": 1,
     "shell": 2,
@@ -705,7 +705,7 @@
       "mapPropertyExpression": "<Icon size={15} strokeWidth={1.5} />",
       "currentRenderers": [
         {
-          "line": 693,
+          "line": 709,
           "expression": "<Icon size={15} />"
         }
       ],
@@ -1281,6 +1281,22 @@
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
+      "file": "src/features/cad/CadSketchAreaRepairPanel.tsx",
+      "line": 79,
+      "symbol": "SelectIcon",
+      "catalogId": "select",
+      "context": "<Button type=\"button\" className=\"cad-area-choice\" aria-label={`Choose areas for ${feature.name}`} disabled={!inspection.cells.cells.length} onClick={() => begin(feature.id)}> <SelectIcon size={13} /><span>{choices[feature.id]?.length ? `${choices[feature.id].length} ${choices[feature.id].length === 1 ? 'area' : 'areas'}` : 'Choose areas'}</span> </Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadSketchAreaRepairPanel.tsx",
+      "line": 85,
+      "symbol": "CloseIcon",
+      "catalogId": "close",
+      "context": "<Button type=\"button\" disabled={submission.applying} onClick={onCancel}><CloseIcon size={13} /> Back to sketch</Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
       "file": "src/features/cad/CadSketchCanvas.tsx",
       "line": 618,
       "symbol": "ConfirmIcon",
@@ -1338,7 +1354,15 @@
     },
     {
       "file": "src/features/cad/CadWorkbench.tsx",
-      "line": 762,
+      "line": 778,
+      "symbol": "Check",
+      "catalogId": "confirm",
+      "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" type=\"submit\" form={areaRepairFormId} aria-label=\"Finish sketch\" title=\"Finish sketch with replacement areas\" disabled={!areaRepairReady || storageBusy || externalWorkflowOpen}><Check size={16} /></Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 778,
       "symbol": "CloseIcon",
       "catalogId": "close",
       "context": "<Button aria-label=\"Cancel sketch edits\" title=\"Discard sketch edits\" disabled={storageBusy} onClick={cancelSketchEdit}><CloseIcon size={13} /></Button>",
@@ -4228,7 +4252,7 @@
       "scoutActualSymbol": "NavigateBackIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 727,
+        "line": 743,
         "column": 167,
         "symbol": "ArrowLeft",
         "exportedSymbol": "ArrowLeft",
@@ -4251,7 +4275,7 @@
       "scoutActualSymbol": "ExpandDownIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 732,
+        "line": 748,
         "column": 240,
         "symbol": "ChevronDown",
         "exportedSymbol": "ChevronDown",
@@ -4274,7 +4298,7 @@
       "scoutActualSymbol": "FileNewIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 740,
+        "line": 756,
         "column": 220,
         "symbol": "FilePlus2",
         "exportedSymbol": "FilePlus2",
@@ -4297,7 +4321,7 @@
       "scoutActualSymbol": "FolderOpenIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 740,
+        "line": 756,
         "column": 315,
         "symbol": "FolderOpen",
         "exportedSymbol": "FolderOpen",
@@ -4320,7 +4344,7 @@
       "scoutActualSymbol": "FolderOpenIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 740,
+        "line": 756,
         "column": 444,
         "symbol": "FolderOpen",
         "exportedSymbol": "FolderOpen",
@@ -4343,7 +4367,7 @@
       "scoutActualSymbol": "CameraCaptureIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 740,
+        "line": 756,
         "column": 737,
         "symbol": "CameraCaptureIcon",
         "exportedSymbol": "CameraCaptureIcon",
@@ -4366,7 +4390,7 @@
       "scoutActualSymbol": "RefreshIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 740,
+        "line": 756,
         "column": 909,
         "symbol": "RefreshIcon",
         "exportedSymbol": "RefreshIcon",
@@ -4389,7 +4413,7 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 740,
+        "line": 756,
         "column": 1014,
         "symbol": "Download",
         "exportedSymbol": "Download",
@@ -4412,7 +4436,7 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 740,
+        "line": 756,
         "column": 1155,
         "symbol": "Download",
         "exportedSymbol": "Download",
@@ -4435,7 +4459,7 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 740,
+        "line": 756,
         "column": 1285,
         "symbol": "Download",
         "exportedSymbol": "Download",
@@ -4458,7 +4482,7 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 740,
+        "line": 756,
         "column": 1581,
         "symbol": "Download",
         "exportedSymbol": "Download",
@@ -4481,7 +4505,7 @@
       "scoutActualSymbol": "SectionCamIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 740,
+        "line": 756,
         "column": 2190,
         "symbol": "SectionCamIcon",
         "exportedSymbol": "SectionCamIcon",
@@ -4504,7 +4528,7 @@
       "scoutActualSymbol": "SendCamIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 740,
+        "line": 756,
         "column": 2409,
         "symbol": "SendCamIcon",
         "exportedSymbol": "SendCamIcon",
@@ -4527,7 +4551,7 @@
       "scoutActualSymbol": "UndoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 741,
+        "line": 757,
         "column": 122,
         "symbol": "Undo2",
         "exportedSymbol": "Undo2",
@@ -4550,7 +4574,7 @@
       "scoutActualSymbol": "RedoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 741,
+        "line": 757,
         "column": 268,
         "symbol": "Redo2",
         "exportedSymbol": "Redo2",
@@ -4573,7 +4597,7 @@
       "scoutActualSymbol": "SaveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 742,
+        "line": 758,
         "column": 99,
         "symbol": "Save",
         "exportedSymbol": "Save",
@@ -4596,7 +4620,7 @@
       "scoutActualSymbol": "SketchIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 749,
+        "line": 765,
         "column": 82,
         "symbol": "SketchIcon",
         "exportedSymbol": "SketchIcon",
@@ -4619,7 +4643,7 @@
       "scoutActualSymbol": "DatumPlaneIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 749,
+        "line": 765,
         "column": 136,
         "symbol": "DatumPlaneIcon",
         "exportedSymbol": "DatumPlaneIcon",
@@ -4642,7 +4666,7 @@
       "scoutActualSymbol": "CurveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 749,
+        "line": 765,
         "column": 216,
         "symbol": "CurveIcon",
         "exportedSymbol": "CurveIcon",
@@ -4665,7 +4689,7 @@
       "scoutActualSymbol": "AddIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 750,
+        "line": 766,
         "column": 62,
         "symbol": "AddIcon",
         "exportedSymbol": "AddIcon",
@@ -4688,7 +4712,7 @@
       "scoutActualSymbol": "SelectIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 73,
         "symbol": "SelectIcon",
         "exportedSymbol": "SelectIcon",
@@ -4711,7 +4735,7 @@
       "scoutActualSymbol": "RectangleIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 162,
         "symbol": "RectangleIcon",
         "exportedSymbol": "RectangleIcon",
@@ -4734,7 +4758,7 @@
       "scoutActualSymbol": "CircleIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 282,
         "symbol": "CircleIcon",
         "exportedSymbol": "CircleIcon",
@@ -4757,7 +4781,7 @@
       "scoutActualSymbol": "SlotIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 391,
         "symbol": "SlotIcon",
         "exportedSymbol": "SlotIcon",
@@ -4780,7 +4804,7 @@
       "scoutActualSymbol": "PolylineIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 498,
         "symbol": "PolylineIcon",
         "exportedSymbol": "PolylineIcon",
@@ -4803,7 +4827,7 @@
       "scoutActualSymbol": "ClosedPathIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 611,
         "symbol": "ClosedPathIcon",
         "exportedSymbol": "ClosedPathIcon",
@@ -4826,7 +4850,7 @@
       "scoutActualSymbol": "MeasureIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 826,
         "symbol": "MeasureIcon",
         "exportedSymbol": "MeasureIcon",
@@ -4849,7 +4873,7 @@
       "scoutActualSymbol": "MoveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 966,
         "symbol": "MoveIcon",
         "exportedSymbol": "MoveIcon",
@@ -4872,7 +4896,7 @@
       "scoutActualSymbol": "PadPocketIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 1714,
         "symbol": "PadPocketIcon",
         "exportedSymbol": "PadPocketIcon",
@@ -4895,7 +4919,7 @@
       "scoutActualSymbol": "RevolveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 1805,
         "symbol": "RevolveIcon",
         "exportedSymbol": "RevolveIcon",
@@ -4918,7 +4942,7 @@
       "scoutActualSymbol": "LoftIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 1891,
         "symbol": "LoftIcon",
         "exportedSymbol": "LoftIcon",
@@ -4941,7 +4965,7 @@
       "scoutActualSymbol": "SweepIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 2105,
         "symbol": "SweepIcon",
         "exportedSymbol": "SweepIcon",
@@ -4964,7 +4988,7 @@
       "scoutActualSymbol": "ShellIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 2481,
         "symbol": "ShellIcon",
         "exportedSymbol": "ShellIcon",
@@ -4987,7 +5011,7 @@
       "scoutActualSymbol": "BooleanIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 2647,
         "symbol": "BooleanIcon",
         "exportedSymbol": "BooleanIcon",
@@ -5010,7 +5034,7 @@
       "scoutActualSymbol": "Move3dIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 2786,
         "symbol": "Move3dIcon",
         "exportedSymbol": "Move3dIcon",
@@ -5033,7 +5057,7 @@
       "scoutActualSymbol": "MirrorIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 751,
+        "line": 767,
         "column": 2962,
         "symbol": "MirrorIcon",
         "exportedSymbol": "MirrorIcon",
@@ -5056,8 +5080,8 @@
       "scoutActualSymbol": "SketchIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 768,
-        "column": 2325,
+        "line": 784,
+        "column": 2760,
         "symbol": "PencilRuler",
         "exportedSymbol": "PencilRuler",
         "catalogId": "sketch",
@@ -5079,13 +5103,13 @@
       "scoutActualSymbol": "BusyIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 758,
+        "line": 774,
         "column": 89,
         "symbol": "Loader2",
         "exportedSymbol": "Loader2",
         "catalogId": "busy",
-        "confidenceScore": 264.5,
-        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelection, relation: inspectedRelation, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onDelete: deleteSketchGeometry, onConfigureRelation: configureGraphRelation, onEditMany: applyCanvasEdits, on"
+        "confidenceScore": 264.53,
+        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelection, relation: inspectedRelation, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onDelete: deleteSketchGeometry, onConfigureRelation: configureGraphRelation, onEditMany"
       },
       "resolution": "resolved",
       "actualSymbol": "Loader2",
@@ -5102,13 +5126,13 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 762,
-        "column": 677,
+        "line": 778,
+        "column": 731,
         "symbol": "Check",
         "exportedSymbol": "Check",
         "catalogId": "confirm",
-        "confidenceScore": 751.47,
-        "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" aria-label=\"Finish area selection\" title=\"Keep these areas\" onClick={currentRegionPick.onFinish}><Check size={16} /></Button>"
+        "confidenceScore": 739.27,
+        "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" aria-label=\"Finish area selection\" title=\"Keep these areas\" type=\"button\" onClick={event => { event.preventDefault(); currentRegionPick.onFinish(); }}><Check size={16} /></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "Check",
@@ -5125,13 +5149,13 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 762,
-        "column": 822,
+        "line": 778,
+        "column": 930,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 755.33,
-        "context": "<Button aria-label=\"Cancel area selection\" title=\"Restore previous area choice\" onClick={currentRegionPick.onCancel}><CloseIcon size={13} /></Button>"
+        "confidenceScore": 739.78,
+        "context": "<Button aria-label=\"Cancel area selection\" title=\"Restore previous area choice\" type=\"button\" onClick={event => { event.preventDefault(); currentRegionPick.onCancel(); }}><CloseIcon size={13} /></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "CloseIcon",
@@ -5148,8 +5172,8 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 762,
-        "column": 1018,
+        "line": 778,
+        "column": 1410,
         "symbol": "Check",
         "exportedSymbol": "Check",
         "catalogId": "confirm",
@@ -5171,8 +5195,8 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 762,
-        "column": 1407,
+        "line": 778,
+        "column": 1800,
         "symbol": "Check",
         "exportedSymbol": "Check",
         "catalogId": "confirm",
@@ -5194,8 +5218,8 @@
       "scoutActualSymbol": "ExpandDownIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 762,
-        "column": 1664,
+        "line": 778,
+        "column": 2057,
         "symbol": "ChevronDown",
         "exportedSymbol": "ChevronDown",
         "catalogId": "expand-down",
@@ -5217,8 +5241,8 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 762,
-        "column": 1692,
+        "line": 778,
+        "column": 2085,
         "symbol": "ChevronRight",
         "exportedSymbol": "ChevronRight",
         "catalogId": "expand-right",
@@ -5240,8 +5264,8 @@
       "scoutActualSymbol": "DeleteIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 762,
-        "column": 2043,
+        "line": 778,
+        "column": 2436,
         "symbol": "Trash2",
         "exportedSymbol": "Trash2",
         "catalogId": "delete",
@@ -5263,13 +5287,13 @@
       "scoutActualSymbol": "BusyIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 766,
+        "line": 782,
         "column": 86,
         "symbol": "Loader2",
         "exportedSymbol": "Loader2",
         "catalogId": "busy",
-        "confidenceScore": 265.75,
-        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelection, relation: inspectedRelation, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onDelete: deleteSketchGeometry, onConfigureRelation: configureGraphRelation, onEditMany: applyCanvasEdits, on"
+        "confidenceScore": 265.8,
+        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelection, relation: inspectedRelation, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onDelete: deleteSketchGeometry, onConfigureRelation: configureGraphRelation, onEditMany"
       },
       "resolution": "resolved",
       "actualSymbol": "Loader2",
@@ -5286,8 +5310,8 @@
       "scoutActualSymbol": "CurveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 768,
-        "column": 2146,
+        "line": 784,
+        "column": 2581,
         "symbol": "Spline",
         "exportedSymbol": "Spline",
         "catalogId": "curve",
@@ -5309,13 +5333,13 @@
       "scoutActualSymbol": "SketchIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 757,
+        "line": 773,
         "column": 89,
         "symbol": "PencilRuler",
         "exportedSymbol": "PencilRuler",
         "catalogId": "sketch",
-        "confidenceScore": 263.25,
-        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelection, relation: inspectedRelation, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onDelete: deleteSketchGeometry, onConfigureRelation: configureGraphRelation, onEditMany: applyCanvasEdits, on"
+        "confidenceScore": 263.27,
+        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelection, relation: inspectedRelation, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onDelete: deleteSketchGeometry, onConfigureRelation: configureGraphRelation, onEditMany"
       },
       "resolution": "resolved",
       "actualSymbol": "PencilRuler",
@@ -5332,7 +5356,7 @@
       "scoutActualSymbol": "DeleteIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 772,
+        "line": 788,
         "column": 970,
         "symbol": "Trash2",
         "exportedSymbol": "Trash2",
@@ -8108,6 +8132,20 @@
       "context": "<Button type=\"button\" aria-label=\"Next polygon vertex\" disabled={index === points.length - 1} onClick={() => setSelectedIndex(index + 1)}><NavigateForwardIcon size={13} /></Button>"
     },
     {
+      "file": "src/features/cad/CadSketchAreaRepairPanel.tsx",
+      "line": 79,
+      "symbol": "SelectIcon",
+      "catalogId": "select",
+      "context": "<Button type=\"button\" className=\"cad-area-choice\" aria-label={`Choose areas for ${feature.name}`} disabled={!inspection.cells.cells.length} onClick={() => begin(feature.id)}> <SelectIcon size={13} /><span>{choices[feature.id]?.length ? `${choices[feature.id].length} ${choices[feature.id].length === 1 ? 'area' : 'areas'}` : 'Choose areas'}</span> </Button>"
+    },
+    {
+      "file": "src/features/cad/CadSketchAreaRepairPanel.tsx",
+      "line": 85,
+      "symbol": "CloseIcon",
+      "catalogId": "close",
+      "context": "<Button type=\"button\" disabled={submission.applying} onClick={onCancel}><CloseIcon size={13} /> Back to sketch</Button>"
+    },
+    {
       "file": "src/features/cad/CadSketchCanvas.tsx",
       "line": 618,
       "symbol": "ConfirmIcon",
@@ -8158,7 +8196,14 @@
     },
     {
       "file": "src/features/cad/CadWorkbench.tsx",
-      "line": 762,
+      "line": 778,
+      "symbol": "Check",
+      "catalogId": "confirm",
+      "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" type=\"submit\" form={areaRepairFormId} aria-label=\"Finish sketch\" title=\"Finish sketch with replacement areas\" disabled={!areaRepairReady || storageBusy || externalWorkflowOpen}><Check size={16} /></Button>"
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 778,
       "symbol": "CloseIcon",
       "catalogId": "close",
       "context": "<Button aria-label=\"Cancel sketch edits\" title=\"Discard sketch edits\" disabled={storageBusy} onClick={cancelSketchEdit}><CloseIcon size={13} /></Button>"

@@ -7,6 +7,7 @@ import type { CadTopologyDescriptor, CadTopologyResolvePicksResult } from '@/dom
 import { applyCadEdits } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
+import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
 import { CadWorkbench, type CadWorkbenchProps } from './CadWorkbench';
 import { closeSketchPolygon, snapSketchPoint, twoPointSketchProfile } from './cadSketchInteraction';
 import { CadSession } from './cadSession';
@@ -77,7 +78,7 @@ function PreviousEditorHeader() {
   return <div>Previous editor content</div>;
 }
 
-async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onWorkflowChange'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
+async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onWorkflowChange' | 'sketchEdit'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
   const session = new CadSession(initial);
   currentSession = session;
   function Harness() {
@@ -196,6 +197,32 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('shows only current sketch areas while repairing a consumed boundary, without accepted suffix solids', async () => {
+    const prefix = solidDocument(), sourceSketch = prefix.features[0];
+    if (sourceSketch.kind !== 'sketch') throw new Error('Sketch fixture missing');
+    const edited = { ...sourceSketch, id: 'second-sketch', name: 'Edited outline' };
+    const initial = applyCadEdits(prefix, [{ kind: 'add-feature', feature: edited }]);
+    const cells = prepareCadSketchCells(edited, initial.parameters);
+    const finish = vi.fn();
+    const staleConsumer = { ...prefix.features[1], id: 'second-pad', name: 'Dependent pad', sketchId: edited.id };
+    if (staleConsumer.kind !== 'extrude') throw new Error('Pad fixture missing');
+    const build = { ...topologyBuild, meshes: [...topologyBuild.meshes, { ...topologyBuild.meshes[0], featureId: 'second-pad', volume: 1234 }] };
+    await mount(initial, { build, buildState: 'ready', sketchEdit: { sketchId: edited.id, cancel: vi.fn(), finish,
+      inspectAreaRepairs: () => ({ sketchId: edited.id, localVersion: currentSession.getSnapshot().version, cells,
+        consumers: [{ feature: staleConsumer, issue: 'The selected boundary changed.' }] }) } });
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: edited.id }));
+    await click('Finish sketch');
+    await click('Choose areas for Dependent pad');
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-displayed-volumes')).toBe('');
+    expect(viewportRegions?.cells).toBe(cells);
+    expect(viewportRegions?.sketchId).toBe(edited.id);
+    await act(async () => viewportRegions?.onSelect([cells.cells[0].reference]));
+    await click('Finish area selection');
+    expect(container.querySelector('form[aria-label="Update dependent sketch areas"]')).not.toBeNull();
+    expect(button('Finish sketch').disabled).toBe(false);
+    expect(finish).not.toHaveBeenCalled();
+    expect(currentDocument).toEqual(initial);
+  });
   it('releases a clean command workflow when suppression rejects because a dependent solid still needs its source', async () => {
     const initial = applyCadEdits(solidDocument(), [{ kind: 'add-feature', feature: {
       id: 'rounded', name: 'Rounded plate', kind: 'fillet', targetId: 'pad', radius: 1, suppressed: false

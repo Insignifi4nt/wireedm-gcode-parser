@@ -3,7 +3,7 @@ import type { CadDocument } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { cadFeatureDependencies } from '@/domain/cad/cadSchema';
 import { CadSession, CadSessionError } from './cadSession';
-import { CadSketchEditDraft, type CadSketchDraftPreparation } from './cadSketchEditDraft';
+import { CadSketchEditDraft, type CadSketchAreaRepairs, type CadSketchDraftPreparation } from './cadSketchEditDraft';
 import type { CadEditCompletion } from './useCadEditSubmission';
 
 interface Owner {
@@ -99,8 +99,26 @@ export function useCadSketchEditing<Inspection>(host: Host<Inspection>) {
     const inspection = await latest.current.inspect(source.document, sketchId, combined);
     combined.throwIfAborted(); assertOwner(owned, source.version); requireIdle(owned); return inspection;
   };
-  const finish = async (signal?: AbortSignal) => {
-    const owned = requireOwner(), prepared = owned.draft.finishEdits(session.getSnapshot());
+  const inspectAreaRepairs = () => {
+    const owned = requireOwner(); requireIdle(owned);
+    return owned.draft.inspectAreaRepairs(session.getSnapshot());
+  };
+  const finish = async (signal?: AbortSignal, repairs?: CadSketchAreaRepairs) => {
+    const owned = requireOwner(), source = session.getSnapshot(), consumerEdits: CadEdit[] = [];
+    if (repairs !== undefined) {
+      owned.draft.assertCurrent(source, repairs.localVersion);
+      const inspection = owned.draft.inspectAreaRepairs(source);
+      if (!inspection || !Array.isArray(repairs.selections) || !repairs.selections.length)
+        throw new CadSessionError('SKETCH_AREA_REPAIR_SELECTION', 'Choose replacement areas for the affected consumers.');
+      const consumers = new Map(inspection.consumers.map(consumer => [consumer.feature.id, consumer.feature])), repaired = new Set<string>();
+      for (const entry of repairs.selections) {
+        const original = consumers.get(entry.featureId);
+        if (!original || repaired.has(entry.featureId)) throw new CadSessionError('SKETCH_AREA_REPAIR_SELECTION', 'Choose each affected consumer once without changing unrelated features.');
+        inspection.cells.resolve(entry.selection); repaired.add(entry.featureId);
+        consumerEdits.push({ kind: 'update-feature', feature: { ...original, regionSelection: entry.selection } });
+      }
+    }
+    const prepared = owned.draft.finishEdits(source, consumerEdits);
     if (prepared.noOp) { release(owned); return; }
     owned.pending = true; owned.finishing = true; setWorking(true);
     const combined = signal ? AbortSignal.any([signal, owned.abort.signal]) : owned.abort.signal;
@@ -122,7 +140,7 @@ export function useCadSketchEditing<Inspection>(host: Host<Inspection>) {
   }, [session]);
   return { sketchId: owner?.draft.pin.sketchId ?? null, snapshot, working,
     analysisReady: !working && !local.workflowOpen && !host.locked,
-    begin, cancel, finish, edit, prepare, inspect, setWorkflowOpen,
+    begin, cancel, finish, edit, prepare, inspect, inspectAreaRepairs, setWorkflowOpen,
     undo: () => { const owned = requireOwner(); requireIdle(owned); owned.draft.undo(); },
     redo: () => { const owned = requireOwner(); requireIdle(owned); owned.draft.redo(); } };
 }

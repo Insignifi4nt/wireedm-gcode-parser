@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
 import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
 import { CadSession } from './cadSession';
 import { useCadSketchEditing } from './useCadSketchEditing';
 
@@ -23,8 +24,8 @@ function rectangle(document: CadDocument, width: number): CadEdit {
   if (profile.geometry.kind !== 'rectangle') throw new Error('Expected fixture rectangle.');
   return { kind: 'update-feature', feature: { ...sketch, profiles: [{ ...profile, geometry: { ...profile.geometry, width } }] } };
 }
-async function mount() {
-  const session = new CadSession(part());
+async function mount(document = part()) {
+  const session = new CadSession(document);
   let current: ReturnType<typeof useCadSketchEditing> | undefined, storage: object | null = {}, open = true, locked = false;
   const preparing = vi.fn(prepare), inspect = vi.fn(async (_document: CadDocument, _sketchId: string, signal?: AbortSignal) => { signal?.throwIfAborted(); return { proof: 'inspection' }; });
   const commit = vi.fn((edits: readonly CadEdit[], version: string, signal?: AbortSignal) => session.editPrepared(version, document => prepare(document, edits, signal), signal));
@@ -40,6 +41,69 @@ async function mount() {
       if ('storage' in next) storage = next.storage ?? null; if ('open' in next) open = next.open ?? false; if ('locked' in next) locked = next.locked ?? false; await rerender();
     } };
 }
+
+function explicitlySelectedPart() {
+  const document = part(), sketch = sketchOf(document), pad = document.features[1];
+  if (pad.kind !== 'extrude') throw new Error('Missing pad');
+  const regionSelection = prepareCadSketchCells(sketch, document.parameters).cells.map(cell => cell.reference);
+  return parseCadDocument({ ...document, features: [sketch, { ...pad, regionSelection }] });
+}
+function replacePlate(document: CadDocument): CadEdit {
+  const sketch = sketchOf(document);
+  return { kind: 'update-feature', feature: { ...sketch, profiles: sketch.profiles.map(profile => ({ ...profile, id: 'replacement' })) } };
+}
+
+it('inspects stale area choices before submission and finishes geometry plus explicit consumer repairs in one global undo', async () => {
+  const h = await mount(explicitlySelectedPart()), base = h.session.getSnapshot();
+  await act(async () => h.editing().begin('sketch')); expect(h.editing().inspectAreaRepairs()).toBeNull();
+  await act(async () => h.editing().edit([replacePlate(base.document)]));
+  const repair = h.editing().inspectAreaRepairs(); if (!repair) throw new Error('Missing repair');
+  expect(repair.consumers.map(consumer => consumer.feature.id)).toEqual(['pad']);
+  expect(h.session.getSnapshot().document).toBe(base.document);
+  const selections = repair.consumers.map(consumer => ({ featureId: consumer.feature.id, selection: repair.cells.cells.map(cell => cell.reference) }));
+  await act(async () => h.editing().setWorkflowOpen(true));
+  expect(() => h.editing().inspectAreaRepairs()).toThrow(expect.objectContaining({ code: 'WORKFLOW_OPEN' }));
+  await act(async () => h.editing().finish(undefined, { localVersion: repair.localVersion, selections }));
+  const accepted = h.session.getSnapshot(); expect(h.editing().sketchId).toBeNull();
+  expect(sketchOf(accepted.document).profiles[0].id).toBe('replacement');
+  expect(accepted.document.features[1]).toMatchObject({ regionSelection: selections[0].selection });
+  expect(h.commit).toHaveBeenCalledOnce(); h.session.undo(); expect(h.session.getSnapshot().document).toBe(base.document);
+  expect(h.session.getSnapshot().canUndo).toBe(false); h.session.redo(); expect(h.session.getSnapshot().document).toBe(accepted.document);
+});
+
+it('refuses stale local repair revisions and invalid, empty, duplicate or unrelated choices without committing', async () => {
+  const h = await mount(explicitlySelectedPart()), base = h.session.getSnapshot(); await act(async () => h.editing().begin('sketch'));
+  await act(async () => h.editing().edit([replacePlate(base.document)]));
+  const repair = h.editing().inspectAreaRepairs(); if (!repair) throw new Error('Missing repair');
+  const valid = { featureId: 'pad', selection: repair.cells.cells.map(cell => cell.reference) };
+  const oldPad = base.document.features[1]; if (oldPad.kind !== 'extrude' || !oldPad.regionSelection) throw new Error('Missing original selection');
+  for (const selections of [[], [{ ...valid, selection: [] }], [valid, valid], [{ ...valid, selection: [...valid.selection, ...valid.selection] }], [{ ...valid, featureId: 'sketch' }],
+    [{ ...valid, selection: oldPad.regionSelection }]]) {
+    await act(async () => { await expect(h.editing().finish(undefined, { localVersion: repair.localVersion, selections })).rejects.toThrow(); });
+    expect(h.editing().sketchId).toBe('sketch'); expect(h.session.getSnapshot().document).toBe(base.document);
+  }
+  await act(async () => h.editing().edit([rectangle(h.editing().snapshot.document, 30)]));
+  await act(async () => { await expect(h.editing().finish(undefined, { localVersion: repair.localVersion, selections: [valid] })).rejects.toMatchObject({ code: 'STALE_STATE' }); });
+  expect(h.commit).not.toHaveBeenCalled(); expect(h.session.getSnapshot().version).toBe(base.version);
+});
+
+it.each([false, true])('captures explicit repairs before deferred Finish and preserves cancellation=%s', async cancelled => {
+  const h = await mount(explicitlySelectedPart()), base = h.session.getSnapshot(); await act(async () => h.editing().begin('sketch'));
+  await act(async () => h.editing().edit([replacePlate(base.document)]));
+  const repair = h.editing().inspectAreaRepairs(); if (!repair) throw new Error('Missing repair');
+  const selection = repair.cells.cells.map(cell => ({ ...cell.reference })), selections = [{ featureId: 'pad', selection }];
+  let complete: () => void = () => { throw new Error('Missing deferred commit'); };
+  h.commit.mockImplementationOnce((edits, version, signal) => h.session.editPrepared(version,
+    document => new Promise(resolve => { complete = () => resolve(applyCadEdits(document, edits)); }), signal));
+  let finishing: Promise<unknown> | undefined;
+  await act(async () => { finishing = h.editing().finish(undefined, { localVersion: repair.localVersion, selections }); void finishing.catch(() => undefined); });
+  selection[0].boundaryProfileId = 'changed-after-submission'; selections.push({ featureId: 'unrelated', selection: [] });
+  if (cancelled) await act(async () => h.editing().cancel());
+  await act(async () => { complete(); if (cancelled) await expect(finishing).rejects.toThrow(); else await finishing; });
+  expect(h.editing().sketchId).toBeNull();
+  if (cancelled) expect(h.session.getSnapshot()).toMatchObject({ document: base.document, version: base.version, canUndo: false });
+  else expect(h.session.getSnapshot().document.features[1]).toMatchObject({ regionSelection: [{ boundaryProfileId: 'replacement' }] });
+});
 
 it('owns a valid private prefix, rejects an open Finish, and commits the repaired boundary as one global undo step', async () => {
   const h = await mount(), base = h.session.getSnapshot();

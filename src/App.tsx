@@ -146,7 +146,7 @@ function WorkbenchApp({ services }: AppProps) {
             sketchAnalysisReady={cad.sketchEditing.analysisReady}
             onWorkflowChange={cad.sketchEditing.setWorkflowOpen}
             onBeginSketchEdit={cad.sketchEditing.begin}
-            sketchEdit={cad.sketchEditing.sketchId ? { sketchId: cad.sketchEditing.sketchId, finish: cad.sketchEditing.finish, cancel: cad.sketchEditing.cancel } : undefined}
+            sketchEdit={cad.sketchEditing.sketchId ? { sketchId: cad.sketchEditing.sketchId, inspectAreaRepairs: cad.sketchEditing.inspectAreaRepairs, finish: cad.sketchEditing.finish, cancel: cad.sketchEditing.cancel } : undefined}
             onBack={cad.back} onSave={async () => { await cad.save(); }}
             onOpenDocument={() => { void cad.showLibrary().catch(error => cad.setErrorMessage(String(error))); }}
             onNewDocument={() => { cad.newDocument(); }} onImportDocument={async file => { await cad.importDocument(file); }}
