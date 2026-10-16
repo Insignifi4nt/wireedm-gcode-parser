@@ -60,6 +60,83 @@ async function fixture(overrides: Partial<Props> = {}) {
 }
 
 describe('graph point interaction ownership', () => {
+  it('snaps a captured drag to accepted geometry before grid and rechecks key-only suppression and final release', async () => {
+    const h = await fixture({ snap: true });
+    await h.pointer(h.point(), 'pointerdown');
+    await h.pointer(h.point(), 'pointermove', { clientX: 102, clientY: 92 });
+    expect(h.point('mixed').classList.contains('is-pick-highlighted')).toBe(true);
+    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('3');
+    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cy')).toBe('7');
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control', ctrlKey: true })));
+    expect(h.point('mixed').classList.contains('is-pick-highlighted')).toBe(false);
+    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('2');
+    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cy')).toBe('8');
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Control' })));
+    expect(h.point('mixed').classList.contains('is-pick-highlighted')).toBe(true);
+    expect(h.edited).not.toHaveBeenCalled();
+    await h.pointer(h.point(), 'pointerup', { clientX: 102, clientY: 92, metaKey: true });
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'a', translation: [2, 8] }], expect.any(AbortSignal));
+    expect(h.document.features[0]).toMatchObject({ graph: { points: expect.arrayContaining([{ id: 'a', position: [0, 0] }]) } });
+  });
+
+  it('confirms only the current solved snap, never a coincident last preview from an older drag request', async () => {
+    vi.useFakeTimers();
+    const h = await fixture({ snap: true });
+    const sketch = h.document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch missing.');
+    const source = parseCadDocument({ ...h.document, features: [{ ...sketch, graph: { ...sketch.graph,
+      points: [...sketch.graph.points, { id: 'first', position: [12, 12] }, { id: 'second', position: [20, 20] }],
+      entities: [...sketch.graph.entities, { id: 'reference', kind: 'line', construction: true, startPointId: 'first', endPointId: 'second' }] } }] });
+    await h.source(source);
+    const first = deferred<CadDocument>(), second = deferred<CadDocument>();
+    const prepare = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    await h.render({ controls: { ...h.props().controls, onPrepareEdits: prepare } });
+    const reference = source.features[0]; if (reference.kind !== 'sketch' || !reference.graph) throw new Error('Reference sketch missing.');
+    const projected = parseCadDocument({ ...source, features: [{ ...reference, graph: { ...reference.graph,
+      points: reference.graph.points.map(point => point.id === 'a' ? { ...point, position: [20, 20] } : point) } }] });
+    await h.pointer(h.point(), 'pointerdown');
+    await h.pointer(h.point(), 'pointermove', { clientX: 111, clientY: 89 });
+    await act(async () => { vi.advanceTimersByTime(20); });
+    await act(async () => first.resolve(projected));
+    const hint = () => container.querySelector('[data-cad-sketch-snap]');
+    expect(hint()?.getAttribute('data-cad-sketch-snap')).toBe('first');
+    expect(container.querySelector('[data-cad-sketch-entity="reference"]')?.classList.contains('is-pick-highlighted')).toBe(true);
+    expect(hint()?.classList.contains('is-attained')).toBe(false);
+    expect(hint()?.getAttribute('aria-label')).toContain('Constraints limit movement');
+    await h.pointer(h.point(), 'pointermove', { clientX: 119, clientY: 81 });
+    expect(hint()?.getAttribute('data-cad-sketch-snap')).toBe('second');
+    expect(h.point().querySelector('.cad-sketch-point-mark')?.getAttribute('cx')).toBe('20');
+    expect(hint()?.classList.contains('is-attained')).toBe(false);
+    await act(async () => { vi.advanceTimersByTime(20); });
+    await act(async () => second.resolve(projected));
+    expect(hint()?.classList.contains('is-attained')).toBe(true);
+    expect(h.edited).not.toHaveBeenCalled();
+    await h.key(h.point(), 'Escape'); expect(hint()).toBeNull();
+  });
+
+  it('excludes the moving joint and its dependent midpoint, and only advertises reachable driven-axis targets', async () => {
+    const h = await fixture({ snap: true });
+    const sketch = h.document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch missing.');
+    const source = parseCadDocument({ ...h.document, features: [{ ...sketch, graph: { ...sketch.graph,
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'mixed', position: [' x ', 7] },
+        { id: 'alias', position: [0, 0] }, { id: 'reachable', position: [3, 20] }],
+      relations: [{ id: 'joint', kind: 'coincident', pointIds: ['a', 'alias'] }] } }] });
+    await h.source(source);
+    await h.pointer(h.point(), 'pointerdown');
+    await h.pointer(h.point(), 'pointermove', { clientX: 105, clientY: 100 });
+    expect(container.querySelector('[data-cad-sketch-snap]')).toBeNull();
+    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('5');
+    await h.key(h.point(), 'Escape');
+    await h.pointer(h.point('mixed'), 'pointerdown');
+    await h.pointer(h.point('mixed'), 'pointermove', { clientX: 116, clientY: 106 });
+    expect(container.querySelector('[data-cad-sketch-snap]')).toBeNull();
+    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('3');
+    await h.pointer(h.point('mixed'), 'pointermove', { clientX: 101, clientY: 88 });
+    expect(container.querySelector('[data-cad-sketch-snap]')?.getAttribute('data-cad-sketch-snap')).toBe('reachable');
+    await h.pointer(h.point('mixed'), 'pointerup', { clientX: 101, clientY: 88 });
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'mixed', translation: [0, 13] }], expect.any(AbortSignal));
+    expect(source.features[0]).toMatchObject({ graph: { points: expect.arrayContaining([{ id: 'mixed', position: [' x ', 7] }]) } });
+  });
+
   it('highlights candidate diagnostic operands independently of accepted relation identity and selection', async () => {
     const h = await fixture();
     await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'point', id: 'mixed' }], inspection: { pointIds: ['a', 'b'], entityIds: [] } } });
@@ -182,7 +259,7 @@ describe('graph point interaction ownership', () => {
     expect(h.capture).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled(); expect(h.selected).not.toHaveBeenCalled();
   });
 
-  it.each(['escape', 'blur', 'locked', 'source', 'cancelSignal', 'unmount'])('aborts a released asynchronous edit on %s and ignores its late completion', async ending => {
+  it.each(['escape', 'blur', 'locked', 'source', 'cancelSignal', 'frame', 'unmount'])('aborts a released asynchronous edit on %s and ignores its late completion', async ending => {
     const operation = deferred<void>(), h = await fixture();
     h.edited.mockReturnValue(operation.promise);
     await h.pointer(h.point(), 'pointerdown');
@@ -196,11 +273,30 @@ describe('graph point interaction ownership', () => {
     else if (ending === 'locked') await h.render({ locked: true });
     else if (ending === 'source') await h.source(parseCadDocument({ ...h.document, name: 'Changed accepted source' }));
     else if (ending === 'cancelSignal') await h.render({ cancelSignal: 1 });
+    else if (ending === 'frame') await h.render({ center: [3, 4], scaleX: 2, scaleY: 3 });
     else await act(async () => root.render(null));
     expect(signal.aborted).toBe(true); expect(h.pending).toHaveBeenLastCalledWith(false);
     await act(async () => operation.resolve(undefined));
     expect(h.edited).toHaveBeenCalledOnce(); expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.error).not.toHaveBeenCalled();
     expect(h.document.features[0]).toMatchObject({ graph: { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 5] }, { id: 'mixed', position: [' x ', 7] }] } });
+  });
+
+  it('cancels a captured snap and pending preview when its projection frame changes', async () => {
+    vi.useFakeTimers();
+    const operation = deferred<CadDocument>(), h = await fixture({ snap: true });
+    const prepare = vi.fn((_edits: readonly CadEdit[], _signal: AbortSignal) => operation.promise);
+    await h.render({ controls: { ...h.props().controls, onPrepareEdits: prepare } });
+    await h.pointer(h.point(), 'pointerdown');
+    await h.pointer(h.point(), 'pointermove', { clientX: 102, clientY: 92 });
+    await act(async () => { vi.advanceTimersByTime(20); });
+    const signal = prepare.mock.calls[0]?.[1]; if (!signal) throw new Error('Preview signal missing.');
+    await h.render({ scaleX: 2 });
+    expect(signal.aborted).toBe(true); expect(h.release.mock.calls).toEqual([['a', 11]]);
+    expect(h.point('mixed').classList.contains('is-pick-highlighted')).toBe(false);
+    await act(async () => operation.resolve(h.document));
+    await h.pointer(h.point(), 'pointerup', { clientX: 102, clientY: 92 });
+    expect(h.edited).not.toHaveBeenCalled(); expect(h.previewed).not.toHaveBeenCalledWith(h.document);
+    expect(h.pending).toHaveBeenLastCalledWith(false);
   });
 
   it('cancels a pending solved preview when source version changes and never publishes its late candidate', async () => {

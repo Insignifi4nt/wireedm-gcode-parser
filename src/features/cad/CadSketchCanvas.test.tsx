@@ -236,6 +236,28 @@ describe('graph spatial selection', () => {
     pending.resolve(image); await expect(capture).rejects.toMatchObject({ code: 'STALE_VIEW' });
     expect(h.selectedSet).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
   });
+  it('invalidates a pre-drag capture even when a snapped gesture cancels before rasterization finishes', async () => {
+    const h = await spatialFixture();
+    await h.show({ graphControls: { ...h.props().graphControls!, selection: [{ kind: 'point', id: 'a' }], onPrepareEdits: () => new Promise(() => {}) } });
+    const point = container.querySelector<SVGGElement>('[data-cad-sketch-point="a"]'); if (!point) throw new Error('Graph point missing.');
+    let held = false;
+    Object.assign(point, { setPointerCapture: () => { held = true; }, hasPointerCapture: () => held, releasePointerCapture: () => { held = false; } });
+    const pointer = async (type: string, x: number, y: number) => {
+      const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch frame missing.');
+      const event = new MouseEvent(type, { button: 0, buttons: 1, bubbles: true, cancelable: true,
+        clientX: 510 + (x - state.centerMm[0]) / (state.heightSpanMm * 2) * 1000,
+        clientY: 270 - (y - state.centerMm[1]) / state.heightSpanMm * 500 });
+      Object.defineProperties(event, { pointerId: { value: 11 }, isPrimary: { value: true } });
+      await act(async () => point.dispatchEvent(event));
+    };
+    const pending = deferred<EditorPreviewCapture>(); rasterize.mockReturnValue(pending.promise);
+    const capture = currentControls().capture(new AbortController().signal);
+    await pointer('pointerdown', 0, 0); await pointer('pointermove', 29.9, 20.1);
+    expect(container.querySelector('[data-cad-sketch-snap="c"]')).not.toBeNull();
+    await act(async () => point.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.edited).not.toHaveBeenCalled();
+    pending.resolve(image); await expect(capture).rejects.toMatchObject({ code: 'STALE_VIEW' });
+  });
   it('uses right-to-left crossing and toggles against the captured base only once', async () => {
     const h = await spatialFixture();
     await h.show({ graphControls: { ...h.props().graphControls!, selection: [{ kind: 'point', id: 'a' }] } });

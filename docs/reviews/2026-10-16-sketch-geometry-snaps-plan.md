@@ -1,6 +1,6 @@
 # Shared sketch geometry snaps
 
-Investigation only, 2026-10-16. Source inspected at `4e7bee9`, including the pending exact Move preparation guard. No production changes, solver experiments, builds or browser runs in this slice.
+Design investigated at `4e7bee9`, including the then-pending exact Move preparation guard. The pure resolver/preparation slice was subsequently authorized at `d705840`; verified implementation evidence is recorded below. This note does not establish complete drawing/movement integration.
 
 ## Recommendation
 
@@ -136,3 +136,29 @@ A future midpoint relation should reference `{pointId, entityId}` and independen
 | Deliberate inferred coincidence, after first slice | Narrow fresh-authoring/domain tests + shared UI/API wiring | Rectangle reverse draw preserves the selected corner's role; source IDs/scalars remain exact; adding/removing the visible relation changes declared connectivity, Undo restores it, and incompatible drivers reject the whole batch unchanged. |
 
 The first four rows are the recommended first vertical slice. Keep native solver behavior and acceptance precision unchanged. Independent review should focus on wrong-target joins, stale owner reuse and a snap hint that overstates what was saved, rather than a large fixture matrix.
+
+## Pure implementation evidence at d705840
+
+The first public-seam test failed with `prepared.snap is not a function`, then passed after adding the resolver and additive hook. Source-role, identity ambiguity, drag exclusions and empty-source draft tests exposed their missing behavior before implementation. A further near-but-different bound-start case failed before the exact coordinate guard was added.
+
+Implemented only [cadSketchGeometrySnaps.ts](../../src/features/cad/cadSketchGeometrySnaps.ts), its [pure tests](../../src/features/cad/cadSketchGeometrySnaps.test.ts), and the additive `snap` method in [cadSketchGraphInteraction.ts](../../src/features/cad/cadSketchGraphInteraction.ts). The original Path helper remains unchanged. The exported preparation function accepts an optional `{ graph, points, segments }` source and returns `(query: CadSketchSnapQuery) => CadSketchSnapResult`; calling it without a source supports an empty sketch or legacy Curve's owned draft start without a synthetic graph.
+
+The actual contract matches the proposed target/result union above. Candidates also expose `entityIds: readonly string[]` for source highlighting. Query `kinds?: readonly CadSketchSnapTarget['kind'][]` filters roles before ranking. Source entity IDs are sorted and exclude disabled owners. A shared point retains an eligible owner; an entity-excluded point cannot reappear as an unowned generic point. Point exclusions expand only through already-declared coincident joints and suppress directly dependent midpoints. No geometric proximity creates an alias. A valid bound start deduplicates with its source point; a missing ID or either exact coordinate mismatch returns `none` for the entire query.
+
+At 09:55 local test-run time, the focused command passed **3 suites / 28 tests**, including **10 new resolver cases**:
+
+```powershell
+& 'C:/Users/cristian/.codex/worktrees/cad-shared-controls/Wire_EDM/tmp/node24/node.exe' node_modules/vitest/vitest.mjs run src/features/cad/cadSketchGeometrySnaps.test.ts src/features/cad/cadSketchGraphInteraction.test.ts src/features/cad/cadPathPointSnap.test.ts
+```
+
+Evidence includes nonuniform screen metrics, inclusive radial acquisition, source-order/ULP ties and coincident-but-distinct point/midpoint identities; endpoint/center/reference roles and construction ownership; CW/CCW 270-degree and reversed arcs; tiny geometry, distant origins and a tiny sweep; alias/dependency exclusions; stale draft references; frozen detached source/query results and exact unchanged expression strings. Scoped syntactic/semantic TypeScript diagnostics on the three owned TS paths passed. No solver behavior, acceptance tolerance, UI, storage or public edit API changed in this slice; full production build and browser integration belong to the parent task.
+
+## Human interaction implementation
+
+Canvas creation now resolves one raw cursor through the shared query, retaining exact point-ID reuse only for Path endpoints. Other tools and arc-through picks use numeric positions. The shared `CadSketchSnapHint` renders an upright pixel-sized glyph and short reason inside the existing Y-up SVG; the source point or midpoint edge uses the existing pick highlight. Source/frame changes clear the borrowed hover, and temporary Ctrl/Cmd suppression is read again on the accepting click. Keyboard arrows bypass magnetic acquisition so a short step cannot become trapped at distant zoom. Polygon closure requires the acquired actual start instead of the old broad span-based zone.
+
+The first creation regressions failed before the integration (`tmp/sketch-snaps-canvas-red.log`). The initial three related drawing suites pass 69 cases (`tmp/sketch-snaps-canvas.log`). Independent review is checking capture identity and accepted off-grid cursor retention before final acceptance.
+
+GraphLayer drag uses its captured accepted preparation, with self/joint/dependent exclusions and explicit driven-axis reachability. It never builds magnets from a moving preview. Ctrl/Cmd key changes and the releasing event both update the requested target. Source/version/prepared/sketch or center/scale changes cancel the drag, preview and pending submission. Only the current ready preview's actual solved point can confirm attainment; a retained older preview is presentation continuity alone. A projected or failed target shows that constraints limit movement. Existing soft point-move semantics and exact driver strings remain unchanged.
+
+The Layer owner verified 26 focused cases and scoped TypeScript on the two owned paths (`tmp/sketch-snap-layer-{green,types}.log`), including two red-first target/attainment regressions. Deferred preparation and released application cover frame invalidation and late results. Integrated checks and real browser evidence remain with the parent owner.

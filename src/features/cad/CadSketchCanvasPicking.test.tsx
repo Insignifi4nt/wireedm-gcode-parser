@@ -55,6 +55,79 @@ async function fixture(profiles: readonly CadSketchProfile[], overrides: Partial
 }
 
 describe('sketch canvas profile picking', () => {
+  const graphSketch = { id: 'snaps', name: 'Snap references', suppressed: false, kind: 'sketch' as const, plane: 'XY' as const, offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: ['anchor', 3.2] as const }, { id: 'b', position: [22.1, 3.2] as const }, { id: 'c', position: [12.1, 13.2] as const }],
+    entities: [{ id: 'line', kind: 'line' as const, startPointId: 'a', endPointId: 'b', construction: false }, { id: 'circle', kind: 'circle' as const, centerPointId: 'c', radius: 3.4, construction: false }], relations: []
+  } };
+  it('places rectangle corners on actual endpoint and center targets without borrowing graph identities', async () => {
+    const original = structuredClone(graphSketch);
+    const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'rectangle' });
+    await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).not.toBeNull();
+    await h.click(2.2, 3.3); await h.click(12.2, 13.3);
+    expect(h.added).toHaveBeenCalledWith({ kind: 'rectangle', x: 2.1, y: 3.2, width: 10, height: 10, cornerRadius: 0 }, expect.any(AbortSignal));
+    expect(graphSketch).toEqual(original); expect(h.error).not.toHaveBeenCalled();
+  });
+  it('uses the analytic line midpoint for a circle center and suppresses magnets on the committing click', async () => {
+    const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'circle' });
+    await h.pointer('pointermove', { ...h.position(12.2, 3.3), buttons: 0 });
+    expect(container.querySelector('[data-cad-sketch-snap-kind="midpoint"]')).not.toBeNull();
+    await h.click(12.2, 3.3); await h.click(17.1, 3.2, h.svg, { ctrlKey: true });
+    expect(h.added).toHaveBeenCalledWith(expect.objectContaining({ kind: 'circle', x: 12.1, y: 3.2, radius: expect.closeTo(5, 10) }), expect.any(AbortSignal));
+  });
+  it.each(['ctrlKey', 'metaKey'] as const)('temporarily suppresses geometry and grid on %s without changing the stored setting', async modifier => {
+    const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'circle' });
+    await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).not.toBeNull();
+    await h.click(2.2, 3.3, h.svg, { [modifier]: true }); await h.click(7.2, 3.3, h.svg, { [modifier]: true });
+    expect(h.added).toHaveBeenCalledWith(expect.objectContaining({ kind: 'circle', x: expect.closeTo(2.2, 10), y: expect.closeTo(3.3, 10), radius: expect.closeTo(5, 10) }), expect.any(AbortSignal));
+    expect(container.querySelector('[aria-label="Toggle snapping"]')?.getAttribute('aria-pressed')).toBe('true');
+  });
+  it('updates a stationary inference on modifier changes and invalidates captures when its visible meaning changes', async () => {
+    const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'rectangle' });
+    await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 }); const before = h.frame();
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).not.toBeNull();
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control', ctrlKey: true, bubbles: true })));
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).toBeNull(); expect(h.frame()).not.toBe(before);
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Control', bubbles: true })));
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).not.toBeNull();
+    await act(async () => window.dispatchEvent(new Event('blur')));
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).toBeNull(); expect(h.added).not.toHaveBeenCalled();
+  });
+  it('closes a polygon only on its acquired start, without swallowing a nearby fourth vertex', async () => {
+    const h = await fixture([], { tool: 'polygon' });
+    // At the default view 7 pixels is inside the old span-based closure zone.
+    await h.click(0, 0); await h.click(30, 0); await h.click(30, 30);
+    const span = Number(h.svg.getAttribute('viewBox')!.split(' ')[3]);
+    await h.click(7 * span / 600, 0, h.svg, { ctrlKey: true }); expect(h.added).not.toHaveBeenCalled();
+    await h.click(0, 0);
+    expect(h.added).toHaveBeenCalledWith({ kind: 'polygon', points: [[0, 0], [30, 0], [30, 30], [expect.closeTo(7 * span / 600, 10), 0]] }, expect.any(AbortSignal));
+  });
+  it('clears a borrowed point hint when the accepted source changes before keyboard placement', async () => {
+    const onAddPath = vi.fn(); const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).not.toBeNull();
+    await h.render({ parameters: { anchor: 100 } });
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).toBeNull();
+    await act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })));
+    await h.click(30, 30); const finish = container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]');
+    if (!finish) throw new Error('Missing Finish path'); await act(async () => finish.click());
+    expect(onAddPath.mock.calls[0][0]).not.toHaveProperty('startPointId'); expect(h.error).not.toHaveBeenCalled();
+  });
+  it('retains an acquired off-grid Path endpoint after placement instead of inventing a grid segment on repeated Space', async () => {
+    const onAddPath = vi.fn(); const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
+    const key = async (value: string) => act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })));
+    await key(' '); await key(' ');
+    expect(h.error).toHaveBeenCalledOnce();
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]')?.disabled).toBe(true);
+    await key('ArrowRight'); await key(' ');
+    const finish = container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]'); if (!finish) throw new Error('Missing Finish path.');
+    await act(async () => finish.click());
+    expect(onAddPath).toHaveBeenCalledOnce();
+    expect(onAddPath.mock.calls[0][0]).toMatchObject({ start: [2.1, 3.2], startPointId: 'a', segments: [{ kind: 'line', end: [7.1, 3.2] }] });
+    expect(onAddPath.mock.calls[0][0].segments[0]).not.toHaveProperty('endPointId');
+  });
   it('keeps pointer focus on the canvas while allowing profile keyboard activation', async () => {
     const h = await fixture([circle('circle', 0, 0, 10)]);
     const group = container.querySelector('[aria-label="Select circle profile"]');

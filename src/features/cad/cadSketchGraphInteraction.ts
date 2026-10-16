@@ -9,6 +9,7 @@ import { CAD_SKETCH_PICK_RADIUS_PX, cadSketchBoundaryDistance } from './cadSketc
 import type { SketchPoint } from './cadSketchInteraction';
 import type { CadSketchGraphSelection } from './cadViewportControls';
 import type { CadSketchGraphPickFilter } from './cadSketchGraphSelection';
+import { prepareCadSketchGeometrySnaps } from './cadSketchGeometrySnaps';
 
 export type { CadSketchGraphSelection } from './cadViewportControls';
 export type { CadSketchGraphPickFilter } from './cadSketchGraphSelection';
@@ -46,7 +47,7 @@ export function prepareCadSketchGraphInteraction(graph: CadSketchGraph, paramete
     position: Object.freeze([evaluateCadScalar(point.position[0], parameters), evaluateCadScalar(point.position[1], parameters)] satisfies [number, number]),
     freeAxes: Object.freeze([typeof point.position[0] === 'number' && !fixed.get(point.id)?.has(0), typeof point.position[1] === 'number' && !fixed.get(point.id)?.has(1)] satisfies [boolean, boolean])
   })));
-  return { graph, parameters, geometry, points,
+  return { graph, parameters, geometry, points, snap: prepareCadSketchGeometrySnaps({ graph, points, segments: geometry.segments }),
     pick(point: SketchPoint, millimetersPerPixel: number, filter: CadSketchGraphPickFilter = 'auto'): readonly CadSketchGraphSelection[] {
       if (!point.every(Number.isFinite) || !Number.isFinite(millimetersPerPixel) || millimetersPerPixel <= 0) return [];
       const tolerance = CAD_SKETCH_PICK_RADIUS_PX * millimetersPerPixel;

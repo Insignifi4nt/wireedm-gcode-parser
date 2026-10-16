@@ -190,6 +190,10 @@
 .cad-curve-viewport .cad-profile, .cad-curve-viewport .cad-profile.is-selected, .cad-curve-viewport .cad-profile-preview { fill: none; }
 .cad-sketch-vertex { fill: #84dcea; stroke: #143645; }
 .cad-sketch-snap-target { fill: var(--card); fill-opacity: .35; stroke: var(--primary); stroke-width: 1.5px; vector-effect: non-scaling-stroke; pointer-events: none; }
+.cad-sketch-snap-hint { pointer-events: none; opacity: .75; }
+.cad-sketch-snap-hint.is-attained { opacity: 1; }
+.cad-sketch-snap-label-bg { fill: var(--popover); stroke: var(--border); stroke-width: 1px; }
+.cad-sketch-snap-label { fill: var(--popover-foreground); font-size: 10px; }
 .cad-sketch-handle { fill: var(--card); stroke: var(--primary); stroke-width: 1.5px; vector-effect: non-scaling-stroke; cursor: crosshair; }
 .cad-sketch-handle:hover, .cad-sketch-handle.is-active, .cad-sketch-handle:focus-visible { fill: var(--primary); stroke: var(--foreground); outline: none; }
 .cad-sketch-handle.is-locked { stroke: var(--muted-foreground); cursor: not-allowed; }

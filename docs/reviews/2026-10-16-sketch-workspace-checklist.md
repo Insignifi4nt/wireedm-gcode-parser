@@ -17,6 +17,16 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: shared geometry snapping
+
+Exact selection Move is checkpoint `d705840`. The next bounded slice shares accepted-source endpoint, center and analytic midpoint targets across drawing and singleton point drag. Geometry targets rank by actual X/Y screen distance before grid rounding; distinct identity ties remain ambiguous. A shared pixel-sized glyph and short hint distinguish Path's deliberate point-ID Join from numeric position-only placement. Ctrl/Cmd suppression is read at the accepting event as well as during hover; explicit Close remains available. Polygon closure no longer swallows a nearby vertex through the old span-based zone.
+
+Independent review resolved two red-first regressions: accepted off-grid Path points retain their exact world cursor instead of falling back to the grid, and a cancelled graph gesture invalidates a capture begun before it. The final integrated set passes 125 focused cases, full TypeScript, shared UI validation, production build/documentation/source distribution and icon integration. All 20 sketch/legacy/region journeys pass in Chromium and Firefox (17 main constraint journeys plus three existing editing/region journeys). Logs: ignored `tmp/sketch-snaps-{integrated,types,ui-standard,build,icons,all-chromium,all-firefox,existing-chromium,existing-firefox}.log`.
+
+Native in-app browser proof created a rectangle from off-grid endpoint targets, placed a bore center at the actual construction-line midpoint, temporarily suppressed snapping for its freehand radius, then set a driving Ø4 mm and extruded 5 mm. The exact source expressions/IDs remain; the solid has one native solid, volume 937.168146928204 mm³ and no diagnostics. Five Undo operations restore the empty original test draft. No user record was saved. Images: `tmp/sketch-geometry-snaps.png`, `tmp/sketch-snap-solid.png`. Review: `2026-10-16-sketch-geometry-snaps-review.md`.
+
+Persistent inferred coincidence is next, using the separately recorded `2026-10-16-sketch-inferred-coincidence-plan.md`. Midpoint association, topology tools and the broader acceptance audit remain unfinished. No storage/schema/native or installed-post change, version bump or remote action.
+
 ## Initial findings
 
 The canvas picker currently returns a profile ID. Selecting/dragging a boundary therefore translates its whole profile. The constraint module records explicit dimensions for primitive profile sizes and preserves expressions, but has no general point/segment relationship solver. Paths and polygons expose no dimension quantities. These are model and interaction gaps, not styling issues.
