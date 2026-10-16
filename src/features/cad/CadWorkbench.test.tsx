@@ -197,6 +197,54 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('prunes removed graph targets from selection before a later source can reuse their IDs', async () => {
+    const initial = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Source selection', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: []
+    } }] });
+    await mount(initial);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }] }));
+    await act(async () => currentSession.edit([{ kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: ['b'], entityIds: [], relationIds: [], cascade: true }]));
+    const afterRemoval = currentSession.getSnapshot();
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'a' }]);
+    expect(currentSession.getSnapshot()).toBe(afterRemoval);
+    const sketch = currentDocument.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch missing');
+    const graph = sketch.graph;
+    await act(async () => currentSession.edit([{ kind: 'update-feature', feature: { ...sketch, graph: { ...graph,
+      points: [...graph.points, { id: 'b', position: [50, 40] }] } } }]));
+    const afterReuse = currentSession.getSnapshot();
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'a' }]);
+    expect(currentSession.getSnapshot()).toBe(afterReuse);
+    await act(async () => currentSession.undo());
+    await act(async () => currentSession.undo());
+    expect(currentDocument).toEqual(initial);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'a' }]);
+  });
+  it('owns one graph selection set for Shift selection, agent selection, construction and one-step set deletion', async () => {
+    const initial = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Set sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }], relations: []
+    } }] });
+    await mount(initial);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const target = (id: string) => { const element = container.querySelector(`[data-cad-sketch-point="${id}"]`); if (!element) throw new Error('Point missing'); return element; };
+    await act(async () => target('a').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    await act(async () => target('b').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })));
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }]);
+    expect(viewport().getState().selectedSketchGeometry).toBeUndefined();
+    expect(currentDocument).toEqual(initial); expect(currentSession.getSnapshot().canUndo).toBe(false);
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: [{ kind: 'entity', id: 'ab' }, { kind: 'entity', id: 'bc' }] }));
+    const construction = container.querySelector<HTMLInputElement>('.cad-sketch-options input'); if (!construction) throw new Error('Construction control missing');
+    await act(async () => construction.click());
+    const converted = currentDocument.features[0]; if (converted.kind !== 'sketch') throw new Error('Sketch missing');
+    expect(converted.graph?.entities.map(entity => entity.construction)).toEqual([true, true]);
+    await click('Delete selected geometry');
+    const deleted = currentDocument.features[0]; if (deleted.kind !== 'sketch') throw new Error('Sketch missing');
+    expect(deleted.graph?.entities).toEqual([]); expect(deleted.graph?.points).toEqual(converted.graph?.points);
+    await act(async () => currentSession.undo());
+    expect(currentDocument.features[0]).toEqual(converted);
+  });
   it('shows only current sketch areas while repairing a consumed boundary, without accepted suffix solids', async () => {
     const prefix = solidDocument(), sourceSketch = prefix.features[0];
     if (sourceSketch.kind !== 'sketch') throw new Error('Sketch fixture missing');
@@ -1037,11 +1085,31 @@ describe('CAD sketch interaction', () => {
     expect(sketch.graph?.entities.map(entity => entity.kind)).toEqual(['line', 'line', 'line', 'line']);
     expect(sketch.graph?.relations.map(relation => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical']);
     expect(currentDocument.schemaVersion).toBe(2);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph?.entities[0].id }]);
     expect(workflow).toHaveBeenLastCalledWith(false);
     expect(container.querySelector('[aria-label="Sketch measurements"]')?.textContent).toContain('2,000 mm²');
     expect(container.querySelector('[aria-label="Sketch measurements"]')?.textContent).toContain('180 mm');
     await click('File'); await click('Send sketch to CAM');
     expect(sendToCam).toHaveBeenCalledWith(sketch.id);
+  });
+
+  it('retains a new graph edge selection when deferred drawing acceptance publishes its source', async () => {
+    let accept: (() => void) | undefined;
+    await mount(createCadDocument(), { build: null, buildState: 'idle', onEdit: (edit, signal) => {
+      if (edit.kind !== 'append-sketch-entities') { currentSession.edit([edit]); return; }
+      return new Promise<void>(resolve => { accept = () => { signal?.throwIfAborted(); currentSession.edit([edit]); resolve(); }; });
+    } });
+    await startSketch(); await canvasClick(300, 200); await canvasClick(450, 100);
+    expect(currentSession.getSnapshot().workflowOpen).toBe(true);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    if (!accept) throw new Error('Drawing acceptance missing');
+    await act(async () => accept?.());
+    const sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph?.entities.length) throw new Error('Accepted graph missing');
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph.entities[0].id }]);
+    expect(currentSession.getSnapshot().workflowOpen).toBe(false);
+    await click('Select');
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph.entities[0].id }]);
   });
 
   it('keeps a multi-click polygon provisional and Escape cancels it without changing saved geometry', async () => {
@@ -1064,6 +1132,7 @@ describe('CAD sketch interaction', () => {
     expect(sketch.profiles).toEqual([]);
     expect(sketch.graph.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [25, 40]]);
     expect(sketch.graph.entities).toHaveLength(3); expect(sketch.graph.relations).toEqual([]);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph.entities[0].id }]);
     await click('Select');
     const edge = sketch.graph.entities[1];
     await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: edge.id } }));

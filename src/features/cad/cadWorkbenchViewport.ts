@@ -1,12 +1,14 @@
 import { Value } from '@sinclair/typebox/value';
 import type { CadDocument, CadMesh, CadPlane, CadSketchPlane } from '@/domain/cad/cadDocument';
 import { cadFeatureProducesBody } from '@/domain/cad/cadSchema';
+import { CadError } from '@/domain/cad/cadError';
 import { parseCadTopologyPickSet, type CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import { ToolError } from '@/features/webmcp/siteTools';
 import { CadViewportCommandSchema, cadViewportVisualIdentity, type CadSketchGraphSelection, type CadRenderedViewControls, type CadViewportCapture, type CadViewportState, type CadWorkbenchViewportControls } from './cadViewportControls';
 import { validateTopologySelection, type CadPickMode } from './cadTopologyPicking';
+import { cadSketchGraphSelectionSet } from './cadSketchGraphSelection';
 
-export interface CadViewportBindings extends Omit<CadViewportState, 'documentId' | 'view'> {
+export interface CadViewportBindings extends Omit<CadViewportState, 'documentId' | 'view' | 'selectedSketchGeometry'> {
   readonly document: CadDocument;
   readonly rendered: CadRenderedViewControls | null;
   readonly meshes: readonly CadMesh[];
@@ -18,7 +20,7 @@ export interface CadViewportBindings extends Omit<CadViewportState, 'documentId'
   editSketch(id: string): void;
   editCurve(id: string): void;
   selectProfile(id: string | null): void;
-  selectSketchGeometry(selection: CadSketchGraphSelection | null): void;
+  selectSketchGeometrySet(selections: readonly CadSketchGraphSelection[]): void;
   finishSketch(): void;
   finishCurve(): void;
   selectTopology(selection: CadTopologyPickSet | null, additive: boolean): void;
@@ -36,9 +38,11 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
   }
   function getState(): CadViewportState {
     const bindings = getBindings();
+    const selectedSketchGeometrySet = Object.freeze(bindings.selectedSketchGeometrySet.map(selection => Object.freeze({ kind: selection.kind, id: selection.id })));
     return Object.freeze({ documentId: bindings.document.id, documentVersion: bindings.documentVersion, dirty: bindings.dirty,
       selectedFeatureId: bindings.selectedFeatureId, selectedProfileId: bindings.selectedProfileId, sketchId: bindings.sketchId, curveId: bindings.curveId,
-      ...(bindings.selectedSketchGeometry ? { selectedSketchGeometry: Object.freeze({ ...bindings.selectedSketchGeometry }) } : {}),
+      selectedSketchGeometrySet,
+      ...(selectedSketchGeometrySet.length === 1 ? { selectedSketchGeometry: selectedSketchGeometrySet[0] } : {}),
       selectedReferencePlane: typeof bindings.selectedReferencePlane === 'object' && bindings.selectedReferencePlane !== null ? Object.freeze({ ...bindings.selectedReferencePlane }) : bindings.selectedReferencePlane,
       awaitingSketchPlane: bindings.awaitingSketchPlane,
       workflowOpen: bindings.workflowOpen, busy: bindings.busy, buildVersion: bindings.buildVersion,
@@ -82,12 +86,18 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
             if (command.profileId !== null && !sketch.profiles.some((profile) => profile.id === command.profileId)) throw new ToolError('NOT_FOUND', 'Profile does not exist in the active sketch.');
             bindings.selectProfile(command.profileId); return;
           }
-          case 'select-sketch-geometry': {
-            const sketch = bindings.document.features.find(feature => feature.kind === 'sketch' && feature.id === bindings.sketchId);
+          case 'select-sketch-geometry':
+          case 'select-sketch-geometry-set': {
+            const sketch = bindings.document.features.find(feature => feature.kind === 'sketch' && feature.id === bindings.sketchId && !feature.suppressed);
             if (sketch?.kind !== 'sketch') throw new ToolError('WRONG_VIEW', 'Open the sketch editor before selecting points or edges.');
-            const selection = command.selection;
-            if (selection && !(selection.kind === 'point' ? sketch.graph?.points : sketch.graph?.entities)?.some(item => item.id === selection.id)) throw new ToolError('NOT_FOUND', 'The point or edge does not exist in the active sketch.');
-            bindings.selectSketchGeometry(selection); return;
+            const request = command.kind === 'select-sketch-geometry-set' ? command.selections : command.selection ? [command.selection] : [];
+            let selections: readonly CadSketchGraphSelection[];
+            try { selections = cadSketchGraphSelectionSet(sketch.graph, request); }
+            catch (error) {
+              if (error instanceof CadError) throw new ToolError(error.code === 'missing-sketch-selection' ? 'NOT_FOUND' : 'INVALID_INPUT', error.message);
+              throw error;
+            }
+            bindings.selectSketchGeometrySet(selections); return;
           }
           case 'finish-sketch':
             if (!bindings.sketchId) throw new ToolError('WRONG_VIEW', 'No sketch editor is open.');

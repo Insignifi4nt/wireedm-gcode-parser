@@ -17,11 +17,11 @@ import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPre
 type Prepared = ReturnType<typeof prepareCadSketchGraphInteraction>;
 export interface CadSketchGraphControls {
   readonly document: CadDocument;
-  readonly selection: CadSketchGraphSelection | null;
+  readonly selection: readonly CadSketchGraphSelection[];
   readonly relation?: CadSketchGraphRelation | null;
   readonly degreesOfFreedom?: number | null;
   readonly showDimensions?: boolean;
-  onSelect(selection: CadSketchGraphSelection | null): void;
+  onSelect(selection: CadSketchGraphSelection | null, additive?: boolean): void;
   onDelete?(selection: CadSketchGraphSelection): void;
   onConfigureRelation?(relation: CadSketchDimensionRelation): void;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
@@ -96,7 +96,12 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
   const relatedPoints = new Set(currentRelation ? cadSketchRelationPointIds(displayed.graph, currentRelation) : []);
   const relatedEntities = new Set(currentRelation ? cadSketchRelationEntityIds(currentRelation) : []);
   const referenceCorners = new Set(displayed.graph.relations.filter(relation => relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner').map(relation => relation.pointId));
-  const choose = (selection: CadSketchGraphSelection) => { if (active && !locked && !submission.applying) controls.onSelect(selection); };
+  const choose = (selection: CadSketchGraphSelection, additive = false) => {
+    if (active && !locked && !submission.applying) {
+      try { if (additive) controls.onSelect(selection, true); else controls.onSelect(selection); }
+      catch (cause) { onError(cause instanceof Error ? cause.message : 'Unable to select this geometry.'); }
+    }
+  };
   const commit = (next: Intent) => {
     if (!next.translation.some(value => value !== 0)) { cancel(); return; }
     callbacks.current.onPendingChange(true); setIntent(next);
@@ -116,7 +121,7 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
     setIntent(current => current && current.translation.every((value, index) => value === owned.translation[index]) ? current : { point: owned.point, translation: owned.translation });
   };
   const interactive = active && !locked && !submission.applying;
-  const selected = (kind: CadSketchGraphSelection['kind'], id: string) => controls.selection?.kind === kind && controls.selection.id === id;
+  const selected = (kind: CadSketchGraphSelection['kind'], id: string) => controls.selection.some(selection => selection.kind === kind && selection.id === id);
   return <g className="cad-sketch-graph" onKeyDown={event => { if (event.key === 'Escape' && (drag.current || intent || submission.applying)) { event.preventDefault(); event.stopPropagation(); cancel(); } }}>
     {displayed.geometry.segments.map((segment, index) => {
       const boundary = cadSketchGraphBoundary(segment), isSelected = selected('entity', segment.id);
@@ -125,11 +130,11 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
       return <g key={segment.id} data-cad-sketch-entity={segment.id} className={`cad-profile cad-sketch-entity${isSelected ? ' is-selected' : ''}${related ? ' is-relation-highlighted' : ''}${construction.has(segment.id) ? ' is-construction' : ''}`}
         role="button" aria-label={`${segment.kind[0].toUpperCase()}${segment.kind.slice(1)} ${index + 1} in ${sketch.name}`} aria-pressed={isSelected} aria-disabled={!interactive || undefined} tabIndex={interactive ? 0 : -1}
         strokeDasharray={construction.has(segment.id) ? `${scaleY * 6} ${scaleY * 4}` : undefined}
-        onPointerDown={event => { if (event.button !== 0 || !active) return; event.stopPropagation(); if (event.isPrimary === false || drag.current || !interactive) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); choose({ kind: 'entity', id: segment.id }); }}
-        onClick={event => { if (!active) return; event.stopPropagation(); if (event.detail === 0) choose({ kind: 'entity', id: segment.id }); }}
+        onPointerDown={event => { if (event.button !== 0 || !active) return; event.stopPropagation(); if (event.isPrimary === false || drag.current || !interactive) return; event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); choose({ kind: 'entity', id: segment.id }, event.shiftKey); }}
+        onClick={event => { if (!active) return; event.stopPropagation(); if (event.detail === 0) choose({ kind: 'entity', id: segment.id }, event.shiftKey); }}
         onKeyDown={event => {
           if (!interactive || drag.current || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'entity', id: segment.id }); }
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'entity', id: segment.id }, event.shiftKey); }
           else if (event.key === 'Delete' && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'entity', id: segment.id }); }
         }}>
         <Boundary boundary={boundary} center={center} />
@@ -144,8 +149,8 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
         onPointerDown={event => {
           if (event.button !== 0 || !active) return;
           event.stopPropagation(); if (event.isPrimary === false || drag.current || !interactive) return;
-          event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); choose({ kind: 'point', id: point.id });
-          if (!free) return;
+          event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); choose({ kind: 'point', id: point.id }, event.shiftKey);
+          if (event.shiftKey || controls.selection.length > 1 || !free) return;
           callbacks.current.onPendingChange(true);
           drag.current = { point: original, pointerId: event.pointerId, element: event.currentTarget, clientX: event.clientX, clientY: event.clientY, step: gridStep, snap, scaleX, scaleY, moved: false, translation: [0, 0] };
           setIntent({ point: original, translation: [0, 0] });
@@ -157,15 +162,15 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
           if (event.button === 0 && owned.moved) commit({ point: owned.point, translation: owned.translation }); else cancel();
         }} onPointerCancel={event => { if (drag.current?.pointerId === event.pointerId) { event.stopPropagation(); cancel(); } }}
         onLostPointerCapture={event => { if (drag.current?.pointerId === event.pointerId) cancel(); }}
-        onClick={event => { event.stopPropagation(); if (event.detail === 0) choose({ kind: 'point', id: point.id }); }}
+        onClick={event => { event.stopPropagation(); if (event.detail === 0) choose({ kind: 'point', id: point.id }, event.shiftKey); }}
         onKeyDown={event => {
           if (!interactive || drag.current || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'point', id: point.id }); return; }
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'point', id: point.id }, event.shiftKey); return; }
           if (event.key === 'Delete' && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'point', id: point.id }); return; }
           const step = gridStep * (event.shiftKey ? 10 : 1);
           const delta: SketchPoint | null = event.key === 'ArrowLeft' ? [-step, 0] : event.key === 'ArrowRight' ? [step, 0] : event.key === 'ArrowUp' ? [0, step] : event.key === 'ArrowDown' ? [0, -step] : null;
           if (!delta) return;
-          event.preventDefault(); event.stopPropagation(); choose({ kind: 'point', id: point.id });
+          event.preventDefault(); event.stopPropagation(); if (controls.selection.length > 1) return; choose({ kind: 'point', id: point.id });
           if (free) commit({ point: original, translation: cadSketchGraphPointTranslation(original, [original.position[0] + delta[0], original.position[1] + delta[1]]) });
         }}>
         <circle cx={point.position[0] - center[0]} cy={point.position[1] - center[1]} r={7 * scaleY} className="cad-sketch-point-hit" />

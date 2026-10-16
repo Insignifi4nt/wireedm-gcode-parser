@@ -103,13 +103,13 @@ function completeViewport(h: Awaited<ReturnType<typeof harness>>) {
   const capture = vi.fn(async () => ({ source: '3d' as const, width: 1, height: 1,
     dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDSkAAAAASUVORK5CYII=' }));
   let bindings: CadViewportBindings = { document: snapshot.document, documentVersion: snapshot.version, dirty: snapshot.dirty,
-    selectedFeatureId: null, selectedProfileId: null, selectedReferencePlane: null, awaitingSketchPlane: false, sketchId: null, curveId: null,
+    selectedFeatureId: null, selectedProfileId: null, selectedSketchGeometrySet: [], selectedReferencePlane: null, awaitingSketchPlane: false, sketchId: null, curveId: null,
     workflowOpen: false, busy: false, buildVersion: visibleBodyIds.length ? snapshot.version : null,
     buildId: visibleBodyIds.length ? 'accepted-build' : null, buildState: visibleBodyIds.length ? 'ready' : 'idle', pickMode: 'body', topologySelection: null,
     meshes: [], visibleBodyIds, visibleReferenceIds, visibleReferencePlanes,
     rendered: { getState: () => rendered, fit: vi.fn(), setGrid: vi.fn(), setView: view => { if (rendered.mode === 'solid') rendered = { ...rendered, view, revision: rendered.revision + 1 }; }, capture },
     selectFeature: featureId => { bindings = { ...bindings, selectedFeatureId: featureId }; }, selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(),
-    selectProfile: vi.fn(), selectSketchGeometry: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: action => action() };
+    selectProfile: vi.fn(), selectSketchGeometrySet: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: action => action() };
   const controls = createCadWorkbenchViewportControls(() => bindings);
   h.cad().setViewportControls(controls);
   return { controls, capture, updateBindings: (change: Partial<CadViewportBindings>) => { bindings = { ...bindings, ...change }; },
@@ -1356,7 +1356,7 @@ describe('CAD controller asynchronous guards', () => {
   it('captures bounded real-image data with CAD draft provenance and exposes only its local artifact receipt', async () => {
     const h = await harness(true); const snapshot = h.session.getSnapshot();
     let state: CadViewportState = { documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
-      selectedFeatureId: null, selectedProfileId: null, sketchId: null, curveId: null, selectedReferencePlane: null, awaitingSketchPlane: false, workflowOpen: false, busy: false, buildVersion: snapshot.version,
+      selectedFeatureId: null, selectedProfileId: null, selectedSketchGeometrySet: [], sketchId: null, curveId: null, selectedReferencePlane: null, awaitingSketchPlane: false, workflowOpen: false, busy: false, buildVersion: snapshot.version,
       buildState: 'ready', buildId: 'build-preview', pickMode: 'body', topologySelection: null,
       visibleBodyIds: [], view: { mode: 'solid', available: true, view: 'Top', gridVisible: true, zoom: 1, revision: 0 } };
     const capture: CadViewportCapture = { contentSource: 'cad-draft', documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
@@ -1382,7 +1382,7 @@ describe('CAD controller asynchronous guards', () => {
     await act(async () => h.session.replace(parseCadDocument({ ...createCadDocument('Many sections', 'many_sections'), features })));
     const snapshot = h.session.getSnapshot();
     const state: CadViewportState = { documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
-      selectedFeatureId: features[0].id, selectedProfileId: null, sketchId: null, curveId: null, selectedReferencePlane: null, awaitingSketchPlane: false, workflowOpen: false, busy: false,
+      selectedFeatureId: features[0].id, selectedProfileId: null, selectedSketchGeometrySet: [], sketchId: null, curveId: null, selectedReferencePlane: null, awaitingSketchPlane: false, workflowOpen: false, busy: false,
       buildVersion: null, buildState: 'idle', buildId: null, pickMode: 'body', topologySelection: null, visibleBodyIds: [],
       view: { mode: 'solid', available: true, view: 'Isometric', gridVisible: false, zoom: 1, revision: 1,
         referenceVersion: snapshot.version, referenceFeatureIds: Object.freeze(features.map(feature => feature.id).sort()), referencePlanes: cadReferencePlanes(prepareCadViewportReferences(features, {})) } };

@@ -526,6 +526,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         } else if (tool === 'path' && pathPending && (event.key === 'Backspace' || event.key === 'Escape')) { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }); }
         else if (event.key === 'Backspace' && points.length) { event.preventDefault(); setPoints((current) => current.slice(0, -1)); }
         else if (event.key === 'Escape' && points.length) { event.preventDefault(); setPoints([]); }
+        else if (event.key === 'Escape' && tool === 'select' && graphControls?.selection.length) { event.preventDefault(); event.stopPropagation(); graphControls.onSelect(null); }
         else if (event.key.toLowerCase() === 'f' && !viewLocked) { event.preventDefault(); fit(); }
       }}
       onClick={(event) => {
@@ -534,6 +535,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (event.button !== 0 || interactionLocked) return;
         if (event.detail > 0 && suppressProfileClick.current) { suppressProfileClick.current = false; event.preventDefault(); return; }
         if (tool === 'select') {
+          if (event.shiftKey && graphControls) return;
           graphControls?.onSelect(null);
           const point = getRawPoint(event); const rect = svg.current?.getBoundingClientRect();
           if (point && rect?.height) {

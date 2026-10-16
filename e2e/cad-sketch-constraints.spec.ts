@@ -2,6 +2,54 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
+test('selects point pairs directly for alignment and linked distance without implicit dragging or discarded constraints', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'set-parameter', name: 'spacing', value: 40 },
+    { kind: 'add-feature', feature: { id: 'pair-sketch', kind: 'sketch', name: 'Pair sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [' 0 ', ' 0 '] }, { id: 'b', position: [30, 10] }, { id: 'c', position: [50, 10] }],
+      entities: [{ id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }], relations: []
+    } } }
+  ] });
+  let current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: 'pair-sketch' } });
+  await page.getByRole('button', { name: 'Point 1 in Pair sketch', exact: true }).click();
+  await page.getByRole('button', { name: 'Point 2 in Pair sketch', exact: true }).click({ modifiers: ['Shift'] });
+  expect(await context(page)).toMatchObject({ version: current.version, workflowOpen: false });
+  const pair = [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }];
+  expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometrySet).toEqual(pair);
+  await page.getByRole('checkbox', { name: 'Horizontal', exact: true }).check();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const aligned = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'pair-sketch' })).feature;
+  expect(aligned.graph.points[0].position).toEqual([' 0 ', ' 0 ']); expect(aligned.graph.points[1].position).toEqual([30, 0]);
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Distance mm', exact: true }).fill('35'); await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'pair-sketch' })).feature).toEqual(aligned);
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit Distance relation', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Distance expression', exact: true }).fill(' spacing ');
+  await page.getByRole('button', { name: 'Keep relation', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Distance relation help', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const constrained = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'pair-sketch' })).feature;
+  expect(constrained.graph.points[1].position).toEqual([40, 0]); expect(constrained.graph.points[2].position).toEqual([50, 10]);
+  expect(constrained.graph.relations).toContainEqual(expect.objectContaining({ kind: 'horizontal' }));
+  expect(constrained.graph.relations).toContainEqual(expect.objectContaining({ kind: 'distance', value: ' spacing ' }));
+  await page.getByRole('checkbox', { name: 'Vertical', exact: true }).check();
+  await expect(page.getByRole('form', { name: 'Sketch relations', exact: true }).getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'pair-sketch' })).feature).toEqual(constrained);
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry-set', selections: [...pair].reverse() } });
+  expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometrySet).toEqual([...pair].reverse());
+  await page.keyboard.press('Control+z'); const undone = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: undone.version, featureId: 'pair-sketch' })).feature).toEqual(aligned);
+});
+
 test('rounds and bevels constrained corners with linked drivers, native dimensions, exact extrusion and reopen', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [

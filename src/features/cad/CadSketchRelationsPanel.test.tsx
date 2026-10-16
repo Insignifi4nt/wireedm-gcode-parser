@@ -13,9 +13,10 @@ let container: HTMLDivElement, root: Root;
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
-async function mount(document: CadDocument, initial: CadSketchGraphSelection, overrides: Partial<Pick<CadSketchRelationsPanelProps, 'onEditMany' | 'onPrepareEdits' | 'initialCommand'>> = {}) {
+const selectionSet = (selection: CadSketchGraphSelection | readonly CadSketchGraphSelection[]) => 'kind' in selection ? [selection] : selection;
+async function mount(document: CadDocument, initial: CadSketchGraphSelection | readonly CadSketchGraphSelection[], overrides: Partial<Pick<CadSketchRelationsPanelProps, 'onEditMany' | 'onPrepareEdits' | 'initialCommand'>> = {}) {
   const session = new CadSession(document), preview = vi.fn(), inspect = vi.fn(), pending = vi.fn((open: boolean) => session.setWorkflowOpen(open));
-  let selection = initial;
+  let selection = selectionSet(initial);
   const edit = vi.fn<NonNullable<CadSketchRelationsPanelProps['onEditMany']>>((edits, signal) => { signal?.throwIfAborted(); return session.edit(edits); });
   const prepare = vi.fn<NonNullable<CadSketchRelationsPanelProps['onPrepareEdits']>>(async (edits, signal) => { signal.throwIfAborted(); return applyCadEdits(session.getSnapshot().document, edits); });
   function Harness() {
@@ -24,7 +25,7 @@ async function mount(document: CadDocument, initial: CadSketchGraphSelection, ov
     return <CadSketchRelationsPanel document={snapshot.document} sketch={sketch} selection={selection} onEditMany={edit} onPrepareEdits={prepare}
       onPreviewDocument={preview} onInspectRelation={inspect} onPendingChange={pending} interactionLocked={false} cancelSignal={0} {...overrides} />;
   }
-  const render = async (next = selection) => { selection = next; await act(async () => root.render(<Harness />)); };
+  const render = async (next: CadSketchGraphSelection | readonly CadSketchGraphSelection[] = selection) => { selection = selectionSet(next); await act(async () => root.render(<Harness />)); };
   await render();
   return { session, preview, inspect, pending, edit, prepare, render };
 }
@@ -56,6 +57,96 @@ const lineDocument = () => parseCadDocument({ ...createCadDocument('Line', 'line
 }] });
 
 describe('selected sketch entity relations', () => {
+  it('aborts the old pair owner on selection change without clearing a mixed selection relation draft', async () => {
+    let resolve: () => void = () => { throw new Error('No pending pair application.'); };
+    const pending = new Promise<void>(accept => { resolve = accept; });
+    const edit = vi.fn<CadSketchRelationsPanelProps['onEditMany']>().mockReturnValueOnce(pending);
+    const source = lineDocument();
+    const h = await mount(source, [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }], {
+      initialCommand: { kind: 'distance' }, onEditMany: edit
+    });
+    await click('Apply'); const signal = edit.mock.calls[0]?.[1];
+    expect(signal?.aborted).toBe(false);
+    await h.render([{ kind: 'point', id: 'a' }, { kind: 'entity', id: 'line' }]);
+    expect(signal?.aborted).toBe(true);
+    await click('Inspect Vertical relation vertical');
+    expect(h.inspect).toHaveBeenLastCalledWith({ id: 'vertical', kind: 'vertical', pointIds: ['a', 'b'] });
+    await click('Remove Vertical relation vertical');
+    await act(async () => resolve());
+    expect(h.pending).toHaveBeenLastCalledWith(true); expect(button('Apply').disabled).toBe(false);
+    expect(container.querySelector('input[aria-label="Distance mm"]')).toBeNull();
+    expect(container.querySelector('input[aria-label="Fix X"]')).toBeNull();
+    expect(h.session.getSnapshot().document).toBe(source);
+    edit.mockImplementationOnce((edits, signal) => { signal?.throwIfAborted(); return h.session.edit(edits); });
+    await click('Apply');
+    expect(edit).toHaveBeenLastCalledWith([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'vertical' }], expect.any(AbortSignal));
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+  });
+
+  it.each(['horizontal', 'vertical'] as const)('previews pair %s alignment and rejects an opposite relation without replacing accepted drivers', async kind => {
+    const source = parseCadDocument({ ...createCadDocument('Aligned pair', 'aligned-pair'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: kind === 'horizontal' ? ['10', '0'] : ['0', '10'] }], entities: [], relations: []
+      }
+    }] });
+    const label = kind === 'horizontal' ? 'Horizontal' : 'Vertical', opposite = kind === 'horizontal' ? 'Vertical' : 'Horizontal';
+    const h = await mount(source, [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }]);
+    await act(async () => field(label).click());
+    await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
+    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [expect.objectContaining({ graph: expect.objectContaining({
+      relations: [expect.objectContaining({ kind, pointIds: ['a', 'b'] })]
+    }) })] }));
+    expect(h.session.getSnapshot().document).toBe(source);
+    await click('Apply'); const accepted = h.session.getSnapshot().document;
+    await act(async () => field(opposite).click());
+    expect(field(label).checked).toBe(true); expect(field(opposite).checked).toBe(true);
+    await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
+    expect(h.prepare).toHaveBeenLastCalledWith([{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: expect.objectContaining({
+      kind: kind === 'horizontal' ? 'vertical' : 'horizontal', pointIds: ['a', 'b']
+    }) }], expect.any(AbortSignal));
+    expect(button('Apply').disabled).toBe(true); expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(h.session.getSnapshot().document).toBe(accepted); expect(h.edit).toHaveBeenCalledTimes(1);
+    await click('Cancel'); expect(field(label).checked).toBe(true); expect(field(opposite).checked).toBe(false);
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+  });
+
+  it('authors an arbitrary point-pair distance through fx, cancels trials and preserves exact links on apply, restore and undo', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Pair', 'pair'), schemaVersion: 2, parameters: { span: 10 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: ['span', '0'] }], entities: [], relations: []
+      }
+    }] });
+    const h = await mount(source, [{ kind: 'point', id: 'b' }, { kind: 'point', id: 'a' }], { initialCommand: { kind: 'distance' } });
+    expect(field('Distance mm').value).toBe('10');
+    await click('Edit Distance relation'); await input('Distance expression', ' span ');
+    await click('Keep relation'); await click('Close Distance relation help');
+    await input('Distance mm', '12.5000');
+    await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
+    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ parameters: { span: 12.5 } }));
+    expect(h.session.getSnapshot().document).toBe(source);
+    await click('Cancel'); expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect(h.edit).not.toHaveBeenCalled();
+    await click('Add distance'); await click('Edit Distance relation'); await input('Distance expression', ' span ');
+    await click('Keep relation'); await click('Close Distance relation help');
+    await input('Distance mm', '12.5000'); await click('Apply');
+    const edits = h.edit.mock.calls[0]?.[0];
+    expect(edits).toEqual([
+      { kind: 'set-parameter', name: 'span', value: 12.5 },
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: expect.objectContaining({ kind: 'distance', pointIds: ['b', 'a'], value: ' span ' }) }
+    ]);
+    const accepted = h.session.getSnapshot().document, sketch = accepted.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Pair sketch missing.');
+    const relation = sketch.graph.relations[0];
+    expect(sketch.graph.points).toEqual([{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: ['span', '0'] }]);
+    await h.render([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }]);
+    await click(`Remove Distance relation ${relation.id}`); await click('Add distance');
+    expect(h.inspect).toHaveBeenLastCalledWith(relation);
+    expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect(h.edit).toHaveBeenCalledTimes(1);
+    await act(async () => h.session.undo());
+    expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+  });
+
   it('sends linked parameter and corner intent to awaited preparation before inspecting unsolved geometry', async () => {
     const document = parseCadDocument({ ...createCadDocument('Linked corner', 'linked-corner'), schemaVersion: 2, parameters: { size: 2 }, features: [{
       id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

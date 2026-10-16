@@ -12,13 +12,13 @@ function setup(mode: 'solid' | 'sketch' | 'curve' = 'solid') {
   const capture = vi.fn(async (_signal: AbortSignal) => ({ ...png, source: mode === 'solid' ? '3d' : '2d' } satisfies EditorPreviewCapture));
   const bindings: CadViewportBindings = {
     document: createCadDocument('Measured part', 'part'), documentVersion: 'version-1', dirty: true,
-    selectedFeatureId: null, selectedProfileId: null, sketchId: mode === 'sketch' ? 'sketch-1' : null, curveId: mode === 'curve' ? 'curve-1' : null,
+    selectedFeatureId: null, selectedProfileId: null, selectedSketchGeometrySet: [], sketchId: mode === 'sketch' ? 'sketch-1' : null, curveId: mode === 'curve' ? 'curve-1' : null,
     selectedReferencePlane: null, awaitingSketchPlane: false,
     workflowOpen: false, busy: false, buildVersion: mode === 'solid' ? 'version-1' : null,
     buildState: mode === 'solid' ? 'ready' : 'idle', visibleBodyIds: [], visibleReferenceIds: [], visibleReferencePlanes: [],
     buildId: mode === 'solid' ? 'build-1' : null, pickMode: 'body', topologySelection: null, meshes: [],
     rendered: { getState: () => Object.freeze(state), fit: vi.fn(), setGrid: vi.fn(), setView: vi.fn(), capture },
-    selectFeature: vi.fn(), selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), selectSketchGeometry: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: (action) => action(),
+    selectFeature: vi.fn(), selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), selectSketchGeometrySet: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: (action) => action(),
   };
   let current = bindings;
   return { controls: createCadWorkbenchViewportControls(() => current), capture,
@@ -34,18 +34,73 @@ describe('shared CAD viewport controls', () => {
     const context = setup('sketch'); context.update({ document: { ...context.bindings.document, schemaVersion: 2, features: [graphSketch] } });
     for (const selection of [{ kind: 'point', id: 'a' }, { kind: 'entity', id: 'ab' }, null] as const) {
       context.controls.apply({ kind: 'select-sketch-geometry', selection });
-      expect(context.bindings.selectSketchGeometry).toHaveBeenLastCalledWith(selection);
+      expect(context.bindings.selectSketchGeometrySet).toHaveBeenLastCalledWith(selection ? [selection] : []);
     }
     for (const selection of [{ kind: 'point', id: 'ab' }, { kind: 'entity', id: 'a' }, { kind: 'point', id: 'missing' }] as const) {
       expect(() => context.controls.apply({ kind: 'select-sketch-geometry', selection })).toThrow('active sketch');
     }
-    context.update({ selectedSketchGeometry: { kind: 'point', id: 'a' } });
-    expect(context.controls.getState()).toMatchObject({ selectedSketchGeometry: { kind: 'point', id: 'a' } });
+    context.update({ selectedSketchGeometrySet: [{ kind: 'point', id: 'a' }] });
+    expect(context.controls.getState()).toMatchObject({ selectedSketchGeometry: { kind: 'point', id: 'a' }, selectedSketchGeometrySet: [{ kind: 'point', id: 'a' }] });
     context.update({ workflowOpen: true });
     expect(() => context.controls.apply({ kind: 'select-sketch-geometry', selection: null })).toThrow('Apply or cancel');
     context.update({ workflowOpen: false, sketchId: null });
     expect(() => context.controls.apply({ kind: 'select-sketch-geometry', selection: null })).toThrow('sketch editor');
-    expect(context.bindings.selectSketchGeometry).toHaveBeenCalledTimes(3);
+    expect(context.bindings.selectSketchGeometrySet).toHaveBeenCalledTimes(3);
+  });
+  it('replaces the ordered graph selection atomically and owns the published request', () => {
+    const context = setup('sketch');
+    const document = { ...context.bindings.document, schemaVersion: 2 as const, features: [graphSketch] };
+    context.update({ document });
+    const command = { kind: 'select-sketch-geometry-set' as const, selections: [{ kind: 'entity' as const, id: 'ab' }, { kind: 'point' as const, id: 'a' }] };
+    context.controls.apply(command);
+    const selected = vi.mocked(context.bindings.selectSketchGeometrySet).mock.calls[0][0];
+    command.selections[0].id = 'foreign'; command.selections.reverse();
+    expect(selected).toEqual([{ kind: 'entity', id: 'ab' }, { kind: 'point', id: 'a' }]);
+    expect(Object.isFrozen(selected)).toBe(true);
+    expect(selected.every(Object.isFrozen)).toBe(true);
+    for (const selections of [
+      [{ kind: 'point', id: 'a' }, { kind: 'entity', id: 'a' }],
+      [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'foreign' }],
+    ] as const) {
+      expect(() => context.controls.apply({ kind: 'select-sketch-geometry-set', selections: [...selections] })).toThrowError(expect.objectContaining({ code: 'NOT_FOUND' }));
+    }
+    expect(() => context.controls.apply({ kind: 'select-sketch-geometry-set', selections: [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'a' }] })).toThrowError(expect.objectContaining({ code: 'INVALID_INPUT' }));
+    expect(context.bindings.selectSketchGeometrySet).toHaveBeenCalledOnce();
+    expect(document.features[0]).toBe(graphSketch);
+    context.controls.apply({ kind: 'select-sketch-geometry-set', selections: [] });
+    expect(context.bindings.selectSketchGeometrySet).toHaveBeenLastCalledWith([]);
+    context.update({ workflowOpen: true });
+    expect(() => context.controls.apply({ kind: 'select-sketch-geometry-set', selections: [] })).toThrowError(expect.objectContaining({ code: 'WORKFLOW_OPEN' }));
+    context.update({ workflowOpen: false, busy: true });
+    expect(() => context.controls.apply({ kind: 'select-sketch-geometry-set', selections: [] })).toThrowError(expect.objectContaining({ code: 'BUSY' }));
+    context.update({ busy: false, sketchId: null });
+    expect(() => context.controls.apply({ kind: 'select-sketch-geometry-set', selections: [] })).toThrowError(expect.objectContaining({ code: 'WRONG_VIEW' }));
+    expect(context.bindings.selectSketchGeometrySet).toHaveBeenCalledTimes(2);
+  });
+  it('projects the scalar only from a singleton and owns the complete state set', () => {
+    const context = setup('sketch');
+    const selections = [{ kind: 'point' as const, id: 'a' }, { kind: 'entity' as const, id: 'ab' }];
+    context.update({ selectedSketchGeometrySet: selections });
+    const snapshot = context.controls.getState();
+    expect(snapshot.selectedSketchGeometry).toBeUndefined();
+    selections[1].id = 'changed';
+    expect(snapshot.selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'a' }, { kind: 'entity', id: 'ab' }]);
+    expect(Object.isFrozen(snapshot.selectedSketchGeometrySet)).toBe(true);
+    expect(snapshot.selectedSketchGeometrySet.every(Object.isFrozen)).toBe(true);
+    context.update({ selectedSketchGeometrySet: [] });
+    expect(context.controls.getState()).toMatchObject({ selectedSketchGeometrySet: [] });
+    expect(context.controls.getState().selectedSketchGeometry).toBeUndefined();
+  });
+  it('accepts the complete 64-target request and rejects oversize commands before publishing', () => {
+    const context = setup('sketch');
+    const points = Array.from({ length: 65 }, (_, index) => ({ id: `p${index}`, position: [index, 0] as const }));
+    context.update({ document: { ...context.bindings.document, schemaVersion: 2,
+      features: [{ ...graphSketch, graph: { points, entities: [], relations: [] } }] } });
+    const selections = points.map(point => ({ kind: 'point' as const, id: point.id }));
+    context.controls.apply({ kind: 'select-sketch-geometry-set', selections: selections.slice(0, 64) });
+    expect(context.bindings.selectSketchGeometrySet).toHaveBeenLastCalledWith(selections.slice(0, 64));
+    expect(() => context.controls.apply({ kind: 'select-sketch-geometry-set', selections })).toThrowError(expect.objectContaining({ code: 'INVALID_INPUT' }));
+    expect(context.bindings.selectSketchGeometrySet).toHaveBeenCalledOnce();
   });
   it('captures graph-only reference sketches without a solid build and rejects a changed point selection', async () => {
     const context = setup(); context.update({ document: { ...context.bindings.document, schemaVersion: 2, features: [graphSketch] },
@@ -53,9 +108,21 @@ describe('shared CAD viewport controls', () => {
     context.updateView({ mode: 'solid', available: true, view: 'Isometric', gridVisible: true, zoom: 1, revision: 1,
       referenceVersion: 'version-1', referenceFeatureIds: [graphSketch.id] });
     await expect(context.controls.capture(new AbortController().signal)).resolves.toMatchObject({ buildVersion: null });
-    const sketch = setup('sketch'); sketch.update({ selectedSketchGeometry: { kind: 'point', id: 'a' } });
-    sketch.capture.mockImplementationOnce(async () => { sketch.update({ selectedSketchGeometry: { kind: 'entity', id: 'ab' } }); return png; });
+    const sketch = setup('sketch'); sketch.update({ selectedSketchGeometrySet: [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }] });
+    sketch.capture.mockImplementationOnce(async () => { sketch.update({ selectedSketchGeometrySet: [{ kind: 'point', id: 'a' }, { kind: 'entity', id: 'ab' }] }); return png; });
     await expect(sketch.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
+  });
+  it('pins set order during capture while ignoring equivalent atom property order', async () => {
+    const context = setup('sketch');
+    context.update({ selectedSketchGeometrySet: [{ kind: 'point', id: 'a' }, { kind: 'entity', id: 'ab' }] });
+    context.capture.mockImplementationOnce(async () => {
+      context.update({ selectedSketchGeometrySet: [{ id: 'a', kind: 'point' }, { id: 'ab', kind: 'entity' }] }); return png;
+    });
+    await expect(context.controls.capture(new AbortController().signal)).resolves.toMatchObject({ sketchId: 'sketch-1' });
+    context.capture.mockImplementationOnce(async () => {
+      context.update({ selectedSketchGeometrySet: [{ kind: 'entity', id: 'ab' }, { kind: 'point', id: 'a' }] }); return png;
+    });
+    await expect(context.controls.capture(new AbortController().signal)).rejects.toMatchObject({ code: 'STALE_VIEW' });
   });
   it('selects only principal or active datum planes as view state and refuses geometry-editor or workflow requests', () => {
     const context = setup(); const datum = { id: 'mount', name: 'Mount', kind: 'datum-plane' as const, suppressed: false,

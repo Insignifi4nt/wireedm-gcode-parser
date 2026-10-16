@@ -28,7 +28,7 @@ async function fixture(overrides: Partial<Props> = {}) {
   const sketch = document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch fixture missing.');
   const selected = vi.fn(), edited = vi.fn(), previewed = vi.fn(), pending = vi.fn(), error = vi.fn();
   const parentPointer = vi.fn(), parentClick = vi.fn();
-  let props: Props = { controls: { document, selection: null, onSelect: selected, onEditMany: edited, onPreviewDocument: previewed },
+  let props: Props = { controls: { document, selection: [], onSelect: selected, onEditMany: edited, onPreviewDocument: previewed },
     sketch, version: 'one', prepared: prepareCadSketchGraphInteraction(sketch.graph, document.parameters), center: [0, 0],
     scaleX: 1, scaleY: 1, gridStep: 5, snap: false, active: true, locked: false, cancelSignal: 0, onPendingChange: pending, onError: error, ...overrides };
   const captures = new Map<Element, Set<number>>();
@@ -51,7 +51,7 @@ async function fixture(overrides: Partial<Props> = {}) {
     Object.defineProperties(event, { pointerId: { value: pointerId }, isPrimary: { value: primary } });
     await act(async () => target.dispatchEvent(event));
   };
-  const key = async (target: Element, value: string) => act(async () => target.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })));
+  const key = async (target: Element, value: string, shiftKey = false) => act(async () => target.dispatchEvent(new KeyboardEvent('keydown', { key: value, shiftKey, bubbles: true, cancelable: true })));
   const source = async (next: CadDocument) => {
     const sketch = next.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Changed sketch missing.');
     await render({ controls: { ...props.controls, document: next }, sketch, version: 'two', prepared: prepareCadSketchGraphInteraction(sketch.graph, next.parameters) });
@@ -60,6 +60,35 @@ async function fixture(overrides: Partial<Props> = {}) {
 }
 
 describe('graph point interaction ownership', () => {
+  it('toggles point and edge selection with Shift without capturing, moving or claiming an edit', async () => {
+    const h = await fixture();
+    await h.pointer(h.point('b'), 'pointerdown', { shiftKey: true });
+    await h.pointer(h.point('b'), 'pointermove', { shiftKey: true, clientX: 150 });
+    await h.pointer(h.point('b'), 'pointerup', { shiftKey: true, clientX: 150 });
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: 'b' }, true);
+    await h.key(h.point('a'), 'Enter', true);
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: 'a' }, true);
+    await h.pointer(h.edge(), 'pointerdown', { shiftKey: true });
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'entity', id: 'edge' }, true);
+    expect(h.capture).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled(); expect(h.pending).not.toHaveBeenCalledWith(true);
+    expect(h.parentPointer).not.toHaveBeenCalled();
+  });
+
+  it('highlights the complete set and requires a singleton before a point gesture can move geometry', async () => {
+    const h = await fixture();
+    await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }] } });
+    expect(h.point('a').getAttribute('aria-pressed')).toBe('true');
+    expect(h.point('b').getAttribute('aria-pressed')).toBe('true');
+    await h.key(h.point('b'), 'ArrowRight');
+    await h.pointer(h.point('b'), 'pointerdown');
+    await h.pointer(h.point('b'), 'pointermove', { clientX: 150 });
+    await h.pointer(h.point('b'), 'pointerup', { clientX: 150 });
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: 'b' });
+    expect(h.capture).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+    await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'point', id: 'b' }] } });
+    await h.key(h.point('b'), 'ArrowRight');
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'b', translation: [5, 0] }], expect.any(AbortSignal));
+  });
   it('keeps fully constrained points selectable for inspection and corner tools without advertising movement', async () => {
     const h = await fixture();
     await h.render({ controls: { ...h.props().controls, degreesOfFreedom: 0 } });

@@ -113,10 +113,10 @@ it('publishes actual viewport resizing once, keeps same-size notifications quiet
   const session = new CadSession(createCadDocument('Rendered part', 'rendered_part')), snapshot = session.getSnapshot();
   const bindings: CadViewportBindings = {
     document: snapshot.document, documentVersion: snapshot.version, dirty: false, selectedFeatureId: null, selectedProfileId: null,
-    selectedReferencePlane: null, awaitingSketchPlane: false, sketchId: null, curveId: null, workflowOpen: false, busy: false,
+    selectedSketchGeometrySet: [], selectedReferencePlane: null, awaitingSketchPlane: false, sketchId: null, curveId: null, workflowOpen: false, busy: false,
     buildVersion: snapshot.version, buildId: 'build', buildState: 'ready', visibleBodyIds: [], visibleReferenceIds: [], visibleReferencePlanes: [],
     pickMode: 'body', topologySelection: null, meshes: [mesh], rendered: currentControls(),
-    selectFeature: vi.fn(), selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), selectSketchGeometry: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(),
+    selectFeature: vi.fn(), selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(), selectProfile: vi.fn(), selectSketchGeometrySet: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(),
     selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: action => action()
   };
   const boundary = createCadWorkbenchViewportControls(() => bindings), before = boundary.getState(), token = cadViewportMetadataToken(session, before);
