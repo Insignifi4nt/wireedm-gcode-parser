@@ -8,6 +8,7 @@ import { createCadDocument, parseCadDocument } from '../cadSchema';
 import { reduceCadEditIntents } from '../cadOperations';
 import type { CadSketchRegionProposal } from '../cadSketchRegionInspection';
 import { endTrim, trimPart } from './cadSketchTrimFixtures';
+import { extendPart, lineExtend } from './cadSketchExtendFixtures';
 
 function splitSource() {
   return parseCadDocument({ ...createCadDocument('Split regions', 'split-regions'), schemaVersion: 2, parameters: { span: 20, retained: 7 }, features: [{
@@ -20,6 +21,21 @@ function splitSource() {
 const split = { kind: 'line', entityId: 'edge-a', parameter: .5, splitPointId: 'joint', newEntityId: 'a-new', supportRelationId: 'straight' } as const;
 
 describe('prepared closed-cell inspection and physical selection', () => {
+  it('queries a line extension without allocating IDs and rejects changed witnesses or mixed read modes', () => {
+    const source = extendPart(), original = JSON.stringify(source), accepted = inspectCadSketchRegions(source, 'sketch');
+    const query = inspectCadSketchRegions(source, 'sketch', { extendAt: { entityId: 'ab', end: 'start' } });
+    expect(query.items).toEqual(accepted.items); expect(query.total).toBe(2); expect(query).not.toHaveProperty('proposed');
+    const { endPointId: _end, ...target } = lineExtend;
+    expect(query.extendPreview).toMatchObject({ target, point: [-5, 0], added: { kind: 'line', length: 5 }, extended: { kind: 'line', length: 25 } });
+    expect(query.extendPreview?.target).not.toHaveProperty('endPointId');
+    const stale = { ...lineExtend, boundary: { ...lineExtend.boundary, position: [-6, 0] as const } };
+    expect(() => inspectCadSketchRegions(source, 'sketch', { proposal: { extend: stale } })).toThrowError(expect.objectContaining({ code: 'stale-sketch-extend' }));
+    for (const input of [{ extendAt: { entityId: 'ab', end: 'start' }, proposal: { extend: lineExtend } },
+      { extendAt: { entityId: 'ab', end: 'start' }, trimAt: { entityId: 'ab', parameter: .1 } }])
+      expect(() => inspectCadSketchRegions(source, 'sketch', input as never)).toThrowError(expect.objectContaining({ code: 'invalid-region-proposal' }));
+    expect(JSON.stringify(source)).toBe(original);
+  });
+
   it('queries an exact end-trim witness without allocating IDs, changing cells or pretending the trim was applied', () => {
     const source = trimPart(), original = JSON.stringify(source);
     const accepted = inspectCadSketchRegions(source, 'sketch');
@@ -34,16 +50,19 @@ describe('prepared closed-cell inspection and physical selection', () => {
     expect(() => inspectCadSketchRegions(source, 'sketch', { trimAt: { entityId: 'ab', parameter: NaN } })).toThrow();
   });
 
-  it('preflights the actual end-trim result and exact remaining refs before an atomic explicit-consumer repair', () => {
-    const session = new CadSession(trimPart(true)), before = session.getSnapshot(), original = JSON.stringify(before.document);
-    const proposal = { trim: endTrim, parameterValues: { added: 11 } };
+  it.each([
+    { name: 'Trim', part: trimPart, topology: { trim: endTrim }, edit: { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: endTrim } as const },
+    { name: 'Extend', part: extendPart, topology: { extend: lineExtend }, edit: { kind: 'extend-sketch-entity', sketchId: 'sketch', extend: lineExtend } as const }
+  ])('preflights the actual $name result and exact remaining refs before an atomic explicit-consumer repair', ({ part, topology, edit }) => {
+    const session = new CadSession(part(true)), before = session.getSnapshot(), original = JSON.stringify(before.document);
+    const proposal = { ...topology, parameterValues: { added: 11 } };
     const inspection = inspectCadSketchRegions(before.document, 'sketch', { proposal });
     expect(inspection).toMatchObject({ proposed: true, total: 1, items: [{ areaMm2: 200, boundaryLengthMm: 60 }] });
     const reference = inspection.items[0].reference;
     expect(readCadSketchRegionReference(before.document, 'sketch', reference.boundaryProfileId, proposal)).toEqual(reference);
-    const edits = [{ kind: 'set-parameter', name: 'added', value: 11 }, { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: endTrim }] as const;
+    const edits = [{ kind: 'set-parameter', name: 'added', value: 11 }, edit] as const;
     const reduced = reduceCadEditIntents(before.document, edits), effective = reduced.features[0];
-    if (effective.kind !== 'sketch') throw new Error('Missing trim sketch.');
+    if (effective.kind !== 'sketch') throw new Error('Missing sketch.');
     expect(prepareCadSketchCells(effective, reduced.parameters).cells.map(cell => cell.reference)).toEqual([reference]);
     expect(() => session.edit(edits, before.version)).toThrowError(expect.objectContaining({ code: 'stale-sketch-region' }));
     expect(session.getSnapshot()).toBe(before); expect(JSON.stringify(before.document)).toBe(original);

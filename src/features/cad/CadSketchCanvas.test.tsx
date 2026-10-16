@@ -404,6 +404,41 @@ describe('graph spatial selection', () => {
     await act(async () => document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     expect(h.edited).not.toHaveBeenCalled(); expect(h.selected).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
   });
+  it('previews Extend from the owned near end to its finite boundary and submits that exact point once', async () => {
+    const h = await spatialFixture(), graph = h.feature.graph!;
+    const feature: CadSketchFeature = { ...h.feature, graph: { ...graph,
+      points: [...graph.points, { id: 'fence-start', position: [-5, -5] }, { id: 'fence-end', position: [-5, 5] }],
+      entities: [...graph.entities, { id: 'fence', kind: 'line', construction: true, startPointId: 'fence-start', endPointId: 'fence-end' }] } };
+    await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });
+    await h.pointer('pointerdown', 2, .1, false, 7, 2); await h.pointer('pointerup', 2, .1, false, 7, 2);
+    const extend = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Extend start');
+    expect(extend).toBeDefined(); expect(extend?.disabled).toBe(false); expect(h.edited).not.toHaveBeenCalled();
+    await act(async () => extend?.focus());
+    expect(container.querySelector('[data-cad-sketch-split-point]')).toBeNull();
+    const preview = container.querySelector('[aria-label="Extend preview"]'); expect(preview).not.toBeNull();
+    const view = currentControls().getState(); if (view.mode === 'solid') throw new Error('Sketch view missing.');
+    const added = preview?.querySelector('.is-added');
+    expect([Number(added?.getAttribute('x1')) + view.centerMm[0], Number(added?.getAttribute('x2')) + view.centerMm[0]].sort((a, b) => a - b)).toEqual([-5, 0]);
+    const pointId = preview?.querySelector('[data-cad-sketch-extend-point]')?.getAttribute('data-cad-sketch-extend-point');
+    await act(async () => extend?.click());
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'extend-sketch-entity', sketchId: feature.id, extend: {
+      kind: 'line', entityId: 'ab', end: 'start', endPointId: pointId,
+      boundary: { entityId: 'fence', index: 0, parameter: -.5, position: [-5, 0] }
+    } }], expect.any(AbortSignal));
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: pointId }); expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
+  it('requires a deliberate Extend end and a real outward boundary without inventing a free endpoint', async () => {
+    const h = await spatialFixture();
+    for (const [x, label] of [[2, 'Extend start'], [5, 'Extend']] as const) {
+      await h.pointer('pointerdown', x, .1, false, 7, 2); await h.pointer('pointerup', x, .1, false, 7, 2);
+      const extend = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === label);
+      expect(extend).toBeDefined(); expect(extend?.disabled).toBe(true);
+      expect(container.querySelector('[aria-label="Extend preview"]')).toBeNull();
+      await act(async () => extend?.click()); expect(h.edited).not.toHaveBeenCalled();
+      await act(async () => document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    }
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
   it('blocks end Trim with the actual detached endpoint owner and cancels a late trim receipt on blur', async () => {
     const h = await trimFixture(), feature = { ...h.feature, graph: { ...h.feature.graph!, relations: [{ id: 'anchor', kind: 'fixed-axis' as const, pointId: 'a', axis: 'x' as const, value: 0 }] } };
     await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });

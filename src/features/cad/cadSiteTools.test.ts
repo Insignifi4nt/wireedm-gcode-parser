@@ -8,10 +8,31 @@ import type { CadController } from './useCadController';
 import type { CadBuildResult } from '@/domain/cad/cadDocument';
 import { refs as regionRefs, pad as regionPad, pocket as regionPocket, sketch as regionSketch } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
 import { CadSketchSplitDependencyError } from '@/domain/cad/cadSketchSplit';
-import { CadSketchTrimDependencyError } from '@/domain/cad/cadSketchTrimExtend';
+import { CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '@/domain/cad/cadSketchTrimExtend';
 import { endTrim } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
+import { lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('exposes line-Extend query and exact proposals with mutually exclusive modes and finite unbounded source parameters', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid extend reached operations.'); });
+    const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+    if (!inspect || !read) throw new Error('Missing region tools.');
+    expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', sketchId: 'regions', extendAt: { entityId: 'ab', end: 'start' } })).toBe(true);
+    for (const tool of [inspect, read]) {
+      const query = { expectedVersion: 'current', sketchId: 'regions', ...(tool === read ? { boundaryProfileId: 'outer' } : {}) };
+      expect(Value.Check(tool.inputSchema, { ...query, proposal: { extend: lineExtend } })).toBe(true);
+      expect(Value.Check(tool.inputSchema, { ...query, proposal: { extend: { ...lineExtend, boundary: { ...lineExtend.boundary, parameter: -2e9 } }, parameterValues: { span: 30 } } })).toBe(true);
+      for (const proposal of [{ extend: lineExtend, trim: endTrim }, { extend: lineExtend, sketch: regionSketch() }, { extend: lineExtend, split: {} },
+        { extend: { ...lineExtend, endPointId: undefined } }, { extend: { ...lineExtend, boundary: { ...lineExtend.boundary, parameter: Infinity } } }])
+        expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    for (const mode of [{ extendAt: { entityId: 'ab', end: 'start' }, proposal: { extend: lineExtend } },
+      { extendAt: { entityId: 'ab', end: 'start' }, trimAt: { entityId: 'ab', parameter: .1 } },
+      { extendAt: { entityId: 'ab', end: 'middle' } }, { extendAt: { entityId: 'ab', end: 'start', parameter: -.25 } }])
+      expect(await inspect.execute({ expectedVersion: 'current', sketchId: 'regions', ...mode })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(controller).not.toHaveBeenCalled();
+  });
+
   it('exposes strict end-trim/delete proposals on the existing reads and refuses mixed or unwitnessed input before controller access', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed trim reached controller.'); });
     const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
@@ -36,13 +57,14 @@ describe('CAD tool argument boundary and discovery', () => {
     expect(controller).not.toHaveBeenCalled();
   });
 
-  it('bounds exact trim relation and endpoint-driver blocker IDs independently', async () => {
+  it.each([CadSketchTrimDependencyError, CadSketchExtendDependencyError])('bounds exact trim/extend relation and endpoint-driver blocker IDs independently for %s', async DependencyError => {
     const relationIds = Array.from({ length: 12 }, (_, index) => `relation-${index}`), pointIds = Array.from({ length: 10 }, (_, index) => `point-${index}`);
-    const failure = new CadSketchTrimDependencyError(relationIds, pointIds);
+    const failure = new DependencyError(relationIds, pointIds);
     const tool = cadSiteTools(() => { throw failure; }).find(tool => tool.name === 'cad_inspect_sketch_regions');
     if (!tool) throw new Error('Missing region inspection.');
-    expect(await tool.execute({ expectedVersion: 'current', sketchId: 'graph', proposal: { trim: endTrim } })).toMatchObject({
-      ok: false, error: { code: 'dependent-sketch-trim', details: {
+    const proposal = DependencyError === CadSketchTrimDependencyError ? { trim: endTrim } : { extend: lineExtend };
+    expect(await tool.execute({ expectedVersion: 'current', sketchId: 'graph', proposal })).toMatchObject({
+      ok: false, error: { code: failure.code, details: {
         relationIds: relationIds.slice(0, 8), relationCount: 12, omittedRelationCount: 4,
         pointIds: pointIds.slice(0, 8), pointCount: 10, omittedPointCount: 2
       } }

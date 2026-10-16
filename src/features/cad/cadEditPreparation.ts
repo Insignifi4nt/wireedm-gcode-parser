@@ -43,19 +43,21 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
   }
   for (const edit of captured) {
     signal?.throwIfAborted();
-    if (edit.kind === 'translate-sketch-geometry' || edit.kind === 'split-sketch-entity' || edit.kind === 'trim-sketch-entity') {
+    if (edit.kind === 'translate-sketch-geometry' || edit.kind === 'split-sketch-entity' || edit.kind === 'trim-sketch-entity' || edit.kind === 'extend-sketch-entity') {
       await flush();
       const target = reduceCadEditIntents(candidate, [edit]);
       if (Value.Equal(candidate, target)) continue;
       candidate = target;
       await solve();
       // Native success may project targets or propagate to outside points/radii.
-      // Exact Move, Split and Trim accept only their complete constructed source candidate.
+      // Exact source edits accept only their complete constructed candidate.
       if (!Value.Equal(candidate, target)) throw edit.kind === 'split-sketch-entity'
         ? new CadError('sketch-split-intent', 'The constraints cannot preserve this exact split without changing geometry. Adjust its relations before splitting.')
         : edit.kind === 'trim-sketch-entity'
           ? new CadError('sketch-trim-intent', 'The constraints cannot preserve this exact trim without changing geometry. Adjust its relations before trimming.')
-          : new CadError('sketch-translation-intent', 'The constraints cannot satisfy this exact move without changing other geometry. Adjust the selection or its relations.');
+          : edit.kind === 'extend-sketch-entity'
+            ? new CadError('sketch-extend-intent', 'The constraints cannot preserve this exact extension without changing geometry. Adjust its relations before extending.')
+            : new CadError('sketch-translation-intent', 'The constraints cannot satisfy this exact move without changing other geometry. Adjust the selection or its relations.');
     } else if (edit.kind === 'move-sketch-point') {
       await flush();
       const sketch = candidate.features.find(feature => feature.id === edit.sketchId);

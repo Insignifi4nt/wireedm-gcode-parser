@@ -10,7 +10,8 @@ import { resolveCadSketchContours, type CadResolvedSketchContour, type CadSketch
 import { createCadSketchCellIndex, selectCadSketchRegions, type CadSketchCellReference } from './cadSketchRegionSelection';
 import { cadScalarParameterNames, mapCadFeatureScalars } from './cadParameters';
 import { CadSketchSplitTargetSchema, splitCadSketchEntity, type CadSketchSplitTarget } from './cadSketchSplit';
-import { CadSketchTrimTargetSchema, prepareCadSketchEndTrim, trimCadSketchEntity, type CadSketchTrimTarget } from './cadSketchTrimExtend';
+import { CadSketchTrimTargetSchema, prepareCadSketchEndTrim, trimCadSketchEntity, type CadSketchTrimTarget,
+  CadSketchExtendTargetSchema, prepareCadSketchLineExtend, extendCadSketchEntity, type CadSketchExtendTarget } from './cadSketchTrimExtend';
 
 export interface CadPreparedSketchCell {
   readonly reference: CadSketchCellReference;
@@ -103,17 +104,19 @@ function resolveCells(sketch: CadSketchFeature, parameters: CadDocument['paramet
 
 /** Numeric additions/overrides keep existing semantics; topology proposals never accept a replacement sketch. */
 export type CadSketchRegionProposal =
-  | { readonly sketch?: CadSketchFeature; readonly split?: never; readonly trim?: never; readonly parameterValues?: CadDocument['parameters'] }
-  | { readonly split: CadSketchSplitTarget; readonly sketch?: never; readonly trim?: never; readonly parameterValues?: CadDocument['parameters'] }
-  | { readonly trim: CadSketchTrimTarget; readonly sketch?: never; readonly split?: never; readonly parameterValues?: CadDocument['parameters'] };
+  | { readonly sketch?: CadSketchFeature; readonly split?: never; readonly trim?: never; readonly extend?: never; readonly parameterValues?: CadDocument['parameters'] }
+  | { readonly split: CadSketchSplitTarget; readonly sketch?: never; readonly trim?: never; readonly extend?: never; readonly parameterValues?: CadDocument['parameters'] }
+  | { readonly trim: CadSketchTrimTarget; readonly sketch?: never; readonly split?: never; readonly extend?: never; readonly parameterValues?: CadDocument['parameters'] }
+  | { readonly extend: CadSketchExtendTarget; readonly sketch?: never; readonly split?: never; readonly trim?: never; readonly parameterValues?: CadDocument['parameters'] };
 export const CadSketchRegionProposalSchema = Type.Union([
   Type.Object({ sketch: Type.Optional(CadSketchFeatureSchema), parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false, minProperties: 1 }),
   Type.Object({ split: CadSketchSplitTargetSchema, parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false }),
-  Type.Object({ trim: CadSketchTrimTargetSchema, parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false })
+  Type.Object({ trim: CadSketchTrimTargetSchema, parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false }),
+  Type.Object({ extend: CadSketchExtendTargetSchema, parameterValues: Type.Optional(CadDocumentSchema.properties.parameters) }, { additionalProperties: false })
 ]);
 export function validateCadSketchRegionProposal(proposal: CadSketchRegionProposal): void {
   if (!isCadImportData(proposal) || !Value.Check(CadSketchRegionProposalSchema, proposal))
-    throw new CadError('invalid-region-proposal', 'Propose a complete same-ID sketch, one exact split or one witnessed end trim, with optional numeric parameter values; parameter-only proposals are also supported.');
+    throw new CadError('invalid-region-proposal', 'Propose a complete same-ID sketch, one exact split, one witnessed end trim or one witnessed line extension, with optional numeric parameter values; parameter-only proposals are also supported.');
 }
 
 function activeSketch(document: CadDocument, sketchId: string, proposal?: CadSketchRegionProposal) {
@@ -137,6 +140,9 @@ function activeSketch(document: CadDocument, sketchId: string, proposal?: CadSke
     } else if (proposal.trim !== undefined) {
       if (!sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
       source = { ...sketch, graph: trimCadSketchEntity({ graph: sketch.graph, parameters, trim: proposal.trim }).graph };
+    } else if (proposal.extend !== undefined) {
+      if (!sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
+      source = { ...sketch, graph: extendCadSketchEntity({ graph: sketch.graph, parameters, extend: proposal.extend }).graph };
     }
     const sourcePlane = source.plane;
     const requiredDatums = typeof sourcePlane === 'string' ? [] : validated.features.slice(0, index)
@@ -164,9 +170,12 @@ export interface CadSketchCellInspection {
 
 export const CadSketchTrimAtSchema = Type.Object({ entityId: CadSketchTrimTargetSchema.anyOf[0].properties.entityId,
   parameter: CadSketchTrimTargetSchema.anyOf[0].properties.parameter }, { additionalProperties: false });
+export const CadSketchExtendAtSchema = Type.Object({ entityId: CadSketchExtendTargetSchema.properties.entityId,
+  end: CadSketchExtendTargetSchema.properties.end }, { additionalProperties: false });
 export type CadSketchRegionInspectionInput = { readonly offset?: number; readonly limit?: number } & (
-  | { readonly proposal?: CadSketchRegionProposal; readonly trimAt?: never }
-  | { readonly trimAt: Readonly<Pick<CadSketchTrimTarget, 'entityId' | 'parameter'>>; readonly proposal?: never }
+  | { readonly proposal?: CadSketchRegionProposal; readonly trimAt?: never; readonly extendAt?: never }
+  | { readonly trimAt: Readonly<Pick<CadSketchTrimTarget, 'entityId' | 'parameter'>>; readonly proposal?: never; readonly extendAt?: never }
+  | { readonly extendAt: Readonly<Pick<CadSketchExtendTarget, 'entityId' | 'end'>>; readonly proposal?: never; readonly trimAt?: never }
 );
 
 /** The requested window is a read boundary, not an authored cell-count ceiling. */
@@ -174,19 +183,25 @@ export function inspectCadSketchRegions(document: CadDocument, sketchId: string,
   const offset = input.offset ?? 0, limit = input.limit ?? 10;
   if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1)
     throw new CadError('invalid-region-page', 'Region offset must be nonnegative and limit must be a positive integer.');
-  if (input.trimAt !== undefined && (input.proposal !== undefined || !isCadImportData(input.trimAt) || !Value.Check(CadSketchTrimAtSchema, input.trimAt)))
-    throw new CadError('invalid-region-proposal', 'Query one accepted end trim with an entity and source parameter, separately from a proposed source.');
+  if ([input.proposal, input.trimAt, input.extendAt].filter(mode => mode !== undefined).length > 1
+    || input.trimAt !== undefined && (!isCadImportData(input.trimAt) || !Value.Check(CadSketchTrimAtSchema, input.trimAt))
+    || input.extendAt !== undefined && (!isCadImportData(input.extendAt) || !Value.Check(CadSketchExtendAtSchema, input.extendAt)))
+    throw new CadError('invalid-region-proposal', 'Query one accepted Trim or Extend target separately from a proposed source.');
   const { sketch, parameters } = activeSketch(document, sketchId, input.proposal);
   const trimPreview = input.trimAt === undefined ? undefined : (() => {
     if (!sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
     return prepareCadSketchEndTrim({ graph: sketch.graph, parameters, ...input.trimAt });
+  })();
+  const extendPreview = input.extendAt === undefined ? undefined : (() => {
+    if (!sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
+    return prepareCadSketchLineExtend({ graph: sketch.graph, parameters, ...input.extendAt });
   })();
   const prepared = prepareCadSketchCells(sketch, parameters);
   const start = Math.min(offset, prepared.cells.length), end = start + Math.min(limit, prepared.cells.length - start);
   const items: CadSketchCellInspection[] = prepared.cells.slice(start, end).map(cell => ({ boundaryProfileId: cell.reference.boundaryProfileId,
     name: cell.boundary.profile.name, kind: cell.boundary.profile.geometry.kind, depth: cell.boundary.depth,
     defaultMaterial: cell.defaultMaterial, areaMm2: cell.areaMm2, boundaryLengthMm: cell.boundaryLengthMm, boundsMm: cell.boundsMm, reference: cell.reference }));
-  return { sketchId, ...(input.proposal === undefined ? {} : { proposed: true as const }), ...(trimPreview === undefined ? {} : { trimPreview }), coordinateSystem: 'sketch-local' as const, units: 'mm' as const, items,
+  return { sketchId, ...(input.proposal === undefined ? {} : { proposed: true as const }), ...(trimPreview === undefined ? {} : { trimPreview }), ...(extendPreview === undefined ? {} : { extendPreview }), coordinateSystem: 'sketch-local' as const, units: 'mm' as const, items,
     total: prepared.cells.length, nextOffset: end < prepared.cells.length ? end : null };
 }
 

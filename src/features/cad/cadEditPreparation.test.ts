@@ -14,6 +14,7 @@ import type { CadDocument } from '@/domain/cad/cadDocument';
 import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTreatment';
 import { createCadFreshSketchDrawing } from '@/domain/cad/cadFreshSketchGraph';
 import { endTrim, trimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
+import { extendPart, lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
 
 const require = createRequire(import.meta.url);
 const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
@@ -41,6 +42,27 @@ const splitLine = { kind: 'split-sketch-entity', sketchId: 'sketch', split: { ki
   splitPointId: 'cut', newEntityId: 'after', supportRelationId: 'support' } } satisfies CadEdit;
 
 describe('shared CAD edit preparation with the real sketch solver', () => {
+  it('extends from the preceding solved boundary and rejects native projection of the exact complete candidate', async () => {
+    const source = extendPart(), original = parseCadDocument({ ...source, parameters: { ...source.parameters, offset: -5 },
+      features: source.features.map(feature => feature.kind === 'sketch' && feature.graph ? { ...feature, graph: { ...feature.graph,
+        relations: [{ id: 'cutter-x', kind: 'fixed-axis', pointId: 'cut-a', axis: 'x', value: ' offset ' },
+          { id: 'cutter-vertical', kind: 'vertical', pointIds: ['cut-a', 'cut-b'] }] } } : feature) });
+    const extend: CadEdit = { kind: 'extend-sketch-entity', sketchId: 'sketch', extend: { ...lineExtend,
+      boundary: { ...lineExtend.boundary, parameter: -.5, position: [-10, 0] } } };
+    const result = await prepareCadEdits(original, [{ kind: 'set-parameter', name: 'offset', value: -10 }, extend], solver);
+    expect(graphOf(result.document).points).toEqual([...graphOf(original).points.map(point => point.id === 'cut-a' || point.id === 'cut-b'
+      ? { ...point, position: [-10, point.position[1]] } : point), { id: 'extension', position: [-10, 0] }]);
+    expect(graphOf(result.document).entities[0]).toMatchObject({ startPointId: 'extension', endPointId: 'b' });
+    const session = new CadSession(source), before = session.getSnapshot();
+    await expect(session.editPrepared(before.version, async document => (await prepareCadEdits(document,
+      [{ kind: 'extend-sketch-entity', sketchId: 'sketch', extend: lineExtend }], { solve: async input => {
+        const solved = await solver.solve(input); if (solved.kind !== 'solved') return solved;
+        return { ...solved, graph: { ...solved.graph, points: solved.graph.points.map(point => point.id === 'extension'
+          ? { ...point, position: [-4, 0] as const } : point) } };
+      } })).document)).rejects.toMatchObject({ code: 'sketch-extend-intent' });
+    expect(session.getSnapshot()).toBe(before);
+  });
+
   it('trims the preceding solved candidate and refuses native projection of the complete trim intent', async () => {
     const original = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters: { offset: 5 }, features: [{
       id: 'sketch', kind: 'sketch', name: 'Trim', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

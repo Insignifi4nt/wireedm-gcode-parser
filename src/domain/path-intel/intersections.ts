@@ -67,7 +67,17 @@ export type ParameterizedSegmentIntersection =
 
 /** Finite source parameters; circles have no endpoint parameter. Never borrows mutable caller data. */
 export function classifyParameterizedPathSegmentIntersection(left: PathSegment, right: PathSegment, coincidenceEpsilon: number): ParameterizedSegmentIntersection {
-  const result = classifyDetailedPathSegmentIntersection(left, right, coincidenceEpsilon);
+  return freezeParameterizedIntersection(classifyDetailedPathSegmentIntersection(left, right, coincidenceEpsilon));
+}
+
+/** Only the source line extends; the boundary keeps its finite endpoints or signed sweep. */
+export function classifyLineRayPathSegmentIntersection(line: LinePathSegment, boundary: PathSegment, end: 'start' | 'end', coincidenceEpsilon: number): ParameterizedSegmentIntersection {
+  const epsilon = finiteNonNegative(coincidenceEpsilon);
+  return freezeParameterizedIntersection(boundary.kind === 'line' ? intersectLines(line, boundary, epsilon, end)
+    : intersectLineCircular(line, boundary, epsilon, end));
+}
+
+function freezeParameterizedIntersection(result: DetailedSegmentIntersection): ParameterizedSegmentIntersection {
   return result.kind === 'points' ? Object.freeze({ kind: result.kind, points: Object.freeze(result.points.map(hit =>
     Object.freeze({ ...hit, point: Object.freeze({ ...hit.point }) }))) })
     : Object.freeze({ kind: result.kind, points: Object.freeze([]) as readonly [] });
@@ -249,13 +259,16 @@ export function expandBounds(bounds: Bounds2, amount: number): Bounds2 {
 function intersectLines(
   left: LinePathSegment,
   right: LinePathSegment,
-  epsilon: number
+  epsilon: number,
+  range: 'segment' | 'start' | 'end' = 'segment'
 ): DetailedSegmentIntersection {
   const leftVector = vector(left.start, left.end);
   const rightVector = vector(right.start, right.end);
   const leftLength = Math.hypot(leftVector.x, leftVector.y);
   const rightLength = Math.hypot(rightVector.x, rightVector.y);
   if (leftLength === 0 || rightLength === 0) return noIntersection();
+  const minimum = range === 'start' ? -Infinity : range === 'end' ? leftLength : 0;
+  const maximum = range === 'end' ? Infinity : range === 'start' ? 0 : leftLength;
 
   const leftUnit = { x: leftVector.x / leftLength, y: leftVector.y / leftLength };
   const rightUnit = { x: rightVector.x / rightLength, y: rightVector.y / rightLength };
@@ -280,14 +293,14 @@ function intersectLines(
 
     const rightStart = dot(offset, leftUnit);
     const rightEnd = dot(vector(left.start, right.end), leftUnit);
-    const overlapStart = Math.max(0, Math.min(rightStart, rightEnd));
-    const overlapEnd = Math.min(leftLength, Math.max(rightStart, rightEnd));
+    const overlapStart = Math.max(minimum, Math.min(rightStart, rightEnd));
+    const overlapEnd = Math.min(maximum, Math.max(rightStart, rightEnd));
     if (overlapEnd < overlapStart - tolerance) return noIntersection();
     if (overlapEnd - overlapStart > tolerance) return overlapIntersection();
 
     const coordinate = Math.min(
-      leftLength,
-      Math.max(0, stableMidpoint(overlapStart, overlapEnd))
+      maximum,
+      Math.max(minimum, stableMidpoint(overlapStart, overlapEnd))
     );
     const point = {
       x: left.start.x + leftUnit.x * coordinate,
@@ -305,8 +318,8 @@ function intersectLines(
   const leftDistance = cross(offset, rightUnit) / denominator;
   const rightDistance = cross(offset, leftUnit) / denominator;
   if (
-    leftDistance < -tolerance ||
-    leftDistance > leftLength + tolerance ||
+    leftDistance < minimum - tolerance ||
+    leftDistance > maximum + tolerance ||
     rightDistance < -tolerance ||
     rightDistance > rightLength + tolerance
   ) {
@@ -336,7 +349,8 @@ function intersectLines(
 function intersectLineCircular(
   line: LinePathSegment,
   circular: CircularPathSegment,
-  epsilon: number
+  epsilon: number,
+  range: 'segment' | 'start' | 'end' = 'segment'
 ): DetailedSegmentIntersection {
   const lineVector = vector(line.start, line.end);
   const lineLength = Math.hypot(lineVector.x, lineVector.y);
@@ -404,12 +418,14 @@ function intersectLineCircular(
     ? [closestParameter]
     : stableQuadraticRoots(quadraticA, quadraticB, quadraticC, Math.max(0, discriminant));
   const parameterTolerance = tolerance / Math.max(lineLength, Number.MIN_VALUE);
+  const minimum = range === 'start' ? -Infinity : range === 'end' ? 1 : 0;
+  const maximum = range === 'end' ? Infinity : range === 'start' ? 0 : 1;
   const points = roots
     .filter(
       (parameter) =>
         Number.isFinite(parameter) &&
-        parameter >= -parameterTolerance &&
-        parameter <= 1 + parameterTolerance
+        parameter >= minimum - parameterTolerance &&
+        parameter <= maximum + parameterTolerance
     )
     .map((parameter) => {
       const radial = {

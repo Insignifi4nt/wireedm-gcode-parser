@@ -28,6 +28,8 @@ import { inspectCadSketchRegions } from '@/domain/cad/cadSketchRegionInspection'
 import type { CadSketchCellReference } from '@/domain/cad/cadSketchRegionSelection';
 import { endTrim, trimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
 import type { CadSketchEndTrimPreparation } from '@/domain/cad/cadSketchTrimExtend';
+import { extendPart, lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
+import type { CadSketchLineExtendPreparation } from '@/domain/cad/cadSketchTrimExtend';
 
 const kernel = vi.hoisted(() => ({ build: vi.fn(), section: vi.fn(), export: vi.fn(), importSolid: vi.fn(), importDxf: vi.fn(), importDxfCurve: vi.fn(), inspectTopology: vi.fn(), resolveTopologyPicks: vi.fn(), dispose: vi.fn() }));
 const createClient = vi.hoisted(() => vi.fn());
@@ -1327,6 +1329,45 @@ describe('CAD controller asynchronous guards', () => {
       await act(async () => h.cad().undo(accepted.version)); expect(h.session.getSnapshot().document).toEqual(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
       await act(async () => h.cad().redo(h.session.getSnapshot().version)); expect(h.session.getSnapshot().document).toEqual(accepted.document);
       expect(createClient).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('queries line Extend through public reads and applies its exact proposal and consumer repair as one guarded Undo', async () => {
+    const h = await harness(); vi.useFakeTimers();
+    try {
+      await act(async () => h.session.replace(extendPart(true)));
+      const before = h.session.getSnapshot(), tools = cadSiteTools(h.cad), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions');
+      const read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference'), edit = tools.find(tool => tool.name === 'cad_edit_document');
+      if (!inspect || !read || !edit) throw new Error('Missing public Extend path.');
+      const extendAt = { entityId: 'ab', end: 'start' };
+      const queried = await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', extendAt }) as {
+        ok: boolean; data: { extendPreview: CadSketchLineExtendPreparation }
+      };
+      expect(queried).toMatchObject({ ok: true, data: { total: 2, extendPreview: { target: {
+        kind: 'line', entityId: 'ab', end: 'start', boundary: { entityId: 'cutter', index: 0, parameter: -.25, position: [-5, 0] }
+      } } } });
+      const target = queried.data.extendPreview.target, extend = { ...target, endPointId: target.boundary.endpointPointId ?? 'extension' };
+      expect(extend).toEqual(lineExtend);
+      const proposal = { extend }, inspected = await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', proposal }) as {
+        ok: boolean; data: { items: { reference: CadSketchCellReference }[] }
+      };
+      expect(inspected).toMatchObject({ ok: true, data: { proposed: true, total: 1, items: [{ areaMm2: 200 }] } });
+      const reference = inspected.data.items[0].reference;
+      expect(await read.execute({ expectedVersion: before.version, sketchId: 'sketch', boundaryProfileId: reference.boundaryProfileId, proposal }))
+        .toMatchObject({ ok: true, data: { text: JSON.stringify(reference) } });
+      expect(h.session.getSnapshot()).toBe(before); expect(createSketchClient).not.toHaveBeenCalled();
+      sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+      const extendEdit = { kind: 'extend-sketch-entity', sketchId: 'sketch', extend } as const;
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits: [extendEdit] })).toMatchObject({ ok: false, error: { code: 'stale-sketch-region' } }); });
+      expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+      const pad = before.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad.');
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits: [extendEdit,
+        { kind: 'update-feature', feature: { ...pad, regionSelection: [reference] } }
+      ] })).toMatchObject({ ok: true }); });
+      const accepted = h.session.getSnapshot(); expect(inspectCadSketchRegions(accepted.document, 'sketch').items.map(cell => cell.reference)).toEqual([reference]);
+      expect(await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', extendAt })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+      await act(async () => h.cad().undo(accepted.version)); expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+      await act(async () => h.cad().redo(h.session.getSnapshot().version)); expect(h.session.getSnapshot().document).toBe(accepted.document);
     } finally { vi.useRealTimers(); }
   });
 

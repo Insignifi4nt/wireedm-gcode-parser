@@ -16,7 +16,7 @@ import { CadSketchCornerCommandTreatmentSchema, createCadSketchCornerTreatmentFr
 import { CadSketchGraphSelectionSchema, type CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { translateCadSketchGraph } from './cadSketchTranslation';
 import { CadSketchSplitTargetSchema, splitCadSketchEntity, type CadSketchSplitTarget } from './cadSketchSplit';
-import { CadSketchTrimTargetSchema, trimCadSketchEntity, type CadSketchTrimTarget } from './cadSketchTrimExtend';
+import { CadSketchTrimTargetSchema, trimCadSketchEntity, type CadSketchTrimTarget, CadSketchExtendTargetSchema, extendCadSketchEntity, type CadSketchExtendTarget } from './cadSketchTrimExtend';
 
 export type CadEdit =
   | { readonly kind: 'add-feature'; readonly feature: CadFeature; readonly beforeId?: string }
@@ -40,6 +40,7 @@ export type CadEdit =
   | { readonly kind: 'create-sketch-corner'; readonly sketchId: string; readonly pointId: string; readonly treatment: CadSketchCornerCommandTreatment }
   | { readonly kind: 'split-sketch-entity'; readonly sketchId: string; readonly split: CadSketchSplitTarget }
   | { readonly kind: 'trim-sketch-entity'; readonly sketchId: string; readonly trim: CadSketchTrimTarget }
+  | { readonly kind: 'extend-sketch-entity'; readonly sketchId: string; readonly extend: CadSketchExtendTarget }
   | { readonly kind: 'delete-sketch-elements'; readonly sketchId: string; readonly pointIds: readonly string[]; readonly entityIds: readonly string[]; readonly relationIds: readonly string[]; readonly cascade: boolean }
   | { readonly kind: 'set-sketch-construction'; readonly sketchId: string; readonly entityIds: readonly string[]; readonly construction: boolean }
   | { readonly kind: 'move-sketch-point'; readonly sketchId: string; readonly pointId: string; readonly translation: CadPoint2 }
@@ -72,6 +73,7 @@ export const CadEditSchema = Type.Union([
   Type.Object({ kind: Type.Literal('create-sketch-corner'), sketchId: identifier, pointId: identifier, treatment: CadSketchCornerCommandTreatmentSchema }, strict),
   Type.Object({ kind: Type.Literal('split-sketch-entity'), sketchId: identifier, split: CadSketchSplitTargetSchema }, strict),
   Type.Object({ kind: Type.Literal('trim-sketch-entity'), sketchId: identifier, trim: CadSketchTrimTargetSchema }, strict),
+  Type.Object({ kind: Type.Literal('extend-sketch-entity'), sketchId: identifier, extend: CadSketchExtendTargetSchema }, strict),
   Type.Object({ kind: Type.Literal('delete-sketch-elements'), sketchId: identifier, pointIds: Type.Array(identifier, { uniqueItems: true }), entityIds: Type.Array(identifier, { uniqueItems: true }), relationIds: Type.Array(identifier, { uniqueItems: true }), cascade: Type.Boolean() }, strict),
   Type.Object({ kind: Type.Literal('set-sketch-construction'), sketchId: identifier, entityIds: Type.Array(identifier, { uniqueItems: true }), construction: Type.Boolean() }, strict),
   Type.Object({ kind: Type.Literal('move-sketch-point'), sketchId: identifier, pointId: identifier, translation: CadPoint2Schema }, strict),
@@ -204,13 +206,14 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
         features[index] = { ...feature, profiles: feature.profiles.map(profile => profile.id === edit.profileId ? moveCadSketchHandle({ profile, handle: edit.handle, translation, parameters }) : profile) };
         break;
       }
-      case 'create-sketch-corner': case 'split-sketch-entity': case 'trim-sketch-entity': {
+      case 'create-sketch-corner': case 'split-sketch-entity': case 'trim-sketch-entity': case 'extend-sketch-entity': {
         const index = indexOf(edit.sketchId), sketch = features[index];
         if (sketch.kind !== 'sketch' || !sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
         const result = edit.kind === 'create-sketch-corner'
           ? createCadSketchCornerTreatmentFromIds({ graph: sketch.graph, parameters, pointId: edit.pointId, treatment: edit.treatment })
           : edit.kind === 'split-sketch-entity' ? splitCadSketchEntity({ graph: sketch.graph, parameters, split: edit.split })
-            : trimCadSketchEntity({ graph: sketch.graph, parameters, trim: edit.trim });
+            : edit.kind === 'trim-sketch-entity' ? trimCadSketchEntity({ graph: sketch.graph, parameters, trim: edit.trim })
+              : extendCadSketchEntity({ graph: sketch.graph, parameters, extend: edit.extend });
         const profileIds = new Set(sketch.profiles.map(profile => profile.id));
         for (const item of [...result.graph.points, ...result.graph.entities, ...result.graph.relations])
           if (profileIds.has(item.id)) throw new CadError('duplicate-sketch-id', `Sketch identity "${item.id}" already belongs to a legacy profile.`);

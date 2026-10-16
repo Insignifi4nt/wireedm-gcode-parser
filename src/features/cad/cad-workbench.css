@@ -197,6 +197,7 @@
 .cad-sketch-trim-preview .is-boundary { stroke: var(--muted-foreground); stroke-dasharray: 3 3; }
 .cad-sketch-trim-preview .is-retained { stroke: var(--primary); }
 .cad-sketch-trim-preview .is-removed { stroke: var(--destructive); stroke-dasharray: 6 3; }
+.cad-sketch-trim-preview .is-added { stroke: var(--foreground); stroke-dasharray: 5 3; }
 .cad-sketch-trim-preview .is-cut { fill: var(--card); stroke: var(--primary); }
 .cad-curve-viewport .cad-profile, .cad-curve-viewport .cad-profile.is-selected, .cad-curve-viewport .cad-profile-preview { fill: none; }
 .cad-sketch-vertex { fill: #84dcea; stroke: #143645; }

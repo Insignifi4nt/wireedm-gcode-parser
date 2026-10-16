@@ -274,6 +274,70 @@ test('trims a consumed edge, reconnects deliberately and matches the same guarde
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
 });
 
+test('extends the chosen line end to its exact boundary joint, matches the agent operation and preserves the closed solid through save', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const sketch = { id: 'outline', kind: 'sketch', name: 'Extend outline', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [3, 0] }, { id: 'b', position: [20, '0.00'] }, { id: 'c', position: [20, 10] },
+      { id: 'd', position: ['0.0000', '10.00'] }, { id: 'e', position: [0, 0] }],
+    entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+      { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+      { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+      { id: 'de', kind: 'line', construction: false, startPointId: 'd', endPointId: 'e' }], relations: []
+  } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
+  let current = await context(page); const baseVersion = current.version;
+  expect((await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id })).items).toEqual([]);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: sketch.id } });
+  const openExtend = async () => {
+    const a = await page.locator('[data-cad-sketch-point="a"]').boundingBox(), b = await page.locator('[data-cad-sketch-point="b"]').boundingBox();
+    if (!a || !b) throw new Error('Extend source endpoints unavailable.');
+    await page.mouse.click(a.x + a.width / 2 + .15 * (b.x + b.width / 2 - a.x - a.width / 2), a.y + a.height / 2 - 1, { button: 'right' });
+    const extend = page.getByRole('menuitem', { name: 'Extend start', exact: true }); await expect(extend).toBeEnabled(); await extend.focus();
+    await expect(page.getByLabel('Extend preview', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-cad-sketch-extend-point]')).toHaveAttribute('data-cad-sketch-extend-point', 'e');
+    return extend;
+  };
+  await openExtend(); await page.keyboard.press('Escape');
+  expect((await context(page)).version).toBe(baseVersion);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: baseVersion, featureId: sketch.id })).feature).toEqual(sketch);
+  await (await openExtend()).click(); await expect(page.locator('[data-cad-sketch-point="e"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
+  const human = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
+  expect(human.graph.points).toEqual(sketch.graph.points); expect(human.graph.relations).toEqual([]);
+  expect(human.graph.entities).toEqual([{ ...sketch.graph.entities[0], startPointId: 'e' }, ...sketch.graph.entities.slice(1)]);
+  await page.keyboard.press('Control+z'); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
+  await page.keyboard.press('Control+Shift+z'); current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await call(page, 'cad_history', { expectedVersion: current.version, direction: 'undo' }); current = await context(page);
+  const query = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id, extendAt: { entityId: 'ab', end: 'start' } });
+  expect(query.items).toEqual([]);
+  expect(query.extendPreview.target).toEqual({ kind: 'line', entityId: 'ab', end: 'start',
+    boundary: { entityId: 'de', index: 0, parameter: -3 / 17, position: [0, 0], endpointPointId: 'e' } });
+  const extend = { ...query.extendPreview.target, endPointId: query.extendPreview.target.boundary.endpointPointId };
+  const proposal = { extend };
+  const regions = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id, proposal });
+  expect(regions.items).toHaveLength(1); expect(regions.items[0]).toMatchObject({ areaMm2: 200, boundaryLengthMm: 60 });
+  const exact = await call(page, 'cad_read_sketch_region_reference', { expectedVersion: current.version, sketchId: sketch.id, proposal, boundaryProfileId: regions.items[0].reference.boundaryProfileId });
+  expect(JSON.parse(exact.text)).toEqual(regions.items[0].reference);
+  const pad = { id: 'pad', kind: 'extrude', name: 'Extended plate', suppressed: false, sketchId: sketch.id,
+    regionSelection: [regions.items[0].reference], distance: ' 5e0 ', symmetric: false, operation: 'new', targetId: null };
+  await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'extend-sketch-entity', sketchId: sketch.id, extend }, { kind: 'add-feature', feature: pad }] });
+  current = await context(page);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  const built = await call(page, 'cad_build', { expectedVersion: current.version }); expect(built.diagnostics).toEqual([]);
+  expect(built.bodies).toHaveLength(1); expect(built.bodies[0].volumeMm3).toBeCloseTo(1000, 7);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: pad.id })).feature).toEqual(pad);
+  await call(page, 'cad_save_document', { expectedVersion: current.version }); await page.reload();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible(); current = await context(page);
+  expect(current.dirty).toBe(false);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
+  expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: pad.id })).feature).toEqual(pad);
+});
+
 test('attaches reversed rectangle picks deliberately, follows their drivers and detaches through the ordinary relation editor', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const feature = { id: 'attached', kind: 'sketch', name: 'Attached rectangle', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

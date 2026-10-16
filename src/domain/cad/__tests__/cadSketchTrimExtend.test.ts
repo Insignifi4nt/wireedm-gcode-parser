@@ -4,6 +4,7 @@ import { compileCadSketchGraph } from '../cadSketchGraphGeometry';
 import { CadSketchTrimDependencyError, prepareCadSketchEndTrim, trimCadSketchEntity } from '../cadSketchTrimExtend';
 import { cadAnalyticSegments } from '../cadAnalyticSegments';
 import { signedAreaOfPath } from '@/domain/path-intel/segments';
+import { createCadDocument, parseCadDocument } from '../cadSchema';
 
 function fences() {
   return parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] },
@@ -14,6 +15,22 @@ function fences() {
 }
 
 describe('exact sketch end Trim', () => {
+  it('rejects an out-of-range cut on a legal arc bulge rather than exposing a malformed ready witness', () => {
+    const document = parseCadDocument({ ...createCadDocument('Arc range', 'arc-range'), schemaVersion: 2, features: [{
+      id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+        points: [{ id: 'o', position: [999999999, 0] }, { id: 'a', position: [999999999, 20] },
+          { id: 'b', position: [999999999, -20] }, { id: 'c', position: [999999989, 0] }],
+        entities: [{ id: 'arc', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 'a', endPointId: 'b', direction: 'cw' },
+          { id: 'circle', kind: 'circle', construction: true, centerPointId: 'c', radius: 25 }], relations: []
+      }
+    }] });
+    const sketch = document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Expected accepted graph.');
+    const graph = sketch.graph, before = JSON.stringify(document);
+    expect(() => prepareCadSketchEndTrim({ graph, parameters: {}, entityId: 'arc', parameter: 0.01 }))
+      .toThrowError(expect.objectContaining({ code: 'sketch-trim-precision' }));
+    expect(JSON.stringify(document)).toBe(before);
+  });
+
   it('removes only the clicked outer span at its nearest finite intersection, retaining source and cutter identities', () => {
     const graph = fences(), before = JSON.stringify(graph);
     const preview = prepareCadSketchEndTrim({ graph, parameters: {}, entityId: 'edge', parameter: 0.1 });
