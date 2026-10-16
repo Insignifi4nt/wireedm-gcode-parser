@@ -756,3 +756,35 @@ it('reads and converts reference values only from accepted geometry or its match
   await act(async()=>field('Distance mm').focus());expect(Number(field('Distance mm').value)).toBe(Math.hypot(60,20));
   await click('Cancel');expect(row()).toBe('(53.851648 mm)');expect(h.edit).not.toHaveBeenCalled();
 });
+
+
+describe('contextual concentric curve centers',()=>{
+  const source=(shared=false)=>parseCadDocument({...createCadDocument('Concentric','concentric'),schemaVersion:2,features:[{
+    id:'sketch',kind:'sketch',name:'Sketch',plane:'XY',offset:0,suppressed:false,profiles:[],graph:{
+      points:[{id:'origin',position:[' 0.00 ','0']},{id:'center',position:[0,0]},{id:'start',position:[3,0]},{id:'end',position:[0,3]}],
+      entities:[{id:'rim',kind:'circle',centerPointId:'origin',radius:' 10 ',construction:false},
+        {id:'arc',kind:'arc',centerPointId:shared?'origin':'center',startPointId:'start',endPointId:'end',direction:'cw',construction:true}],relations:[]}
+  }]});
+  const pair=[{kind:'entity' as const,id:'arc'},{kind:'entity' as const,id:'rim'}];
+  it('keeps preview/cancel private and reuses exact center coincidence through reversed selection and toggles',async()=>{
+    const original=source(),h=await mount(original,pair);
+    await act(async()=>field('Concentric').click());await click('Cancel');expect(h.session.getSnapshot().document).toBe(original);expect(h.edit).not.toHaveBeenCalled();
+    await act(async()=>field('Concentric').click());await click('Apply');
+    const accepted=h.session.getSnapshot().document,sketch=accepted.features[0];if(sketch.kind!=='sketch'||!sketch.graph)throw Error('Missing graph');
+    expect(sketch.graph.relations).toEqual([{id:expect.any(String),kind:'coincident',pointIds:['center','origin']}]);
+    expect(sketch.graph.entities).toEqual(original.features[0].kind==='sketch'?original.features[0].graph?.entities:[]);
+    expect(sketch.graph.points).toEqual(original.features[0].kind==='sketch'?original.features[0].graph?.points:[]);
+    await h.render([...pair].reverse());expect(field('Concentric').checked).toBe(true);
+    await act(async()=>field('Concentric').click());await act(async()=>field('Concentric').click());
+    expect(h.pending).toHaveBeenLastCalledWith(false);expect(h.session.getSnapshot().document).toBe(accepted);
+    await act(async()=>h.session.undo());expect(h.session.getSnapshot().document).toBe(original);
+  });
+  it.each(['shared','chain'])('recognizes %s centers without a redundant relation or editable false freedom',async(kind)=>{
+    const base=source(kind==='shared'),first=base.features[0];if(first.kind!=='sketch'||!first.graph)throw Error('Missing graph');
+    const original=kind==='shared'?base:parseCadDocument({...base,features:[{...first,graph:{...first.graph,points:[...first.graph.points,{id:'bridge',position:[0,0]}],
+      relations:[{id:'first-link',kind:'coincident',pointIds:['origin','bridge']},{id:'second-link',kind:'coincident',pointIds:['bridge','center']}]}}]});
+    const h=await mount(original,pair);
+    expect(field('Concentric').checked).toBe(true);expect(field('Concentric').disabled).toBe(true);
+    expect(h.pending).toHaveBeenLastCalledWith(false);expect(h.prepare).not.toHaveBeenCalled();expect(h.edit).not.toHaveBeenCalled();expect(h.session.getSnapshot().document).toBe(original);
+  });
+});

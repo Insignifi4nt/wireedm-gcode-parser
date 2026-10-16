@@ -5,6 +5,7 @@ import { CloseIcon, ConfirmIcon, LinkIcon, MeasureIcon } from '@wire-edm/icons-r
 import type { CadDocument, CadScalar, CadSketchFeature } from '@/domain/cad/cadDocument';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation, CadSketchReferenceDimension } from '@/domain/cad/cadSketchGraph';
 import { cadSketchReferenceDimensionToDriving, measureCadSketchReferenceDimension, resolveCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
+import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 import { cadSketchRelationPointIds, mapCadSketchRelationScalars } from '@/domain/cad/cadSketchGraphReferences';
 import { cadSketchExternalReferenceForSelection, cadSketchExternalReferenceLockReason } from '@/domain/cad/cadSketchExternalReferences';
 import { reduceCadEditIntents, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
@@ -210,6 +211,12 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const parameters = useMemo(() => ({ ...source.document.parameters, ...parameterEdits }), [source.document, parameterEdits]);
   const selectedEntity = singleton?.kind === 'entity' ? draft.entities.find(entity => entity.id === singleton.id) : null;
   const selectedPoint = singleton?.kind === 'point' ? draft.points.find(point => point.id === singleton.id) : null;
+  const curves = curvePair?.map(id => draft.entities.find(e => e.id === id));
+  const centerPair = curves?.[0] && curves[0].kind !== 'line' && curves[1] && curves[1].kind !== 'line'
+    ? [curves[0].centerPointId, curves[1].centerPointId] as const : null;
+  const centerRelation = centerPair && draft.relations.find(r => r.kind === 'coincident' && samePair(r, centerPair));
+  const centerIdentity = centerPair && resolveCadSketchPointIdentities(draft);
+  const sharedCenter = Boolean(centerPair && !centerRelation && centerIdentity && centerIdentity(centerPair[0]) === centerIdentity(centerPair[1]));
   const selectedReference = singleton ? cadSketchExternalReferenceForSelection(draft, singleton) : undefined;
   const referenceLock = singleton ? cadSketchExternalReferenceLockReason(draft, singleton) : null;
   const referenceSourceName = selectedReference ? source.document.features.find(feature => feature.id === selectedReference.sourceSketchId)?.name : null;
@@ -267,14 +274,14 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       return { ...current, relations: retained };
     });
   };
-  const togglePairRelation = (kind: 'coincident' | 'horizontal' | 'vertical', enabled: boolean) => {
-    if (!pointPair) return;
+  const togglePairRelation = (kind: 'coincident' | 'horizontal' | 'vertical', enabled: boolean, pair = pointPair) => {
+    if (!pair) return;
     // Keep other relations for the shared preparation/conflict checks.
     if (enabled) {
-      changeRelation(source.graph.relations.find(relation => relation.kind === kind && samePair(relation, pointPair))
-        ?? { id: crypto.randomUUID(), kind, pointIds: pointPair });
+      changeRelation(source.graph.relations.find(relation => relation.kind === kind && samePair(relation, pair))
+        ?? { id: crypto.randomUUID(), kind, pointIds: pair });
     } else {
-      setError(null); setDraft(current => ({ ...current, relations: current.relations.filter(relation => relation.kind !== kind || !samePair(relation, pointPair)) }));
+      setError(null); setDraft(current => ({ ...current, relations: current.relations.filter(relation => relation.kind !== kind || !samePair(relation, pair)) }));
     }
   };
   const toggleEntityPairRelation = (kind: 'parallel' | 'perpendicular' | 'equal-length' | 'equal-radius', enabled: boolean) => {
@@ -471,6 +478,10 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         <Button type="button" disabled={Boolean(orientationOwner)} title={orientationOwner ? `Remove ${relationLabel(orientationOwner)} before adding Angle.` : 'Drive the actual corner angle'} onClick={addAngle}><MeasureIcon size={13} /> {angleOwner ? 'Edit angle' : 'Add angle'}</Button>
       </div>}
       {choosingAngle && angleChoices && <CadSketchAngleSectors sectors={angleChoices} onChoose={relation => { changeRelation(relation); setActiveRelationId(relation.id); setChoosingAngle(false); }} />}
+      {centerPair && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label="Concentric"
+        checked={sharedCenter || Boolean(centerRelation)} disabled={sharedCenter} title={sharedCenter ? 'These centers already share a point or connected coincidence relations.' : undefined}
+        onChange={event => togglePairRelation('coincident', event.target.checked, centerPair)} />Concentric</label>
+        <CadContextHelp label="Concentric">Aligns arc and circle centers independently of their sizes. Existing dimensions remain in force; free geometry follows the sketch constraints. Uses a coincidence between their exact center points. Centers that already share a point or connecting relations remain concentric; edit those relations to change the connection.</CadContextHelp></div>}
       {entityPair && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label={linePair ? 'Equal length' : 'Equal radius'}
         checked={draft.relations.some(relation => relation.kind === (linePair ? 'equal-length' : 'equal-radius') && sameEntityPair(relation, entityPair))}
         onChange={event => toggleEntityPairRelation(linePair ? 'equal-length' : 'equal-radius', event.target.checked)} />{linePair ? 'Equal length' : 'Equal radius'}</label></div>}

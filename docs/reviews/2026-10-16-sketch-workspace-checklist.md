@@ -17,6 +17,14 @@ Goal started 16 October 2026. Base `01e6380`, merged PR #14. Local branch `featu
 - [ ] Only after the sketch audit is satisfied, continue interaction, shared-control and agent usability improvements across existing CAD tools.
 - [ ] Final audit of the complete objective, local commits and evidence. No completion claim while required work remains.
 
+## Checkpoint: curve-center alignment
+
+Two selected arcs/circles now expose Concentric through the existing center-point coincidence. Shared identity and transitive coincidence are recognized without duplicate relations; direct relations preserve their ID and tuple when restored. No new graph arm, native primitive or implicit size driver. Unconstrained geometry follows ordinary solving; radius drivers and exact source remain authoritative.
+
+Genuine RED-to-GREEN form coverage (38 cases) and one complete annular-part journey pass, including private Cancel/Apply/Finish, parameter following, exact Undo, agent parity and save/reload. The journey passes in Chromium and Firefox. Full types/build/docs/source/shared-control checks pass; independent source review has no open finding after correcting an overbroad size-preservation help claim. Native pointer verification selected both circumferences, canceled and applied alignment, then confirmed the bore center followed X=5 while separate radii remained 12 and 4. Pad5 volume was 640π mm³, with one solid and no diagnostics. Undo restored both the concentric and original offset-center sources. Temporary draft restored empty and closed without Save. Evidence: tmp/sketch-concentric-native-proof.json and matching editor/solid PNGs.
+
+Next: sequential point-pair Dimension picking. Editable sketch patterns and the broader tool inventory remain unfinished.
+
 ## Checkpoint: saved reference dimensions
 
 Saved scalar-free line/point-pair and arc/circle radius/diameter references now persist on the sketch, follow actual geometry and add no native equation. Same-ID Make driving uses the normal guarded scalar editor, with exact Cancel/Undo and no silent owner release. Values and conversion seeds use only clean accepted or exactly matching solved geometry. Passive-only edits share complete geometry certification; retained operands survive surgery. Independent source review has no open finding after genuine regression repairs. Focused gates, full types/build/docs/source/sharedUI checks and the complete private-Finish/conversion/Undo/Save/reload journey pass; the journey passes in Chromium and Firefox. [Design, review and acceptance](2026-10-16-sketch-reference-dimension-plan.md).
