@@ -11,6 +11,20 @@ import { assertCadSketchExternalReferences, refreshCadSketchExternalReferences }
 import { cadSketchSolutionMatchesInput } from './sketch-solver/cadSketchSolverProtocol';
 import { cadSketchPatternSnapshotNeedsExact, cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 
+/** Exact geometry edits whose re-solved prefix must stay unchanged, with the error shown when constraints move it. */
+const geometryIntentErrors = {
+  'translate-sketch-geometry': ['sketch-translation-intent', 'The constraints cannot satisfy this exact move without changing other geometry. Adjust the selection or its relations.'],
+  'place-sketch-geometry': ['sketch-placement-intent', 'The constraints cannot preserve this exact placement. Adjust the selection or its relations.'],
+  'split-sketch-entity': ['sketch-split-intent', 'The constraints cannot preserve this exact split without changing geometry. Adjust its relations before splitting.'],
+  'trim-sketch-entity': ['sketch-trim-intent', 'The constraints cannot preserve this exact trim without changing geometry. Adjust its relations before trimming.'],
+  'extend-sketch-entity': ['sketch-extend-intent', 'The constraints cannot preserve this exact extension without changing geometry. Adjust its relations before extending.'],
+  'offset-sketch-loop': ['sketch-offset-intent', 'The constraints cannot preserve this exact offset without changing geometry. Adjust its source or relations before offsetting.'],
+  'mirror-sketch-geometry': ['sketch-mirror-intent', 'The constraints cannot preserve this exact mirrored copy without changing geometry. Adjust its source or relations before mirroring.'],
+  'copy-sketch-profile': ['sketch-profile-copy-intent', 'The constraints cannot preserve this exact independent outline without changing geometry. Adjust its source before copying.']
+} as const satisfies Partial<Record<CadEdit['kind'], readonly [string, string]>>;
+type GeometryIntentEdit = Extract<CadEdit, { kind: keyof typeof geometryIntentErrors }>;
+const isGeometryIntentEdit = (edit: CadEdit): edit is GeometryIntentEdit => Object.hasOwn(geometryIntentErrors, edit.kind);
+
 export function needsCadSketchPreparation(document: CadDocument, edits: readonly CadEdit[]): boolean {
   return document.features.some(feature => feature.kind === 'sketch' && feature.graph)
     || edits.some(edit => edit.kind === 'append-sketch-entities' || edit.kind === 'offset-sketch-loop' || edit.kind === 'copy-sketch-profile' || edit.kind === 'use-sketch-entity' || (edit.kind === 'add-feature' || edit.kind === 'update-feature') && edit.feature.kind === 'sketch' && edit.feature.graph);
@@ -122,26 +136,12 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
         continue;
       }
     }
-    if (edit.kind === 'translate-sketch-geometry' || edit.kind === 'place-sketch-geometry' || edit.kind === 'split-sketch-entity' || edit.kind === 'trim-sketch-entity' || edit.kind === 'extend-sketch-entity' || edit.kind === 'offset-sketch-loop' || edit.kind === 'mirror-sketch-geometry' || edit.kind === 'copy-sketch-profile') {
+    if (isGeometryIntentEdit(edit)) {
       await flush();
       const target = reduceCadEditIntents(candidate, [edit]);
       if (Value.Equal(candidate, target)) continue;
       candidate = target;
-      const error = () => edit.kind === 'place-sketch-geometry'
-        ? new CadError('sketch-placement-intent', 'The constraints cannot preserve this exact placement. Adjust the selection or its relations.')
-        : edit.kind === 'split-sketch-entity'
-        ? new CadError('sketch-split-intent', 'The constraints cannot preserve this exact split without changing geometry. Adjust its relations before splitting.')
-        : edit.kind === 'trim-sketch-entity'
-          ? new CadError('sketch-trim-intent', 'The constraints cannot preserve this exact trim without changing geometry. Adjust its relations before trimming.')
-          : edit.kind === 'extend-sketch-entity'
-            ? new CadError('sketch-extend-intent', 'The constraints cannot preserve this exact extension without changing geometry. Adjust its relations before extending.')
-            : edit.kind === 'offset-sketch-loop'
-              ? new CadError('sketch-offset-intent', 'The constraints cannot preserve this exact offset without changing geometry. Adjust its source or relations before offsetting.')
-              : edit.kind === 'mirror-sketch-geometry'
-                ? new CadError('sketch-mirror-intent', 'The constraints cannot preserve this exact mirrored copy without changing geometry. Adjust its source or relations before mirroring.')
-                : edit.kind === 'copy-sketch-profile'
-                  ? new CadError('sketch-profile-copy-intent', 'The constraints cannot preserve this exact independent outline without changing geometry. Adjust its source before copying.')
-                  : new CadError('sketch-translation-intent', 'The constraints cannot satisfy this exact move without changing other geometry. Adjust the selection or its relations.');
+      const [code, message] = geometryIntentErrors[edit.kind], error = () => new CadError(code, message);
       // Certify the complete edited prefix before any downstream reference refresh.
       // Unrelated suffix features still require complete equality.
       await solve(undefined, { sketchId: edit.kind === 'copy-sketch-profile' ? edit.newSketchId : edit.sketchId, error });
