@@ -573,7 +573,7 @@ describe('graph spatial selection', () => {
     const acceptedDocument = applyCadEdits(h.props().graphControls!.document, h.edited.mock.calls[0][0]), accepted = acceptedDocument.features[0];
     if (accepted.kind !== 'sketch') throw new Error('Accepted trim missing.');
     expect(accepted.graph?.entities[0]).toMatchObject({ id: 'ab', startPointId: pointId, endPointId: 'b' });
-    expect(accepted.graph?.points.slice(0, 5)).toEqual(h.feature.graph?.points);
+    expect(accepted.graph?.points.filter(point => point.id !== pointId)).toEqual(h.feature.graph?.points.filter(point => point.id !== 'a'));
     await h.show({ sketch: accepted, documentVersion: 'accepted', graphControls: { ...h.props().graphControls!, document: acceptedDocument } });
     await act(async () => operation.resolve(undefined));
     expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: pointId }); expect(h.pending).toHaveBeenLastCalledWith(false);
