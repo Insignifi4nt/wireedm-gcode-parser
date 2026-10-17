@@ -37,21 +37,32 @@ import { CadFeatureInputRequestSchema } from './cadFeatureInput';
 const id = Type.String({ minLength: 1, maxLength: 160 });
 const version = { expectedVersion: id };
 const pageFields = { ...workbenchPageFields, offset: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })) };
-const regionProposalEnvelope = Type.Union([
-  Type.Object({ ...CadSketchRegionProposalSchema.anyOf[0].properties, sketch: Type.Optional(CadToolSketchEnvelope) }, { additionalProperties: false, minProperties: 1 }),
-  ...CadSketchRegionProposalSchema.anyOf.slice(1)
-]);
-const regionInspectionSchema = <P extends TSchema>(proposal: P) => Type.Union([
-  object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')), proposal: Type.Optional(proposal) }),
+/** Discovery names each proposal branch; execution validates the complete witnessed target. */
+const proposalTarget = (description: string) => Type.Object({}, { additionalProperties: true, description });
+const regionProposalEnvelope = Type.Object({ sketch: Type.Optional(CadToolSketchEnvelope),
+  split: Type.Optional(proposalTarget('split-sketch-entity target fields.')),
+  trim: Type.Optional(proposalTarget('trimPreview.target plus allocated trim-sketch-entity IDs.')),
+  extend: Type.Optional(proposalTarget('extendPreview.target plus endPointId.')),
+  offset: Type.Optional(proposalTarget('{source,distance,idPrefix}')),
+  mirror: Type.Optional(proposalTarget('{entityIds,axisLineId,idPrefix}')),
+  parameterValues: CadSketchRegionProposalSchema.anyOf[0].properties.parameterValues
+}, { additionalProperties: false, minProperties: 1, description: 'At most one of sketch, split, trim, extend, offset or mirror.' });
+const regionInspectionSchema = Type.Union([
+  object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')), proposal: Type.Optional(CadSketchRegionProposalSchema) }),
   object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')), trimAt: CadSketchTrimAtSchema }),
   object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')), extendAt: CadSketchExtendAtSchema })
 ]);
-const regionReferenceSchema = <P extends TSchema>(proposal: P) => {
-  const common = { ...version, sketchId: CadIdentifierSchema, offset: pageFields.offset,
-    length: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096 })), proposal: Type.Optional(proposal) };
-  return Type.Union([object({ ...common, boundaryProfileId: CadSketchRegionReadTargetSchema.anyOf[0] }),
-    object({ ...common, ...CadSketchRegionReadTargetSchema.anyOf[1].properties })]);
-};
+const regionReferenceCommon = { ...version, sketchId: CadIdentifierSchema, offset: pageFields.offset,
+  length: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096 })), proposal: Type.Optional(CadSketchRegionProposalSchema) };
+const regionReferenceSchema = Type.Union([object({ ...regionReferenceCommon, boundaryProfileId: CadSketchRegionReadTargetSchema.anyOf[0] }),
+  object({ ...regionReferenceCommon, ...CadSketchRegionReadTargetSchema.anyOf[1].properties })]);
+/** Flat discovery rows; the execution unions above still reject combined or missing selectors. */
+const regionInspectionDiscovery = Type.Object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')),
+  proposal: Type.Optional(regionProposalEnvelope), trimAt: Type.Optional(CadSketchTrimAtSchema), extendAt: Type.Optional(CadSketchExtendAtSchema)
+}, { additionalProperties: false, description: 'proposal, trimAt and extendAt are mutually exclusive.' });
+const regionReferenceDiscovery = Type.Object({ ...regionReferenceCommon, proposal: Type.Optional(proposalTarget('The identical proposal object given to cad_inspect_sketch_regions.')),
+  boundaryProfileId: Type.Optional(CadSketchRegionReadTargetSchema.anyOf[0]), cellIds: Type.Optional(CadSketchRegionReadTargetSchema.anyOf[1].properties.cellIds)
+}, { additionalProperties: false, description: 'Exactly one of boundaryProfileId or cellIds.' });
 const pathConstructionSchema = object({ start: CadConstructionPointSchema,
   steps: Type.Array(CadPathConstructionStepSchema, { minItems: 1, maxItems: 128 }) });
 const documentText = new WeakMap<CadDocument, string>();
@@ -190,7 +201,7 @@ export function cadSiteTools(getController: () => CadController) {
     }, false, object({ ...version, package: CadToolPluginPackageEnvelope })),
     tool('cad_inspect_plane', 'Resolve the current active datum, sketch or curve world frame and signed offset in mm. Preserves authored placement; does not certify native solid precision. Finish pending workflows; stale/unavailable references and cancellation reject. Feature definitions: cad_describe_features.', object({ ...version, featureId: id }),
       (cad, input, signal) => cad.inspectPlane(input.featureId, input.expectedVersion, signal)),
-    tool('cad_inspect_sketch_regions', 'Inspect current or proposed closed sketch cells with local area/bounds. Default contour rows/references stay unchanged. mode=graph-cells explicitly discovers all graph-owned bounded cells, including intersection cells; rows expose numeric cellId receipts without full witness duplication. Pack selected cellIds with cad_read_sketch_region_reference for an exact graph-cells regionSelection. Pin accepted version, sketch, mode and identical optional proposal across pages/chunks. Whole sketch keeps its existing material. proposal accepts a complete same-ID sketch OR one exact split OR one witnessed trim OR one witnessed line or arc extension OR one detached loop offset OR one mirror copy, with optional numeric parameterValues; parameter-only proposals also work. Source preflight only, no native solve or full-part certification. trimAt:{entityId,parameter} queries a clicked line, open-arc or eligible numeric-circle span; extendAt:{entityId,end} queries an outward line or arc endpoint. They return trimPreview/extendPreview without allocating IDs, are mutually exclusive and cannot accompany proposal. Current cells stay current. Complete target IDs using cad_describe_edits: middle trim needs ordered cutPointIds/newEntityId/supportRelationId, circle trim ordered cutPointIds, end trim cutPointId, extension endPointId. Use witnessed endpoint identities where present. Inspect proposal.trim/extend with the identical allocated target for resulting cells. proposal.offset accepts {source,distance,idPrefix}; source is an existing profile ID or complete current reference.graphContours sourceRefs. Reuse its prefix and signed distance for the edit. proposal.mirror accepts {entityIds,axisLineId,idPrefix} for a detached numeric graph copy with declared internal joints only; reuse the exact request for mirror-sketch-geometry. Reads reserve no IDs and change no document. Apply topology and explicit consumer repairs atomically. Full sketch: cad_describe_features(kind=sketch). Read omitted references with cad_read_sketch_region_reference. No edits.', regionInspectionSchema(CadSketchRegionProposalSchema), async (cad, input, signal) => {
+    tool('cad_inspect_sketch_regions', 'Inspect current or proposed closed sketch cells with local area/bounds. Default rows keep contour references; mode=graph-cells lists all graph-owned bounded cells, including intersections, as numeric cellId receipts to pack with cad_read_sketch_region_reference. Pin version, sketch, mode and identical proposal across pages. proposal previews one complete same-ID sketch, split, trim, extend, offset or mirror, with optional numeric parameterValues; source preflight only. trimAt:{entityId,parameter} or extendAt:{entityId,end} return trimPreview/extendPreview without allocating IDs. Complete targets per cad_describe_edits, reusing witnessed endpoint IDs, then inspect proposal.trim/extend with that exact target. offset and mirror reuse the exact edit request. Reads reserve no IDs; apply topology and consumer repairs atomically. Full sketch: cad_describe_features(kind=sketch). No edits.', regionInspectionSchema, async (cad, input, signal) => {
       const { expectedVersion, mode, limit, offset = 0 } = input;
       const inspection = await cad.inspectSketchRegions(input.sketchId, input, expectedVersion, signal);
       const rows: ReadonlyArray<(typeof inspection.items)[number]> = inspection.items;
@@ -207,8 +218,8 @@ export function cadSiteTools(getController: () => CadController) {
       return { version: expectedVersion, sketchId: inspection.sketchId, ...(mode === undefined ? {} : { mode }), ...(inspection.proposed ? { proposed: true } : {}), ...(inspection.trimPreview ? { trimPreview: inspection.trimPreview } : {}), ...(inspection.extendPreview ? { extendPreview: inspection.extendPreview } : {}), coordinateSystem: inspection.coordinateSystem, units: inspection.units,
         items: projected.items, total: inspection.total,
         nextOffset: projected.nextOffset !== null ? offset + projected.nextOffset : inspection.nextOffset };
-    }, true, regionInspectionSchema(regionProposalEnvelope)),
-    tool('cad_read_sketch_region_reference', 'Read exact regionSelection reference JSON in UTF-16 chunks. Concatenate text until nextOffset=null. Use boundaryProfileId for the unchanged contour reference, OR nonempty unique cellIds for one packed graph-cells selection. Numeric cell IDs are read-only locators, never saved topology. Pin version, sketch, receipt mode and identical optional proposal for every chunk: a complete same-ID sketch OR one exact split OR one witnessed trim OR one witnessed line or arc extension OR one detached loop offset OR one mirror copy, with optional numeric parameterValues; parameter-only proposals also work. Source preflight only; no native solve or full-part certification. Full sketch: cad_describe_features(kind=sketch). No edits.', regionReferenceSchema(CadSketchRegionProposalSchema), async (cad, input, signal) => {
+    }, true, regionInspectionDiscovery),
+    tool('cad_read_sketch_region_reference', 'Read exact regionSelection reference JSON in UTF-16 chunks; concatenate until nextOffset=null. Give boundaryProfileId for an unchanged contour, or nonempty unique cellIds for one packed graph-cells selection; cell IDs are read-only locators, never saved topology. Pin version, sketch, mode and the identical optional proposal from cad_inspect_sketch_regions for every chunk. Source preflight only. Full sketch: cad_describe_features(kind=sketch). No edits.', regionReferenceSchema, async (cad, input, signal) => {
       const { expectedVersion, sketchId, proposal, offset = 0, length = 4096 } = input;
       const target = 'cellIds' in input ? { cellIds: [...input.cellIds] } : input.boundaryProfileId;
       const text = await cad.readSketchRegionReference(sketchId, target, expectedVersion, signal, proposal);
@@ -216,7 +227,7 @@ export function cadSiteTools(getController: () => CadController) {
       const end = Math.min(text.length, offset + length);
       return { version: expectedVersion, sketchId, ...(typeof target === 'string' ? { boundaryProfileId: target } : { mode: 'graph-cells', cellIds: target.cellIds }), ...(proposal === undefined ? {} : { proposed: true }),
         offset, totalLength: text.length, nextOffset: end < text.length ? end : null, text: text.slice(offset, end) };
-    }, true, regionReferenceSchema(regionProposalEnvelope)),
+    }, true, regionReferenceDiscovery),
     tool('cad_inspect_loft', 'Preflight 2–16 ordered sketch sources for a new Loft: exact common-frame placement, station order and precision. Does not reorder geometry or certify Join/Cut/native material. Authoring semantics: cad_describe_features(kind=loft); finish with cad_build. No edits/native work.', object({ ...version,
       sketchIds: Type.Array(CadIdentifierSchema, { minItems: MIN_CAD_LOFT_SECTIONS, maxItems: MAX_CAD_LOFT_SECTIONS, uniqueItems: true }) }),
       (cad, input, signal) => cad.inspectLoft(input.sketchIds, input.expectedVersion, signal)),

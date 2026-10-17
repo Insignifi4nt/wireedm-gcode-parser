@@ -56,7 +56,7 @@ describe('Revolve source editing', () => {
     expect(container.querySelector('[aria-label="Cancel source selection"]')).toBeNull(); expect(select.value).toBe(datum.id);
     const apply = container.querySelector<HTMLButtonElement>('button[type="submit"]'); if (!apply) throw new Error('Missing Apply');
     await act(async () => apply.click());
-    expect(onApply).toHaveBeenCalledExactlyOnceWith({ ...revolve, sketchId: datum.id }, {});
+    expect(onApply).toHaveBeenCalledExactlyOnceWith({ ...revolve, sketchId: datum.id }, {}, expect.any(AbortSignal));
     expect(part.features.find(feature => feature.id === revolve.id)).toEqual(revolve);
   });
 });

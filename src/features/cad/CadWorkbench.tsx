@@ -729,7 +729,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     signal?.throwIfAborted();
     setPickedTopology(null);
     setNewFeature(null); setEditorPending(false); setSelectedId(feature.id); setError(null);
-    if (feature.kind === 'sketch' && !sketch) { setSketchId(feature.id); setTool('rectangle'); }
+    if (feature.kind === 'sketch' && newFeature && !sketch) { setSketchId(feature.id); setTool('rectangle'); }
   };
   const addSketchGraph = (graph: CadSketchGraph, signal?: AbortSignal) => {
     if (!sketch) throw new Error('Open a sketch before drawing.');

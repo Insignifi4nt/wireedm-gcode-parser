@@ -112,7 +112,7 @@ describe('CAD tool argument boundary and discovery', () => {
     expect(controller).not.toHaveBeenCalled();
   });
 
-  it('exposes strict end/middle/circle/delete trim proposals on the existing reads and refuses mixed or unwitnessed input before controller access', async () => {
+  it('accepts end/middle/circle/delete trim proposals on the existing reads and refuses mixed or unwitnessed input before controller access', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed trim reached controller.'); });
     const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
     if (!inspect || !read) throw new Error('Missing region reads.');
@@ -139,7 +139,6 @@ describe('CAD tool argument boundary and discovery', () => {
         { trim: { ...circle, cutPointIds: ['one'] } }, { trim: { ...circle, boundaries: [circle.boundaries[0]] } },
         { trim: { ...circle, newEntityId: 'unused' } },
         { trim: { ...deletion, cutPointId: 'unused' } }, { trim: endTrim, parameterValues: { span: '30' } }]) {
-        expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(false);
         expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
       }
     }
@@ -199,7 +198,7 @@ describe('CAD tool argument boundary and discovery', () => {
     expect(controller).not.toHaveBeenCalled(); expect(inspect.annotations?.readOnlyHint).toBe(true); expect(read.annotations?.readOnlyHint).toBe(true);
   });
 
-  it('advertises strict split proposals on both existing region reads and rejects mixed/extra arms before controller access', async () => {
+  it('accepts split proposals on both existing region reads and rejects mixed/extra arms before controller access', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid split proposal reached operations'); });
     const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
     if (!inspect || !read) throw new Error('Missing region reads.');
@@ -210,7 +209,6 @@ describe('CAD tool argument boundary and discovery', () => {
       for (const proposal of [{ split: line }, { split: arc, parameterValues: { span: 30 } }]) expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(true);
       for (const proposal of [{ split: line, sketch: regionSketch() }, { split: { ...line, parameter: 0 } }, { split: { ...arc, supportRelationId: 'unused' } },
         { split: { ...line, newEntityId: undefined } }, { split: { ...line, parameter: '0.5' } }, { split: line, parameterValues: { span: '30' } }, { split: line, edits: [] }]) {
-        expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(false);
         expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
       }
     }

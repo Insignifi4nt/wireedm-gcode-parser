@@ -1,4 +1,4 @@
-import { Type, type Static } from '@sinclair/typebox';
+import { Kind, Type, TypeRegistry, type Static } from '@sinclair/typebox';
 import { CadIdentifierSchema } from '@/domain/cad/cadPrimitives';
 import { pageFields } from '@/features/webmcp/siteTools';
 import { CadEditSchema, type CadEdit } from '@/domain/cad/cadOperations';
@@ -58,10 +58,13 @@ export const CadToolEditDefinitions = CadEditSchema.anyOf.map(edit => 'feature' 
   ? Type.Object({ ...edit.properties, feature: featureEnvelope }, { additionalProperties: false })
   : 'package' in edit.properties ? Type.Object({ ...edit.properties, package: CadToolPluginPackageEnvelope }, { additionalProperties: false })
     : editDescriptions[edit.properties.kind.const] ? { ...edit, description: editDescriptions[edit.properties.kind.const] } : edit);
+/** A plain JSON enum; a literal union would repeat {const,type} for every edit kind. */
+TypeRegistry.Set<{ enum: readonly string[] }>('CadToolStringEnum', (schema, value) => typeof value === 'string' && schema.enum.includes(value));
+const stringEnum = <T extends string>(values: readonly T[]) => Type.Unsafe<T>({ [Kind]: 'CadToolStringEnum', type: 'string', enum: values });
 /** Discover an edit's fields on demand instead of repeating every contract on each connection. */
-export const CadToolEditEnvelope = Type.Union(CadEditSchema.anyOf.map(edit => Type.Object({ kind: edit.properties.kind }, {
+export const CadToolEditEnvelope = Type.Object({ kind: stringEnum(CadEditSchema.anyOf.map(edit => edit.properties.kind.const)) }, {
   additionalProperties: true, description: 'Fields: cad_describe_edits(kind). Execution validates the complete contract.'
-})));
+});
 
 export const CadToolDocumentEnvelope = Type.Object({ ...CadDocumentSchema.properties,
   features: Type.Array(featureEnvelope, { maxItems: CadDocumentSchema.properties.features.maxItems })

@@ -19,6 +19,6 @@ it('retains dimension intent when an exact definition edit opts into automatic n
     const button = [...host.querySelectorAll('button')].find(entry => entry.textContent?.trim() === 'Apply'); if (!button) throw new Error('Missing Apply');
     await act(async () => button.click());
     const { role: _legacyRole, ...expected } = profile;
-    expect(apply).toHaveBeenCalledWith({ ...expected, geometry: { ...profile.geometry, width: '30' } }, {});
+    expect(apply).toHaveBeenCalledWith({ ...expected, geometry: { ...profile.geometry, width: '30' } }, {}, expect.any(AbortSignal));
   } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
 });
