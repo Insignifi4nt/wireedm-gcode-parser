@@ -9,8 +9,20 @@ permissions:
   contents: read
 
 jobs:
-  unit-and-contracts:
-    name: Unit tests and contracts
+  naming:
+    name: Branch and title naming
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require descriptive, tool-neutral names
+        if: github.event_name == 'pull_request'
+        env:
+          BRANCH: ${{ github.head_ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/check-pull-request-naming.mjs
+
+  contracts:
+    name: Contracts and release record
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -27,13 +39,35 @@ jobs:
       - run: git fetch origin main
       - run: npm run release:check -- origin/main
       - run: npm run post:docs:check
-      - run: npm test -- --run
       - run: npm run post:conformance -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json
       - run: npm run machine-package:validate -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-package
 
-  build-and-browser:
-    name: Production build and browser journeys
+  unit:
+    name: Unit tests (${{ matrix.shard }}/2)
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          check-latest: true
+          cache: npm
+      - run: npm ci
+      - run: npm test -- --run --shard=${{ matrix.shard }}/2
+
+  build-and-browser:
+    name: Production build and browser journeys (${{ matrix.shard }}/2)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -49,14 +83,14 @@ jobs:
           key: third-party-sources-${{ hashFiles('docs/thirdparty/*-sources.json', 'vendor/sketch-solver/planegcs-sources.json') }}
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e -- --workers=2
+      - run: npm run test:e2e -- --workers=2 --shard=${{ matrix.shard }}/2
         env:
           PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
       - name: Preserve browser failure reports
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: browser-test-report
+          name: browser-test-report-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
@@ -64,14 +98,18 @@ jobs:
           retention-days: 7
 
   verify:
-    needs: [unit-and-contracts, build-and-browser]
+    needs: [naming, contracts, unit, build-and-browser]
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - name: Require both verification jobs to pass
+      - name: Require every verification job to pass
         env:
-          UNIT_RESULT: ${{ needs.unit-and-contracts.result }}
+          NAMING_RESULT: ${{ needs.naming.result }}
+          CONTRACTS_RESULT: ${{ needs.contracts.result }}
+          UNIT_RESULT: ${{ needs.unit.result }}
           BROWSER_RESULT: ${{ needs.build-and-browser.result }}
         run: |
+          test "$NAMING_RESULT" = success
+          test "$CONTRACTS_RESULT" = success
           test "$UNIT_RESULT" = success
           test "$BROWSER_RESULT" = success
