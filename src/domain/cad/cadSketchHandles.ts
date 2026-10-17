@@ -62,6 +62,13 @@ function refitArc(source: Extract<CadPathSegment, { kind: 'arc' }>, resolved: Ex
 }
 
 /** Human grips and agent discovery use exactly the same eligible targets and locks. */
+type RectangleGrip = 'rectangle-corner' | 'rectangle-side';
+/** Edges moved by a rectangle grip; corners run lower-left counterclockwise and sides bottom, right, top, left. */
+function rectangleGripSides(kind: RectangleGrip, index: number) {
+  const corner = kind === 'rectangle-corner', left = corner ? index === 0 || index === 3 : index === 3, bottom = corner ? index < 2 : index === 0;
+  return { left, right: corner ? !left : index === 1, bottom, top: corner ? !bottom : index === 2 };
+}
+
 export function inspectCadSketchHandles(profile: CadSketchProfile, parameters: Readonly<Record<string, number>>): readonly CadSketchHandleDescriptor[] {
   const g = profile.geometry, e = (value: CadScalar) => evaluateCadScalar(value, parameters), { free, size } = freedoms(profile, parameters);
   const descriptor = (handle: CadSketchHandle, point: Point, label: string, draggable: boolean, unavailableReason?: string): CadSketchHandleDescriptor => ({ handle, point, label, draggable, ...(unavailableReason ? { unavailableReason } : {}) });
@@ -85,12 +92,13 @@ export function inspectCadSketchHandles(profile: CadSketchProfile, parameters: R
     case 'rectangle': {
       const x = e(g.x), y = e(g.y), w = e(g.width), h = e(g.height);
       const horizontal = size('width', g.width), vertical = size('height', g.height);
-      const left = horizontal && free(g.x), bottom = vertical && free(g.y);
+      const draggable = (kind: RectangleGrip, index: number) => { const side = rectangleGripSides(kind, index);
+        return (side.left || side.right) && horizontal && (!side.left || free(g.x)) || (side.bottom || side.top) && vertical && (!side.bottom || free(g.y)); };
       const corners: readonly Point[] = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
       const sides: readonly Point[] = [[x + w / 2, y], [x + w, y + h / 2], [x + w / 2, y + h], [x, y + h / 2]];
       return [
-        ...corners.map((point, index) => descriptor({ kind: 'rectangle-corner', index }, point, `${['Lower left', 'Lower right', 'Upper right', 'Upper left'][index]} corner`, (index === 0 || index === 3 ? left : horizontal) || (index < 2 ? bottom : vertical))),
-        ...sides.map((point, index) => descriptor({ kind: 'rectangle-side', index }, point, `${['Bottom', 'Right', 'Top', 'Left'][index]} side`, [bottom, horizontal, vertical, left][index]))
+        ...corners.map((point, index) => descriptor({ kind: 'rectangle-corner', index }, point, `${['Lower left', 'Lower right', 'Upper right', 'Upper left'][index]} corner`, draggable('rectangle-corner', index))),
+        ...sides.map((point, index) => descriptor({ kind: 'rectangle-side', index }, point, `${['Bottom', 'Right', 'Top', 'Left'][index]} side`, draggable('rectangle-side', index)))
       ];
     }
     case 'circle': return [
@@ -171,11 +179,7 @@ export function moveCadSketchHandle(input: { profile: CadSketchProfile; handle: 
     return { ...profile, geometry: { ...g, length: length === e(g.length) ? g.length : length, width: width === e(g.width) ? g.width : width } };
   }
   if ((handle.kind === 'rectangle-corner' || handle.kind === 'rectangle-side') && g.kind === 'rectangle') {
-    const corner = handle.kind === 'rectangle-corner';
-    const left = corner ? handle.index === 0 || handle.index === 3 : handle.index === 3;
-    const right = corner ? !left : handle.index === 1;
-    const bottom = corner ? handle.index < 2 : handle.index === 0;
-    const top = corner ? !bottom : handle.index === 2;
+    const { left, right, bottom, top } = rectangleGripSides(handle.kind, handle.index);
     const x = (left || right) && size('width', g.width) && (!left || free(g.x)) ? dx : 0;
     const y = (bottom || top) && size('height', g.height) && (!bottom || free(g.y)) ? dy : 0;
     const width = e(g.width) + (left ? -x : x), height = e(g.height) + (bottom ? -y : y);
