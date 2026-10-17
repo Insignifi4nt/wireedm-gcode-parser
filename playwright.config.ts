@@ -10,6 +10,8 @@ export default defineConfig({
   fullyParallel: true,
   reporter: [['list'], ['html', { open: 'never' }]],
   retries: process.env.CI ? 2 : 0,
+  // CI renders CAD through software SwiftShader; long sketch journeys take 15–35 s there.
+  timeout: process.env.CI ? 60_000 : 30_000,
   use: {
     baseURL: 'http://127.0.0.1:3107',
     screenshot: 'only-on-failure',
