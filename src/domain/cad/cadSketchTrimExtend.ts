@@ -10,7 +10,7 @@ import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from './cadSket
 import { resolveCadSketchGraphJoints, resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
 import { evaluateCadScalar } from './cadExpression';
 import { classifyLineRayPathSegmentIntersection, classifyParameterizedPathSegmentIntersection } from '@/domain/path-intel/intersections';
-import { createArcSegment, createCircleSegment, createLineSegment, pointOnArcAtParameter } from '@/domain/path-intel/segments';
+import { createArcSegment, createCircleSegment, createLineSegment, distance, pointOnArcAtParameter } from '@/domain/path-intel/segments';
 import type { ArcPathSegment, CirclePathSegment, LinePathSegment, PathSegment, Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
 
@@ -132,7 +132,6 @@ function at(segment: OpenSegment, t: number): Point2 {
     y: segment.start.y + (segment.end.y - segment.start.y) * t }
     : pointOnArcAtParameter(segment, { segmentId: segment.id, reversed: false }, t);
 }
-function distance(a: Readonly<Point2>, b: Readonly<Point2>): number { return Math.hypot(a.x - b.x, a.y - b.y); }
 function arcOutwardParameter(segment: ArcPathSegment, point: Readonly<Point2>, end: 'start' | 'end'): number {
   const endpoint = end === 'start' ? segment.start : segment.end;
   const a = { x: endpoint.x - segment.center.x, y: endpoint.y - segment.center.y }, b = { x: point.x - segment.center.x, y: point.y - segment.center.y };

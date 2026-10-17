@@ -10,7 +10,7 @@ import { cadProfileToEntities, resolveCadSketchContours } from './cadSketchGeome
 import { appendCadSketchEntities } from './cadSketchGraphEdits';
 import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraphEntity } from './cadSketchGraph';
 import { compileCadSketchGraph } from './cadSketchGraphGeometry';
-import { createArcSegment, createCircleSegment, createLineSegment } from '@/domain/path-intel/segments';
+import { createArcSegment, createCircleSegment, createLineSegment, cross } from '@/domain/path-intel/segments';
 import { signedDxfArcSweepRadians } from '@/domain/dxf/arcSweep';
 import type { DxfEntity } from '@/domain/dxf/types';
 import type { ArcPathSegment, LinePathSegment, PathSegment, Point2 } from '@/domain/path-intel/types';
@@ -36,7 +36,6 @@ export interface CadSketchOffsetPreparation {
 type Edge = LinePathSegment | ArcPathSegment;
 const fail = (message: string): never => { throw new CadError('unsupported-sketch-offset', message); };
 const position = (point: Point2): readonly [number, number] => [point.x, point.y];
-const cross = (a: Point2, b: Point2) => a.x * b.y - a.y * b.x;
 function pathSegment(segment: PathSegment): ResolvedCadPathSegment {
   return segment.kind === 'line' ? { kind: 'line', start: position(segment.start), end: position(segment.end) }
     : { kind: 'arc', center: position(segment.center), radius: segment.radius,

@@ -9,6 +9,7 @@ import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import { resolveCadSketchGraphJoints } from './cadSketchGraphJoints';
 import type { Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
+import { cross, dot } from '@/domain/path-intel/segments';
 
 type Rays = CadSketchAngleRelation['rays'];
 type Direction = NonNullable<ReturnType<typeof cadSketchLineDirection>>;
@@ -20,8 +21,6 @@ export interface CadSketchLineAngleGeometry {
 }
 export interface CadSketchLineAngleSector { readonly relation: CadSketchAngleRelation; readonly geometry: CadSketchLineAngleGeometry }
 type Sectors = readonly [CadSketchLineAngleSector, CadSketchLineAngleSector, CadSketchLineAngleSector, CadSketchLineAngleSector];
-const cross = (a: Point2, b: Point2) => a.x * b.y - a.y * b.x;
-const dot = (a: Point2, b: Point2) => a.x * b.x + a.y * b.y;
 const angle = (a: Point2, b: Point2) => Math.atan2(cross(a, b), dot(a, b));
 const ambiguous = () => new CadError('ambiguous-sketch-angle-sector', 'Choose the visible angle sector between the two lines.');
 

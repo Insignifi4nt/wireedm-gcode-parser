@@ -13,7 +13,7 @@ import { resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import { cadProfileToEntities, resolveCadProfile } from './cadSketchGeometry';
 import { classifyPathSegmentIntersection } from '@/domain/path-intel/intersections';
-import { createArcSegment, createCircleSegment, createLineSegment } from '@/domain/path-intel/segments';
+import { createArcSegment, createCircleSegment, createLineSegment, cross, dot } from '@/domain/path-intel/segments';
 import type { PathSegment, Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
 
@@ -109,7 +109,6 @@ export function prepareCadSketchMirror({ sketch, parameters, ...request }: CadSk
   const addition = parseCadSketchGraph({ points, entities, relations });
   const copiedGeometry = compileCadSketchGraph(addition, {});
   const vector = (from: string, to: string, values = positions) => ({ x: position(to, values).x - position(from, values).x, y: position(to, values).y - position(from, values).y });
-  const dot = (a: Point2, b: Point2) => a.x * b.x + a.y * b.y;
   const checkVector = (from: string, to: string) => {
     const old = vector(from, to), next = vector(from, to, reflected), offset = 2 * dot(old, normal);
     const expected = { x: old.x - offset * normal.x, y: old.y - offset * normal.y };
@@ -130,7 +129,7 @@ export function prepareCadSketchMirror({ sketch, parameters, ...request }: CadSk
     if (entity.kind === 'arc' && old.kind === 'arc' && next.kind === 'arc') {
       const a = vector(entity.centerPointId, entity.startPointId), b = vector(entity.centerPointId, entity.endPointId);
       const c = vector(entity.centerPointId, entity.startPointId, reflected), d = vector(entity.centerPointId, entity.endPointId, reflected);
-      const cross = (a: Point2, b: Point2) => a.x * b.y - a.y * b.x, sourceSide = Math.sign(Math.abs(old.sweepRadians) - Math.PI);
+      const sourceSide = Math.sign(Math.abs(old.sweepRadians) - Math.PI);
       const angleError = Math.abs(old.sweepRadians + next.sweepRadians), tolerance = cadPathClosureTolerance([a, b, c, d]);
       if (angleError > 1e-12 || angleError * old.radius > tolerance || Math.abs(old.radius - next.radius) > tolerance
         || Math.abs(Math.hypot(b.x, b.y) - Math.hypot(d.x, d.y)) > tolerance

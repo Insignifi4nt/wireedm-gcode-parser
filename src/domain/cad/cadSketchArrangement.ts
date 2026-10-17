@@ -4,7 +4,7 @@ import { compileCadSketchGraph } from './cadSketchGraphGeometry';
 import { evaluateCadScalar } from './cadExpression';
 import { classifyPathSegmentIntersection, expandBounds, spatialCellSizeForSegments } from '@/domain/path-intel/intersections';
 import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
-import { arcBounds, arcParameterAtPoint, createArcSegment, createLineSegment, normalizeAngle, pointOnArcAtParameter, pointOnCircle, signedAreaOfPath } from '@/domain/path-intel/segments';
+import { arcBounds, arcParameterAtPoint, createArcSegment, createLineSegment, distance, normalizeAngle, pointOnArcAtParameter, pointOnCircle, signedAreaOfPath } from '@/domain/path-intel/segments';
 import { SpatialHash } from '@/domain/path-intel/spatialIndex';
 import type { OrientedSegmentRef, PathSegment, Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
@@ -60,7 +60,6 @@ interface HalfEdge { edge: Edge; reversed: boolean; origin: Vertex; target: Vert
 interface Walk { boundary: CadSketchArrangementBoundary; halves: HalfEdge[]; component: number }
 const turn = 2 * Math.PI;
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
-const distance = (a: Point2, b: Point2) => Math.hypot(a.x - b.x, a.y - b.y);
 const boundsPoints = (segment: PathSegment) => [{ x: segment.bounds.minX, y: segment.bounds.minY }, { x: segment.bounds.maxX, y: segment.bounds.maxY }];
 function root(vertex: Vertex): Vertex {
   let owner = vertex;
