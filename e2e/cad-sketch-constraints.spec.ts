@@ -507,7 +507,7 @@ test('extends the chosen line end to its exact boundary joint, matches the agent
   await (await openExtend()).click(); await expect(page.locator('[data-cad-sketch-point="e"]')).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
   const human = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
-  expect(human.graph.points).toEqual(sketch.graph.points);
+  expect(human.graph.points).toEqual(sketch.graph.points.filter((point: { id: string }) => point.id !== 'a'));
   expect(human.graph.relations).toEqual([{ ...sketch.graph.relations[0], pointIds: ['e', 'b'] }, ...sketch.graph.relations.slice(1)]);
   expect(human.graph.entities).toEqual([{ ...sketch.graph.entities[0], startPointId: 'e' }, ...sketch.graph.entities.slice(1)]);
   await page.keyboard.press('Control+z'); current = await context(page);
