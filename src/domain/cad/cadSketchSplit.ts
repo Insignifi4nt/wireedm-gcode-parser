@@ -3,7 +3,7 @@ import { Value } from '@sinclair/typebox/value';
 import { CadIdentifierSchema } from './cadPrimitives';
 import { CadError } from './cadError';
 import { isCadImportData } from './cadImportData';
-import { parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
+import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
 import { compileCadSketchGraph } from './cadSketchGraphGeometry';
 import { cadSketchRelationEntityIds } from './cadSketchGraphReferences';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
@@ -55,6 +55,9 @@ export function splitCadSketchEntity({ graph: input, parameters, split }: {
   const candidate = parseCadSketchGraph({ points: [...graph.points, { id: split.splitPointId, position: [point.x, point.y] }],
     entities: graph.entities.flatMap(item => item.id === entity.id ? [retained, second] : [item]),
     relations: split.kind === 'line' ? [...graph.relations, { id: split.supportRelationId, kind: 'parallel', lineIds: [entity.id, split.newEntityId] }] : graph.relations });
+  // Far from the origin a short piece's direction can miss the parallel accuracy contract.
+  if (split.kind === 'line' && checkCadSketchGraph(candidate, parameters).some(issue => issue.source.id === split.supportRelationId))
+    throw new CadError('sketch-split-precision', 'The cut cannot keep both pieces exactly parallel at these coordinates.');
   const compiled = compileCadSketchGraph(candidate, parameters);
   if (segment.kind === 'arc') {
     const first = compiled.segments.find(item => item.id === entity.id), second = compiled.segments.find(item => item.id === split.newEntityId);

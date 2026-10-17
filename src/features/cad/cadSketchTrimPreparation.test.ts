@@ -145,7 +145,7 @@ describe('real PlaneGCS exact end-Trim preparation', () => {
     if (sketch.kind !== 'sketch') throw new Error('Expected the same sketch.');
     expect(sketch.graph).toEqual(expected.graph); expect(prepared.document.parameters).toEqual(parameters);
     expect(prepared.sketchDiagnostics).toEqual([{ sketchId: 'sketch', diagnostics: {
-      status: 'success', degreesOfFreedom: 8, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: []
+      status: 'success', degreesOfFreedom: 6, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: []
     } }]);
     expect(JSON.stringify(document)).toBe(before);
   });

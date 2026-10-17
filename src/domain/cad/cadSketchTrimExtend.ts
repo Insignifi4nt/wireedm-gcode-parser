@@ -6,7 +6,7 @@ import { parseCadSketchGraph, type CadSketchGraph, type CadSketchGraphRelation }
 import { isCadImportData } from './cadImportData';
 import { compileCadSketchGraph } from './cadSketchGraphGeometry';
 import { cadPathClosureTolerance, cadPathTangentContact } from './cadAnalyticSegments';
-import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
+import { cadSketchEntityPointIds, cadSketchRelationEntityIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
 import { resolveCadSketchGraphJoints, resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
 import { evaluateCadScalar } from './cadExpression';
 import { classifyLineRayPathSegmentIntersection, classifyParameterizedPathSegmentIntersection } from '@/domain/path-intel/intersections';
@@ -331,6 +331,13 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
   return unique;
 }
 
+/** Drop detached points nothing uses; a point a relation still names stays explicit. */
+function withoutDetachedPoints(graph: CadSketchGraph, detached: readonly string[]): CadSketchGraph {
+  const used = new Set([...graph.entities.flatMap(cadSketchEntityPointIds), ...graph.relations.flatMap(relation => cadSketchRelationPointIds(graph, relation))]);
+  const removed = new Set(detached.filter(id => !used.has(id)));
+  return removed.size ? parseCadSketchGraph({ ...graph, points: graph.points.filter(point => !removed.has(point.id)) }) : graph;
+}
+
 function replaceEndpoint(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, entityId: string, end: 'start' | 'end',
   witness: Witness, pointId: string, operation: 'trim' | 'extend'): CadSketchGraph {
   const endpoint = witness.endpointPointId;
@@ -347,7 +354,7 @@ function replaceEndpoint(graph: CadSketchGraph, parameters: Readonly<Record<stri
     points: endpoint === undefined ? [...graph.points, { id: pointId, position: witness.position }] : graph.points,
     entities: graph.entities.map(entity => entity.id === entityId ? { ...entity, [end === 'start' ? 'startPointId' : 'endPointId']: pointId } : entity) });
   compileCadSketchGraph(candidate, parameters);
-  return candidate;
+  return withoutDetachedPoints(candidate, source && source.kind !== 'circle' ? [end === 'start' ? source.startPointId : source.endPointId] : []);
 }
 
 /** One clicked span, with no inferred cutter attachment or coordinate healing. */
@@ -423,7 +430,8 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
     ? { kind: trim.kind, entityId: trim.entityId, parameter: trim.parameter, end: trim.end, boundary: trim.boundary }
     : { kind: trim.kind, entityId: trim.entityId, parameter: trim.parameter, boundaries: trim.boundaries };
   if (!Value.Equal(prepared.target, target)) throw new CadError('stale-sketch-trim', 'The trim boundary changed. Choose the portion again.');
-  if (trim.kind === 'delete') return Object.freeze({ graph: parseCadSketchGraph({ ...graph, entities: graph.entities.filter(entity => entity.id !== trim.entityId) }),
+  if (trim.kind === 'delete') return Object.freeze({ graph: withoutDetachedPoints(parseCadSketchGraph({ ...graph, entities: graph.entities.filter(entity => entity.id !== trim.entityId) }),
+      cadSketchEntityPointIds(graph.entities.find(entity => entity.id === trim.entityId)!)),
     retainedEntityId: null, removedEntityId: trim.entityId, cutPointId: null });
   if (trim.kind === 'circle') {
     const circle = graph.entities.find(entity => entity.id === trim.entityId);

@@ -54,7 +54,7 @@ describe('real PlaneGCS direction-preserving line boundary preparation', () => {
     const preview = prepareCadSketchLineExtend({ graph, parameters: document.parameters, entityId: 'bottom', end: 'end' });
     expect(preview.target.boundary).toEqual({ entityId: 'right', index: 0, parameter: 2, position: [10, 0], endpointPointId: 'c' });
     const extend = { ...preview.target, endPointId: 'c' }, expected = extendCadSketchEntity({ graph, parameters: document.parameters, extend });
-    expect(expected.graph.points).toEqual(graph.points); expect(expected.graph.relations).toEqual(graph.relations);
+    expect(expected.graph.points).toEqual(graph.points.filter(point => point.id !== 'b')); expect(expected.graph.relations).toEqual(graph.relations);
     expect(expected.graph.entities).toEqual([{ ...graph.entities[0], endPointId: 'c' }, ...graph.entities.slice(1)]);
     const prepared = await prepareCadEdits(document, [{ kind: 'extend-sketch-entity', sketchId: 'sketch', extend }], runtime);
     const sketch = prepared.document.features[0]; if (sketch.kind !== 'sketch') throw new Error('Expected the original sketch.');

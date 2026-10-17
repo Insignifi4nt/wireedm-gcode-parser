@@ -6,7 +6,7 @@ import { cadAnalyticSegments } from '../cadAnalyticSegments';
 import { signedAreaOfPath } from '@/domain/path-intel/segments';
 import { createCadDocument, parseCadDocument } from '../cadSchema';
 import { createCadSketchCornerTreatment } from '../cadSketchCornerTreatment';
-import type { CadSketchGraphRelation } from '../cadSketchGraph';
+import type { CadSketchGraph, CadSketchGraphRelation } from '../cadSketchGraph';
 
 function source() {
   return parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] },
@@ -15,6 +15,9 @@ function source() {
     { id: 'near', kind: 'line', startPointId: 'c', endPointId: 'd', construction: true },
     { id: 'far', kind: 'line', startPointId: 'e', endPointId: 'f', construction: true }], relations: [] });
 }
+
+/** Extends drop the detached old end when nothing else uses it. */
+const without = (points: readonly CadSketchGraph['points'][number][], ...ids: string[]) => points.filter(point => !ids.includes(point.id));
 
 describe('exact line Extend', () => {
   it('transfers vertical endpoint intent while retaining Parallel/Perpendicular and an adjacent old-corner horizontal pair exactly', () => {
@@ -88,7 +91,7 @@ describe('exact line Extend', () => {
       .toEqual([999999979, 0]);
   });
 
-  it('extends only the selected end to its nearest finite boundary, keeping old source and cutter data', () => {
+  it('extends only the selected end to its nearest finite boundary, keeping source and cutter data but not the detached end', () => {
     const graph = source(), before = JSON.stringify(graph);
     const preview = prepareCadSketchLineExtend({ graph, parameters: {}, entityId: 'edge', end: 'end' });
     expect(preview.target).toEqual({ kind: 'line', entityId: 'edge', end: 'end',
@@ -98,7 +101,7 @@ describe('exact line Extend', () => {
     expect(preview.point).toEqual([20, 0]); expect(preview.boundary.id).toBe('near');
     const result = extendCadSketchEntity({ graph, parameters: {}, extend: { ...preview.target, endPointId: 'm' } });
     expect(result).toMatchObject({ retainedEntityId: 'edge', endPointId: 'm' });
-    expect(result.graph.points).toEqual([...graph.points, { id: 'm', position: [20, 0] }]);
+    expect(result.graph.points).toEqual([...without(graph.points, 'b'), { id: 'm', position: [20, 0] }]);
     expect(result.graph.entities).toEqual([{ ...graph.entities[0], endPointId: 'm' }, ...graph.entities.slice(1)]);
     expect(result.graph.relations).toEqual([]);
     expect(compileCadSketchGraph(result.graph, {}).segments.find(segment => segment.id === 'edge')?.length).toBe(20);
@@ -114,7 +117,7 @@ describe('exact line Extend', () => {
     expect(preview.added).toMatchObject({ start: { x: 20, y: 0 }, end: { x: 10, y: 0 } });
     const result = extendCadSketchEntity({ graph, parameters: {}, extend: { ...preview.target, endPointId: 'm' } });
     expect(result.graph.entities.find(entity => entity.id === 'edge')).toMatchObject({ startPointId: 'm', endPointId: 'a' });
-    expect(result.graph.points.slice(0, original.points.length)).toEqual(graph.points);
+    expect(without(result.graph.points, 'm')).toEqual(without(graph.points, 'b'));
   });
 
   it('uses actual circle/major-arc/minor-arc membership rather than the whole complementary support', () => {
@@ -130,7 +133,7 @@ describe('exact line Extend', () => {
       expect(preview.point).toEqual(direction === 'ccw' ? [10, 0] : [-10, 0]);
       expect(preview.target.boundary.endpointPointId).toBe(direction === 'ccw' ? 'c' : undefined);
       const result = extendCadSketchEntity({ graph: arc, parameters: {}, extend: { ...preview.target, endPointId: direction === 'ccw' ? 'c' : 'm' } });
-      expect(result.graph.entities[1]).toEqual(arc.entities[1]); expect(result.graph.points.slice(0, 5)).toEqual(arc.points);
+      expect(result.graph.entities[1]).toEqual(arc.entities[1]); expect(without(result.graph.points, 'm')).toEqual(without(arc.points, 'b'));
     }
     expect(() => prepareCadSketchLineExtend({ graph, parameters: {}, entityId: 'curve', end: 'end' }))
       .toThrowError(expect.objectContaining({ code: 'invalid-sketch-extend-target' }));
@@ -151,7 +154,7 @@ describe('exact line Extend', () => {
     expect(compiled.cycles).toHaveLength(1); expect(compiled.arrangementEntityIds).toEqual([]);
     const path = cadAnalyticSegments(compiled.cycles[0].path);
     expect(Math.abs(signedAreaOfPath(path.refs, path.byId))).toBe(100);
-    expect(result.graph.points).toEqual(graph.points); expect(result.graph.relations).toEqual([]);
+    expect(result.graph.points).toEqual(without(graph.points, 'b')); expect(result.graph.relations).toEqual([]);
     expect(() => extendCadSketchEntity({ graph, parameters, extend: { ...preview.target, endPointId: 'unjoined' } }))
       .toThrowError(expect.objectContaining({ code: 'invalid-sketch-extend-point' }));
   });
@@ -184,7 +187,7 @@ describe('exact line Extend', () => {
       .toThrowError(expect.objectContaining({ code: 'dependent-sketch-extend', relationIds: ['equal'] }));
     const unrelated = parseCadSketchGraph({ ...original, points: original.points.map(point => point.id === 'a' ? { ...point, position: [' origin ', 0] } : point) });
     const preview = prepareCadSketchLineExtend({ graph: unrelated, parameters: { origin: 0 }, entityId: 'edge', end: 'end' });
-    expect(extendCadSketchEntity({ graph: unrelated, parameters: { origin: 0 }, extend: { ...preview.target, endPointId: 'm' } }).graph.points.slice(0, 6)).toEqual(unrelated.points);
+    expect(extendCadSketchEntity({ graph: unrelated, parameters: { origin: 0 }, extend: { ...preview.target, endPointId: 'm' } }).graph.points.filter(point => point.id !== 'm')).toEqual(without(unrelated.points, 'b'));
   });
 
   it('rejects stale, forged and colliding requests rather than retargeting changed boundaries', () => {

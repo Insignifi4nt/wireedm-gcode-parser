@@ -106,7 +106,7 @@ describe('shared CAD edit preparation with the real sketch solver', () => {
     } };
     const result = await prepareCadEdits(original, [{ kind: 'set-parameter', name: 'offset', value: 10 }, trim], solver);
     expect(graphOf(result.document).points).toEqual([
-      { id: 'a', position: ['0', '0'] }, { id: 'b', position: [20, 0] },
+      { id: 'a', position: ['0', '0'] },
       { id: 'c', position: [10, '-5'] }, { id: 'd', position: [10, '5'] }, { id: 'cut', position: [10, 0] }
     ]);
     expect(graphOf(result.document).entities[0]).toMatchObject({ startPointId: 'a', endPointId: 'cut' });

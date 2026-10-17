@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCadSketchGraph } from '../cadSketchGraph';
+import { parseCadSketchGraph, type CadSketchGraph } from '../cadSketchGraph';
 import { compileCadSketchGraph } from '../cadSketchGraphGeometry';
 import { CadSketchTrimDependencyError, prepareCadSketchTrim, trimCadSketchEntity } from '../cadSketchTrimExtend';
 import { cadAnalyticSegments } from '../cadAnalyticSegments';
@@ -14,6 +14,9 @@ function fences() {
     { id: 'left', kind: 'line', startPointId: 'c', endPointId: 'd', construction: true },
     { id: 'right', kind: 'line', startPointId: 'e', endPointId: 'f', construction: true }], relations: [] });
 }
+
+/** Trims drop the detached points nothing else uses. */
+const without = (points: readonly CadSketchGraph['points'][number][], ...ids: string[]) => points.filter(point => !ids.includes(point.id));
 
 describe('exact sketch end Trim', () => {
   it.each([false, true])('transfers only the fresh rectangle line’s unordered H/V pair, keeping old adjacent direction and reversed=%s source intent', reversed => {
@@ -72,7 +75,7 @@ describe('exact sketch end Trim', () => {
     expect(JSON.stringify(document)).toBe(before);
   });
 
-  it('removes only the clicked outer span at its nearest finite intersection, retaining source and cutter identities', () => {
+  it('removes only the clicked outer span at its nearest finite intersection, retaining source and cutter identities but not the detached end', () => {
     const graph = fences(), before = JSON.stringify(graph);
     const preview = prepareCadSketchTrim({ graph, parameters: {}, entityId: 'edge', parameter: 0.1 });
     if ('cuts' in preview) throw new Error('Expected one end survivor.');
@@ -85,7 +88,7 @@ describe('exact sketch end Trim', () => {
     const result = trimCadSketchEntity({ graph, parameters: {}, trim: { ...preview.target, cutPointId: 'cut' } });
     expect(result).toMatchObject({ retainedEntityId: 'edge', removedEntityId: null, cutPointId: 'cut' });
     expect(result.graph.entities).toEqual([{ ...graph.entities[0], startPointId: 'cut' }, ...graph.entities.slice(1)]);
-    expect(result.graph.points).toEqual([...graph.points, { id: 'cut', position: [5, 0] }]);
+    expect(result.graph.points).toEqual([...without(graph.points, 'a'), { id: 'cut', position: [5, 0] }]);
     expect(result.graph.relations).toEqual([]);
     expect(compileCadSketchGraph(result.graph, {}).segments.find(segment => segment.id === 'edge')?.length).toBe(15);
     expect(JSON.stringify(graph)).toBe(before); expect(Object.isFrozen(preview.removed.start)).toBe(true);
@@ -101,7 +104,7 @@ describe('exact sketch end Trim', () => {
     const target = preview.target;
     expect(target.boundary.endpointPointId).toBe('c');
     const result = trimCadSketchEntity({ graph, parameters: { cutX: 5 }, trim: { ...target, cutPointId: 'c' } });
-    expect(result.graph.points).toEqual(graph.points); expect(result.graph.relations).toEqual([]);
+    expect(result.graph.points).toEqual(without(graph.points, 'a')); expect(result.graph.relations).toEqual([]);
     expect(result.graph.entities[0]).toMatchObject({ id: 'edge', startPointId: 'c', endPointId: 'b' });
     expect(() => trimCadSketchEntity({ graph, parameters: { cutX: 5 }, trim: { ...target, cutPointId: 'new' } }))
       .toThrowError(expect.objectContaining({ code: 'invalid-sketch-trim-point' }));
@@ -122,7 +125,7 @@ describe('exact sketch end Trim', () => {
     expect(compiled.cycles).toHaveLength(1); expect(compiled.arrangementEntityIds).toEqual([]);
     const path = cadAnalyticSegments(compiled.cycles[0].path);
     expect(Math.abs(signedAreaOfPath(path.refs, path.byId))).toBe(100);
-    expect(result.graph.points).toEqual(graph.points); expect(result.graph.relations).toEqual([]);
+    expect(result.graph.points).toEqual(without(graph.points, 'a')); expect(result.graph.relations).toEqual([]);
   });
 
   it.each([false, true])('keeps the physical nearest side and witness stable under reordered source and reversed direction=%s', reversed => {
@@ -133,7 +136,7 @@ describe('exact sketch end Trim', () => {
     expect(preview.target).toMatchObject({ end: reversed ? 'end' : 'start', boundary: { entityId: 'left', position: [5, 0] } });
     const result = trimCadSketchEntity({ graph, parameters: {}, trim: { ...preview.target, cutPointId: 'm' } });
     expect(result.graph.entities.find(entity => entity.id === 'edge')).toMatchObject({ startPointId: reversed ? 'b' : 'm', endPointId: reversed ? 'm' : 'b' });
-    expect(result.graph.points.slice(0, graph.points.length)).toEqual(graph.points);
+    expect(without(result.graph.points, 'm')).toEqual(without(graph.points, 'a'));
   });
 
   it.each(['cw', 'ccw'] as const)('keeps exact %s arc support and expected remaining sweep rather than its complementary branch', direction => {
@@ -147,7 +150,7 @@ describe('exact sketch end Trim', () => {
     const preview = prepareCadSketchTrim({ graph, parameters, entityId: 'arc', parameter: 0.1 });
     if (preview.target.kind !== 'end') throw new Error('Expected end trim.');
     const result = trimCadSketchEntity({ graph, parameters, trim: { ...preview.target, cutPointId: 'm' } });
-    expect(result.graph.points.slice(0, 5)).toEqual(graph.points); expect(result.graph.relations).toEqual([]);
+    expect(without(result.graph.points, 'm')).toEqual(without(graph.points, 'a')); expect(result.graph.relations).toEqual([]);
     expect(result.graph.entities[0]).toEqual({ ...graph.entities[0], startPointId: 'm' });
     const segment = compileCadSketchGraph(result.graph, parameters).segments.find(segment => segment.id === 'arc');
     if (segment?.kind !== 'arc' || preview.removed.kind !== 'arc') throw new Error('Expected analytic arcs.');
@@ -169,7 +172,7 @@ describe('exact sketch end Trim', () => {
       .toThrowError(expect.objectContaining({ code: 'driven-sketch-trim-radius' }));
   });
 
-  it('previews whole-edge deletion only when no finite interior intersection exists, preserving points and cutters', () => {
+  it('previews whole-edge deletion only when no finite interior intersection exists, pruning only its detached points', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, -20] }, { id: 'b', position: [0, -5] },
       { id: 'o', position: [0, 0] }, { id: 'c', position: [10, 0] }, { id: 'd', position: [0, 10] }], entities: [
       { id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
@@ -180,7 +183,7 @@ describe('exact sketch end Trim', () => {
     if (preview.target.kind !== 'delete') throw new Error('Expected complete deletion.');
     const result = trimCadSketchEntity({ graph, parameters: {}, trim: preview.target });
     expect(result).toMatchObject({ retainedEntityId: null, removedEntityId: 'edge', cutPointId: null });
-    expect(result.graph.entities).toEqual([graph.entities[1]]); expect(result.graph.points).toEqual(graph.points);
+    expect(result.graph.entities).toEqual([graph.entities[1]]); expect(result.graph.points).toEqual(without(graph.points, 'a', 'b'));
     expect(JSON.stringify(graph)).toBe(before);
   });
 

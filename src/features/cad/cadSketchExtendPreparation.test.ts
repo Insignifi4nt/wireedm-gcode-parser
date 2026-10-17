@@ -88,7 +88,7 @@ describe('real PlaneGCS exact line Extend preparation', () => {
       { id: 'edge', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false },
       { id: 'boundary', kind: 'line', startPointId: 'c', endPointId: 'd', construction: true }], relations: [] });
     const result = await prepared(graph, 'edge', { origin: 0 }, 'm');
-    expect(result.sketchDiagnostics[0].diagnostics.degreesOfFreedom).toBe(9);
+    expect(result.sketchDiagnostics[0].diagnostics.degreesOfFreedom).toBe(7);
   });
 
   it('preserves exact endpoint attachment and accepted drivers while closing the intended contour', async () => {
@@ -99,6 +99,6 @@ describe('real PlaneGCS exact line Extend preparation', () => {
       { id: 'top', kind: 'line', startPointId: 'd', endPointId: 'e', construction: false },
       { id: 'left', kind: 'line', startPointId: 'e', endPointId: 'a', construction: false }], relations: [] });
     const result = await prepared(graph, 'bottom', { width: 10 }, 'c');
-    expect(result.sketchDiagnostics[0].diagnostics.degreesOfFreedom).toBe(8);
+    expect(result.sketchDiagnostics[0].diagnostics.degreesOfFreedom).toBe(6);
   });
 });

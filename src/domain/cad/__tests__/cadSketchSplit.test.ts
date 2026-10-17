@@ -98,7 +98,10 @@ describe('exact sketch source split', () => {
       { kind: 'arc', entityId: 'edge', parameter: 0.5, splitPointId: 'm', newEntityId: 'child' }] as const)
       expect(() => splitCadSketchEntity({ graph, parameters: {}, split: request })).toThrow();
     const far = parseCadSketchGraph({ ...graph, points: [{ id: 'a', position: [9e8, 9e8] }, { id: 'b', position: [9e8 + 1, 9e8 + 3] }] });
-    expect(() => splitCadSketchEntity({ graph: far, parameters: {}, split: { ...split, parameter: 0.1 } })).toThrow();
+    expect(() => splitCadSketchEntity({ graph: far, parameters: {}, split: { ...split, parameter: 0.1 } })).toThrowError(expect.objectContaining({ code: 'sketch-split-precision' }));
+    const angle = 61 * Math.PI / 180, rotated = parseCadSketchGraph({ ...graph, points: [{ id: 'a', position: [98765.4321, 98765.4321] },
+      { id: 'b', position: [98765.4321 + 20 * Math.cos(angle), 98765.4321 + 20 * Math.sin(angle)] }] });
+    expect(() => splitCadSketchEntity({ graph: rotated, parameters: {}, split: { ...split, parameter: .25 } })).toThrowError(expect.objectContaining({ code: 'sketch-split-precision' }));
     const tiny = parseCadSketchGraph({ ...graph, points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [1e-6, 0] }] });
     expect(splitCadSketchEntity({ graph: tiny, parameters: {}, split }).graph.points.at(-1)?.position).toEqual([5e-7, 0]);
     expect(JSON.stringify(graph)).toBe(before);
