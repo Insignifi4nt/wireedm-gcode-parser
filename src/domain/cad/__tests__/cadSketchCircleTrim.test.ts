@@ -128,6 +128,12 @@ describe('exact free-circle Trim', () => {
     const expression = parseCadSketchGraph({ ...graph, entities: graph.entities.map(entity => entity.kind === 'circle' ? { ...entity, radius: ' 10 ' } : entity) });
     expect(() => prepareCadSketchTrim({ graph: expression, parameters, entityId: 'rim', parameter: .25 }))
       .toThrowError(expect.objectContaining({ code: 'driven-sketch-trim-radius' }));
+    // Deleting a whole isolated circle keeps no radius support, so its expression cannot block it.
+    const drivenIsolated = parseCadSketchGraph({ ...isolated, entities: [{ ...isolated.entities[0], radius: ' 10 ' }] as typeof isolated.entities });
+    const drivenDeletion = prepareCadSketchTrim({ graph: drivenIsolated, parameters, entityId: 'rim', parameter: .25 });
+    expect(drivenDeletion.target).toEqual({ kind: 'delete', entityId: 'rim', parameter: .25 });
+    if (drivenDeletion.target.kind !== 'delete') throw new Error('Expected whole driven-circle deletion.');
+    expect(trimCadSketchEntity({ graph: drivenIsolated, parameters, trim: drivenDeletion.target }).graph.entities).toEqual([]);
     const radial = parseCadSketchGraph({ ...graph, relations: [...graph.relations, { id: 'radius-driver', kind: 'radial-size', entityId: 'rim', quantity: 'radius', value: ' 10 ' }] });
     expect(() => prepareCadSketchTrim({ graph: radial, parameters, entityId: 'rim', parameter: .25 }))
       .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['radius-driver'], pointIds: [] }));

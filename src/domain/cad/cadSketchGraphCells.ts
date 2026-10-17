@@ -10,6 +10,7 @@ import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
 import { createCircleSegment, pathBounds, signedAreaOfPath } from '@/domain/path-intel/segments';
 import type { Point2 } from '@/domain/path-intel/types';
 import { Value } from '@sinclair/typebox/value';
+import { deepFreezeCadData } from './cadDeepFreeze';
 
 const key = (value: unknown) => JSON.stringify(value);
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
@@ -17,10 +18,6 @@ function descriptorKey(descriptor: CadSketchGraphCellDescriptor): string {
   const spans = (boundary: readonly CadSketchGraphCellSpan[]) => boundary.map(span => span.kind === 'range'
     ? [span.kind, span.entityId, span.from, span.to, span.reversed] : [span.kind, span.entityId, span.reversed]);
   return key([spans(descriptor.outer), descriptor.holes.map(spans)]);
-}
-function freeze<T>(value: T): T {
-  if (value !== null && typeof value === 'object') { for (const child of Object.values(value)) freeze(child); Object.freeze(value); }
-  return value;
 }
 function canonical<T>(items: readonly T[]): T[] {
   let first = 0;
@@ -67,7 +64,7 @@ export function prepareCadSketchGraphCells(sketch: CadSketchFeature, parameters:
       : entity.kind === 'arc' ? { entityId: entity.id, kind: entity.kind, centerPointId: entity.centerPointId,
         startPointId: entity.startPointId, endPointId: entity.endPointId, direction: entity.direction, events }
       : { entityId: entity.id, kind: entity.kind, centerPointId: entity.centerPointId, events };
-    sourceMap.set(entity.id, freeze(witness));
+    sourceMap.set(entity.id, deepFreezeCadData(witness));
   }
   function boundary(source: CadSketchArrangementBoundary) {
     const edges = source.sourceRefs.map((reference, index) => {
@@ -100,7 +97,7 @@ export function prepareCadSketchGraphCells(sketch: CadSketchFeature, parameters:
       boundsMm: metrics.boundsMm, contains: (point: Point2) => point.x >= metrics.boundsMm.minX && point.x <= metrics.boundsMm.maxX
         && point.y >= metrics.boundsMm.minY && point.y <= metrics.boundsMm.maxY && inside.contains(point) && !insideHoles.some(hole => hole.contains(point)) };
   }).sort((a, b) => compare(key(a.descriptor), key(b.descriptor)));
-  const cells = entries.map((entry, id) => freeze({ id, name: `Area ${id + 1}`, descriptor: entry.descriptor,
+  const cells = entries.map((entry, id) => deepFreezeCadData({ id, name: `Area ${id + 1}`, descriptor: entry.descriptor,
     boundary: entry.boundary, voids: entry.voids, areaMm2: entry.areaMm2, boundaryLengthMm: entry.boundaryLengthMm,
     boundsMm: entry.boundsMm, defaultMaterial: false }));
   const byDescriptor = new Map(entries.map((entry, id) => [descriptorKey(entry.descriptor), id]));
@@ -118,7 +115,7 @@ export function prepareCadSketchGraphCells(sketch: CadSketchFeature, parameters:
       for (const event of witness.events.flat()) if (event.kind === 'intersection') for (const id of event.entityIds)
         if (!used.has(id)) { used.add(id); queue.push(id); }
     }
-    return freeze({ kind: 'graph-cells', sources: [...used].sort(compare).map(id => {
+    return deepFreezeCadData({ kind: 'graph-cells', sources: [...used].sort(compare).map(id => {
       const witness = sourceMap.get(id); if (!witness) throw new CadError('invalid-sketch-cells', 'A selected support is missing.'); return witness;
     }),
       cells: selected.map(id => entries[id].descriptor) });
@@ -188,9 +185,9 @@ export function prepareCadSketchGraphCells(sketch: CadSketchFeature, parameters:
       regions[owner.index].voids.push({ geometry: hole.geometry });
     }
     if (!regions.length || measured.some(loop => loop.metrics.areaMm2 <= 0)) throw new CadError('invalid-sketch-cells', 'Selected areas have no resolved bounded material.');
-    return freeze(regions);
+    return deepFreezeCadData(regions);
   }
-  return freeze({ mode: 'graph-cells' as const, cells, pack, selectedCellIds, resolve,
+  return deepFreezeCadData({ mode: 'graph-cells' as const, cells, pack, selectedCellIds, resolve,
     hasIntersections: arrangement.sources.some(source => source.knots.some(knot => knot.events.some(event => event.kind === 'intersection'))),
     pick(point: Point2) { if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
       const matches = entries.flatMap((entry, id) => entry.contains(point) ? [cells[id]] : []); return matches.length === 1 ? matches[0] : null; } });

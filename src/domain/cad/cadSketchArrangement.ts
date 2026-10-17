@@ -7,6 +7,7 @@ import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
 import { arcBounds, arcParameterAtPoint, createArcSegment, createLineSegment, normalizeAngle, pointOnArcAtParameter, pointOnCircle, signedAreaOfPath } from '@/domain/path-intel/segments';
 import { SpatialHash } from '@/domain/path-intel/spatialIndex';
 import type { OrientedSegmentRef, PathSegment, Point2 } from '@/domain/path-intel/types';
+import { deepFreezeCadData } from './cadDeepFreeze';
 
 export type CadSketchArrangementEvent =
   | { readonly kind: 'point'; readonly pointId: string }
@@ -61,11 +62,6 @@ const turn = 2 * Math.PI;
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 const distance = (a: Point2, b: Point2) => Math.hypot(a.x - b.x, a.y - b.y);
 const boundsPoints = (segment: PathSegment) => [{ x: segment.bounds.minX, y: segment.bounds.minY }, { x: segment.bounds.maxX, y: segment.bounds.maxY }];
-function freeze(value: unknown): void {
-  if (value === null || typeof value !== 'object') return;
-  for (const child of Object.values(value)) freeze(child);
-  Object.freeze(value);
-}
 function root(vertex: Vertex): Vertex {
   let owner = vertex;
   while (owner.parent) owner = owner.parent;
@@ -174,7 +170,7 @@ export function deriveCadSketchArrangement(graph: CadSketchGraph, parameters: Re
   const issue = (code: CadSketchArrangementIssue['code'], entityIds: string[], message: string) => issues.push({ code, entityIds: [...new Set(entityIds)].sort(compare), message });
   const finish = (cells: CadSketchArrangementCell[] = []): CadSketchArrangement => {
     const result = { cells: issues.length ? [] : cells, issues, sources: sources.map(source => ({ entityId: source.entity.id,
-      knots: source.knots.map(knot => ({ parameter: knot.parameter, events: events(knot.vertex) })) })) }; freeze(result); return result;
+      knots: source.knots.map(knot => ({ parameter: knot.parameter, events: events(knot.vertex) })) })) }; deepFreezeCadData(result); return result;
   };
   const vertex = (point: Point2, event: CadSketchArrangementEvent): Vertex => ({ point, parent: null, events: new Map([[JSON.stringify(event), event]]),
     branches: event.kind === 'intersection' ? new Map([[JSON.stringify(event.entityIds), event.branch]]) : new Map(), eventSnapshot: null, keySnapshot: null, outgoing: [] });

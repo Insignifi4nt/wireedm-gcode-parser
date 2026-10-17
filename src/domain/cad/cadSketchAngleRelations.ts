@@ -8,6 +8,7 @@ import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import { resolveCadSketchGraphJoints } from './cadSketchGraphJoints';
 import type { Point2 } from '@/domain/path-intel/types';
+import { deepFreezeCadData } from './cadDeepFreeze';
 
 type Rays = CadSketchAngleRelation['rays'];
 type Direction = NonNullable<ReturnType<typeof cadSketchLineDirection>>;
@@ -23,11 +24,6 @@ const cross = (a: Point2, b: Point2) => a.x * b.y - a.y * b.x;
 const dot = (a: Point2, b: Point2) => a.x * b.x + a.y * b.y;
 const angle = (a: Point2, b: Point2) => Math.atan2(cross(a, b), dot(a, b));
 const ambiguous = () => new CadError('ambiguous-sketch-angle-sector', 'Choose the visible angle sector between the two lines.');
-function freezeData(value: unknown): void {
-  if (value === null || typeof value !== 'object') return;
-  for (const child of Object.values(value)) freezeData(child);
-  Object.freeze(value);
-}
 
 /** Source ownership only. Changed angle values may still have unsolved coordinates. */
 export function resolveCadSketchAngleRays(graph: CadSketchGraph, rays: Rays) {
@@ -125,7 +121,7 @@ function sectors(input: CreationInput, prepared: ReturnType<typeof prepare>): Se
     if (!directions) throw new CadError('missing-sketch-point', 'The angle needs numeric source endpoints.');
     const actual = angle(directions[0], directions[1]), sense = actual > 0 ? 'ccw' : 'cw';
     const relation: CadSketchAngleRelation = { id: input.relationId, kind: 'line-angle', rays, sense, value: Math.abs(actual) * 180 / Math.PI };
-    cadSketchAngleTarget(relation, input.parameters); freezeData(relation);
+    cadSketchAngleTarget(relation, input.parameters); deepFreezeCadData(relation);
     return Object.freeze({ relation, geometry: geometry(vertex, directions[0], directions[1], sense) });
   };
   const startAngle = (sector: CadSketchLineAngleSector) => {

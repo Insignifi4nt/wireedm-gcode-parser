@@ -15,6 +15,7 @@ import { cadProfileToEntities, resolveCadProfile } from './cadSketchGeometry';
 import { classifyPathSegmentIntersection } from '@/domain/path-intel/intersections';
 import { createArcSegment, createCircleSegment, createLineSegment } from '@/domain/path-intel/segments';
 import type { PathSegment, Point2 } from '@/domain/path-intel/types';
+import { deepFreezeCadData } from './cadDeepFreeze';
 
 export const CadSketchMirrorRequestSchema = Type.Object({
   entityIds: Type.Array(CadIdentifierSchema, { minItems: 1, maxItems: 64, uniqueItems: true }),
@@ -29,11 +30,6 @@ export interface CadSketchMirrorPreparation {
   readonly resultEntityIds: readonly string[];
 }
 
-function freezeData(value: unknown): void {
-  if (value === null || typeof value !== 'object') return;
-  for (const child of Object.values(value)) freezeData(child);
-  Object.freeze(value);
-}
 const precision = () => new CadError('sketch-mirror-precision', 'The reflection cannot preserve exact geometry at these coordinates.');
 function legacySegments(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): PathSegment[] {
   return sketch.profiles.flatMap((profile, profileIndex) => cadProfileToEntities(resolveCadProfile(profile.geometry, parameters)).map((entity, index) => {
@@ -146,5 +142,5 @@ export function prepareCadSketchMirror({ sketch, parameters, ...request }: CadSk
   const result = { sketch: appendCadSketchEntities({ sketch: structuredClone(sketch), geometry: addition }), sourceEntityIds,
     resultEntityIds: entities.map(entity => entity.id) };
   if (result.sketch.graph) compileCadSketchGraph(result.sketch.graph, parameters);
-  freezeData(result); return result;
+  deepFreezeCadData(result); return result;
 }

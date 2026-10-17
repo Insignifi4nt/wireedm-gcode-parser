@@ -14,11 +14,13 @@ interface Job {
   resolve(result: CadSketchSolveResult): void;
   reject(error: Error): void;
   cleanup(): void;
+  /** The caller already received AbortError; its reply is awaited only to free the worker slot. */
+  canceled?: boolean;
 }
 export const CAD_SKETCH_SOLVE_TIMEOUT_MS = 15_000;
 const canceled = () => new DOMException('Sketch solving canceled.', 'AbortError');
 
-/** At most one worker and four waiting requests; failures are never replayed automatically. */
+/** At most one worker, one in-flight request and four waiting requests; failures are never replayed automatically. */
 export function createCadSketchSolverClient(makeWorker: () => CadSketchSolverTransport = () => new Worker(new URL('./cadSketchSolver.worker.ts', import.meta.url), { type: 'module', name: 'wireedm-sketch-solver' })): CadSketchSolverClient {
   let worker: CadSketchSolverTransport | undefined, active: Job | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined, disposed = false, id = 0;
@@ -28,7 +30,7 @@ export function createCadSketchSolverClient(makeWorker: () => CadSketchSolverTra
     const job = active;
     if (!job) return;
     clearTimeout(timer); timer = undefined; active = undefined; job.cleanup();
-    if (value instanceof Error) job.reject(value); else job.resolve(value);
+    if (!job.canceled) { if (value instanceof Error) job.reject(value); else job.resolve(value); }
     pump();
   }
   function fail(error: Error) { terminate(); finish(error); }
@@ -63,7 +65,9 @@ export function createCadSketchSolverClient(makeWorker: () => CadSketchSolverTra
       try { captured = parseCadSketchSolveInput(input); } catch (error) { return Promise.reject(error); }
       return new Promise((resolve, reject) => {
         const cancel = () => {
-          if (active === job) { fail(canceled()); return; }
+          // Keep the warm worker: the caller settles now and the late reply is discarded.
+          // Only a timeout or worker failure terminates the worker.
+          if (active === job) { job.canceled = true; job.cleanup(); reject(canceled()); return; }
           const index = queue.indexOf(job);
           if (index >= 0) { queue.splice(index, 1); job.cleanup(); reject(canceled()); }
         };

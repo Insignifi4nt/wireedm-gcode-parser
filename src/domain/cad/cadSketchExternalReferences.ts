@@ -9,6 +9,7 @@ import { parseCadSketchGraph, type CadSketchExternalReference, type CadSketchGra
 import { cadSketchEntityPointIds } from './cadSketchGraphReferences';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { appendCadSketchEntities } from './cadSketchGraphEdits';
+import { deepFreezeCadData } from './cadDeepFreeze';
 
 export const CadSketchUseEntityRequestSchema = Type.Object({ sketchId: CadIdentifierSchema, sourceSketchId: CadIdentifierSchema,
   sourceEntityId: CadIdentifierSchema, idPrefix: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' }) }, { additionalProperties: false });
@@ -16,11 +17,6 @@ export type CadSketchUseEntityRequest = Readonly<Static<typeof CadSketchUseEntit
 type Context = { readonly sketch: CadSketchFeature; readonly parameters: Readonly<Record<string, number>>; readonly previous: ReadonlyMap<string, CadFeature> };
 const invalid = (message: string): never => { throw new CadError('invalid-sketch-reference', message); };
 const unavailable = (message: string): never => { throw new CadError('unavailable-sketch-reference', message); };
-function freezeData(value: unknown): void {
-  if (value === null || typeof value !== 'object') return;
-  for (const child of Object.values(value)) freezeData(child);
-  Object.freeze(value);
-}
 function readonlyIds(ids: readonly string[]): ReadonlySet<string> {
   const values = new Set(ids);
   const result: ReadonlySet<string> = Object.freeze({ size: values.size, has: (id: string) => values.has(id),
@@ -98,7 +94,7 @@ export function refreshCadSketchExternalReferences(context: Context): CadSketchF
   const { points, circles } = snapshots(context);
   const graph = parseCadSketchGraph({ ...sketch.graph, points: sketch.graph.points.map(point => points.has(point.id) ? { ...point, position: points.get(point.id) } : point),
     entities: sketch.graph.entities.map(entity => entity.kind === 'circle' && circles.has(entity.id) ? { ...entity, radius: circles.get(entity.id) } : entity) });
-  const result = { ...structuredClone(sketch), graph }; freezeData(result); return result;
+  const result = { ...structuredClone(sketch), graph }; deepFreezeCadData(result); return result;
 }
 /** Strict accepted-cache authority, including suppressed targets. No stale fallback. */
 export function assertCadSketchExternalReferences(context: Context): void {
@@ -132,5 +128,5 @@ export function prepareCadSketchUseEntity({ sketch, parameters, previous, ...req
     ? { id: entityId, kind: 'line', construction: true, startPointId: points[0].id, endPointId: points[1].id }
     : { id: entityId, kind: 'circle', construction: true, centerPointId: points[0].id, radius: evaluateCadScalar(entity.radius, parameters) }] });
   const result = { sketch: appendCadSketchEntities({ sketch: structuredClone(sketch), geometry: addition }), referenceId, entityId };
-  assertCadSketchExternalReferences({ ...context, sketch: result.sketch }); freezeData(result); return result;
+  assertCadSketchExternalReferences({ ...context, sketch: result.sketch }); deepFreezeCadData(result); return result;
 }

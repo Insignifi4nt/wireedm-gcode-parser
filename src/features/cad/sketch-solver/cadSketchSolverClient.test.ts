@@ -17,19 +17,33 @@ const graph = parseCadSketchGraph({ points: [{ id: 'point', position: [0, 0] }],
 const result = { kind: 'solved', graph, diagnostics: { status: 'success', degreesOfFreedom: 2, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } };
 
 describe('sketch solver worker lifetime', () => {
-  it('starts lazily, cancels an active solve, and ignores its stale reply after restart', async () => {
+  it('starts lazily, cancels an active solve without terminating the warm worker, and drops its stale reply', async () => {
     const transports: Transport[] = [], client = createCadSketchSolverClient(() => { const worker = new Transport(); transports.push(worker); return worker; });
     expect(transports).toHaveLength(0);
     const signal = new AbortController(), canceled = client.solve({ graph, parameters: {} }, signal.signal);
     const rejected = expect(canceled).rejects.toMatchObject({ name: 'AbortError' });
-    const stale = transports[0].onmessage;
     signal.abort(); await rejected;
-    expect(transports[0].terminated).toBe(true);
+    expect(transports).toHaveLength(1); expect(transports[0].terminated).toBe(false);
     const next = client.solve({ graph, parameters: {} });
-    stale?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result } }));
-    transports[1].onmessage?.(new MessageEvent('message', { data: { id: 2, kind: 'result', result } }));
-    expect(await next).toEqual(result);
-    client.dispose(); expect(transports[1].terminated).toBe(true);
+    // The canceled request still owns the single in-flight slot until its reply arrives.
+    expect(transports[0].messages.map(message => message.id)).toEqual([1]);
+    transports[0].onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result } }));
+    expect(transports[0].messages.map(message => message.id)).toEqual([1, 2]);
+    transports[0].onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result } }));
+    transports[0].onmessage?.(new MessageEvent('message', { data: { id: 2, kind: 'result', result } }));
+    expect(await next).toEqual(result); expect(transports).toHaveLength(1); expect(transports[0].terminated).toBe(false);
+    client.dispose(); expect(transports[0].terminated).toBe(true);
+  });
+  it('still terminates a canceled solve that later exceeds its time limit', async () => {
+    vi.useFakeTimers();
+    const workers: Transport[] = [], client = createCadSketchSolverClient(() => { const worker = new Transport(); workers.push(worker); return worker; });
+    try {
+      const controller = new AbortController(), pending = client.solve({ graph, parameters: {} }, controller.signal);
+      const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+      controller.abort(); await rejected;
+      await vi.advanceTimersByTimeAsync(CAD_SKETCH_SOLVE_TIMEOUT_MS);
+      expect(workers[0].terminated).toBe(true); expect(vi.getTimerCount()).toBe(0);
+    } finally { client.dispose(); vi.useRealTimers(); }
   });
   it('bounds queued work and rejects every outstanding request on disposal', async () => {
     const worker = new Transport(), client = createCadSketchSolverClient(() => worker);

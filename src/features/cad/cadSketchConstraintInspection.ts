@@ -12,6 +12,7 @@ import { page } from '@/features/webmcp/siteTools';
 import { summarizeMessage, summarizeDiagnostic } from '@/features/webmcp/diagnosticSummaries';
 import type { CadSketchSolveDiagnostics, CadSketchSolveResult, CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
 import type { CadSketchConstraintSection } from './cadToolSchemas';
+import { deepFreezeCadData } from '@/domain/cad/cadDeepFreeze';
 
 export type CadSketchConstraintAnalysis = { readonly kind: 'solved'; readonly diagnostics: CadSketchSolveDiagnostics }
   | { readonly kind: 'rejected'; readonly reason: Extract<CadSketchSolveResult, { kind: 'rejected' }>['reason']; readonly message: string; readonly diagnostics: CadSketchSolveDiagnostics }
@@ -28,11 +29,7 @@ export interface CadSketchConstraintInspection {
 }
 const unknownDiagnostics = (): CadSketchSolveDiagnostics => ({ status: null, degreesOfFreedom: null,
   conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] });
-function freezeData(value: unknown): void {
-  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return;
-  for (const child of Object.values(value)) freezeData(child);
-  Object.freeze(value);
-}
+const freezeData = (value: unknown) => deepFreezeCadData(value, { skipFrozen: true });
 
 /** Analyze copied numeric geometry; the accepted source and its exact drivers remain authoritative. */
 export async function inspectCadSketchConstraints(document: CadDocument, sketchId: string,

@@ -13,6 +13,7 @@ self.addEventListener('message', (event: MessageEvent<unknown>) => {
       const request = parseCadSketchSolverRequest(value);
       reply = { id: request.id, kind: 'result', result: await runtime.solve(request.input) };
     } catch (error) { reply = { id: value.id, kind: 'error', message: error instanceof Error ? error.message.slice(0, 8192) : 'Sketch solving failed.' }; }
-    self.postMessage(reply);
-  });
+    try { self.postMessage(reply); }
+    catch { self.postMessage({ id: value.id, kind: 'error', message: 'The sketch solver reply could not be sent.' } satisfies CadSketchSolverReply); }
+  }).catch(() => undefined); // One failed reply must never wedge later requests.
 });

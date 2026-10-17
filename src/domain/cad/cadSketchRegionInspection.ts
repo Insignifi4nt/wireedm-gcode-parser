@@ -17,6 +17,7 @@ import { CadSketchTrimTargetSchema, prepareCadSketchTrim, trimCadSketchEntity, t
   CadSketchExtendTargetSchema, prepareCadSketchExtend, extendCadSketchEntity, type CadSketchExtendTarget } from './cadSketchTrimExtend';
 import { CadSketchOffsetRequestSchema, prepareCadSketchOffset, type CadSketchOffsetRequest } from './cadSketchOffset';
 import { CadSketchMirrorRequestSchema, prepareCadSketchMirror, type CadSketchMirrorRequest } from './cadSketchMirror';
+import { deepFreezeCadData } from './cadDeepFreeze';
 
 export interface CadPreparedSketchCell {
   readonly id: CadSketchCellId;
@@ -82,15 +83,10 @@ export function prepareCadSketchCells(sketch: CadSketchFeature, parameters: CadD
   const cached = reusable ? previous.catalogs[mode] : undefined;
   if (cached) return cached;
   const cells = build(environment);
-  function freezeGeometry(value: unknown): void {
-    if (value === null || typeof value !== 'object') return;
-    for (const child of Object.values(value)) freezeGeometry(child);
-    Object.freeze(value);
-  }
   for (const cell of cells.cells) {
     // Only newly resolved objects are frozen here. The profile is borrowed from
     // the already deeply frozen parser source; raw caller inputs stay untouched.
-    freezeGeometry(cell.boundary.geometry); if ('point' in cell.boundary) Object.freeze(cell.boundary.point); Object.freeze(cell.boundary);
+    deepFreezeCadData(cell.boundary.geometry); if ('point' in cell.boundary) Object.freeze(cell.boundary.point); Object.freeze(cell.boundary);
   }
   preparations.set(sketch, { names, values, catalogs: { ...(reusable ? previous.catalogs : {}), [mode]: cells } });
   return cells;

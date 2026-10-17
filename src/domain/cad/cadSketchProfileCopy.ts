@@ -11,6 +11,7 @@ import { parseCadSketchGraph, type CadSketchGraphEntity } from './cadSketchGraph
 import { compileCadSketchGraph } from './cadSketchGraphGeometry';
 import { createArcSegment, createCircleSegment, createLineSegment } from '@/domain/path-intel/segments';
 import type { PathSegment, Point2 } from '@/domain/path-intel/types';
+import { deepFreezeCadData } from './cadDeepFreeze';
 
 export const CadSketchProfileCopyRequestSchema = Type.Object({
   sourceSketchId: CadIdentifierSchema, profileId: CadIdentifierSchema, newSketchId: CadIdentifierSchema,
@@ -27,11 +28,6 @@ export interface CadSketchProfileCopyPreparation {
 const invalid = (message: string): never => { throw new CadError('invalid-sketch-profile-copy', message); };
 const precision = (): never => { throw new CadError('sketch-profile-copy-precision', 'The independent copy cannot preserve the analytic supports, joints and arc branches at these coordinates.'); };
 const position = (point: Point2): readonly [number, number] => [point.x, point.y];
-function freezeData(value: unknown): void {
-  if (value === null || typeof value !== 'object') return;
-  for (const child of Object.values(value)) freezeData(child);
-  Object.freeze(value);
-}
 function pathSegment(segment: PathSegment): ResolvedCadPathSegment {
   return segment.kind === 'line' ? { kind: 'line', start: position(segment.start), end: position(segment.end) }
     : { kind: 'arc', center: position(segment.center), radius: segment.radius,
@@ -128,5 +124,5 @@ export function prepareCadSketchProfileCopy({ sketch, parameters, ...request }: 
       before.bounds.maxX - after.bounds.maxX, before.bounds.maxY - after.bounds.maxY].some(delta => Math.abs(delta) > tolerance)) return precision();
   const result: CadSketchProfileCopyPreparation = { sketch: { id: request.newSketchId, kind: 'sketch', name: request.name, suppressed: false,
     plane: structuredClone(sketch.plane), offset, profiles: [], graph }, sourceSegments, resultEntityIds: entities.map(entity => entity.id) };
-  freezeData(result); return result;
+  deepFreezeCadData(result); return result;
 }

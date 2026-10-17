@@ -20,6 +20,7 @@ import { checkCadSketchAngleRelation, resolveCadSketchAngleRays } from './cadSke
 import { resolveCadSketchMidpointOperands } from './cadSketchMidpointRelations';
 import { validateCadSketchExternalReference } from './cadSketchExternalReferences';
 import { resolveCadSketchReferenceDimension } from './cadSketchReferenceDimensions';
+import { deepFreezeCadData } from './cadDeepFreeze';
 
 const strict = { additionalProperties: false };
 const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
@@ -94,11 +95,6 @@ export const CadSketchGraphIssueSchema = Type.Object({
 }, strict);
 export type CadSketchGraphIssue = Immutable<Static<typeof CadSketchGraphIssueSchema>>;
 
-function freezeData(value: unknown): void {
-  if (value === null || typeof value !== 'object') return;
-  for (const child of Object.values(value)) freezeData(child);
-  Object.freeze(value);
-}
 
 /** Parse unsolved intent without solving, changing scalars, or checking geometric residuals. */
 export function parseCadSketchGraph(value: unknown): CadSketchGraph {
@@ -132,7 +128,7 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
     }
     references(item.id, cadSketchRelationPointIds(graph, item));
   }
-  freezeData(graph);
+  deepFreezeCadData(graph);
   return graph;
 }
 
@@ -232,6 +228,6 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
       if (residual > tolerance) report(source, 'relation-residual', 'Sketch geometry does not satisfy its driving relation.', residual);
     } catch (error) { report(source, 'invalid-expression', error instanceof Error ? error.message : 'Invalid relation expression.'); }
   }
-  freezeData(issues);
+  deepFreezeCadData(issues);
   return issues;
 }

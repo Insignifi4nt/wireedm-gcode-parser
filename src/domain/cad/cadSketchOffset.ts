@@ -14,6 +14,7 @@ import { createArcSegment, createCircleSegment, createLineSegment } from '@/doma
 import { signedDxfArcSweepRadians } from '@/domain/dxf/arcSweep';
 import type { DxfEntity } from '@/domain/dxf/types';
 import type { ArcPathSegment, LinePathSegment, PathSegment, Point2 } from '@/domain/path-intel/types';
+import { deepFreezeCadData } from './cadDeepFreeze';
 
 const strict = { additionalProperties: false };
 export const CadSketchOffsetSourceSchema = Type.Union([
@@ -36,11 +37,6 @@ type Edge = LinePathSegment | ArcPathSegment;
 const fail = (message: string): never => { throw new CadError('unsupported-sketch-offset', message); };
 const position = (point: Point2): readonly [number, number] => [point.x, point.y];
 const cross = (a: Point2, b: Point2) => a.x * b.y - a.y * b.x;
-function freezeData(value: unknown): void {
-  if (value === null || typeof value !== 'object') return;
-  for (const child of Object.values(value)) freezeData(child);
-  Object.freeze(value);
-}
 function pathSegment(segment: PathSegment): ResolvedCadPathSegment {
   return segment.kind === 'line' ? { kind: 'line', start: position(segment.start), end: position(segment.end) }
     : { kind: 'arc', center: position(segment.center), radius: segment.radius,
@@ -138,7 +134,7 @@ export function prepareCadSketchOffset({ sketch, parameters, ...request }: CadSk
   // absolute angles would yield π±ulp. Generic path/graph sweeps stay exact.
   const sourceEdges = cadProfileToEntities(contour.geometry).map((entity, index) => analyticSegment(entity, index,
     contour.geometry.kind === 'slot' && entity.type === 'arc' ? Math.PI : undefined)), sourceSegments = sourceEdges.map(pathSegment);
-  freezeData(sourceSegments);
+  deepFreezeCadData(sourceSegments);
   if (distanceMm === 0) return Object.freeze({ sketch, sourceSegments, resultSegments: sourceSegments, distanceMm });
   const points: { id: string; position: readonly [number, number] }[] = [], entities: CadSketchGraphEntity[] = [], resultEdges: PathSegment[] = [];
   const point = (id: string, value: Point2) => { checkPoint(value); points.push({ id, position: position(value) }); return id; };
@@ -179,6 +175,6 @@ export function prepareCadSketchOffset({ sketch, parameters, ...request }: CadSk
   }
   if (!nested) return fail('The offset cannot preserve the requested inside/outside branch.');
   const preparation = { sketch: result, sourceSegments, resultSegments: resultEdges.map(pathSegment), distanceMm };
-  freezeData(preparation);
+  deepFreezeCadData(preparation);
   return preparation;
 }

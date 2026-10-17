@@ -7,6 +7,7 @@ import { cadSketchCellModeForAreas, prepareCadSketchCells, type CadPreparedSketc
 import { resolveCadSketchRegions } from '@/domain/cad/cadSketchGeometry';
 import type { CadSketchRegionSelection } from '@/domain/cad/cadSketchRegionSelection';
 import { CadSession, CadSessionError, type CadSessionSnapshot } from './cadSession';
+import { deepFreezeCadData } from '@/domain/cad/cadDeepFreeze';
 
 export type CadSketchEditDraftSource = Pick<CadSessionSnapshot, 'document' | 'version'>;
 export type CadSketchDraftPreparation = (document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) => Promise<CadDocument>;
@@ -29,11 +30,7 @@ export interface CadSketchAreaRepairs {
 const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 const scopeError = () => new CadSessionError('SKETCH_DRAFT_SCOPE', 'A sketch draft may change only its owned sketch, numeric parameters and solver-updated earlier graph values.');
 const numericOriginal = (original: CadScalar, candidate: CadScalar) => typeof original === 'number' && typeof candidate === 'number' ? original : candidate;
-function freezeData(value: unknown): void {
-  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return;
-  for (const child of Object.values(value)) freezeData(child);
-  Object.freeze(value);
-}
+const freezeData = (value: unknown) => deepFreezeCadData(value, { skipFrozen: true });
 
 /** Remove only the allowed solver-owned differences before comparing complete earlier source. */
 function withoutSolvedGraphValues(original: CadFeature, candidate: CadFeature): CadFeature {

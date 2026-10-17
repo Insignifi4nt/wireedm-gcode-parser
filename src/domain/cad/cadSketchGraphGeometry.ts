@@ -7,6 +7,7 @@ import { createArcSegment, createCircleSegment, createLineSegment } from '@/doma
 import { classifyPathSegmentIntersection, expandBounds, spatialCellSizeForSegments } from '@/domain/path-intel/intersections';
 import { SpatialHash } from '@/domain/path-intel/spatialIndex';
 import type { PathSegment, Point2 } from '@/domain/path-intel/types';
+import { deepFreezeCadData } from './cadDeepFreeze';
 
 export interface CadSketchGraphSourceRef { readonly entityId: string; readonly reversed: boolean }
 export interface CadSketchGraphCycle {
@@ -48,11 +49,6 @@ function checkCycleEncoding(path: readonly ResolvedCadPathSegment[]): void {
       throw new CadError('sketch-graph-precision', 'The analytic cycle cannot reproduce its joints within saved path precision.');
     }
   }
-}
-function freezeData(value: unknown): void {
-  if (value === null || typeof value !== 'object') return;
-  for (const child of Object.values(value)) freezeData(child);
-  Object.freeze(value);
 }
 
 /** Simple declared-joint cycles only. No endpoint healing, coordinate merging or implicit graph edits. */
@@ -141,6 +137,6 @@ export function compileCadSketchGraph(graph: CadSketchGraph, parameters: Readonl
     .sort((a, b) => a.sourceRefs[0].entityId < b.sourceRefs[0].entityId ? -1 : a.sourceRefs[0].entityId > b.sourceRefs[0].entityId ? 1 : 0),
     openEntityIds: open.sort(), branchedEntityIds: branched.sort(), arrangementEntityIds: [...arrangement].sort() };
   for (const cycle of result.cycles) checkCycleEncoding(cycle.path);
-  freezeData(result);
+  deepFreezeCadData(result);
   return result;
 }

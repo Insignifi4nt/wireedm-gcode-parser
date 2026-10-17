@@ -12,6 +12,7 @@ import { evaluateCadScalar } from './cadExpression';
 import { classifyLineRayPathSegmentIntersection, classifyParameterizedPathSegmentIntersection } from '@/domain/path-intel/intersections';
 import { createArcSegment, createCircleSegment, createLineSegment, pointOnArcAtParameter } from '@/domain/path-intel/segments';
 import type { ArcPathSegment, CirclePathSegment, LinePathSegment, PathSegment, Point2 } from '@/domain/path-intel/types';
+import { deepFreezeCadData } from './cadDeepFreeze';
 
 const strict = { additionalProperties: false }, id = CadIdentifierSchema;
 const parameter = Type.Number({ minimum: 0, maximum: 1 });
@@ -94,20 +95,22 @@ export interface CadSketchMiddleTrimResult {
 }
 export type CadSketchCircleTrimResult = Omit<CadSketchMiddleTrimResult, 'newEntityId'>;
 export type CadSketchTrimResult = CadSketchEndTrimResult | CadSketchMiddleTrimResult | CadSketchCircleTrimResult;
-export class CadSketchTrimDependencyError extends CadError {
+abstract class CadSketchEditDependencyError extends CadError {
   readonly relationIds: readonly string[];
   readonly pointIds: readonly string[];
-  constructor(relationIds: readonly string[], pointIds: readonly string[]) {
-    super('dependent-sketch-trim', 'Remove or recreate the relations and endpoint drivers affected by this trim before trimming.');
+  constructor(code: string, message: string, relationIds: readonly string[], pointIds: readonly string[]) {
+    super(code, message);
     this.relationIds = Object.freeze([...relationIds]); this.pointIds = Object.freeze([...pointIds]);
   }
 }
-export class CadSketchExtendDependencyError extends CadError {
-  readonly relationIds: readonly string[];
-  readonly pointIds: readonly string[];
+export class CadSketchTrimDependencyError extends CadSketchEditDependencyError {
   constructor(relationIds: readonly string[], pointIds: readonly string[]) {
-    super('dependent-sketch-extend', 'Remove or recreate the relations and endpoint drivers affected by this extension before extending.');
-    this.relationIds = Object.freeze([...relationIds]); this.pointIds = Object.freeze([...pointIds]);
+    super('dependent-sketch-trim', 'Remove or recreate the relations and endpoint drivers affected by this trim before trimming.', relationIds, pointIds);
+  }
+}
+export class CadSketchExtendDependencyError extends CadSketchEditDependencyError {
+  constructor(relationIds: readonly string[], pointIds: readonly string[]) {
+    super('dependent-sketch-extend', 'Remove or recreate the relations and endpoint drivers affected by this extension before extending.', relationIds, pointIds);
   }
 }
 interface Source {
@@ -124,11 +127,6 @@ const precision = (operation: 'trim' | 'extend' = 'trim') => new CadError(`sketc
   operation === 'trim' ? 'This intersection cannot leave an exact nondegenerate trim at these coordinates.' : 'This intersection cannot produce an exact nondegenerate extension at these coordinates.');
 const ambiguous = (operation: 'trim' | 'extend' = 'trim') => new CadError(`ambiguous-sketch-${operation}`,
   `${operation === 'trim' ? 'Trim' : 'Extend'} needs a unique transverse intersection; overlapping, tangent or undeclared coincident boundaries need explicit repair.`);
-function freezeData(value: unknown): void {
-  if (value === null || typeof value !== 'object') return;
-  for (const child of Object.values(value)) freezeData(child);
-  Object.freeze(value);
-}
 function at(segment: OpenSegment, t: number): Point2 {
   return segment.kind === 'line' ? { x: segment.start.x + (segment.end.x - segment.start.x) * t,
     y: segment.start.y + (segment.end.y - segment.start.y) * t }
@@ -195,7 +193,8 @@ function assertMiddleDependencies(graph: CadSketchGraph, entity: SourceEdge): vo
   if (owners.length) throw new CadSketchTrimDependencyError(owners.map(relation => relation.id), []);
 }
 function assertCircleDependencies(graph: CadSketchGraph, entity: Extract<CadSketchGraph['entities'][number], { kind: 'circle' }>, retained: boolean): void {
-  if (typeof entity.radius === 'string') throw new CadError('driven-sketch-trim-radius', "Edit or release this circle's radius expression before trimming.");
+  // Whole-circle deletion keeps no support, so only a retained arc must freeze its radius.
+  if (retained && typeof entity.radius === 'string') throw new CadError('driven-sketch-trim-radius', "Edit or release this circle's radius expression before trimming.");
   const owners = graph.relations.filter(relation => (!retained || relation.kind !== 'reference-dimension') && cadSketchRelationEntityIds(relation).includes(entity.id));
   if (owners.length) throw new CadSketchTrimDependencyError(owners.map(relation => relation.id), []);
 }
@@ -375,7 +374,7 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
     if (entity.kind !== 'circle') assertDependencies(graph, entityId, [entity.startPointId, entity.endPointId]);
     const result: CadSketchEndTrimPreparation = { target: { kind: 'delete', entityId, parameter: pick }, removed: segment,
       survivor: null, boundary: null, point: null };
-    freezeData(result); return result;
+    deepFreezeCadData(result); return result;
   }
   if (segment.kind === 'circle') {
     if (unique.length < 2) throw ambiguous();
@@ -393,7 +392,7 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
     const result: CadSketchCircleTrimPreparation = { target: { kind: 'circle', entityId, parameter: pick,
       boundaries: [previous.witness, next.witness] }, removed, survivor,
       cuts: [{ boundary: previous.boundary, point: [previous.point.x, previous.point.y] }, { boundary: next.boundary, point: [next.point.x, next.point.y] }] };
-    freezeData(result); return result;
+    deepFreezeCadData(result); return result;
   }
   if (entity.kind === 'circle') throw precision();
   for (const event of unique) if (Math.abs(pick - event.witness.parameter) * segment.length <= cadPathClosureTolerance([at(segment, pick), event.point]))
@@ -413,7 +412,7 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
       removed: createLineSegment({ ...segment, start: left.point, end: right.point }),
       survivors: [createLineSegment({ ...segment, end: left.point }), createLineSegment({ ...segment, start: right.point })] }
       : { ...contacts, ...middleArcPieces(segment, left, right) };
-    freezeData(result); return result;
+    deepFreezeCadData(result); return result;
   }
   const event = end === 'start' ? first : last;
   assertEndpointRange(event.point, 'trim');
@@ -422,7 +421,7 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
   const result: CadSketchEndTrimPreparation = { target: { kind: 'end', entityId, parameter: pick, end, boundary: event.witness },
     removed: pieces[end === 'start' ? 0 : 1], survivor: pieces[end === 'start' ? 1 : 0], boundary: event.boundary,
     point: [event.point.x, event.point.y] };
-  freezeData(result); return result;
+  deepFreezeCadData(result); return result;
 }
 
 /** Recheck the exact preview witness; never retarget a changed source to another intersection. */
@@ -510,7 +509,7 @@ export function prepareCadSketchExtend({ graph: input, parameters, entityId, end
   checkArcPiece(segment, extended, expected, tolerance, 'extend'); checkArcPiece(segment, added, expected - segment.sweepRadians, tolerance, 'extend');
   const result: CadSketchArcExtendPreparation = { target: { kind: 'arc', entityId, end, boundary: event.witness }, added, extended,
     boundary: event.boundary, point: [event.point.x, event.point.y] };
-  freezeData(result); return result;
+  deepFreezeCadData(result); return result;
 }
 
 /** Strict line entry point retained for existing callers. */
@@ -535,7 +534,7 @@ function prepareLineExtend(graph: CadSketchGraph, parameters: Readonly<Record<st
   const added = createLineSegment({ ...segment, start: end === 'start' ? event.point : original, end: end === 'start' ? original : event.point });
   const result: CadSketchLineExtendPreparation = { target: { kind: 'line', entityId, end, boundary: event.witness }, added, extended,
     boundary: event.boundary, point: [event.point.x, event.point.y] };
-  freezeData(result); return result;
+  deepFreezeCadData(result); return result;
 }
 export function extendCadSketchEntity({ graph: input, parameters, extend }: Source & { readonly extend: CadSketchExtendTarget }): CadSketchExtendResult {
   if (!isCadImportData(extend) || !Value.Check(CadSketchExtendTargetSchema, extend)) throw new CadError('invalid-sketch-extend', 'Choose one complete line or arc extension request.');
