@@ -39,10 +39,6 @@ export function isCadSketchSolverEnvelope(value: unknown): value is { id: number
   return typeof value === 'object' && value !== null && 'id' in value && Number.isSafeInteger(value.id) && typeof value.id === 'number' && value.id > 0
     && 'kind' in value && typeof value.kind === 'string';
 }
-export function parseCadSketchSolverRequest(value: unknown): CadSketchSolverRequest {
-  if (!isCadSketchSolverEnvelope(value) || value.kind !== 'solve' || !('input' in value)) throw new Error('Invalid sketch solver request.');
-  return { id: value.id, kind: 'solve', input: parseCadSketchSolveInput(value.input) };
-}
 
 export function cadSketchSolutionMatchesInput(input: CadSketchSolveInput, graph: CadSketchSolveInput['graph']) {
   if (graph.points.length !== input.graph.points.length || graph.entities.length !== input.graph.entities.length) return false;

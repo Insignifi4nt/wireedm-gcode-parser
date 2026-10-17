@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { checkCadSketchGraph, parseCadSketchGraph } from '../cadSketchGraph';
 import { cadSketchRelationEntityIds, cadSketchRelationPointIds, mapCadSketchRelationScalars } from '../cadSketchGraphReferences';
 import { splitCadSketchEntity, CadSketchSplitDependencyError } from '../cadSketchSplit';
-import { prepareCadSketchTrim, prepareCadSketchLineExtend, CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '../cadSketchTrimExtend';
+import { prepareCadSketchTrim, prepareCadSketchExtend, CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '../cadSketchTrimExtend';
 import { deleteCadSketchElements } from '../cadSketchGraphEdits';
 import type { CadSketchFeature } from '../cadDocument';
 
@@ -54,7 +54,7 @@ describe('persistent line midpoint intent', () => {
     expect(() => splitCadSketchEntity({ graph, parameters: {}, split: { kind: 'line', entityId: 'line', parameter: .5,
       splitPointId: 'split', newEntityId: 'second', supportRelationId: 'direction' } })).toThrow(CadSketchSplitDependencyError);
     for (const parameter of [.1, .5]) expect(() => prepareCadSketchTrim({ graph, parameters: {}, entityId: 'line', parameter })).toThrow(CadSketchTrimDependencyError);
-    expect(() => prepareCadSketchLineExtend({ graph, parameters: {}, entityId: 'line', end: 'end' })).toThrow(CadSketchExtendDependencyError);
+    expect(() => prepareCadSketchExtend({ graph, parameters: {}, entityId: 'line', end: 'end' })).toThrow(CadSketchExtendDependencyError);
     const sketch: CadSketchFeature = { id: 's', kind: 'sketch', name: 'Midpoint', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph };
     expect(() => deleteCadSketchElements({ sketch, entityIds: ['line'], pointIds: [], relationIds: [], cascade: false })).toThrow(/depend/i);
     const removed = deleteCadSketchElements({ sketch, entityIds: ['line'], pointIds: [], relationIds: [], cascade: true });

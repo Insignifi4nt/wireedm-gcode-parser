@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { prepareCadSketchLineExtend, prepareCadSketchExtend, extendCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
+import { prepareCadSketchExtend, extendCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
 import { prepareCadEdits } from './cadEditPreparation';
 import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
@@ -18,7 +18,7 @@ const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModu
 async function prepared(graph: CadSketchGraph, entityId: string, parameters: Readonly<Record<string, number>>, endPointId: string) {
   const document = parseCadDocument({ ...createCadDocument('Line extension', 'line-extension'), schemaVersion: 2, parameters,
     features: [{ id: 'sketch', name: 'Lines', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph }] });
-  const before = JSON.stringify(document), preview = prepareCadSketchLineExtend({ graph, parameters, entityId, end: 'end' });
+  const before = JSON.stringify(document), preview = prepareCadSketchExtend({ graph, parameters, entityId, end: 'end' });
   const extend = { ...preview.target, endPointId }, expected = extendCadSketchEntity({ graph, parameters, extend });
   const result = await prepareCadEdits(document, [{ kind: 'extend-sketch-entity', sketchId: 'sketch', extend }], runtime);
   const sketch = result.document.features[0];

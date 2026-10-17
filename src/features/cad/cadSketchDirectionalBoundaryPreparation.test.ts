@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { createCadFreshSketchGraph } from '@/domain/cad/cadFreshSketchGraph';
 import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { prepareCadSketchTrim, prepareCadSketchLineExtend, trimCadSketchEntity, extendCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
+import { prepareCadSketchTrim, prepareCadSketchExtend, trimCadSketchEntity, extendCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { prepareCadEdits } from './cadEditPreparation';
 import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
@@ -51,7 +51,7 @@ describe('real PlaneGCS direction-preserving line boundary preparation', () => {
       { id: 'parallel', kind: 'parallel', lineIds: ['bottom', 'top'] },
       { id: 'perpendicular', kind: 'perpendicular', lineIds: ['bottom', 'right'] }] });
     const document = part(graph), before = JSON.stringify(document);
-    const preview = prepareCadSketchLineExtend({ graph, parameters: document.parameters, entityId: 'bottom', end: 'end' });
+    const preview = prepareCadSketchExtend({ graph, parameters: document.parameters, entityId: 'bottom', end: 'end' });
     expect(preview.target.boundary).toEqual({ entityId: 'right', index: 0, parameter: 2, position: [10, 0], endpointPointId: 'c' });
     const extend = { ...preview.target, endPointId: 'c' }, expected = extendCadSketchEntity({ graph, parameters: document.parameters, extend });
     expect(expected.graph.points).toEqual(graph.points.filter(point => point.id !== 'b')); expect(expected.graph.relations).toEqual(graph.relations);

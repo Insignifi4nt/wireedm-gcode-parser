@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { prepareCadSketchExtend, prepareCadSketchLineExtend, extendCadSketchEntity } from '../cadSketchTrimExtend';
+import { prepareCadSketchExtend, extendCadSketchEntity } from '../cadSketchTrimExtend';
 import { compileCadSketchGraph } from '../cadSketchGraphGeometry';
 import { prepareCadSketchCells } from '../cadSketchRegionInspection';
 import { arcExtendPart } from './cadSketchArcExtendFixtures';
@@ -61,7 +61,7 @@ describe('exact endpoint-owned arc Extend', () => {
     expect(preview.target).toMatchObject({ kind: 'arc', boundary: { entityId: 'cutter', position: [-6, 8] } });
   });
 
-  it('preserves reversed CW traversal and source order when extending the start, while the old line entry remains strict', () => {
+  it('preserves reversed CW traversal and source order when extending the start', () => {
     const document = arcExtendPart(), sketch = document.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Expected arc source.');
     const graph = parseCadSketchGraph({ ...sketch.graph, points: [...sketch.graph.points].reverse(), entities: sketch.graph.entities.map(entity => entity.kind === 'arc'
@@ -74,8 +74,6 @@ describe('exact endpoint-owned arc Extend', () => {
     const result = extendCadSketchEntity({ graph, parameters: document.parameters, extend: { ...preview.target, endPointId: 'c' } });
     expect(result.graph.entities).toEqual(graph.entities.map(entity => entity.id === 'arc' ? { ...entity, startPointId: 'c' } : entity));
     expect(result.graph.points).toEqual(graph.points); expect(JSON.stringify(graph)).toBe(before);
-    expect(() => prepareCadSketchLineExtend({ graph, parameters: document.parameters, entityId: 'arc', end: 'start' }))
-      .toThrowError(expect.objectContaining({ code: 'invalid-sketch-extend-target' }));
     expect(() => extendCadSketchEntity({ graph, parameters: document.parameters, extend: { ...preview.target, kind: 'line', endPointId: 'c' } }))
       .toThrowError(expect.objectContaining({ code: 'invalid-sketch-extend-target' }));
   });

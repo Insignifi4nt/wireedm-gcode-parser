@@ -30,8 +30,9 @@ function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] 
   }
 }
 
+/** Input already parsed by the solve boundary. */
 function compile(input: CadSketchSolveInput) {
-  const graph = parseCadSketchGraph(input.graph), objects: SketchPrimitive[] = [];
+  const graph = input.graph, objects: SketchPrimitive[] = [];
   const sourceIds = new Map<string, string>();
   const numericPoints = new Map<string, Point2>();
   const scalar = (value: number | string) => evaluateCadScalar(value, input.parameters);

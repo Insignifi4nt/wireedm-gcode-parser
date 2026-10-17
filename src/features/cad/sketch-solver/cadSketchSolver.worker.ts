@@ -1,6 +1,7 @@
 import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from './cadSketchSolverModule';
-import { isCadSketchSolverEnvelope, parseCadSketchSolverRequest, type CadSketchSolverReply } from './cadSketchSolverProtocol';
+import type { CadSketchSolveInput } from './cadSketchSolverTypes';
+import { isCadSketchSolverEnvelope, type CadSketchSolverReply } from './cadSketchSolverProtocol';
 
 const runtime = createCadSketchSolverRuntime(initializeCadSketchSolverModule);
 let queue = Promise.resolve();
@@ -10,8 +11,9 @@ self.addEventListener('message', (event: MessageEvent<unknown>) => {
   queue = queue.then(async () => {
     let reply: CadSketchSolverReply;
     try {
-      const request = parseCadSketchSolverRequest(value);
-      reply = { id: request.id, kind: 'result', result: await runtime.solve(request.input) };
+      // The runtime owns input parsing; an invalid graph returns its invalid-input rejection.
+      if (value.kind !== 'solve' || !('input' in value)) throw new Error('Invalid sketch solver request.');
+      reply = { id: value.id, kind: 'result', result: await runtime.solve(value.input as CadSketchSolveInput) };
     } catch (error) { reply = { id: value.id, kind: 'error', message: error instanceof Error ? error.message.slice(0, 8192) : 'Sketch solving failed.' }; }
     try { self.postMessage(reply); }
     catch { self.postMessage({ id: value.id, kind: 'error', message: 'The sketch solver reply could not be sent.' } satisfies CadSketchSolverReply); }

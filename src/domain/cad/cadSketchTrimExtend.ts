@@ -511,13 +511,6 @@ export function prepareCadSketchExtend({ graph: input, parameters, entityId, end
   deepFreezeCadData(result); return result;
 }
 
-/** Strict line entry point retained for existing callers. */
-export function prepareCadSketchLineExtend({ graph: input, parameters, entityId, end }: Source & { readonly entityId: string; readonly end: 'start' | 'end' }): CadSketchLineExtendPreparation {
-  if (end !== 'start' && end !== 'end') throw new CadError('invalid-sketch-extend', 'Choose the start or end of one line.');
-  const graph = parseCadSketchGraph(input), entity = graph.entities.find(item => item.id === entityId);
-  if (!entity || entity.kind !== 'line') throw new CadError('invalid-sketch-extend-target', 'This extension supports an existing line endpoint.');
-  return prepareLineExtend(graph, parameters, entity, end);
-}
 function prepareLineExtend(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, entity: SourceLine, end: 'start' | 'end'): CadSketchLineExtendPreparation {
   const entityId = entity.id;
   const geometry = compileCadSketchGraph(graph, parameters), segment = geometry.segments.find(item => item.id === entityId);
