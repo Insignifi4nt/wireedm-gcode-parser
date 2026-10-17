@@ -26,6 +26,7 @@ export function useCadSketchCommandSession<P extends CadSketchCommandSessionProp
   const [error, setError] = useState<string | null>(null);
   const submission = useCadEditSubmission(), ended = useRef(false), submitted = useRef<CadDocument | null>(null);
   const callbacks = useRef(props); callbacks.current = props;
+  const applying = useRef(false); applying.current = submission.applying;
   const sourceCurrent = props.document === owner.document && props.documentVersion === owner.version;
   // A successful session publication may render before its promise's accepted callback.
   const ownPublication = submission.applying && submitted.current !== null && Value.Equal(props.document, submitted.current);
@@ -45,8 +46,8 @@ export function useCadSketchCommandSession<P extends CadSketchCommandSessionProp
     }, cause => { submitted.current = null; setError(cause instanceof Error ? cause.message : failure); });
   };
   /** Live check for deferred callbacks such as canvas picks; reads refs, never render-time values. */
-  const closed = () => ended.current || callbacks.current.interactionLocked || callbacks.current.document !== owner.document || callbacks.current.documentVersion !== owner.version;
-  return { owner, error, setError, cancel, submit, closed, applying: submission.applying, sourceCurrent, blocked,
+  const closed = () => ended.current || applying.current || callbacks.current.interactionLocked || callbacks.current.document !== owner.document || callbacks.current.documentVersion !== owner.version;
+  return { owner, error, setError, cancel, submit, closed, submittedDocument: submitted.current, applying: submission.applying, sourceCurrent, blocked,
     /** Live previews run only while this session may still apply. */
     previewEnabled: sourceCurrent && !props.interactionLocked && !submission.applying };
 }
