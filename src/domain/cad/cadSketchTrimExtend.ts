@@ -5,7 +5,7 @@ import { CadError } from './cadError';
 import { parseCadSketchGraph, type CadSketchGraph, type CadSketchGraphRelation } from './cadSketchGraph';
 import { isCadImportData } from './cadImportData';
 import { compileCadSketchGraph } from './cadSketchGraphGeometry';
-import { cadPathClosureTolerance } from './cadAnalyticSegments';
+import { cadPathClosureTolerance, cadPathTangentContact } from './cadAnalyticSegments';
 import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
 import { resolveCadSketchGraphJoints, resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
 import { evaluateCadScalar } from './cadExpression';
@@ -156,13 +156,6 @@ function extent(segment: PathSegment): Point2[] {
 function assertEndpointRange(point: Point2, operation: 'trim' | 'extend'): void {
   if (!Value.Check(boundary.properties.position, [point.x, point.y])) throw precision(operation);
 }
-function tangent(segment: PathSegment, point: Readonly<Point2>, operation: 'trim' | 'extend' = 'trim'): Point2 {
-  const vector = segment.kind === 'line' ? { x: segment.end.x - segment.start.x, y: segment.end.y - segment.start.y }
-    : { x: -(point.y - segment.center.y), y: point.x - segment.center.x };
-  const length = Math.hypot(vector.x, vector.y);
-  if (!Number.isFinite(length) || length <= 1e-7) throw precision(operation);
-  return { x: vector.x / length, y: vector.y / length };
-}
 function sameEndpointPair(edge: Pick<SourceLine, 'startPointId' | 'endPointId'>, pair: readonly string[]): boolean {
   return pair.length === 2 && (edge.startPointId === pair[0] && edge.endPointId === pair[1] || edge.startPointId === pair[1] && edge.endPointId === pair[0]);
 }
@@ -255,12 +248,20 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
   const joint = resolveCadSketchGraphJoints(graph, numericPoints), events: Event[] = [];
   const support = query.kind === 'extend' && segment.kind === 'arc'
     ? createCircleSegment({ id: segment.id, source: segment.source, center: segment.center, radius: segment.radius }) : null;
+  const endpointIds = (id: string) => { const entity = graph.entities.find(item => item.id === id); return entity && entity.kind !== 'circle' ? [entity.startPointId, entity.endPointId] : []; };
+  /** The arrangement's tangency rule, so trims and cells agree at every sketch position; declared joints are topology. */
+  const assertTransverse = (reach: PathSegment, other: PathSegment, tolerance: number) => {
+    const contact = cadPathTangentContact(reach, other, tolerance), own = endpointIds(segment.id);
+    if (contact && !endpointIds(other.id).some(id => own.some(mine => joint(mine) === joint(id)) && numericPoints.has(id) && distance(numericPoints.get(id)!, contact) <= tolerance)) throw ambiguous(operation);
+  };
   for (const other of segments) {
     if (other.id === segment.id) continue;
     const tolerance = cadPathClosureTolerance([...extent(support ?? segment), ...extent(other)]);
     const result = query.kind === 'extend' && query.segment.kind === 'line' ? classifyLineRayPathSegmentIntersection(query.segment, other, query.end, tolerance)
       : classifyParameterizedPathSegmentIntersection(support ?? segment, other, tolerance);
     if (result.kind === 'overlap') throw ambiguous(operation);
+    // A line extension's span is only known per hit; trims and arc supports also catch rounded near-misses.
+    if (query.kind !== 'extend' || segment.kind !== 'line') assertTransverse(support ?? segment, other, tolerance);
     if (result.kind !== 'points') continue;
     const hits = result.points.map(hit => ({ hit, parameter: query.kind === 'extend' && segment.kind === 'arc' ? arcOutwardParameter(segment, hit.point, query.end)
       : segment.kind === 'circle' ? cadSketchCircleTrimParameter(segment, hit.point) : hit.leftParameter }))
@@ -305,8 +306,7 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
         if (Math.abs(distance(point, other.center) - other.radius) > tolerance) throw precision(operation);
       } else if (hit.rightParameter === null || hit.rightParameter < 0 || hit.rightParameter > 1
         || distance(point, at(other, hit.rightParameter)) > tolerance) throw precision(operation);
-      const u = tangent(segment, point, operation), v = tangent(other, point, operation);
-      if (Math.abs(u.x * v.y - u.y * v.x) <= 64 * Number.EPSILON) throw ambiguous(operation);
+      if (query.kind === 'extend' && segment.kind === 'line') assertTransverse(createLineSegment({ ...segment, [query.end]: point }), other, tolerance);
       if (query.kind === 'trim' ? segment.kind !== 'circle' && (t === 0 || t === 1) : segment.kind === 'line' && t === (query.end === 'start' ? 0 : 1)) continue;
       const exact = endpointPointId ? numericPoints.get(endpointPointId) : point;
       if (!exact || distance(exact, point) > tolerance) throw precision(operation);

@@ -2,8 +2,8 @@ import type { CadPathSegment } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadAngle, evaluateCadScalar } from './cadExpression';
 import type { DxfEntity, DxfPoint } from '@/domain/dxf/types';
-import { createArcSegment, createLineSegment } from '@/domain/path-intel/segments';
-import type { PathSegment } from '@/domain/path-intel/types';
+import { angleIsOnSweep, createArcSegment, createLineSegment, distance } from '@/domain/path-intel/segments';
+import type { PathSegment, Point2 } from '@/domain/path-intel/types';
 
 export type ResolvedCadPathSegment =
   | { readonly kind: 'line'; readonly start: readonly [number, number]; readonly end: readonly [number, number] }
@@ -52,4 +52,43 @@ export function cadPathClosureTolerance(points: readonly DxfPoint[]): number {
   let scale = 1;
   for (const point of points) scale = Math.max(scale, Math.abs(point.x), Math.abs(point.y));
   return Math.max(1e-12, 8 * Number.EPSILON * scale);
+}
+
+function onSpan(segment: PathSegment, point: Point2, tolerance: number): boolean {
+  if (segment.kind === 'circle') return true;
+  if (segment.kind === 'arc') return angleIsOnSweep(Math.atan2(point.y - segment.center.y, point.x - segment.center.x), segment.startAngleRadians, segment.sweepRadians, tolerance / segment.radius);
+  const dx = segment.end.x - segment.start.x, dy = segment.end.y - segment.start.y, length = Math.hypot(dx, dy);
+  const along = ((point.x - segment.start.x) * dx + (point.y - segment.start.y) * dy) / length;
+  return along >= -tolerance && along <= length + tolerance;
+}
+
+/**
+ * Where two line/circular loci touch within `tolerance` of tangency, on both spans.
+ * Their gap never exceeds the tolerance there, so a numeric miss, one root or two close
+ * crossings are all one unresolvable tangent contact, independent of sketch position.
+ */
+export function cadPathTangentContact(a: PathSegment, b: PathSegment, tolerance: number): Point2 | null {
+  if (a.kind === 'line' && b.kind === 'line') return null;
+  const [line, round] = a.kind === 'line' ? [a, b] : b.kind === 'line' ? [b, a] : [null, a];
+  if (round.kind === 'line') return null;
+  let contact: Point2 | null = null;
+  if (line) {
+    const dx = line.end.x - line.start.x, dy = line.end.y - line.start.y, length = Math.hypot(dx, dy);
+    const offset = ((round.center.x - line.start.x) * dy - (round.center.y - line.start.y) * dx) / length;
+    if (Math.abs(Math.abs(offset) - round.radius) <= tolerance && Math.abs(offset) > 0) {
+      const scale = round.radius / Math.abs(offset);
+      contact = { x: round.center.x - offset * dy / length * scale, y: round.center.y + offset * dx / length * scale };
+    }
+  } else {
+    const other = round === a ? b : a;
+    if (other.kind === 'line') return null;
+    const gap = distance(round.center, other.center);
+    if (gap > 0) for (const reach of [round.radius + other.radius, round.radius - other.radius, other.radius - round.radius]) {
+      if (reach <= 0 || Math.abs(gap - Math.abs(reach)) > tolerance) continue;
+      const toward = reach === other.radius - round.radius ? -1 : 1;
+      contact = { x: round.center.x + toward * round.radius * (other.center.x - round.center.x) / gap, y: round.center.y + toward * round.radius * (other.center.y - round.center.y) / gap };
+      break;
+    }
+  }
+  return contact && onSpan(a, contact, tolerance) && onSpan(b, contact, tolerance) ? contact : null;
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph } from '../cadSketchGraph';
 import { deriveCadSketchArrangement } from '../cadSketchArrangement';
+import { prepareCadSketchTrim } from '../cadSketchTrimExtend';
 import { compileCadSketchGraph } from '../cadSketchGraphGeometry';
 import { classifyPathSegmentIntersection } from '@/domain/path-intel/intersections';
 
@@ -159,6 +160,25 @@ describe('analytic sketch arrangement', () => {
     expect(areas[0]).toBeCloseTo(overlapArea, 10);
     expect(areas[1]).toBeCloseTo(12.5 * Math.PI - overlapArea, 10);
     expect(areas[2]).toBeCloseTo(16 * Math.PI - overlapArea, 10);
+  });
+
+  it('treats a rounded tangent contact identically at every sketch position, rotation and radius in cells and trims', () => {
+    // Float rounding leaves the line a hair inside, outside or exactly on the circle; none may change the topology.
+    for (const offset of [0, 1000, 12345.678, 98765.4321]) for (const degrees of [0, 17, 30, 61]) for (const radius of [5, 0.37]) {
+      const t = degrees * Math.PI / 180, c = [offset + 3.21, offset - 1.7], normal = [-Math.sin(t), Math.cos(t)], along = [Math.cos(t), Math.sin(t)];
+      const at = (s: number, n: number) => [c[0] + n * normal[0] + s * along[0], c[1] + n * normal[1] + s * along[1]];
+      const graph = parseCadSketchGraph({ points: [{ id: 'c', position: c }, { id: 'p', position: at(-4 * radius, radius) },
+        { id: 'q', position: at(4 * radius, radius) }, { id: 'r', position: at(4 * radius, -2 * radius) }], entities: [
+        { id: 'disk', kind: 'circle', construction: false, centerPointId: 'c', radius },
+        { id: 'pq', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' },
+        { id: 'qr', kind: 'line', construction: false, startPointId: 'q', endPointId: 'r' },
+        { id: 'rp', kind: 'line', construction: false, startPointId: 'r', endPointId: 'p' }], relations: [] });
+      const result = deriveCadSketchArrangement(graph, {});
+      expect(result.cells, `${offset} ${degrees}° r${radius}`).toEqual([]);
+      expect(result.issues.some(issue => issue.code === 'ambiguous-tangency')).toBe(true);
+      expect(() => prepareCadSketchTrim({ graph, parameters: {}, entityId: 'pq', parameter: 0.1 }))
+        .toThrowError(expect.objectContaining({ code: 'ambiguous-sketch-trim' }));
+    }
   });
 
   it('reports tangent contacts and overlapping source ownership without fabricating cells', () => {

@@ -1,4 +1,4 @@
-import { cadAnalyticSegments, cadPathClosureTolerance, type ResolvedCadPathSegment } from './cadAnalyticSegments';
+import { cadAnalyticSegments, cadPathClosureTolerance, cadPathTangentContact, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 import type { CadSketchGraph, CadSketchGraphEntity } from './cadSketchGraph';
 import { compileCadSketchGraph } from './cadSketchGraphGeometry';
 import { evaluateCadScalar } from './cadExpression';
@@ -56,7 +56,8 @@ interface Vertex {
 interface Knot { parameter: number; vertex: Vertex }
 interface Source { entity: CadSketchGraphEntity; segment: PathSegment; knots: Knot[] }
 interface Edge { id: number; source: Source; from: Knot; to: Knot; segment: PathSegment }
-interface HalfEdge { edge: Edge; reversed: boolean; origin: Vertex; target: Vertex; angle: number; next: HalfEdge | null }
+/** `reach` bounds how far the outgoing direction is known: roundoff in it is about tolerance / reach radians. */
+interface HalfEdge { edge: Edge; reversed: boolean; origin: Vertex; target: Vertex; angle: number; reach: number; next: HalfEdge | null }
 interface Walk { boundary: CadSketchArrangementBoundary; halves: HalfEdge[]; component: number }
 const turn = 2 * Math.PI;
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
@@ -253,6 +254,11 @@ export function deriveCadSketchArrangement(graph: CadSketchGraph, parameters: Re
       // Broad-phase roundoff bounds must not become a physical coincidence/healing tolerance.
       const relation = classifyPathSegmentIntersection(other.segment, source.segment, 0);
       if (relation.kind === 'overlap') { issue('overlap', [other.entity.id, source.entity.id], 'Overlapping analytic loci require an explicit source-ownership decision.'); continue; }
+      const contact = cadPathTangentContact(other.segment, source.segment, epsilon);
+      if (contact && !endpointIds(other).some((id, index) => endpointIds(source).some(otherId => declaredJoints.get(id) === declaredJoints.get(otherId))
+        && distance(at(other.segment, index), contact) <= epsilon)) {
+        issue('ambiguous-tangency', [other.entity.id, source.entity.id], 'A tangent contact has no unambiguous cell boundary.'); continue;
+      }
       for (const candidate of relation.points) {
         const candidateEvent = crossingEvent(other.segment, source.segment, candidate);
         const declaredEndpoint = endpointIds(other).some((id, left) => endpointIds(source).some((otherId, right) =>
@@ -288,8 +294,9 @@ export function deriveCadSketchArrangement(graph: CadSketchGraph, parameters: Re
       const id = edges.length, segment = subsegment(source.segment, from.parameter, to.parameter, `arrangement_${id}`);
       if (segment.kind !== 'circle' && segment.length <= cadPathClosureTolerance(boundsPoints(segment))) { issue('precision', [source.entity.id], 'Intersection events create an unresolved analytic edge.'); continue; }
       const edge: Edge = { id, source, from, to, segment };
-      const forward: HalfEdge = { edge, reversed: false, origin: root(from.vertex), target: root(to.vertex), angle: normalizeAngle(outgoingAngle(source.segment, from.parameter, false)), next: null };
-      const backward: HalfEdge = { edge, reversed: true, origin: root(to.vertex), target: root(from.vertex), angle: normalizeAngle(outgoingAngle(source.segment, to.parameter, true)), next: null };
+      const reach = source.segment.kind === 'line' ? segment.length : Math.min(source.segment.radius, segment.kind === 'circle' ? turn * segment.radius : segment.length);
+      const forward: HalfEdge = { edge, reversed: false, origin: root(from.vertex), target: root(to.vertex), angle: normalizeAngle(outgoingAngle(source.segment, from.parameter, false)), reach, next: null };
+      const backward: HalfEdge = { edge, reversed: true, origin: root(to.vertex), target: root(from.vertex), angle: normalizeAngle(outgoingAngle(source.segment, to.parameter, true)), reach, next: null };
       edges.push(edge); root(from.vertex).outgoing.push(forward); root(to.vertex).outgoing.push(backward);
     }
   }
@@ -297,11 +304,13 @@ export function deriveCadSketchArrangement(graph: CadSketchGraph, parameters: Re
   const vertices = [...new Set(edges.flatMap(edge => [root(edge.from.vertex), root(edge.to.vertex)]))];
   for (const node of vertices) {
     node.outgoing.sort((a, b) => a.angle - b.angle);
-    for (let index = 0; index < node.outgoing.length; index++) {
+    // Two outgoing edges have one cyclic order however they tie.
+    if (node.outgoing.length > 2) for (let index = 0; index < node.outgoing.length; index++) {
       const left = node.outgoing[index], right = node.outgoing[(index + 1) % node.outgoing.length];
       if (left === right) continue;
       const delta = normalizeAngle(right.angle - left.angle);
-      if (Math.min(delta, turn - delta) <= 64 * Number.EPSILON) issue('ambiguous-tangency', [left.edge.source.entity.id, right.edge.source.entity.id], 'Tangent outgoing edges have no unambiguous angular order.');
+      // Directions closer than the shared closure tolerance over the shorter reach are tangent at any sketch position.
+      if (Math.min(delta, turn - delta) <= Math.max(64 * Number.EPSILON, broadEpsilon / Math.min(left.reach, right.reach))) issue('ambiguous-tangency', [left.edge.source.entity.id, right.edge.source.entity.id], 'Tangent outgoing edges have no unambiguous angular order.');
     }
   }
   if (issues.length) return finish();
