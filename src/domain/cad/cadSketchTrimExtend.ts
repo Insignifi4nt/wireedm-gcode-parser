@@ -216,27 +216,19 @@ function partition(segment: OpenSegment, point: Point2, t: number): readonly [Op
     || Math.abs(first.sweepRadians + second.sweepRadians - segment.sweepRadians) * segment.radius > tolerance) throw precision();
   return [first, second];
 }
-function checkCircleArc(circle: Pick<CirclePathSegment, 'center' | 'radius'>, arc: ArcPathSegment, expected: number, tolerance: number): void {
-  const a = { x: arc.start.x - circle.center.x, y: arc.start.y - circle.center.y }, b = { x: arc.end.x - circle.center.x, y: arc.end.y - circle.center.y };
-  const cross = a.x * b.y - a.y * b.x, dot = a.x * b.x + a.y * b.y;
-  if (!(expected > 0 && expected < fullTurn) || !(arc.sweepRadians > 0 && arc.sweepRadians < fullTurn)
-    || Math.abs(arc.radius - circle.radius) > tolerance || Math.abs(distance(arc.center, arc.start) - circle.radius) > tolerance
-    || Math.abs(distance(arc.center, arc.end) - circle.radius) > tolerance
-    || Math.abs(arc.sweepRadians - expected) >= Math.PI || Math.abs(arc.sweepRadians - expected) * circle.radius > tolerance
-    || cross > 0 && arc.sweepRadians >= Math.PI || cross < 0 && arc.sweepRadians <= Math.PI || cross === 0 && dot >= 0) throw precision();
-}
 function circlePieces(circle: CirclePathSegment, previous: Event, next: Event): readonly [ArcPathSegment, ArcPathSegment] {
   const span = next.witness.parameter - previous.witness.parameter, sweep = (span > 0 ? span : 1 + span) * fullTurn;
   const tolerance = cadPathClosureTolerance([circle.center, previous.point, next.point]);
   if (distance(previous.point, next.point) <= Math.max(1e-7, tolerance)) throw precision();
-  const common = { id: circle.id, source: circle.source, center: circle.center, clockwise: false };
+  const common = { id: circle.id, source: circle.source, center: circle.center, clockwise: false }, source = { ...common, radius: circle.radius };
   const removed = createArcSegment({ ...common, start: previous.point, end: next.point });
   const survivor = createArcSegment({ ...common, start: next.point, end: previous.point });
-  checkCircleArc(circle, removed, sweep, tolerance); checkCircleArc(circle, survivor, fullTurn - sweep, tolerance);
+  checkArcPiece(source, removed, sweep, tolerance); checkArcPiece(source, survivor, fullTurn - sweep, tolerance);
   if (Math.abs(removed.sweepRadians + survivor.sweepRadians - fullTurn) * circle.radius > tolerance) throw precision();
   return [removed, survivor];
 }
-function checkArcPiece(source: ArcPathSegment, piece: ArcPathSegment, expected: number, tolerance: number, operation: 'trim' | 'extend' = 'trim'): void {
+/** A circle checks its pieces as a counterclockwise source arc. */
+function checkArcPiece(source: Pick<ArcPathSegment, 'center' | 'radius' | 'clockwise'>, piece: ArcPathSegment, expected: number, tolerance: number, operation: 'trim' | 'extend' = 'trim'): void {
   const a = { x: piece.start.x - source.center.x, y: piece.start.y - source.center.y }, b = { x: piece.end.x - source.center.x, y: piece.end.y - source.center.y };
   const direction = source.clockwise ? -1 : 1, cross = direction * (a.x * b.y - a.y * b.x), dot = a.x * b.x + a.y * b.y;
   const sweep = direction * piece.sweepRadians;
@@ -448,8 +440,8 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
         centerPointId: circle.centerPointId, startPointId: trim.cutPointIds[1], endPointId: trim.cutPointIds[0], direction: 'ccw' } : entity) });
     const actual = compileCadSketchGraph(candidate, parameters).segments.find(segment => segment.id === circle.id);
     if (actual?.kind !== 'arc') throw precision();
-    const source = { center: prepared.survivor.center, radius: evaluateCadScalar(circle.radius, parameters) };
-    checkCircleArc(source, actual, prepared.survivor.sweepRadians, cadPathClosureTolerance([actual.center, actual.start, actual.end]));
+    const source = { center: prepared.survivor.center, radius: evaluateCadScalar(circle.radius, parameters), clockwise: false };
+    checkArcPiece(source, actual, prepared.survivor.sweepRadians, cadPathClosureTolerance([actual.center, actual.start, actual.end]));
     return Object.freeze({ graph: candidate, retainedEntityId: circle.id, removedEntityId: null,
       cutPointIds: Object.freeze([trim.cutPointIds[0], trim.cutPointIds[1]] satisfies [string, string]) });
   }
