@@ -231,8 +231,10 @@
 .cad-grid-step { display: flex; align-items: center; gap: 5px; font-size: 10px; margin-left: 5px; color: var(--muted-foreground); }
 .cad-grid-step input { width: 55px; padding: 2px 4px; font-size: 12px; }
 .cad-sketch-instruction { position: absolute; bottom: 32px; left: 12px; right: 12px; display: flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid var(--border); background: var(--card); border-radius: 4px; font-size: 10px; color: var(--muted-foreground); }
-.cad-sketch-instruction > span { flex: 1; }
-.cad-sketch-instruction button { font-size: 12px; padding: 3px 6px; }
+/* The live prompt is the primary message; toggles and cancel stay secondary. */
+.cad-sketch-instruction > span { flex: 1; color: var(--foreground); font-size: 11px; font-weight: 500; }
+.cad-sketch-instruction .cad-check { margin: 0; font-size: 11px; }
+.cad-sketch-instruction button { font-size: 11px; font-weight: 400; padding: 3px 6px; }
 .cad-path-instruction { flex-wrap: wrap; }
 .cad-path-instruction > span { flex: 1 1 180px; }
 .cad-path-instruction button { flex-shrink: 0; }
