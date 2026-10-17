@@ -47,13 +47,17 @@ export function useCadSketchCommandSession<P extends CadSketchCommandSessionProp
   };
   /** Live check for deferred callbacks such as canvas picks; reads refs, never render-time values. */
   const closed = () => ended.current || applying.current || callbacks.current.interactionLocked || callbacks.current.document !== owner.document || callbacks.current.documentVersion !== owner.version;
-  return { owner, error, setError, cancel, submit, closed, submittedDocument: submitted.current, applying: submission.applying, sourceCurrent, blocked,
+  /** Ends the session without an edit, e.g. when nothing changed. */
+  const finish = (accept: () => void) => { if (!closed()) { ended.current = true; accept(); } };
+  return { owner, error, setError, cancel, submit, finish, closed, submittedDocument: submitted.current, applying: submission.applying, sourceCurrent, blocked,
     /** Live previews run only while this session may still apply. */
     previewEnabled: sourceCurrent && !props.interactionLocked && !submission.applying };
 }
 
 interface FormProps {
   label: string;
+  title?: string;
+  icon?: ReactNode;
   help: ReactNode;
   session: ReturnType<typeof useCadSketchCommandSession>;
   canApply: boolean;
@@ -65,11 +69,11 @@ interface FormProps {
 }
 
 /** Shared sketch command chrome: heading, Escape to cancel, Enter to apply, status line and actions. */
-export function CadSketchCommandForm({ label, help, session, canApply, issue, status, formRef, onSubmit, children }: FormProps) {
+export function CadSketchCommandForm({ label, title = label, icon, help, session, canApply, issue, status, formRef, onSubmit, children }: FormProps) {
   return <form ref={formRef} className="cad-property-form cad-sketch-profile-panel" aria-label={label} aria-busy={session.applying || undefined}
     onKeyDown={event => { if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); session.cancel(); } }}
     onSubmit={event => { event.preventDefault(); if (canApply && !session.blocked) onSubmit(); }}>
-    <div className="cad-sketch-profile-heading"><strong>{label}</strong><CadContextHelp label={label}>{help}</CadContextHelp></div>
+    <div className="cad-sketch-profile-heading">{icon}<strong>{title}</strong><CadContextHelp label={label}>{help}</CadContextHelp></div>
     {children}
     {status}
     {issue && <p className="cad-error" role="alert">{issue}</p>}
