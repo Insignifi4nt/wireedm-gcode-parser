@@ -1,0 +1,31 @@
+{
+  "version": "0.0.718",
+  "previousVersion": "0.0.717",
+  "postCompatibility": "preserved-output-storage-full-guidance",
+  "summary": "A save refused because storage is full now says so and explains how to keep working. Both storage adapters recognize quota failures (QuotaExceededError, NS_ERROR_DOM_QUOTA_REACHED and legacy codes 22 and 1014) and report them as a storage-full error that keeps the original error as its cause. Browser-cache workbenches point to backup, restore into a folder workbench, Unreferenced file cleanup and readable recovery export; folder workbenches ask for free disk space. When rollback of a partial save also fails, the retained recovery journal is unchanged and the failure message now includes the original and rollback causes, including the storage-full guidance. Rebuilding the browser-cache directory list no longer fails reads when storage is full, because that metadata is rebuilt from the stored files.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions or controller output. Error messages for full storage and for a failed saved-revision rollback change wording; error codes, transaction journals, rollback and recovery behavior are unchanged.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding or controller-file change.",
+    "installationAndStorage": "Browser-cache and folder adapters wrap writes and directory creation to classify quota failures; other failures pass through unchanged. No file is written, moved or deleted differently. A quota failure while repairing the browser-cache directory list is ignored so existing files stay readable.",
+    "verification": "Storage tests refuse writes in both adapters and check the guidance, pass-through of other failures, directory listing under full storage, and that every original is kept when a data write or its rollback is refused. Controller tests run generation into full browser-cache and folder storage, with and without a failed rollback, and check the retained journal, read-only recovery export without writes, and a clean reopen after space returns. Storage, workbench catalog, saved-revision and app suites (656 tests), tsc -b, npm run lint and npm run ui:check pass. Independently reviewed."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Posting code is untouched; Robofil 2.6.0 package and current-contract tests pass unchanged. No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Full browser storage or a full disk is reported clearly, with a way to keep working.",
+    "changes": [
+      "When browser storage is full, saves explain how to back up the workbench, move it into a folder or remove unreferenced files.",
+      "When the disk holding a folder workbench is full, saves ask you to free disk space and try again."
+    ],
+    "compatibility": "Posted programs, installed posts and saved projects are unchanged.",
+    "action": "No action needed."
+  }
+}
