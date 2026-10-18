@@ -7,6 +7,7 @@ import { buildChains } from '../chains';
 import { analyzeContours } from '../contours';
 import { clusterSegmentEndpoints } from '../endpointClusters';
 import { pathSegmentsFromDxfEntities } from '../fromDxfEntities';
+import { MAX_LISTED_SEGMENT_PAIRS } from '../intersections';
 import { planOperations } from '../planOperations';
 import { sanitizePathSegments } from '../sanitizeSegments';
 import { createLineSegment } from '../segments';
@@ -373,11 +374,15 @@ function crossingPairChains(pairs: number) {
 function analyzeCrossingPairs({ segments, chains }: ReturnType<typeof crossingPairChains>) {
   const { contours, diagnostics } = analyzeContours(chains, segments);
   const intersections = diagnostics.filter(({ code }) => code === 'intersecting-topology');
-  if (intersections.length !== chains.length / 2) throw new Error('Expected one crossing per pair.');
+  const pairs = chains.length / 2;
+  const listed = Math.min(pairs, MAX_LISTED_SEGMENT_PAIRS);
+  if (intersections.length !== listed + (pairs > listed ? 1 : 0)) throw new Error('Expected one crossing per listed pair.');
+  const contourIdsByCrossing = new Map(intersections.map((crossing) => [crossing, new Set(crossing.relatedContourIds)]));
   for (const [index, contour] of contours.entries()) {
-    const crossing = intersections[Math.floor(index / 2)];
+    // Pairs past the listing cap share the summary crossing.
+    const crossing = intersections[Math.min(Math.floor(index / 2), listed)];
     const linked = contour.diagnosticIds.filter((id) => id.startsWith('diag_intersection_'));
-    if (linked.length !== 1 || linked[0] !== crossing.id || !crossing.relatedContourIds?.includes(contour.id)) {
+    if (linked.length !== 1 || linked[0] !== crossing.id || !contourIdsByCrossing.get(crossing)?.has(contour.id)) {
       throw new Error(`Contour ${contour.id} is not linked to only its own crossing.`);
     }
   }

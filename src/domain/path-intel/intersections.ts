@@ -126,6 +126,23 @@ function classifyDetailedPathSegmentIntersection(
   return noIntersection();
 }
 
+/**
+ * False only where classification cannot report an overlap: a line with a circular segment,
+ * or two lines that fail the classifier's own parallel test.
+ */
+export function pathSegmentsMayOverlap(left: PathSegment, right: PathSegment) {
+  if (left.kind !== 'line' || right.kind !== 'line') return isCircular(left) && isCircular(right);
+  // Same operations as intersectLines, so the decision matches it exactly.
+  const leftVector = vector(left.start, left.end);
+  const rightVector = vector(right.start, right.end);
+  const leftLength = Math.hypot(leftVector.x, leftVector.y);
+  const rightLength = Math.hypot(rightVector.x, rightVector.y);
+  if (leftLength === 0 || rightLength === 0) return false;
+  const leftUnit = { x: leftVector.x / leftLength, y: leftVector.y / leftLength };
+  const rightUnit = { x: rightVector.x / rightLength, y: rightVector.y / rightLength };
+  return Math.abs(cross(leftUnit, rightUnit)) <= ROUNDING_FACTOR * Number.EPSILON;
+}
+
 export function pathSegmentsShareSweptLocus(
   left: PathSegment,
   right: PathSegment,
@@ -175,22 +192,98 @@ export function pathSegmentsShareSweptLocus(
   );
 }
 
+/** Segment pairs listed one by one; the rest share a summary that still blocks every chain they touch. */
+export const MAX_LISTED_SEGMENT_PAIRS = 1_000;
+
+/** Bounds for pairwise segment analysis (crossings and overlaps). */
+export interface SegmentPairAnalysis {
+  readonly maxListed?: number;
+  /**
+   * Whether a recorded error already covers these segments. Validation passes its saved
+   * diagnostics so pairs it already recorded are not reported again.
+   */
+  readonly isRecorded?: (segmentIds: readonly string[]) => boolean;
+}
+
+/**
+ * Lists the first `maxListed` reported pairs. Later pairs share one error relating every
+ * affected segment and chain, so blocking stays as complete as if every pair were listed
+ * while the diagnostics stay bounded.
+ */
+export function createSegmentPairReport<Detail>(
+  analysis: SegmentPairAnalysis,
+  diagnostic: {
+    readonly listed: (leftSegmentId: string, rightSegmentId: string, detail: Detail) => PathDiagnostic;
+    readonly omitted: (count: number, segmentIds: string[]) => PathDiagnostic;
+  }
+) {
+  const maxListed = analysis.maxListed ?? MAX_LISTED_SEGMENT_PAIRS;
+  const diagnostics: PathDiagnostic[] = [];
+  const omittedSegmentIds = new Set<string>();
+  let omittedCount = 0;
+  return {
+    add(leftSegmentId: string, rightSegmentId: string, detail: Detail) {
+      if (analysis.isRecorded?.([leftSegmentId, rightSegmentId])) return;
+      if (diagnostics.length < maxListed) {
+        diagnostics.push(diagnostic.listed(leftSegmentId, rightSegmentId, detail));
+        return;
+      }
+      omittedCount += 1;
+      omittedSegmentIds.add(leftSegmentId);
+      omittedSegmentIds.add(rightSegmentId);
+    },
+    finish() {
+      if (omittedCount > 0) {
+        diagnostics.push(diagnostic.omitted(omittedCount, uniqueSorted([...omittedSegmentIds])));
+      }
+      return diagnostics;
+    }
+  };
+}
+
 export function findPathSegmentIntersectionDiagnostics(
   segments: PathSegment[],
   chains: PathChain[],
-  options: PathPlanningOptions = {}
+  options: PathPlanningOptions = {},
+  analysis: SegmentPairAnalysis = {}
 ) {
   const resolved = resolvePathPlanningOptions(options);
   const epsilon = resolved.coincidenceEpsilon;
-  const diagnostics: PathDiagnostic[] = [];
   const allowedJunctions = adjacentJunctions(chains, segments);
   const chainIdsBySegmentId = chainIdsBySegment(chains);
+  const relatedChainIds = (segmentIds: readonly string[]) =>
+    uniqueSorted(segmentIds.flatMap((segmentId) => chainIdsBySegmentId.get(segmentId) ?? []));
+  let nextNumber = 1;
+  const nextId = () => `diag_intersection_${String(nextNumber++).padStart(4, '0')}`;
+  const report = createSegmentPairReport<Point2[]>(analysis, {
+    listed: (leftSegmentId, rightSegmentId, points) => {
+      const relatedSegmentIds = [leftSegmentId, rightSegmentId];
+      return {
+        id: nextId(),
+        severity: 'error',
+        code: 'intersecting-topology',
+        message: `Segments ${leftSegmentId} and ${rightSegmentId} meet outside a valid adjacent endpoint junction.`,
+        relatedSegmentIds,
+        relatedChainIds: relatedChainIds(relatedSegmentIds),
+        details: { points }
+      };
+    },
+    omitted: (count, relatedSegmentIds) => ({
+      id: nextId(),
+      severity: 'error',
+      code: 'intersecting-topology',
+      message: `${count} more segment pairs meet outside a valid adjacent endpoint junction; they are not listed individually.`,
+      relatedSegmentIds,
+      relatedChainIds: relatedChainIds(relatedSegmentIds),
+      details: { omittedPairCount: count }
+    })
+  });
   const index = new SpatialHash<IndexedSegment>({
     cellSize: spatialCellSizeForSegments(segments, epsilon),
     maxCellsPerBounds: 256
   });
 
-  segments.forEach((segment, segmentIndex) => {
+  for (const [segmentIndex, segment] of segments.entries()) {
     const candidates = index
       .queryBounds(expandBounds(segment.bounds, epsilon))
       .sort((left, right) => left.index - right.index);
@@ -215,24 +308,13 @@ export function findPathSegmentIntersectionDiagnostics(
       );
       if (disallowedPoints.length === 0) continue;
 
-      const relatedSegmentIds = [candidate.segment.id, segment.id];
-      diagnostics.push({
-        id: `diag_intersection_${String(diagnostics.length + 1).padStart(4, '0')}`,
-        severity: 'error',
-        code: 'intersecting-topology',
-        message: `Segments ${candidate.segment.id} and ${segment.id} meet outside a valid adjacent endpoint junction.`,
-        relatedSegmentIds,
-        relatedChainIds: uniqueSorted(
-          relatedSegmentIds.flatMap((segmentId) => chainIdsBySegmentId.get(segmentId) ?? [])
-        ),
-        details: { points: disallowedPoints.map(({ point }) => point) }
-      });
+      report.add(candidate.segment.id, segment.id, disallowedPoints.map(({ point }) => point));
     }
 
     index.insertBounds(segment.bounds, { index: segmentIndex, segment });
-  });
+  }
 
-  return diagnostics;
+  return report.finish();
 }
 
 export function spatialCellSizeForSegments(segments: PathSegment[], epsilon: number) {

@@ -1,8 +1,11 @@
 import {
   classifyPathSegmentIntersection,
+  createSegmentPairReport,
   expandBounds,
+  pathSegmentsMayOverlap,
   pathSegmentsShareSweptLocus,
-  spatialCellSizeForSegments
+  spatialCellSizeForSegments,
+  type SegmentPairAnalysis
 } from './intersections';
 import {
   nextDown,
@@ -26,7 +29,8 @@ interface IndexedSegment {
 
 export function sanitizePathSegments(
   segments: PathSegment[],
-  options: PathPlanningOptions = {}
+  options: PathPlanningOptions = {},
+  analysis: SegmentPairAnalysis = {}
 ): SegmentBuildResult {
   const resolved = resolvePathPlanningOptions(options);
   const epsilon = resolved.coincidenceEpsilon;
@@ -54,6 +58,18 @@ export function sanitizePathSegments(
     cellSize: spatialCellSizeForSegments(candidates, epsilon),
     maxCellsPerBounds: 256
   });
+  let nextNumber = diagnostics.length;
+  const report = createSegmentPairReport<[PathSegment, PathSegment]>(analysis, {
+    listed: (_left, _right, [left, right]) => overlapDiagnostic(nextNumber++, left, right),
+    omitted: (count, relatedSegmentIds) => ({
+      id: `diag_sanitize_${String(++nextNumber).padStart(4, '0')}`,
+      severity: 'error',
+      code: 'overlapping-segment',
+      message: `${count} more segment pairs overlap along a positive-length geometric locus; they are not listed individually.`,
+      relatedSegmentIds,
+      details: { omittedPairCount: count }
+    })
+  });
 
   for (const segment of candidates) {
     const nearby = index
@@ -74,9 +90,10 @@ export function sanitizePathSegments(
     }
 
     for (const candidate of nearby) {
+      if (!pathSegmentsMayOverlap(candidate.segment, segment)) continue;
       const relation = classifyPathSegmentIntersection(candidate.segment, segment, epsilon);
       if (relation.kind !== 'overlap') continue;
-      diagnostics.push(overlapDiagnostic(diagnostics.length, candidate.segment, segment));
+      report.add(candidate.segment.id, segment.id, [candidate.segment, segment]);
     }
 
     const retainedIndex = retained.length;
@@ -84,6 +101,7 @@ export function sanitizePathSegments(
     index.insertBounds(segment.bounds, { index: retainedIndex, segment });
   }
 
+  diagnostics.push(...report.finish());
   for (const [representativeIndex, duplicates] of duplicateGroups) {
     const representative = retained[representativeIndex];
     diagnostics.push(

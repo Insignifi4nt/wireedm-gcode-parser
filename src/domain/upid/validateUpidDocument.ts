@@ -442,13 +442,18 @@ function validateLiveGeometrySafety(
 ) {
   const options = liveGeometryOptions(optionsValue);
   const geometry = segments.map(normalizeSegmentDerivedGeometry);
-  const sanitized = sanitizePathSegments(geometry, options);
+  // Recorded pairs may be summarized, so a live pair is known when any recorded error
+  // with the same code relates both of its segments.
+  const sanitized = sanitizePathSegments(geometry, options, {
+    isRecorded: recordedSegmentCoverage(documentDiagnostics, 'overlapping-segment')
+  });
   const endpointClusters = clusterSegmentEndpoints(sanitized.segments, options);
   const endpointTopology = auditLiveEndpointTopology(endpointClusters.clusters);
   const intersections = findPathSegmentIntersectionDiagnostics(
     sanitized.segments,
     endpointTopology.junctionChains,
-    options
+    options,
+    { isRecorded: recordedSegmentCoverage(documentDiagnostics, 'intersecting-topology') }
   );
   const candidates = [
     ...sanitized.diagnostics,
@@ -584,11 +589,41 @@ function normalizeSegmentDerivedGeometry(segment: PathSegment): PathSegment {
   };
 }
 
+/** Whether one recorded error with this code relates every given segment. */
+function recordedSegmentCoverage(diagnostics: PathDiagnostic[], code: PathDiagnostic['code']) {
+  // Pairs nest by segment id; joined keys could collide, since ids may hold any separator.
+  const pairs = new Map<string, Set<string>>();
+  const groupsBySegmentId = new Map<string, Set<string>[]>();
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.severity !== 'error' || diagnostic.code !== code) continue;
+    const group = new Set(diagnostic.relatedSegmentIds ?? []);
+    if (group.size === 2) {
+      const [left, right] = [...group].sort();
+      const partners = pairs.get(left) ?? new Set<string>();
+      partners.add(right);
+      pairs.set(left, partners);
+      continue;
+    }
+    for (const segmentId of group) {
+      const groups = groupsBySegmentId.get(segmentId) ?? [];
+      groups.push(group);
+      groupsBySegmentId.set(segmentId, groups);
+    }
+  }
+  return (segmentIds: readonly string[]) => {
+    if (segmentIds.length === 0) return true;
+    if (segmentIds.length === 2 && pairs.size > 0) {
+      const [left, right] = segmentIds;
+      if (left < right ? pairs.get(left)?.has(right) : pairs.get(right)?.has(left)) return true;
+    }
+    return (groupsBySegmentId.get(segmentIds[0]) ?? [])
+      .some((group) => segmentIds.every((segmentId) => group.has(segmentId)));
+  };
+}
+
 function liveGeometryDiagnosticKey(diagnostic: PathDiagnostic) {
-  return [
-    diagnostic.code,
-    [...(diagnostic.relatedSegmentIds ?? [])].sort().join(',')
-  ].join('|');
+  // JSON keeps ids distinct whatever separators they contain.
+  return JSON.stringify([diagnostic.code, [...(diagnostic.relatedSegmentIds ?? [])].sort()]);
 }
 
 function validateOptions(value: unknown, schemaVersion: unknown, context: ValidationContext) {
