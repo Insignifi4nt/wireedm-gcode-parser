@@ -63,6 +63,18 @@ describe('exact contour containment', () => {
     expect(exterior).toMatchObject({ classification: 'exterior', childIds: [hole.id] });
     expect(hole).toMatchObject({ classification: 'hole', parentId: exterior.id, containmentDepth: 1 });
   });
+
+  it('places a contour label point inside its part however far the drawing lies from the origin', () => {
+    const outline = [[0, 0], [10, 0], [10, 3], [7, 3], [7, 10], [0, 10]];
+    for (const offset of [0, 1e8, 1e9, 1e12]) {
+      const document = createUpidFromDxfEntities([polygon(outline.map(([x, y]) => [x + offset, y + offset]))]);
+      expect(validateUpidDocument(document).structurallyValid).toBe(true);
+      const point = document.contours[0].representativePoint!;
+      // The L-shaped centroid is (321.5 / 79, 363.5 / 79) from the outline origin.
+      expect(point.x - offset).toBeCloseTo(321.5 / 79, 3);
+      expect(point.y - offset).toBeCloseTo(363.5 / 79, 3);
+    }
+  });
 });
 
 function polygon(points: number[][]): DxfEntity {
