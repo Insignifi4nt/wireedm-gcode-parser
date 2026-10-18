@@ -29,8 +29,8 @@ describe('path-intel endpoint clustering performance', () => {
       clusterSegmentEndpoints(sequentialLines(250));
       clusterSegmentEndpoints(oneThousand);
 
-      const oneThousandMs = median([0, 1, 2].map(() => timeClustering(oneThousand)));
-      const fourThousandMs = median([0, 1, 2].map(() => timeClustering(fourThousand)));
+      const oneThousandMs = fastest(() => timeClustering(oneThousand));
+      const fourThousandMs = fastest(() => timeClustering(fourThousand));
       const growthRatio = fourThousandMs / Math.max(oneThousandMs, 0.001);
 
       console.info(
@@ -48,12 +48,8 @@ describe('path-intel endpoint clustering performance', () => {
     () => {
       exerciseOversizedBounds(100);
 
-      const fourThousandMs = median(
-        [0, 1, 2].map(() => timeOversizedBounds(4_000))
-      );
-      const sixteenThousandMs = median(
-        [0, 1, 2].map(() => timeOversizedBounds(16_000))
-      );
+      const fourThousandMs = fastest(() => timeOversizedBounds(4_000));
+      const sixteenThousandMs = fastest(() => timeOversizedBounds(16_000));
       const growthRatio = sixteenThousandMs / Math.max(fourThousandMs, 0.001);
 
       console.info(
@@ -71,12 +67,8 @@ describe('path-intel endpoint clustering performance', () => {
     () => {
       exerciseMixedLocationPoints(100);
 
-      const oneThousandMs = median(
-        [0, 1, 2].map(() => timeMixedLocationPoints(1_000))
-      );
-      const fourThousandMs = median(
-        [0, 1, 2].map(() => timeMixedLocationPoints(4_000))
-      );
+      const oneThousandMs = fastest(() => timeMixedLocationPoints(1_000));
+      const fourThousandMs = fastest(() => timeMixedLocationPoints(4_000));
       const growthRatio = fourThousandMs / Math.max(oneThousandMs, 0.001);
 
       console.info(
@@ -97,12 +89,8 @@ describe('path-intel endpoint clustering performance', () => {
       sanitizeMixedSizeLines(mixedSizeLines(100));
       sanitizeMixedSizeLines(oneThousand);
 
-      const oneThousandMs = median(
-        [0, 1, 2, 3, 4].map(() => timeMixedSizeSanitization(oneThousand))
-      );
-      const fourThousandMs = median(
-        [0, 1, 2, 3, 4].map(() => timeMixedSizeSanitization(fourThousand))
-      );
+      const oneThousandMs = fastest(() => timeMixedSizeSanitization(oneThousand));
+      const fourThousandMs = fastest(() => timeMixedSizeSanitization(fourThousand));
       const growthRatio = fourThousandMs / Math.max(oneThousandMs, 0.001);
 
       console.info(
@@ -122,8 +110,8 @@ describe('path-intel endpoint clustering performance', () => {
       planNestedParts(nestedPartChains(50));
       planNestedParts(oneThousand);
 
-      const oneThousandMs = median([0, 1, 2].map(() => timeNestedPlanning(oneThousand)));
-      const fourThousandMs = median([0, 1, 2].map(() => timeNestedPlanning(fourThousand)));
+      const oneThousandMs = fastest(() => timeNestedPlanning(oneThousand));
+      const fourThousandMs = fastest(() => timeNestedPlanning(fourThousand));
       const growthRatio = fourThousandMs / Math.max(oneThousandMs, 0.001);
 
       console.info(
@@ -144,9 +132,9 @@ describe('path-intel endpoint clustering performance', () => {
       analyzeCrossingPairs(crossingPairChains(50));
       analyzeCrossingPairs(twoThousand);
 
-      // The fastest of several runs filters runner noise; the old scan grew about 16x here.
-      const twoThousandMs = Math.min(...[0, 1, 2, 3, 4].map(() => timeCrossingPairs(twoThousand)));
-      const eightThousandMs = Math.min(...[0, 1, 2, 3, 4].map(() => timeCrossingPairs(eightThousand)));
+      // The old scan grew about 16x here.
+      const twoThousandMs = fastest(() => timeCrossingPairs(twoThousand));
+      const eightThousandMs = fastest(() => timeCrossingPairs(eightThousand));
       const growthRatio = eightThousandMs / Math.max(twoThousandMs, 0.001);
 
       console.info(
@@ -167,12 +155,8 @@ describe('path-intel endpoint clustering performance', () => {
       validateDisjointOpenDocument(disjointOpenDocument(100));
       validateDisjointOpenDocument(oneThousand);
 
-      const oneThousandMs = median(
-        [0, 1, 2].map(() => timeDisjointOpenValidation(oneThousand))
-      );
-      const fourThousandMs = median(
-        [0, 1, 2].map(() => timeDisjointOpenValidation(fourThousand))
-      );
+      const oneThousandMs = fastest(() => timeDisjointOpenValidation(oneThousand));
+      const fourThousandMs = fastest(() => timeDisjointOpenValidation(fourThousand));
       const growthRatio = fourThousandMs / Math.max(oneThousandMs, 0.001);
 
       console.info(
@@ -231,8 +215,9 @@ function timeClustering(segments: ReturnType<typeof sequentialLines>) {
   return performance.now() - start;
 }
 
-function median(values: number[]) {
-  return values.slice().sort((left, right) => left - right)[Math.floor(values.length / 2)];
+/** Noise such as GC pauses or a busy runner only slows a run, so the fastest of several is the stable estimate. */
+function fastest(time: () => number, runs = 5) {
+  return Math.min(...Array.from({ length: runs }, time));
 }
 
 function timeOversizedBounds(count: number) {
