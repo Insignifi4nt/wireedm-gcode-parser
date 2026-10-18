@@ -90,7 +90,7 @@ export function EditorProgramTree(props: EditorProgramTreeProps) {
     } else if (event.key === 'ArrowUp' && index > 0) {
       event.preventDefault(); focus(visibleItems[index - 1]);
     } else if (event.key === 'ArrowRight' && hasChildren) {
-      event.preventDefault(); expanded ? focus(item.children[0]) : setExpanded(item, true);
+      event.preventDefault(); if (expanded) focus(item.children[0]); else setExpanded(item, true);
     } else if (event.key === 'ArrowLeft') {
       event.preventDefault();
       if (hasChildren && expanded) setExpanded(item, false);

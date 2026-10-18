@@ -4,8 +4,6 @@ import {
   createArcSegment,
   createLineSegment,
   distance,
-  orientedSegmentEnd,
-  orientedSegmentStart,
   pathCutLength,
   pathEndPoint,
   pathStartPoint,

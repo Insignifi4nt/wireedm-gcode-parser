@@ -1,4 +1,4 @@
-import type { CadProfile, CadSketchFeature, CadSketchProfile } from './cadDocument';
+import type { CadProfile, CadSketchFeature } from './cadDocument';
 import { CadError } from './cadError';
 import { resolveCadPluginProfile } from './plugins/cadPlugins';
 import { evaluateCadAngle, evaluateCadScalar } from './cadExpression';

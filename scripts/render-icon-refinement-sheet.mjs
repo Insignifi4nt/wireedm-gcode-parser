@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { Resvg } from '@resvg/resvg-js';
 import { iconSource } from './icon-source.mjs';

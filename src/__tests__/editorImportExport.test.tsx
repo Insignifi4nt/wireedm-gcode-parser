@@ -5,17 +5,12 @@ import { importExternalProgram as importExternalProgramService } from '@/domain/
 import { saveEditorProgram as saveEditorProgramService } from '@/domain/editor/saveEditorProgram';
 
 import {
-  FakeDirectoryHandle,
   cleanupAppTestContext,
   createAppTestContext,
-  dispatchTouchEvent,
   flushAsync,
-  parseSvgViewBox,
   renderApp,
-  setInputValue,
   setSelectValue,
   setTextAreaValue,
-  simpleLineDxf,
   type AppTestContext
 } from './appTestHelpers';
 

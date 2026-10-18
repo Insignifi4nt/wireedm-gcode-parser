@@ -1310,10 +1310,6 @@ export function EditorInspectorPanel({
   );
 }
 
-function formatLimit(value: number | null) {
-  return typeof value === 'number' ? `${value.toFixed(3)} mm` : '-';
-}
-
 function formatDxfUnitDeclaration(
   declaration: PathPlanningDocument['source']['unitDeclaration']
 ) {

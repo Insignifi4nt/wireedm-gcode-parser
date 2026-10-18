@@ -54,6 +54,7 @@ export function exportCadKernelStep(shapes: readonly { readonly shape: Shape3D; 
       try { cadKernelDisposeOwned(value); } catch (error) { cleanupError ??= error; }
     }
     // Finish releasing every resource and retain the actual export failure.
+    // oxlint-disable-next-line no-unsafe-finally -- cleanup failures surface only after a successful export.
     if (!failed && cleanupError !== undefined) throw cleanupError;
   }
 }

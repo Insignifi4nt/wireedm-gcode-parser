@@ -170,7 +170,7 @@ export function interpretGCodeBlock(
   if (unknownG || legacyOmitted || subprogram || referenceReturn || inspectionInvalidation) state.positionKnown = false;
   const ownsCoordinates = words.some(word => (word.letter === 'G' || (inspection && word.letter === 'M')) &&
     gcodeCommandDefinition(canonicalGCodeCommand(word.letter, word.value)).blocksImplicitMotion);
-  const unsupportedSyntax = wordScan.hasUnparsedText || /^\//.test(cleanedLine);
+  const unsupportedSyntax = wordScan.hasUnparsedText || cleanedLine.startsWith('/');
   if (unsupportedSyntax) state.motion = null;
   const suppressMotion = Boolean(context?.previewUnsupported || unsupportedSyntax || unknownG || legacyOmitted || subprogram || referenceReturn || inspectionSuspension ||
     (ownsCoordinates && hasCoordinates) || (state.plane !== 'XY' && hasCoordinates));

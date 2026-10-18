@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2024": true
+  },
+  "ignorePatterns": [
+    "vendor/**",
+    "packages/icons-react/dist/**",
+    "public/**",
+    "tmp/**"
+  ],
+  "rules": {
+    "no-control-regex": "off",
+    "unicorn/no-new-array": "off",
+    "unicorn/no-useless-spread": "off"
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/__tests__/**",
+        "src/testSetup.ts"
+      ],
+      "rules": {
+        "no-loss-of-precision": "off",
+        "typescript/no-this-alias": "off"
+      }
+    }
+  ]
+}

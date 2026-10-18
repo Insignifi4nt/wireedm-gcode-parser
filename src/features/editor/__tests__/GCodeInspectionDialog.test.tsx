@@ -110,7 +110,7 @@ describe('read-only G-code inspection', () => {
     click('Commands (5)'); click('Inspect G999 occurrences');
     expect(workspace.getAttribute('data-compact-active-pane')).toBe('code');
     expect(document.activeElement).toBe(document.querySelector('[data-inspection-line="3"]'));
-    const issues = [...document.querySelectorAll<HTMLButtonElement>('button')].find(item => /^Issues \(/.test(item.textContent ?? ''))!;
+    const issues = [...document.querySelectorAll<HTMLButtonElement>('button')].find(item => (item.textContent ?? '').startsWith('Issues ('))!;
     act(() => issues.click());
     expect(workspace.getAttribute('data-compact-active-pane')).toBe('issues');
     const issue = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="G-code inspection details"] button')]

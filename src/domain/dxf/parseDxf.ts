@@ -1499,10 +1499,6 @@ function angleDegrees(center: DxfPoint, point: DxfPoint) {
   return round((Math.atan2(point.y - center.y, point.x - center.x) * 180) / Math.PI);
 }
 
-function pointsEqual(a: DxfPoint, b: DxfPoint) {
-  return Math.abs(a.x - b.x) <= 1e-9 && Math.abs(a.y - b.y) <= 1e-9;
-}
-
 function isFiniteDxfEntity(entity: DxfEntity) {
   if (!isFiniteEntitySource(entity.source)) return false;
 

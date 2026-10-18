@@ -20,11 +20,9 @@ import type {
   PathElementProvenance,
   PathOperation,
   PathOperationOverrides,
-  PathPlanningDocument,
   PathPlanningOptions,
   PathSegment,
-  OperationThreadingTransition,
-  Point2
+  OperationThreadingTransition
 } from '@/domain/path-intel/types';
 import {
   pathSegmentHasConsistentArcAngularGeometry,
@@ -38,7 +36,6 @@ import {
   finiteNumber,
   finitePoint,
   finitePointOnly,
-  optionalString,
   type UpidValidationContext as ValidationContext
 } from './upidValidationPrimitives';
 
@@ -1586,7 +1583,6 @@ function validateIdentityAgreement(
   for (const element of pathElements) {
     const contour = contourMap.get(element.contourId);
     const chain = chainMap.get(element.chainId);
-    const operation = element.operationId ? operationMap.get(element.operationId) : null;
     if (contour && (element.id !== contour.id || element.chainId !== contour.chainId)) {
       context.add(
         'upid-identity-mismatch',

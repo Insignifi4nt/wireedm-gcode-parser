@@ -1129,7 +1129,7 @@ describe('CAD sketch interaction', () => {
     expect(currentSession.getSnapshot()).toMatchObject({ version: before.version, document: before.document, canUndo: false, workflowOpen: true });
     await input(field('Length'), '21');
     const nextCommand = preview.mock.calls.at(-1)?.[0]; if (!nextCommand || nextCommand.kind !== 'candidate') throw new Error('Missing latest candidate');
-    const pendingKind: 'waiting' = 'waiting', pendingPreview = { kind: pendingKind, owner: command.owner, featureId: 'pad', baseVersion: before.version, candidateId: 'candidate_2', definitionKey: cadFeatureCandidateKey(nextCommand.edits), lastValid: ready };
+    const pendingKind = 'waiting' as const, pendingPreview = { kind: pendingKind, owner: command.owner, featureId: 'pad', baseVersion: before.version, candidateId: 'candidate_2', definitionKey: cadFeatureCandidateKey(nextCommand.edits), lastValid: ready };
     await act(async () => replaceFeaturePreview(pendingPreview));
     expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-displayed-volumes')).toBe('40000');
     expect(button('Apply').disabled).toBe(true); expect(currentSession.getSnapshot().document).toBe(before.document);
