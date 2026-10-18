@@ -1,0 +1,24 @@
+{
+  "version": "0.0.703",
+  "previousVersion": "0.0.702",
+  "postCompatibility": "preserved-tooling-only",
+  "summary": "Moves type-checking to native TypeScript 7, tests to Vitest 5, adds oxlint and journey type-checking, removes dead code and rebalances browser-journey shards.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Development tooling only: TypeScript 7 rejects baseUrl, so path aliases now resolve through paths alone, and compiler-API scripts use @typescript/typescript6.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change. Program-tree keyboard expansion keeps the same behavior after a ternary statement became an if/else.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. Removed code was unreferenced: unused helpers, imports and an unused CAD tab state.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change and no cleanup of user files.",
+    "verification": "Rebased onto 0.0.702 main, which made sketch arc bounds exact and fixed the mixed path drawing journey that failed this PR's first CI run. Native tsc -b (now including e2e and playwright.config.ts), npm run lint with zero findings, the shared UI gate, icon checks, post-authoring docs check, production build with documentation and third-party source verification pass. Vitest 5 full suite: 5,675 of 5,677 tests pass locally; the two CAD workbench interaction tests that timed out at 5 s run in about 0.5 s on an idle machine and timed out only under heavy unrelated local CPU load (they also time out on main with Vitest 4 under the same load). The journeys using the shared onboarding helpers and the changed worker shim pass locally; CI runs every journey across four shards."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Faster internal checks; no workbench behavior changes.",
+    "changes": [
+      "Internal type, lint and test checks run faster and cover the browser journeys, so regressions are caught before release."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

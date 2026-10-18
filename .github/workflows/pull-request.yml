@@ -34,6 +34,7 @@ jobs:
           check-latest: true
           cache: npm
       - run: npm ci
+      - run: npm run lint
       - run: npm run ui:check
       - run: npm run icons:check
       - run: git fetch origin main
@@ -62,12 +63,13 @@ jobs:
       - run: npm test -- --run --shard=${{ matrix.shard }}/2
 
   build-and-browser:
-    name: Production build and browser journeys (${{ matrix.shard }}/2)
+    name: Production build and browser journeys (${{ matrix.shard }}/4)
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        # CAD journeys sort first and run longest; four shards keep each under ~5 minutes.
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -83,7 +85,7 @@ jobs:
           key: third-party-sources-${{ hashFiles('docs/thirdparty/*-sources.json', 'vendor/sketch-solver/planegcs-sources.json') }}
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e -- --workers=2 --shard=${{ matrix.shard }}/2
+      - run: npm run test:e2e -- --workers=2 --shard=${{ matrix.shard }}/4
         env:
           PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
       - name: Preserve browser failure reports

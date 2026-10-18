@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import ts from 'typescript';
+// TypeScript 7 ships no compiler API yet; AST tooling uses the TypeScript 6 package.
+import ts from '@typescript/typescript6';
 
 // An icon rename must never rename an axis, field, tooltip or operation value.
 const decorativeRemovals = new Map([

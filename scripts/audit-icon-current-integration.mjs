@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import ts from 'typescript';
+// TypeScript 7 ships no compiler API yet; AST tooling uses the TypeScript 6 package.
+import ts from '@typescript/typescript6';
 import { iconSource } from './icon-source.mjs';
 import * as iconComponents from '@wire-edm/icons-react';
 

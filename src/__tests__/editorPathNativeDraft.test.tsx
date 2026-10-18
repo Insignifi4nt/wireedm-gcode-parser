@@ -11,13 +11,11 @@ import {
   setCircleOperationCenterPierceLeadIn,
   setManualInitialWirePosition,
   setClosedOperationStartNearPoint,
-  setPathOperationClassification,
   setPathOperationTransitions,
-  reversePathOperation,
-  translatePathDocument
+  reversePathOperation
 } from '@/domain/path-editor/pathDocumentOperations';
 import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
-import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   createWorkbenchProjectDocument,
   type WorkbenchProjectDocument
@@ -3780,43 +3778,6 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
   }
 
-  async function clickProgramTreeRow(treeKey: string) {
-    const row = programTreeItem(treeKey)?.querySelector<HTMLElement>(
-      ':scope > [data-editor-program-tree-row]'
-    );
-    expect(row).not.toBeNull();
-
-    await act(async () => row?.click());
-    await flushAsync();
-  }
-
-  async function pressProgramTreeItem(treeKey: string, key: string) {
-    const item = programTreeItem(treeKey);
-    expect(item).not.toBeNull();
-
-    await act(async () => {
-      item?.focus();
-      item?.dispatchEvent(new KeyboardEvent('keydown', {
-        bubbles: true,
-        cancelable: true,
-        key
-      }));
-    });
-    await flushAsync();
-  }
-
-  async function doubleClickProgramTreeItem(treeKey: string) {
-    const row = programTreeItem(treeKey)?.querySelector<HTMLElement>(
-      ':scope > [data-editor-program-tree-row]'
-    );
-    expect(row).not.toBeNull();
-
-    await act(async () => {
-      row?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
-    });
-    await flushAsync();
-  }
-
   async function openWorkflowMenu(commandId: string) {
     await act(async () => {
       container.querySelector<HTMLButtonElement>(
@@ -4076,12 +4037,6 @@ function pathDocumentFromGappedRectangle() {
   });
 }
 
-function pathDocumentFromAmbiguousEndpoints() {
-  return dxfEntitiesToUpidDocument(parseDxf(ambiguousEndpointsDxf()).entities, {
-    endpointTolerance: 0.01
-  });
-}
-
 function pathDocumentFromArc() {
   return dxfEntitiesToUpidDocument(parseDxf(arcDxf()).entities);
 }
@@ -4196,22 +4151,6 @@ function gappedRectangleDxf() {
     ...lineDxf(10.004, 0, 10, 5),
     ...lineDxf(10, 5, 0, 5),
     ...lineDxf(0, 5, 0, 0),
-    '0',
-    'ENDSEC',
-    '0',
-    'EOF'
-  ].join('\n');
-}
-
-function ambiguousEndpointsDxf() {
-  return [
-    '0',
-    'SECTION',
-    '2',
-    'ENTITIES',
-    ...lineDxf(0, 0, 10, 0),
-    ...lineDxf(10.009, 0, 20, 0),
-    ...lineDxf(10.018, 0, 30, 0),
     '0',
     'ENDSEC',
     '0',

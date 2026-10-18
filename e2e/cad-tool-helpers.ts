@@ -19,33 +19,36 @@ export async function prepareCadTools(page: Page) {
   await expect(page.getByRole('button', { name: 'Design in CAD' })).toBeEnabled();
 }
 
-export async function rawCadToolCall(page: Page, name: string, input: unknown = {}) {
+/** Tool payloads are untyped JSON; journeys assert their shape at the point of use. */
+export type CadToolData = Record<string, any>;
+
+export async function rawCadToolCall(page: Page, name: string, input: unknown = {}): Promise<CadToolData> {
   return page.evaluate(async ({ name, input }) => {
     const tools = (document as Document & { __cadTestTools: Map<string, { execute(input: unknown): Promise<unknown> }> }).__cadTestTools;
     const tool = tools.get(name);
     if (!tool) throw new Error(`Missing registered tool ${name}`);
-    return tool.execute(input);
+    return tool.execute(input) as Promise<CadToolData>;
   }, { name, input });
 }
 
-export async function callCadTool(page: Page, name: string, input: unknown = {}): Promise<Record<string, unknown>> {
+export async function callCadTool(page: Page, name: string, input: unknown = {}): Promise<CadToolData> {
   const result = await rawCadToolCall(page, name, input);
   return cadToolData(name, result);
 }
 
-function cadToolData(name: string, result: unknown): Record<string, unknown> {
+function cadToolData(name: string, result: unknown): CadToolData {
   expect(result, `${name}: ${JSON.stringify(result)}`).toMatchObject({ ok: true });
   if (!result || typeof result !== 'object' || !('data' in result) || !result.data || typeof result.data !== 'object') throw new Error('Invalid tool result');
-  return result.data as Record<string, unknown>;
+  return result.data as CadToolData;
 }
 
-export async function cadContext(page: Page): Promise<Record<string, unknown> & { version: string; documentId: string }> {
+export async function cadContext(page: Page): Promise<CadToolData & { version: string; documentId: string }> {
   const value = await callCadTool(page, 'cad_get_context');
   if (!('version' in value) || typeof value.version !== 'string' || !('documentId' in value) || typeof value.documentId !== 'string') throw new Error('Invalid CAD context');
   return { ...value, version: value.version, documentId: value.documentId };
 }
 
-export async function captureCadPreview(page: Page, expectedVersion: string): Promise<Record<string, unknown>> {
+export async function captureCadPreview(page: Page, expectedVersion: string): Promise<CadToolData> {
   const result = await rawCadToolCall(page, 'cad_capture_preview', { expectedVersion });
   if (result && typeof result === 'object' && 'ok' in result && result.ok === false
       && 'error' in result && result.error && typeof result.error === 'object'

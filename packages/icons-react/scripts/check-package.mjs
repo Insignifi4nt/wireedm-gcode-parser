@@ -65,6 +65,7 @@ export const examples = [<AddIcon {...props} />, <PadIcon aria-label="Extrude" /
   assert.equal(installed.sideEffects, false);
   console.log(`Packed ${iconSource.length} icons; isolated consumer ESM/types resolve; AddIcon bundle ${bundle.outputFiles[0].contents.length} bytes retains one drawing and no dynamic catalog.`);
 } finally {
+  // oxlint-disable-next-line no-unsafe-finally -- refusing to delete an unexpected directory must win.
   if (!resolve(scratch).startsWith(`${temporaryRoot}${sep}`) || !scratch.split(sep).at(-1)?.startsWith('wire-edm-icons-')) throw new Error('Invalid package-check cleanup directory.');
   rmSync(scratch, { recursive: true, force: true });
 }

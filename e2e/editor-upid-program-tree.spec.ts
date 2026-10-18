@@ -3,6 +3,7 @@ import { reloadEditorAndReturnToLibrary } from './fixtures/navigation';
 
 import { clearWorkbenchCache } from './fixtures/workbench-cache';
 import { confirmPendingDxfImport } from './dxf-import';
+import { dismissOnboarding, openReadyWorkbench } from './fixtures/onboarding';
 
 test('round-trips an exported UPID through a clean browser cache with execution order and provenance', async ({ page }) => {
   await importTwoContourDxf(page, 'tree-portable-round-trip.dxf');
@@ -25,10 +26,10 @@ test('round-trips an exported UPID through a clean browser cache with execution 
   await exportButton.click();
   await page.getByRole('menuitem', { name: 'Export', exact: true }).click();
   await page.waitForFunction(() => (
-    typeof (window as Window & { __capturedTextDownload?: { text?: string } }).__capturedTextDownload?.text === 'string'
+    typeof (window as unknown as Window & { __capturedTextDownload?: { text?: string } }).__capturedTextDownload?.text === 'string'
   ));
   const captured = await page.evaluate(() => (
-    (window as Window & { __capturedTextDownload: { name: string; text: string } }).__capturedTextDownload
+    (window as unknown as Window & { __capturedTextDownload: { name: string; text: string } }).__capturedTextDownload
   ));
   const portableProject = Buffer.from(captured.text);
   expect(captured.name).toMatch(/\.upid\.json$/);
@@ -52,7 +53,7 @@ test('round-trips an exported UPID through a clean browser cache with execution 
 async function captureNextTextDownload(page: Page) {
   await page.evaluate(() => {
     const capture: { name: string; text?: string } = { name: '' };
-    (window as Window & { __capturedTextDownload?: typeof capture }).__capturedTextDownload = capture;
+    (window as unknown as Window & { __capturedTextDownload?: typeof capture }).__capturedTextDownload = capture;
     const createObjectUrl = URL.createObjectURL.bind(URL);
     URL.createObjectURL = (object: Blob | MediaSource) => {
       if (object instanceof Blob) void object.text().then((text) => { capture.text = text; });
@@ -95,21 +96,14 @@ test('keeps imported NC programs in the machine-program editor through edit, sav
   await captureNextTextDownload(page);
   await page.getByRole('button', { name: 'Export normalized ISO' }).click();
   await page.waitForFunction(() => (
-    typeof (window as Window & { __capturedTextDownload?: { text?: string } }).__capturedTextDownload?.text === 'string'
+    typeof (window as unknown as Window & { __capturedTextDownload?: { text?: string } }).__capturedTextDownload?.text === 'string'
   ));
   const captured = await page.evaluate(() => (
-    (window as Window & { __capturedTextDownload: { name: string; text: string } }).__capturedTextDownload
+    (window as unknown as Window & { __capturedTextDownload: { name: string; text: string } }).__capturedTextDownload
   ));
   expect(captured.name).toMatch(/^normalized-\d{4}-\d{2}-\d{2}\.iso$/);
   expect(captured.text).toMatch(/X24(?:\.0+)?(?:\s|$)/);
 });
-
-async function openReadyWorkbench(page: Page) {
-  await page.goto('/');
-  await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
-  await expect(page.locator('input[aria-label="Machine program file"]')).toBeEnabled();
-  await dismissOnboarding(page);
-}
 
 async function importTwoContourDxf(page: Page, name: string) {
   await openReadyWorkbench(page);
@@ -134,12 +128,6 @@ async function programOperationLabels(page: Page) {
   ).evaluateAll((operations) =>
     operations.map((operation) => operation.querySelector<HTMLElement>(':scope > div span[title]')?.innerText)
   );
-}
-
-async function dismissOnboarding(page: Page) {
-  const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
-  await onboarding.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
-  if (await onboarding.isVisible()) await onboarding.getByRole('button', { name: 'Go Build!' }).click();
 }
 
 function twoContourDxf() {

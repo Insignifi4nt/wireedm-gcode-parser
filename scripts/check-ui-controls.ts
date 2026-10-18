@@ -1,7 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
+// TypeScript 7 ships no compiler API yet; AST tooling uses the TypeScript 6 package.
+import ts from '@typescript/typescript6';
 
 const owners: Record<string, string> = {
   button: 'src/components/ui/button.tsx', input: 'src/components/ui/input.tsx',

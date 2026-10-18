@@ -12,7 +12,6 @@ import {
   useState,
   type CSSProperties,
   type MouseEvent,
-  type PointerEvent,
   type ReactNode
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -93,7 +92,6 @@ import type {
   PathPlanningDocument
 } from '@/domain/path-intel/types';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
-import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import {
   deriveActiveMachiningOperations,
   setMachiningSpanParticipation,
@@ -230,7 +228,6 @@ import {
   EDITOR_COMMAND_REGISTRY,
   EDITOR_WORKFLOW_MENU_TITLES,
   EDITOR_WORKSPACE_PANEL_DESCRIPTIONS,
-  EDITOR_WORKSPACE_PANEL_TITLES,
   INSPECTOR_WORKSPACE_PANEL_IDS,
   PATH_WORKSPACE_PANEL_IDS,
   SET_START_COMMAND,
@@ -3926,8 +3923,4 @@ function programTreeKeyForOperation(operationId: string | null) {
 
 function nextMeasurementPointId(currentLength: number) {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${currentLength}`;
-}
-
-function formatCoordinateDraft(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(3);
 }

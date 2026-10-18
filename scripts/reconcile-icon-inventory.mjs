@@ -244,15 +244,6 @@ channels.glyphCandidates = rowsFor('glyphCandidates', audit.glyphCandidates || [
   return setExcluded(row, 'excluded-text-notation', 'Text/math/parser/status copy; punctuation, units, coordinates, or wording is not a pictogram.');
 });
 channels.assets = rowsFor('assets', audit.assets || [], (row, r) => setExcluded(row, 'excluded-content-asset', `Raster content asset (${r.bytes} bytes, sha256 ${r.sha256}); retained as content artwork rather than converted into a UI icon.`));
-
-function markdownTableRows(markdown, headingRegex, rowRegex) {
-  const start = markdown.search(headingRegex);
-  if (start < 0) return [];
-  const tail = markdown.slice(start);
-  const sectionEnd = tail.search(/\n##?\s/);
-  const section = sectionEnd >= 0 ? tail.slice(0, sectionEnd) : tail;
-  return section.split(/\r?\n/).map((line) => lineRegex.exec(line)).filter(Boolean);
-}
 const expanded = [];
 if (inventoryMarkdown) {
   for (const match of inventoryMarkdown.matchAll(/^\| `(use\.[0-9a-f]{12}\.([^`]+))` \|(.+)$/gm)) {
@@ -297,7 +288,7 @@ if (inventoryMarkdown) {
   }
 }
 const variantRoutesText = inventoryMarkdown.match(/Variant routes:\s*\n([\s\S]*?)\n\| Renderer call \|/)?.[1] || '';
-const routeGuidance = variantRoutesText.split(/\r?\n/).filter((x) => /^- /.test(x)).map((x) => x.slice(2).trim());
+const routeGuidance = variantRoutesText.split(/\r?\n/).filter((x) => x.startsWith('- ')).map((x) => x.slice(2).trim());
 
 const expandedCounts = {
   expandedVariants: expanded.length,

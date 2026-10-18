@@ -209,7 +209,6 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const [newFeature, setNewFeature] = useState<CadFeature | null>(null);
   const [tool, setTool] = useState<SketchTool>('select');
   const [construction, setConstruction] = useState(false);
-  const [tab, setTab] = useState<'model' | 'parameters'>('model');
   const [fileMenu, setFileMenu] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);

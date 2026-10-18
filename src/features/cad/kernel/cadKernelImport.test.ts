@@ -6,7 +6,7 @@ import { exportSTEP, getOC, makeBox, makeCompound, makePolygon, setOC } from 're
 import { cadBytesToBase64, isCadSolidImportResult, type CadSolidImportSource } from '../../../domain/cad/cadImports';
 import type { CadDocument, CadFeature } from '../../../domain/cad/cadDocument';
 import { parseCadDocument } from '../../../domain/cad/cadSchema';
-import { loadCadSolidImport, prepareCadSolidImport } from './cadKernelImport';
+import { prepareCadSolidImport } from './cadKernelImport';
 import { buildCadKernelModel } from './cadKernelModel';
 import { createCadKernelRuntime } from './cadKernelRuntime';
 import { isCadKernelReply } from './cadKernelProtocol';

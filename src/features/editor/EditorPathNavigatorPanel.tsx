@@ -2723,7 +2723,6 @@ function renderSegmentRow(
                       role: pointPresentation.selectableRole,
                       segment,
                       hoveredPathElement,
-                      isSaving,
                       selectedPathElement
                     })
                   : renderGeometryPointRow(
@@ -2743,7 +2742,6 @@ function renderSegmentRow(
 function renderPointRow({
   hoveredPathElement,
   index,
-  isSaving,
   label,
   onHoverPathElement,
   onSelectPathElement,
@@ -2757,7 +2755,6 @@ function renderPointRow({
 }: {
   hoveredPathElement: EditorPathElementRef | null;
   index: number;
-  isSaving: boolean;
   label: string;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;

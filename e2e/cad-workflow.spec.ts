@@ -617,7 +617,6 @@ test('View drawer and floating configuration preserve pending dimensions and can
   const { draft } = await createBox(page);
   await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'select-feature', featureId: 'pad' } });
   const length = page.getByRole('textbox', { name: 'Length mm', exact: true });
-  const inspector = page.getByRole('complementary', { name: 'Feature properties' });
   const canvas = page.locator('.cad-viewport canvas');
   const originalBounds = await canvas.boundingBox();
   await editScalarRelation(page, 'Length', 'height + 2');
@@ -771,7 +770,7 @@ test('an imported path is selected by its interior and edited atomically through
   const viewport = await call(page, 'cad_get_viewport', { expectedVersion: current.version });
   const view = viewport.view;
   if (!view || typeof view !== 'object' || !('mode' in view) || view.mode !== 'sketch' || !('centerMm' in view)
-    || !Array.isArray(view.centerMm) || view.centerMm.length !== 2 || view.centerMm.some(value => typeof value !== 'number' || !Number.isFinite(value))) {
+    || !Array.isArray(view.centerMm) || view.centerMm.length !== 2 || view.centerMm.some((value: unknown) => typeof value !== 'number' || !Number.isFinite(value))) {
     throw new Error('Missing current sketch world centre');
   }
   const centerMm: [number, number] = [view.centerMm[0], view.centerMm[1]];
@@ -1287,7 +1286,7 @@ test('far-origin imported Sketch renders inside free pixels and keeps its view a
   const framed = await call(page, 'cad_get_viewport', { expectedVersion: accepted.version });
   const view = framed.view;
   if (!view || typeof view !== 'object' || !('centerMm' in view) || !Array.isArray(view.centerMm)
-    || view.centerMm.length !== 2 || !view.centerMm.every(value => typeof value === 'number' && Number.isFinite(value))
+    || view.centerMm.length !== 2 || !view.centerMm.every((value: unknown) => typeof value === 'number' && Number.isFinite(value))
     || !('heightSpanMm' in view) || typeof view.heightSpanMm !== 'number') throw new Error('Missing exact public Sketch frame');
   const initialFrame = { centerMm: [...view.centerMm], heightSpanMm: view.heightSpanMm };
   const feature = await call(page, 'cad_get_feature', { expectedVersion: accepted.version, featureId: imported.sketchId });

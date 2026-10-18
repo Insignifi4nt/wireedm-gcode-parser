@@ -11,14 +11,12 @@ import { buildContourDisplayNames } from '@/domain/path-intel/pathNaming';
 import { planOperations } from '@/domain/path-intel/planOperations';
 import { sanitizePathSegments } from '@/domain/path-intel/sanitizeSegments';
 import {
-  arcParameterAtPoint,
   createArcSegment,
   createCircleSegment,
   createLineSegment,
   distance,
   endpointKey,
   normalizeAngle,
-  orientedArcClockwise,
   orientedArcSweep,
   orientedSegmentEnd,
   orientedSegmentStart,
@@ -40,14 +38,12 @@ import {
   operationExitPoint as resolvedOperationExitPoint,
   operationTransitionCutLength
 } from '@/domain/path-intel/operationTransitions';
-import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import {
   inferPathPoint,
   nearestPointOnSegment,
   type InferredPathPoint
 } from '@/domain/path-editor/pathPointInference';
 import type {
-  ArcPathSegment,
   CirclePathSegment,
   ContourClassification,
   EndpointClusterId,
@@ -1562,10 +1558,6 @@ function planMetrics(plan: OperationPlan) {
     totalCutLength: plan.operations.reduce((total, operation) => total + operation.metrics.cutLength, 0),
     totalRapidLength: plan.operations.reduce((total, operation) => total + operation.metrics.rapidInLength, 0)
   };
-}
-
-function operationEntryPoint(operation: PathOperation) {
-  return resolvedOperationEntryPoint(operation);
 }
 
 function refreshOperationTransitions(operation: PathOperation) {

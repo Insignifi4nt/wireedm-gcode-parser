@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import ts from 'typescript';
+// TypeScript 7 ships no compiler API yet; AST tooling uses the TypeScript 6 package.
+import ts from '@typescript/typescript6';
 import { describe, expect, it } from 'vitest';
 
 describe('published post event payloads', () => {

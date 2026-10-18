@@ -2,18 +2,13 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  FakeDirectoryHandle,
   cleanupAppTestContext,
   createAppTestContext,
-  dispatchTouchEvent,
   enableAutoOpenEditorWorkspacePanels,
   flushAsync,
-  parseSvgViewBox,
   renderApp,
   setInputValue,
-  setSelectValue,
   setTextAreaValue,
-  simpleLineDxf,
   type AppTestContext
 } from './appTestHelpers';
 

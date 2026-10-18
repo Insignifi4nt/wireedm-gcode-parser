@@ -10,7 +10,7 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const failure = new Error('Failed to fetch dynamically imported module');
-function BrokenWorkspace() { throw failure; return null; }
+function BrokenWorkspace(): never { throw failure; }
 function props(): Omit<CadWorkspaceBoundaryProps, 'children'> {
   return { documentName: 'Accepted part', busy: false, onSave: vi.fn(async () => undefined), onDownloadDocument: vi.fn(), onFailure: vi.fn() };
 }

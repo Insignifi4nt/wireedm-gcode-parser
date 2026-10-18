@@ -2,7 +2,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ContextType } from 'react';
 import { CloseIcon, ConfirmIcon, SelectIcon } from '@wire-edm/icons-react';
-import type { CadDocument, CadFeature, CadPlane, CadProfile, CadScalar, CadSketchProfile } from '@/domain/cad/cadDocument';
+import type { CadDocument, CadFeature, CadPlane, CadScalar, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
 import { resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
 import { cadSketchSourceAvailability } from '@/domain/cad/cadSketchSources';
