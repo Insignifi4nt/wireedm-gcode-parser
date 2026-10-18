@@ -1,0 +1,24 @@
+{
+  "version": "0.0.708",
+  "previousVersion": "0.0.707",
+  "postCompatibility": "preserved-output-faster-cad-rebuild",
+  "summary": "CAD rebuilds skip repeated OpenCascade validity checks and volume integrations on shapes that were just checked. A single-region new extrude or revolve is checked once instead of twice, a confirmed Cut result is not re-checked before meshing, a single-region extrude Cut tool is not confirmed twice, and each built body's volume is measured once and reused for its mesh.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Every shape that was checked before is still checked, with the same checks in the same order, so features succeed or fail with the same diagnostics. Body volumes, solid counts and meshes are unchanged.",
+  "checklist": {
+    "schema": "No CAD, UPID, post, machine package, execution plan, saved revision, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post, machine or CAD capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. CAD exports are built from the same shapes.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "A new kernel test counts OpenCascade validity checks: a new plate body is checked once (twice before) and a plate with an extruded bore Cut five times (eight before), with unchanged volumes. A module 3 gear body with an extruded bore Cut rebuilds in 4.9 s instead of 6.9 s in Node with the same volume. The CAD kernel suite (414 tests) and the CAD feature suites pass, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "CAD models rebuild faster.",
+    "changes": [
+      "Rebuilding a CAD model after an edit skips repeated geometry checks, so extrudes, revolves and cuts update sooner."
+    ],
+    "compatibility": "CAD files, models, exports, execution plans and posted programs are unchanged.",
+    "action": "No action needed."
+  }
+}

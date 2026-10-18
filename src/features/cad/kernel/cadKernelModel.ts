@@ -37,27 +37,36 @@ export interface CadKernelModel {
 
 const meshOptions = { tolerance: 0.05, angularTolerance: 0.15 };
 
-function validateSolid(shape: Shape3D): number {
+/**
+ * Returns the solid count and whole-shape volume so callers reuse the measurement.
+ * Pass topologyChecked only when this exact shape passed OpenCascade's validity
+ * check and no kernel operation has used it since.
+ */
+function validateSolid(shape: Shape3D, topologyChecked = false): { solidCount: number; volume: number } {
   if (shape.isNull) throw new CadError('empty-solid', 'The operation produced no solid.');
   const solids = cadKernelSolids(shape);
   try {
-    if (!solids.length || solids.some(solid => !Number.isFinite(measureVolume(solid)) || measureVolume(solid) <= 1e-9)) {
+    if (!solids.length || solids.some(solid => !positiveVolume(measureVolume(solid)))) {
       throw new CadError('empty-solid', 'The operation must contain closed solids with positive volume.');
     }
   } finally { for (const solid of solids) cadKernelDisposeShape(solid); }
-  if (!cadKernelIsValid(shape)) throw new CadError('invalid-solid', 'OpenCascade rejected the resulting topology. Reduce the dimensions or choose a different feature.');
+  if (!topologyChecked && !cadKernelIsValid(shape)) throw new CadError('invalid-solid', 'OpenCascade rejected the resulting topology. Reduce the dimensions or choose a different feature.');
   const volume = measureVolume(shape);
-  if (!Number.isFinite(volume) || volume <= 1e-9) throw new CadError('empty-solid', 'The operation must produce a closed solid with positive volume.');
-  return solids.length;
+  if (!positiveVolume(volume)) throw new CadError('empty-solid', 'The operation must produce a closed solid with positive volume.');
+  return { solidCount: solids.length, volume };
 }
 
-function shapeMesh(shape: Shape3D, feature: CadFeature, topology: CadKernelTopology, solidCount: number): CadMesh {
+function positiveVolume(volume: number) {
+  return Number.isFinite(volume) && volume > 1e-9;
+}
+
+function shapeMesh(shape: Shape3D, feature: CadFeature, topology: CadKernelTopology, { solidCount, volume }: { solidCount: number; volume: number }): CadMesh {
   const box = shape.boundingBox;
   try {
     const [min, max] = box.bounds;
     const { mesh, edgeMesh } = meshCadKernelPreview(shape, { min, max }, meshOptions);
     return { featureId: feature.id, name: feature.name, positions: mesh.vertices, normals: mesh.normals, indices: mesh.triangles,
-      edges: edgeMesh.lines, ...topology.meshGroups(mesh, edgeMesh), volume: measureVolume(shape), solidCount, bounds: { min, max } };
+      edges: edgeMesh.lines, ...topology.meshGroups(mesh, edgeMesh), volume, solidCount, bounds: { min, max } };
   } finally { box.delete(); }
 }
 
@@ -95,7 +104,8 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
     for (const shape of shapes) if (!retained.has(shape)) { cadKernelDisposeShape(shape); shapes.delete(shape); }
   }
 
-  function fromSketch(feature: Extract<CadFeature, { kind: 'extrude' | 'revolve' }>, regions: readonly CadSketchMaterialRegion[]): Shape3D {
+  /** A single region returns its checked shape unchanged; several regions return their fused, unchecked union. */
+  function fromSketch(feature: Extract<CadFeature, { kind: 'extrude' | 'revolve' }>, regions: readonly CadSketchMaterialRegion[]): { shape: Shape3D; checked: boolean } {
     const sketch = sketches.get(feature.sketchId);
     if (!sketch) throw new CadError('missing-sketch', 'The source sketch is unavailable or suppressed.');
     const placement = resolveCadExtrudeRevolvePlacement(feature, sketch, document.parameters, frameLookup);
@@ -139,7 +149,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         } finally { cadKernelDisposeShape(face); }
       }
       if (!result) throw new CadError('empty-sketch', 'A solid feature needs at least one closed non-construction profile.');
-      return result;
+      return { shape: result, checked: regions.length === 1 };
     } finally {
       for (const sketched of consumedSketches) cadKernelDisposeOwned(sketched);
       plane.delete();
@@ -151,6 +161,8 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
     if (feature.suppressed) continue;
     try {
       let result: Shape3D;
+      // True only when result itself was just validated, with no kernel operation on it since.
+      let topologyChecked = false;
       let instances = 1;
       const consumed: string[] = [];
       switch (feature.kind) {
@@ -167,11 +179,14 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           const regions = resolveCadSketchRegions(sourceSketch, document.parameters, feature.kind === 'extrude' ? feature.regionSelection : undefined);
           instances = regions.length;
           if (feature.targetId !== null) instances = checkedInstances(instances + instancesOf(feature.targetId));
-          result = fromSketch(feature, regions);
+          const sketched = fromSketch(feature, regions);
+          result = sketched.shape; topologyChecked = sketched.checked;
           if (feature.operation !== 'new') {
             if (!feature.targetId) throw new CadError('missing-target', 'Join and cut need a target body.');
             const target = body(feature.targetId);
-            result = own(feature.operation === 'join' ? target.fuse(result) : cutCadKernelConfirmedMaterial(target, result));
+            result = own(feature.operation === 'join' ? target.fuse(result)
+              : cutCadKernelConfirmedMaterial(target, result, { toolConfirmed: sketched.checked }));
+            topologyChecked = feature.operation === 'cut';
             consumed.push(feature.targetId);
           }
           break;
@@ -184,6 +199,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
             instances = checkedInstances(1 + instancesOf(feature.targetId));
             const loft = own(buildCadLoftSolid(sections, feature.ruled));
             result = own(feature.operation === 'join' ? target.fuse(loft) : cutCadKernelConfirmedMaterial(target, loft));
+            topologyChecked = feature.operation === 'cut';
             consumed.push(feature.targetId);
           } else result = own(buildCadLoftSolid(sections, feature.ruled));
           break;
@@ -196,6 +212,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
             instances = checkedInstances(1 + instancesOf(feature.targetId));
             const sweep = own(buildCadSweepSolid(inputs));
             result = own(feature.operation === 'join' ? target.fuse(sweep) : cutCadKernelConfirmedMaterial(target, sweep));
+            topologyChecked = feature.operation === 'cut';
             consumed.push(feature.targetId);
           } else result = own(buildCadSweepSolid(inputs));
           break;
@@ -235,6 +252,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           const target = body(feature.targetId); const tool = body(feature.toolId);
           instances = checkedInstances(instancesOf(feature.targetId) + instancesOf(feature.toolId));
           result = own(feature.operation === 'union' ? target.fuse(tool) : feature.operation === 'cut' ? cutCadKernelConfirmedMaterial(target, tool) : target.intersect(tool));
+          topologyChecked = feature.operation === 'cut';
           consumed.push(feature.targetId, feature.toolId); break;
         }
         case 'transform': {
@@ -288,10 +306,10 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         }
         default: { const exhaustive: never = feature; throw new Error(`Unsupported feature: ${exhaustive}`); }
       }
-      const solidCount = validateSolid(result);
+      const measured = validateSolid(result, topologyChecked);
       const topology = new CadKernelTopology(result);
       try {
-        const mesh = shapeMesh(result, feature, topology, solidCount);
+        const mesh = shapeMesh(result, feature, topology, measured);
         for (const id of consumed) { visible.delete(id); bodies.get(id)?.topology.dispose(); bodies.delete(id); }
         bodies.set(feature.id, { shape: result, feature, mesh, instances, topology });
       } catch (error) { topology.dispose(); throw error; }

@@ -84,9 +84,13 @@ export function cadKernelSolidEvidence(shape: Shape3D, context: MaterialContext,
   } finally { solids.forEach(cadKernelDisposeOwned); }
 }
 
-/** Every solid Cut borrows both inputs; only a validated result leaves. */
-export function cutCadKernelConfirmedMaterial(target: Shape3D, tool: Shape3D): Shape3D {
-  cadKernelSolidEvidence(target, 'target', 'Cut'); cadKernelSolidEvidence(tool, 'tool', 'Cut');
+/**
+ * Every solid Cut borrows both inputs; only a validated result leaves. Pass
+ * toolConfirmed only when the caller just confirmed this exact tool as Cut tool
+ * evidence and no kernel operation has used it since.
+ */
+export function cutCadKernelConfirmedMaterial(target: Shape3D, tool: Shape3D, { toolConfirmed = false } = {}): Shape3D {
+  cadKernelSolidEvidence(target, 'target', 'Cut'); if (!toolConfirmed) cadKernelSolidEvidence(tool, 'tool', 'Cut');
   const common = target.intersect(tool);
   try { cadKernelSolidEvidence(common, 'common', 'Cut'); }
   finally { cadKernelDisposeShape(common); }
