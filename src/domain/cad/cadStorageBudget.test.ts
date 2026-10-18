@@ -104,7 +104,8 @@ describe.each(['browser-cache', 'directory'] as const)('CAD large exact serializ
       expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(retry.savedVersion);
       expect(cadBudgetOriginals(retry.document)).toEqual(cadBudgetOriginals(document));
       expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
-    });
+    // Five exact multi-MiB saves and loads; shared CI runners need more than the default budget.
+    }, 20_000);
   });
   it.each(['load', 'save', 'list'] as const)('cancels %s during an exact read without publishing or overwriting the original', async operation => {
     const document = parseCadDocument(cadBudgetFixture(CAD_FORMER_DOCUMENT_BYTES + 64 * 1024));

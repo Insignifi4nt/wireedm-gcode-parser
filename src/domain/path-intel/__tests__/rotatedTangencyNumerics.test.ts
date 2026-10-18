@@ -89,6 +89,19 @@ describe('rotated adjacent tangent joins', () => {
     expect(intersectionDiagnostics(source)).toHaveLength(1);
   });
 
+  it('treats a kernel section tangent split by a few coordinate ulps as one junction', () => {
+    // Exact OCCT section output for a rounded plate corner: the arc tangent at the
+    // shared endpoint leans 4.7e-15 radians, so its second root sits 3e-14 mm away.
+    const source = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 60, y: 3 }, end: { x: 60, y: 37 } },
+      { type: 'arc', layer: 'CUT', center: { x: 57.00000000000001, y: 37.000000000000014 }, radius: 2.9999999999999893,
+        start: { x: 57, y: 40 }, end: { x: 60, y: 37 }, startAngle: 1.570796326794899, endAngle: -4.6629367034256575e-15,
+        sweepRadians: -1.5707963267949037, clockwise: true }
+    ] as DxfEntity[], { endpointTolerance: 1e-7, coincidenceEpsilon: 1e-9 });
+    expect(classifyPathSegmentIntersection(source.segments[0], source.segments[1], 1e-9).points).toHaveLength(1);
+    expect(intersectionDiagnostics(source)).toEqual([]);
+  });
+
   it('retains two nonadjacent near-tangent crossings within the endpoint coincidence tolerance', () => {
     const source = createUpidFromDxfEntities([
       { type: 'line', layer: 'CUT', start: { x: 1 - 5e-13, y: -1e-3 }, end: { x: 1 - 5e-13, y: 1e-3 } },

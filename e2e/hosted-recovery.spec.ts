@@ -52,10 +52,10 @@ test('copies retained historical files from connected storage when verified back
     for (const [path, text] of Object.entries(files)) localStorage.setItem(`wire-edm-workbench:file:${path}`, text);
   }, originals);
   await page.reload();
-  await expect(page.locator('[data-storage-status-label]')).toHaveText('Browser cache active');
   await expect(page.getByRole('button', { name: /^Open project / })).toHaveCount(1);
   await page.getByRole('button', { name: 'Open settings', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Workbench settings' });
+  await expect(dialog).toContainText('Browser cache active');
   await dialog.getByRole('button', { name: 'Create and download backup', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText(`Revision ${revisionId}`);
   const request = page.waitForEvent('download');

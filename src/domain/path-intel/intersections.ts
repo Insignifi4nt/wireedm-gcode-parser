@@ -490,17 +490,22 @@ function arcEndpointAnchoredLineCandidates({ line, circular, start, end, delta, 
     // of letting sqrt(radial error) create two artificial near-tangent branches.
     // Retain the other root: a small dot product can still encode a real crossing.
     const secondOffset = -2 * dot(candidate.radial, delta) / quadraticA;
+    const anchored = {
+      point: candidate.point,
+      radial: { x: candidate.radial.x * scale, y: candidate.radial.y * scale },
+      parameter: candidate.parameter
+    };
+    const second = {
+      x: candidate.point.x + delta.x * secondOffset * scale,
+      y: candidate.point.y + delta.y * secondOffset * scale
+    };
+    // A tangent touch is one double root. Noisy kernel arcs can split it by a few
+    // coordinate ulps; that twin is the same contact, not a second crossing.
+    if (withinCoordinateUlps(second.x, candidate.point.x) && withinCoordinateUlps(second.y, candidate.point.y)) return [anchored];
     return [
+      anchored,
       {
-        point: candidate.point,
-        radial: { x: candidate.radial.x * scale, y: candidate.radial.y * scale },
-        parameter: candidate.parameter
-      },
-      {
-        point: {
-          x: candidate.point.x + delta.x * secondOffset * scale,
-          y: candidate.point.y + delta.y * secondOffset * scale
-        },
+        point: second,
         radial: {
           x: (candidate.radial.x + delta.x * secondOffset) * scale,
           y: (candidate.radial.y + delta.y * secondOffset) * scale
@@ -1018,6 +1023,11 @@ function isCircular(segment: PathSegment): segment is CircularPathSegment {
 function linearTolerance(epsilon: number, ...values: number[]) {
   const magnitude = Math.max(1, ...values.map((value) => Math.abs(value)));
   return Math.max(epsilon, ROUNDING_FACTOR * Number.EPSILON * magnitude);
+}
+
+/** Unlike coordinateRoundoffTolerance, no unit floor: values near zero keep their own precision. */
+function withinCoordinateUlps(left: number, right: number) {
+  return Math.abs(left - right) <= 8 * Number.EPSILON * Math.max(Math.abs(left), Math.abs(right));
 }
 
 function coordinateRoundoffTolerance(epsilon: number, ...coordinates: number[]) {

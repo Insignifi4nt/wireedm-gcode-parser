@@ -13,7 +13,9 @@ test('starts and edits temporary projects when the localStorage getter is denied
   const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench', exact: true });
   await expect(onboarding).toBeVisible({ timeout: 5000 });
   await onboarding.getByRole('button', { name: 'Go Build!', exact: true }).click();
-  await expect(page.locator('[data-storage-status]')).toHaveAttribute('aria-label', 'Temporary storage only');
+  await page.getByRole('button', { name: 'Open settings', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('Temporary storage');
+  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
   await page.getByLabel('Machine program file', { exact: true }).setInputFiles(program('temporary-denied.nc', 12));
   await expect(page.locator('[data-editor-context="machine-program"]')).toBeVisible();
   await page.getByRole('tab', { name: 'Text', exact: true }).click();
