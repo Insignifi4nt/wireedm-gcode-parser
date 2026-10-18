@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DxfEntity } from '@/domain/dxf/types';
+import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
+import { reviewCenterline } from '@/__tests__/reviewedUpid';
 import {
   movePathOperation,
   reversePathOperation,
+  rotatePathDocument,
   setCircleOperationCenterPierceLeadIn,
   setClosedOperationStartNearPoint,
   setPathOperationTransitions,
@@ -1182,6 +1185,35 @@ describe('UPID project rail projection', () => {
     expect(reversedSelected?.geometry.endAngleDegrees).toBeCloseTo(0);
     expectPointClose(reversedSelected?.geometry.startTangent, { x: 1, y: 0 });
     expectPointClose(reversedSelected?.geometry.endTangent, { x: 0, y: -1 });
+  });
+
+  it.each([false, true])('reads circle tangents at its rotated preferred start, reversed=%s', (reverse) => {
+    const original = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    const rotated = rotatePathDocument(original, 90, { x: 10, y: 20 });
+    if (!rotated) throw new Error('Circle rotation failed');
+    const document = reverse ? reversePathOperation(rotated, rotated.plan.operations[0].id) : rotated;
+    if (!document) throw new Error('Circle reversal failed');
+    const operation = document.plan.operations[0];
+    document.setup = { initialWirePosition: { kind: 'manual', point: { ...operation.startPoint }, review: 'reviewed' } };
+    reviewCenterline(document);
+    const before = structuredClone(document);
+    const executionBefore = compileWireEdmExecutionPlan(document);
+    expect(executionBefore.ok).toBe(true);
+    const pathElement = readUpidOperationPathElement(document, operation.id, null);
+    if (!pathElement) throw new Error('Missing circle path element');
+    const selected = readUpidSelectedPathSegment(document, pathElement, {
+      operationId: operation.id, pathElementId: pathElement.id, segmentId: operation.segmentRefs[0].segmentId
+    });
+    expect(selected).toMatchObject({ start: { x: 10, y: 25 }, end: { x: 10, y: 25 } });
+    if (selected?.geometry.kind !== 'circle') throw new Error('Expected selected circle geometry');
+    const tangent = { x: reverse ? 1 : -1, y: 0 };
+    expect(selected.geometry.clockwise).toBe(reverse);
+    expectPointClose(selected.geometry.startTangent, tangent);
+    expectPointClose(selected.geometry.endTangent, tangent);
+    expect(compileWireEdmExecutionPlan(document)).toEqual(executionBefore);
+    expect(document).toEqual(before);
   });
 
   it('formats selected element manual override rows from UPID overrides', () => {

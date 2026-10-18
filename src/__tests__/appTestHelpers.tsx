@@ -165,7 +165,17 @@ export async function confirmPendingDxfImport(
   if (!button) throw new Error('DXF import confirmation is not available.');
 
   await act(async () => button.click());
+  // Imports verify storage exactly before publishing, which takes a variable number of turns.
+  await settleUntil(() => !container.querySelector('[role="dialog"][aria-label="Review DXF import"]'));
   await flushAsync();
+}
+
+/** Let pending storage work run until a condition holds, failing loudly if it never does. */
+export async function settleUntil(condition: () => boolean, attempts = 200) {
+  for (let attempt = 0; !condition(); attempt++) {
+    if (attempt === attempts) throw new Error('App did not settle.');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  }
 }
 
 function openEditorWorkspacePanelsOnce() {

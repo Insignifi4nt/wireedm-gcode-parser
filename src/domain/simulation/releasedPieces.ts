@@ -138,11 +138,12 @@ export function compileReleasedPieces(
 }
 
 function associateParents(pieces: readonly SimulationPiece[]): SimulationPiece[] {
-  return pieces.map((piece) => {
-    const parents = pieces.filter((other) => other.id !== piece.id && polygonArea(other.polygon) > polygonArea(piece.polygon)
+  const measured = pieces.map(piece => ({ piece, area: polygonArea(piece.polygon) }));
+  return measured.map(({ piece, area }) => {
+    const parents = measured.filter(({ piece: other, area: otherArea }) => other.id !== piece.id && otherArea > area
       && piece.polygon.every((point) => pointInPolygon(point, other.polygon)));
-    parents.sort((a, b) => polygonArea(a.polygon) - polygonArea(b.polygon));
-    return { ...piece, parentPieceId: parents[0]?.id ?? null };
+    parents.sort((a, b) => a.area - b.area);
+    return { ...piece, parentPieceId: parents[0]?.piece.id ?? null };
   });
 }
 
@@ -174,8 +175,53 @@ function completeCoverage(ranges: readonly CutRange[]): boolean {
 export function releasedPieceSnapshots(
   pieces: readonly SimulationPiece[], settings: ResolvedSimulationSettings, elapsedSeconds: number
 ): { pieces: SimulationPieceSnapshot[]; stockHoles: (readonly Point2[])[]; removedPieceIds: string[] } {
-  const released = pieces.filter(({ releaseSeconds }) => releaseSeconds <= elapsedSeconds);
+  return snapshotReleasedPieces(pieces, settings, elapsedSeconds, pieceTopology(pieces));
+}
+
+interface PieceTopology {
+  byId: ReadonlyMap<string, SimulationPiece>;
+  fallStarts: ReadonlyMap<SimulationPiece, number>;
+  metadata: readonly { piece: SimulationPiece; id: string; parentPieceId: string | null; releaseSeconds: number }[];
+}
+
+const pieceTopologies = new WeakMap<readonly SimulationPiece[], PieceTopology>();
+
+function pieceTopology(pieces: readonly SimulationPiece[]): PieceTopology {
+  const cached = pieceTopologies.get(pieces);
+  if (cached && cached.metadata.length === pieces.length && pieces.every((piece, index) => {
+    const previous = cached.metadata[index];
+    return previous.piece === piece && previous.id === piece.id && previous.parentPieceId === piece.parentPieceId
+      && Object.is(previous.releaseSeconds, piece.releaseSeconds);
+  })) return cached;
+  const metadata = pieces.map(piece => ({ piece, id: piece.id, parentPieceId: piece.parentPieceId, releaseSeconds: piece.releaseSeconds }));
   const byId = new Map(pieces.map((piece) => [piece.id, piece]));
+  const fallStarts = new Map<SimulationPiece, number>();
+  for (const piece of pieces) {
+    let fallStart = piece.releaseSeconds;
+    let ancestor = piece.parentPieceId ? byId.get(piece.parentPieceId) : undefined;
+    while (ancestor) {
+      fallStart = Math.min(fallStart, ancestor.releaseSeconds);
+      ancestor = ancestor.parentPieceId ? byId.get(ancestor.parentPieceId) : undefined;
+    }
+    fallStarts.set(piece, fallStart);
+  }
+  const topology = { byId, fallStarts, metadata };
+  // Worker clones are mutable; compare topology inputs before reusing ancestor work.
+  pieceTopologies.set(pieces, topology);
+  return topology;
+}
+
+/** A synchronous obstruction scan owns a stable piece collection for all its samples. */
+export function createReleasedPieceSnapshotSampler(pieces: readonly SimulationPiece[], settings: ResolvedSimulationSettings) {
+  const topology = pieceTopology(pieces);
+  return (elapsedSeconds: number) => snapshotReleasedPieces(pieces, settings, elapsedSeconds, topology);
+}
+
+function snapshotReleasedPieces(
+  pieces: readonly SimulationPiece[], settings: ResolvedSimulationSettings, elapsedSeconds: number,
+  { byId, fallStarts }: PieceTopology
+): { pieces: SimulationPieceSnapshot[]; stockHoles: (readonly Point2[])[]; removedPieceIds: string[] } {
+  const released = pieces.filter(({ releaseSeconds }) => releaseSeconds <= elapsedSeconds);
   const releasedIds = new Set(released.map(({ id }) => id));
   function nearestReleasedParent(piece: SimulationPiece): SimulationPiece | null {
     let parent = piece.parentPieceId ? byId.get(piece.parentPieceId) : undefined;
@@ -196,12 +242,7 @@ export function releasedPieceSnapshots(
     removedPieceIds: released.filter(piece => piece.removalSeconds !== null && piece.removalSeconds <= elapsedSeconds).map(piece => piece.id),
     pieces: released.filter(piece => piece.removalSeconds === null || piece.removalSeconds > elapsedSeconds).map((piece) => {
       // An earlier enclosing release carries still-attached inner material with it.
-      let fallStart = piece.releaseSeconds;
-      let ancestor = piece.parentPieceId ? byId.get(piece.parentPieceId) : undefined;
-      while (ancestor) {
-        fallStart = Math.min(fallStart, ancestor.releaseSeconds);
-        ancestor = ancestor.parentPieceId ? byId.get(ancestor.parentPieceId) : undefined;
-      }
+      const fallStart = fallStarts.get(piece)!;
       const elapsed = Math.max(0, elapsedSeconds - fallStart);
       const freeBottom = settings.stock.bottomZ - 0.5 * GRAVITY_MM_PER_SECOND_SQUARED * elapsed * elapsed;
       const bottomZ = settings.retention === 'retain' ? settings.stock.bottomZ

@@ -44,17 +44,18 @@ describe('machine library storage', () => {
       library: createEmptyMachineLibrary()
     });
     expect(adapter.directories).toEqual([MACHINE_LIBRARY_DIRECTORY]);
-    expect(JSON.parse(adapter.files.get(MACHINE_LIBRARY_PATH) ?? '')).toEqual({
-      format: 'wire-edm-machine-library',
-      schemaVersion: 1,
-      machines: []
-    });
+    expect(adapter.files.get(MACHINE_LIBRARY_PATH)).toBe(
+      '{\n  "format": "wire-edm-machine-library",\n  "schemaVersion": 1,\n  "machines": []\n}'
+    );
   });
 
   it('round-trips machines only when every exact post reference resolves', async () => {
     const adapter = new MemoryAdapter();
     const { machines, posts } = await fixture();
     expect(await writeMachineLibraryStorage(adapter, machines)).toEqual({ ok: true });
+    expect(adapter.files.get(MACHINE_LIBRARY_PATH)).toBe(JSON.stringify({
+      format: 'wire-edm-machine-library', schemaVersion: 1, machines: machines.machines
+    }, null, 2));
 
     expect(await readMachineLibraryStorage(adapter, posts)).toEqual({ ok: true, library: machines });
     expect(await readMachineLibraryStorage(adapter, createEmptyPostLibrary())).toMatchObject({

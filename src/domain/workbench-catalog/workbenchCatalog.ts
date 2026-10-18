@@ -15,6 +15,7 @@ import {
   initializePostLibraryStorage,
   POST_LIBRARY_PATH,
   readPostLibraryStorage,
+  serializePostLibraryStorage,
   type PostLibraryStorageError
 } from '@/domain/post-processor/postLibraryStorage';
 import { createEmptyPostLibrary, type PostLibrary } from '@/domain/post-processor/postLibrary';
@@ -646,7 +647,7 @@ async function migrateLegacyV1WorkbenchCatalog(
     await commitWorkbenchFileTransaction(adapter, [
       ...[...placeholderPaths].filter(([, existed]) => !existed).map(([path]) => ({ path, contents: '' })),
       ...[...projectTexts].map(([path, texts]) => ({ path, contents: texts.next })),
-      ...(existingPosts.rawText === null ? [{ path: POST_LIBRARY_PATH, contents: JSON.stringify({ format: 'wire-edm-post-library', schemaVersion: 1, installations: [] }, null, 2) }] : []),
+      ...(existingPosts.rawText === null ? [{ path: POST_LIBRARY_PATH, contents: serializePostLibraryStorage(createEmptyPostLibrary()) }] : []),
       ...(existingMachines.rawText === null ? [{ path: MACHINE_LIBRARY_PATH, contents: serializeMachineLibraryStorage(createEmptyMachineLibrary()) }] : []),
       { path: WORKBENCH_CATALOG_PATH, contents: JSON.stringify(manifest, null, 2) }
     ]);

@@ -2,12 +2,54 @@ import { describe, expect, it } from 'vitest';
 
 import { buildUpidEditorTree } from '@/domain/upid/upidEditorTree';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
-import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
+import { setMachiningSpanParticipation, setPartialContourCompensationSide } from '@/domain/path-intel/machiningParticipation';
+import { setManualInitialWirePosition } from '@/domain/path-editor/pathDocumentOperations';
 import { reviewCenterline } from '@/__tests__/reviewedUpid';
 
-import { resolveEditorProgramTreeAction } from './editorProgramTreeActions';
+import { editorExecutionDiagnosticReviewLabel, resolveEditorProgramTreeAction } from './editorProgramTreeActions';
 
 describe('resolveEditorProgramTreeAction', () => {
+  it('routes missing partial compensation to the source-preserving side decision that clears the compiler blocker', () => {
+    const source = createUpidFromDxfEntities([{
+      type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 10
+    }]);
+    const positioned = setManualInitialWirePosition(source, { x: 10, y: 0 });
+    if (!positioned) throw new Error('Expected a reviewed initial wire position');
+    const partial = setMachiningSpanParticipation(positioned, {
+      sourceSegmentId: source.segments[0].id, range: { start: 0.25, end: 0.75 }, participation: 'inactive-reference'
+    });
+    if (!partial) throw new Error('Expected a partial circle');
+    const tree = buildUpidEditorTree(partial);
+    if (tree.status === 'ready') throw new Error('Expected an explicit partial compensation decision');
+    const diagnostic = tree.diagnostics[0];
+    expect(diagnostic.diagnostic.code).toBe('EXECUTION_PLAN_COMPENSATION_UNRESOLVED');
+    expect(diagnostic.diagnostic.operationId).not.toBe(diagnostic.operationId);
+    expect(resolveEditorProgramTreeAction(diagnostic)).toEqual({
+      commandId: 'machining.participation', exactTarget: null, operationId: source.plan.operations[0].id
+    });
+    expect(editorExecutionDiagnosticReviewLabel(diagnostic)).toBe('Review partial-path compensation');
+
+    const reviewed = setPartialContourCompensationSide(partial, source.plan.operations[0].id, 'right');
+    if (!reviewed) throw new Error('Expected an explicit partial-path side');
+    expect(buildUpidEditorTree(reviewed).status).toBe('ready');
+    expect(reviewed.plan.operations[0].compensationIntent).toEqual(source.plan.operations[0].compensationIntent);
+    expect(reviewed.segments).toEqual(source.segments);
+  });
+
+  it('keeps a full contour compensation issue in contour setup', () => {
+    const source = createUpidFromDxfEntities([{
+      type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 10
+    }]);
+    const positioned = setManualInitialWirePosition(source, { x: 10, y: 0 });
+    if (!positioned) throw new Error('Expected a reviewed initial wire position');
+    const tree = buildUpidEditorTree(positioned);
+    if (tree.status === 'ready') throw new Error('Expected a contour compensation decision');
+    const diagnostic = tree.diagnostics[0];
+    expect(diagnostic.diagnostic.code).toBe('EXECUTION_PLAN_COMPENSATION_UNRESOLVED');
+    expect(resolveEditorProgramTreeAction(diagnostic).commandId).toBe('machining.contour-setup');
+    expect(editorExecutionDiagnosticReviewLabel(diagnostic)).toBe('Review contour compensation');
+  });
+
   it('opens participation to confirm the effective partial exit', () => {
     const document = createUpidFromDxfEntities([{
       type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }

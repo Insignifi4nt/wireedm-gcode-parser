@@ -916,6 +916,15 @@ function remapMachiningSpansAfterSplit(
   const intervals = original.kind === 'circle'
     ? [[firstParameter, firstParameter + direction * 0.5], [firstParameter + direction * 0.5, firstParameter + direction]]
     : [[firstParameter, firstParameter + direction * split.t], [firstParameter + direction * split.t, firstParameter + direction]];
+  const reservedSpanIds = new Set(document.machiningParticipation.spans
+    .filter((span) => span.sourceSegmentId !== original.id).map((span) => span.id));
+  const reserveSpanId = (preferred: string) => {
+    let id = preferred;
+    let suffix = 2;
+    while (reservedSpanIds.has(id)) id = `${preferred}__${suffix++}`;
+    reservedSpanIds.add(id);
+    return id;
+  };
   document.machiningParticipation.spans = document.machiningParticipation.spans.flatMap((span) => {
     if (span.sourceSegmentId !== original.id) return [span];
     return replacements.flatMap((replacement, index) => {
@@ -935,7 +944,7 @@ function remapMachiningSpansAfterSplit(
         else merged.push(range);
       }
       return merged.map((range, rangeIndex) => ({
-        ...span, id: `${span.id}__${replacement.id}_${rangeIndex + 1}`, sourceSegmentId: replacement.id, range
+        ...span, id: reserveSpanId(`${span.id}__${replacement.id}_${rangeIndex + 1}`), sourceSegmentId: replacement.id, range
       }));
     });
   }).sort((left, right) => left.sourceSegmentId.localeCompare(right.sourceSegmentId) || left.range.start - right.range.start);
@@ -1716,16 +1725,22 @@ function translatePoint(point: Point2, delta: Point2): Point2 {
 
 function rotationPointTransform(angleDegrees: number, origin: Point2) {
   const normalizedAngle = ((angleDegrees % 360) + 360) % 360;
+  if (normalizedAngle === 0 && Number.isFinite(origin.x) && Number.isFinite(origin.y)) {
+    return (point: Point2): Point2 => ({ ...point });
+  }
   const radians = (normalizedAngle * Math.PI) / 180;
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
+  // Exact quarter-turn coefficients remove trigonometric residue without rounding geometry.
+  const cos = normalizedAngle === 180 ? -1
+    : normalizedAngle === 90 || normalizedAngle === 270 ? 0 : Math.cos(radians);
+  const sin = normalizedAngle === 90 ? 1
+    : normalizedAngle === 270 ? -1 : normalizedAngle === 180 ? 0 : Math.sin(radians);
 
   return (point: Point2): Point2 => {
     const localX = point.x - origin.x;
     const localY = point.y - origin.y;
     return {
-      x: roundCoordinate(origin.x + localX * cos - localY * sin),
-      y: roundCoordinate(origin.y + localX * sin + localY * cos)
+      x: origin.x + localX * cos - localY * sin,
+      y: origin.y + localX * sin + localY * cos
     };
   };
 }
@@ -1734,16 +1749,11 @@ function mirrorPointTransform(axis: PathMirrorAxis, origin: Point2) {
   return (point: Point2): Point2 =>
     axis === 'x'
       ? {
-          x: roundCoordinate(point.x),
-          y: roundCoordinate(origin.y - (point.y - origin.y))
+          x: point.x,
+          y: origin.y - (point.y - origin.y)
         }
       : {
-          x: roundCoordinate(origin.x - (point.x - origin.x)),
-          y: roundCoordinate(point.y)
+          x: origin.x - (point.x - origin.x),
+          y: point.y
         };
-}
-
-function roundCoordinate(value: number) {
-  const rounded = Number(value.toFixed(12));
-  return Math.abs(rounded) <= 1e-12 ? 0 : rounded;
 }

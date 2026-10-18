@@ -8,7 +8,7 @@ const preference = { mode: 'fixed', unit: 'millimeters' } as const;
 const text = '0\r\nSECTION\r\n2\r\nENTITIES\r\n0\r\nLINE\r\n8\r\nMatriță 日本\r\n10\r\n0\r\n20\r\n0\r\n11\r\n10\r\n21\r\n0\r\n0\r\nENDSEC\r\n0\r\nEOF\r\n';
 const input = { fileName: 'units.dxf', text, now: new Date('2026-10-04T00:00:00Z') };
 
-class DxfWorker {
+class DxfWorker extends EventTarget {
   static instances: DxfWorker[] = [];
   static failPost = false;
   onmessage: ((event: MessageEvent<DxfProcessorResponse>) => void) | null = null;
@@ -16,7 +16,7 @@ class DxfWorker {
   onmessageerror: (() => void) | null = null;
   terminate = vi.fn();
   postMessage = vi.fn((_request: DxfProcessorRequest) => { if (DxfWorker.failPost) throw new Error('Cannot clone'); });
-  constructor(readonly url: URL, readonly options: WorkerOptions) { DxfWorker.instances.push(this); }
+  constructor(readonly url: URL, readonly options: WorkerOptions) { super(); DxfWorker.instances.push(this); }
   complete() {
     // Worker messages clone data and do not preserve Object.freeze.
     this.onmessage?.({ data: structuredClone(runDxfProcessorTask(this.postMessage.mock.calls[0][0])) } as MessageEvent<DxfProcessorResponse>);
@@ -97,9 +97,21 @@ describe('cancellable local DXF processing', () => {
   it.each(['onerror', 'onmessageerror', 'post'] as const)('reports %s failure and releases the worker', async failure => {
     DxfWorker.failPost = failure === 'post';
     const pending = browserDxfProcessor.prepare(preference, input);
-    if (failure !== 'post') DxfWorker.instances[0][failure]?.();
+    if (failure === 'onerror') DxfWorker.instances[0].onerror?.();
+    if (failure === 'onmessageerror') DxfWorker.instances[0].dispatchEvent(new MessageEvent('messageerror'));
     await expect(pending).rejects.toMatchObject({ code: 'DXF_IMPORT_WORKER_FAILED' });
     released(DxfWorker.instances[0]);
+  });
+
+  it('rejects a mismatched task response without accepting geometry from another request', async () => {
+    const pending = browserDxfProcessor.prepare(preference, input);
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'DXF_IMPORT_WORKER_FAILED' });
+    const worker = DxfWorker.instances[0];
+    const queued = worker.onmessage;
+    queued?.(new MessageEvent('message', { data: runDxfProcessorTask({ kind: 'plan', entities: [], metadata: {} }) }));
+    await rejected;
+    queued?.(new MessageEvent('message', { data: runDxfProcessorTask({ kind: 'prepare', preference, input }) }));
+    released(worker);
   });
 
   it('reports unavailable workers in browsers without running a blocking fallback', async () => {

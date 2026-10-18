@@ -4,6 +4,7 @@ import type {
   WireEdmExecutionPlan
 } from '@/domain/execution-plan/executionPlan';
 import type { Point2 } from '@/domain/path-intel/types';
+import { circularRadialDistance, signedRadialAngle } from '@/domain/path-intel/circularGeometry';
 
 export interface ControllerMotionTrace {
   readonly motion: 'linear' | 'circular';
@@ -206,10 +207,10 @@ function sameMotionSequence(
     !motion.center ||
     !sameRoundedPoint(motion.center, event.center!, sourceToleranceMm, motion.rounding?.centerX, motion.rounding?.centerY, pointToleranceMm) ||
     motion.clockwise !== event.clockwise ||
-    Math.abs(distance(event.center!, motion.start) - radius) > roundedPointAllowance(
+    circularRadialDistance(motion.start, event.start, event.center!, radius) > roundedPointAllowance(
       sourceToleranceMm, motion.rounding?.startX, motion.rounding?.startY, lengthToleranceMm
     ) ||
-    Math.abs(distance(event.center!, motion.end) - radius) > roundedPointAllowance(
+    circularRadialDistance(motion.end, event.start, event.center!, radius) > roundedPointAllowance(
       sourceToleranceMm, motion.rounding?.endX, motion.rounding?.endY, lengthToleranceMm
     ) ||
     motion.fullCircle !== (motion.start.x === motion.end.x && motion.start.y === motion.end.y)
@@ -295,16 +296,9 @@ function sameLinearPath(
 }
 
 function circularSweep(start: Point2, end: Point2, center: Point2, clockwise: boolean) {
-  const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
-  const endAngle = Math.atan2(end.y - center.y, end.x - center.x);
-  return clockwise
-    ? positiveAngle(startAngle - endAngle)
-    : positiveAngle(endAngle - startAngle);
-}
-
-function positiveAngle(value: number) {
-  const fullTurn = Math.PI * 2;
-  return ((value % fullTurn) + fullTurn) % fullTurn;
+  const angle = signedRadialAngle(start, end, center);
+  const directed = clockwise ? -angle : angle;
+  return directed < 0 ? directed + Math.PI * 2 : directed;
 }
 
 function samePoint(first: Point2, second: Point2, toleranceMm: number) {

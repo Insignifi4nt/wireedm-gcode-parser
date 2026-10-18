@@ -11,6 +11,7 @@ import type {
   SegmentSourceRef
 } from './types';
 import { DEFAULT_PATH_PLANNING_OPTIONS } from './types';
+import { exactQuadrantTrig, rotateCircularPoint } from './circularGeometry';
 
 const FULL_TURN = Math.PI * 2;
 const ANGULAR_ULP_FACTOR = 32;
@@ -443,6 +444,21 @@ export function orientedCircleClockwise(_segment: CirclePathSegment, ref: Orient
   return ref.reversed;
 }
 
+export function pointOnCircleAtParameter(
+  segment: CirclePathSegment,
+  ref: OrientedSegmentRef,
+  parameter: number
+) {
+  if (!Number.isFinite(parameter)) {
+    throw new RangeError('Circle parameter must be finite.');
+  }
+  const clamped = Math.min(1, Math.max(0, parameter));
+  const start = orientedSegmentStart(segment, ref);
+  if (clamped === 0 || clamped === 1) return start;
+  const sweep = orientedCircleClockwise(segment, ref) ? -FULL_TURN : FULL_TURN;
+  return pointFromExactArcStart(start, segment.center, sweep * clamped);
+}
+
 export function reverseSegmentRef(ref: OrientedSegmentRef): OrientedSegmentRef {
   return { segmentId: ref.segmentId, reversed: !ref.reversed };
 }
@@ -552,12 +568,10 @@ export function approximateSegmentRef(segment: PathSegment, ref: OrientedSegment
   }
 
   if (segment.kind === 'circle') {
-    const clockwise = orientedCircleClockwise(segment, ref);
-    const stepSign = clockwise ? -1 : 1;
     const count = Math.max(8, Math.ceil(FULL_TURN / Math.max(maxAngleRadians, Math.PI / 90)));
     const points: Point2[] = [];
     for (let index = 0; index <= count; index++) {
-      points.push(pointOnCircle(segment.center, segment.radius, stepSign * (FULL_TURN * index) / count));
+      points.push(pointOnCircleAtParameter(segment, ref, index / count));
     }
     return points;
   }
@@ -613,34 +627,7 @@ function angularUlpTolerance(...angles: number[]) {
 }
 
 function pointFromExactArcStart(start: Point2, center: Point2, delta: number): Point2 {
-  const radialX = start.x - center.x;
-  const radialY = start.y - center.y;
-  const exactQuadrant = exactQuadrantTrig(delta);
-  const sinDelta = exactQuadrant?.sin ?? Math.sin(delta);
-  const sinHalf = exactQuadrant ? null : Math.sin(delta / 2);
-  const cosDeltaMinusOne = exactQuadrant?.cosMinusOne ?? -2 * sinHalf! * sinHalf!;
-
-  return {
-    x: start.x + cosDeltaMinusOne * radialX - sinDelta * radialY,
-    y: start.y + sinDelta * radialX + cosDeltaMinusOne * radialY
-  };
-}
-
-function exactQuadrantTrig(delta: number) {
-  const quadrant = Math.round(delta / (Math.PI / 2));
-  const exactDelta = quadrant * (Math.PI / 2);
-  if (delta !== exactDelta) return null;
-
-  switch (((quadrant % 4) + 4) % 4) {
-    case 0:
-      return { sin: 0, cosMinusOne: 0 };
-    case 1:
-      return { sin: 1, cosMinusOne: -1 };
-    case 2:
-      return { sin: 0, cosMinusOne: -2 };
-    default:
-      return { sin: -1, cosMinusOne: -1 };
-  }
+  return rotateCircularPoint(start, start.x - center.x, start.y - center.y, delta);
 }
 
 function sweepMinusSin(sweepRadians: number) {
@@ -668,24 +655,24 @@ export function requiredSegment(segmentsById: Map<SegmentId, PathSegment>, segme
 }
 
 export function segmentStartTangent(segment: PathSegment, ref: OrientedSegmentRef) {
-  if (segment.kind === 'circle') return { x: 0, y: ref.reversed ? -1 : 1 };
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
   if (segment.kind === 'line') return normalizeVector({ x: end.x - start.x, y: end.y - start.y });
 
   const angle = Math.atan2(start.y - segment.center.y, start.x - segment.center.x);
-  const clockwise = orientedArcClockwise(segment, ref);
+  const clockwise = segment.kind === 'circle'
+    ? orientedCircleClockwise(segment, ref) : orientedArcClockwise(segment, ref);
   return clockwise ? { x: Math.sin(angle), y: -Math.cos(angle) } : { x: -Math.sin(angle), y: Math.cos(angle) };
 }
 
 export function segmentEndTangent(segment: PathSegment, ref: OrientedSegmentRef) {
-  if (segment.kind === 'circle') return { x: 0, y: ref.reversed ? -1 : 1 };
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
   if (segment.kind === 'line') return normalizeVector({ x: end.x - start.x, y: end.y - start.y });
 
   const angle = Math.atan2(end.y - segment.center.y, end.x - segment.center.x);
-  const clockwise = orientedArcClockwise(segment, ref);
+  const clockwise = segment.kind === 'circle'
+    ? orientedCircleClockwise(segment, ref) : orientedArcClockwise(segment, ref);
   return clockwise ? { x: Math.sin(angle), y: -Math.cos(angle) } : { x: -Math.sin(angle), y: Math.cos(angle) };
 }
 

@@ -3,7 +3,7 @@ import { triangleModel } from '@/domain/simulation/machine-import/__tests__/mach
 import type { MachineCollisionScanResponse } from '../machineCollisionScanTask';
 import { compiledInput } from './simulationCompilerTestSupport';
 
-export class CollisionWorker {
+export class CollisionWorker extends EventTarget {
   static instances: CollisionWorker[] = [];
   static failPost = false;
   onmessage: ((event: MessageEvent<MachineCollisionScanResponse>) => void) | null = null;
@@ -11,7 +11,7 @@ export class CollisionWorker {
   onmessageerror: (() => void) | null = null;
   terminate = vi.fn();
   postMessage = vi.fn(() => { if (CollisionWorker.failPost) throw new DOMException('Cannot clone', 'DataCloneError'); });
-  constructor(readonly url: URL, readonly options: WorkerOptions) { CollisionWorker.instances.push(this); }
+  constructor(readonly url: URL, readonly options: WorkerOptions) { super(); CollisionWorker.instances.push(this); }
   reply(data: MachineCollisionScanResponse) { this.onmessage?.({ data } as MessageEvent<MachineCollisionScanResponse>); }
 }
 

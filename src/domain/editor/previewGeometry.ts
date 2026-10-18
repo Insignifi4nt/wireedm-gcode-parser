@@ -23,9 +23,11 @@ import type {
   ArcPathSegment,
   Bounds2,
   CirclePathSegment,
+  MachiningSpan,
   OperationId,
   OrientedSegmentRef,
   PathElementId,
+  PathOperation,
   PathPlanningDocument,
   PathSegment,
   Point2,
@@ -187,6 +189,22 @@ export function buildEditorPathDocumentPreviewGeometry(
       .filter((element) => element.operationId !== null)
       .map((element) => [element.operationId!, element])
   );
+  const sourceOperationsBySegment = new Map<SegmentId, PathOperation>();
+  const sourceRefsByOperation = new Map<PathOperation, Map<SegmentId, OrientedSegmentRef>>();
+  if (hasParticipation) {
+    for (const operation of document.plan.operations) {
+      const refs = new Map<SegmentId, OrientedSegmentRef>();
+      for (const ref of operation.segmentRefs) {
+        if (!sourceOperationsBySegment.has(ref.segmentId)) sourceOperationsBySegment.set(ref.segmentId, operation);
+        if (!refs.has(ref.segmentId)) refs.set(ref.segmentId, ref);
+      }
+      sourceRefsByOperation.set(operation, refs);
+    }
+  }
+  const activeSpansById = new Map<string, MachiningSpan>();
+  if (machining?.status === 'ready') {
+    for (const span of machining.activeSpans) if (!activeSpansById.has(span.id)) activeSpansById.set(span.id, span);
+  }
   const paths: EditorPreviewPath[] = [];
   let bounds = emptyBounds();
   const initialWire = resolveInitialWirePosition(document);
@@ -199,12 +217,11 @@ export function buildEditorPathDocumentPreviewGeometry(
     for (const span of inactiveSpans) {
       const segmentId = span.sourceSegmentId;
       const sourceSegment = sourceSegmentsById.get(segmentId);
-      const sourceOperation = document.plan.operations.find((operation) =>
-        operation.segmentRefs.some((ref) => ref.segmentId === segmentId)
-      );
+      const sourceOperation = sourceOperationsBySegment.get(segmentId);
       if (!sourceSegment || !sourceOperation) continue;
       const segment = deriveSpanSegment(sourceSegment, span);
-      const ref = sourceOperation.segmentRefs.find((candidate) => candidate.segmentId === segmentId)!;
+      const ref = sourceRefsByOperation.get(sourceOperation)?.get(segmentId);
+      if (!ref) continue;
       bounds = mergeBounds(bounds, segment.bounds);
       for (const segmentPath of pathDocumentSegmentPaths(segment, ref)) {
         paths.push({
@@ -289,9 +306,7 @@ export function buildEditorPathDocumentPreviewGeometry(
 
     for (const [refIndex, ref] of operation.segmentRefs.entries()) {
       const spanId = operation.machiningIntent?.spanIds[refIndex];
-      const span = machining?.status === 'ready'
-        ? machining.activeSpans.find((candidate) => candidate.id === spanId)
-        : undefined;
+      const span = spanId === undefined ? undefined : activeSpansById.get(spanId);
       const segment = requiredSegment(segmentsById, ref.segmentId);
       for (const segmentPath of pathDocumentSegmentPaths(segment, ref)) {
         paths.push({

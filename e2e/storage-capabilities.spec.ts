@@ -1,5 +1,48 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test('starts and edits temporary projects when the localStorage getter is denied', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'localStorage', { configurable: true, get: () => {
+      throw new DOMException('Storage access denied', 'SecurityError');
+    } });
+    Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: undefined });
+  });
+  await page.goto('/');
+  const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench', exact: true });
+  await expect(onboarding).toBeVisible({ timeout: 5000 });
+  await onboarding.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await page.getByRole('button', { name: 'Open settings', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('Temporary storage');
+  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+  await page.getByLabel('Machine program file', { exact: true }).setInputFiles(program('temporary-denied.nc', 12));
+  await expect(page.locator('[data-editor-context="machine-program"]')).toBeVisible();
+  await page.getByRole('tab', { name: 'Text', exact: true }).click();
+  await page.getByLabel('Program editor').fill('G21 G90\nG0 X0 Y0\nG1 X24 Y5');
+  await page.getByRole('button', { name: 'Save active document', exact: true }).click();
+  await expect(page.locator('[data-editor-document-state]')).toHaveText('Saved');
+  expect(errors).toEqual([]);
+});
+
+test('keeps passive layout persistence failures out of temporary editor workflows', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    Reflect.set(window, 'layoutWriteAttempts', 0);
+    Storage.prototype.setItem = function (key: string) {
+      if (key === 'wire-edm.editor-workspace-layout.v1') Reflect.set(window, 'layoutWriteAttempts', Reflect.get(window, 'layoutWriteAttempts') + 1);
+      throw new DOMException('Storage is full', 'QuotaExceededError');
+    };
+    Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: undefined });
+  });
+  await ready(page);
+  await page.getByLabel('Machine program file', { exact: true }).setInputFiles(program('temporary-quota.nc', 12));
+  await expect(page.locator('[data-editor-context="machine-program"]')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, 'layoutWriteAttempts'))).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+});
+
 test('keeps existing cache untouched without Web Locks while temporary imports remain editable', async ({ page, context }) => {
   await ready(page);
   await page.getByLabel('Machine program file', { exact: true }).setInputFiles(program('retained.nc', 10));

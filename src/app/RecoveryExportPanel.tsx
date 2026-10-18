@@ -17,7 +17,7 @@ export function RecoveryExportPanel({ recovery, disabled = false }: { recovery: 
   const locked = disabled || recovery.busy;
   return <section className="grid gap-2 border-t border-border pt-3 text-xs" aria-label="Recovery export">
     <h2 className="text-sm font-semibold">Export readable recovery files</h2>
-    <p className="break-words">{source.kind === 'directory' ? 'Folder' : 'Persistent browser cache'}: {source.name}{source.nameTruncated ? '…' : ''}</p>
+    <p className="break-words">{source.kind === 'directory' ? 'Folder' : source.kind === 'memory' ? 'Temporary session' : 'Persistent browser cache'}: {source.name}{source.nameTruncated ? '…' : ''}</p>
     <p className="break-words text-muted-foreground">{source.diagnostic.message}{source.diagnostic.messageTruncated ? '… (diagnostic shortened)' : ''}</p>
     <p className="text-muted-foreground">Download the readable files and recovery diagnostics from this location. This does not repair storage or create a verified restore backup. Unreadable or oversized files are listed as omissions. Storage remains unchanged.</p>
     <div className="flex flex-wrap gap-2">

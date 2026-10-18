@@ -11,6 +11,40 @@ import {
 } from '../previewGeometry';
 
 describe('editor preview geometry', () => {
+  it('retains first source ownership and reference orientation when multiple operations mention an inactive source', () => {
+    const source = createPathPlanningDocumentFromDxfEntities([line(0, 0, 10, 0)]);
+    const document = setMachiningSpanParticipation(source, {
+      sourceSegmentId: source.segments[0].id, range: { start: 0, end: 0.4 }, participation: 'inactive-reference'
+    })!;
+    const originalOperation = document.plan.operations[0];
+    document.plan.operations.push({ ...structuredClone(originalOperation), id: 'second-owner',
+      segmentRefs: originalOperation.segmentRefs.map(ref => ({ ...ref, reversed: !ref.reversed })) });
+    const original = structuredClone(document);
+    const inactive = buildEditorPathDocumentPreviewGeometry(document).paths.filter(path => path.participation === 'inactive-reference');
+    expect(inactive).toHaveLength(1);
+    expect(inactive[0]).toMatchObject({ operationId: originalOperation.id, start: { x: 0, y: 0 }, end: { x: 4, y: 0 } });
+    expect(document).toEqual(original);
+  });
+
+  it('bounds source-reference reads while displaying many partial spans even when machining derivation is blocked', () => {
+    const count = 800;
+    const document = createPathPlanningDocumentFromDxfEntities([{ type: 'lwpolyline', layer: 'CUT', closed: true,
+      vertices: Array.from({ length: count }, (_, index) => ({
+        x: 100 * Math.cos(2 * Math.PI * index / count), y: 100 * Math.sin(2 * Math.PI * index / count), bulge: 0 })) }]);
+    document.machiningParticipation = { spans: document.segments.map((segment, index) => ({
+      id: `inactive-${index}`, sourceSegmentId: segment.id, participation: 'inactive-reference', range: { start: 0, end: 0.25 }
+    })) };
+    let reads = 0;
+    for (const ref of document.plan.operations[0].segmentRefs) {
+      const id = ref.segmentId;
+      Object.defineProperty(ref, 'segmentId', { get: () => { reads++; return id; } });
+    }
+    const paths = buildEditorPathDocumentPreviewGeometry(document).paths;
+    expect(paths.filter(path => path.participation === 'inactive-reference')).toHaveLength(count);
+    expect(paths.filter(path => path.participation === 'active-cut')).toHaveLength(count);
+    expect(reads).toBeLessThan(count * 30);
+  });
+
   it('maps a clipped cut to its source selection and exact machining span', () => {
     const source = createPathPlanningDocumentFromDxfEntities([line(0, 0, 10, 0)]);
     const segmentId = source.segments[0].id;

@@ -414,7 +414,13 @@ export async function restoreStoredWorkbenchProject(
         const raw = await workbench.adapter.readText(path);
         if (raw === null) return { ok: false, error: ownedFileDangling(input.projectId, path) };
         const parsed = await parseSavedWireEdmJobRevision(raw);
-        if (!parsed.ok || parsed.candidate.revisionId !== revisionId || parsed.candidate.project.id !== input.projectId) {
+        if (!parsed.ok) {
+          return { ok: false, error: {
+            code: 'WORKBENCH_PROJECT_SCHEMA_INVALID', path,
+            message: `Cannot restore project because saved revision ${revisionId} cannot be validated: ${parsed.error.message}`
+          } };
+        }
+        if (parsed.candidate.revisionId !== revisionId || parsed.candidate.project.id !== input.projectId) {
           return { ok: false, error: {
             code: 'WORKBENCH_PROJECT_SCHEMA_INVALID', path,
             message: `Cannot restore project because saved revision ${revisionId} is invalid or belongs to another project.`

@@ -63,11 +63,9 @@ describe('post library storage', () => {
       library: createEmptyPostLibrary()
     });
     expect(adapter.directories).toEqual([POST_LIBRARY_DIRECTORY]);
-    expect(JSON.parse(adapter.files.get(POST_LIBRARY_PATH) ?? '')).toEqual({
-      format: 'wire-edm-post-library',
-      schemaVersion: 1,
-      installations: []
-    });
+    expect(adapter.files.get(POST_LIBRARY_PATH)).toBe(
+      '{\n  "format": "wire-edm-post-library",\n  "schemaVersion": 1,\n  "installations": []\n}'
+    );
   });
 
   it('round-trips exact installation references and package content', async () => {
@@ -78,6 +76,32 @@ describe('post library storage', () => {
     expect(await writePostLibraryStorage(adapter, installed.library)).toEqual({ ok: true });
 
     expect(await readPostLibraryStorage(adapter)).toEqual({ ok: true, library: installed.library });
+  });
+
+  it('preserves installation order and the exact JSON encoding of package text', async () => {
+    let library = createEmptyPostLibrary();
+    for (const version of ['2.0.0', '1.0.0']) {
+      const value = minimalPostPackage();
+      value.manifest.version = version;
+      value.manifest.name = `Post "atelier" – șop ${version}`;
+      value.source.code += '\n// "quoted" \\ path\tșop\n';
+      const parsed = parseWireEdmPostPackage(JSON.stringify(value));
+      if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+      const installed = await installPostPackage(library, parsed.package);
+      if (!installed.ok) throw new Error(installed.error.message);
+      library = installed.library;
+    }
+    const adapter = new MemoryAdapter();
+    expect(await writePostLibraryStorage(adapter, library)).toEqual({ ok: true });
+
+    const text = adapter.files.get(POST_LIBRARY_PATH);
+    expect(text).toBe(JSON.stringify({
+      format: 'wire-edm-post-library', schemaVersion: 1, installations: library.installations
+    }, null, 2));
+    expect(text).toContain('Post \\"atelier\\" – șop 2.0.0');
+    expect(text?.endsWith('\n')).toBe(false);
+    expect(await readPostLibraryStorage(adapter)).toEqual({ ok: true, library });
+    expect(library.installations.map(({ ref }) => ref.version)).toEqual(['2.0.0', '1.0.0']);
   });
 
   it('reopens unchanged legacy arc packages without rerunning installation conformance', async () => {

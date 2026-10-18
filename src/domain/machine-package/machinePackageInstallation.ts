@@ -7,6 +7,7 @@ import {
 import {
   POST_LIBRARY_PATH,
   PostLibraryDocumentSchema,
+  serializePostLibraryStorage,
   writePostLibraryStorage
 } from '@/domain/post-processor/postLibraryStorage';
 import {
@@ -16,6 +17,7 @@ import {
 import {
   MACHINE_LIBRARY_PATH,
   MachineLibraryDocumentSchema,
+  serializeMachineLibraryStorage,
   writeMachineLibraryStorage
 } from '@/domain/machine-definition/machineLibraryStorage';
 import type { MachineDefinition } from '@/domain/machine-definition/machineDefinition';
@@ -25,7 +27,8 @@ import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageA
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import {
   beginCatalogPairTransaction,
-  finishCatalogPairTransaction,
+  finishExpectedCatalogPairTransaction,
+  serializeCatalogPairTransaction,
   rollbackCatalogPairTransaction
 } from '@/domain/storage/catalogPairTransaction';
 import {
@@ -484,16 +487,8 @@ async function persistCatalogsAtomically(
   const beforeMachines = await readRequired(adapter, MACHINE_LIBRARY_PATH);
   if (!beforeMachines.ok) return beforeMachines;
 
-  const expectedPosts = JSON.stringify({
-    format: 'wire-edm-post-library',
-    schemaVersion: 1,
-    installations: posts.installations
-  }, null, 2);
-  const expectedMachines = JSON.stringify({
-    format: 'wire-edm-machine-library',
-    schemaVersion: 1,
-    machines: machines.machines
-  }, null, 2);
+  const expectedPosts = serializePostLibraryStorage(posts);
+  const expectedMachines = serializeMachineLibraryStorage(machines);
   // The transaction must finish or recover once its journal phase begins.
   beforeWrite?.();
   const transactionValues = {
@@ -530,7 +525,7 @@ async function persistCatalogsAtomically(
       }
     });
   }
-  const finished = await finishCatalogPairTransaction(adapter);
+  const finished = await finishExpectedCatalogPairTransaction(adapter, serializeCatalogPairTransaction(transactionValues));
   return finished.ok
     ? { ok: true }
     : rollbackCatalogs(adapter, transactionValues, finished);

@@ -1,0 +1,35 @@
+{
+  "version": "0.0.701",
+  "previousVersion": "0.0.700",
+  "postCompatibility": "potential-output-impact-from-corrected-arc-stop-calculations",
+  "summary": "Lands the October storage and UPID integrity audit, corrected arc-stop and circular calculations (engine 3), recovery copies for connected workbenches, actionable execution diagnostics and faster partial-preview and simulation preparation.",
+  "warning": "Potentially breaking for installed posts and saved revisions: corrected circular stop distances, circle stop and partial-range endpoints, circular sampling and arc auditing can change execution-plan points, source ranges, hashes, controller bytes and whether circular output passes the post audit. Engine 1 and 2 saved revisions whose corrected canonical plan differs are rejected with SAVED_REVISION_EXECUTION_PLAN_MISMATCH or SAVED_REVISION_EXECUTION_PLAN_INVALID; their bytes are preserved, and they block controller generation, inspection, Snapshot JSON, verified backup and Trash restoration. New revisions record engine 3, which earlier apps cannot read. Installed packages and saved revisions are never rewritten. Storage recovery now requires exact transaction-journal ownership and blocks rather than guesses when a journal changed outside its transaction.",
+  "checklist": {
+    "schema": "Saved revisions and controller artifacts record saved-job/generating engine 3; artifacts keep sourceRevisionEngineVersion for accepted engine 1/2 sources. UPID, post, machine package, execution plan, saved revision, storage and journal schema numbers are unchanged. Post engine API remains 1.",
+    "events": "Execution event kinds and serialized shapes are unchanged. Circular source-range values, stop points and partial-range endpoints can change for affected circular geometry. Unrepresentable whole-contour boundary stops now fail with a precision diagnostic.",
+    "capabilities": "No post capability is added or relaxed. Recovery export is additive for connected browser-cache, folder and temporary-session workbenches and for edm_export_recovery; its format and receipts are unchanged. UPID import now rechecks cancellation and the reviewed workbench under the storage lock before its journal starts.",
+    "auditAndOutput": "Post-owned encoding, line endings, wrappers, numbering and formatting stay authoritative. Corrected circle sampling, circular sweep auditing and simulation interpolation can change controller bytes and audit results for affected input. Simulation keeps continuous positioning threaded and can report clearance warnings that were previously missed. Preview and simulation indexing preserve formulas, ordering and outputs.",
+    "installationAndStorage": "No installed package, snapshot or revision migration and no destructive cleanup. Browser-cache and folder adapters share the exact transaction-ownership checks: journals must be absent before a write starts and match exactly before removal, and malformed or changed contents block recovery while keeping files and journals. Optional browser storage failures keep existing data readable.",
+    "verification": "Rebased onto 0.0.700 main. Full local pure-domain and browser suites pass (511 files, 5,676 tests), with type-check and the shared UI gate. Integration fixes keep main's exact malformed-cache rejection in fingerprint tests, let CAD cancellation tests pass recovery-journal reads through, and make DXF import helpers wait for the import to finish. Endpoint-anchored line/arc intersections now treat a tangent root split by a few coordinate ulps as one contact, so exact-kernel sections of rounded plates keep forming clean CAM contours. Two journeys read storage status from Settings after main quieted the header. The original branches recorded UPID conformance, both post conformance sets and the exact Robofil package validation; no physical-controller verification is implied."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Robofil 2.6.0 post conformance fixtures and complete machine-package validation passed on the original numerical-correction branch. No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Corrected arc-stop and circular calculations, stricter storage recovery, recovery copies from connected storage and clearer execution diagnostics.",
+    "changes": [
+      "Remaining-cut program stops on arcs and circles use corrected positions, and circular sampling, playback and output auditing are more precise.",
+      "Older saved revisions whose plan changes under the corrected calculations stay preserved but are reported as incompatible instead of producing different output silently.",
+      "Settings → Storage can copy readable recovery files from a connected workbench, including when a historical revision blocks verified backup.",
+      "Execution issues name their contour and open the tool that actually clears them, including Machining Participation for partial contours.",
+      "Storage recovery keeps files and journals untouched whenever their contents changed outside the expected transaction.",
+      "Large partial drawings and repeated simulation seeks prepare faster."
+    ],
+    "compatibility": "Installed machine packages and saved revisions are never rewritten. Circular output and audit results can change for affected geometry, and some older saved revisions become unreadable until regenerated. New revisions need this app version or later.",
+    "action": "Before machining, regenerate controller output for projects with arcs or circles and review it against the exact post's fixtures. For a revision reported as incompatible, open its editable project, review circular geometry and program stops, save, and choose Generate controller artifact; keep the old revision and existing backups."
+  }
+}

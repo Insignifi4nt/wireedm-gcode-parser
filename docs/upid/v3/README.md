@@ -28,4 +28,6 @@ Without an exit lead, `after-contour` and `after-exit` pause at the same point. 
 
 New travel-distance intent promotes only the edited project to v3. Readers still accept v1/v2; their placement meanings and execution remain unchanged. Older apps reject v3. Saved revisions and installed packages are never rewritten.
 
+The [source geometry and identity checks](../v1/README.md#identity-and-source-of-truth) apply to every supported version. Disagreement between paired contour/path-element depths can reject an older document, and correcting a route that relied on forged or stale hierarchy metadata can block an old execution plan. Preserve its original and review a corrected project/new revision; do not modify an installed post to bypass the material check.
+
 Post schema, engine API and execution event kinds are unchanged. The `program-stop.placement` vocabulary adds `after-contour-distance`. Posts that exhaustively check placement values or assume one unsplit exit/positioning motion may reject new jobs or need a separately reviewed package update. Controller output can contain split moves and an extra stop; generate and inspect it with the exact installed setup. Software checks do not verify controller resume behavior or physical machining. The app does not generate feeds for this feature.

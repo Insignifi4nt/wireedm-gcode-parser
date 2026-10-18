@@ -51,3 +51,55 @@ test('repairs an execution issue through its owning tool and updates readiness',
   await page.getByRole('button', { name: 'Save active document', exact: true }).click();
   await expect(page.locator('[data-editor-document-state]')).toHaveText('Saved');
 });
+
+test('repairs partial compensation through its diagnostic while preserving pending-form cancellation and Undo', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await page.getByLabel('DXF file').setInputFiles({ name: 'partial-compensation-circle.dxf', mimeType: 'application/dxf',
+    buffer: Buffer.from('0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\nCUT\n10\n0\n20\n0\n40\n10\n0\nENDSEC\n0\nEOF\n') });
+  await confirmPendingDxfImport(page);
+  await page.locator('[data-editor-status-diagnostics]').click();
+  await page.getByRole('button', { name: 'Review initial wire position for Program setup', exact: true }).click();
+  await page.getByLabel('Initial wire X', { exact: true }).fill('10');
+  await page.getByLabel('Initial wire Y', { exact: true }).fill('0');
+  await page.getByRole('button', { name: 'Review and set manual initial wire position', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply Initial wire position workflow', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Machining menu', exact: true }).click();
+  await page.locator('[data-editor-workflow-command="machining.participation"]').click();
+  await page.getByLabel('Machining span start', { exact: true }).fill('25');
+  await page.getByLabel('Machining span end', { exact: true }).fill('75');
+  await page.getByRole('button', { name: 'Mark inactive reference', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply Machining Participation workflow', exact: true }).click();
+
+  await page.locator('[data-editor-status-diagnostics]').click();
+  const issue = page.locator('[data-editor-execution-diagnostic="EXECUTION_PLAN_COMPENSATION_UNRESOLVED"]');
+  await expect(issue.locator('[data-editor-execution-diagnostic-context]')).toHaveText('Contour 01 · Exterior 1');
+  await issue.getByRole('button', { name: 'Review partial-path compensation for Contour 01 · Exterior 1', exact: true }).click();
+  await expect(page.getByLabel('Partial contour wire side', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-editor-status-selection]')).toHaveText('Selection Exterior 1');
+
+  await page.getByLabel('Machining span start', { exact: true }).fill('20');
+  await page.locator('[data-tree-key="diagnostic:EXECUTION_PLAN_COMPENSATION_UNRESOLVED:0"] > div').dblclick();
+  const pending = page.getByRole('dialog', { name: 'Pending workflow changes', exact: true });
+  await expect(pending).toBeVisible();
+  await expect(pending.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(pending).toHaveCount(0);
+  await expect(page.getByLabel('Machining span start', { exact: true })).toHaveValue('20');
+  await page.getByRole('button', { name: 'Cancel Machining Participation workflow', exact: true }).click();
+  await pending.getByRole('button', { name: 'Discard', exact: true }).click();
+
+  await page.locator('[data-editor-status-diagnostics]').click();
+  await issue.getByRole('button', { name: 'Review partial-path compensation for Contour 01 · Exterior 1', exact: true }).click();
+  await page.getByLabel('Partial contour wire side', { exact: true }).selectOption('right');
+  await page.getByRole('button', { name: 'Apply Machining Participation workflow', exact: true }).click();
+  await expect(page.locator('[data-tree-key="section:program"] > ul > li').first()).toContainText('Program start');
+  await expect(page.locator('[data-tree-key="section:program"] > ul > li').last()).toContainText('Program end');
+
+  await page.getByRole('button', { name: 'Undo active document change', exact: true }).click();
+  await page.locator('[data-editor-status-diagnostics]').click();
+  await expect(issue.getByRole('button')).toHaveText('Review partial-path compensation');
+  await page.getByRole('button', { name: 'Redo active document change', exact: true }).click();
+  await expect(issue).toHaveCount(0);
+});

@@ -5,6 +5,20 @@ import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { resolveProgramStopPoints } from '../programStops';
 
 describe('operation program stops', () => {
+  it('uses the exact stored endpoint for a stop at a line join', () => {
+    const join = { x: 1e-16, y: 0 };
+    const document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: -1, y: 0 }, end: join },
+      { type: 'line', layer: 'CUT', start: join, end: { x: 2, y: 0 } }
+    ], { coincidenceEpsilon: 0, endpointTolerance: 0 });
+    const operation = document.plan.operations[0];
+    operation.programStops = [{ id: 'join', enabled: true, reason: 'operator-check',
+      placement: { kind: 'before-operation-end', remainingCutLengthMm: 2 } }];
+    expect(resolveProgramStopPoints(document, operation.id)).toMatchObject({
+      status: 'ready', stops: [{ point: join }]
+    });
+  });
+
   it('places a remaining-distance stop at an exact point without changing source geometry', () => {
     const document = createUpidFromDxfEntities([
       { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }

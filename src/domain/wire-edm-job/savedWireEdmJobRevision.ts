@@ -37,9 +37,12 @@ import { WireEdmPostPackageSchema } from '@/domain/post-processor/postPackageSch
 import type { PostPropertyDiagnostic, PostPropertyValue } from '@/domain/post-processor/postProperties';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import { readExactTransactionText as readExact, verifyTransactionJournal } from '@/domain/storage/transactionFileState';
 import {
   beginSavedRevisionTransaction,
-  finishSavedRevisionTransaction,
+  finishExpectedSavedRevisionTransaction,
+  serializeSavedRevisionTransaction,
+  SAVED_REVISION_TRANSACTION_PATH,
   recoverSavedRevisionTransaction,
   type SavedRevisionTransactionError
 } from '@/domain/storage/savedRevisionTransaction';
@@ -65,7 +68,8 @@ import {
 } from '@/domain/workbench-catalog/workbenchProjectStorage';
 
 export const SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION = 1 as const;
-export const WIRE_EDM_ENGINE_VERSION = '2' as const;
+export const WIRE_EDM_ENGINE_VERSION = '3' as const;
+const readableWireEdmEngineVersions = ['1', '2', WIRE_EDM_ENGINE_VERSION] as const;
 
 const MAX_SAVED_REVISION_BYTES = 128 * 1024 * 1024;
 const strictObject = { additionalProperties: false } as const;
@@ -84,7 +88,7 @@ const PostPropertyValueSchema = Type.Union([
 export const SavedWireEdmJobRevisionSchema = Type.Object({
   format: Type.Literal('wire-edm-job-revision'),
   schemaVersion: Type.Literal(SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION),
-  engineVersion: Type.Union([Type.Literal('1'), Type.Literal(WIRE_EDM_ENGINE_VERSION)]),
+  engineVersion: Type.Union([Type.Literal('1'), Type.Literal('2'), Type.Literal(WIRE_EDM_ENGINE_VERSION)]),
   revisionId: PostIdentifierSchema,
   savedAt: Type.String({ pattern: canonicalTimestampPattern }),
   project: WorkbenchProjectDocumentSchema,
@@ -145,7 +149,7 @@ export interface SavedRevisionHashes {
 export interface SavedWireEdmJobRevisionData {
   readonly format: 'wire-edm-job-revision';
   readonly schemaVersion: typeof SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION;
-  readonly engineVersion: '1' | typeof WIRE_EDM_ENGINE_VERSION;
+  readonly engineVersion: SavedRevisionSchemaValue['engineVersion'];
   readonly revisionId: string;
   readonly savedAt: string;
   readonly project: UpidWorkbenchProjectDocument;
@@ -180,7 +184,7 @@ export type SavedWireEdmJobRevisionError =
       readonly supportedVersion: typeof SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION;
     }
   | { readonly code: 'SAVED_REVISION_ENGINE_UNSUPPORTED'; readonly message: string;
-      readonly foundVersion: string; readonly supportedVersions: readonly ['1', '2'] }
+      readonly foundVersion: string; readonly supportedVersions: typeof readableWireEdmEngineVersions }
   | { readonly code: 'SAVED_REVISION_FILE_TOO_LARGE'; readonly message: string }
   | { readonly code: 'SAVED_REVISION_JSON_INVALID'; readonly message: string }
   | { readonly code: 'SAVED_REVISION_SCHEMA_INVALID'; readonly message: string; readonly path: string }
@@ -486,10 +490,10 @@ export async function parseSavedWireEdmJobRevision(
     });
   }
   if (record && typeof record.engineVersion === 'string' &&
-    record.engineVersion !== '1' && record.engineVersion !== WIRE_EDM_ENGINE_VERSION) {
+    !readableWireEdmEngineVersions.some((version) => version === record.engineVersion)) {
     return failure({ code: 'SAVED_REVISION_ENGINE_UNSUPPORTED',
       message: `Saved revision engine version ${record.engineVersion} is unsupported.`,
-      foundVersion: record.engineVersion, supportedVersions: ['1', '2'] });
+      foundVersion: record.engineVersion, supportedVersions: readableWireEdmEngineVersions });
   }
   const schemaError = Value.Errors(SavedWireEdmJobRevisionSchema, value).First();
   if (schemaError) return schemaFailure(schemaError.path, schemaError.message);
@@ -563,7 +567,7 @@ export async function parseSavedWireEdmJobRevision(
   if (!compiled.ok) {
     return failure({
       code: 'SAVED_REVISION_EXECUTION_PLAN_INVALID',
-      message: 'The saved UPID no longer compiles into a valid execution plan.',
+      message: `The saved UPID no longer compiles with the current engine's corrected calculations. ${compiled.diagnostics.map(diagnostic => diagnostic.message).join(' ')} The original saved revision and installed machine packages have not been changed. Open its editable project from the library, review the diagnostics, circular geometry and program stops, save the project, then choose Generate controller artifact to save a new revision.`,
       diagnostics: compiled.diagnostics
     });
   }
@@ -585,7 +589,7 @@ export async function parseSavedWireEdmJobRevision(
   if (canonicalJson(candidate.executionPlan) !== canonicalJson(snapshot.executionPlan)) {
     return failure({
       code: 'SAVED_REVISION_EXECUTION_PLAN_MISMATCH',
-      message: 'Saved execution plan does not match the current compilation of its UPID. The original saved revision and installed machine packages have not been changed. Review the project and save a new revision before generating controller output; do not rewrite the historical revision to match.'
+      message: 'Saved execution plan does not match the current compilation of its UPID, which uses corrected arc-stop distance calculations and circle stop/partial-range endpoints. The original saved revision and installed machine packages have not been changed. Review the project and save a new revision before generating controller output: open its editable project from the library, review circular geometry and program stops, save the project, then choose Generate controller artifact. Do not rewrite the historical revision to match.'
     });
   }
   const hashes = await calculateHashes({
@@ -738,8 +742,6 @@ export function saveStoredWireEdmJobRevision(
       writtenContents: snapshot.path === path ? serializedRevision
         : snapshot.path === documentPath ? serializedProject : serializedManifest
     }));
-    const rollback = (error: SavedRevisionCatalogMutationError) =>
-      rollbackCatalogRevision(workbench, applied, transactionSnapshots, error);
     const previousProject = snapshots.snapshots.find((snapshot) => snapshot.path === documentPath)?.contents;
     const previousManifest = snapshots.snapshots.find((snapshot) => snapshot.path === WORKBENCH_CATALOG_PATH)?.contents;
     if (previousProject == null || previousManifest == null) {
@@ -749,7 +751,7 @@ export function saveStoredWireEdmJobRevision(
       const current = await verifyCurrentActiveSetup(workbench.adapter, candidate);
       if (!current.ok) return current;
     }
-    const begun = await beginSavedRevisionTransaction(workbench.adapter, {
+    const transactionValues = {
       projectId: project.id,
       revisionId: candidate.revisionId,
       previousProject,
@@ -757,7 +759,11 @@ export function saveStoredWireEdmJobRevision(
       nextRevision: serializedRevision,
       nextProject: serializedProject,
       nextManifest: serializedManifest
-    }, { beforeWrite: options.beforeWrite });
+    };
+    const journal = serializeSavedRevisionTransaction(transactionValues);
+    const rollback = (error: SavedRevisionCatalogMutationError) =>
+      rollbackCatalogRevision(workbench, applied, transactionSnapshots, journal, error);
+    const begun = await beginSavedRevisionTransaction(workbench.adapter, transactionValues, { beforeWrite: options.beforeWrite });
     if (!begun.ok) return begun;
     journalCatalogSnapshot(applied, snapshots.snapshots, path, serializedRevision);
     const revisionWrite = await writeCatalogTransactionText(workbench, path, serializedRevision);
@@ -806,7 +812,7 @@ export function saveStoredWireEdmJobRevision(
         path: WORKBENCH_CATALOG_PATH
       });
     }
-    const finished = await finishSavedRevisionTransaction(workbench.adapter);
+    const finished = await finishExpectedSavedRevisionTransaction(workbench.adapter, journal);
     return {
       ok: true,
       path,
@@ -856,7 +862,7 @@ async function persistSavedWireEdmJobRevisionUnlocked(
   const serialized = serializeSavedWireEdmJobRevision(candidate);
   let existing: string | null;
   try {
-    existing = await adapter.readText(path);
+    existing = await readExact(adapter, path);
   } catch (error) {
     return storageFailure(
       'SAVED_REVISION_STORAGE_READ_FAILED',
@@ -891,7 +897,7 @@ async function persistSavedWireEdmJobRevisionUnlocked(
   try {
     await adapter.writeText(path, serialized);
   } catch (error) {
-    return rollbackNewRevision(adapter, path, storageFailure(
+    return rollbackNewRevision(adapter, path, { kind: 'failed-write', text: serialized }, storageFailure(
       'SAVED_REVISION_STORAGE_WRITE_FAILED',
       `Could not persist saved revision at ${path}: ${errorMessage(error)}.`
     ));
@@ -899,11 +905,12 @@ async function persistSavedWireEdmJobRevisionUnlocked(
 
   let readBack: string | null;
   try {
-    readBack = await adapter.readText(path);
+    readBack = await readExact(adapter, path);
   } catch (error) {
     return rollbackNewRevision(
       adapter,
       path,
+      { kind: 'completed-write', text: serialized },
       storageFailure(
         'SAVED_REVISION_STORAGE_READ_FAILED',
         `Could not verify saved revision at ${path}: ${errorMessage(error)}.`
@@ -914,6 +921,7 @@ async function persistSavedWireEdmJobRevisionUnlocked(
     return rollbackNewRevision(
       adapter,
       path,
+      { kind: 'completed-write', text: serialized },
       storageFailure(
         'SAVED_REVISION_STORAGE_READBACK_MISMATCH',
         `Saved revision at ${path} did not read back byte-for-byte.`
@@ -922,7 +930,7 @@ async function persistSavedWireEdmJobRevisionUnlocked(
   }
   const parsed = await parseSavedWireEdmJobRevision(readBack);
   if (!parsed.ok) {
-    return rollbackNewRevision(adapter, path, storageFailure(
+    return rollbackNewRevision(adapter, path, { kind: 'completed-write', text: serialized }, storageFailure(
       'SAVED_REVISION_STORAGE_READBACK_MISMATCH',
       `Saved revision at ${path} failed validation after write: ${parsed.error.message}`
     ));
@@ -1229,9 +1237,12 @@ async function rollbackCatalogRevision(
   workbench: ConnectedWorkbenchCatalog,
   snapshots: readonly AppliedCatalogSnapshot[],
   transactionSnapshots: readonly AppliedCatalogSnapshot[],
+  expectedJournal: string,
   originalError: SavedRevisionCatalogMutationError
 ): Promise<Extract<SaveStoredWireEdmJobRevisionResult, { readonly ok: false }>> {
   const rollbackErrors: WorkbenchProjectStorageError[] = [];
+  try { await verifyTransactionJournal(workbench.adapter, SAVED_REVISION_TRANSACTION_PATH, expectedJournal); }
+  catch (error) { rollbackErrors.push(catalogStorageAccessFailure('write', SAVED_REVISION_TRANSACTION_PATH, error)); }
   // Validate every journal target before touching any of them. An external edit
   // or unrecognized partial write must retain both its bytes and recovery journal.
   for (const snapshot of transactionSnapshots) {
@@ -1240,6 +1251,10 @@ async function rollbackCatalogRevision(
     else if (current.contents !== snapshot.contents && current.contents !== snapshot.writtenContents) {
       rollbackErrors.push(catalogStorageAccessFailure('write', snapshot.path, 'Rollback target has unknown bytes; original and recovery data were preserved'));
     }
+  }
+  if (rollbackErrors.length === 0) {
+    try { await verifyTransactionJournal(workbench.adapter, SAVED_REVISION_TRANSACTION_PATH, expectedJournal); }
+    catch (error) { rollbackErrors.push(catalogStorageAccessFailure('write', SAVED_REVISION_TRANSACTION_PATH, error)); }
   }
   for (const snapshot of rollbackErrors.length === 0 ? [...snapshots].reverse() : []) {
     const restored = snapshot.contents === null
@@ -1255,7 +1270,7 @@ async function rollbackCatalogRevision(
     }
   }
   if (rollbackErrors.length === 0) {
-    const finished = await finishSavedRevisionTransaction(workbench.adapter);
+    const finished = await finishExpectedSavedRevisionTransaction(workbench.adapter, expectedJournal);
     return finished.ok ? catalogMutationFailure(originalError) : finished;
   }
   return {
@@ -1395,10 +1410,19 @@ function storageFailure<Code extends SavedWireEdmJobRevisionStorageError['code']
 async function rollbackNewRevision(
   adapter: WorkbenchStorageAdapter,
   path: string,
+  expected: { readonly kind: 'failed-write' | 'completed-write'; readonly text: string },
   originalFailure: Extract<PersistSavedWireEdmJobRevisionResult, { readonly ok: false }>
 ): Promise<Extract<PersistSavedWireEdmJobRevisionResult, { readonly ok: false }>> {
   try {
+    const current = await readExact(adapter, path);
+    if (current === null) return originalFailure;
+    // Only a failed first write can leave an initial empty handle. Once that
+    // write completes, empty bytes are unknown contents and must be retained.
+    if (current !== expected.text && !(expected.kind === 'failed-write' && current === '')) {
+      throw new Error('Revision changed outside this write. Its contents were preserved for recovery');
+    }
     await adapter.deleteText(path);
+    if (await readExact(adapter, path) !== null) throw new Error('Revision cleanup did not read back exactly');
     return originalFailure;
   } catch (error) {
     return storageFailure(

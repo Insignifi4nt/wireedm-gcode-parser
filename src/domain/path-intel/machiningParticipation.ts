@@ -10,7 +10,7 @@ import {
   pathEndPoint,
   pathStartPoint,
   pointOnArcAtParameter,
-  pointOnCircle,
+  pointOnCircleAtParameter,
   segmentMap
 } from './segments';
 import type {
@@ -527,11 +527,7 @@ function sourcePointAt(segment: PathSegment, parameter: number) {
   if (segment.kind === 'arc') {
     return pointOnArcAtParameter(segment, { segmentId: segment.id, reversed: false }, parameter);
   }
-  const startAngle = Math.atan2(
-    segment.preferredStart.y - segment.center.y,
-    segment.preferredStart.x - segment.center.x
-  );
-  return pointOnCircle(segment.center, segment.radius, startAngle + Math.PI * 2 * parameter);
+  return pointOnCircleAtParameter(segment, { segmentId: segment.id, reversed: false }, parameter);
 }
 
 function partitionSegment(segmentId: string, decisions: MachiningSpan[]) {

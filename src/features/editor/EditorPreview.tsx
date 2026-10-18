@@ -3,6 +3,7 @@ import { Select } from '@/components/ui/select';
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -31,7 +32,7 @@ import {
 } from '@/domain/editor/previewGeometry';
 import type { EditorPreviewPath, EditorPreviewViewBox } from '@/domain/editor/previewGeometry';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
-import { orientedSegmentStart, orientedSegmentEnd } from '@/domain/path-intel/segments';
+import { readPathEndpointHandles } from './editorPreviewEndpoints';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 import {
   MAX_PREVIEW_ZOOM,
@@ -78,6 +79,8 @@ interface EditorPreviewProps {
   hoveredLine: number | null;
   hoveredPathElement?: EditorPathElementRef | null;
   keyboardShortcutsEnabled?: boolean;
+  /** Stable across cursor renders, changes when the owning draft or pick target changes. */
+  interactionKey?: string;
   measurementPoints: MeasurementPoint[];
   measurement?: EditorMeasurementState;
   onCursorPointChange?: (point: { x: number; y: number } | null) => void;
@@ -148,6 +151,7 @@ export function EditorPreview({
   hoveredLine,
   hoveredPathElement,
   keyboardShortcutsEnabled = true,
+  interactionKey,
   measurementPoints,
   measurement,
   onCursorPointChange,
@@ -191,7 +195,7 @@ export function EditorPreview({
   const [showGrid, setShowGrid] = useState(true);
   const [surfaceSize, setSurfaceSize] = useState({ width: 0, height: 0 });
   const dragStateRef = useRef<PreviewDragState | null>(null);
-  const lastTapRef = useRef<PreviewLastTapState | null>(null);
+  const lastTapRef = useRef<(PreviewLastTapState & { pendingPickTimeout: number | null }) | null>(null);
   const pointDragStateRef = useRef<{ pointId: string } | null>(null);
   const pathDragStateRef = useRef<{
     currentWorld: { x: number; y: number };
@@ -213,7 +217,7 @@ export function EditorPreview({
   const [selectionFilter, setSelectionFilter] = useState<PreviewSelectionFilter>('all');
   const [overlapCandidates, setOverlapCandidates] = useState<EditorPreviewPath[]>([]);
   const touchTapRef = useRef<PreviewTouchTapState | null>(null);
-  const pendingTouchPointClickTimeoutRef = useRef<number | null>(null);
+  const pendingTouchPointClickTimeoutsRef = useRef(new Set<number>());
 
   const fittedViewBox = preview
     ? fitViewBoxToViewportAspect(preview.viewBox, surfaceSize.width, surfaceSize.height)
@@ -233,13 +237,26 @@ export function EditorPreview({
     setViewState(activeViewState);
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     return () => {
-      if (pendingTouchPointClickTimeoutRef.current !== null) {
-        window.clearTimeout(pendingTouchPointClickTimeoutRef.current);
-      }
+      for (const timeout of pendingTouchPointClickTimeoutsRef.current) window.clearTimeout(timeout);
+      pendingTouchPointClickTimeoutsRef.current.clear();
+      lastTapRef.current = null;
+      touchTapRef.current = null;
     };
-  }, []);
+  }, [program, parseResult, pathDocument, canvasMouseMode, pathEndpointActionOperationId,
+    interactionKey, Boolean(measurement), Boolean(onPreviewPointClick), Boolean(onPathElementClick),
+    interactionKey === undefined ? onPreviewPointClick : undefined,
+    interactionKey === undefined ? onPathElementClick : undefined]);
+
+  function scheduleTouchPick(pick: () => void) {
+    const timeout = window.setTimeout(() => {
+      pendingTouchPointClickTimeoutsRef.current.delete(timeout);
+      pick();
+    }, TOUCH_DOUBLE_TAP_TIMEOUT_MS);
+    pendingTouchPointClickTimeoutsRef.current.add(timeout);
+    return timeout;
+  }
 
   function setZoom(action: number | ((current: number) => number)) {
     setViewState((current) => ({
@@ -804,9 +821,9 @@ export function EditorPreview({
       Math.hypot(touch.clientX - previousTap.clientX, touch.clientY - previousTap.clientY) <=
         TOUCH_TAP_THRESHOLD
     ) {
-      if (pendingTouchPointClickTimeoutRef.current !== null) {
-        window.clearTimeout(pendingTouchPointClickTimeoutRef.current);
-        pendingTouchPointClickTimeoutRef.current = null;
+      if (previousTap.pendingPickTimeout !== null) {
+        window.clearTimeout(previousTap.pendingPickTimeout);
+        pendingTouchPointClickTimeoutsRef.current.delete(previousTap.pendingPickTimeout);
       }
       lastTapRef.current = null;
       handleFitPreview();
@@ -816,11 +833,13 @@ export function EditorPreview({
       gridSize: snapGridSize,
       snapToGrid
     });
-    lastTapRef.current = {
+    const tapState: NonNullable<typeof lastTapRef.current> = {
       clientX: touch.clientX,
       clientY: touch.clientY,
-      time: now
+      time: now,
+      pendingPickTimeout: null
     };
+    lastTapRef.current = tapState;
     if (selectionEnabled) {
       const exactPoint = previewTouchToWorldPoint(touch, event.currentTarget, activeViewBox, flipY, { gridSize: snapGridSize, snapToGrid: false });
       const candidates = exactPoint ? previewSelectionCandidates(activePreview.paths, exactPoint, measurementScale(event.currentTarget) * 6, selectionFilter) : [];
@@ -828,20 +847,16 @@ export function EditorPreview({
       if (picked?.operationId) {
         const element = { operationId: picked.operationId, pathElementId: picked.pathElementId ?? null,
           segmentId: picked.segmentId ?? null, machiningSpanId: picked.machiningSpanId };
-        pendingTouchPointClickTimeoutRef.current = window.setTimeout(() => {
-          pendingTouchPointClickTimeoutRef.current = null;
+        tapState.pendingPickTimeout = scheduleTouchPick(() => {
           setOverlapCandidates(candidates);
           onPathElementClick?.(element);
-        }, TOUCH_DOUBLE_TAP_TIMEOUT_MS);
+        });
       }
       return;
     }
     if (!point || !onPreviewPointClick) return;
 
-    pendingTouchPointClickTimeoutRef.current = window.setTimeout(() => {
-      pendingTouchPointClickTimeoutRef.current = null;
-      onPreviewPointClick(point);
-    }, TOUCH_DOUBLE_TAP_TIMEOUT_MS);
+    tapState.pendingPickTimeout = scheduleTouchPick(() => onPreviewPointClick(point));
   }
 
   function handlePreviewTouchCancel() {
@@ -1823,72 +1838,6 @@ function pathElementMatches(
   if (path.travelRole) return false;
   if (!path.segmentId) return false;
   return element.segmentId ? path.segmentId === element.segmentId : true;
-}
-
-interface PreviewPathEndpointHandle {
-  operationId: string;
-  pathElementId?: string;
-  point: { x: number; y: number };
-  role: 'start' | 'end';
-  segmentId: string;
-}
-
-function readPathEndpointHandles(paths: EditorPreviewPath[], document?: PathPlanningDocument | null): PreviewPathEndpointHandle[] {
-  const segmentPaths = new Map<
-    string,
-    {
-      first: EditorPreviewPath;
-      last: EditorPreviewPath;
-    }
-  >();
-
-  for (const previewPath of paths) {
-    if (previewPath.source !== 'path-document' || !previewPath.operationId || !previewPath.segmentId) continue;
-    let path = previewPath;
-    if (path.clippedSourceSegment) {
-      const source = document?.segments.find((segment) => segment.id === path.segmentId);
-      const ref = document?.plan.operations.find((operation) => operation.id === path.operationId)?.segmentRefs.find((candidate) => candidate.segmentId === path.segmentId);
-      if (!source || !ref) continue;
-      path = { ...path, start: orientedSegmentStart(source, ref), end: orientedSegmentEnd(source, ref) };
-    }
-
-    const key = `${path.operationId}:${path.pathElementId ?? ''}:${path.segmentId}`;
-    const grouped = segmentPaths.get(key);
-    if (grouped) {
-      grouped.last = path;
-    } else {
-      segmentPaths.set(key, { first: path, last: path });
-    }
-  }
-
-  return [...segmentPaths.values()].flatMap(({ first, last }) => {
-    const start: PreviewPathEndpointHandle = {
-      operationId: first.operationId!,
-      pathElementId: first.pathElementId,
-      point: first.start,
-      role: 'start',
-      segmentId: first.segmentId!
-    };
-    if (previewPointsEqual(first.start, last.end)) return [start];
-
-    return [
-      start,
-      {
-        operationId: last.operationId!,
-        pathElementId: last.pathElementId,
-        point: last.end,
-        role: 'end',
-        segmentId: last.segmentId!
-      }
-    ];
-  });
-}
-
-function previewPointsEqual(
-  first: { x: number; y: number },
-  second: { x: number; y: number }
-) {
-  return Math.abs(first.x - second.x) <= 1e-9 && Math.abs(first.y - second.y) <= 1e-9;
 }
 
 function pathEndpointMatches(

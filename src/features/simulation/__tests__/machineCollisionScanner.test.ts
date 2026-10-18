@@ -72,7 +72,8 @@ describe('machine collision worker lifecycle', () => {
     const { plan, model } = scanInput();
     const pending = scanMachineCollisionsAsync(plan, model, IDENTITY_MACHINE_PLACEMENT, new AbortController().signal);
     const worker = CollisionWorker.instances[0];
-    worker[event]?.();
+    if (event === 'onmessageerror') worker.dispatchEvent(new MessageEvent('messageerror'));
+    else worker.onerror?.();
     expect(await pending).toMatchObject({ ok: false, message: expect.stringContaining('No clearance was verified') });
     released(worker);
   });

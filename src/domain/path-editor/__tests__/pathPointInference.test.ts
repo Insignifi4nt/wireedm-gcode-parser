@@ -7,14 +7,101 @@ import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/f
 
 import {
   inferPathPoint,
+  inferPathPointOnSegment,
   inferPerpendicularOperationOffset
 } from '../pathPointInference';
+import type { PathPointInferenceMode } from '../pathPointInference';
 
 function documentFrom(entities: DxfEntity[]) {
   return createPathPlanningDocumentFromDxfEntities(entities);
 }
 
 describe('inferPathPoint', () => {
+  it.each<PathPointInferenceMode>(['endpoint', 'nearest', 'midpoint', 'perpendicular', 'tangent'])(
+    'preserves complete %s inference metadata when selecting a segment directly',
+    (mode) => {
+      const geometries: DxfEntity[] = [
+        { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+        { type: 'arc', layer: 'CUT', center: { x: 0, y: 0 }, radius: 10,
+          startAngle: 0, endAngle: 90, clockwise: false, start: { x: 10, y: 0 }, end: { x: 0, y: 10 } },
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 10 }
+      ];
+      for (const geometry of geometries) {
+        for (const reversed of [false, true]) {
+          const document = documentFrom([geometry]);
+          const operation = document.plan.operations[0];
+          const ref = operation.segmentRefs[0];
+          ref.reversed = reversed;
+          const request = { mode, hintPoint: { x: 8, y: 2 }, sourcePoint: { x: 20, y: 5 }, operationId: operation.id };
+          const scanned = inferPathPoint(document, request);
+          const direct = inferPathPointOnSegment(document, { ...request, segmentId: ref.segmentId });
+
+          expect(direct).toEqual(scanned);
+          expect(direct).toMatchObject({ mode, operationId: operation.id,
+            pathElementId: document.pathElements.find((element) => element.operationId === operation.id)?.id ?? null,
+            segmentId: ref.segmentId, segmentIndex: 0, sourcePoint: request.sourcePoint });
+          expect(direct?.guide).toEqual({ from: request.sourcePoint, to: direct?.point });
+          expect(direct?.distance).toBe(Math.hypot(request.hintPoint.x - direct!.point.x, request.hintPoint.y - direct!.point.y));
+        }
+      }
+    }
+  );
+
+  it('retains the first operation and segment when candidate distances tie', () => {
+    const operationsDocument = documentFrom([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: -2 }, end: { x: 10, y: -2 } },
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 2 }, end: { x: 10, y: 2 } }
+    ]);
+    const request = { mode: 'nearest' as const, hintPoint: { x: 5, y: 0 } };
+    expect(inferPathPoint(operationsDocument, request)?.operationId).toBe(operationsDocument.plan.operations[0].id);
+    operationsDocument.plan.operations.reverse();
+    expect(inferPathPoint(operationsDocument, request)?.operationId).toBe(operationsDocument.plan.operations[0].id);
+
+    const segmentsDocument = documentFrom([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 10, y: 10 } }
+    ]);
+    const operation = segmentsDocument.plan.operations[0];
+    const segmentRequest = { mode: 'nearest' as const, hintPoint: { x: 5, y: 5 } };
+    expect(inferPathPoint(segmentsDocument, segmentRequest)?.segmentId).toBe(operation.segmentRefs[0].segmentId);
+    operation.segmentRefs.reverse();
+    expect(inferPathPoint(segmentsDocument, segmentRequest)?.segmentId).toBe(operation.segmentRefs[0].segmentId);
+  });
+
+  it.each([
+    ['operation scan', inferPathPoint],
+    ['direct segment selection', inferPathPointOnSegment]
+  ] as const)('returns detached construction points and guides through %s', (_, infer) => {
+    const document = documentFrom([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    const operation = document.plan.operations[0];
+    const snapshot = structuredClone(document);
+    const hintPoint = { x: 8, y: 2 };
+    const sourcePoint = { x: 4, y: 5 };
+    const candidate = infer(document, { mode: 'perpendicular', hintPoint, sourcePoint,
+      operationId: operation.id, segmentId: operation.segmentRefs[0].segmentId });
+    expect(candidate).not.toBeNull();
+    expect(candidate?.sourcePoint).not.toBe(sourcePoint);
+    expect(candidate?.guide?.from).not.toBe(sourcePoint);
+    expect(candidate?.guide?.from).not.toBe(candidate?.sourcePoint);
+    expect(candidate?.guide?.to).not.toBe(candidate?.point);
+    candidate!.point.x = 100;
+    candidate!.sourcePoint!.x = 101;
+    candidate!.guide!.from.x = 102;
+    candidate!.guide!.to.x = 103;
+    expect(sourcePoint).toEqual({ x: 4, y: 5 });
+    expect(hintPoint).toEqual({ x: 8, y: 2 });
+    expect(document).toEqual(snapshot);
+
+    const nearest = infer(document, { mode: 'nearest', hintPoint,
+      operationId: operation.id, segmentId: operation.segmentRefs[0].segmentId });
+    expect(nearest?.sourcePoint).toBeUndefined();
+    expect(nearest?.guide).toEqual({ from: hintPoint, to: nearest?.point });
+    expect(nearest?.guide?.from).not.toBe(hintPoint);
+    expect(nearest?.guide?.to).not.toBe(nearest?.point);
+  });
+
   it.each([false, true])('uses clipped arc endpoint normals with source identity (reversed %s)', (reversed) => {
     const source = documentFrom([{ type: 'arc', layer: 'CUT', center: { x: 0, y: 0 }, radius: 10,
       startAngle: 0, endAngle: 90, clockwise: false, start: { x: 10, y: 0 }, end: { x: 0, y: 10 } }]);

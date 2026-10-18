@@ -11,7 +11,9 @@ import { setManualCompensationIntent } from '@/domain/compensation/intent';
 import { buildMachinePackageArchive } from '@/domain/machine-package';
 import { machinePackageFixture } from '@/domain/machine-package/__tests__/machinePackageFixture';
 import { prepareStoredMachinePackageInstallation, commitStoredMachinePackageInstallation } from '@/domain/machine-package/machinePackageInstallation';
-import { createSavedWireEdmJobRevision, saveStoredWireEdmJobRevision } from '@/domain/wire-edm-job/savedWireEdmJobRevision';
+import { createSavedWireEdmJobRevision, parseSavedWireEdmJobRevision, saveStoredWireEdmJobRevision } from '@/domain/wire-edm-job/savedWireEdmJobRevision';
+import { canonicalJson } from '@/domain/post-processor/canonicalJson';
+import { captureWorkbenchRecovery, recoveryStorageSource } from '../workbenchRecovery';
 import type { WorkbenchStorageAdapter } from '../workbenchStorageAdapter';
 
 function storage(kind: 'cache' | 'folder'): WorkbenchStorageAdapter {
@@ -55,6 +57,30 @@ async function fixture(adapter: WorkbenchStorageAdapter) {
 }
 
 describe.each(['cache', 'folder'] as const)('%s complete workbench backup', (kind) => {
+  it('copies an indexed noncanonical historical revision exactly while keeping verified-backup validation strict', async () => {
+    const adapter = storage(kind);
+    const workbench = await fixture(adapter);
+    const path = 'projects/part/revisions/revision.one.wireedm-job.json';
+    const parsed = await parseSavedWireEdmJobRevision((await adapter.readText(path))!);
+    if (!parsed.ok) throw new Error(parsed.error.message);
+    const executionPlan = { ...parsed.candidate.executionPlan,
+      requirements: { ...parsed.candidate.executionPlan.requirements, operationCount: 99 } };
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalJson(executionPlan)));
+    const executionPlanHash = Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('');
+    const original = `\uFEFF${canonicalJson({ ...parsed.candidate, engineVersion: '2', executionPlan,
+      hashes: { ...parsed.candidate.hashes, executionPlan: executionPlanHash } })}\r\n`;
+    await adapter.writeText(path, original);
+    const write = vi.spyOn(adapter, 'writeText'); const remove = vi.spyOn(adapter, 'deleteText');
+    await expect(createWorkbenchBackup(workbench)).rejects.toThrow('Saved execution plan does not match');
+    const exported = await captureWorkbenchRecovery(recoveryStorageSource(adapter, {
+      code: 'CONNECTED_WORKBENCH_RECOVERY_COPY', message: 'Copy readable originals.'
+    }));
+    expect(exported.receipt.contentComplete).toBe(true);
+    expect(JSON.parse(exported.text).files).toContainEqual(expect.objectContaining({ path, text: original, status: 'captured' }));
+    expect(await adapter.readExactText!(path)).toBe(original);
+    expect(write).not.toHaveBeenCalled(); expect(remove).not.toHaveBeenCalled();
+  });
+
   it('validates BOM-prefixed JSON semantically while preserving every original and checksum', async () => {
     const source = storage(kind);
     const workbench = await fixture(source);

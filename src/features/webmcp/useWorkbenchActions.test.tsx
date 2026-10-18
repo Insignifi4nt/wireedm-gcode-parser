@@ -13,6 +13,7 @@ import { MACHINE_LIBRARY_PATH } from '@/domain/machine-definition/machineLibrary
 import { CATALOG_PAIR_TRANSACTION_PATH } from '@/domain/storage/catalogPairTransaction';
 import { SAVED_REVISION_TRANSACTION_PATH } from '@/domain/storage/savedRevisionTransaction';
 import { WORKBENCH_FILE_TRANSACTION_PATH } from '@/domain/storage/workbenchFileTransaction';
+import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import { workbenchSiteTools } from './workbenchSiteTools';
 import { applyProjectEdits } from './projectEdits';
@@ -32,12 +33,13 @@ async function harness(overrides: Partial<AppServices> = {}, isExternalBusy: () 
   let tools: SiteTool[] = [];
   let app!: ReturnType<typeof useWorkbenchAppController>;
   let draft!: { current: DraftReadSnapshot | null };
+  let agentWorkbench: ReturnType<typeof useWorkbenchAppController>['connectedWorkbench'] | undefined;
   const generate = vi.fn(defaultAppServices.generateControllerArtifact);
   const download = vi.fn<AppServices['downloadTextFile']>();
   function Harness() {
     draft = useRef<DraftReadSnapshot | null>(null);
     app = useWorkbenchAppController({ ...createDxfImportServices(directDxfProcessor), connectRememberedWorkbenchDirectory: async () => ({ status: 'missing' }), generateControllerArtifact: generate, downloadTextFile: download, ...overrides }, () => draft.current);
-    const actions = useWorkbenchActions(app, draft, isExternalBusy);
+    const actions = useWorkbenchActions(agentWorkbench === undefined ? app : { ...app, connectedWorkbench: agentWorkbench }, draft, isExternalBusy);
     tools = [...workbenchSiteTools(() => ({ workbench: app.connectedWorkbench, draft: draft.current, busy: actions.isBusy() })), ...actions.tools];
     return actions.previewControl;
   }
@@ -49,7 +51,12 @@ async function harness(overrides: Partial<AppServices> = {}, isExternalBusy: () 
     return result as { ok: boolean; data: Record<string, any>; error?: { code: string } };
   }
   const execute = (name: string, input: unknown, signal?: AbortSignal) => tools.find(tool => tool.name === name)!.execute(input, { signal });
-  return { call, execute, app: () => app, draft: () => draft, generate, download };
+  const refreshAgentWorkbench = async () => {
+    if (!app.connectedWorkbench) throw new Error('No workbench to refresh');
+    agentWorkbench = { ...app.connectedWorkbench };
+    await act(async () => root.render(<Harness />));
+  };
+  return { call, execute, app: () => app, draft: () => draft, generate, download, refreshAgentWorkbench };
 }
 
 it('reports the shared CAD operation gate and blocks imports and recovery until it clears', async () => {
@@ -634,6 +641,88 @@ async function prepareSetupActivation(h: Awaited<ReturnType<typeof harness>>) {
 }
 
 describe('agent final save/open/setup guards', () => {
+  it('rejects a portable UPID import when its reviewed workbench version changes while queued', async () => {
+    const h = await harness(), context = await h.call('edm_workflow_context', {});
+    const document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 10 } }
+    ]);
+    const adapter = h.app().connectedWorkbench!.adapter, lock = await holdMutationLock(adapter), writes = vi.spyOn(adapter, 'writeText');
+    let pending!: Promise<unknown>;
+    await act(async () => { pending = h.execute('edm_import_upid', { expectedVersion: context.data.version,
+      source: { fileName: 'portable.upid.json', text: JSON.stringify({ format: 'upid', schemaVersion: document.schemaVersion, document }) }
+    }); });
+    expect(writes).not.toHaveBeenCalled();
+    await h.refreshAgentWorkbench();
+    expect((await h.call('edm_workflow_context', {})).data.version).not.toBe(context.data.version);
+    let result: unknown;
+    await act(async () => { await lock.release(); result = await pending; });
+    expect(result).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    expect(writes).not.toHaveBeenCalled();
+    expect(h.app().connectedWorkbench!.manifest.projects).toEqual([]);
+    expect(h.app().activeView).toBe('dashboard');
+    expect(h.app().workbenchInteractionLocked).toBe(false);
+  });
+
+  it('cancels a portable UPID import queued before its first durable write and permits retry', async () => {
+    const h = await harness();
+    const context = await h.call('edm_workflow_context', {});
+    const document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 10 } }
+    ]);
+    const input = { expectedVersion: context.data.version, source: { fileName: 'portable.upid.json',
+      text: JSON.stringify({ format: 'upid', schemaVersion: document.schemaVersion, document }) } };
+    const adapter = h.app().connectedWorkbench!.adapter, lock = await holdMutationLock(adapter);
+    const writes = vi.spyOn(adapter, 'writeText'), abort = new AbortController();
+    let pending!: Promise<unknown>;
+    await act(async () => { pending = h.execute('edm_import_upid', input, abort.signal); });
+    expect(h.app().workbenchInteractionLocked).toBe(true);
+    expect(writes).not.toHaveBeenCalled();
+    abort.abort();
+    let result: unknown;
+    await act(async () => { await lock.release(); result = await pending; });
+    expect(result).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    expect(writes).not.toHaveBeenCalled();
+    expect(h.app().connectedWorkbench!.manifest.projects).toEqual([]);
+    expect(h.app().activeView).toBe('dashboard');
+    expect(h.app().workbenchInteractionLocked).toBe(false);
+    expect(await h.call('edm_import_upid', input)).toMatchObject({ ok: true, data: { imported: true, opened: true } });
+    expect(h.app().connectedWorkbench!.manifest.projects).toHaveLength(1);
+  });
+
+  it.each(['before-journal', 'after-journal'] as const)('reports a portable UPID import cancelled %s truthfully', async boundary => {
+    const h = await harness(), context = await h.call('edm_workflow_context', {});
+    const document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 10 } }
+    ]);
+    const adapter = h.app().connectedWorkbench!.adapter, abort = new AbortController();
+    const write = adapter.writeText.bind(adapter), writes = vi.spyOn(adapter, 'writeText');
+    if (boundary === 'before-journal') {
+      const ensure = adapter.ensureDirectory.bind(adapter);
+      vi.spyOn(adapter, 'ensureDirectory').mockImplementation(async path => {
+        await ensure(path); if (path === 'transactions') abort.abort();
+      });
+    } else {
+      writes.mockImplementation(async (path, text) => {
+        await write(path, text); if (path === WORKBENCH_FILE_TRANSACTION_PATH) abort.abort();
+      });
+    }
+    const result = await h.call('edm_import_upid', { expectedVersion: context.data.version,
+      source: { fileName: 'portable.upid.json', text: JSON.stringify({ format: 'upid', schemaVersion: document.schemaVersion, document }) }
+    }, abort.signal);
+    if (boundary === 'before-journal') {
+      expect(result).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+      expect(writes).not.toHaveBeenCalled();
+      expect(h.app().connectedWorkbench!.manifest.projects).toEqual([]);
+      expect(h.app().activeView).toBe('dashboard');
+    } else {
+      expect(result).toMatchObject({ ok: true, data: { imported: true, opened: true } });
+      expect(h.app().connectedWorkbench!.manifest.projects).toHaveLength(1);
+      expect(h.app().activeView).toBe('editor');
+    }
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+    expect(h.app().workbenchInteractionLocked).toBe(false);
+  });
+
   it('keeps ordinary Save available with an unchanged view-only workflow', async () => {
     const h = await harness(), program = await importCircle(h);
     const document = applyProjectEdits(program.pathDocument, [{ kind: 'translate', delta: { x: 1, y: 0 } }]);

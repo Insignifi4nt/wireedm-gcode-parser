@@ -56,6 +56,53 @@ describe('controller linear motion audit', () => {
 });
 
 describe('controller circular motion audit', () => {
+  it.each([false, true])('accepts ordered sub-ulp arc fragments and rejects reverse travel, clockwise=%s', (clockwise) => {
+    const base = CANONICAL_POST_PLAN_FIXTURES['core.single-closed-contour.v1'];
+    const source = base.events.find((event) => event.kind === 'motion');
+    if (!source) throw new Error('Expected canonical motion');
+    const event = { ...source, motion: 'circular' as const, start: { x: 0, y: 0 }, end: { x: 1, y: 0 },
+      center: { x: 0.5, y: clockwise ? -2.5e15 : 2.5e15 }, clockwise, fullCircle: false };
+    const audit = (positions: number[]) => {
+      const blocks = positions.slice(1).map((endX, index) => ({
+        id: `block-${String(index + 1).padStart(6, '0')}`, lineIndex: index, text: `ARC ${endX}`,
+        eventId: event.id, commandIds: ['arc'],
+        motion: { motion: 'circular' as const, role: event.role, start: { x: positions[index], y: 0 },
+          end: { x: endX, y: 0 }, center: event.center, clockwise, fullCircle: false }
+      }));
+      const lines = blocks.map(({ text }) => text);
+      const program: ControllerProgram = { text: lines.join('\n'), lines, blocks,
+        eventDispositions: [{ kind: 'emitted', eventId: event.id, blockIds: blocks.map(({ id }) => id) }] };
+      return auditControllerProgram({ ...base, events: [event] }, program, new Set(['arc']));
+    };
+    // Every point is within 5e-17 mm of the analytic arc; its total length is 1 mm.
+    expect(audit([0, 0.25, 0.5, 0.75, 1])).toEqual([]);
+    expect(audit([0, 0.75, 0.25, 1])).toEqual([
+      expect.objectContaining({ code: 'POST_AUDIT_MOTION_MISMATCH' })
+    ]);
+  });
+
+  it('rejects a tiny-arc transverse detour that disappears in radius subtraction', () => {
+    const base = CANONICAL_POST_PLAN_FIXTURES['core.single-closed-contour.v1'];
+    const source = base.events.find((event) => event.kind === 'motion');
+    if (!source) throw new Error('Expected canonical motion');
+    const event = { ...source, motion: 'circular' as const, start: { x: 0, y: 0 }, end: { x: 1, y: 0 },
+      center: { x: 0.5, y: 2.5e15 }, clockwise: false, fullCircle: false };
+    const points = [event.start, { x: 0.5, y: 0.1 }, event.end];
+    const blocks = points.slice(1).map((end, index) => ({
+      id: `block-${String(index + 1).padStart(6, '0')}`, lineIndex: index, text: `ARC ${index}`,
+      eventId: event.id, commandIds: ['arc'], motion: {
+        motion: 'circular' as const, role: event.role, start: points[index], end,
+        center: event.center, clockwise: false, fullCircle: false
+      }
+    }));
+    const lines = blocks.map(({ text }) => text);
+    const program: ControllerProgram = { text: lines.join('\n'), lines, blocks,
+      eventDispositions: [{ kind: 'emitted', eventId: event.id, blockIds: blocks.map(({ id }) => id) }] };
+    expect(auditControllerProgram({ ...base, events: [event] }, program, new Set(['arc']))).toEqual([
+      expect.objectContaining({ code: 'POST_AUDIT_MOTION_MISMATCH' })
+    ]);
+  });
+
   it.each([0.0005, 2 * Math.PI - 0.0005, -0.0005, -2 * Math.PI + 0.0005])(
     'keeps a non-full arc non-full when its endpoints are within tolerance, angle %s',
     (angle) => {

@@ -1,5 +1,6 @@
 import { compileSimulation, type SimulationCompileResult, type SimulationSettings } from '@/domain/simulation';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import { startOwnedWorkerTask } from '@/lib/ownedWorkerTask';
 
 export interface SimulationCompileRequest { document: PathPlanningDocument; settings: SimulationSettings }
 const failure = (code: string, message: string): SimulationCompileResult => ({ ok: false,
@@ -15,22 +16,16 @@ export function compileSimulationAsync(document: PathPlanningDocument, settings:
   let worker: Worker;
   try { worker = new Worker(new URL('./simulationCompiler.worker.ts', import.meta.url), { type: 'module' }); }
   catch { return Promise.resolve(failure('SIMULATION_WORKER_UNAVAILABLE', 'The browser could not start the local simulation worker. Reload the app and try again.')); }
-  return new Promise((resolve, reject) => {
-    let finished = false;
-    const cleanup = () => {
-      clearTimeout(timeout); signal.removeEventListener('abort', abort);
-      worker.onmessage = null; worker.onerror = null; worker.onmessageerror = null; worker.terminate();
-    };
-    const finish = (result: SimulationCompileResult) => { if (finished) return; finished = true; cleanup(); resolve(result); };
-    const abort = () => { if (finished) return; finished = true; cleanup(); reject(signal.reason); };
-    const timeout = setTimeout(() => finish(failure('SIMULATION_COMPILE_TIMEOUT',
-      'Simulation preparation reached its 60-second limit. Reduce the active geometry or try a simpler process.')), 60_000);
-    worker.onmessage = (event: MessageEvent<SimulationCompileResult>) => finish(event.data);
-    worker.onerror = worker.onmessageerror = () => finish(failure('SIMULATION_WORKER_FAILED',
-      'The local simulation worker stopped unexpectedly. Try the process again.'));
-    signal.addEventListener('abort', abort, { once: true });
-    if (signal.aborted) { abort(); return; }
-    try { worker.postMessage({ document, settings } satisfies SimulationCompileRequest); }
-    catch { finish(failure('SIMULATION_WORKER_FAILED', 'The saved process could not be sent to the simulation worker.')); }
-  });
+  return startOwnedWorkerTask<SimulationCompileResult, SimulationCompileResult>({
+    worker, request: { document, settings } satisfies SimulationCompileRequest, signal, timeoutMs: 60_000,
+    receive: response => ({ kind: 'complete', value: response }),
+    failure(cause) {
+      if (cause.kind === 'abort') throw cause.reason;
+      if (cause.kind === 'timeout') return failure('SIMULATION_COMPILE_TIMEOUT',
+        'Simulation preparation reached its 60-second limit. Reduce the active geometry or try a simpler process.');
+      return failure('SIMULATION_WORKER_FAILED', cause.kind === 'post-error'
+        ? 'The saved process could not be sent to the simulation worker.'
+        : 'The local simulation worker stopped unexpectedly. Try the process again.');
+    }
+  }).result;
 }

@@ -128,15 +128,19 @@ export async function writePostLibraryStorage(
   adapter: WorkbenchStorageAdapter,
   library: PostLibrary
 ): Promise<WritePostLibraryStorageResult> {
+  const rawText = serializePostLibraryStorage(library);
+  const sizeError = librarySizeError(rawText);
+  if (sizeError) return { ok: false, error: sizeError };
+  return accessStorage('write', POST_LIBRARY_PATH, () => adapter.writeText(POST_LIBRARY_PATH, rawText));
+}
+
+export function serializePostLibraryStorage(library: PostLibrary) {
   const document: ReadonlyPostLibraryDocument = {
     format: 'wire-edm-post-library',
     schemaVersion: 1,
     installations: library.installations
   };
-  const rawText = JSON.stringify(document, null, 2);
-  const sizeError = librarySizeError(rawText);
-  if (sizeError) return { ok: false, error: sizeError };
-  return accessStorage('write', POST_LIBRARY_PATH, () => adapter.writeText(POST_LIBRARY_PATH, rawText));
+  return JSON.stringify(document, null, 2);
 }
 
 async function parseStoredPostLibrary(rawText: string): Promise<ReadPostLibraryStorageResult> {

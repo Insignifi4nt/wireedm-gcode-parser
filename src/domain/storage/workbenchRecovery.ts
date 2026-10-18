@@ -69,7 +69,7 @@ export async function captureWorkbenchRecovery(source: RecoveryStorageSource, op
     const startedAt = new Date().toISOString();
     const header = { format: 'wire-edm-recovery-export', schemaVersion: 1, appVersion: APP_VERSION,
       source: recoverySourceSummary(source), startedAt,
-      observation: 'Exact logical text observed after connection failed or persistent storage became unavailable. Not a restore backup.',
+      observation: 'Exact readable logical text observed from the selected storage location. Not a restore backup.',
       coordination, atomicSnapshot: false, externalEditsMayOccur: true,
       limits: { archiveUtf8Bytes: maxArchiveBytes, logicalFileUtf8Bytes: maxFileBytes, inventoryEntries: MAX_STORAGE_INVENTORY_ENTRIES, folderDepth: 16, pathCharacters: MAX_PATH_CHARACTERS },
       excluded: ['Unreadable or oversized files', 'Empty directories', 'Physical compressed cache envelopes', 'Unrelated browser keys and UI preferences', 'Remembered folder handles', 'Unsaved drafts'],

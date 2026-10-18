@@ -2,7 +2,16 @@ import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { PostIdentifierSchema } from '@/domain/post-processor/postFormatPrimitives';
 import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
-import { readExactTransactionText as readExact, transactionFileHash, verifyTransactionDeletions } from './transactionFileState';
+import {
+  cleanupFailedTransactionJournalWrite,
+  readExactTransactionText as readExact,
+  removeTransactionJournal,
+  transactionFileHash,
+  verifyTransactionDeletions,
+  verifyTransactionJournal,
+  verifyTransactionJournalAbsent,
+  type TransactionJournalWritePhase
+} from './transactionFileState';
 
 export const PROJECT_TRASH_TRANSACTION_PATH = 'transactions/project-trash.json';
 const manifestPath = 'workbench.json';
@@ -40,12 +49,15 @@ export async function commitProjectTrashTransaction(
     const raw = JSON.stringify({ format: 'wire-edm-project-trash-transaction', schemaVersion: 1, previous, next });
     if (new TextEncoder().encode(raw).byteLength > maximumBytes) return failure('Project recovery data is too large.');
     await adapter.ensureDirectory('transactions');
+    await verifyTransactionJournalAbsent(adapter, PROJECT_TRASH_TRANSACTION_PATH);
+    let writePhase: TransactionJournalWritePhase = 'writing';
     try {
       await adapter.writeText(PROJECT_TRASH_TRANSACTION_PATH, raw);
+      writePhase = 'completed';
       if (await readExact(adapter, PROJECT_TRASH_TRANSACTION_PATH) !== raw) throw new Error('Recovery data did not read back exactly.');
     } catch (error) {
-      // The manifest is untouched until the journal has been verified.
-      await adapter.deleteText(PROJECT_TRASH_TRANSACTION_PATH);
+      // The manifest is untouched, but unknown journal bytes still need retention.
+      await cleanupFailedTransactionJournalWrite(adapter, PROJECT_TRASH_TRANSACTION_PATH, raw, writePhase);
       return failure(message(error));
     }
     try {
@@ -54,16 +66,17 @@ export async function commitProjectTrashTransaction(
     } catch (error) {
       // A reported failure restores the caller's snapshot, even if the write
       // completed before a later read failed. Crash recovery can finalize next.
+      await verifyTransactionJournal(adapter, PROJECT_TRASH_TRANSACTION_PATH, raw);
       const current = await readExact(adapter, manifestPath);
       if (current !== previous && current !== next) return conflict();
       await adapter.writeText(manifestPath, previous);
       if (await readExact(adapter, manifestPath) !== previous) return failure('Project catalog rollback did not read back exactly.');
-      await adapter.deleteText(PROJECT_TRASH_TRANSACTION_PATH);
+      await removeTransactionJournal(adapter, PROJECT_TRASH_TRANSACTION_PATH, { kind: 'verified', text: raw });
       return failure(message(error));
     }
     // Once read back, the catalog move is committed. A cleanup failure leaves
     // a journal that every later catalog mutation must recover before writing.
-    await recoverProjectTrashTransaction(adapter);
+    await recoverProjectTrashTransactionImage(adapter, raw);
     return { ok: true };
   } catch (error) { return failure(message(error)); }
 }
@@ -85,21 +98,24 @@ export async function commitProjectPurgeTransaction(
       projectId: input.projectId, ownedPaths: input.ownedPaths, ownedHashes, previous, next: input.next });
     if (new TextEncoder().encode(raw).byteLength > maximumBytes) return failure('Project purge recovery data is too large.');
     await adapter.ensureDirectory('transactions');
+    await verifyTransactionJournalAbsent(adapter, PROJECT_TRASH_TRANSACTION_PATH);
+    let writePhase: TransactionJournalWritePhase = 'writing';
     try {
       await adapter.writeText(PROJECT_TRASH_TRANSACTION_PATH, raw);
+      writePhase = 'completed';
       if (await readExact(adapter, PROJECT_TRASH_TRANSACTION_PATH) !== raw) throw new Error('Recovery data did not read back exactly.');
     } catch (error) {
-      await adapter.deleteText(PROJECT_TRASH_TRANSACTION_PATH);
+      await cleanupFailedTransactionJournalWrite(adapter, PROJECT_TRASH_TRANSACTION_PATH, raw, writePhase);
       return failure(message(error));
     }
     try {
       await adapter.writeText(manifestPath, input.next);
       if (await readExact(adapter, manifestPath) !== input.next) throw new Error('Project archive did not read back exactly.');
-      const recovered = await recoverProjectTrashTransaction(adapter);
+      const recovered = await recoverProjectTrashTransactionImage(adapter, raw);
       if (!recovered.ok) return recovered;
       return { ok: true };
     } catch (error) {
-      const recovered = await recoverProjectTrashTransaction(adapter);
+      const recovered = await recoverProjectTrashTransactionImage(adapter, raw);
       if (!recovered.ok) return failure(`${message(error)}; recovery failed: ${recovered.error.message}`);
       return await readExact(adapter, manifestPath) === input.next ? { ok: true } : failure(message(error));
     }
@@ -108,14 +124,18 @@ export async function commitProjectPurgeTransaction(
 
 /** Recover only recorded states; preserve unknown contents and their journal for recovery. */
 export async function recoverProjectTrashTransaction(adapter: WorkbenchStorageAdapter): Promise<Result> {
+  return recoverProjectTrashTransactionImage(adapter);
+}
+
+async function recoverProjectTrashTransactionImage(adapter: WorkbenchStorageAdapter, expected?: string): Promise<Result> {
   try {
     const raw = await readExact(adapter, PROJECT_TRASH_TRANSACTION_PATH);
+    if (expected !== undefined && raw !== expected) return failure('Project recovery journal changed outside this transaction. Preserve storage and its journal for recovery.');
     if (raw === null) return { ok: true };
     // Empty first-write handles precede every catalog or owned-file change.
     if (raw === '') {
-      await adapter.deleteText(PROJECT_TRASH_TRANSACTION_PATH);
-      return await adapter.readText(PROJECT_TRASH_TRANSACTION_PATH) === null
-        ? { ok: true } : failure('Empty project recovery data could not be removed.');
+      await removeTransactionJournal(adapter, PROJECT_TRASH_TRANSACTION_PATH, { kind: 'verified', text: raw });
+      return { ok: true };
     }
     if (new TextEncoder().encode(raw).byteLength > maximumBytes) return failure('Project recovery data is too large.');
     let value: unknown;
@@ -132,6 +152,7 @@ export async function recoverProjectTrashTransaction(adapter: WorkbenchStorageAd
       if (value.schemaVersion === 2) {
         await verifyTransactionDeletions(adapter, value.ownedPaths, value.ownedHashes, current === value.next);
       }
+      await verifyTransactionJournal(adapter, PROJECT_TRASH_TRANSACTION_PATH, raw);
       if (current === value.next) {
         if (value.schemaVersion === 1) await verifyTransactionDeletions(adapter, value.ownedPaths, undefined);
         for (const path of value.ownedPaths) {
@@ -139,12 +160,10 @@ export async function recoverProjectTrashTransaction(adapter: WorkbenchStorageAd
           if (await readExact(adapter, path) !== null) return failure(`Could not remove ${path}.`);
         }
       }
-      await adapter.deleteText(PROJECT_TRASH_TRANSACTION_PATH);
-      if (await adapter.readText(PROJECT_TRASH_TRANSACTION_PATH) !== null) return failure('Project purge recovery data was not removed.');
+      await removeTransactionJournal(adapter, PROJECT_TRASH_TRANSACTION_PATH, { kind: 'verified', text: raw });
       return { ok: true };
     }
-    await adapter.deleteText(PROJECT_TRASH_TRANSACTION_PATH);
-    if (await adapter.readText(PROJECT_TRASH_TRANSACTION_PATH) !== null) return failure('Project recovery data was not removed.');
+    await removeTransactionJournal(adapter, PROJECT_TRASH_TRANSACTION_PATH, { kind: 'verified', text: raw });
     return { ok: true };
   } catch (error) { return failure(message(error)); }
 }

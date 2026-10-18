@@ -1,5 +1,6 @@
 import { DxfProcessingError, type DxfProcessor } from '@/domain/dxf/dxfProcessing';
 import type { DxfProcessorRequest, DxfProcessorResponse } from './dxfProcessorTask';
+import { startOwnedWorkerTask } from '@/lib/ownedWorkerTask';
 
 /** Every CPU task owns a fresh worker. The deadline is an acceptance limit, not a speed guarantee. */
 export const DXF_PROCESSING_TIMEOUT_MS = 90_000;
@@ -14,31 +15,21 @@ function process(request: DxfProcessorRequest, signal?: AbortSignal): Promise<Dx
   let worker: Worker;
   try { worker = new Worker(new URL('./dxfProcessor.worker.ts', import.meta.url), { type: 'module' }); }
   catch { return Promise.reject(new DxfProcessingError('DXF_IMPORT_WORKER_FAILED', 'The browser could not start the local DXF worker. Reload the app and try again.')); }
-  return new Promise((resolve, reject) => {
-    let finished = false;
-    const finish = (result?: DxfProcessorResponse, error?: unknown) => {
-      if (finished) return;
-      finished = true;
-      clearTimeout(timeout);
-      signal?.removeEventListener('abort', abort);
-      worker.onmessage = null; worker.onerror = null; worker.onmessageerror = null;
-      worker.terminate();
-      if (result) resolve(result); else reject(error);
-    };
-    const abort = () => finish(undefined, signal?.reason);
-    const timeout = setTimeout(() => finish(undefined, new DxfProcessingError('DXF_IMPORT_TIMEOUT',
-      'DXF preparation reached its 90-second limit and was stopped. No project was written. Simplify the drawing or split it into smaller files.')), DXF_PROCESSING_TIMEOUT_MS);
-    const failed = () => finish(undefined, new DxfProcessingError('DXF_IMPORT_WORKER_FAILED',
-      'The local DXF worker stopped unexpectedly. No project was written. Try the import again or simplify the drawing.'));
-    worker.onmessage = (event: MessageEvent<DxfProcessorResponse>) => {
-      if (!event.data || (event.data.ok && event.data.kind !== request.kind)) { failed(); return; }
-      finish(event.data);
-    };
-    worker.onerror = worker.onmessageerror = failed;
-    signal?.addEventListener('abort', abort, { once: true });
-    if (signal?.aborted) { abort(); return; }
-    try { worker.postMessage(request); } catch { failed(); }
-  });
+  const failed = () => new DxfProcessingError('DXF_IMPORT_WORKER_FAILED',
+    'The local DXF worker stopped unexpectedly. No project was written. Try the import again or simplify the drawing.');
+  return startOwnedWorkerTask<DxfProcessorResponse, DxfProcessorResponse>({
+    worker, request, signal, timeoutMs: DXF_PROCESSING_TIMEOUT_MS,
+    receive(response) {
+      if (!response || (response.ok && response.kind !== request.kind)) throw failed();
+      return { kind: 'complete', value: response };
+    },
+    failure(cause) {
+      if (cause.kind === 'abort') throw cause.reason;
+      if (cause.kind === 'timeout') throw new DxfProcessingError('DXF_IMPORT_TIMEOUT',
+        'DXF preparation reached its 90-second limit and was stopped. No project was written. Simplify the drawing or split it into smaller files.');
+      throw failed();
+    }
+  }).result;
 }
 
 export const browserDxfProcessor: DxfProcessor = {
