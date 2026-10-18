@@ -1,0 +1,26 @@
+{
+  "version": "0.0.711",
+  "previousVersion": "0.0.710",
+  "postCompatibility": "preserved-external-program-cr-line-endings",
+  "summary": "External G-code programs and DXF drawings whose lines end with a lone CR (classic Mac line endings) are read line by line. Before, the parser split on CR but normalization, editing cleanup, line moves and measurement-point insertion split only on LF. A CR-only program collapsed into one line, and Normalize replaced it with an empty program ending in M02. The DXF reader stripped CR and could not read such files at all. Normalization also removes M02 before collapsing spaces and canonicalizing motion codes, so re-normalizing a program no longer changes it.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or post-generated controller output. External-program cleanup output changes only for CR-only files, which now keep their blocks, and for blocks where M02 shared a line with other words, which lose a doubled space or gain a canonical G0-G3 code. DXF files that contain any LF parse exactly as before.",
+  "checklist": {
+    "schema": "No UPID, portable UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "Post generation, audit, numbering, encoding and controller-file rules are unchanged. Only the external-program Normalize and editing-cleanup text changes, as described in the warning.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "New tests cover CR-only normalization, editing cleanup, line moves and DXF parsing, plus idempotent normalization after removing M02. Each fails on the old code. A fuzzer over 12,000 generated programs (LF, CRLF and CR) finds normalization idempotent and the stripped-then-normalized path identical to the directly normalized one, except for one malformed program with % inside a block that also differs on the old code. The editor and DXF suites, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Programs and drawings saved with classic Mac line endings open correctly.",
+    "changes": [
+      "G-code programs whose lines end with a lone CR keep every block when normalized, cleaned up for editing or rearranged.",
+      "DXF drawings whose lines end with a lone CR can be imported.",
+      "Normalizing an already normalized program leaves it unchanged."
+    ],
+    "compatibility": "Posted programs and saved projects are unchanged.",
+    "action": "Re-open any CR-only program that normalized to an empty program before this release."
+  }
+}
