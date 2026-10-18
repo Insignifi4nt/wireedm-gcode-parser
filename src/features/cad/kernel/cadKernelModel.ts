@@ -37,27 +37,32 @@ export interface CadKernelModel {
 
 const meshOptions = { tolerance: 0.05, angularTolerance: 0.15 };
 
-function validateSolid(shape: Shape3D): number {
+/** Returns the solid count and whole-shape volume so callers reuse the measurement. */
+function validateSolid(shape: Shape3D): { solidCount: number; volume: number } {
   if (shape.isNull) throw new CadError('empty-solid', 'The operation produced no solid.');
   const solids = cadKernelSolids(shape);
   try {
-    if (!solids.length || solids.some(solid => !Number.isFinite(measureVolume(solid)) || measureVolume(solid) <= 1e-9)) {
+    if (!solids.length || solids.some(solid => !positiveVolume(measureVolume(solid)))) {
       throw new CadError('empty-solid', 'The operation must contain closed solids with positive volume.');
     }
   } finally { for (const solid of solids) cadKernelDisposeShape(solid); }
   if (!cadKernelIsValid(shape)) throw new CadError('invalid-solid', 'OpenCascade rejected the resulting topology. Reduce the dimensions or choose a different feature.');
   const volume = measureVolume(shape);
-  if (!Number.isFinite(volume) || volume <= 1e-9) throw new CadError('empty-solid', 'The operation must produce a closed solid with positive volume.');
-  return solids.length;
+  if (!positiveVolume(volume)) throw new CadError('empty-solid', 'The operation must produce a closed solid with positive volume.');
+  return { solidCount: solids.length, volume };
 }
 
-function shapeMesh(shape: Shape3D, feature: CadFeature, topology: CadKernelTopology, solidCount: number): CadMesh {
+function positiveVolume(volume: number) {
+  return Number.isFinite(volume) && volume > 1e-9;
+}
+
+function shapeMesh(shape: Shape3D, feature: CadFeature, topology: CadKernelTopology, { solidCount, volume }: { solidCount: number; volume: number }): CadMesh {
   const box = shape.boundingBox;
   try {
     const [min, max] = box.bounds;
     const { mesh, edgeMesh } = meshCadKernelPreview(shape, { min, max }, meshOptions);
     return { featureId: feature.id, name: feature.name, positions: mesh.vertices, normals: mesh.normals, indices: mesh.triangles,
-      edges: edgeMesh.lines, ...topology.meshGroups(mesh, edgeMesh), volume: measureVolume(shape), solidCount, bounds: { min, max } };
+      edges: edgeMesh.lines, ...topology.meshGroups(mesh, edgeMesh), volume, solidCount, bounds: { min, max } };
   } finally { box.delete(); }
 }
 
@@ -288,10 +293,10 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         }
         default: { const exhaustive: never = feature; throw new Error(`Unsupported feature: ${exhaustive}`); }
       }
-      const solidCount = validateSolid(result);
+      const measured = validateSolid(result);
       const topology = new CadKernelTopology(result);
       try {
-        const mesh = shapeMesh(result, feature, topology, solidCount);
+        const mesh = shapeMesh(result, feature, topology, measured);
         for (const id of consumed) { visible.delete(id); bodies.get(id)?.topology.dispose(); bodies.delete(id); }
         bodies.set(feature.id, { shape: result, feature, mesh, instances, topology });
       } catch (error) { topology.dispose(); throw error; }
