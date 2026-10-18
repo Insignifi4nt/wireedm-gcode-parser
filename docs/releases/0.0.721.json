@@ -1,0 +1,34 @@
+{
+  "version": "0.0.721",
+  "previousVersion": "0.0.720",
+  "postCompatibility": "preserved-output-sketch-tools-tree-and-snapping",
+  "summary": "The CAD sketch tools, part tree and inspector were reworked for direct, CATIA- and Onshape-like interaction. Sketching is free by default: the grid is a reference and a Snap to grid view option turns on a 6 px magnet. Drawing and point drags snap to the sketch origin, the X and Y axes, other points, edges, curve crossings and horizontal or vertical guides, including where a guide crosses an edge or axis. Dimension is tool-first and also measures a point from the origin or an axis. A Constrain menu holds the positional constraints, and the origin and axes can be picked as references. A Trim tool, single-letter tool keys, live size readouts and dimension text that follows ISO 129 were added. The part tree nests a sketch under the first solid that absorbs it, the selected-feature panel moved into context menus, Model is called Body, and editor titles and controls sit in the inspector heading without the preview status text. Hover picking replaces the Body, Face and Edge buttons, and Shift-drag box-selects a body.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions or controller output. Sketch relations created by the new reference snaps and origin or axis dimensions use the existing fixed-axis and point-on-line relation kinds. The WebMCP set-pick-mode tool now accepts and reports auto, and select-feature only selects; agents that relied on select-feature opening the editor must double-click or use the editor command instead.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, storage or journal schema change. CAD documents gain no new fields; new relations use the existing fixed-axis and point-on-line kinds. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version change. WebMCP set-pick-mode gains the auto mode and the view state reports gridSnapEnabled; both are documented in the public agent-tool guide. select-feature selects without opening the feature editor.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding or controller-file change. Solid geometry for an unchanged CAD document is unchanged.",
+    "installationAndStorage": "No storage adapter, installation or migration change. Sketch edits still go through the existing cancellable, draft-protected CAD edit operations.",
+    "verification": "Unit, DOM and app tests cover reference and guide-crossing snaps while drawing and dragging, origin and axis dimensions in either pick order, the Constrain tools, Trim, tree nesting, box selection, the parameters context menu and the inspector heading. The full Vitest suite, tsc -b, npm run lint, npm run ui:check, npm run icons:check and npm run build pass. The sketch flows were exercised in the running app. An independent review covered the branch before it was opened."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Posting code is untouched; Robofil 2.6.0 package and current-contract tests pass unchanged. No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Sketching is freer and snaps to the origin, axes, edges and crossings, and the part tree and inspector are tidier.",
+    "changes": [
+      "The grid is a reference; turn on Snap to grid in the view options to snap to it.",
+      "Drawing and dragging points snap to the origin, the axes, edges, crossings and horizontal or vertical guides.",
+      "Dimension can measure a point from the sketch origin or an axis.",
+      "A Constrain menu, a Trim tool and single-letter tool keys were added.",
+      "Sketches nest under the solid that uses them, and feature actions are in right-click menus."
+    ],
+    "compatibility": "Posted programs, installed posts and saved projects are unchanged.",
+    "action": "No action needed."
+  }
+}
