@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { initializeWorkbenchCatalog, WORKBENCH_CATALOG_PATH } from '@/domain/workbench-catalog/workbenchCatalog';
 import { WorkbenchStorageFullError } from '../storageFull';
 import { readExactTransactionText as exact } from '../transactionFileState';
 import { commitWorkbenchFileTransaction, WORKBENCH_FILE_TRANSACTION_PATH } from '../workbenchFileTransaction';
@@ -103,5 +104,47 @@ describe.each(['cache', 'folder'] as const)('%s file transaction on full storage
     ]))).rejects.toThrow(/^Storage write and rollback failed\. Recovery data is retained; reopen the workbench before editing\. .*full/);
     expect(await exact(adapter, WORKBENCH_FILE_TRANSACTION_PATH)).not.toBeNull();
     expect(await exact(adapter, 'workbench.json')).toBe('OLD INDEX');
+  });
+});
+
+describe.each(['cache', 'folder'] as const)('%s write refused for lack of space', (kind) => {
+  function setup(): { adapter: WorkbenchStorageAdapter; refuse: (refuse: RefuseWrite) => void } {
+    return kind === 'cache' ? cacheStorage() : folderStorage();
+  }
+
+  it('leaves a new path absent and an existing file unchanged', async () => {
+    const { adapter, refuse } = setup();
+    await adapter.writeText('projects/old.json', 'ORIGINAL');
+    refuse(() => true);
+
+    await expect(adapter.writeText('projects/new.json', 'NEXT')).rejects.toBeInstanceOf(WorkbenchStorageFullError);
+    await expect(adapter.writeText('projects/old.json', 'NEXT')).rejects.toBeInstanceOf(WorkbenchStorageFullError);
+    expect(await exact(adapter, 'projects/new.json')).toBeNull();
+    expect(await exact(adapter, 'projects/old.json')).toBe('ORIGINAL');
+    expect((await adapter.listFiles?.())?.paths).toEqual(['projects/old.json']);
+  });
+
+  it('retries a version-2 workbench upgrade after its backup write was refused', async () => {
+    const { adapter, refuse } = setup();
+    const created = await initializeWorkbenchCatalog(adapter, { now: new Date('2026-08-28T12:00:00.000Z') });
+    if (!created.ok) throw new Error(created.error.message);
+    const original = JSON.stringify({
+      ...created.workbench.manifest,
+      schemaVersion: 2,
+      preferences: {
+        ...created.workbench.manifest.preferences,
+        export: { status: 'configured', fileExtension: { kind: 'custom', extension: 'tap' }, lineEnding: 'lf' }
+      }
+    });
+    await adapter.writeText(WORKBENCH_CATALOG_PATH, original);
+    refuse((path) => path === 'legacy/v2/workbench.json');
+
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: false });
+    expect(await exact(adapter, WORKBENCH_CATALOG_PATH)).toBe(original);
+    expect(await exact(adapter, 'legacy/v2/workbench.json')).toBeNull();
+
+    refuse(() => false);
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: true, workbench: { manifest: { schemaVersion: 3 } } });
+    expect(await exact(adapter, 'legacy/v2/workbench.json')).toBe(original);
   });
 });
