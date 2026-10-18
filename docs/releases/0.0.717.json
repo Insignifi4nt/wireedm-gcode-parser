@@ -1,0 +1,30 @@
+{
+  "version": "0.0.717",
+  "previousVersion": "0.0.716",
+  "postCompatibility": "corrected-0.0.704-near-tie-order-and-start-record",
+  "summary": "Corrects the compatibility record of 0.0.704, which said cut order, start points and directions were unchanged for the same geometry. That holds except when planning candidates compare equal within the coincidence epsilon pairwise but not end to end, by rapid length or by the start-coordinate tie-break. There, 0.0.704 replaced a pick that depended on engine sort internals with the first best by a fixed scan, so the order of contours, the start vertex of a contour and its cutting direction can differ from 0.0.703. This release changes no code; it adds tests that pin the current, deterministic choice.",
+  "warning": "Potentially breaking for posted programs re-planned since 0.0.704, not caused by this release. When three or more planning candidates compare equal within the coincidence epsilon pairwise but not end to end, whether by rapid length or by start coordinates, re-planning can choose a different cut order, start vertex or cutting direction than 0.0.703. That changes positioning moves, rotates where the cutting moves of a contour begin, or reverses them. Examples with epsilon 1e-6: three circles whose starts lie 10, 10 + 0.75 epsilon and 10 + 1.5 epsilon from the start point were ordered [2, 1, 0] in 0.0.703 and [1, 0, 2] since 0.0.704; a forward-only triangle with vertices (10, 0), (-10 - 1.5 epsilon, 0) and (0, 10 + 0.75 epsilon) started at (10, 0) in 0.0.703 and at (0, 10 + 0.75 epsilon) since 0.0.704; a reversible quadrilateral with vertices (10, 0), (0, 10 + 0.75 epsilon), (-10 - 1.5 epsilon, 0) and (0, -10 - 2.25 epsilon) was cut forward from (-10 - 1.5 epsilon, 0) in 0.0.703 and in reverse from (0, 10 + 0.75 epsilon) since 0.0.704; three open lines whose starts all lie exactly 10 from the start point, with x coordinates 8, 8 + 0.75 epsilon and 8 + 1.5 epsilon, changed order as well. Randomized comparisons did not hit these cases; they need distances or coordinates arranged within the configured coincidence epsilon (0.00001 drawing units by default; a larger configured epsilon widens the affected range). Saved revisions keep their stored plan until re-planned.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No code change in this release. The 0.0.704 near-tie choice is recorded: cut order, start rotation and cutting direction can differ from 0.0.703 in the cases described in the warning, and with them the posted positioning moves and the order and direction of cutting moves. Generation, audit, numbering, encoding and controller-file rules are unchanged.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Historical release records stay immutable; this record carries the correction.",
+    "verification": "Four planning tests pin the near-tie contour order [1, 0, 2], the triangle start at (0, 10 + 0.75 epsilon), the quadrilateral reverse start at (0, 10 + 0.75 epsilon) and the coordinate-tied line order [2, 0, 1]. An independent check ran each case against 0.0.703 (commit 0177fd61) and reproduced the earlier results there, and found that saved revisions recompile from their stored plan without re-planning. path-intel tests, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "No code change; Robofil 2.6.0 package and current-contract tests pass unchanged. No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Corrected compatibility note for 0.0.704: near-tied contours can be cut in a different order, from a different start or in the other direction.",
+    "changes": [
+      "Since 0.0.704, contours, start vertices or directions whose rapid distances or start coordinates tie within the coincidence epsilon (0.00001 drawing units by default, or the configured value) are chosen by a fixed scan, so re-planning can pick a different order, start or direction than 0.0.703."
+    ],
+    "compatibility": "No change in this release. Programs re-planned since 0.0.704 can differ from 0.0.703 only for these near ties.",
+    "action": "If a part has candidate starts whose distances or coordinates tie within the coincidence epsilon, check its cut order, start points and directions after re-planning."
+  }
+}
