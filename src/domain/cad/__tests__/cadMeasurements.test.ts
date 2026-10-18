@@ -51,4 +51,19 @@ describe('analytic CAD sketch measurements', () => {
     expect(measured([profile('reference', { kind: 'circle', x: 0, y: 0, radius: 1 }, 'outer', true)])).toMatchObject({ materialAreaMm2: 0, boundaryLengthMm: 0, boundsMm: null });
     expect(() => measureCadSketch(createCadDocument(), 'missing')).toThrow('existing sketch');
   });
+
+  it('keeps quarter-turn arc endpoints exact whichever way generated ids order a graph cycle', () => {
+    // These id orders compile the same semicircle as 270° + 180° and 450° − 180°.
+    const semicircle = ([start, end, center, arcId, lineId]: readonly string[]) => measureCadSketch(parseCadDocument({
+      ...createCadDocument('Part', 'cad_measure'), schemaVersion: 2, features: [{ id: 'sketch', name: 'Sketch', kind: 'sketch', suppressed: false,
+        offset: 0, plane: 'XY', profiles: [], graph: {
+          points: [{ id: start, position: [0, 0] }, { id: end, position: [0, 20] }, { id: center, position: [0, 10] }],
+          entities: [{ id: arcId, kind: 'arc', centerPointId: center, startPointId: start, endPointId: end, direction: 'ccw', construction: false },
+            { id: lineId, kind: 'line', startPointId: end, endPointId: start, construction: false }], relations: [] } }]
+    }), 'sketch');
+    for (const ids of [['a', 'b', 'c', 'm', 'z'], ['a', 'b', 'c', 'z', 'm']]) {
+      expect(semicircle(ids)).toMatchObject({ materialAreaMm2: expect.closeTo(50 * Math.PI, 8),
+        boundsMm: { minX: 0, minY: 0, maxX: expect.closeTo(10, 8), maxY: 20 } });
+    }
+  });
 });
