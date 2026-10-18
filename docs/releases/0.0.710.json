@@ -1,0 +1,24 @@
+{
+  "version": "0.0.710",
+  "previousVersion": "0.0.709",
+  "postCompatibility": "preserved-faster-intersection-tolerances",
+  "summary": "Path intersection checks compute their coordinate tolerances with a loop instead of building temporary arrays for every candidate pair. Validation of a 2,000-part job drops from about 1,250 ms to 1,100 ms, and intersection-heavy drawings validate about 25% faster. The path-planning growth checks now time the fastest of five runs, so a garbage-collection pause or busy runner no longer fails them.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Tolerances are numerically identical, including NaN propagation, so diagnostics and derived documents are unchanged.",
+  "checklist": {
+    "schema": "No UPID, portable UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "1,600 fuzzed imports, including near-coincident and tolerance-edge drawings, hash identically before and after the change. The pure-domain path-intel and path-planning suites, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Large drawings validate faster.",
+    "changes": [
+      "Checking a drawing for crossings and overlaps is faster on large jobs and drawings with many intersecting paths."
+    ],
+    "compatibility": "Results, saved projects and posted programs are unchanged.",
+    "action": "No action needed."
+  }
+}
