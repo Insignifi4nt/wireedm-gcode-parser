@@ -10,6 +10,136 @@ import { runCustomPostConformance } from '../customPostConformance';
 import { reconcileDeterminismRuns, runCustomPost, type CustomPostRunResult } from '../customPostRuntime';
 
 describe('isolated custom JavaScript post runtime', () => {
+  const thrownValues = [
+    { name: 'BigInt', expression: '1n', message: '1' },
+    { name: 'undefined', expression: 'undefined', message: 'undefined' },
+    { name: 'null', expression: 'null', message: 'null' },
+    { name: 'symbol', expression: 'Symbol("thrown")', message: 'Symbol(thrown)' },
+    { name: 'number', expression: '42', message: '42' },
+    { name: 'NaN', expression: 'NaN', message: 'NaN' },
+    { name: 'infinity', expression: 'Infinity', message: 'Infinity' },
+    { name: 'boolean', expression: 'false', message: 'false' },
+    { name: 'string', expression: '"post failed"', message: 'post failed' },
+    { name: 'empty string', expression: '""', message: 'Custom post threw an unprintable value.' },
+    { name: 'object', expression: '({ detail: "post failed" })', message: '{"detail":"post failed"}' },
+    { name: 'message object', expression: '({ message: "post failed" })', message: 'post failed' },
+    { name: 'cyclic object', expression: '(() => { const value = {}; value.self = value; return value; })()', message: '[object Object]' },
+    { name: 'hostile getter', expression: '({ get message() { throw 1n; } })', message: '[object Object]' },
+    { name: 'hostile toJSON', expression: '({ toJSON() { throw 1n; } })', message: '[object Object]' },
+    { name: 'hostile toString', expression: '({ toString() { throw 1n; } })', message: '{}' },
+    { name: 'hostile Symbol.toPrimitive', expression: '({ [Symbol.toPrimitive]() { throw 1n; } })', message: '{}' },
+    { name: 'hostile coercion', expression: '({ toJSON() { throw 1n; }, toString() { throw 2n; }, [Symbol.toPrimitive]() { throw 3n; } })', message: 'Custom post threw an unprintable value.' },
+    { name: 'fulfilled Promise', expression: 'Promise.resolve(1n)', message: '{"type":"fulfilled","value":"1"}' },
+    { name: 'rejected Promise', expression: 'Promise.reject(1n)', message: '{"type":"rejected","error":"1"}' },
+    { name: 'pending Promise', expression: 'new Promise(() => {})', message: '{"type":"pending"}' },
+    { name: 'nested Promise', expression: 'Promise.reject(new Promise(() => {}))', message: 'Custom post threw an unprintable value.' },
+    { name: 'Error subclass', expression: 'new (class PostError extends Error {})("post failed")', message: 'post failed' },
+    { name: 'empty Error', expression: 'new Error("")', message: 'Custom post threw an unprintable value.' },
+    { name: 'huge Error subclass', expression: 'new (class PostError extends Error {})("x".repeat(12000))', message: `${'x'.repeat(4093)}...` },
+    { name: 'huge string', expression: '"x".repeat(12000)', message: `${'x'.repeat(4093)}...` }
+  ];
+
+  describe.each(['source', 'createPost', 'onEvent'] as const)('exceptions in %s', (phase) => {
+    it.each(thrownValues)('reports $name and can run a successful post afterwards', async ({ expression, message }) => {
+      const fixture = runtimeFixture();
+      fixture.package.source.code = phase === 'source'
+        ? `throw ${expression}; export function createPost() {}`
+        : phase === 'createPost'
+          ? `export function createPost() { throw ${expression}; }`
+          : `export function createPost() { return { onEvent() { throw ${expression}; } }; }`;
+
+      await expect(runCustomPost(fixture)).resolves.toEqual({
+        ok: false,
+        diagnostics: [{
+          code: phase === 'source' ? 'POST_CUSTOM_SOURCE_INVALID' : 'POST_CUSTOM_RUNTIME_FAILED',
+          message,
+          eventId: phase === 'onEvent' ? fixture.plan.events[0].id : null,
+          commandId: null
+        }]
+      });
+      await expect(runCustomPost(runtimeFixture())).resolves.toMatchObject({
+        ok: true, program: { text: 'G90\nG1 X0 Y0\nG1 X10 Y0\nM02' }
+      });
+    });
+  });
+
+  it.each(['source', 'onEvent'])('preserves resource classification before truncating a %s exception', async (phase) => {
+    const fixture = runtimeFixture();
+    const throwing = 'throw new Error("x".repeat(12000) + "stack overflow");';
+    fixture.package.source.code = phase === 'source'
+      ? `${throwing} export function createPost() {}`
+      : `export function createPost() { return { onEvent() { ${throwing} } }; }`;
+
+    await expect(runCustomPost(fixture)).resolves.toMatchObject({
+      ok: false, diagnostics: [{ code: 'POST_CUSTOM_RESOURCE_LIMIT', message: `${'x'.repeat(4093)}...` }]
+    });
+    await expect(runCustomPost(runtimeFixture())).resolves.toMatchObject({ ok: true });
+  });
+
+  it.each([
+    { expression: '1n', message: '1' },
+    { expression: 'new Promise(() => {})', message: '{"type":"pending"}' }
+  ])('disposes an exception from handler key enumeration: $expression', async ({ expression, message }) => {
+    const fixture = runtimeFixture();
+    fixture.package.source.code = `export function createPost() {
+      return new Proxy({}, { ownKeys() { throw ${expression}; } });
+    }`;
+
+    await expect(runCustomPost(fixture)).resolves.toMatchObject({
+      ok: false, diagnostics: [{ code: 'POST_CUSTOM_SOURCE_INVALID', message }]
+    });
+    await expect(runCustomPost(runtimeFixture())).resolves.toMatchObject({ ok: true });
+  });
+
+  it('releases handles after stack overflow', async () => {
+    const fixture = runtimeFixture();
+    fixture.package.source.code = `export function createPost() {
+      return { onEvent() { function recurse() { recurse(); } recurse(); } };
+    }`;
+
+    await expect(runCustomPost({ ...fixture, limits: { stackBytes: 16 * 1024 } })).resolves.toMatchObject({
+      ok: false, diagnostics: [{ code: 'POST_CUSTOM_RESOURCE_LIMIT', message: 'stack overflow' }]
+    });
+    await expect(runCustomPost(runtimeFixture())).resolves.toMatchObject({ ok: true });
+  });
+
+  it.each([
+    { action: 'api.getProperty(1n)', code: 'POST_CUSTOM_RUNTIME_FAILED', message: 'Do not know how to serialize a BigInt' },
+    { action: "api.getProperty('missing')", code: 'POST_CUSTOM_API_MISUSE', message: 'Property "missing" is not present in the exact binding.' },
+    { action: 'api.emitCommand(1n, {})', code: 'POST_CUSTOM_COMMAND_UNKNOWN', message: 'Command ID must be a string.' },
+    { action: 'api.emitMotion(1n, {})', code: 'POST_CUSTOM_COMMAND_UNKNOWN', message: 'Command ID must be a string.' },
+    { action: 'api.consume(1n)', code: 'POST_CUSTOM_API_MISUSE', message: 'consume requires a non-empty reason of at most 512 characters.' }
+  ])('retains the host callback diagnostic and releases handles for $action', async ({ action, code, message }) => {
+    const fixture = runtimeFixture();
+    fixture.package.source.code = `export function createPost(api) {
+      return { onEvent() { ${action}; } };
+    }`;
+
+    await expect(runCustomPost(fixture)).resolves.toMatchObject({
+      ok: false, diagnostics: [{ code, message, eventId: fixture.plan.events[0].id }]
+    });
+    await expect(runCustomPost(runtimeFixture())).resolves.toMatchObject({ ok: true });
+  });
+
+  it.each([
+    { phase: 'source', limits: { interruptCycles: 1 } },
+    { phase: 'createPost', limits: { interruptCycles: 1 } },
+    { phase: 'onEvent', limits: { interruptCycles: 1 } },
+    { phase: 'onEvent', limits: { deadlineMs: 20 } }
+  ])('releases handles after interrupting $phase with $limits', async ({ phase, limits }) => {
+    const fixture = runtimeFixture();
+    fixture.package.source.code = phase === 'source'
+      ? 'while (true) {} export function createPost() {}'
+      : phase === 'createPost'
+        ? 'export function createPost() { while (true) {} }'
+        : 'export function createPost() { return { onEvent() { while (true) {} } }; }';
+
+    await expect(runCustomPost({ ...fixture, limits })).resolves.toMatchObject({
+      ok: false, diagnostics: [{ code: 'POST_CUSTOM_RESOURCE_LIMIT', message: 'interrupted' }]
+    });
+    await expect(runCustomPost(runtimeFixture())).resolves.toMatchObject({ ok: true });
+  });
+
   it('reports a run stopped by a resource limit instead of calling the post nondeterministic', async () => {
     const completed = await runCustomPost(runtimeFixture());
     if (!completed.ok) throw new Error(JSON.stringify(completed.diagnostics));

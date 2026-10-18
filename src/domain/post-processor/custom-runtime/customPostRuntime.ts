@@ -83,6 +83,11 @@ export interface RunCustomPostInput {
 type RuntimeCommand = WireEdmPostPackage['dialect']['commands'][string];
 type RuntimeParameter = RuntimeCommand['parameters'][string];
 
+interface FormattedPostError {
+  readonly message: string;
+  readonly resourceLimit: boolean;
+}
+
 interface MutableRunState {
   readonly lines: string[];
   readonly blocks: ControllerProgramBlock[];
@@ -244,10 +249,13 @@ async function executeOnce(
         'global'
       );
       if (!eventValue.ok) return runtimeFailure(state, eventValue.error);
-      const called = callGuest(context, onEvent, post, eventValue.value);
-      eventValue.value.dispose();
-      if (!called.ok) return runtimeFailure(state, called.error);
-      called.value.dispose();
+      try {
+        const called = callGuest(context, onEvent, post, eventValue.value);
+        if (!called.ok) return runtimeFailure(state, called.error);
+        called.value.dispose();
+      } finally {
+        eventValue.value.dispose();
+      }
       if (state.fatal) return { ok: false, diagnostics: [state.fatal] };
       if (state.currentDisposition === 'none') {
         return failure(
@@ -431,7 +439,7 @@ function createGuestApi(
     'global'
   );
   if (frozen.ok) frozen.value.dispose();
-  else recordFatal(state, diagnostic('POST_CUSTOM_RUNTIME_FAILED', frozen.error));
+  else recordFatal(state, diagnostic('POST_CUSTOM_RUNTIME_FAILED', frozen.error.message));
   return api;
 }
 
@@ -459,7 +467,7 @@ function executeAction(
     } catch (error) {
       if (!state.fatal) recordFatal(state, diagnostic(
         'POST_CUSTOM_RUNTIME_FAILED',
-        error instanceof Error ? error.message : String(error),
+        formatThrownValue(error).message,
         state.currentEvent.id
       ));
     }
@@ -926,16 +934,16 @@ function validatePostHandler(context: QuickJSContext, post: QuickJSHandle): Cust
 function ownPropertyNames(
   context: QuickJSContext,
   value: QuickJSHandle
-): { ok: true; names: string[] } | { ok: false; error: string } {
+): { ok: true; names: string[] } | { ok: false; error: FormattedPostError } {
   const result = context.getOwnPropertyNames(value);
   if (result.error) {
-    const error = dumpedError(context, result.error);
-    result.error.dispose();
-    return { ok: false, error };
+    return { ok: false, error: consumeError(context, result.error) };
   }
-  const names = result.value.map((handle) => context.getString(handle));
-  result.value.dispose();
-  return { ok: true, names };
+  try {
+    return { ok: true, names: result.value.map((handle) => context.getString(handle)) };
+  } finally {
+    result.value.dispose();
+  }
 }
 
 function callGuest(
@@ -946,9 +954,7 @@ function callGuest(
 ) {
   const result = context.callFunction(fn, thisValue, ...args);
   if (result.error) {
-    const error = dumpedError(context, result.error);
-    result.error.dispose();
-    return { ok: false as const, error };
+    return { ok: false as const, error: consumeError(context, result.error) };
   }
   return { ok: true as const, value: result.value };
 }
@@ -961,9 +967,7 @@ function evaluate(
 ) {
   const result = context.evalCode(source, fileName, { type });
   if (result.error) {
-    const error = dumpedError(context, result.error);
-    result.error.dispose();
-    return { ok: false as const, error };
+    return { ok: false as const, error: consumeError(context, result.error) };
   }
   return { ok: true as const, value: result.value };
 }
@@ -991,28 +995,58 @@ function guestValue(context: QuickJSContext, value: PostPropertyValue) {
   return context.newString(value);
 }
 
-function dumpedError(context: QuickJSContext, handle: QuickJSHandle) {
-  const value = context.dump(handle);
-  if (isRecord(value) && typeof value.message === 'string') return value.message;
-  return typeof value === 'string' ? value : JSON.stringify(value);
+function consumeError(context: QuickJSContext, handle: QuickJSHandle): FormattedPostError {
+  try {
+    const value: unknown = context.dump(handle);
+    return formatThrownValue(value);
+  } catch {
+    return unprintableThrownValue();
+  } finally {
+    // dump consumes Promise handles itself, including rejected and pending ones.
+    if (handle.alive) handle.dispose();
+  }
 }
 
-function runtimeFailure(state: MutableRunState, message: string): CustomPostRunResult {
+const UNPRINTABLE_THROWN_VALUE = 'Custom post threw an unprintable value.';
+const MAX_THROWN_VALUE_MESSAGE_LENGTH = 4096;
+
+function formatThrownValue(value: unknown): FormattedPostError {
+  try {
+    const message = isRecord(value) && typeof value.message === 'string'
+      ? value.message
+      : typeof value === 'object' && value !== null
+        ? JSON.stringify(value, (_key, item: unknown) => typeof item === 'bigint' ? String(item) : item)
+        : String(value);
+    if (typeof message !== 'string' || message.length === 0) return unprintableThrownValue();
+    return {
+      message: message.length > MAX_THROWN_VALUE_MESSAGE_LENGTH
+        ? `${message.slice(0, MAX_THROWN_VALUE_MESSAGE_LENGTH - 3)}...`
+        : message,
+      // Preserve the existing classification even if the matching text is truncated.
+      resourceLimit: /interrupted|out of memory|stack overflow/i.test(message)
+    };
+  } catch {
+    return unprintableThrownValue();
+  }
+}
+
+function unprintableThrownValue(): FormattedPostError {
+  return { message: UNPRINTABLE_THROWN_VALUE, resourceLimit: false };
+}
+
+function runtimeFailure(state: MutableRunState, error: FormattedPostError): CustomPostRunResult {
   if (state.fatal) return { ok: false, diagnostics: [state.fatal] };
-  const resourceFailure = /interrupted|out of memory|stack overflow/i.test(message);
   return failure(
-    resourceFailure ? 'POST_CUSTOM_RESOURCE_LIMIT' : 'POST_CUSTOM_RUNTIME_FAILED',
-    message,
+    error.resourceLimit ? 'POST_CUSTOM_RESOURCE_LIMIT' : 'POST_CUSTOM_RUNTIME_FAILED',
+    error.message,
     state.currentEvent?.id ?? null
   );
 }
 
-function sourceFailure(message: string): CustomPostRunResult {
+function sourceFailure(error: FormattedPostError): CustomPostRunResult {
   return failure(
-    /interrupted|out of memory|stack overflow/i.test(message)
-      ? 'POST_CUSTOM_RESOURCE_LIMIT'
-      : 'POST_CUSTOM_SOURCE_INVALID',
-    message
+    error.resourceLimit ? 'POST_CUSTOM_RESOURCE_LIMIT' : 'POST_CUSTOM_SOURCE_INVALID',
+    error.message
   );
 }
 
