@@ -345,10 +345,15 @@ function boundsFromPolygon(points: Point2[]): Bounds2 {
   );
 }
 
+/**
+ * Works relative to the first vertex. Absolute shoelace products cancel
+ * catastrophically far from the origin and overflow long before coordinates do.
+ */
 function polygonCentroidOrAverage(points: Point2[], epsilon: number) {
   const clean = stripClosingDuplicate(points, epsilon);
   if (clean.length === 0) return null;
-  if (clean.length < 3) return averagePoint(clean);
+  const origin = clean[0];
+  if (clean.length < 3) return averagePoint(clean, origin);
 
   let twiceArea = 0;
   let cx = 0;
@@ -357,26 +362,32 @@ function polygonCentroidOrAverage(points: Point2[], epsilon: number) {
   for (let index = 0; index < clean.length; index++) {
     const current = clean[index];
     const next = clean[(index + 1) % clean.length];
-    const factor = current.x * next.y - next.x * current.y;
+    const currentX = current.x - origin.x;
+    const currentY = current.y - origin.y;
+    const nextX = next.x - origin.x;
+    const nextY = next.y - origin.y;
+    const factor = currentX * nextY - nextX * currentY;
     twiceArea += factor;
-    cx += (current.x + next.x) * factor;
-    cy += (current.y + next.y) * factor;
+    cx += (currentX + nextX) * factor;
+    cy += (currentY + nextY) * factor;
   }
 
-  if (Math.abs(twiceArea) <= 1e-9) return averagePoint(clean);
+  if (Math.abs(twiceArea) <= 1e-9) return averagePoint(clean, origin);
 
   return {
-    x: cx / (3 * twiceArea),
-    y: cy / (3 * twiceArea)
+    x: origin.x + cx / (3 * twiceArea),
+    y: origin.y + cy / (3 * twiceArea)
   };
 }
 
-function averagePoint(points: Point2[]): Point2 {
-  const sum = points.reduce((total, point) => ({ x: total.x + point.x, y: total.y + point.y }), {
-    x: 0,
-    y: 0
-  });
-  return { x: sum.x / points.length, y: sum.y / points.length };
+function averagePoint(points: Point2[], origin: Point2): Point2 {
+  let x = 0;
+  let y = 0;
+  for (const point of points) {
+    x += point.x - origin.x;
+    y += point.y - origin.y;
+  }
+  return { x: origin.x + x / points.length, y: origin.y + y / points.length };
 }
 
 function stripClosingDuplicate(points: Point2[], epsilon = 1e-9) {

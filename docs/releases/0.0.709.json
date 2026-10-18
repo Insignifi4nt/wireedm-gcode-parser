@@ -1,0 +1,24 @@
+{
+  "version": "0.0.709",
+  "previousVersion": "0.0.708",
+  "postCompatibility": "preserved-output-correct-far-contour-representative-point",
+  "summary": "Contour representative points are computed relative to the contour's first vertex. The absolute shoelace centroid cancelled catastrophically for drawings far from the origin: a 10 mm L-shaped part at 100 km recorded its representative point 416 m away, and at 1,000 km 127 km away. Points are now accurate at any offset, including 1e12 mm.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Saved documents keep their stored representative points until their contours are re-derived by an import or path edit. Newly derived contours record corrected representative points, which also differ from the old values in the last digits near the origin; the matching path element point changes with them. Execution plans, compensation, simulation and posted programs do not read this point and are unchanged.",
+  "checklist": {
+    "schema": "No UPID, portable UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. Only contours[].representativePoint and the matching representative path element point of newly derived documents change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Stored documents are not rewritten.",
+    "verification": "A new test places an L-shaped part's representative point at its exact centroid at offsets 0, 1e8, 1e9 and 1e12 mm; it fails on the old code (416,666 mm off at 1e8). Across 200 fuzzed imports, only contours[].representativePoint and the mirrored path element point changed; points inside their contour's bounds went from 752 to 1,019 of 1,033, and the 14 others belong to self-intersecting contours. The pure-domain path-intel, UPID, compensation and execution-plan suites, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Parts drawn far from the drawing origin record correct label points.",
+    "changes": [
+      "Imported drawings placed far from the origin record each closed contour's representative point inside the part instead of far away from it."
+    ],
+    "compatibility": "Execution plans and posted programs are unchanged. Saved projects keep their stored points until their paths are re-derived.",
+    "action": "No action needed."
+  }
+}
