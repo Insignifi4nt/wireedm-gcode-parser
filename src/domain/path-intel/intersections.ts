@@ -194,31 +194,27 @@ export function pathSegmentsShareSweptLocus(
 
 /** Segment pairs listed one by one; the rest share a summary that still blocks every chain they touch. */
 export const MAX_LISTED_SEGMENT_PAIRS = 1_000;
-/** Candidate segment pairs each scan compares before it stops and blocks the drawing as unchecked. */
-export const MAX_SEGMENT_PAIR_CHECKS = 4_000_000;
 
 /** Bounds for pairwise segment analysis (crossings and overlaps). */
 export interface SegmentPairAnalysis {
   readonly maxListed?: number;
-  readonly maxChecks?: number;
   /**
    * Whether a recorded error already covers these segments. Validation passes its saved
-   * diagnostics so known pairs, and a stop it already recorded, are not reported again.
+   * diagnostics so pairs it already recorded are not reported again.
    */
   readonly isRecorded?: (segmentIds: readonly string[]) => boolean;
 }
 
 /**
- * Lists the first `maxListed` reported pairs. Later pairs, and a scan that ran out of checks,
- * each add one error relating every affected segment and chain, so blocking stays as
- * complete as if every pair were listed while the diagnostics stay bounded.
+ * Lists the first `maxListed` reported pairs. Later pairs share one error relating every
+ * affected segment and chain, so blocking stays as complete as if every pair were listed
+ * while the diagnostics stay bounded.
  */
 export function createSegmentPairReport<Detail>(
   analysis: SegmentPairAnalysis,
   diagnostic: {
     readonly listed: (leftSegmentId: string, rightSegmentId: string, detail: Detail) => PathDiagnostic;
     readonly omitted: (count: number, segmentIds: string[]) => PathDiagnostic;
-    readonly unchecked: (checkedPairCount: number, segmentIds: string[]) => PathDiagnostic;
   }
 ) {
   const maxListed = analysis.maxListed ?? MAX_LISTED_SEGMENT_PAIRS;
@@ -236,13 +232,9 @@ export function createSegmentPairReport<Detail>(
       omittedSegmentIds.add(leftSegmentId);
       omittedSegmentIds.add(rightSegmentId);
     },
-    /** Pass the segments left unchecked when the scan stopped early. */
-    finish(checkedPairCount: number, uncheckedSegmentIds: readonly string[]) {
+    finish() {
       if (omittedCount > 0) {
         diagnostics.push(diagnostic.omitted(omittedCount, uniqueSorted([...omittedSegmentIds])));
-      }
-      if (uncheckedSegmentIds.length > 0 && !analysis.isRecorded?.(uncheckedSegmentIds)) {
-        diagnostics.push(diagnostic.unchecked(checkedPairCount, uniqueSorted([...uncheckedSegmentIds])));
       }
       return diagnostics;
     }
@@ -257,7 +249,6 @@ export function findPathSegmentIntersectionDiagnostics(
 ) {
   const resolved = resolvePathPlanningOptions(options);
   const epsilon = resolved.coincidenceEpsilon;
-  const maxChecks = analysis.maxChecks ?? MAX_SEGMENT_PAIR_CHECKS;
   const allowedJunctions = adjacentJunctions(chains, segments);
   const chainIdsBySegmentId = chainIdsBySegment(chains);
   const relatedChainIds = (segmentIds: readonly string[]) =>
@@ -285,32 +276,17 @@ export function findPathSegmentIntersectionDiagnostics(
       relatedSegmentIds,
       relatedChainIds: relatedChainIds(relatedSegmentIds),
       details: { omittedPairCount: count }
-    }),
-    unchecked: (checkedPairCount, relatedSegmentIds) => ({
-      id: nextId(),
-      severity: 'error',
-      code: 'intersecting-topology',
-      message: `Crossing analysis stopped after ${checkedPairCount} segment pair checks, so these segments could not be checked for crossings.`,
-      relatedSegmentIds,
-      relatedChainIds: relatedChainIds(relatedSegmentIds),
-      details: { checkedPairCount }
     })
   });
   const index = new SpatialHash<IndexedSegment>({
     cellSize: spatialCellSizeForSegments(segments, epsilon),
     maxCellsPerBounds: 256
   });
-  let checkedPairCount = 0;
 
   for (const [segmentIndex, segment] of segments.entries()) {
     const candidates = index
       .queryBounds(expandBounds(segment.bounds, epsilon))
       .sort((left, right) => left.index - right.index);
-    // Stop before a segment rather than inside it, so the stop point is deterministic.
-    if (checkedPairCount + candidates.length > maxChecks) {
-      return report.finish(checkedPairCount, segments.map(({ id }) => id));
-    }
-    checkedPairCount += candidates.length;
 
     for (const candidate of candidates) {
       const relation = classifyDetailedPathSegmentIntersection(
@@ -338,7 +314,7 @@ export function findPathSegmentIntersectionDiagnostics(
     index.insertBounds(segment.bounds, { index: segmentIndex, segment });
   }
 
-  return report.finish(checkedPairCount, []);
+  return report.finish();
 }
 
 export function spatialCellSizeForSegments(segments: PathSegment[], epsilon: number) {

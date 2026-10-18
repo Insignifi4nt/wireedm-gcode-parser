@@ -38,23 +38,6 @@ describe('bounded segment pair analysis', () => {
     expect(findPathSegmentIntersectionDiagnostics(segments, chains)).toEqual(capped);
   });
 
-  it('stops crossing analysis at its check budget and blocks every segment it could not check', () => {
-    const { segments, chains } = prepared(crosshatchEntities(10));
-    const complete = findPathSegmentIntersectionDiagnostics(segments, chains);
-    const stopped = findPathSegmentIntersectionDiagnostics(segments, chains, {}, { maxChecks: 50 });
-    const stop = stopped.at(-1)!;
-
-    expect(complete).toHaveLength(100);
-    expect(stop).toMatchObject({ severity: 'error', code: 'intersecting-topology' });
-    expect(stop.message).toMatch(/^Crossing analysis stopped after \d+ segment pair checks/);
-    expect(stop.details?.checkedPairCount).toBeLessThanOrEqual(50);
-    expect(stop.relatedSegmentIds).toEqual(segments.map(({ id }) => id).sort());
-    expect(stop.relatedChainIds).toEqual(chains.map(({ id }) => id).sort());
-    // Crossings found before the stop stay listed, and the stop point is deterministic.
-    expect(stopped.slice(0, -1)).toEqual(complete.slice(0, stopped.length - 1));
-    expect(findPathSegmentIntersectionDiagnostics(segments, chains, {}, { maxChecks: 50 })).toEqual(stopped);
-  });
-
   it('bounds overlap diagnostics for partial overlaps and keeps exact duplicates grouped', () => {
     const partial = Array.from({ length: 60 }, (_, index) => line(index * 0.5, 0, index * 0.5 + 100, 0));
     const duplicates = Array.from({ length: 5 }, () => line(0, 10, 50, 10));
@@ -72,18 +55,6 @@ describe('bounded segment pair analysis', () => {
     expect(capped.diagnostics.map(({ id }) => id)).toEqual(
       capped.diagnostics.map((_, index) => `diag_sanitize_${String(index + 1).padStart(4, '0')}`)
     );
-  });
-
-  it('stops overlap analysis at its check budget and keeps the unchecked segments blocked', () => {
-    const segments = pathSegmentsFromDxfEntities(Array.from({ length: 30 }, (_, index) => line(index, 0, index + 50, 0))).segments;
-    const stopped = sanitizePathSegments(segments, {}, { maxChecks: 100 });
-    const stop = stopped.diagnostics.at(-1)!;
-
-    expect(stopped.segments).toHaveLength(30);
-    expect(stop).toMatchObject({ severity: 'error', code: 'overlapping-segment' });
-    expect(stop.message).toMatch(/^Overlap analysis stopped after \d+ segment pair checks/);
-    expect(stop.relatedSegmentIds).toEqual(segments.map(({ id }) => id).sort());
-    expect(sanitizePathSegments(segments, {}, { maxChecks: 100 })).toEqual(stopped);
   });
 
   it('skips only line pairs that the classifier cannot report as overlapping', () => {

@@ -2,7 +2,6 @@ import {
   classifyPathSegmentIntersection,
   createSegmentPairReport,
   expandBounds,
-  MAX_SEGMENT_PAIR_CHECKS,
   pathSegmentsMayOverlap,
   pathSegmentsShareSweptLocus,
   spatialCellSizeForSegments,
@@ -59,7 +58,6 @@ export function sanitizePathSegments(
     cellSize: spatialCellSizeForSegments(candidates, epsilon),
     maxCellsPerBounds: 256
   });
-  const maxChecks = analysis.maxChecks ?? MAX_SEGMENT_PAIR_CHECKS;
   let nextNumber = diagnostics.length;
   const report = createSegmentPairReport<[PathSegment, PathSegment]>(analysis, {
     listed: (_left, _right, [left, right]) => overlapDiagnostic(nextNumber++, left, right),
@@ -70,30 +68,13 @@ export function sanitizePathSegments(
       message: `${count} more segment pairs overlap along a positive-length geometric locus; they are not listed individually.`,
       relatedSegmentIds,
       details: { omittedPairCount: count }
-    }),
-    unchecked: (checkedPairCount, relatedSegmentIds) => ({
-      id: `diag_sanitize_${String(++nextNumber).padStart(4, '0')}`,
-      severity: 'error',
-      code: 'overlapping-segment',
-      message: `Overlap analysis stopped after ${checkedPairCount} segment pair checks, so these segments could not be checked for duplicates or overlaps.`,
-      relatedSegmentIds,
-      details: { checkedPairCount }
     })
   });
-  let checkedPairCount = 0;
-  let checking = true;
 
   for (const segment of candidates) {
-    const nearby = checking
-      ? index.queryBounds(expandBounds(segment.bounds, epsilon)).sort((left, right) => left.index - right.index)
-      : [];
-    // Past the budget, keep the remaining segments unchecked; the stop is reported below.
-    if (checking && checkedPairCount + nearby.length > maxChecks) checking = false;
-    if (!checking) {
-      retained.push(segment);
-      continue;
-    }
-    checkedPairCount += nearby.length;
+    const nearby = index
+      .queryBounds(expandBounds(segment.bounds, epsilon))
+      .sort((left, right) => left.index - right.index);
     const duplicate = nearby.find((candidate) => {
       if (!pathSegmentsShareSweptLocus(candidate.segment, segment, epsilon)) return false;
       return (duplicateGroups.get(candidate.index) ?? []).every((groupMember) =>
@@ -120,7 +101,7 @@ export function sanitizePathSegments(
     index.insertBounds(segment.bounds, { index: retainedIndex, segment });
   }
 
-  diagnostics.push(...report.finish(checkedPairCount, checking ? [] : retained.map(({ id }) => id)));
+  diagnostics.push(...report.finish());
   for (const [representativeIndex, duplicates] of duplicateGroups) {
     const representative = retained[representativeIndex];
     diagnostics.push(
