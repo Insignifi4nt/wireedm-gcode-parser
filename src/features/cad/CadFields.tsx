@@ -48,11 +48,7 @@ function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onC
   const changeRelation = (next: CadScalar) => { context.setValueDraft(key, null); context.markRelationEdited(key); onChange(next); };
   return <label className={`cad-field${issue ? ' is-invalid' : ''}`}><span>{label}<small>{unit}</small>
     <CadContextHelp label={label}><div>{cadScalarHelp(label)}</div><dl><dt>Current value</dt><dd>{resolved === undefined ? issue : `${resolved} ${unit}`}</dd>{!literal && <><dt>Linked expression</dt><dd><code>{value}</code></dd></>}</dl>
-      <div>{alias ? `Edits update ${alias} and every linked input together when you Apply.` : locked ? 'This value follows a formula. Edit the relation with fx.' : 'Enter a number. Add or change a relation with fx.'}</div></CadContextHelp>
-    <CadContextHelp label={`${label} relation`} buttonLabel={`Edit ${label} relation`} activation="click" triggerContent="fx" className="cad-scalar-relation">
-      <CadExpressionBinding label={label} expression={value} parameters={context.parameters} resolved={resolved} onChange={changeRelation}
-        description="A document parameter keeps this value linked. Relation and parameter edits stay in this draft until you Apply."
-        onPendingChange={pending => context.setRelationPending(key, pending)} /></CadContextHelp></span>
+      <div>{alias ? `Edits update ${alias} and every linked input together when you Apply.` : locked ? 'This value follows a formula. Edit the relation with fx.' : 'Enter a number. Add or change a relation with fx.'}</div></CadContextHelp></span>
     <Input data-cad-field-key={key} value={text} inputMode="decimal" spellCheck={false} readOnly={locked} aria-label={`${inputLabel}${unit ? ` ${unit}` : ''}`} aria-invalid={Boolean(issue) || undefined}
       onFocus={event => {
         const control = event.currentTarget;
@@ -74,7 +70,11 @@ function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onC
           else if (intent.kind === 'scalar') { context.setValueDraft(key, { source: intent.source, text: next }); onChange(intent.source); }
           else if (intent.kind === 'locked') context.setIssue(key, intent.reason);
         } catch (error) { context.setIssue(key, error instanceof Error ? error.message : 'Invalid numeric value.'); }
-      }} />{issue && <small className="cad-field-hint">{issue}</small>}</label>;
+      }} />
+    <CadContextHelp label={`${label} relation`} buttonLabel={`Edit ${label} relation`} activation="click" triggerContent="fx" className="cad-scalar-relation">
+      <CadExpressionBinding label={label} expression={value} parameters={context.parameters} resolved={resolved} onChange={changeRelation}
+        description="A document parameter keeps this value linked. Relation and parameter edits stay in this draft until you Apply."
+        onPendingChange={pending => context.setRelationPending(key, pending)} /></CadContextHelp>{issue && <small className="cad-field-hint">{issue}</small>}</label>;
 }
 
 export function CadReferencePickButton({ label, options, onSelect, disabled = false }: { label: string; options: readonly { value: string; disabled?: boolean }[]; onSelect(value: string): void; disabled?: boolean }) {

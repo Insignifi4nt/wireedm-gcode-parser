@@ -58,11 +58,13 @@ export interface CadFeatureTreeProps {
   onSelectReferencePlane?(plane: CadPlane): void;
   /** Real parameter operations supplied by the workbench, mounted when expanded. */
   parameterContent?: ReactNode;
+  /** Actions for the Parameters branch's context menu; choosing one reveals the branch first. */
+  parameterMenu?: readonly { readonly label: string; readonly help?: string; onSelect(): void }[];
 }
 
 /** One ordered model history, with links taken from the same reference model as rebuild. */
 export function CadFeatureTree({ document, diagnostics = [], selectedId, selectedProfileId, locked, selectionOnly = false, highlightedFeatureIds = [], onSelect, onConfigure, onEditSketch, onEditCurve, onSelectProfile,
-  selectableFeatureIds, allowPrincipalPlaneSelection = false, onSuppress, onProperties, onChangeSketchPlane, onDelete, onUpdateProfile, onDeleteProfile, onCopyProfile, onContextMenuOpenChange, onRename, onRenamePendingChange, cancelSignal = 0, onCreateSketch, selectedReferencePlane, onSelectReferencePlane, parameterContent }: CadFeatureTreeProps) {
+  selectableFeatureIds, allowPrincipalPlaneSelection = false, onSuppress, onProperties, onChangeSketchPlane, onDelete, onUpdateProfile, onDeleteProfile, onCopyProfile, onContextMenuOpenChange, onRename, onRenamePendingChange, cancelSignal = 0, onCreateSketch, selectedReferencePlane, onSelectReferencePlane, parameterContent, parameterMenu }: CadFeatureTreeProps) {
 
   const treeId = useId();
   const tree = useRef<HTMLOListElement>(null), returnFocus = useRef<{ documentId: string; target: TreeTarget } | null>(null);
@@ -87,7 +89,7 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
   const { expanded, branches } = treeView;
   const [rename, setRename] = useState<{ document: CadDocument; cancelSignal: number; target: TreeTarget } | null>(null);
   const renameCurrent = !locked && !selectionOnly && rename?.document === document && rename.cancelSignal === cancelSignal ? rename : null;
-  const [menu, setMenu] = useState<{ document: CadDocument; featureId: string | null; profileId?: string; anchor: CadContextMenuAnchor } | null>(null);
+  const [menu, setMenu] = useState<{ document: CadDocument; featureId: string | null; profileId?: string; parameters?: true; anchor: CadContextMenuAnchor } | null>(null);
   const menuCurrent = !locked && !selectionOnly && !renameCurrent && menu?.document === document ? menu : null;
   const selectable = useMemo(() => selectionOnly && selectableFeatureIds ? new Set(selectableFeatureIds) : null, [selectionOnly, selectableFeatureIds]);
   const selectionDisabled = (id: string) => locked || Boolean(renameCurrent) || selectable !== null && !selectable.has(id);
@@ -127,7 +129,7 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
         setRename(current => current === owner ? null : current);
       });
     }} />;
-  const openMenu = (event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>, featureId: string | null, profileId?: string) => {
+  const openMenu = (event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>, featureId: string | null, profileId?: string, parameters?: true) => {
     if ('key' in event && event.key === 'F2' && onRename && featureId !== null) {
       event.preventDefault(); event.stopPropagation();
       beginRename(profileId === undefined ? { kind: 'feature', featureId } : { kind: 'profile', featureId, profileId }); return;
@@ -138,12 +140,16 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
     event.currentTarget.focus();
     const bounds = event.currentTarget.getBoundingClientRect();
     const anchor = 'clientX' in event && (event.clientX || event.clientY) ? { x: event.clientX, y: event.clientY } : { x: bounds.left, y: bounds.bottom };
-    setMenu({ document, featureId, profileId, anchor });
+    setMenu({ document, featureId, profileId, parameters, anchor });
   };
   const menuFeature = menuCurrent?.featureId ? relationships.byId.get(menuCurrent.featureId) : undefined;
   const menuProfile = menuFeature?.kind === 'sketch' ? menuFeature.profiles.find(profile => profile.id === menuCurrent?.profileId) : undefined;
   const menuItems: CadContextMenuItem[] = [];
-  if (menuCurrent?.featureId === null && onProperties) menuItems.push({ label: 'Properties', onSelect: () => onProperties(null) });
+  if (menuCurrent?.parameters) menuItems.push(...(parameterMenu ?? []).map(item => ({ ...item, onSelect: () => {
+    setTreeView(previous => previous.branches.has('parameters') ? previous : { ...previous, branches: new Set([...previous.branches, 'parameters']) });
+    item.onSelect();
+  } })));
+  else if (menuCurrent?.featureId === null && onProperties) menuItems.push({ label: 'Properties', onSelect: () => onProperties(null) });
   if (menuFeature) {
     if (menuProfile && menuFeature.kind === 'sketch') {
       const sketch = menuFeature, profile = menuProfile;
@@ -229,10 +235,12 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
       </ul>}
       {parameterContent !== undefined && parameterContent !== null && parameterContent !== false && <>
         <Button type="button" className="cad-tree-branch" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('parameters') ? 'Collapse' : 'Expand'} Parameters`}
+          onContextMenu={event => openMenu(event, null, undefined, true)} onKeyDown={event => openMenu(event, null, undefined, true)}
           aria-expanded={branches.has('parameters')} aria-controls={branches.has('parameters') ? `${treeId}-parameters` : undefined} onClick={() => toggleBranch('parameters')}>
           <ExpandRightIcon size={12} className="cad-tree-hierarchy-toggle" /><AdjustIcon size={13} /><span>Parameters</span>
         </Button>
-        {branches.has('parameters') && <div id={`${treeId}-parameters`} className="cad-tree-parameters">{parameterContent}</div>}
+        {/* Stays mounted while collapsed so its menu actions can open the editor. */}
+        <div id={`${treeId}-parameters`} className="cad-tree-parameters" hidden={!branches.has('parameters')}>{parameterContent}</div>
       </>}
       <Button type="button" className="cad-tree-branch" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('model') ? 'Collapse' : 'Expand'} Body`} onContextMenu={event => openMenu(event, null)} onKeyDown={event => openMenu(event, null)}
         aria-expanded={branches.has('model')} aria-controls={branches.has('model') ? `${treeId}-model` : undefined} onClick={() => toggleBranch('model')}>
@@ -240,8 +248,7 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
       </Button>
       {branches.has('model') && <ol ref={tree} id={`${treeId}-model`} className="cad-feature-list cad-feature-history" aria-label="Feature history and dependencies">
     {document.features.filter(feature => !relationships.owner.has(feature.id)).map(renderNode)}
-    {!document.features.length && <li className="cad-tree-empty">No features yet.<br />Create a sketch to begin.</li>}
       </ol>}
     </div>}
-  </div>{menuCurrent && menuItems.length > 0 && <CadContextMenu anchor={menuCurrent.anchor} title={menuProfile?.name ?? menuFeature?.name ?? 'Body'} items={menuItems} onClose={() => setMenu(null)} />}</>;
+  </div>{menuCurrent && menuItems.length > 0 && <CadContextMenu anchor={menuCurrent.anchor} title={menuCurrent.parameters ? 'Parameters' : menuProfile?.name ?? menuFeature?.name ?? 'Body'} items={menuItems} onClose={() => setMenu(null)} />}</>;
 }

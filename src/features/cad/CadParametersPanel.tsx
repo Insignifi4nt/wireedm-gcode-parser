@@ -1,20 +1,22 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { createPortal } from 'react-dom';
-import { AddIcon, CloseIcon, ConfirmIcon, DeleteIcon, FolderPlusIcon, LinkIcon, PluginIcon, RenameIcon } from '@wire-edm/icons-react';
+import { CloseIcon, ConfirmIcon, DeleteIcon, LinkIcon, PluginIcon, RenameIcon } from '@wire-edm/icons-react';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { inspectCadParameters, type CadParameterUsage } from '@/domain/cad/cadParameters';
-import { CadContextHelp } from './CadContextHelp';
 import { formatCadLocalizedQuantity } from './cadDisplayQuantity';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import './cad-parameters.css';
 
 type Editor = { kind: 'parameter'; originalName: string | null; name: string; value: string; groupId: string; error: string }
   | { kind: 'group'; originalId: string | null; name: string; error: string };
+/** Commands the tree's Parameters menu sends; each is ignored while the panel is locked or already editing. */
+export interface CadParametersPanelControls { create(kind: 'parameter' | 'group'): void }
 export interface CadParametersPanelProps {
+  controls?: Ref<CadParametersPanelControls>;
   document: CadDocument;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
   onInspectParameter(name: string | null): void;
@@ -24,7 +26,7 @@ export interface CadParametersPanelProps {
   cancelSignal: number;
 }
 const numericValue = (value: number) => formatCadLocalizedQuantity(value, 8, false);
-export function CadParametersPanel({ document: cadDocument, onEditMany, onInspectParameter, onInspectUsage, onPendingChange, interactionLocked, cancelSignal }: CadParametersPanelProps) {
+export function CadParametersPanel({ controls, document: cadDocument, onEditMany, onInspectParameter, onInspectUsage, onPendingChange, interactionLocked, cancelSignal }: CadParametersPanelProps) {
   const inspection = useMemo(() => inspectCadParameters(cadDocument), [cadDocument]);
   const [editor, setEditor] = useState<Editor | null>(null);
   const submission = useCadEditSubmission();
@@ -56,6 +58,8 @@ export function CadParametersPanel({ document: cadDocument, onEditMany, onInspec
     editorDocument.current = cadDocument;
     setEditor(next); onInspectParameter(next.kind === 'parameter' ? next.originalName : null);
   };
+  useImperativeHandle(controls, () => ({ create: kind => begin(kind === 'group' ? { kind: 'group', originalId: null, name: '', error: '' }
+    : { kind: 'parameter', originalName: null, name: '', value: '', groupId: '', error: '' }) }));
   const update = (values: Partial<Pick<Editor, 'name' | 'error'>>) => setEditor(current => current ? { ...current, ...values } : current);
   const report = (error: unknown) => update({ error: error instanceof Error ? error.message : 'Unable to apply this change.' });
   const assertCurrent = () => { if (editorDocument.current !== cadDocument) throw new Error('The part changed while this editor was open. Cancel and reopen it to edit the current values.'); };
@@ -105,11 +109,9 @@ export function CadParametersPanel({ document: cadDocument, onEditMany, onInspec
   });
   const localInputs = inspection.pluginInputs.filter(input => !input.linked);
   return <div ref={host} className="cad-parameters-panel">
-    <header><span>Document values</span><CadContextHelp label="Document parameters"><p>These named values drive dimensions through expressions. Editing a value updates every linked profile and dependent feature.</p><p>Local profile inputs stay in their profile configuration until linked to a named value. Renaming a parameter preserves its dimension references.</p></CadContextHelp><Button type="button" aria-label="Add parameter group" title="New group" disabled={interactionLocked || editor !== null} onClick={() => begin({ kind: 'group', originalId: null, name: '', error: '' })}><FolderPlusIcon size={13} /></Button><Button type="button" aria-label="Add parameter" title="New parameter" disabled={interactionLocked || editor !== null} onClick={() => begin({ kind: 'parameter', originalName: null, name: '', value: '', groupId: '', error: '' })}><AddIcon size={14} /></Button></header>
     <div className="cad-parameter-list">
       {inspection.groups.map(group => <details key={group.id} className="cad-parameter-group" open><summary>{inspection.parameters.some(parameter => parameter.groupId === group.id && parameter.source.kind === 'plugin') && <PluginIcon size={10} aria-label="Plugin parameters" />}<span>{group.name}</span><small>{inspection.parameters.filter(parameter => parameter.groupId === group.id).length}</small><Button type="button" aria-label={`Rename parameter group ${group.name}`} disabled={interactionLocked || editor !== null} onClick={event => { event.preventDefault(); begin({ kind: 'group', originalId: group.id, name: group.name, error: '' }); }}><RenameIcon size={10} /></Button></summary>{rows(group.id)}</details>)}
       {inspection.parameters.some(parameter => parameter.groupId === null) && <details className="cad-parameter-group" open><summary><span>{inspection.groups.length ? 'Ungrouped' : 'Parameters'}</span></summary>{rows(null)}</details>}
-      {!inspection.parameters.length && <p className="cad-parameter-empty">No named values yet.<Button type="button" disabled={interactionLocked || editor !== null} onClick={() => begin({ kind: 'parameter', originalName: null, name: '', value: '', groupId: '', error: '' })}>Add a parameter</Button></p>}
       {localInputs.length > 0 && <details className="cad-parameter-group cad-local-inputs"><summary><span>Local profile inputs</span><small>{localInputs.length}</small></summary>{localInputs.map(input => <Button type="button" className="cad-local-input-row" key={`${input.featureId}/${input.profileId}/${input.inputName}`} disabled={!onInspectUsage || interactionLocked || editor !== null} aria-label={`Inspect ${input.profileName} ${input.label}`} title={`${input.featureName} / ${input.profileName}. Configure this value in its profile.`} onClick={() => onInspectUsage?.(input)}><PluginIcon size={10} /><span>{input.label}<small>{input.profileName}</small></span><output>{input.appliedValue === undefined ? '—' : numericValue(input.appliedValue)}</output><small>{!input.effective ? 'auto' : !input.editable ? 'locked' : 'local'}</small></Button>)}</details>}
     </div>
     {editor && createPortal(<div ref={floating} className="cad-parameter-editor" role="dialog" aria-label={editor.kind === 'group' ? editor.originalId ? 'Edit parameter group' : 'New parameter group' : editor.originalName ? `Edit ${editor.originalName}` : 'New parameter'} style={{ ...position, maxHeight: window.innerHeight - position.top - 12 }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>

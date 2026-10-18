@@ -48,18 +48,19 @@ it('shows the current native preview solid count while keeping old, failed and u
   const ready: Extract<CadFeaturePreviewState, { kind: 'ready' }> = { kind: 'ready', owner: command.owner, baseVersion: command.expectedVersion, featureId: 'pad', candidateId: 'current',
     definitionKey: cadFeatureCandidateKey(command.edits), document: applyCadEdits(before.document, command.edits), result };
   await act(async () => publish?.(ready));
-  expect(container.querySelector('.cad-feature-preview-status')?.textContent).toBe('Preview · 2 solids · Apply to keep');
+  // The panel stays quiet: Apply alone says whether the current draft has a valid preview.
+  expect(container.querySelector('[role="alert"]')).toBeNull();
   const apply = container.querySelector<HTMLButtonElement>('button[type="submit"]'); if (!apply) throw new Error('Apply missing'); expect(apply.disabled).toBe(false);
   await changeLength('21');
-  expect(container.querySelector('.cad-feature-preview-status')?.textContent).toBe('Updating preview · last valid result'); expect(apply.disabled).toBe(true);
+  expect(apply.disabled).toBe(true);
   const next = preview.mock.calls.at(-1)?.[0]; if (!next || next.kind !== 'candidate') throw new Error('Expected next candidate');
   await act(async () => publish?.({ ...ready, kind: 'waiting', definitionKey: cadFeatureCandidateKey(next.edits), candidateId: 'next', lastValid: ready }));
-  expect(container.querySelector('.cad-feature-preview-status')?.textContent).toBe('Updating preview · last valid result'); expect(apply.disabled).toBe(true);
+  expect(apply.disabled).toBe(true);
   await act(async () => publish?.({ ...ready, kind: 'error', definitionKey: cadFeatureCandidateKey(next.edits), candidateId: 'next', stage: 'kernel', message: 'Join could not be built', diagnostics: [], lastValid: ready }));
-  expect(container.querySelector('.cad-feature-preview-status')?.textContent).toBe('Join could not be built'); expect(apply.disabled).toBe(true);
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('Join could not be built'); expect(apply.disabled).toBe(true);
   await act(async () => publish?.({ ...ready, candidateId: 'unknown', definitionKey: cadFeatureCandidateKey(next.edits), document: applyCadEdits(before.document, next.edits),
     result: { ...result, meshes: [mesh] } }));
-  expect(container.querySelector('.cad-feature-preview-status')?.textContent).toBe('Preview · Apply to keep'); expect(apply.disabled).toBe(false);
+  expect(container.querySelector('[role="alert"]')).toBeNull(); expect(apply.disabled).toBe(false);
   expect(session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: false });
 });
 it('edits a displayed Pad depth through its exact named driver, previews all dependents and commits the correlated batch as one reversible history step', async () => {

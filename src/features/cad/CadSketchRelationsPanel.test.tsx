@@ -701,6 +701,35 @@ describe('selected sketch entity relations', () => {
   });
 });
 
+describe('dimensions from the sketch origin and axes', () => {
+  const boreDocument = (relations: readonly unknown[] = []) => parseCadDocument({ ...createCadDocument('Located bore', 'located-bore'), schemaVersion: 2, features: [{
+    id: 'sketch', kind: 'sketch', name: 'Bore', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'center', position: [30, -20] }], entities: [{ id: 'bore', kind: 'circle', centerPointId: 'center', radius: 4, construction: false }], relations
+    }
+  }] });
+  it('keeps signed coordinates from the origin and drives the one you change', async () => {
+    const h = await mount(boreDocument(), { kind: 'point', id: 'center' }, { initialCommand: { kind: 'datum-distance', datum: 'origin' } });
+    expect(field('X from origin mm').value).toBe('30'); expect(field('Y from origin mm').value).toBe('-20');
+    expect(document.activeElement).toBe(field('X from origin mm'));
+    await input('X from origin mm', '35'); await click('Apply');
+    expect(h.edit).toHaveBeenCalledExactlyOnceWith([
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: expect.objectContaining({ kind: 'fixed-axis', pointId: 'center', axis: 'x', value: 35 }) },
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: expect.objectContaining({ kind: 'fixed-axis', pointId: 'center', axis: 'y', value: -20 }) }
+    ], expect.any(AbortSignal));
+  });
+  it('reuses the coordinate an axis already drives and explains a point that cannot take one', async () => {
+    const h = await mount(boreDocument([{ id: 'level', kind: 'fixed-axis', pointId: 'center', axis: 'y', value: -20 }]), { kind: 'point', id: 'center' },
+      { initialCommand: { kind: 'datum-distance', datum: 'x-axis' } });
+    expect(field('Y from X axis mm').value).toBe('-20'); expect(container.querySelector('input[aria-label="X from Y axis mm"]')).toBeNull();
+    await input('Y from X axis mm', '-25'); await click('Apply');
+    expect(h.edit).toHaveBeenCalledExactlyOnceWith([{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'level', kind: 'fixed-axis', pointId: 'center', axis: 'y', value: -25 } }], expect.any(AbortSignal));
+    await act(async () => root.unmount()); root = createRoot(container);
+    await mount(boreDocument([{ id: 'pin', kind: 'fixed-point', pointId: 'center', position: [30, -20] }]), { kind: 'point', id: 'center' }, { initialCommand: { kind: 'datum-distance', datum: 'y-axis' } });
+    expect(container.textContent).toContain('already has its position from a fixed point or an expression');
+    expect(container.querySelector('input[aria-label="X from Y axis mm"]')).toBeNull();
+  });
+});
+
 
 describe('saved reference dimension editing', () => {
   it('saves a passive diameter on expression-driven geometry and keeps its source owner explicit', async () => {

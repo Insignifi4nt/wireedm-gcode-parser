@@ -115,7 +115,7 @@ describe('Sketch reference-plane workflow', () => {
       row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 80, clientY: 100 })); });
     expect(state()).toMatchObject({ awaitingSketchPlane: true, workflowOpen: true });
     expect(container.querySelector('[role="menu"]')).toBeNull(); expect(container.querySelector('[aria-label="Feature name"]')).toBeNull();
-    for (const label of ['Circle profile', 'Add parameter', 'Add parameter group', 'Edit parameter wall', 'Create sketch on XY plane']) {
+    for (const label of ['Circle profile', 'Edit parameter wall', 'Create sketch on XY plane']) {
       expect(button(label).disabled, label).toBe(true); await click(label);
     }
     expect(container.querySelector<HTMLInputElement>('[aria-label="Part name"]')?.disabled).toBe(true);

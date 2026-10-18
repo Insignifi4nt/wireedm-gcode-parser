@@ -56,7 +56,7 @@ describe('unified feature history and dependency tree', () => {
         onEditMany={onEditMany} onInspectParameter={() => undefined} onPendingChange={setPending} interactionLocked={false} cancelSignal={0} />} />;
     }
     await act(async () => root.render(<Harness />));
-    expect(container.querySelector('[aria-label="Edit parameter width"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Edit parameter width"]')?.closest('[hidden]')).not.toBeNull();
     await click('Expand Parameters');
     expect(button('Collapse Parameters').getAttribute('aria-expanded')).toBe('true');
     await act(async () => button('Edit parameter width').focus());
@@ -70,7 +70,7 @@ describe('unified feature history and dependency tree', () => {
     await act(async () => close.click());
     expect(document.activeElement).toBe(button('Edit parameter width'));
     await click('Collapse Parameters');
-    expect(container.querySelector('[aria-label="Edit parameter width"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Edit parameter width"]')?.closest('[hidden]')).not.toBeNull();
     expect(onEditMany).not.toHaveBeenCalled();
     expect(callbacks.document).toBe(cadDocument);
   });

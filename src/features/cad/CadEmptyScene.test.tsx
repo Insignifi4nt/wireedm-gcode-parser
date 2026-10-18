@@ -42,7 +42,7 @@ describe('CAD tools without an evaluated solid', () => {
     await mount({ ...createCadDocument(), features: [outline, emptySketch] }); const before = session.getSnapshot();
     await click(namedButton('Empty sketch')); await click(namedButton('Select Outline in history')); await click(namedButton('Pad / Pocket'));
     const source = [...container.querySelectorAll('select')].find(element => element.closest('label')?.textContent?.startsWith('Profile sketch'));
-    expect(source?.value).toBe('outline'); expect(container.querySelector('.cad-property-title')?.textContent).toBe('Create pad / pocket');
+    expect(source?.value).toBe('outline'); expect(container.querySelector('.cad-inspector-title')?.textContent).toBe('Create pad / pocket');
     expect(session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: false, workflowOpen: true });
     await click(namedButton('Cancel')); expect(session.getSnapshot()).toEqual(before);
   });

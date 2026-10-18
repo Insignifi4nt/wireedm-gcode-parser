@@ -53,7 +53,7 @@ export function CadSketchRegionsField({ document, sketchId, selection, onChange 
       {prepared.kind === 'unavailable' && <p>{prepared.reason}</p>}
     </CadContextHelp></span>
     <div className="cad-area-actions">
-      <Button type="button" className="cad-area-choice" aria-label="Pick closed areas from model"
+      <Button type="button" variant="outline" className="cad-area-choice" aria-label="Pick closed areas from model"
         aria-description={prepared.kind === 'unavailable' ? prepared.reason : 'Click an area; hold Shift to add or remove areas.'}
         disabled={!picking?.beginRegions || !picking.precedingIds.has(sketchId) || prepared.kind !== 'ready' || !prepared.cells.cells.length} onClick={begin}>
         <SelectIcon size={13} /><span>{selection === undefined ? wholeAvailable ? 'Whole sketch' : 'Choose areas' : count ? `${count} ${count === 1 ? 'area' : 'areas'}` : 'No areas'}</span>

@@ -137,6 +137,15 @@ async function rowMenu(row: string, command: string) {
   if (!item) throw new Error(`Menu command "${command}" missing.`);
   await act(async () => item.click());
 }
+/** Right-click the Parameters branch and run one of its menu commands. */
+async function parameterMenu(command: string) {
+  const branch = [...document.querySelectorAll('button')].find(entry => /^(Expand|Collapse) Parameters$/.test(entry.getAttribute('aria-label') ?? ''));
+  if (!branch) throw new Error('Parameters branch missing.');
+  await act(async () => branch.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 100, clientY: 100 })));
+  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(entry => entry.textContent?.trim() === command);
+  if (!item) throw new Error(`Menu command "${command}" missing.`);
+  await act(async () => item.click());
+}
 function property(label: string) {
   return [...container.querySelectorAll('.cad-properties-list > div')].find(row => row.querySelector('dt')?.textContent === label)?.querySelector('dd')?.textContent;
 }
@@ -1664,6 +1673,28 @@ describe('CAD sketch interaction', () => {
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
+  it('dimensions a point from the sketch origin or an axis in either pick order', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Line', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [12, -7] }, { id: 'b', position: [30, 5] }], entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [] } }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const pick = async (selector: string) => {
+      const target = container.querySelector(selector); if (!target) throw new Error(`${selector} missing.`);
+      await act(async () => target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    };
+    const relations = () => { const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.'); return feature.graph.relations; };
+    await click('Dimension'); expect(container.querySelector('[data-cad-sketch-datum="origin"]')?.getAttribute('role')).toBe('button');
+    await pick('[data-cad-sketch-datum="x-axis"]'); expect(container.textContent).toContain('Choose a point to dimension from the x axis');
+    await pick('[data-cad-sketch-point="a"]'); expect(field('Y from X axis').value).toBe('-7'); await click('Apply');
+    expect(relations()).toMatchObject([{ kind: 'fixed-axis', pointId: 'a', axis: 'y', value: -7 }]);
+    // A selected point starts the tool as its first pick.
+    await pick('[data-cad-sketch-point="b"]'); await click('Dimension');
+    expect(container.textContent).toContain('Choose the second point, the origin or an axis');
+    await pick('[data-cad-sketch-datum="origin"]');
+    expect(field('X from origin').value).toBe('30'); expect(field('Y from origin').value).toBe('5'); await click('Apply');
+    expect(relations().slice(1)).toMatchObject([{ kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 30 }, { kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 5 }]);
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
   it('starts Dimension before picking an edge, cancels cleanly and applies a linked length through the same editor', async () => {
     await mount({ ...createCadDocument(), parameters: { plateWidth: 50 } }); await startSketch(); await snapToGrid();
     await canvasClick(300, 200); await canvasClick(450, 100); await click('Select');
@@ -1714,7 +1745,7 @@ describe('CAD sketch interaction', () => {
       const name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]');
       if (!name) throw new Error('Part name missing'); pendingField = name; await input(name, 'Pending rename');
     } else {
-      await click('Parameters'); await click('Add parameter'); pendingField = field('Name'); await input(pendingField, 'wall'); await input(field('Value'), '3');
+      await parameterMenu('New parameter'); pendingField = field('Name'); await input(pendingField, 'wall'); await input(field('Value'), '3');
     }
     const pendingValue = pendingField.value;
     const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]');
@@ -1862,8 +1893,8 @@ describe('CAD sketch interaction', () => {
   });
 
   it('cancels pending parameter fields from the focused input without changing geometry or history', async () => {
-    await mount(solidDocument()); await click('Parameters');
-    const before = currentSession.getSnapshot(); await click('Add parameter');
+    await mount(solidDocument());
+    const before = currentSession.getSnapshot(); await parameterMenu('New parameter');
     await input(field('Name'), 'wall'); await input(field('Value'), '3');
     expect(currentSession.getSnapshot().workflowOpen).toBe(true);
     await act(async () => field('Value').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
@@ -2012,7 +2043,7 @@ describe('CAD sketch interaction', () => {
     expect(signal?.aborted).toBe(true); expect(currentSession.getSnapshot().workflowOpen).toBe(false);
     await click('Chamfer');
     await act(async () => finish?.({ bodyId: 'pad', buildId: 'build-1', purpose: 'fillet', selection: selectedEdgeQuery }));
-    expect(container.querySelector('.cad-property-title')?.textContent).toBe('Create chamfer');
+    expect(container.querySelector('.cad-inspector-title')?.textContent).toBe('Create chamfer');
     await click('Apply');
     expect(currentDocument.features.at(-1)?.kind).toBe('chamfer');
   });
