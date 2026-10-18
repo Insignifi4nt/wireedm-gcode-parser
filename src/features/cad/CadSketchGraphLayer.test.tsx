@@ -239,9 +239,10 @@ describe('graph point interaction ownership', () => {
       relations: [{ id: 'joint', kind: 'coincident', pointIds: ['a', 'alias'] }] } }] });
     await h.source(source);
     await h.pointer(h.point(), 'pointerdown');
-    await h.pointer(h.point(), 'pointermove', { clientX: 105, clientY: 100 });
-    expect(container.querySelector('[data-cad-sketch-snap]')).toBeNull();
-    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('5');
+    await h.pointer(h.point(), 'pointermove', { clientX: 110, clientY: 100 });
+    // The joined alias moves along; only the X axis the point slides on attracts it.
+    expect(container.querySelector('[data-cad-sketch-snap]')?.getAttribute('data-cad-sketch-snap')).toBe('x-axis');
+    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('10');
     await h.key(h.point(), 'Escape');
     await h.pointer(h.point('mixed'), 'pointerdown');
     await h.pointer(h.point('mixed'), 'pointermove', { clientX: 116, clientY: 106 });
@@ -252,6 +253,30 @@ describe('graph point interaction ownership', () => {
     await h.pointer(h.point('mixed'), 'pointerup', { clientX: 101, clientY: 88 });
     expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'mixed', translation: [0, 13] }], expect.any(AbortSignal));
     expect(source.features[0]).toMatchObject({ graph: { points: expect.arrayContaining([{ id: 'mixed', position: [' x ', 7] }]) } });
+  });
+
+  it('drags a point onto another edge, a guide crossing or an axis as a position only', async () => {
+    const h = await fixture({ snap: true });
+    const sketch = h.document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch missing.');
+    const source = parseCadDocument({ ...h.document, features: [{ ...sketch, graph: {
+      points: [{ id: 'a', position: [0, 20] }, { id: 'b', position: [40, 20] }, { id: 'p', position: [10, 40] }, { id: 'q', position: [30, 60] }],
+      entities: [{ id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'arm', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }],
+      relations: [] } }] });
+    await h.source(source);
+    const hint = () => container.querySelector('[data-cad-sketch-snap]');
+    // The pointer starts on p at (10, 40); one pixel is one millimetre and Y points up.
+    await h.pointer(h.point('p'), 'pointerdown');
+    await h.pointer(h.point('p'), 'pointermove', { clientX: 102, clientY: 119.7 });
+    expect(hint()?.getAttribute('data-cad-sketch-snap')).toBe('edge'); expect(hint()?.getAttribute('aria-label')).toMatch(/^On line · /);
+    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('12');
+    // Its neighbour q offers a vertical guide, which crosses the edge at (30, 20).
+    await h.pointer(h.point('p'), 'pointermove', { clientX: 119.6, clientY: 119.6 });
+    expect(hint()?.getAttribute('aria-label')).toMatch(/^On line · vertical with point · /);
+    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('30');
+    await h.pointer(h.point('p'), 'pointermove', { clientX: 89.7, clientY: 90 });
+    expect(hint()?.getAttribute('data-cad-sketch-snap')).toBe('y-axis');
+    await h.pointer(h.point('p'), 'pointerup', { clientX: 89.7, clientY: 90 });
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'p', translation: [-10, 10] }], expect.any(AbortSignal));
   });
 
   it('highlights candidate diagnostic operands independently of accepted relation identity and selection', async () => {

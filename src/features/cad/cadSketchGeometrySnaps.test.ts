@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadPathClosureTolerance } from '@/domain/cad/cadAnalyticSegments';
 import { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
-import { prepareCadSketchGeometrySnaps, type CadSketchProfilePositionSnapSource } from './cadSketchGeometrySnaps';
+import { cadSketchSnapTargetLabel, prepareCadSketchGeometrySnaps, type CadSketchProfilePositionSnapSource } from './cadSketchGeometrySnaps';
 
 describe('prepared sketch geometry snaps', () => {
   it('retains profile position intent beside exact graph points and only suppresses graph midpoints', () => {
@@ -304,6 +304,16 @@ describe('prepared sketch geometry snaps', () => {
       expect(at([100.2, 150], { alignTo, kinds: ['on-entity'] })).toEqual({ kind: 'none' });
       // Geometry within reach beats a guide.
       expect(at([15, 10.2], { alignTo: [[15.3, 50]] })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'on-entity', entityId: 'ab' } } });
+    });
+
+    it('snap where a guide crosses a nearby edge or axis, keeping the edge or axis as the target', () => {
+      expect(at([15, 10.2], { alignTo: [[15.3, 50]] })).toEqual({ kind: 'hit', candidate: { target: { kind: 'on-entity', entityId: 'ab', entityKind: 'line', vertical: [15.3, 50] },
+        point: [15.3, 10], distancePx: expect.closeTo(Math.hypot(3, 2), 9), entityIds: ['ab'] } });
+      expect(at([-.2, -29.8], { alignTo: [[60, -30]] })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'on-axis', axis: 'y', horizontal: [60, -30] }, point: [0, -30] } });
+      // Beyond the crossing's reach the plain position on the edge remains.
+      expect(at([15, 10.2], { alignTo: [[25, 50]] })).toEqual({ kind: 'hit', candidate: { target: { kind: 'on-entity', entityId: 'ab', entityKind: 'line' }, point: [15, 10], distancePx: expect.closeTo(2, 9), entityIds: ['ab'] } });
+      expect(cadSketchSnapTargetLabel({ kind: 'on-entity', entityId: 'ab', entityKind: 'line', vertical: [15.3, 50] })).toBe('On line · vertical with point');
+      expect(cadSketchSnapTargetLabel({ kind: 'on-axis', axis: 'y', horizontal: [60, -30] })).toBe('On Y axis · horizontal with point');
     });
   });
 });

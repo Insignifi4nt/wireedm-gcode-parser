@@ -11,7 +11,7 @@ export function CadSketchSnapHint({ candidate, center, scaleX, scaleY, label, at
     : target.kind === 'on-axis' ? `${target.axis}-axis` : target.kind === 'intersection' ? candidate.entityIds.concat(target.axes.map(axis => `${axis}-axis`)).join('/') : target.kind;
   const kind = target.kind === 'profile-position' ? target.location.kind === 'arc-center' ? 'center' : target.location.kind : target.kind;
   // Guides run from each source point to the hint, in the hint's pixel frame (Y down).
-  const guides = target.kind === 'aligned' ? [target.horizontal, target.vertical].flatMap(source => source
+  const guides = target.kind === 'aligned' || target.kind === 'on-entity' || target.kind === 'on-axis' ? [target.horizontal, target.vertical].flatMap(source => source
     ? [[(source[0] - candidate.point[0]) / scaleX, -(source[1] - candidate.point[1]) / scaleY] as const] : []) : [];
   return <g className={`cad-sketch-snap-hint${attained ? ' is-attained' : ''}`} data-cad-sketch-snap={id} data-cad-sketch-snap-kind={target.kind}
     transform={`translate(${candidate.point[0] - center[0]},${candidate.point[1] - center[1]}) scale(${scaleX},${-scaleY})`} aria-label={label}>

@@ -24,8 +24,9 @@ export type CadSketchSnapTarget =
   | { readonly kind: 'draft-start' }
   | { readonly kind: 'origin' }
   | { readonly kind: 'intersection'; readonly axes: readonly ('x' | 'y')[] }
-  | { readonly kind: 'on-entity'; readonly entityId: string; readonly entityKind: 'line' | 'arc' | 'circle' }
-  | { readonly kind: 'on-axis'; readonly axis: 'x' | 'y' }
+  /** A position on an edge or axis; `horizontal` or `vertical` names the acquired point whose guide crosses it there. */
+  | { readonly kind: 'on-entity'; readonly entityId: string; readonly entityKind: 'line' | 'arc' | 'circle'; readonly horizontal?: SketchPoint; readonly vertical?: SketchPoint }
+  | { readonly kind: 'on-axis'; readonly axis: 'x' | 'y'; readonly horizontal?: SketchPoint; readonly vertical?: SketchPoint }
   /** Level with `horizontal` and/or above or below `vertical`: inference from points the pointer acquired. */
   | { readonly kind: 'aligned'; readonly horizontal?: SketchPoint; readonly vertical?: SketchPoint };
 export interface CadSketchSnapCandidate {
@@ -244,17 +245,33 @@ export function prepareCadSketchGeometrySnaps(source?: {
 }
 
 type Near = { readonly curve: Curve; readonly point: SketchPoint; readonly distancePx: number };
-/** The nearest position on an edge or axis, else alignment with an acquired point. */
+/** Where a guide from an acquired point crosses a nearby edge or axis, else the nearest position on one, else alignment with an acquired point. */
 function curveOrAlignment(near: readonly Near[], alignTo: readonly SketchPoint[], cursor: SketchPoint, mmPerPixel: SketchPoint, tolerancePx: number,
   permitted: (kind: CadSketchSnapTarget['kind']) => boolean): CadSketchSnapResult {
   const candidates = near.filter(entry => permitted('axis' in entry.curve.owner ? 'on-axis' : 'on-entity')).sort((a, b) => a.distancePx - b.distancePx
     // An edge lying on an axis is the more specific target.
     || Number('axis' in a.curve.owner) - Number('axis' in b.curve.owner));
-  if (candidates.length) {
-    const { curve, point, distancePx } = candidates[0], owner = curve.owner;
-    const target: CadSketchSnapTarget = 'axis' in owner ? { kind: 'on-axis', axis: owner.axis } : { kind: 'on-entity', entityId: owner.entityId, entityKind: owner.entityKind };
-    return Object.freeze({ kind: 'hit', candidate: Object.freeze({ target: Object.freeze(target), point: copyPoint(point), distancePx, entityIds: Object.freeze('entityId' in owner ? [owner.entityId] : []) }) });
+  const curveHit = (entry: Near, point: SketchPoint, distancePx: number, guide?: { readonly axis: 0 | 1; readonly source: SketchPoint }) => {
+    const owner = entry.curve.owner, along = guide ? guide.axis === 0 ? { vertical: copyPoint(guide.source) } : { horizontal: copyPoint(guide.source) } : {};
+    const target: CadSketchSnapTarget = 'axis' in owner ? { kind: 'on-axis', axis: owner.axis, ...along } : { kind: 'on-entity', entityId: owner.entityId, entityKind: owner.entityKind, ...along };
+    return Object.freeze({ kind: 'hit' as const, candidate: Object.freeze({ target: Object.freeze(target), point: copyPoint(point), distancePx, entityIds: Object.freeze('entityId' in owner ? [owner.entityId] : []) }) });
+  };
+  if (candidates.length && permitted('aligned') && alignTo.length) {
+    let crossing: { readonly entry: Near; readonly point: SketchPoint; readonly distancePx: number; readonly axis: 0 | 1; readonly source: SketchPoint } | null = null;
+    for (const entry of candidates) for (const source of alignTo) for (const axis of [0, 1] as const) {
+      // Axis 0 is the vertical guide through the source, axis 1 the horizontal one.
+      const guide: Curve = { owner: entry.curve.owner, kind: 'line', start: copyPoint(source), end: axis === 0 ? [source[0], source[1] + 1] : [source[0] + 1, source[1]], bounded: false };
+      for (const found of intersections(entry.curve, guide)) {
+        const point: SketchPoint = axis === 0 ? [source[0], found[1]] : [found[0], source[1]];
+        const distancePx = Math.hypot((point[0] - cursor[0]) / mmPerPixel[0], (point[1] - cursor[1]) / mmPerPixel[1]);
+        // The source itself is already a point target; a guide only helps away from it.
+        if (distancePx > tolerancePx || point[1 - axis] === source[1 - axis] || crossing && crossing.distancePx <= distancePx) continue;
+        crossing = { entry, point, distancePx, axis, source };
+      }
+    }
+    if (crossing) return curveHit(crossing.entry, crossing.point, crossing.distancePx, crossing);
   }
+  if (candidates.length) return curveHit(candidates[0], candidates[0].point, candidates[0].distancePx);
   if (!permitted('aligned') || !alignTo.length) return NONE;
   // A guide is chosen by how far the pointer is from it, then by how close its source point is.
   const guide = (axis: 0 | 1) => alignTo.map(source => ({ source, offset: Math.abs(source[axis] - cursor[axis]) / mmPerPixel[axis],
@@ -273,8 +290,10 @@ export function cadSketchSnapTargetLabel(target: CadSketchSnapTarget): string {
   switch (target.kind) {
     case 'origin': return 'Origin';
     case 'intersection': return 'Intersection';
-    case 'on-entity': return `On ${target.entityKind}`;
-    case 'on-axis': return `On ${target.axis.toUpperCase()} axis`;
+    case 'on-entity': case 'on-axis': {
+      const on = target.kind === 'on-entity' ? `On ${target.entityKind}` : `On ${target.axis.toUpperCase()} axis`;
+      return target.horizontal ? `${on} · horizontal with point` : target.vertical ? `${on} · vertical with point` : on;
+    }
     case 'aligned': return target.horizontal && target.vertical ? 'Aligned with two points' : target.horizontal ? 'Horizontal with point' : 'Vertical with point';
     case 'profile-position': case 'draft-start': case 'midpoint': case 'endpoint': case 'center': case 'point': return `${target.kind[0].toUpperCase()}${target.kind.slice(1).replace('-', ' ')}`;
   }

@@ -16,6 +16,8 @@ const retiredSourceReferences = [
   {id:'use.35556bc89fbd',reason:'The Pattern command now uses the shared CadToolbarMenu, which owns the expand-down chevron for every toolbar menu.'},
   {id:'use.5745191fface',reason:'The selected-feature panel with its Edit curve button was removed; curves open by double-click or the history context menu.'},
   {id:'use.c0d304036f6d',reason:'The selected-feature panel with its Edit sketch button was removed; sketches open by double-click or the history context menu.'},
+  {id:'use.34955e8e553d',reason:'The Parameters header with its Add parameter group button was removed; New group lives in the Parameters context menu.'},
+  {id:'use.789ef07f7f97',reason:'The Parameters header with its Add parameter button was removed; New parameter lives in the Parameters context menu.'},
 ];
 const integration = JSON.parse(readFileSync(path.join(root, 'docs/design/icon-integration-map.json'), 'utf8'));
 const intendedByUse = new Map(integration.directUsages.map(row=>[row.usageId,row.replacements]));

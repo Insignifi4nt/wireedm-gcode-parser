@@ -1018,7 +1018,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       eligibleDatums: firstLineId !== null || firstDatum !== null ? [] : CAD_SKETCH_DATUMS,
       pickedDatums: firstDatum ? [firstDatum] : [],
       label: firstLineId !== null ? 'Choose a second line for an angle, or empty space for the length' : firstDatum !== null ? `Choose a point to dimension from the ${cadSketchDatumLabels[firstDatum].toLowerCase()}`
-        : firstPointId !== null ? 'Choose the second point, the origin or an axis' : 'Choose a line, curve or first point',
+        : firstPointId !== null ? 'Choose the second point, the origin or an axis' : 'Choose a line, curve, point, the origin or an axis',
       onPickDatum: datum => {
         if (!owns() || firstLineId !== null || firstDatum !== null) return;
         if (firstPointId !== null) { finish([{ kind: 'point', id: firstPointId }], { kind: 'datum-distance', datum }); return; }

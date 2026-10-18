@@ -15,7 +15,7 @@ import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadContinuousPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { cadSketchGeometryPickAllows, type CadSketchGeometryPick, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
-import type { CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
+import { cadSketchSnapTargetLabel, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
 import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
 
@@ -53,10 +53,15 @@ interface DragFrame {
   /** A press on an item that is already part of a multi-selection keeps the set for dragging; a plain click still selects the item alone. */
   readonly pick?: CadSketchGraphSelection;
 }
-type Drag = DragFrame & ({ readonly kind: 'point'; readonly point: CadSketchGraphPointControl; readonly prepared: Prepared; translation: SketchPoint; candidate: CadSketchSnapCandidate | null }
+type Drag = DragFrame & ({ readonly kind: 'point'; readonly point: CadSketchGraphPointControl; readonly prepared: Prepared; readonly guides: readonly SketchPoint[]; translation: SketchPoint; candidate: CadSketchSnapCandidate | null }
   | { readonly kind: 'radius'; readonly circle: CircleControl; radius: number }
   | { readonly kind: 'translate'; readonly selections: readonly CadSketchGraphSelection[]; readonly anchor: SketchPoint; readonly normal: SketchPoint | null; translation: SketchPoint });
 
+/** The far ends of the lines that meet at a point, which a drag can line up with. */
+function lineNeighbours(prepared: Prepared, pointId: string): readonly SketchPoint[] {
+  const ids = prepared.graph.entities.flatMap(entity => entity.kind !== 'line' ? [] : entity.startPointId === pointId ? [entity.endPointId] : entity.endPointId === pointId ? [entity.startPointId] : []);
+  return prepared.points.filter(point => ids.includes(point.id) && point.id !== pointId).map(point => point.position);
+}
 /** Exact translation accepts at most this many selections at once. */
 const MAX_TRANSLATED_SELECTIONS = 64;
 
@@ -121,7 +126,8 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
       setIntent(current => current?.kind === 'radius' && Object.is(current.radius, owned.radius) ? current : { kind: 'radius', circle: owned.circle, radius: owned.radius });
       return;
     }
-    const result = enabled ? owned.prepared.snap({ cursor: owned.cursor, mmPerPixel: [owned.scaleX, owned.scaleY], excludePointIds: [owned.point.id] }) : null;
+    // Edges, axes and the origin attract the point as they do while drawing; its line neighbours offer horizontal and vertical guides.
+    const result = enabled ? owned.prepared.snap({ cursor: owned.cursor, mmPerPixel: [owned.scaleX, owned.scaleY], excludePointIds: [owned.point.id], references: true, alignTo: owned.guides }) : null;
     let candidate = result?.kind === 'hit' ? result.candidate : null;
     if (candidate) {
       const target = candidate.point;
@@ -228,7 +234,7 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
   const attained = Boolean(snapCandidate && solvedPoint && Math.hypot(solvedPoint.position[0] - snapCandidate.point[0], solvedPoint.position[1] - snapCandidate.point[1])
     <= cadPathClosureTolerance([{ x: solvedPoint.position[0], y: solvedPoint.position[1] }, { x: snapCandidate.point[0], y: snapCandidate.point[1] }]));
   const limited = Boolean(snapCandidate && !preview.stale && (preview.kind === 'error' || preview.kind === 'ready' && !attained));
-  const snapLabel = snapCandidate ? `${snapCandidate.target.kind === 'endpoint' ? 'Endpoint' : snapCandidate.target.kind === 'center' ? 'Center' : snapCandidate.target.kind === 'midpoint' ? 'Midpoint' : 'Point'} position · ${limited ? 'Constraints limit movement' : 'No relation'}` : '';
+  const snapLabel = snapCandidate ? `${cadSketchSnapTargetLabel(snapCandidate.target)} · ${limited ? 'Constraints limit movement' : 'No relation'}` : '';
   const edgesInteractive = interactive && filter !== 'points', pointsInteractive = interactive && filter !== 'edges';
   const singleEntity = controls.selection.length === 1 && controls.selection[0].kind === 'entity' ? entities.get(controls.selection[0].id) : null;
   const circle = singleEntity?.kind === 'circle' ? cadSketchGraphCircleControl(prepared.graph, prepared.parameters, singleEntity.id) : null;
@@ -323,7 +329,7 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
           if (event.shiftKey || !canRequestMove) return; // A plain pick above replaces the old set with this point.
           callbacks.current.onPendingChange(true);
           drag.current = { kind: 'point', point: original, pointerId: event.pointerId, element: event.currentTarget, clientX: event.clientX, clientY: event.clientY, step: gridStep, snap, gridSnap, scaleX, scaleY,
-            prepared, cursor: original.position, suppressed: event.ctrlKey || event.metaKey, moved: false, translation: [0, 0], candidate: null };
+            prepared, guides: lineNeighbours(prepared, original.id), cursor: original.position, suppressed: event.ctrlKey || event.metaKey, moved: false, translation: [0, 0], candidate: null };
           setIntent({ kind: 'point', point: original, translation: [0, 0], snap: null });
           try { event.currentTarget.setPointerCapture(event.pointerId); } catch { cancel(); }
         }}
