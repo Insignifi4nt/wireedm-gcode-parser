@@ -71,6 +71,21 @@ describe('geometry edit identity integrity', () => {
     if (result) expect(validateUpidDocument(result).structuralDiagnostics).toEqual([]);
   });
 
+  it('keeps a saved drawing with ambiguous endpoint joins structurally valid after an unrelated edit', () => {
+    const line = (startX: number, endX: number, y: number) =>
+      ({ type: 'line' as const, layer: 'CUT', start: { x: startX, y }, end: { x: endX, y } });
+    const saved = JSON.parse(JSON.stringify(createPathPlanningDocumentFromDxfEntities(
+      [line(0, 10, 0), line(10.009, 20, 0), line(10.018, 30, 0), line(0, 10, 5)],
+      { endpointTolerance: 0.01 }
+    )));
+    expect(saved.diagnostics.some(({ code }: { code: string }) => code === 'ambiguous-endpoint-cluster')).toBe(true);
+
+    const edited = translatePathSegment(saved, saved.segments.at(-1).id, { x: 0, y: 1 });
+
+    expect(edited).not.toBeNull();
+    expect(validateUpidDocument(edited!).structuralDiagnostics).toEqual([]);
+  });
+
   it('rejects non-finite transform input without changing the source document', () => {
     const document = rectangle(), before = structuredClone(document);
     expect(translatePathSegment(document, document.segments[0].id, { x: Infinity, y: 0 })).toBeNull();
