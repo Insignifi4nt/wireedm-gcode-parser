@@ -1,0 +1,31 @@
+{
+  "version": "0.0.719",
+  "previousVersion": "0.0.718",
+  "postCompatibility": "preserved-output-bounded-pair-diagnostics",
+  "summary": "Drawings with very many crossing or overlapping segments import without building one diagnostic per segment pair. Crossing and overlap analysis each list the first 1,000 pairs individually and report the rest in one error that relates every remaining segment and chain, so the same chains stay blocked as if every pair were listed. 800 mutually overlapping lines previously produced 222 MB of diagnostics and now produce about 3 MB. Overlap analysis skips the exact overlap test for line pairs that cannot be parallel, using the same parallel test, which cut overlap analysis of a 3,000-line crosshatch from 0.71 s to 0.40 s. Validation of saved documents recognizes pairs and summaries already recorded, and its comparison with recorded errors no longer confuses segment ids that contain separators such as commas or vertical bars.",
+  "warning": "No breaking change for installed posts, machine packages or controller output. Drawings with more than 1,000 crossing or overlap pairs now show one summary error for the pairs past the first 1,000 instead of one error each; which chains and contours are blocked is unchanged. A saved document whose segment ids contain commas or vertical bars could previously hide a live crossing, overlap or other geometry error behind a recorded error with similar ids; validation now reports it and blocks the affected geometry. Generated documents use ids without these characters.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Summary errors use the existing intersecting-topology and overlapping-segment codes with an omittedPairCount detail. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding or controller-file change. Planning, compensation and posting block the same segments and chains; only the number of listed crossing and overlap diagnostics changes past 1,000 pairs.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Saved documents keep their recorded diagnostics and are not rewritten.",
+    "verification": "Tests compare capped and uncapped output on a 40 by 40 crosshatch and 60 partial overlaps (same blocked segments and chains, identical first 1,000 entries, deterministic ids), check that a randomized prefilter never skips a pair the classifier reports as overlapping, validate a saved crosshatch against its summary and a stripped copy, and rename segment ids to collide under joined keys; the separator cases fail on the previous code. The pure-domain suite (1,405 tests), UPID, path-editor and DXF suites (599 tests), tsc -b and npm run lint pass. Three independent review rounds."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Posting code is untouched; Robofil 2.6.0 package and current-contract tests pass unchanged. No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Drawings with very many crossing or overlapping lines import faster and use far less memory.",
+    "changes": [
+      "The first 1,000 crossing or overlapping segment pairs are listed one by one; the rest are reported together in one error that still blocks every affected path.",
+      "Checking for overlapping lines is faster on dense drawings."
+    ],
+    "compatibility": "Posted programs and installed posts are unchanged. Saved projects keep their recorded warnings.",
+    "action": "No action needed."
+  }
+}
