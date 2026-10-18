@@ -254,11 +254,12 @@ const DXF_INSUNITS: Record<number, { label: string; scaleToMillimeters: number |
 };
 
 /**
- * DXF text lines. LF ends a line together with any CRs before it, so LF, CRLF and the
- * CRCRLF written by Windows text-mode exporters are one break; a lone CR is one break too.
+ * DXF text lines. LF, CR, CRLF and the CRCRLF written by Windows text-mode exporters
+ * are each one break. Every alternative has a fixed length, so splitting stays linear
+ * and a CR-terminated line followed by an empty CRCRLF-terminated value keeps it.
  */
 export function splitDxfLines(text: string): string[] {
-  return text.split(/\r*\n|\r/);
+  return text.split(/\r\r\n|\r\n|\r|\n/);
 }
 
 function toPairs(text: string, budget: DxfResourceBudget): DxfPair[] {

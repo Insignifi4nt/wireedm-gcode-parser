@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseDxf } from '../parseDxf';
+import { parseDxf, splitDxfLines } from '../parseDxf';
 import type { DxfEntity, DxfPoint, DxfUnitDeclarationStatus } from '../types';
 
 const DXF_UNIT_DECLARATION_STATUSES: DxfUnitDeclarationStatus[] = [
@@ -44,6 +44,15 @@ describe('parseDxf', () => {
     for (const text of [lines.join('\r'), `${lines.join('\r')}\n`, lines.join('\r\n'), lines.join('\r\r\n'), mixed]) {
       expect(parseDxf(text)).toEqual(expected);
     }
+  });
+
+  it('keeps empty values between mixed line endings and splits long CR runs in linear time', () => {
+    expect(splitDxfLines('1\r\r\r\n0\nENDSEC')).toEqual(['1', '', '0', 'ENDSEC']);
+    expect(splitDxfLines('1\n\r\n0')).toEqual(['1', '', '0']);
+
+    const started = performance.now();
+    expect(splitDxfLines(`0\nEOF${'\r'.repeat(200_000)}`)).toHaveLength(200_002);
+    expect(performance.now() - started).toBeLessThan(2_000);
   });
 
   it('exports the complete DXF unit declaration status vocabulary', () => {
