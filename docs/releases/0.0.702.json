@@ -1,0 +1,24 @@
+{
+  "version": "0.0.702",
+  "previousVersion": "0.0.701",
+  "postCompatibility": "preserved-exact-quarter-turn-arc-endpoints",
+  "summary": "Evaluates CAD path arc endpoints at exact quarter turns exactly, so sketch measurements, kernel wires and CAM handoffs no longer depend on how generated ids order a graph cycle.",
+  "warning": "No breaking change for installed posts, machine packages or saved revisions. CAD path arcs whose start or end falls on a quarter turn (0°, 90°, 180°, 270° and equivalents) now land exactly on the axis instead of up to a few 1e-15 mm off it. New sketch measurements, built solids and new CAD-to-CAM handoffs can therefore differ by that amount; controller output at controller precision is not expected to change. Existing CAM projects and saved revisions are not recomputed or rewritten.",
+  "checklist": {
+    "schema": "No CAD, UPID, post, machine package, execution plan, saved revision, storage or journal schema change. Post engine API 1; saved-job engine 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "Only quarter-turn arc endpoints of CAD path profiles change, by at most a few ulps toward the exact value; other angles keep their existing radian evaluation bit for bit. CAM handoffs created afterwards carry the exact endpoints. No generation, audit, numbering, encoding, line ending or feed change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder change. Saved CAD documents store graph points, not compiled arcs, so nothing is migrated.",
+    "verification": "New measurement regression compiles the same semicircle as 270° + 180° and 450° − 180° and requires exact 0 bounds for both; it fails without the fix. Domain, CAD and simulation suites pass locally (4,997 tests; one path-intel timing check failed once under unrelated local CPU load and passes on rerun). The previously flaky 'human mixed path drawing' journey passed 6 of 6 repeats; it had failed one in three locally and all three attempts in a CI shard."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "More exact arc endpoints in CAD sketches.",
+    "changes": [
+      "Sketch arcs that start or end straight above, below or beside their centre now sit exactly on that axis, so sketch measurements and bounds are the same every time."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions and existing CAM projects are unchanged. New CAD measurements and handoffs can differ by a few 1e-15 mm.",
+    "action": "No action needed."
+  }
+}

@@ -26,12 +26,25 @@ export function cadAnalyticSegments(geometry: readonly ResolvedCadPathSegment[])
     if (segment.radius <= 1e-7 || segment.radius > 1e6 || Math.abs(segment.sweep) > 360 || segment.sweep === 0) throw new CadError('invalid-profile', 'Path arcs need a positive radius and a nonzero sweep of at most one turn.');
     const angle = segment.startAngle * Math.PI / 180; const sweep = segment.sweep * Math.PI / 180;
     const center = { x: segment.center[0], y: segment.center[1] };
-    const at = (value: number) => ({ x: center.x + segment.radius * Math.cos(value), y: center.y + segment.radius * Math.sin(value) });
-    return createArcSegment({ id, source, center, radius: segment.radius, start: at(angle), end: at(angle + sweep), sweepRadians: sweep, clockwise: sweep < 0 });
+    const at = (degrees: number, radians: number) => pointAtAngle(center, segment.radius, degrees, radians);
+    return createArcSegment({ id, source, center, radius: segment.radius, start: at(segment.startAngle, angle), end: at(segment.startAngle + segment.sweep, angle + sweep), sweepRadians: sweep, clockwise: sweep < 0 });
   });
   const refs = segments.map(segment => ({ segmentId: segment.id, reversed: false }));
   const byId = new Map(segments.map(segment => [segment.id, segment]));
   return { segments, refs, byId };
+}
+
+/**
+ * Quarter turns are exact in degrees but not after conversion to radians:
+ * cos(3π/2) is -1.8e-16, not 0. Equivalent angles such as 270° and 450° would
+ * otherwise put the same endpoint on opposite sides of an axis. Other angles
+ * keep their established radian evaluation.
+ */
+function pointAtAngle(center: Point2, radius: number, degrees: number, radians: number): Point2 {
+  const turn = ((degrees % 360) + 360) % 360;
+  const [cos, sin] = turn === 0 ? [1, 0] : turn === 90 ? [0, 1] : turn === 180 ? [-1, 0] : turn === 270 ? [0, -1]
+    : [Math.cos(radians), Math.sin(radians)];
+  return { x: center.x + radius * cos, y: center.y + radius * sin };
 }
 
 export function cadOrderedCurveEntities(segments: readonly ResolvedCadPathSegment[], layer = 'CAD_CURVE'): readonly CadOrderedCurveEntity[] {
@@ -41,9 +54,9 @@ export function cadOrderedCurveEntities(segments: readonly ResolvedCadPathSegmen
     // endpoint can lose angular precision when the radius is small far away.
     const startAngle = segment.startAngle * Math.PI / 180; const sweepRadians = segment.sweep * Math.PI / 180;
     const center = Object.freeze({ x: segment.center[0], y: segment.center[1] });
-    const at = (angle: number) => Object.freeze({ x: center.x + segment.radius * Math.cos(angle), y: center.y + segment.radius * Math.sin(angle) });
+    const at = (degrees: number, radians: number) => Object.freeze(pointAtAngle(center, segment.radius, degrees, radians));
     return Object.freeze({ type: 'arc', layer, center, radius: segment.radius, startAngle, endAngle: startAngle + sweepRadians,
-      sweepRadians, clockwise: sweepRadians < 0, start: at(startAngle), end: at(startAngle + sweepRadians) });
+      sweepRadians, clockwise: sweepRadians < 0, start: at(segment.startAngle, startAngle), end: at(segment.startAngle + segment.sweep, startAngle + sweepRadians) });
   }));
 }
 
