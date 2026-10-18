@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
 import type { CadSketchCellReference } from '../src/domain/cad/cadSketchRegionSelection';
-import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context, historyRow } from './cad-tool-helpers';
 
 test('offsets a consumed plate into an independent wall loop and matches the exact agent repair through save', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
@@ -28,7 +28,7 @@ test('offsets a consumed plate into an independent wall loop and matches the exa
   await call(page, 'cad_build', { expectedVersion: base.version });
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: base.version }))
     .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: base.version } } });
-  await page.getByRole('button', { name: 'Select Wall outline in history', exact: true }).dblclick();
+  await (await historyRow(page, 'Wall outline')).dblclick();
   const openOffset = async () => {
     await page.locator('[data-cad-sketch-entity="ab"]').press('Enter');
     await page.getByRole('button', { name: 'Offset loop', exact: true }).click();
@@ -53,9 +53,14 @@ test('offsets a consumed plate into an independent wall loop and matches the exa
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await expect(page.getByRole('form', { name: 'Update dependent sketch areas', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Choose areas for Wall blank', exact: true }).click();
+  await page.getByRole('button', { name: 'View controls', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Named view', exact: true }).selectOption('Top');
+  await page.getByRole('button', { name: 'Fit model', exact: true }).click();
+  await page.getByRole('button', { name: 'View controls', exact: true }).click();
   const area = await page.getByLabel('3D model canvas').boundingBox();
   if (!area) throw new Error('Replacement wall area unavailable.');
-  await page.mouse.click(area.x + area.width / 2, area.y + area.height * .4);
+  // Fitted from the top, this lands in the 2 mm wall along the plate's far edge, at (20, 19) mm.
+  await page.mouse.click(area.x + area.width * .558, area.y + area.height * .2214);
   await page.getByRole('button', { name: 'Finish area selection', exact: true }).click();
   expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: sketch.id })).feature).toEqual(sketch);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
@@ -106,7 +111,7 @@ test('previews a legacy rounded loop exclusively and keeps its analytic copy ind
   await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version,
     edits: [{ kind: 'set-parameter', name: 'slotLength', value: 30 }, { kind: 'add-feature', feature: sketch }] });
   const base = await context(page);
-  await page.getByRole('button', { name: 'Select Rounded clearance in history', exact: true }).dblclick();
+  await (await historyRow(page, 'Rounded clearance')).dblclick();
   await page.getByRole('button', { name: 'Rotated slot profile', exact: true }).click();
   await page.getByRole('button', { name: 'Offset loop', exact: true }).click();
   await page.getByRole('textbox', { name: 'Offset distance mm', exact: true }).fill('2');

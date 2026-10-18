@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools, callCadTool as call, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow } from './cad-tool-helpers';
 
 test('copies a generated outline into an independent editable sketch, rounds one corner and reopens its solid', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
@@ -40,7 +40,7 @@ test('copies a generated outline into an independent editable sketch, rounds one
   const request = { sourceSketchId: source.id, profileId: 'plate-profile', newSketchId: copy.id, name: copy.name, idPrefix: copy.graph.entities[0].id.slice(0, -3) };
   await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'copy-sketch-profile', ...request }] }); current = await context(page);
   expect(await read(copy.id)).toEqual(copy); expect(await read(source.id)).toEqual(source);
-  await page.getByRole('button', { name: 'Select ' + copy.name + ' in history', exact: true }).dblclick();
+  await (await historyRow(page, copy.name)).dblclick();
   await page.getByRole('button', { name: 'Point 1 in ' + copy.name, exact: true }).press('Enter');
   await page.getByRole('button', { name: 'Sketch corner tools', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Fillet', exact: true }).click();
@@ -54,7 +54,7 @@ test('copies a generated outline into an independent editable sketch, rounds one
   const pad = { id: 'pad', name: 'Copied plate', kind: 'extrude', sketchId: copy.id, suppressed: false, distance: 5, symmetric: false, operation: 'new', targetId: null };
   await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: pad }] }); current = await context(page);
   const built = await call(page, 'cad_build', { expectedVersion: current.version });
-  expect(built.diagnostics).toEqual([]); expect(built.bodies).toHaveLength(1); expect(built.bodies[0]).toMatchObject({ solidCount: 1, boundsMm: { min: [0, expect.closeTo(0, 12), 2], max: [40, 20, 7] } });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies).toHaveLength(1); expect(built.bodies[0]).toMatchObject({ solidCount: 1, boundsMm: { min: [0, 0, 2].map(value => expect.closeTo(value, 12)), max: [40, 20, 7].map(value => expect.closeTo(value, 12)) } });
   expect(built.bodies[0].volumeMm3).toBeCloseTo(3980 + 5 * Math.PI, 7);
   await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'set-parameter', name: 'profileWidth', value: 60 }, { kind: 'set-parameter', name: 'lift', value: 6 }] }); current = await context(page);
   expect(await read(source.id)).toEqual(source); expect(await read(copy.id)).toEqual(rounded); expect(await read(pad.id)).toEqual(pad);
@@ -62,7 +62,7 @@ test('copies a generated outline into an independent editable sketch, rounds one
   const section = await call(page, 'cad_inspect_section', { expectedVersion: current.version, section: { bodyId: pad.id, plane: 'XY', offset: 4.5 } });
   expect(section.contourCount).toBe(1); expect(section.entities.nextOffset).toBeNull();
   expect(section.entities.items.filter((entity: { type: string }) => entity.type === 'line')).toHaveLength(4);
-  expect(section.entities.items.filter((entity: { type: string }) => entity.type === 'arc')).toEqual([expect.objectContaining({ radius: 2, sweepRadians: expect.closeTo(-Math.PI / 2, 10) })]);
+  expect(section.entities.items.filter((entity: { type: string }) => entity.type === 'arc')).toEqual([expect.objectContaining({ radius: expect.closeTo(2, 12), sweepRadians: expect.closeTo(-Math.PI / 2, 10) })]);
   await call(page, 'cad_history', { expectedVersion: current.version, direction: 'undo' }); current = await context(page);
   expect(current.parameters).toEqual({ profileWidth: 40, lift: 2 }); expect(await read(copy.id)).toEqual(rounded);
   await call(page, 'cad_history', { expectedVersion: current.version, direction: 'redo' }); current = await context(page);

@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import type { CadTopologyDescriptor } from '../src/domain/cad/cadTopology';
 import type { CadFeature, CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools as prepare, rawCadToolCall as rawCall, callCadTool as call, cadContext as context, captureCadPreview } from './cad-tool-helpers';
+import { prepareCadTools as prepare, rawCadToolCall as rawCall, callCadTool as call, cadContext as context, captureCadPreview, openFeatureEditor } from './cad-tool-helpers';
 
 async function expectSavedCadReopened(page: Page, documentId: string) {
   await expect(page).toHaveURL(url => url.pathname.endsWith(`/cad/${encodeURIComponent(documentId)}`));
@@ -108,6 +108,7 @@ test('human Through-all Pocket follows target changes and exports an exact agent
   expect(pocket).toMatchObject({ kind: 'pocket', sketchId: 'bore', targetId: 'pad', extent: { kind: 'through-all', direction: 'both' } });
   expect(pocket).not.toHaveProperty('distance'); expect(pocket).not.toHaveProperty('operation');
   expect(await call(page, 'cad_build', { expectedVersion: accepted.version })).toMatchObject({ diagnostics: [], bodies: [{ featureId: pocket.id, volumeMm3: expect.closeTo((200 - 4 * Math.PI) * 5, 6) }] });
+  await openFeatureEditor(page, pocket.id);
   await properties.getByRole('combobox', { name: 'Extent', exact: true }).selectOption('distance');
   await editScalarRelation(page, 'Length', 'height / 3');
   await properties.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -246,6 +247,7 @@ test('ordered loft sections rebuild parametrically and carry an exact bored sect
   if (!loft) throw new Error('Missing applied loft');
   expect(await call(page, 'cad_build', { expectedVersion: created.version })).toMatchObject({ diagnostics: [], totalBodies: 1,
     bodies: [{ volumeMm3: expect.closeTo(6080 * Math.PI / 3, 5) }] });
+  await openFeatureEditor(page, loft.id);
   await page.getByRole('button', { name: 'Move section 1 down', exact: true }).click();
   const movedSection = page.getByLabel('Section 2', { exact: true });
   await expect(movedSection).toBeFocused();
@@ -327,10 +329,12 @@ test('datum Loft preflight and human section editing preserve placement through 
   expect(loft).toMatchObject({ sketchIds: ['lower', 'upper'], ruled: false });
   expect(await call(page, 'cad_build', { expectedVersion: created.version })).toMatchObject({ diagnostics: [],
     bodies: [{ featureId: loft.id, volumeMm3: expect.closeTo(3920 * Math.PI / 3, 5) }] });
+  await openFeatureEditor(page, loft.id);
   await page.getByRole('button', { name: 'Move section 1 down', exact: true }).click();
   await expect(page.getByLabel('Section 1', { exact: true })).toHaveValue('upper');
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect(await context(page)).toMatchObject({ version: created.version, workflowOpen: false });
+  await openFeatureEditor(page, loft.id);
   await expect(page.getByLabel('Section 1', { exact: true })).toHaveValue('lower');
   expect(await rawCall(page, 'cad_edit_document', { expectedVersion: created.version,
     edits: [{ kind: 'set-parameter', name: 'height', value: 0 }] })).toMatchObject({ ok: false });
@@ -598,14 +602,13 @@ test('one compact header and real face picking create an inward shell', async ({
   await page.getByLabel('Named view').selectOption('Top');
   await openViewControls(page);
   await page.getByRole('button', { name: 'Fit model', exact: true }).click();
-  await openViewControls(page);
-  await page.getByRole('button', { name: 'Face', exact: true }).click();
+  // Auto picking takes the face under the pointer, away from its edges.
   const canvas = page.locator('.cad-viewport canvas');
   const bounds = await canvas.boundingBox();
   if (!bounds) throw new Error('Missing solid canvas');
   expect(bounds.height).toBeGreaterThan(650);
   await canvas.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
-  await expect.poll(() => call(page, 'cad_get_viewport', { expectedVersion: draft.version })).toMatchObject({ pickMode: 'face', topologySelection: { bodyId: 'pad', picks: [{ kind: 'face' }] } });
+  await expect.poll(() => call(page, 'cad_get_viewport', { expectedVersion: draft.version })).toMatchObject({ pickMode: 'auto', topologySelection: { bodyId: 'pad', picks: [{ kind: 'face' }] } });
   await page.getByRole('button', { name: 'Shell', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Wall thickness mm', exact: true })).toHaveValue('1');
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
@@ -615,7 +618,7 @@ test('one compact header and real face picking create an inward shell', async ({
 
 test('View drawer and floating configuration preserve pending dimensions and canvas framing', async ({ page }) => {
   const { draft } = await createBox(page);
-  await call(page, 'cad_set_viewport', { expectedVersion: draft.version, command: { kind: 'select-feature', featureId: 'pad' } });
+  await openFeatureEditor(page, 'pad');
   const length = page.getByRole('textbox', { name: 'Length mm', exact: true });
   const canvas = page.locator('.cad-viewport canvas');
   const originalBounds = await canvas.boundingBox();
@@ -639,6 +642,7 @@ test('View drawer and floating configuration preserve pending dimensions and can
   expect(await call(page, 'cad_build', { expectedVersion: changed.version })).toMatchObject({ diagnostics: [], bodies: [{ volumeMm3: expect.closeTo(1400, 6) }] });
   expect(await call(page, 'cad_get_feature', { expectedVersion: changed.version, featureId: 'pad' })).toMatchObject({ feature: { distance: 'height + 2' } });
   await expect.poll(() => call(page, 'cad_get_viewport', { expectedVersion: changed.version })).toMatchObject({ buildVersion: changed.version });
+  await openFeatureEditor(page, 'pad');
   const canvasBounds = await canvas.boundingBox();
   const expanded = await call(page, 'cad_get_viewport', { expectedVersion: changed.version });
   const framing = expanded.view as { mode: string; view: string; zoom: number; gridVisible: boolean };
@@ -1086,6 +1090,7 @@ test('human datum creation, placement reuse and history share atomic pending-edi
   if (!Array.isArray(rows.items) || rows.items.length !== 1) throw new Error('Missing human datum');
   const datum = rows.items[0] as CadFeature;
   expect(datum).toMatchObject({ kind: 'datum-plane', name: 'Plane 1', definition: { kind: 'world', basePlane: 'XY', origin: [12, 0, 0], rotation: ['tilt', 0, 0] } });
+  await openFeatureEditor(page, datum.id);
   await properties.getByRole('textbox', { name: 'Origin X mm', exact: true }).fill('24');
   expect(await rawCall(page, 'cad_inspect_plane', { expectedVersion: accepted.version, featureId: datum.id })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
   await properties.getByRole('textbox', { name: 'Origin X mm', exact: true }).press('Escape');
@@ -1356,8 +1361,7 @@ test('small far-origin solids retain rendered faces, edges and physical topology
   // Keep the same selected-body colour in both images so the pixel difference
   // measures the translucent face highlight, not a change in body selection.
   await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'select-feature', featureId: 'far' } });
-  await openViewControls(page);
-  await page.getByRole('button', { name: 'Face', exact: true }).click();
+  await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'set-pick-mode', mode: 'face' } });
   const beforeFace = await call(page, 'cad_capture_preview', { expectedVersion: accepted.version });
   const canvas = page.locator('.cad-viewport canvas');
   const bounds = await canvas.boundingBox(); if (!bounds) throw new Error('Missing solid canvas');
@@ -1405,8 +1409,7 @@ test('small far-origin solids retain rendered faces, edges and physical topology
   }, [beforeFace.previewUrl, highlighted.previewUrl]);
   expect(faceHighlightPixels, 'The selected native face highlight must not collapse at 1e8 mm').toBeGreaterThan(100);
   await page.screenshot({ path: 'tmp/cad-far-origin-face.png' });
-  await openViewControls(page);
-  await page.getByRole('button', { name: 'Edge', exact: true }).click();
+  await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'set-pick-mode', mode: 'edge' } });
   await canvas.click({ position: { x: (renderedBody.right + .5) / renderedBody.width * bounds.width, y: facePoint.y } });
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: accepted.version }))
     .toMatchObject({ ok: true, data: { topologySelection: { bodyId: 'far', picks: [{ kind: 'edge' }] } } });
@@ -1596,6 +1599,8 @@ test('human sketch drawing and dimensions share undo and active-workflow protect
   await canvas.locator(`[data-cad-sketch-entity="${widthEdge.id}"]`).focus();
   await canvas.locator(`[data-cad-sketch-entity="${widthEdge.id}"]`).press('Enter');
   await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  // Dimension starts with the selected edge; picking it again asks for its length.
+  await canvas.locator(`[data-cad-sketch-entity="${widthEdge.id}"]`).press('Enter');
   await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('53');
   expect(await context(page)).toMatchObject({ version: drawn.version, workflowOpen: true });
   expect(await rawCall(page, 'cad_edit_document', { expectedVersion: drawn.version, edits: [{ kind: 'rename-document', name: 'Interrupt dimension' }] }))

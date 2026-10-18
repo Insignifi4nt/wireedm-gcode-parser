@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { CadFeature } from '../src/domain/cad/cadDocument';
 import type { CadTopologyDescriptor } from '../src/domain/cad/cadTopology';
-import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context, openFeatureEditor } from './cad-tool-helpers';
 
 for (const kind of ['fillet', 'chamfer', 'shell'] as const) test(`replaces an existing ${kind} input with Cancel, exact agent parity, history and save`, async ({ page }, testInfo) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
@@ -34,7 +34,7 @@ for (const kind of ['fillet', 'chamfer', 'shell'] as const) test(`replaces an ex
   const expected = kind === 'shell' ? { ...feature, opening: replacement.opening } : { ...feature, selection: replacement.selection };
   expect(expected).not.toEqual(feature);
   expect(await call(page, 'cad_build', { expectedVersion: accepted.version })).toMatchObject({ buildId: acceptedBuild.buildId });
-  await call(page, 'cad_set_viewport', { expectedVersion: accepted.version, command: { kind: 'select-feature', featureId: 'treatment' } });
+  await openFeatureEditor(page, 'treatment');
   const choose = page.getByRole('button', { name: kind === 'shell' ? 'Choose opening' : 'Choose edges', exact: true });
   await choose.click();
   const browse = page.getByRole('button', { name: `Browse ${topology}s`, exact: true });

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { prepareCadTools, callCadTool as call, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
 
 test('edits a persistent circle row on a consumed sketch, restores exclusions and saves identical human/agent parts', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
@@ -11,7 +11,7 @@ test('edits a persistent circle row on a consumed sketch, restores exclusions an
   await call(page,'cad_edit_document',{expectedVersion:(await context(page)).version,edits:[{kind:'set-parameter',name:'pitch',value:15},{kind:'set-parameter',name:'boreRadius',value:3},
     {kind:'add-feature',feature:sketch},{kind:'add-feature',feature:{id:'pad',kind:'extrude',name:'Thickness',suppressed:false,sketchId:'plate',distance:' 5e0 ',symmetric:false,operation:'new',targetId:null}}]});
   const base=await context(page), read=(version:string)=>call(page,'cad_get_feature',{expectedVersion:version,featureId:'plate'}).then(r=>r.feature);
-  const edit=async()=>{await page.getByRole('button',{name:'Select Pattern plate in history',exact:true}).dblclick();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toBeVisible();};
+  const edit=async()=>{await (await historyRow(page, 'Pattern plate')).dblclick();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toBeVisible();};
   const select=async(id:string)=>page.locator(`[data-cad-sketch-entity="${id}"]`).press('Enter');
   const apply=async()=>{await page.getByRole('button',{name:'Apply',exact:true}).click();await expect(page.getByRole('button',{name:'Apply',exact:true})).toHaveCount(0);};
   const finish=async()=>{await page.getByRole('button',{name:'Finish sketch',exact:true}).click();await expect(page.getByRole('button',{name:'Finish sketch',exact:true})).toHaveCount(0);};
@@ -21,10 +21,10 @@ test('edits a persistent circle row on a consumed sketch, restores exclusions an
   await page.getByRole('button',{name:'Cancel',exact:true}).click();expect(await read(base.version)).toEqual(sketch);
   await create();await page.getByRole('button',{name:'Edit Pitch relation',exact:true}).click();await page.getByRole('textbox',{name:'Pitch expression',exact:true}).fill(' pitch ');
   await page.getByRole('button',{name:'Keep relation',exact:true}).click();await page.getByRole('button',{name:'Close Pitch relation help',exact:true}).click();await apply();
-  await page.getByRole('button',{name:'Edit pattern',exact:true}).click();await marker(2).press('Space');await page.getByRole('spinbutton',{name:'Count',exact:true}).fill('2');await apply();
-  await page.getByRole('button',{name:'Edit pattern',exact:true}).click();await page.getByRole('spinbutton',{name:'Count',exact:true}).fill('4');await expect(marker(2)).toHaveAttribute('aria-checked','false');
+  await (await relationControl(page, 'button', 'Edit pattern')).click();await marker(2).press('Space');await page.getByRole('spinbutton',{name:'Count',exact:true}).fill('2');await apply();
+  await (await relationControl(page, 'button', 'Edit pattern')).click();await page.getByRole('spinbutton',{name:'Count',exact:true}).fill('4');await expect(marker(2)).toHaveAttribute('aria-checked','false');
   await marker(2).press('Space');await page.getByRole('textbox',{name:'Pitch mm',exact:true}).fill('16');await apply();
-  await page.getByRole('textbox',{name:'Radius mm',exact:true}).fill('4');await apply();
+  await (await relationControl(page, 'textbox', 'Radius mm')).fill('4');await apply();
   expect(await read(base.version)).toEqual(sketch);await finish();let current=await context(page);const human=await read(current.version);
   const owner=human.graph.relations.find((r:{kind:string})=>r.kind==='linear-pattern');expect(owner).toMatchObject({count:4,spacing:' pitch ',direction:'+x',omittedInstances:[]});
   expect(human.graph.entities).toEqual([...sketch.graph.entities,...[1,2,3].map(index=>({id:`${owner.idPrefix}_i${index}_e0`,kind:'circle',centerPointId:`${owner.idPrefix}_i${index}_p0`,radius:4,construction:false}))]);

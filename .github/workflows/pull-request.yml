@@ -63,13 +63,15 @@ jobs:
       - run: npm test -- --run --shard=${{ matrix.shard }}/2
 
   build-and-browser:
-    name: Production build and browser journeys (${{ matrix.shard }}/4)
+    name: Production build and browser journeys (${{ matrix.shard }}/12)
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        # CAD journeys sort first and run longest; four shards keep each under ~5 minutes.
-        shard: [1, 2, 3, 4]
+        # Playwright splits the ~190 journeys by count and the slower CAD ones sort first.
+        # Twelve shards keep each near 2 minutes and, with the other jobs, stay under the
+        # free hosted-runner limit of 20 concurrent jobs. Keep /12 in the name and command in step.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -85,7 +87,8 @@ jobs:
           key: third-party-sources-${{ hashFiles('docs/thirdparty/*-sources.json', 'vendor/sketch-solver/planegcs-sources.json') }}
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e -- --workers=2 --shard=${{ matrix.shard }}/4
+      # A broken change stops each shard after a few failures instead of retrying every journey to its timeout.
+      - run: npm run test:e2e -- --workers=2 --max-failures=5 --shard=${{ matrix.shard }}/12
         env:
           PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
       - name: Preserve browser failure reports

@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 // Exercise production registrations without a browser-specific WebMCP transport.
 // Native WebMCP interoperability is also checked in the Codex in-app browser.
@@ -59,4 +59,44 @@ export async function captureCadPreview(page: Page, expectedVersion: string): Pr
     return callCadTool(page, 'cad_capture_preview', { expectedVersion });
   }
   return cadToolData('cad_capture_preview', result);
+}
+
+/** A feature's history row; a sketch nested under the solid that uses it is revealed by expanding its owners first. */
+async function revealHistoryRow(page: Page, row: Locator): Promise<Locator> {
+  const collapsed = page.getByRole('list', { name: 'Feature history and dependencies' }).locator('.cad-feature-disclosure[aria-expanded="false"]:not([disabled])');
+  // A sketch sits collapsed under the solid that consumes it, and the tree may still be catching up with the last edit.
+  for (const deadline = Date.now() + 10_000; Date.now() < deadline && !await row.isVisible();) {
+    if (await collapsed.count()) await collapsed.first().click(); else await page.waitForTimeout(100);
+  }
+  return row;
+}
+export function historyRow(page: Page, name: string): Promise<Locator> {
+  return revealHistoryRow(page, page.getByRole('button', { name: `Select ${name} in history`, exact: true }));
+}
+/** Selecting a feature only selects it; its editor opens from a double-click on its history row. */
+export async function openFeatureEditor(page: Page, featureId: string) {
+  await (await revealHistoryRow(page, page.locator(`[data-cad-feature-id="${featureId}"] > .cad-feature-history-row .cad-tree-row`))).dblclick();
+}
+
+/** Sketching is free by default; journeys that place geometry on whole millimetres turn the grid magnet on. */
+export async function enableGridSnap(page: Page) {
+  const toggle = page.getByRole('checkbox', { name: 'Snap to grid', exact: true });
+  const view = page.getByRole('button', { name: 'View controls', exact: true });
+  const opened = !await toggle.isVisible() && await view.getAttribute('aria-expanded') !== 'true';
+  if (opened) await view.click();
+  await toggle.check();
+  if (opened) await view.click();
+}
+
+/** Selected sketch geometry lists and edits its relations from its context menu; the target defaults to the first selected item. */
+export async function openSketchRelations(page: Page, target?: Locator) {
+  await (target ?? page.locator('[data-cad-sketch-entity].is-selected, [data-cad-sketch-point][aria-pressed="true"]').first()).press('Shift+F10');
+  await page.getByRole('menuitem', { name: 'Constraints and dimensions', exact: true }).click();
+}
+
+/** A relations-panel control for the current selection, opening the panel first when it is closed. */
+export async function relationControl(page: Page, role: 'checkbox' | 'button' | 'textbox', name: string | RegExp): Promise<Locator> {
+  const control = page.getByRole(role, typeof name === 'string' ? { name, exact: true } : { name });
+  if (!await control.isVisible()) await openSketchRelations(page);
+  return control;
 }

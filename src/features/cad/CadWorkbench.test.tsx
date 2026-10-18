@@ -1347,6 +1347,36 @@ describe('CAD sketch interaction', () => {
     expect(() => snapSketchPoint([1, 1], 0, true)).toThrow('positive');
   });
 
+  it('keeps the open sketch plane offset editable while nothing in it is selected', async () => {
+    await mount(); await startSketch();
+    await input(field('Plane offset'), '3'); await click('Apply');
+    expect(currentDocument.features[0]).toMatchObject({ kind: 'sketch', plane: 'XY', offset: 3 });
+  });
+
+  it('hides the sketch plane fields while geometry in the open sketch is selected', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Plane fields'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Plane fields', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'center', position: [0, 0] }], entities: [{ id: 'circle', kind: 'circle', construction: false, centerPointId: 'center', radius: 3 }], relations: []
+      }
+    }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    expect(field('Plane offset')).toBeTruthy();
+    const center = container.querySelector('[data-cad-sketch-point="center"]'); if (!center) throw new Error('Center missing.');
+    await act(async () => center.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'center' }]);
+    expect(() => field('Plane offset')).toThrow('missing');
+    // Selection alone leaves relations closed; the geometry context menu opens them.
+    expect(container.querySelector('form[aria-label="Sketch relations"]')).toBeNull();
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    await act(async () => { (center as SVGGElement).focus(); center.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+    const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(entry => entry.textContent === 'Constraints and dimensions'); if (!item) throw new Error('Missing Constraints and dimensions.');
+    await act(async () => item.click());
+    expect(container.querySelector('form[aria-label="Sketch relations"]')).not.toBeNull();
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: null }));
+    expect(field('Plane offset')).toBeTruthy();
+  });
+
   it('creates a real sketch, commits a drawn rectangle and sends that exact sketch to CAM', async () => {
     await mount();
     await click('Sketch');

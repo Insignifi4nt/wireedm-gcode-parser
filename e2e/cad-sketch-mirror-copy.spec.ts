@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context, historyRow } from './cad-tool-helpers';
 
 test('mirrors a bore by picking its axis and keeps the copied bore independent through solid edits and save', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
@@ -27,7 +27,7 @@ test('mirrors a bore by picking its axis and keeps the copied bore independent t
   expect((await call(page, 'cad_build', { expectedVersion: current.version })).bodies[0].volumeMm3).toBeCloseTo(9000 - 45 * Math.PI, 7);
   const base = current, read = (id: string) => call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: id }).then(reply => reply.feature);
   const open = async () => {
-    await page.getByRole('button', { name: 'Select Mounting plate in history', exact: true }).dblclick();
+    await (await historyRow(page, 'Mounting plate')).dblclick();
     await page.locator('[data-cad-sketch-entity="bore"]').press('Enter');
     await page.getByRole('button', { name: 'Mirror copy', exact: true }).click();
   };
@@ -78,7 +78,7 @@ test('mirrors a bore by picking its axis and keeps the copied bore independent t
   await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [edit, { kind: 'update-feature', feature: repairedPad }] }); current = await context(page);
   expect(await read(sketch.id)).toEqual(human); expect(await read(pad.id)).toEqual(repairedPad);
   // The detached copy acquires its own ordinary diameter, without stealing the source expression.
-  await page.getByRole('button', { name: 'Select Mounting plate in history', exact: true }).dblclick();
+  await (await historyRow(page, 'Mounting plate')).dblclick();
   await page.locator('[data-cad-sketch-entity="' + copiedId + '"]').press('Enter');
   await page.getByRole('button', { name: 'Dimension', exact: true }).click();
   await page.getByRole('textbox', { name: 'Diameter mm', exact: true }).fill('8');

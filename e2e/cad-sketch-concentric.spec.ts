@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { prepareCadTools, callCadTool as call, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
 
 test('aligns curve centers privately and keeps the annular part associative through agent parity, Undo and reopen',async({page})=>{
   await prepareCadTools(page);await call(page,'cad_open_workspace');
@@ -11,11 +11,11 @@ test('aligns curve centers privately and keeps the annular part associative thro
     {kind:'set-parameter',name:'outerRadius',value:10},{kind:'set-parameter',name:'boreRadius',value:4},{kind:'add-feature',feature:sketch},
     {kind:'add-feature',feature:{id:'pad',kind:'extrude',name:'Thickness',suppressed:false,sketchId:'ring',distance:' 5e0 ',symmetric:false,operation:'new',targetId:null}}]});
   const base=await context(page);await call(page,'cad_build',{expectedVersion:base.version});
-  await page.getByRole('button',{name:'Select Ring in history',exact:true}).dblclick();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toBeVisible();
+  await (await historyRow(page, 'Ring')).dblclick();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toBeVisible();
   await page.locator('[data-cad-sketch-entity="rim"]').press('Enter');await page.locator('[data-cad-sketch-entity="bore"]').press('Shift+Enter');
-  await page.getByRole('checkbox',{name:'Concentric',exact:true}).check();await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await (await relationControl(page, 'checkbox', 'Concentric')).check();await page.getByRole('button',{name:'Cancel',exact:true}).click();
   expect((await call(page,'cad_get_feature',{expectedVersion:base.version,featureId:'ring'})).feature).toEqual(sketch);
-  await page.getByRole('checkbox',{name:'Concentric',exact:true}).check();await page.getByRole('button',{name:'Apply',exact:true}).click();
+  await (await relationControl(page, 'checkbox', 'Concentric')).check();await page.getByRole('button',{name:'Apply',exact:true}).click();
   await expect(page.getByRole('button',{name:'Apply',exact:true})).toHaveCount(0);
   expect((await call(page,'cad_get_feature',{expectedVersion:base.version,featureId:'ring'})).feature).toEqual(sketch);
   await page.getByRole('button',{name:'Finish sketch',exact:true}).click();await expect(page.getByRole('button',{name:'Finish sketch',exact:true})).toHaveCount(0);

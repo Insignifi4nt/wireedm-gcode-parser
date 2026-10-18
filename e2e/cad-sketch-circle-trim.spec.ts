@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context, historyRow } from './cad-tool-helpers';
 
 test('trims a circle cap, deliberately repairs its consumed area and matches exact agent history through save', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
@@ -28,7 +28,7 @@ test('trims a circle cap, deliberately repairs its consumed area and matches exa
   const base = current, readFeature = (id: string) => call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: id }).then(reply => reply.feature);
   expect((await call(page, 'cad_build', { expectedVersion: current.version })).bodies[0].volumeMm3).toBeCloseTo(500 * Math.PI, 7);
   const openTrim = async () => {
-    await page.getByRole('button', { name: 'Select Round blank in history', exact: true }).dblclick();
+    await (await historyRow(page, 'Round blank')).dblclick();
     const cap = await page.locator('[data-cad-sketch-entity="rim"] > circle').evaluate(element => {
       const circle = element as SVGCircleElement, matrix = circle.getScreenCTM(); if (!matrix) throw new Error('Circle projection unavailable.');
       const point = new DOMPoint(circle.cx.baseVal.value, circle.cy.baseVal.value + circle.r.baseVal.value).matrixTransform(matrix);

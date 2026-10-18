@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context, historyRow } from './cad-tool-helpers';
 
 test('extends an arc to its finite endpoint, repairs the larger material union and saves the same human and agent part', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
@@ -29,7 +29,7 @@ test('extends an arc to its finite endpoint, repairs the larger material union a
   expect((await call(page, 'cad_build', { expectedVersion: current.version })).bodies[0].volumeMm3).toBeCloseTo(250 * (Math.PI / 2 - 1), 7);
   const originalVersion = current.version;
   const openExtend = async () => {
-    await page.getByRole('button', { name: 'Select Arc segment in history', exact: true }).dblclick();
+    await (await historyRow(page, 'Arc segment')).dblclick();
     await page.locator('[data-cad-sketch-entity="rim"]').press('Shift+F10');
     const extend = page.getByRole('menuitem', { name: 'Extend end', exact: true }); await expect(extend).toBeEnabled(); await extend.focus();
     await expect(page.getByLabel('Extend preview', { exact: true }).locator('path.is-added')).toHaveCount(1);
@@ -45,8 +45,9 @@ test('extends an arc to its finite endpoint, repairs the larger material union a
   await page.getByRole('button', { name: 'Fit model', exact: true }).click();
   await page.getByRole('button', { name: 'View controls', exact: true }).click();
   const canvas = await page.getByLabel('3D model canvas').boundingBox(); if (!canvas) throw new Error('Area picker unavailable.');
-  await page.mouse.click(canvas.x + canvas.width * .57, canvas.y + canvas.height * .40);
-  await page.keyboard.down('Shift'); await page.mouse.click(canvas.x + canvas.width * .40, canvas.y + canvas.height * .35); await page.keyboard.up('Shift');
+  // Fitted from the top: the old segment at (6, 6) mm, then the added cell at (-1, 7.5) mm.
+  await page.mouse.click(canvas.x + canvas.width * .631, canvas.y + canvas.height * .305);
+  await page.keyboard.down('Shift'); await page.mouse.click(canvas.x + canvas.width * .505, canvas.y + canvas.height * .260); await page.keyboard.up('Shift');
   await page.getByRole('button', { name: 'Finish area selection', exact: true }).click(); await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
   const human = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context, historyRow } from './cad-tool-helpers';
 
 test('trims a middle arc, retains its radius owners and repairs the same human and agent part through save', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
@@ -37,7 +37,7 @@ test('trims a middle arc, retains its radius owners and repairs the same human a
   const base = current, readFeature = (id: string) => call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: id }).then(reply => reply.feature);
   expect((await call(page, 'cad_build', { expectedVersion: current.version })).bodies[0].volumeMm3).toBeCloseTo((100 * Math.PI - (100 * Math.acos(.6) - 48)) * 5, 7);
   const openTrim = async () => {
-    await page.getByRole('button', { name: 'Select D blank in history', exact: true }).dblclick();
+    await (await historyRow(page, 'D blank')).dblclick();
     const a = await page.locator('[data-cad-sketch-point="a"]').boundingBox(), b = await page.locator('[data-cad-sketch-point="b"]').boundingBox();
     if (!a || !b) throw new Error('Arc endpoints unavailable.');
     const ax = a.x + a.width / 2, bx = b.x + b.width / 2;

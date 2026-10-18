@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
-import { prepareCadTools, callCadTool as call, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
 
 test('keeps a rounded profile tangent through radius edits, private recovery, solid/export, exact history and saved agent parity',async({page})=>{
   await prepareCadTools(page);await call(page,'cad_open_workspace');
@@ -12,13 +12,13 @@ test('keeps a rounded profile tangent through radius edits, private recovery, so
   await call(page,'cad_edit_document',{expectedVersion:(await context(page)).version,edits:[{kind:'set-parameter',name:'bendRadius',value:5},{kind:'add-feature',feature:sketch},
     {kind:'add-feature',feature:{id:'pad',kind:'extrude',name:'Thickness',suppressed:false,sketchId:'outline',distance:' 5e0 ',symmetric:false,operation:'new',targetId:null}}]});
   const base=await context(page),read=(version:string)=>call(page,'cad_get_feature',{expectedVersion:version,featureId:'outline'}).then(r=>r.feature);
-  const edit=async()=>{await page.getByRole('button',{name:'Select Rounded detail in history',exact:true}).dblclick();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toBeVisible();};
+  const edit=async()=>{await (await historyRow(page, 'Rounded detail')).dblclick();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toBeVisible();};
   const apply=async()=>{await page.getByRole('button',{name:'Apply',exact:true}).click();await expect(page.getByRole('button',{name:'Apply',exact:true})).toHaveCount(0);};
   const pick=async(id:string,add=false)=>page.locator(`[data-cad-sketch-entity="${id}"]`).press(add?'Shift+Enter':'Enter');
-  await edit();await pick('line');await pick('arc',true);await page.getByRole('checkbox',{name:'Tangent',exact:true}).check();await page.getByRole('button',{name:'Cancel',exact:true}).click();expect(await read(base.version)).toEqual(sketch);
-  await page.getByRole('checkbox',{name:'Tangent',exact:true}).check();await apply();await pick('arc');await page.getByRole('button',{name:/^Inspect Radius relation/}).click();
+  await edit();await pick('line');await pick('arc',true);await (await relationControl(page, 'checkbox', 'Tangent')).check();await page.getByRole('button',{name:'Cancel',exact:true}).click();expect(await read(base.version)).toEqual(sketch);
+  await (await relationControl(page, 'checkbox', 'Tangent')).check();await apply();await pick('arc');await (await relationControl(page, 'button', /^Inspect Radius relation/)).click();
   await page.getByRole('textbox',{name:'Radius mm',exact:true}).fill('-1');await expect(page.getByRole('button',{name:'Apply',exact:true})).toBeDisabled();await page.getByRole('button',{name:'Cancel',exact:true}).click();
-  await page.getByRole('button',{name:/^Inspect Radius relation/}).click();await page.getByRole('textbox',{name:'Radius mm',exact:true}).fill('8');await apply();expect(await read(base.version)).toEqual(sketch);
+  await (await relationControl(page, 'button', /^Inspect Radius relation/)).click();await page.getByRole('textbox',{name:'Radius mm',exact:true}).fill('8');await apply();expect(await read(base.version)).toEqual(sketch);
   await page.getByRole('button',{name:'Finish sketch',exact:true}).click();await expect(page.getByRole('button',{name:'Finish sketch',exact:true})).toHaveCount(0);
   let current=await context(page);const human=await read(current.version),owner=human.graph.relations[1];
   const finalPoints=[...sketch.graph.points.slice(0,2),{id:'c',position:[expect.closeTo(0,10),expect.closeTo(8,10)]},{id:'e',position:[expect.closeTo(8,10),' bendRadius ']},sketch.graph.points[4]];
@@ -28,7 +28,7 @@ test('keeps a rounded profile tangent through radius edits, private recovery, so
   const section=await call(page,'cad_inspect_section',{expectedVersion:current.version,section:{bodyId:'pad',plane:'XY',offset:2.5}});expect(section.contourCount).toBe(1);
   expect(section.entities.items.filter((entity:{type:string})=>entity.type==='line')).toHaveLength(3);expect(section.entities.items.filter((entity:{type:string})=>entity.type==='arc')).toEqual([expect.objectContaining({radius:expect.closeTo(8,10)})]);
   const downloading=page.waitForEvent('download');await call(page,'cad_export_dxf',{expectedVersion:current.version,sketchId:'outline'});const downloaded=await(await downloading).path();if(!downloaded)throw Error('Missing rounded DXF');const dxf=await readFile(downloaded,'utf8');expect(dxf.match(/\nARC\r?\n/g)).toHaveLength(1);expect(dxf.match(/\nLINE\r?\n/g)).toHaveLength(3);
-  await edit();await pick('arc');await pick('line',true);await expect(page.getByRole('checkbox',{name:'Tangent',exact:true})).toBeChecked();await page.getByRole('checkbox',{name:'Tangent',exact:true}).uncheck();await apply();await page.getByRole('button',{name:'Cancel sketch edits',exact:true}).click();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toHaveCount(0);expect(await read(current.version)).toEqual(human);
+  await edit();await pick('arc');await pick('line',true);await expect((await relationControl(page, 'checkbox', 'Tangent'))).toBeChecked();await (await relationControl(page, 'checkbox', 'Tangent')).uncheck();await apply();await page.getByRole('button',{name:'Cancel sketch edits',exact:true}).click();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toHaveCount(0);expect(await read(current.version)).toEqual(human);
   await call(page,'cad_history',{expectedVersion:current.version,direction:'undo'});current=await context(page);expect(await read(current.version)).toEqual(sketch);expect(current.parameters).toEqual({bendRadius:5});
   await call(page,'cad_history',{expectedVersion:current.version,direction:'redo'});current=await context(page);expect(await read(current.version)).toEqual(human);
   await call(page,'cad_history',{expectedVersion:current.version,direction:'undo'});current=await context(page);await call(page,'cad_edit_document',{expectedVersion:current.version,edits:[{kind:'set-parameter',name:'bendRadius',value:8},{kind:'set-sketch-relation',sketchId:'outline',relation:owner}]});current=await context(page);const agent=await read(current.version);expect(agent).toEqual({...human,graph:{...human.graph,points:finalPoints}});

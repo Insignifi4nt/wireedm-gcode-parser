@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
 
 test('uses a layout edge on a raised sketch, follows source edits and explicitly detaches without losing its bore', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
@@ -25,10 +25,10 @@ test('uses a layout edge on a raised sketch, follows source edits and explicitly
   let current = await context(page); const initial = current;
   const read = (id: string) => call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: id }).then(reply => reply.feature);
   const openUse = async () => {
-    await page.getByRole('button', { name: 'Select Raised plate in history', exact: true }).dblclick();
+    await (await historyRow(page, 'Raised plate')).dblclick();
     await expect(page.getByRole('button', { name: 'Use reference', exact: true })).toBeVisible({ timeout: 2000 });
     await page.getByRole('button', { name: 'Use reference', exact: true }).click();
-    await page.getByRole('button', { name: 'Select Layout in history', exact: true }).click();
+    await (await historyRow(page, 'Layout')).click();
     await page.locator('[data-cad-sketch-entity="guide"]').press('Enter');
     await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
   };
@@ -40,7 +40,7 @@ test('uses a layout edge on a raised sketch, follows source edits and explicitly
   expect(referenceId).toBeTruthy();
   await page.locator('[data-cad-sketch-point="center"]').press('Enter');
   await page.locator('[data-cad-sketch-entity="' + referenceId + '"]').press('Shift+Enter');
-  await page.getByRole('checkbox', { name: 'Midpoint', exact: true }).check();
+  await (await relationControl(page, 'checkbox', 'Midpoint')).check();
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toHaveCount(0); current = await context(page);
@@ -72,7 +72,7 @@ test('uses a layout edge on a raised sketch, follows source edits and explicitly
   for (const arc of arcs) expect(arc).toMatchObject({ radius: 3, center: { x: expect.closeTo(30, 9), y: expect.closeTo(12, 9) } });
   expect((await raw(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'update-feature', feature: { ...movedLayout, suppressed: true } }] })).ok).toBe(false);
   expect((await context(page)).version).toBe(current.version);
-  await page.getByRole('button', { name: 'Select Raised plate in history', exact: true }).dblclick();
+  await (await historyRow(page, 'Raised plate')).dblclick();
   await page.locator('[data-cad-sketch-entity="' + referenceId + '"]').press('Shift+F10');
   await page.getByRole('menuitem', { name: 'Detach reference', exact: true }).click();
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
