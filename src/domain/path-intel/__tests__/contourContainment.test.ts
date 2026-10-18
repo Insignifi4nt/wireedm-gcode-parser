@@ -86,6 +86,21 @@ describe('exact contour containment', () => {
       expect(point.y / scale).toBeCloseTo(363.5 / 79, 9);
     }
   });
+
+  it('keeps a thin side of a huge part when placing its label point', () => {
+    // The cubic terms overflow, and one scale for both axes would flush the unit-high side to zero.
+    const document = createUpidFromDxfEntities([polygon([[0, 0], [1e170, 0], [1e170, 1], [0, 3]])]);
+    expect(validateUpidDocument(document).structurallyValid).toBe(true);
+    const point = document.contours[0].representativePoint!;
+    expect(point.x / 1e170).toBeCloseTo(5 / 12, 12);
+    expect(point.y).toBeCloseTo(13 / 12, 12);
+  });
+
+  it('keeps the direct label point wherever it is finite', () => {
+    // Scaling these into a common frame would underflow the short side and move the point.
+    const document = createUpidFromDxfEntities([polygon([[0, 0], [1e156, 0], [5e155, 3e-6]])]);
+    expect(document.contours[0].representativePoint).toEqual({ x: 5e155, y: 0.0000010000000000000002 });
+  });
 });
 
 function polygon(points: number[][]): DxfEntity {

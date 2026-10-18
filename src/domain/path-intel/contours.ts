@@ -347,91 +347,121 @@ function boundsFromPolygon(points: Point2[]): Bounds2 {
 
 /**
  * Works relative to the first vertex. Absolute shoelace products cancel
- * catastrophically far from the origin. Coordinates are also rescaled by powers
- * of two, which is exact, so the cubic centroid terms cannot overflow for huge
- * contours while results stay bit-identical wherever they were finite before.
+ * catastrophically far from the origin and overflow long before coordinates do.
+ * Huge contours can still overflow the cubic centroid terms; only then is the
+ * centroid recomputed in a power-of-two scaled frame.
  */
 function polygonCentroidOrAverage(points: Point2[], epsilon: number) {
   const clean = stripClosingDuplicate(points, epsilon);
   if (clean.length === 0) return null;
-  const frame = scaledFrame(clean);
-  if (clean.length < 3) return averagePoint(frame);
+  const direct = relativeCentroidOrAverage(clean);
+  if (isFinitePoint(direct)) return direct;
+  const scaled = scaledCentroidOrAverage(clean);
+  return isFinitePoint(scaled) ? scaled : boundsMidpoint(clean);
+}
+
+function relativeCentroidOrAverage(points: readonly Point2[]): Point2 {
+  const origin = points[0];
+  if (points.length < 3) return averagePoint(points, origin);
 
   let twiceArea = 0;
   let cx = 0;
   let cy = 0;
 
-  for (let index = 0; index < frame.points.length; index++) {
-    const current = frame.points[index];
-    const next = frame.points[(index + 1) % frame.points.length];
-    const factor = current.x * next.y - next.x * current.y;
+  for (let index = 0; index < points.length; index++) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    const currentX = current.x - origin.x;
+    const currentY = current.y - origin.y;
+    const nextX = next.x - origin.x;
+    const nextY = next.y - origin.y;
+    const factor = currentX * nextY - nextX * currentY;
     twiceArea += factor;
-    cx += (current.x + next.x) * factor;
-    cy += (current.y + next.y) * factor;
+    cx += (currentX + nextX) * factor;
+    cy += (currentY + nextY) * factor;
   }
 
-  // The degenerate-area threshold stays in square drawing units.
-  if (Math.abs(twiceArea) * frame.relativeScale * frame.relativeScale * frame.absoluteScale * frame.absoluteScale <= 1e-9) {
-    return averagePoint(frame);
-  }
-  return frameToWorld(frame, cx / (3 * twiceArea), cy / (3 * twiceArea)) ?? averagePoint(frame);
-}
+  if (Math.abs(twiceArea) <= 1e-9) return averagePoint(points, origin);
 
-interface ScaledFrame {
-  readonly origin: Point2;
-  readonly absoluteScale: number;
-  readonly relativeScale: number;
-  /** Vertices relative to origin, divided by absoluteScale * relativeScale. */
-  readonly points: readonly Point2[];
-  /** Vertices divided by absoluteScale, for the overflow-free mean. */
-  readonly absolutePoints: readonly Point2[];
-}
-
-function scaledFrame(points: readonly Point2[]): ScaledFrame {
-  const absoluteScale = powerOfTwoScale(points.reduce((max, { x, y }) => Math.max(max, Math.abs(x), Math.abs(y)), 0));
-  const absolutePoints = points.map(({ x, y }) => ({ x: x / absoluteScale, y: y / absoluteScale }));
-  const origin = absolutePoints[0];
-  const shifted = absolutePoints.map(({ x, y }) => ({ x: x - origin.x, y: y - origin.y }));
-  const relativeScale = powerOfTwoScale(shifted.reduce((max, { x, y }) => Math.max(max, Math.abs(x), Math.abs(y)), 0));
   return {
-    origin: points[0],
-    absoluteScale,
-    relativeScale,
-    points: shifted.map(({ x, y }) => ({ x: x / relativeScale, y: y / relativeScale })),
-    absolutePoints
+    x: origin.x + cx / (3 * twiceArea),
+    y: origin.y + cy / (3 * twiceArea)
   };
 }
 
-/** Largest power of two not above the magnitude; 1 for zero. Dividing by it is exact. */
-function powerOfTwoScale(magnitude: number) {
-  return magnitude > 0 && Number.isFinite(magnitude) ? 2 ** Math.floor(Math.log2(magnitude)) : 1;
-}
-
-function frameToWorld(frame: ScaledFrame, x: number, y: number): Point2 | null {
-  const world = {
-    x: frame.origin.x + x * frame.relativeScale * frame.absoluteScale,
-    y: frame.origin.y + y * frame.relativeScale * frame.absoluteScale
-  };
-  return Number.isFinite(world.x) && Number.isFinite(world.y) ? world : null;
-}
-
-function averagePoint(frame: ScaledFrame): Point2 {
+function averagePoint(points: readonly Point2[], origin: Point2): Point2 {
   let x = 0;
   let y = 0;
-  for (const point of frame.points) {
-    x += point.x;
-    y += point.y;
+  for (const point of points) {
+    x += point.x - origin.x;
+    y += point.y - origin.y;
   }
-  const relative = frameToWorld(frame, x / frame.points.length, y / frame.points.length);
-  if (relative) return relative;
-  // Offsets wider than the number range: average the absolute-scaled vertices instead.
-  let ax = 0;
-  let ay = 0;
-  for (const point of frame.absolutePoints) {
-    ax += point.x;
-    ay += point.y;
+  return { x: origin.x + x / points.length, y: origin.y + y / points.length };
+}
+
+/**
+ * The same centroid with each axis divided by its own powers of two, so the cubic terms
+ * stay finite and a tiny extent beside a huge one keeps its precision. The centroid
+ * follows axis scaling exactly; the area threshold is compared in square drawing units.
+ */
+function scaledCentroidOrAverage(points: readonly Point2[]): Point2 {
+  const x = scaledAxis(points.map((point) => point.x));
+  const y = scaledAxis(points.map((point) => point.y));
+  const average = () => ({ x: x.toWorld(mean(x.local)), y: y.toWorld(mean(y.local)) });
+  if (points.length < 3) return average();
+
+  let twiceArea = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let index = 0; index < points.length; index++) {
+    const next = (index + 1) % points.length;
+    const factor = x.local[index] * y.local[next] - x.local[next] * y.local[index];
+    twiceArea += factor;
+    cx += (x.local[index] + x.local[next]) * factor;
+    cy += (y.local[index] + y.local[next]) * factor;
   }
-  return { x: (ax / frame.absolutePoints.length) * frame.absoluteScale, y: (ay / frame.absolutePoints.length) * frame.absoluteScale };
+
+  // Logarithms avoid forming a scaled area that could itself overflow or underflow.
+  if (Math.log2(Math.abs(twiceArea)) + x.log2Scale + y.log2Scale <= Math.log2(1e-9)) return average();
+  const centroid = { x: x.toWorld(cx / (3 * twiceArea)), y: y.toWorld(cy / (3 * twiceArea)) };
+  return isFinitePoint(centroid) ? centroid : average();
+}
+
+/** One axis relative to its first value, divided by powers of two, which is exact short of underflow. */
+function scaledAxis(values: readonly number[]) {
+  const absoluteScale = powerOfTwoScale(maxMagnitude(values));
+  const absolute = values.map((value) => value / absoluteScale);
+  const shifted = absolute.map((value) => value - absolute[0]);
+  const relativeScale = powerOfTwoScale(maxMagnitude(shifted));
+  return {
+    local: shifted.map((value) => value / relativeScale),
+    log2Scale: Math.log2(relativeScale) + Math.log2(absoluteScale),
+    // One factor at a time; their product alone can exceed the number range.
+    toWorld: (value: number) => values[0] + value * relativeScale * absoluteScale
+  };
+}
+
+function mean(values: readonly number[]) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function maxMagnitude(values: readonly number[]) {
+  return values.reduce((max, value) => Math.max(max, Math.abs(value)), 0);
+}
+
+/** Largest power of two not above the magnitude, capped at the largest finite one; 1 for zero. */
+function powerOfTwoScale(magnitude: number) {
+  return magnitude > 0 && Number.isFinite(magnitude) ? 2 ** Math.min(1023, Math.floor(Math.log2(magnitude))) : 1;
+}
+
+/** Halves before adding, so the midpoint of finite bounds is always finite. */
+function boundsMidpoint(points: Point2[]): Point2 {
+  const bounds = boundsFromPolygon(points);
+  return { x: bounds.minX / 2 + bounds.maxX / 2, y: bounds.minY / 2 + bounds.maxY / 2 };
+}
+
+function isFinitePoint(point: Point2) {
+  return Number.isFinite(point.x) && Number.isFinite(point.y);
 }
 
 function stripClosingDuplicate(points: Point2[], epsilon = 1e-9) {

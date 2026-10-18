@@ -68,6 +68,18 @@ describe('prepareDxfProjectImport', () => {
     });
   });
 
+  it('prepares geometry too large to measure until a smaller declared unit is applied', () => {
+    const prepared = prepareDxfProjectImport(
+      workbenchWithImportUnits({ mode: 'ask' }),
+      { fileName: 'angstroms.dxf', text: lineDxf(11, 1e301) }
+    );
+    if (!prepared.ok) throw new Error(prepared.error.message);
+
+    expect(previewDxfProjectImport(prepared.preparation, {
+      unitCandidateId: prepared.preparation.defaultUnitCandidateId!
+    })).toMatchObject({ ok: true, preview: { sizeMm: { widthMm: 1e294 } } });
+  });
+
   it('returns typed errors for missing geometry and an unknown reviewed candidate', () => {
     const workbench = workbenchWithImportUnits({ mode: 'ask' });
     expect(prepareDxfProjectImport(workbench, {
