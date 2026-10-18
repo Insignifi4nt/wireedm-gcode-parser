@@ -47,7 +47,9 @@ import {
 import type {
   CirclePathSegment,
   ContourClassification,
+  EndpointCluster,
   EndpointClusterId,
+  EndpointClusterResult,
   EndpointSide,
   OperationPlan,
   OrientedSegmentRef,
@@ -1448,11 +1450,13 @@ function syncChainRefs(document: PathPlanningDocument, operation: PathOperation)
 }
 
 function refreshPlan(document: PathPlanningDocument) {
+  const previousClusters = document.endpointClusters;
   const clusterResult = clusterSegmentEndpoints(document.segments, document.options);
   document.endpointClusters = clusterResult.clusters;
 
   const segmentsById = segmentMap(document.segments);
   document.chains.forEach((chain) => refreshChainTopology(chain, segmentsById, clusterResult.endpointToCluster));
+  refreshEndpointTopologyDiagnostics(document, previousClusters, clusterResult, segmentsById);
 
   const initialWire = resolveInitialWirePosition(document);
   let current = initialWire.status === 'ready' ? initialWire.point : document.options.startPoint;
@@ -1506,6 +1510,74 @@ function replaceContourAnalysisDiagnostics(document: PathPlanningDocument, diagn
   const kept = document.diagnostics.filter((diagnostic) => !fromContourAnalysis(diagnostic));
   kept.splice(first < 0 ? kept.length : first, 0, ...diagnostics);
   document.diagnostics = kept;
+}
+
+// Refreshing renumbers endpoint clusters, and a split start replaces a segment with
+// two new ones. Rebuild cluster diagnostics in place and move chain diagnostics onto
+// the clusters and segments now at the endpoints they describe, so neither names a
+// different joint or a segment the document no longer has.
+function refreshEndpointTopologyDiagnostics(
+  document: PathPlanningDocument,
+  previousClusters: EndpointCluster[],
+  clusterResult: EndpointClusterResult,
+  segmentsById: Map<SegmentId, PathSegment>
+) {
+  const clustersById = new Map(clusterResult.clusters.map((cluster) => [cluster.id, cluster]));
+  const previousSegmentIds = new Set(previousClusters.flatMap(({ members }) => members.map(({ segmentId }) => segmentId)));
+  const successors = new Map<EndpointClusterId, EndpointCluster>();
+  for (const cluster of previousClusters) {
+    const successor = cluster.members
+      .map(({ segmentId, side }) => clusterResult.endpointToCluster[endpointKey(segmentId, side)])
+      .find((id) => id !== undefined);
+    const next = successor === undefined ? undefined : clustersById.get(successor);
+    if (next) successors.set(cluster.id, next);
+  }
+  const chainsByDiagnosticId = new Map(document.chains.flatMap((chain) => chain.diagnosticIds.map((id) => [id, chain] as const)));
+  const fromClustering = (diagnostic: PathDiagnostic) => diagnostic.id.startsWith('diag_cluster_');
+  const first = document.diagnostics.findIndex(fromClustering);
+  const kept = document.diagnostics
+    .filter((diagnostic) => !fromClustering(diagnostic))
+    .map((diagnostic) => diagnostic.id.startsWith('diag_chain_')
+      ? refreshChainDiagnostic(diagnostic, chainsByDiagnosticId.get(diagnostic.id), successors, previousSegmentIds, segmentsById)
+      : diagnostic);
+  kept.splice(first < 0 ? kept.length : first, 0, ...clusterResult.diagnostics);
+  document.diagnostics = kept;
+}
+
+function refreshChainDiagnostic(
+  diagnostic: PathDiagnostic,
+  chain: PathChain | undefined,
+  successors: Map<EndpointClusterId, EndpointCluster>,
+  previousSegmentIds: Set<SegmentId>,
+  segmentsById: Map<SegmentId, PathSegment>
+): PathDiagnostic {
+  if (chain && (diagnostic.code === 'open-chain' || diagnostic.code === 'closed-chain-gap')) {
+    const clusterIds = diagnostic.code === 'open-chain' ? [chain.startClusterId, chain.endClusterId] : [chain.startClusterId];
+    return {
+      ...diagnostic,
+      relatedSegmentIds: chain.segmentRefs.map(({ segmentId }) => segmentId),
+      relatedClusterIds: clusterIds.filter((id): id is EndpointClusterId => id !== null),
+      ...(diagnostic.code === 'closed-chain-gap' ? { details: { ...diagnostic.details, gapLength: chain.metrics.gapLength } } : {})
+    };
+  }
+  // A branching junction: follow its cluster, and name the new pieces of a split segment there.
+  const junctions = (diagnostic.relatedClusterIds ?? []).map((id) => successors.get(id));
+  if (diagnostic.relatedClusterIds === undefined || !junctions.every((cluster) => cluster !== undefined)) return diagnostic;
+  const pieces = [...new Set(junctions.flatMap(({ members }) => members.map(({ segmentId }) => segmentId)))]
+    .filter((segmentId) => !previousSegmentIds.has(segmentId));
+  const currentSegmentIds = (segmentIds: SegmentId[]) =>
+    [...new Set(segmentIds.flatMap((segmentId) => segmentsById.has(segmentId) ? [segmentId] : pieces))];
+  const chosenSegmentId = diagnostic.details?.chosenSegmentId;
+  const renamed = new Map([...successors].map(([id, cluster]) => [id, cluster.id]));
+  return {
+    ...diagnostic,
+    message: diagnostic.message.replace(/\bec_\d+\b/g, (id) => renamed.get(id) ?? id),
+    relatedClusterIds: junctions.map(({ id }) => id),
+    ...(diagnostic.relatedSegmentIds ? { relatedSegmentIds: currentSegmentIds(diagnostic.relatedSegmentIds) } : {}),
+    ...(typeof chosenSegmentId === 'string' && !segmentsById.has(chosenSegmentId) && pieces.length > 0
+      ? { details: { ...diagnostic.details, chosenSegmentId: pieces[0] } }
+      : {})
+  };
 }
 
 function refreshPathElements(document: PathPlanningDocument) {

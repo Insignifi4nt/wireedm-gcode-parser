@@ -234,4 +234,50 @@ describe('geometry edit identity integrity', () => {
     expect(result).toEqual(setClosedOperationStartNearPoint(document, firstOperation.id, { x: 0, y: 5 }));
     expect(document).toEqual(before);
   });
+
+  it('keeps endpoint diagnostics on the joints they describe after a split start renumbers clusters', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [line(0, 0, 10, 0), line(10, 0, 10, 10), line(10.002, 10.002, 0, 10), line(0, 10, 0, 0)],
+      { endpointTolerance: 0.01 }
+    );
+    const result = setClosedOperationStartNearPoint(document, document.plan.operations[0].id, { x: 5, y: 0 });
+    if (!result) throw new Error('Invalid fixture');
+
+    expectDiagnosticReferencesResolve(result);
+    const snap = result.diagnostics.find(({ code }) => code === 'endpoint-cluster-snap')!;
+    expect(result.endpointClusters.find(({ id }) => id === snap.relatedClusterIds?.[0])).toMatchObject({
+      method: 'within-tolerance',
+      members: [{ segmentId: 'seg_0002', side: 'end' }, { segmentId: 'seg_0003', side: 'start' }]
+    });
+    const gap = result.diagnostics.find(({ code }) => code === 'closed-chain-gap')!;
+    expect(gap.relatedClusterIds).toEqual([result.chains[0].startClusterId]);
+    expect(gap.relatedSegmentIds).toEqual(result.chains[0].segmentRefs.map(({ segmentId }) => segmentId));
+  });
+
+  it('keeps a branching diagnostic on its junction and the new piece of a split segment', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(0, 0, 10, 0), line(10, 0, 10, 10), line(10, 10, 0, 10), line(0, 10, 0, 0),
+      line(0, 0, -10, 0), line(-10, 0, -10, -10), line(-10, -10, 0, -10), line(0, -10, 0, 0)
+    ]);
+    const lower = document.plan.operations.find(({ provenance }) => provenance.sourceEntityIndices.includes(4))!;
+    const result = setClosedOperationStartNearPoint(document, lower.id, { x: -5, y: 0 });
+    if (!result) throw new Error('Invalid fixture');
+
+    expectDiagnosticReferencesResolve(result);
+    const junction = result.endpointClusters.find(({ members }) => members.length === 4)!;
+    const branching = result.diagnostics.find(({ code }) => code === 'branching-topology')!;
+    expect(junction.id).not.toBe(document.diagnostics.find(({ code }) => code === 'branching-topology')!.relatedClusterIds![0]);
+    expect(branching.relatedClusterIds).toEqual([junction.id]);
+    expect(branching.message).toContain(`Endpoint cluster ${junction.id} `);
+    expect(new Set(branching.relatedSegmentIds)).toEqual(new Set(junction.members.map(({ segmentId }) => segmentId)));
+  });
 });
+
+function expectDiagnosticReferencesResolve(document: PathPlanningDocument) {
+  const clusterIds = new Set(document.endpointClusters.map(({ id }) => id));
+  const segmentIds = new Set(document.segments.map(({ id }) => id));
+  for (const diagnostic of document.diagnostics) {
+    for (const id of diagnostic.relatedClusterIds ?? []) expect(clusterIds, diagnostic.id).toContain(id);
+    for (const id of diagnostic.relatedSegmentIds ?? []) expect(segmentIds, diagnostic.id).toContain(id);
+  }
+}
