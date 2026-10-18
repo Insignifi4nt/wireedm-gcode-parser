@@ -442,13 +442,18 @@ function validateLiveGeometrySafety(
 ) {
   const options = liveGeometryOptions(optionsValue);
   const geometry = segments.map(normalizeSegmentDerivedGeometry);
-  const sanitized = sanitizePathSegments(geometry, options);
+  // Recorded pairs may be summarized, so a live pair is known when any recorded error
+  // with the same code relates both of its segments.
+  const sanitized = sanitizePathSegments(geometry, options, {
+    isRecorded: recordedSegmentCoverage(documentDiagnostics, 'overlapping-segment')
+  });
   const endpointClusters = clusterSegmentEndpoints(sanitized.segments, options);
   const endpointTopology = auditLiveEndpointTopology(endpointClusters.clusters);
   const intersections = findPathSegmentIntersectionDiagnostics(
     sanitized.segments,
     endpointTopology.junctionChains,
-    options
+    options,
+    { isRecorded: recordedSegmentCoverage(documentDiagnostics, 'intersecting-topology') }
   );
   const candidates = [
     ...sanitized.diagnostics,
@@ -581,6 +586,35 @@ function normalizeSegmentDerivedGeometry(segment: PathSegment): PathSegment {
       maxX: segment.center.x + segment.radius,
       maxY: segment.center.y + segment.radius
     }
+  };
+}
+
+/** Whether one recorded error with this code relates every given segment. */
+function recordedSegmentCoverage(diagnostics: PathDiagnostic[], code: PathDiagnostic['code']) {
+  const pairs = new Set<string>();
+  const groupsBySegmentId = new Map<string, Set<string>[]>();
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.severity !== 'error' || diagnostic.code !== code) continue;
+    const group = new Set(diagnostic.relatedSegmentIds ?? []);
+    if (group.size === 2) {
+      const [left, right] = [...group].sort();
+      pairs.add(`${left}|${right}`);
+      continue;
+    }
+    for (const segmentId of group) {
+      const groups = groupsBySegmentId.get(segmentId) ?? [];
+      groups.push(group);
+      groupsBySegmentId.set(segmentId, groups);
+    }
+  }
+  return (segmentIds: readonly string[]) => {
+    if (segmentIds.length === 0) return true;
+    if (segmentIds.length === 2 && pairs.size > 0) {
+      const [left, right] = segmentIds;
+      if (pairs.has(left < right ? `${left}|${right}` : `${right}|${left}`)) return true;
+    }
+    return (groupsBySegmentId.get(segmentIds[0]) ?? [])
+      .some((group) => segmentIds.every((segmentId) => group.has(segmentId)));
   };
 }
 

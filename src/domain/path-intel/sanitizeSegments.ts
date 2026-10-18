@@ -1,8 +1,12 @@
 import {
   classifyPathSegmentIntersection,
+  createSegmentPairReport,
   expandBounds,
+  MAX_SEGMENT_PAIR_CHECKS,
+  pathSegmentsMayOverlap,
   pathSegmentsShareSweptLocus,
-  spatialCellSizeForSegments
+  spatialCellSizeForSegments,
+  type SegmentPairAnalysis
 } from './intersections';
 import {
   nextDown,
@@ -26,7 +30,8 @@ interface IndexedSegment {
 
 export function sanitizePathSegments(
   segments: PathSegment[],
-  options: PathPlanningOptions = {}
+  options: PathPlanningOptions = {},
+  analysis: SegmentPairAnalysis = {}
 ): SegmentBuildResult {
   const resolved = resolvePathPlanningOptions(options);
   const epsilon = resolved.coincidenceEpsilon;
@@ -54,11 +59,41 @@ export function sanitizePathSegments(
     cellSize: spatialCellSizeForSegments(candidates, epsilon),
     maxCellsPerBounds: 256
   });
+  const maxChecks = analysis.maxChecks ?? MAX_SEGMENT_PAIR_CHECKS;
+  let nextNumber = diagnostics.length;
+  const report = createSegmentPairReport<[PathSegment, PathSegment]>(analysis, {
+    listed: (_left, _right, [left, right]) => overlapDiagnostic(nextNumber++, left, right),
+    omitted: (count, relatedSegmentIds) => ({
+      id: `diag_sanitize_${String(++nextNumber).padStart(4, '0')}`,
+      severity: 'error',
+      code: 'overlapping-segment',
+      message: `${count} more segment pairs overlap along a positive-length geometric locus; they are not listed individually.`,
+      relatedSegmentIds,
+      details: { omittedPairCount: count }
+    }),
+    unchecked: (checkedPairCount, relatedSegmentIds) => ({
+      id: `diag_sanitize_${String(++nextNumber).padStart(4, '0')}`,
+      severity: 'error',
+      code: 'overlapping-segment',
+      message: `Overlap analysis stopped after ${checkedPairCount} segment pair checks, so these segments could not be checked for duplicates or overlaps.`,
+      relatedSegmentIds,
+      details: { checkedPairCount }
+    })
+  });
+  let checkedPairCount = 0;
+  let checking = true;
 
   for (const segment of candidates) {
-    const nearby = index
-      .queryBounds(expandBounds(segment.bounds, epsilon))
-      .sort((left, right) => left.index - right.index);
+    const nearby = checking
+      ? index.queryBounds(expandBounds(segment.bounds, epsilon)).sort((left, right) => left.index - right.index)
+      : [];
+    // Past the budget, keep the remaining segments unchecked; the stop is reported below.
+    if (checking && checkedPairCount + nearby.length > maxChecks) checking = false;
+    if (!checking) {
+      retained.push(segment);
+      continue;
+    }
+    checkedPairCount += nearby.length;
     const duplicate = nearby.find((candidate) => {
       if (!pathSegmentsShareSweptLocus(candidate.segment, segment, epsilon)) return false;
       return (duplicateGroups.get(candidate.index) ?? []).every((groupMember) =>
@@ -74,9 +109,10 @@ export function sanitizePathSegments(
     }
 
     for (const candidate of nearby) {
+      if (!pathSegmentsMayOverlap(candidate.segment, segment)) continue;
       const relation = classifyPathSegmentIntersection(candidate.segment, segment, epsilon);
       if (relation.kind !== 'overlap') continue;
-      diagnostics.push(overlapDiagnostic(diagnostics.length, candidate.segment, segment));
+      report.add(candidate.segment.id, segment.id, [candidate.segment, segment]);
     }
 
     const retainedIndex = retained.length;
@@ -84,6 +120,7 @@ export function sanitizePathSegments(
     index.insertBounds(segment.bounds, { index: retainedIndex, segment });
   }
 
+  diagnostics.push(...report.finish(checkedPairCount, checking ? [] : retained.map(({ id }) => id)));
   for (const [representativeIndex, duplicates] of duplicateGroups) {
     const representative = retained[representativeIndex];
     diagnostics.push(
