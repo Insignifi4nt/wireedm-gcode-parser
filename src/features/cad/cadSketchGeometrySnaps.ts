@@ -110,11 +110,14 @@ function intersections(a: Curve, b: Curve): SketchPoint[] {
     raw.push([a.start[0] + r[0] * t, a.start[1] + r[1] * t]);
   } else if (a.kind === 'line' || b.kind === 'line') {
     const line = (a.kind === 'line' ? a : b) as Extract<Curve, { kind: 'line' }>, circle = (a.kind === 'circle' ? a : b) as Extract<Curve, { kind: 'circle' }>;
-    const d = [line.end[0] - line.start[0], line.end[1] - line.start[1]], f = [line.start[0] - circle.center[0], line.start[1] - circle.center[1]];
-    const A = d[0] * d[0] + d[1] * d[1], B = 2 * (f[0] * d[0] + f[1] * d[1]), C = f[0] * f[0] + f[1] * f[1] - circle.radius * circle.radius, disc = B * B - 4 * A * C;
-    if (!(A > 0) || disc < -1e-12 * B * B) return [];
-    const root = Math.sqrt(Math.max(0, disc));
-    for (const t of root === 0 ? [-B / (2 * A)] : [(-B - root) / (2 * A), (-B + root) / (2 * A)]) raw.push([line.start[0] + d[0] * t, line.start[1] + d[1] * t]);
+    // Work from the circle's center so a small circle far from the origin keeps its precision.
+    const d = [line.end[0] - line.start[0], line.end[1] - line.start[1]], f = [line.start[0] - circle.center[0], line.start[1] - circle.center[1]], length = Math.hypot(d[0], d[1]);
+    if (!(length > 0)) return [];
+    const u = [d[0] / length, d[1] / length], along = f[0] * u[0] + f[1] * u[1], foot = [f[0] - u[0] * along, f[1] - u[1] * along];
+    const square = circle.radius * circle.radius - (foot[0] * foot[0] + foot[1] * foot[1]);
+    if (square < -1e-12 * circle.radius * circle.radius) return [];
+    const half = Math.sqrt(Math.max(0, square));
+    for (const offset of half === 0 ? [0] : [-half, half]) raw.push([circle.center[0] + foot[0] + u[0] * offset, circle.center[1] + foot[1] + u[1] * offset]);
   } else {
     const dx = b.center[0] - a.center[0], dy = b.center[1] - a.center[1], distance = Math.hypot(dx, dy);
     if (!(distance > 0) || distance > a.radius + b.radius || distance < Math.abs(a.radius - b.radius)) return [];

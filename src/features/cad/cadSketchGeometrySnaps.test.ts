@@ -295,6 +295,13 @@ describe('prepared sketch geometry snaps', () => {
       expect(query({ cursor: [5.2, 5.3], mmPerPixel: [.1, .1], references: true, excludePointIds: ['r'] })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'on-entity', entityId: 'pq' } } });
     });
 
+    it('keep a small far-origin circle exact where it crosses an axis', () => {
+      const far = parseCadSketchGraph({ points: [{ id: 'c', position: [1e8, 0] }], entities: [{ id: 'circle', kind: 'circle', construction: true, centerPointId: 'c', radius: 3 }], relations: [] });
+      const prepared = prepareCadSketchGraphInteraction(far, {});
+      expect(prepared.snap({ cursor: [1e8 + 3, .01], mmPerPixel: [.1, .1], references: true })).toMatchObject({ kind: 'hit',
+        candidate: { target: { kind: 'intersection', axes: ['x'] }, point: [1e8 + 3, 0], entityIds: ['circle'] } });
+    });
+
     it('align with acquired points after every geometric target, by the nearest guide', () => {
       const alignTo = [[100, 100], [120, 80], [100, 60]] as const;
       expect(at([100.2, 150], { alignTo })).toEqual({ kind: 'hit', candidate: { target: { kind: 'aligned', vertical: [100, 100] }, point: [100, 150], distancePx: expect.closeTo(2, 9), entityIds: [] } });

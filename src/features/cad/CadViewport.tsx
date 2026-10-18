@@ -534,8 +534,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       if (rectangle) Object.assign(overlay.style, { left: `${rectangle.left}px`, top: `${rectangle.top}px`, width: `${rectangle.right - rectangle.left}px`, height: `${rectangle.bottom - rectangle.top}px` });
     };
     const endBox = () => {
-      if (box) { try { if (renderer.domElement.hasPointerCapture?.(box.pointerId)) renderer.domElement.releasePointerCapture(box.pointerId); } catch { /* Capture may already be gone. */ } }
-      box = null; drawBox();
+      const ended = box; box = null; drawBox();
+      if (ended) { try { if (renderer.domElement.hasPointerCapture?.(ended.pointerId)) renderer.domElement.releasePointerCapture(ended.pointerId); } catch { /* Capture may already be gone. */ } }
     };
     const boxPointerDown = (event: PointerEvent) => {
       if (box) { event.preventDefault(); event.stopImmediatePropagation(); return; }
@@ -602,8 +602,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     };
     const cancelAllPointers = () => cancelPointerInteraction(false, data.current.busyInputLocked && preserveIdleHover.current);
     const pointerLeave = () => { if (depthPointer !== null && renderer.domElement.hasPointerCapture?.(depthPointer) || box && renderer.domElement.hasPointerCapture?.(box.pointerId)) return; cancelAllPointers(); depth.hover(null); };
-    const pointerCancel = (event: PointerEvent) => { if (activePointers.has(event.pointerId) || depthPointer === event.pointerId) cancelPointerInteraction(); };
-    const lostPointerCapture = (event: PointerEvent) => { if (activePointers.has(event.pointerId) || depthPointer === event.pointerId) cancelPointerInteraction(); };
+    const pointerCancel = (event: PointerEvent) => { if (activePointers.has(event.pointerId) || depthPointer === event.pointerId || box?.pointerId === event.pointerId) cancelPointerInteraction(); };
+    const lostPointerCapture = (event: PointerEvent) => { if (activePointers.has(event.pointerId) || depthPointer === event.pointerId || box?.pointerId === event.pointerId) cancelPointerInteraction(); };
     const pointerUp = (event: PointerEvent) => {
       if (data.current.busyInputLocked) return;
       const tracked = activePointers.delete(event.pointerId);

@@ -938,8 +938,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     const graph = sketch?.graph;
     return { entityIds: graph?.entities.filter(entity => !cadSketchLinearPatternLockReason(graph, { kind: 'entity', id: entity.id }) && !cadSketchExternalReferenceLockReason(graph, { kind: 'entity', id: entity.id })
       && !(entity.kind === 'circle' && typeof entity.radius === 'string' && !graph.relations.some(relation => relation.kind === 'radial-size' && relation.entityId === entity.id))).map(entity => entity.id) ?? [],
-      // Driven/reference points can anchor a free partner or a passive measurement.
-      pointIds: graph && graph.points.length > 1 ? graph.points.map(point => point.id) : [] };
+      // Driven/reference points can anchor a free partner or a passive measurement; a lone point still measures from the origin or an axis.
+      pointIds: graph?.points.map(point => point.id) ?? [] };
   }, [sketch]);
   const canPickDimension = Boolean(dimensionPickTargets.entityIds.length || dimensionPickTargets.pointIds.length);
   const openGraphDimension = (selections: readonly CadSketchGraphSelection[]) => {
