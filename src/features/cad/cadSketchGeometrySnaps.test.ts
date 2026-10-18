@@ -248,4 +248,62 @@ describe('prepared sketch geometry snaps', () => {
     expect(snap({ cursor: [0, 0], mmPerPixel: [1, 1], draftStart: { point: [NaN, 0] } })).toEqual({ kind: 'none' });
     expect(snap({ cursor: [0, 0], mmPerPixel: [1, 1] })).toEqual({ kind: 'none' });
   });
+
+  describe('plane and edge references', () => {
+    // A 20 mm square from (10, 10), an arc centred at (40, 0) through the X axis and a vertical line along the Y axis.
+    const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [10, 10] }, { id: 'b', position: [30, 10] }, { id: 'c', position: [30, 30] },
+      { id: 'o', position: [40, 0] }, { id: 's', position: [50, 0] }, { id: 'e', position: [30, 0] }, { id: 'y0', position: [0, 5] }, { id: 'y1', position: [0, 40] }],
+    entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+      { id: 'arc', kind: 'arc', construction: true, centerPointId: 'o', startPointId: 's', endPointId: 'e', direction: 'ccw' },
+      { id: 'onY', kind: 'line', construction: false, startPointId: 'y0', endPointId: 'y1' }], relations: [] });
+    const prepared = prepareCadSketchGraphInteraction(graph, {});
+    const snap = prepareCadSketchGeometrySnaps({ graph, points: prepared.points, segments: prepared.geometry.segments });
+    const at = (cursor: readonly [number, number], extra: Partial<Parameters<typeof snap>[0]> = {}) => snap({ cursor, mmPerPixel: [.1, .1], references: true, ...extra });
+
+    it('stay off unless the query asks for them', () => {
+      expect(snap({ cursor: [15, 10.2], mmPerPixel: [.1, .1] })).toEqual({ kind: 'none' });
+      expect(snap({ cursor: [.1, .1], mmPerPixel: [.1, .1] })).toEqual({ kind: 'none' });
+    });
+
+    it('catch the origin, positions on edges, arcs and axes, and their crossings', () => {
+      expect(at([.2, -.1])).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'origin' }, point: [0, 0] } });
+      expect(at([15, 10.3])).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'on-entity', entityId: 'ab', entityKind: 'line' }, point: [15, 10], entityIds: ['ab'] } });
+      const onArc = at([47.2, 7.2]);
+      if (onArc.kind !== 'hit') throw new Error('Arc position missing.');
+      expect(onArc.candidate.target).toEqual({ kind: 'on-entity', entityId: 'arc', entityKind: 'arc' });
+      expect(Math.hypot(onArc.candidate.point[0] - 40, onArc.candidate.point[1])).toBeCloseTo(10, 12);
+      // The arc runs counter-clockwise from (50, 0) to (30, 0) over the top; below the axis is off the arc.
+      expect(at([40, -10.2])).toEqual({ kind: 'none' });
+      expect(at([70, .3])).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'on-axis', axis: 'x' }, point: [70, 0] } });
+      expect(at([-.3, -20])).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'on-axis', axis: 'y' }, point: [0, -20] } });
+      // An edge lying along an axis is the more specific target.
+      expect(at([.2, 20])).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'on-entity', entityId: 'onY' } } });
+      expect(at([20, -.3])).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'on-axis', axis: 'x' } } });
+    });
+
+    it('resolve a crossing only where no point target is in reach', () => {
+      const square = parseCadSketchGraph({ points: [{ id: 'p', position: [-10, 5] }, { id: 'q', position: [10, 5] }, { id: 'r', position: [5, -6] }, { id: 't', position: [5, 10] }],
+        entities: [{ id: 'pq', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }, { id: 'rt', kind: 'line', construction: false, startPointId: 'r', endPointId: 't' }], relations: [] });
+      const crossing = prepareCadSketchGraphInteraction(square, {});
+      const query = prepareCadSketchGeometrySnaps({ graph: square, points: crossing.points, segments: crossing.geometry.segments });
+      expect(query({ cursor: [5.2, 5.3], mmPerPixel: [.1, .1], references: true })).toEqual({ kind: 'hit', candidate: {
+        target: { kind: 'intersection', axes: [] }, point: [5, 5], distancePx: expect.closeTo(Math.hypot(2, 3), 9), entityIds: ['pq', 'rt'] } });
+      expect(query({ cursor: [5.2, .3], mmPerPixel: [.1, .1], references: true })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'intersection', axes: ['x'] }, point: [5, 0], entityIds: ['rt'] } });
+      // The midpoint of pq is (0, 5) on the Y axis: the midpoint wins over the crossing at the same place.
+      expect(query({ cursor: [.1, 5.1], mmPerPixel: [.1, .1], references: true })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'midpoint', entityId: 'pq' } } });
+      // A moving edge never attracts its own pointer.
+      expect(query({ cursor: [5.2, 5.3], mmPerPixel: [.1, .1], references: true, excludePointIds: ['r'] })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'on-entity', entityId: 'pq' } } });
+    });
+
+    it('align with acquired points after every geometric target, by the nearest guide', () => {
+      const alignTo = [[100, 100], [120, 80], [100, 60]] as const;
+      expect(at([100.2, 150], { alignTo })).toEqual({ kind: 'hit', candidate: { target: { kind: 'aligned', vertical: [100, 100] }, point: [100, 150], distancePx: expect.closeTo(2, 9), entityIds: [] } });
+      expect(at([150, 79.7], { alignTo })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'aligned', horizontal: [120, 80] }, point: [150, 80] } });
+      expect(at([119.8, 99.6], { alignTo })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'aligned', horizontal: [100, 100], vertical: [120, 80] }, point: [120, 100] } });
+      expect(at([150, 150], { alignTo })).toEqual({ kind: 'none' });
+      expect(at([100.2, 150], { alignTo, kinds: ['on-entity'] })).toEqual({ kind: 'none' });
+      // Geometry within reach beats a guide.
+      expect(at([15, 10.2], { alignTo: [[15.3, 50]] })).toMatchObject({ kind: 'hit', candidate: { target: { kind: 'on-entity', entityId: 'ab' } } });
+    });
+  });
 });

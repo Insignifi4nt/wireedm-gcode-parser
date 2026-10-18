@@ -38,7 +38,7 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
         </g>
         <g className="cad-sketch-graph-dimension-label" role="button" aria-label={`${dimension.relation.kind === 'reference-dimension' ? 'Inspect reference' : 'Configure'} ${name} ${quantity}${roles}`} aria-pressed={selectedRelationId === dimension.relation.id}
           aria-disabled={!interactive || undefined} tabIndex={interactive ? 0 : -1} style={{ cursor: interactive ? 'pointer' : 'default' }}
-          transform={`translate(${dimension.label[0] - center[0]} ${dimension.label[1] - center[1]}) scale(${mmPerPixel} ${-mmPerPixel})`}
+          transform={`translate(${dimension.label[0] - center[0]} ${dimension.label[1] - center[1]}) scale(${mmPerPixel} ${-mmPerPixel})${dimension.labelAngle ? ` rotate(${-dimension.labelAngle * 180 / Math.PI})` : ''}`}
           onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); event.stopPropagation(); if (interactive && event.isPrimary !== false) event.currentTarget.focus({ preventScroll: true }); }}
           onClick={event => { if (event.button !== 0) return; event.preventDefault(); event.stopPropagation(); if (interactive) onConfigure(dimension.relation); }}
           onKeyDown={event => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); event.stopPropagation();

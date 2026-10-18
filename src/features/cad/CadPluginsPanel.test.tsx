@@ -9,7 +9,7 @@ import { CadPluginsPanel } from './CadPluginsPanel';
 import { CadWorkbench } from './CadWorkbench';
 import { CadSession } from './cadSession';
 
-vi.mock('./CadViewport', () => ({ CadViewport: () => <div>Native viewport is verified in browser tests</div> }));
+vi.mock('./CadViewport', () => ({ CadViewport: ({ hidden }: { hidden?: boolean }) => hidden ? <div className="cad-viewport" hidden /> : <div>Native viewport is verified in browser tests</div> }));
 let container: HTMLDivElement, root: Root;
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} }); localStorage.clear(); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });

@@ -187,6 +187,25 @@ it('preserves a large-part Fit zoom through named-view OrbitControls recreation 
   }
 });
 
+describe('hidden under a sketch surface', () => {
+  it('keeps one graphics context and its camera, publishes no controls and defers model uploads until shown', async () => {
+    const edited: CadMesh = { ...mesh, featureId: 'edited', bounds: { min: [0, 0, 0], max: [40, 40, 40] } };
+    const view = async (meshes: readonly CadMesh[], hidden: boolean) => { await act(async () => root.render(<CadViewport hidden={hidden} meshes={meshes} selectedId="body" onSelect={vi.fn()} onControlsReady={value => { controls = value; }} />)); };
+    await view([mesh], false); await flushFrame();
+    const shown = currentControls(); await act(async () => shown.setView?.('Top'));
+    const zoom = solidViewState().zoom; const drawn = renderer().render.mock.calls.length;
+    await view([edited], true); await flushFrame();
+    expect(controls).toBeNull(); expect(container.querySelector('button[aria-label="Fit model"]')).toBeNull();
+    expect(renderer().render.mock.calls.length).toBe(drawn);
+    const scene = renderer().render.mock.calls[0][0]; const ids = () => { const found = new Set<string>(); scene.traverse(object => { if (object.userData.featureId) found.add(object.userData.featureId); }); return found; };
+    expect(ids().has('edited')).toBe(false);
+    await view([edited], false); await flushFrame();
+    expect(renderers).toHaveLength(1); expect(controls).toBe(shown); expect(container.querySelector('button[aria-label="Fit model"]')).not.toBeNull();
+    // The user's chosen view survives; a part that already had its first frame is not refit.
+    expect(solidViewState()).toMatchObject({ view: 'Top', zoom }); expect(ids()).toEqual(new Set(['edited']));
+  });
+});
+
 describe('viewport pointer ownership and hover', () => {
   const meshes: readonly CadMesh[] = [{ ...mesh, faceGroups: [{ key: 'face', start: 0, count: 3 }], edgeGroups: [{ key: 'edge', start: 0, count: 2 }] }];
   async function harness(mode: 'body' | 'face' = 'body') {

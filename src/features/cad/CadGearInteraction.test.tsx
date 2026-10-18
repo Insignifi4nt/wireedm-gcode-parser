@@ -10,7 +10,7 @@ import { CadSession } from './cadSession';
 import { CadWorkbench } from './CadWorkbench';
 
 // The real DOM/SVG sketch and numeric geometry run; jsdom has no native WebGL context.
-vi.mock('./CadViewport', () => ({ CadViewport: () => <div>Native solid viewport</div> }));
+vi.mock('./CadViewport', () => ({ CadViewport: ({ hidden }: { hidden?: boolean }) => hidden ? <div className="cad-viewport" hidden /> : <div>Native solid viewport</div> }));
 let container: HTMLDivElement, root: Root;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);

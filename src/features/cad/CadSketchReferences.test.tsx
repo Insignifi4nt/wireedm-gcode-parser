@@ -11,7 +11,7 @@ import { cadReferenceFeatureIds, cadReferencePlanes, type CadViewportReference }
 // Exercise the real Workbench selection/edit/capture bridge without a GPU in jsdom.
 vi.mock('./CadViewport', () => ({ CadViewport: function ReferenceViewport(props: {
   references: readonly CadViewportReference[]; referenceVersion: string; meshes: readonly { featureId: string }[];
-  interactionLocked: boolean; onSelect(id: string): void;
+  interactionLocked: boolean; onSelect(id: string): void; hidden?: boolean;
   onControlsReady?(controls: CadRenderedViewControls | null, released?: CadRenderedViewControls): void;
 }) {
   const live = useRef(props); live.current = props;
@@ -21,7 +21,8 @@ vi.mock('./CadViewport', () => ({ CadViewport: function ReferenceViewport(props:
     fit: vi.fn(), setGrid: vi.fn(), setView: vi.fn(),
     capture: async () => ({ dataUrl: 'data:image/png;base64,AA==', width: 800, height: 600, source: '3d' }),
   }), []);
-  useLayoutEffect(() => { props.onControlsReady?.(controls); return () => props.onControlsReady?.(null, controls); }, [props.onControlsReady, controls]);
+  useLayoutEffect(() => { if (props.hidden) return; props.onControlsReady?.(controls); return () => props.onControlsReady?.(null, controls); }, [props.onControlsReady, controls, props.hidden]);
+  if (props.hidden) return <div className="cad-viewport" hidden />;
   return <div aria-label="3D model viewport" data-solid-count={props.meshes.length}>
     {props.references.flatMap(reference => reference.featureId === null ? [] : [<button key={reference.referenceId} disabled={props.interactionLocked} onClick={() => { if (reference.featureId !== null) props.onSelect(reference.featureId); }}
       data-world-reference={reference.referenceId} data-construction={reference.construction}>World {reference.referenceId}</button>])}
@@ -97,7 +98,9 @@ describe('world Sketch reference Workbench integration', () => {
   });
 
   it('keeps property drafts locked against world/tree selection and installs updated accepted geometry only after Apply', async () => {
-    await mount({ ...createCadDocument(), features: [section, other] }); await click('World section/rectangle'); await click('Edit sketch');
+    await mount({ ...createCadDocument(), features: [section, other] }); await click('World section/rectangle');
+    // Double-click enters the sketch, as the removed Edit sketch panel button did.
+    await act(async () => button('Select Section in history').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
     const profile = [...container.querySelectorAll<HTMLButtonElement>('.cad-tree-profile')].find(entry => entry.textContent === 'Rectangle');
     if (!profile) throw new Error('Rectangle tree profile missing'); await act(async () => profile.click());
     const before = session.getSnapshot(); await click('Add dimension'); await inputWidth('25'); expect(session.getSnapshot().workflowOpen).toBe(true);

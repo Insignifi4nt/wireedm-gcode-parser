@@ -657,6 +657,15 @@
     "file": "turn.svg"
   },
   {
+    "id": "constraint",
+    "label": "Sketch constraint",
+    "category": "geometry",
+    "aliases": [
+      "Perpendicular"
+    ],
+    "file": "constraint.svg"
+  },
+  {
     "id": "trim",
     "label": "Trim geometry",
     "category": "geometry",

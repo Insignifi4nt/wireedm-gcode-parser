@@ -8,7 +8,7 @@ import { CadSession } from './cadSession';
 import { CadWorkbench } from './CadWorkbench';
 import { cadPlacementOptions } from './cadPlacementUi';
 
-vi.mock('./CadViewport', () => ({ CadViewport: () => <div aria-label="3D model viewport" /> }));
+vi.mock('./CadViewport', () => ({ CadViewport: ({ hidden }: { hidden?: boolean }) => hidden ? <div className="cad-viewport" hidden /> : <div aria-label="3D model viewport" /> }));
 const datum: CadDatumPlaneFeature = { id: 'mount', name: 'Mount', kind: 'datum-plane', suppressed: false,
   definition: { kind: 'world', basePlane: 'XY', origin: [10, 20, 30], rotation: [30, 0, 0] } };
 const sketch: CadSketchFeature = { id: 'outline', name: 'Outline', kind: 'sketch', suppressed: false, plane: { kind: 'datum-plane', featureId: datum.id }, offset: 'lift / 2',
@@ -39,6 +39,8 @@ function button(label: string) {
   if (!result) throw new Error(`Missing button ${label}`); return result;
 }
 async function click(label: string) { await act(async () => button(label).click()); }
+/** A history click only selects; double-click opens the feature editor. */
+async function open(label: string) { await click(label); await act(async () => button(label).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))); }
 function field(label: string) {
   const result = [...container.querySelectorAll('label')].find(entry => entry.querySelector('span')?.childNodes[0]?.textContent === label);
   if (!result) throw new Error(`Missing field ${label}`); return result;
@@ -56,9 +58,13 @@ async function relation(label: string, value: string, keep = true) {
     if (!action || !close) throw new Error('Missing relation actions'); await act(async () => action.click()); await act(async () => close.click());
   }
 }
-async function choose(value: string) {
-  await act(async () => { const control = field('Reference plane').querySelector('select')!; control.value = value; control.dispatchEvent(new Event('change', { bubbles: true })); });
+/** Right-click a history row and run one of its menu commands. */
+async function menu(row: string, command: string) {
+  await act(async () => button(`Select ${row} in history`).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })));
+  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(entry => entry.textContent?.trim() === command);
+  if (!item) throw new Error(`Missing menu command ${command}`); await act(async () => item.click());
 }
+async function escape() { await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); }); }
 
 describe('datum placement editing with shared Session history', () => {
   it('creates a datum only on Apply and uses the selected accepted plane for Sketch and Curve creation', async () => {
@@ -67,7 +73,7 @@ describe('datum placement editing with shared Session history', () => {
     expect(session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: false, workflowOpen: false });
     await click('Plane'); await input('Origin Z', '25'); await click('Apply');
     const accepted = session.getSnapshot().document.features[0]; expect(accepted).toMatchObject({ kind: 'datum-plane', definition: { origin: [0, 0, 25] } });
-    await click('Sketch'); expect(field('Reference plane').querySelector('select')?.value).toBe(`datum:${accepted.id}`);
+    await click('Sketch');
     const created = session.getSnapshot().document.features[1]; expect(created).toMatchObject({ kind: 'sketch', plane: { kind: 'datum-plane', featureId: accepted.id } });
     expect(button('Finish sketch').disabled).toBe(false); expect(session.getSnapshot().workflowOpen).toBe(false);
     await click('Finish sketch'); await click(accepted.name); await click('Curve');
@@ -76,29 +82,28 @@ describe('datum placement editing with shared Session history', () => {
     await click('Undo'); expect(session.getSnapshot().document.features).toEqual([accepted]); await click('Undo'); expect(session.getSnapshot().document.features).toEqual([]);
   });
   it('preserves expression drafts through fields, commits one frame edit and reverses it atomically', async () => {
-    await mount(); await click('Mount'); const before = session.getSnapshot();
+    await mount(); await open('Mount'); const before = session.getSnapshot();
     await relation('Origin X', 'lift * 3'); await relation('Around X', 'tilt');
     expect(session.getSnapshot().document).toBe(before.document); expect(session.getSnapshot().workflowOpen).toBe(true);
     expect(button('Sketch').disabled).toBe(true); await click('Apply');
     const accepted = session.getSnapshot().document.features[0]; expect(accepted).toMatchObject({ definition: { origin: ['lift * 3', 20, 30], rotation: ['tilt', 0, 0] } });
     expect(session.getSnapshot().document.features[1]).toEqual(before.document.features[1]); expect(session.getSnapshot().workflowOpen).toBe(false);
     await click('Undo'); expect(session.getSnapshot().document).toEqual(before.document); await click('Redo'); expect(session.getSnapshot().document.features[0]).toEqual(accepted);
-    await relation('Around Y', '1 / 0', false); expect(document.querySelector('[role="alert"]')?.textContent).toContain('zero'); expect(button('Apply').disabled).toBe(true);
+    await open('Mount'); await relation('Around Y', '1 / 0', false); expect(document.querySelector('[role="alert"]')?.textContent).toContain('zero'); expect(button('Apply').disabled).toBe(true);
     expect(session.getSnapshot().document.features[0]).toBe(accepted);
     const close = document.querySelector<HTMLButtonElement>('button[aria-label="Close Around Y relation help"]'); if (!close) throw new Error('Missing relation close'); await act(async () => close.click());
     expect(session.getSnapshot().workflowOpen).toBe(false); expect(session.getSnapshot().document.features[0]).toBe(accepted);
   });
-  it('changes placement explicitly without rewriting imported local geometry/source and preserves Cancel', async () => {
-    await mount(); await click('Outline'); const before = session.getSnapshot();
-    expect(field('Reference plane').querySelector('select')?.value).toBe('datum:mount');
-    await choose('XZ'); expect(session.getSnapshot().document).toBe(before.document); await click('Cancel');
+  it('changes the sketch plane by picking a plane without rewriting imported local geometry/source and preserves Escape', async () => {
+    await mount(); await click('Expand Reference'); const before = session.getSnapshot();
+    await menu('Outline', 'Change sketch plane'); await escape();
     expect(session.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: before.canUndo, workflowOpen: false });
-    expect(field('Reference plane').querySelector('select')?.value).toBe('datum:mount');
-    await choose('YZ'); await click('Apply'); expect(session.getSnapshot().document.features[1]).toEqual({ ...sketch, plane: 'YZ' });
+    // The sketch now lies on the picked plane, so its former plane offset no longer applies.
+    await menu('Outline', 'Change sketch plane'); await click('Select YZ plane'); expect(session.getSnapshot().document.features[1]).toEqual({ ...sketch, plane: 'YZ', offset: 0 });
     const accepted = session.getSnapshot().document;
     await click('Undo'); expect(session.getSnapshot().document).toEqual(before.document);
     await click('Redo'); expect(session.getSnapshot().document).toEqual(accepted);
-    await click('Undo'); await click('Outline'); await click('Edit sketch');
+    await click('Undo'); await open('Outline');
     expect(container.querySelector('.cad-plane-label')?.textContent).toBe('Mount');
     const world = cadFramePointToWorld(resolveCadWorldDatum(datum, {}), 4, [2, 3]);
     expect(world).toEqual([12, expect.closeTo(20.598076211353316, 10), expect.closeTo(34.96410161513775, 10)]);
@@ -112,11 +117,10 @@ describe('datum placement editing with shared Session history', () => {
     expect(session.getSnapshot()).toMatchObject({ document: before.document, workflowOpen: false, canUndo: before.canUndo, canRedo: true });
     expect(session.getSnapshot().document.features[1]).toEqual(sketch);
   });
-  it('keeps unavailable datum selected truthfully while allowing an explicit principal replacement', async () => {
-    await mount({ ...createCadDocument(), parameters: { lift: 8 }, features: [{ ...datum, suppressed: true }, { ...sketch, suppressed: true }] }); await click('Outline');
-    const control = field('Reference plane').querySelector('select')!;
-    expect(control.selectedOptions[0].textContent).toBe('Mount (unavailable)'); expect(control.selectedOptions[0].disabled).toBe(true);
-    await choose('XY'); await click('Apply'); expect(session.getSnapshot().document.features[1]).toMatchObject({ plane: 'XY', suppressed: true });
+  it('rejects an unavailable datum as the new plane while allowing an explicit principal replacement', async () => {
+    await mount({ ...createCadDocument(), parameters: { lift: 8 }, features: [{ ...datum, suppressed: true }, { ...sketch, suppressed: true }] }); await click('Expand Reference');
+    await menu('Outline', 'Change sketch plane'); await click('Mount'); expect(session.getSnapshot().document.features[1]).toMatchObject({ plane: { kind: 'datum-plane', featureId: 'mount' } });
+    await click('Select XY plane'); expect(session.getSnapshot().document.features[1]).toMatchObject({ plane: 'XY', suppressed: true });
     const later = { ...datum, id: 'later', name: 'Later' };
     expect(cadPlacementOptions([datum, sketch, later], sketch.id, sketch.plane).some(option => option.value === 'datum:later')).toBe(false);
   });

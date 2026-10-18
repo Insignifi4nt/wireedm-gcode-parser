@@ -8,7 +8,7 @@ import { CadWorkbench } from './CadWorkbench';
 import { initialCadLoftSketchIds, inspectCadLoftCandidates } from './cadLoftUi';
 import { CadSession } from './cadSession';
 
-vi.mock('./CadViewport', () => ({ CadViewport: () => <div aria-label="3D model viewport" /> }));
+vi.mock('./CadViewport', () => ({ CadViewport: ({ hidden }: { hidden?: boolean }) => hidden ? <div className="cad-viewport" hidden /> : <div aria-label="3D model viewport" /> }));
 let root: Root; let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -44,6 +44,8 @@ function button(label: string): HTMLButtonElement {
   if (!found) throw new Error(`Button ${label} missing`); return found;
 }
 async function click(label: string) { await act(async () => button(label).click()); }
+/** A history click only selects; double-click on the selected row opens its editor. */
+async function openSelected() { await act(async () => { container.querySelector('.cad-tree-row[aria-pressed="true"]')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); }); }
 function select(label: string): HTMLSelectElement {
   const found = container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`) ?? [...container.querySelectorAll('label')].find(entry => entry.querySelector('span')?.childNodes[0]?.textContent === label)?.querySelector('select');
   if (!found) throw new Error(`Select ${label} missing`); return found;
@@ -134,7 +136,7 @@ describe('ordered loft section authoring', () => {
     await choose('Section 2', 'Base'); expect(ids()).toEqual(['Base', 'Middle']);
     await choose('Section 2', 'Top'); expect(ids()).toEqual(['Base', 'Top']); expect(document.activeElement).toBe(select('Section 2'));
     await choose('Transition', 'ruled'); await choose('Operation', 'join'); expect(select('Target body').value).toBe('pad');
-    await click('Apply'); const before = session.getSnapshot(); expect(loft(before.document.features.at(-1))).toMatchObject({ ruled: true, operation: 'join', targetId: 'pad' });
+    await click('Apply'); const before = session.getSnapshot(); expect(loft(before.document.features.at(-1))).toMatchObject({ ruled: true, operation: 'join', targetId: 'pad' }); await openSelected();
     expect(select('Target body').value).toBe('pad'); expect(select('Target body').querySelector('option[value="pad"]')).not.toBeNull();
     await choose('Operation', 'cut'); await click('Apply'); expect(loft(session.getSnapshot().document.features.at(-1)).operation).toBe('cut');
     await act(async () => session.undo()); expect(session.getSnapshot().document).toEqual(before.document);
@@ -195,6 +197,6 @@ describe('ordered loft section authoring', () => {
     await click('Cancel');
     const initial = parseCadDocument({ ...sectionDocument(), features: [sketch('Base', 0), sketch('Top', 20),
       { id: 'loft', name: 'Loft 1', kind: 'loft', suppressed: false, sketchIds: ['Base', 'Top'], ruled: false, operation: 'new', targetId: null }, sketch('Later', 30)] });
-    await mount(initial); await click('Loft 1'); expect(select('Section 1').querySelector('option[value="Later"]')).toBeNull(); expect(ids()).toEqual(['Base', 'Top']);
+    await mount(initial); await click('Loft 1'); await openSelected(); expect(select('Section 1').querySelector('option[value="Later"]')).toBeNull(); expect(ids()).toEqual(['Base', 'Top']);
   });
 });

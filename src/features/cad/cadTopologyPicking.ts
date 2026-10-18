@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import type { CadMesh, CadMeshTopologyGroup } from '@/domain/cad/cadDocument';
 import type { CadTopologyPick, CadTopologyPickSet } from '@/domain/cad/cadTopology';
 
-export type CadPickMode = 'body' | 'face' | 'edge';
+/** `auto` picks an edge near the pointer, else the face under it; the others restrict picking to one kind. */
+export type CadPickMode = 'auto' | 'body' | 'face' | 'edge';
 export interface CadTopologyHit { readonly bodyId: string; readonly pick: CadTopologyPick }
 
 /** Face offsets are triangle indices; edge offsets are line vertices, not XYZ scalars. */
@@ -54,10 +55,14 @@ export function validateTopologySelection(selection: CadTopologyPickSet, source:
 }
 
 export function pickTopology({ mode, raycaster, bodies, edges, meshByObject, camera, viewportHeight }: {
-  mode: 'edge' | 'face'; raycaster: THREE.Raycaster; bodies: readonly THREE.Mesh[];
+  mode: 'auto' | 'edge' | 'face'; raycaster: THREE.Raycaster; bodies: readonly THREE.Mesh[];
   edges: readonly THREE.LineSegments[]; meshByObject: ReadonlyMap<THREE.Object3D, CadMesh>;
   camera: THREE.OrthographicCamera; viewportHeight: number;
 }): CadTopologyHit | null {
+  if (mode === 'auto') {
+    const options = { raycaster, bodies, edges, meshByObject, camera, viewportHeight };
+    return pickTopology({ ...options, mode: 'edge' }) ?? pickTopology({ ...options, mode: 'face' });
+  }
   if (mode === 'face') {
     const hit = raycaster.intersectObjects([...bodies], false)[0];
     const mesh = hit && meshByObject.get(hit.object);

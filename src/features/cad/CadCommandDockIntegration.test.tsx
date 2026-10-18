@@ -10,8 +10,9 @@ const viewportMounted = vi.fn(), viewportUnmounted = vi.fn(), fit = vi.fn();
 // WebGL is unavailable in jsdom; keep the real drawer, Workbench and session.
 vi.mock('./CadViewport', async () => {
   const { CadViewTools } = await import('./CadCommandDock');
-  return { CadViewport: () => {
+  return { CadViewport: ({ hidden }: { hidden?: boolean }) => {
     useEffect(() => { viewportMounted(); return viewportUnmounted; }, []);
+    if (hidden) return <div className="cad-viewport" hidden />;
     return <div aria-label="3D model viewport"><CadViewTools label="Viewport controls"><button aria-label="Fit model" onClick={fit}>Fit</button></CadViewTools></div>;
   } };
 });
@@ -45,6 +46,7 @@ it.each(['View controls', 'Fit model'])('closes the drawer from %s without cance
   }
   await act(async () => root.render(<Harness />));
   await act(async () => button('Select Pad in history').click());
+  await act(async () => button('Select Pad in history').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(length(), '27');
     length().dispatchEvent(new Event('input', { bubbles: true }));

@@ -137,4 +137,27 @@ describe('fresh authored sketch picks', () => {
     expect(() => createCadFreshSketchDrawing({ drawing, construction: false, createId: () => `unused-${++allocations}` })).toThrow();
     expect(allocations).toBe(0);
   });
+
+  it('places fresh points on an existing line or the plane origin and axes with removable relations', () => {
+    const existingGraph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 20] }, { id: 'b', position: [40, 20] }],
+      entities: [{ id: 'top', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' }], relations: [] });
+    const drawing: CadFreshSketchDrawing = { kind: 'polygon', vertices: [
+      { kind: 'datum', point: [0, 0], datum: 'origin', relationIds: ['at-x', 'at-y'] },
+      { kind: 'datum', point: [30, 0], datum: 'x-axis', relationIds: ['on-x'] },
+      { kind: 'on-line', point: [25, 20], lineId: 'top', relationId: 'on-top' }] };
+    const created = createCadFreshSketchDrawing({ drawing, construction: false, createId: idFactory(), existingGraph });
+    if (created.kind !== 'polygon') throw new Error('Expected polygon role map.');
+    const [origin, axis, top] = created.vertexPointIds;
+    expect(created.geometry.relations.filter(relation => !relation.id.startsWith('fresh-'))).toEqual([
+      { id: 'at-x', kind: 'fixed-axis', pointId: origin, axis: 'x', value: 0 }, { id: 'at-y', kind: 'fixed-axis', pointId: origin, axis: 'y', value: 0 },
+      { id: 'on-x', kind: 'fixed-axis', pointId: axis, axis: 'y', value: 0 }, { id: 'on-top', kind: 'point-on-line', pointId: top, lineId: 'top' }]);
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: existingGraph }] });
+    expect(() => applyCadEdits(source, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: created.geometry }])).not.toThrow();
+    expect(() => createCadFreshSketchDrawing({ drawing: { kind: 'circle', center: { kind: 'datum', point: [0, .5], datum: 'y-axis', relationIds: ['r'] }, radius: 2 },
+      construction: false, createId: idFactory(), existingGraph })).not.toThrow();
+    expect(() => createCadFreshSketchDrawing({ drawing: { kind: 'circle', center: { kind: 'datum', point: [0, .5], datum: 'origin', relationIds: ['r', 's'] }, radius: 2 },
+      construction: false, createId: idFactory(), existingGraph })).toThrow('must lie exactly on it');
+    expect(() => createCadFreshSketchDrawing({ drawing: { kind: 'circle', center: { kind: 'on-line', point: [5, 20], lineId: 'gone', relationId: 'r' }, radius: 2 },
+      construction: false, createId: idFactory(), existingGraph })).toThrow('A picked line changed or no longer exists');
+  });
 });

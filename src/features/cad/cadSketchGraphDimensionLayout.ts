@@ -18,6 +18,8 @@ interface DimensionGeometry {
   readonly extensions: readonly Pair[];
   readonly arrows: readonly Arrow[];
   readonly label: SketchPoint;
+  /** Text direction in sketch radians; aligned dimensions read along their line (ISO 129), others stay horizontal. */
+  readonly labelAngle: number;
 }
 interface LinearDimensionGeometry extends DimensionGeometry { readonly valueMm: number; readonly line: Pair }
 export type CadSketchGraphDimensionLayout = LinearDimensionGeometry & (
@@ -37,18 +39,28 @@ export function cadSketchGraphDimensionLabel(value: number, kind: CadSketchGraph
   return { quantity, text: label, width: Math.max(42, label.length * 7 + 12), height: 18 };
 }
 
-/** Shared aligned dimension geometry; the caller chooses its geometric outward side. */
-function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixel: number): Omit<LinearDimensionGeometry, 'valueMm'> {
+/**
+ * Shared aligned dimension geometry; the caller chooses its geometric outward side.
+ * ISO 129 text runs parallel to an unbroken dimension line, above it and readable from the bottom or right.
+ * When "above" faces the measured geometry the line moves further out so the text stays clear of the part.
+ */
+function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixel: number, box: { readonly height: number }): Omit<LinearDimensionGeometry, 'valueMm'> {
   const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), ux = length === 0 ? 0 : dx / length, uy = length === 0 ? 0 : dy / length;
+  let readX = length === 0 ? -ny : ux, readY = length === 0 ? nx : uy;
+  if (readX < -1e-12 || Math.abs(readX) <= 1e-12 && readY < 0) { readX = -readX; readY = -readY; }
+  const upX = -readY, upY = readX, lineOffset = upX * nx + upY * ny < -1e-12 ? 20 + isoInwardClearance : 20;
   const offset = (point: Point2, pixels: number): SketchPoint => [point.x + nx * pixels * mmPerPixel, point.y + ny * pixels * mmPerPixel];
-  const line: Pair = [offset(a, 20), offset(b, 20)];
+  const line: Pair = [offset(a, lineOffset), offset(b, lineOffset)];
   const headLength = Math.min(6 * mmPerPixel, length / 4), headWidth = Math.min(2.5 * mmPerPixel, length / 8);
   const arrow = (point: SketchPoint, sign: number): Arrow => [point,
     [point[0] + ux * headLength * sign + nx * headWidth, point[1] + uy * headLength * sign + ny * headWidth],
     [point[0] + ux * headLength * sign - nx * headWidth, point[1] + uy * headLength * sign - ny * headWidth]];
-  return { line, extensions: [[offset(a, 3), offset(a, 22)], [offset(b, 3), offset(b, 22)]], arrows: length === 0 ? [] : [arrow(line[0], 1), arrow(line[1], -1)],
-    label: [a.x / 2 + b.x / 2 + nx * 20 * mmPerPixel, a.y / 2 + b.y / 2 + ny * 20 * mmPerPixel] };
+  const lift = (box.height / 2 + isoTextGap) * mmPerPixel;
+  return { line, extensions: [[offset(a, 3), offset(a, lineOffset + 2)], [offset(b, 3), offset(b, lineOffset + 2)]], arrows: length === 0 ? [] : [arrow(line[0], 1), arrow(line[1], -1)],
+    label: [line[0][0] / 2 + line[1][0] / 2 + upX * lift, line[0][1] / 2 + line[1][1] / 2 + upY * lift], labelAngle: Math.atan2(readY, readX) };
 }
+/** Screen pixels between an ISO dimension line and its text, and the extra line offset when text faces the part. */
+const isoTextGap = 2, isoInwardClearance = 8;
 
 type AlignedDimension = Extract<CadSketchGraphDimensionLayout, { kind: 'distance' | 'distance-x' | 'distance-y' | 'setback' }>;
 const isAlignedDimension = (dimension: CadSketchGraphDimensionLayout): dimension is AlignedDimension =>
@@ -63,12 +75,17 @@ function separateAlignedDimensions(dimensions: readonly CadSketchGraphDimensionL
     .sort((a, b) => length(a.dimension) - length(b.dimension) || (key(a.dimension) < key(b.dimension) ? -1 : key(a.dimension) > key(b.dimension) ? 1 : 0));
   const halfBox = (dimension: AlignedDimension, x: number, y: number) => {
     const box = cadSketchGraphDimensionLabel(dimension.valueMm, dimension.kind, dimension.relation.kind === 'reference-dimension');
-    return (Math.abs(x) * box.width + Math.abs(y) * box.height) * mmPerPixel / 2;
+    const cos = Math.cos(dimension.labelAngle), sin = Math.sin(dimension.labelAngle);
+    return (Math.abs(x * cos + y * sin) * box.width + Math.abs(y * cos - x * sin) * box.height) * mmPerPixel / 2;
   };
   const span = (dimension: AlignedDimension, x: number, y: number) => {
     const first = dimension.line[0][0] * x + dimension.line[0][1] * y, second = dimension.line[1][0] * x + dimension.line[1][1] * y;
     const center = dimension.label[0] * x + dimension.label[1] * y, half = halfBox(dimension, x, y);
     return [Math.min(first, second, center - half), Math.max(first, second, center + half)] as const;
+  };
+  const strip = (dimension: AlignedDimension, x: number, y: number) => {
+    const base = dimension.line[0][0] * x + dimension.line[0][1] * y, center = dimension.label[0] * x + dimension.label[1] * y, half = halfBox(dimension, x, y);
+    return [Math.min(base, center - half), Math.max(base, center + half)] as const;
   };
   for (const { dimension, index } of ordered) {
     const guide = dimension.extensions[0], dx = guide[1][0] - guide[0][0], dy = guide[1][1] - guide[0][1], guideLength = Math.hypot(dx, dy);
@@ -82,9 +99,9 @@ function separateAlignedDimensions(dimensions: readonly CadSketchGraphDimensionL
       if (otherLength ? Math.abs(ux * vy - uy * vx) > otherLength * 1e-12 : Math.abs(nx * oy - ny * ox) > Math.hypot(ox, oy) * 1e-12) return [];
       const interval = span(other, ux, uy);
       if (occupied[0] > interval[1] || occupied[1] < interval[0]) return [];
-      const distance = (dimension.line[0][0] - other.line[0][0]) * nx + (dimension.line[0][1] - other.line[0][1]) * ny;
-      const gap = halfBox(dimension, nx, ny) + halfBox(other, nx, ny) + 8 * mmPerPixel;
-      return [[-distance - gap, -distance + gap] as const];
+      // Each strip holds its line and its lifted text; a shift must clear the other strip by the margin.
+      const mine = strip(dimension, nx, ny), theirs = strip(other, nx, ny), margin = 8 * mmPerPixel;
+      return [[theirs[0] - margin - mine[1], theirs[1] + margin - mine[0]] as const];
     }).sort((a, b) => a[0] - b[0]);
     let offset = 0;
     for (const [start, end] of forbidden) { if (offset < start) break; if (offset < end) offset = end; }
@@ -104,7 +121,7 @@ function radialGeometry(center: Point2, radius: number, angle: number, valueMm: 
   const clearance = (Math.abs(ux) * box.width / 2 + Math.abs(uy) * box.height / 2 + 8) * mmPerPixel;
   const label: SketchPoint = [tip[0] + ux * clearance, tip[1] + uy * clearance];
   const headLength = Math.min(6 * mmPerPixel, radius / 4), headWidth = Math.min(2.5 * mmPerPixel, radius / 8);
-  return { line: [[center.x, center.y], label], extensions: [], label,
+  return { line: [[center.x, center.y], label], extensions: [], label, labelAngle: 0,
     arrows: [[tip, [tip[0] + ux * headLength - uy * headWidth, tip[1] + uy * headLength + ux * headWidth],
       [tip[0] + ux * headLength + uy * headWidth, tip[1] + uy * headLength - ux * headWidth]]] };
 }
@@ -129,7 +146,7 @@ function angularDimension(graph: CadSketchGraph, relation: Extract<CadSketchDime
       extensions: [[at(first.direction, 3 * mmPerPixel), at(first.direction, radius + 2 * mmPerPixel)],
         [at(second.direction, 3 * mmPerPixel), at(second.direction, radius + 2 * mmPerPixel)]],
       arrows: [arrow(start, first.direction, sign), arrow(end, second.direction, -sign)],
-      label: [vertex.x + ux * (radius + clearance), vertex.y + uy * (radius + clearance)] }];
+      label: [vertex.x + ux * (radius + clearance), vertex.y + uy * (radius + clearance)], labelAngle: 0 }];
   } catch { return []; } // A remote or uncertain support intersection cannot safely place an annotation.
 }
 
@@ -175,7 +192,7 @@ function cornerDimensions(graph: CadSketchGraph, relation: Extract<CadSketchDime
     if (!Number.isFinite(length) || length === 0 || !Number.isFinite(valueMm) || valueMm <= 0) return [];
     let nx = -dy / length, ny = dx / length;
     if ((other.x - vertex.x) * nx + (other.y - vertex.y) * ny > 0) { nx = -nx; ny = -ny; }
-    return [{ kind: 'setback', relation, side, lineId: relation.lineIds[side], valueMm, ...alignedGeometry(vertex, trim, nx, ny, mmPerPixel) }];
+    return [{ kind: 'setback', relation, side, lineId: relation.lineIds[side], valueMm, ...alignedGeometry(vertex, trim, nx, ny, mmPerPixel, cadSketchGraphDimensionLabel(valueMm, 'setback')) }];
   });
 }
 
@@ -222,7 +239,7 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
       const base = horizontal ? side < 0 ? Math.min(a.y, b.y) : Math.max(a.y, b.y) : side < 0 ? Math.min(a.x, b.x) : Math.max(a.x, b.x);
       const projectedA = horizontal ? { x: a.x, y: base } : { x: base, y: a.y };
       const projectedB = horizontal ? { x: b.x, y: base } : { x: base, y: b.y };
-      const geometry = alignedGeometry(projectedA, projectedB, nx, ny, mmPerPixel);
+      const geometry = alignedGeometry(projectedA, projectedB, nx, ny, mmPerPixel, cadSketchGraphDimensionLabel(valueMm, horizontal ? 'distance-x' : 'distance-y'));
       return [{ kind: horizontal ? 'distance-x' : 'distance-y', relation, valueMm, ...geometry,
         extensions: [a, b].map((point, index): Pair => [[point.x + nx * 3 * mmPerPixel, point.y + ny * 3 * mmPerPixel],
           [geometry.line[index][0] + nx * 2 * mmPerPixel, geometry.line[index][1] + ny * 2 * mmPerPixel]]) }];
@@ -235,7 +252,7 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
     const outward = (midpoint[0] - center[0]) * nx + (midpoint[1] - center[1]) * ny;
     const tie = Math.abs(outward) <= cadPathClosureTolerance([a, b, { x: center[0], y: center[1] }]);
     if (tie ? Math.abs(dx) >= Math.abs(dy) ? ny > 0 : nx < 0 : outward < 0) { nx = -nx; ny = -ny; }
-    return [{ kind: 'distance', relation, valueMm, ...alignedGeometry(a, b, nx, ny, mmPerPixel) }];
+    return [{ kind: 'distance', relation, valueMm, ...alignedGeometry(a, b, nx, ny, mmPerPixel, cadSketchGraphDimensionLabel(valueMm, 'distance', relation.kind === 'reference-dimension')) }];
   });
   return separateAlignedDimensions(dimensions, mmPerPixel);
 }

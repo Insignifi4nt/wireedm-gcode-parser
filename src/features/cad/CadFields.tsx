@@ -53,7 +53,7 @@ function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onC
       <CadExpressionBinding label={label} expression={value} parameters={context.parameters} resolved={resolved} onChange={changeRelation}
         description="A document parameter keeps this value linked. Relation and parameter edits stay in this draft until you Apply."
         onPendingChange={pending => context.setRelationPending(key, pending)} /></CadContextHelp></span>
-    <Input value={text} inputMode="decimal" spellCheck={false} readOnly={locked} aria-label={`${inputLabel}${unit ? ` ${unit}` : ''}`} aria-invalid={Boolean(issue) || undefined}
+    <Input data-cad-field-key={key} value={text} inputMode="decimal" spellCheck={false} readOnly={locked} aria-label={`${inputLabel}${unit ? ` ${unit}` : ''}`} aria-invalid={Boolean(issue) || undefined}
       onFocus={event => {
         const control = event.currentTarget;
         if (control.value !== exactText) {

@@ -145,7 +145,8 @@ function radialDimension(graph: CadSketchGraph, entity: CadSketchGraphEntity, pa
   const quantity = entity.kind === 'circle' ? 'diameter' : 'radius';
   return { id: crypto.randomUUID(), kind: 'radial-size', entityId: entity.id, quantity, value: radius * (quantity === 'diameter' ? 2 : 1) };
 }
-export type CadSketchRelationCommand = { readonly kind: 'inspect'; readonly relationId: string } | { readonly kind: 'length' | 'distance' | 'point-dimensions' | 'radial-size' | 'line-angle' | 'fillet' | 'chamfer' | 'move' };
+/** `relations` lists what constrains the selection without starting a new dimension. */
+export type CadSketchRelationCommand = { readonly kind: 'inspect'; readonly relationId: string } | { readonly kind: 'relations' | 'length' | 'distance' | 'point-dimensions' | 'radial-size' | 'line-angle' | 'fillet' | 'chamfer' | 'move' };
 type GeometryDraft = { readonly kind: 'fillet'; readonly radius: CadScalar } | { readonly kind: 'chamfer'; readonly setbacks: readonly [CadScalar, CadScalar] }
   | { readonly kind: 'move'; readonly x: string; readonly y: string };
 
@@ -154,6 +155,8 @@ export interface CadSketchRelationsPanelProps {
   sketch: CadSketchFeature;
   selection: readonly CadSketchGraphSelection[];
   initialCommand?: CadSketchRelationCommand;
+  /** Shows only the dimension that `initialCommand` places; positional relations stay with the Constrain tools and the relations list. */
+  dimensionOnly?: boolean;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
   onPendingChange(pending: boolean): void;
   onPrepareEdits?: CadPrepareEdits;
@@ -175,8 +178,9 @@ export function CadSketchRelationsPanel(props: CadSketchRelationsPanelProps) {
   return <RelationsForm key={JSON.stringify([props.document.id, props.sketch.id, props.selection, props.cancelSignal])} {...props} graph={graph} />;
 }
 
-function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onInspectSubject, onCornerAccepted, onEditPattern, onSelectPatternSeed, onPlaceGeometry, interactionLocked }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
+function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onInspectSubject, onCornerAccepted, onEditPattern, onSelectPatternSeed, onPlaceGeometry, interactionLocked, dimensionOnly: dimensionRequested = false }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
   const submission = useCadEditSubmission();
+  const form = useRef<HTMLFormElement>(null);
   const singleton = selection.length === 1 ? selection[0] : null;
   const pointPair = selectedPointPair(selection);
   const pointLine = selectedPointLine(selection, graph);
@@ -219,6 +223,15 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const [error, setError] = useState<string | CadSketchConstraintFeedback | null>(initialAngle?.error ?? null), [resetVersion, setResetVersion] = useState(0);
   const [inspectedFailure, setInspectedFailure] = useState<{ feedback: CadSketchConstraintFeedback; subject: CadSketchConstraintFeedbackSubject } | null>(null);
   const [activeRelationId, setActiveRelationId] = useState<string | null>(initialCommand?.kind === 'inspect' ? initialCommand.relationId : initialDimension?.id ?? null);
+  // A dimension started from the toolbar or picked on the canvas is ready for typing: its first editable value takes focus, Enter applies and Escape resets.
+  const [typedRelationId] = useState(() => initialCommand && initialCommand.kind !== 'relations' ? activeRelationId : null);
+  const dimensionOnly = dimensionRequested && (initialCommand?.kind === 'length' || initialCommand?.kind === 'distance' || initialCommand?.kind === 'point-dimensions' || initialCommand?.kind === 'radial-size' || initialCommand?.kind === 'line-angle');
+  useLayoutEffect(() => {
+    if (!typedRelationId) return;
+    const field = [...form.current?.querySelectorAll<HTMLInputElement>('input[data-cad-field-key]') ?? []]
+      .find(input => input.dataset.cadFieldKey?.startsWith(`${typedRelationId}/`) && !input.readOnly && !input.disabled);
+    field?.focus({ preventScroll: true }); field?.select();
+  }, [typedRelationId]);
   const callbacks = useRef({ onPendingChange, onPreviewDocument, onInspectRelation, onInspectSubject }); callbacks.current = { onPendingChange, onPreviewDocument, onInspectRelation, onInspectSubject };
   const reset = useCallback(() => {
     submission.cancel(); setSource(latest.current); setDraft(latest.current.graph); setGeometryDraft(null);
@@ -475,7 +488,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
             {relation.kind === 'chamfer-corner' && <span>{relation.values.map(value => relationQuantity(value, parameters)).join(' / ')}</span>}
           </Button><Button type="button" aria-label={relation.kind === 'linear-pattern' ? 'Detach pattern' : relation.kind === 'external-reference' ? 'Detach reference' : `Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title={relation.kind === 'linear-pattern' ? 'Detach all occurrences and retain their current geometry' : relation.kind === 'external-reference' ? 'Detach this source link and retain the current geometry' : 'Remove this relation and retain the current geometry'} disabled={relation.kind === 'linear-pattern' && (pending || !onEditPattern)} onClick={() => { if (relation.kind === 'linear-pattern') onEditPattern?.(relation.id,true); else removeRelation(relation.id); }}><CloseIcon size={12} /></Button>
         </li>)}</ul>;
-  return <form className="cad-property-form cad-sketch-profile-panel" aria-label="Sketch relations" aria-busy={submission.applying || undefined}
+  return <form ref={form} className="cad-property-form cad-sketch-profile-panel" aria-label="Sketch relations" aria-busy={submission.applying || undefined}
     onKeyDown={event => { if (event.key === 'Escape' && pending && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); reset(); } }}
     onSubmit={event => {
       event.preventDefault();
@@ -485,7 +498,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         reset(); if (candidate.created) onCornerAccepted?.(candidate.created.entityId, candidate.created.relationId);
       }, cause => setError(cause instanceof CadSketchPreparationError ? cause.feedback : cause instanceof Error ? cause.message : 'Unable to apply this sketch relation.'));
     }}>
-    <div className="cad-property-title">{move ? 'Move selection' : corner ? corner.kind === 'fillet' ? 'Sketch fillet' : 'Sketch chamfer' : pointPair ? 'Point pair' : linePair ? 'Line pair' : curvePair ? 'Curve pair' : selection.length > 1 ? `${selection.length} selected` : selectedPoint ? 'Point' : selectedEntity?.kind === 'circle' ? 'Circle' : selectedEntity?.kind === 'line' ? 'Line' : 'Arc'}
+    <div className="cad-property-title">{dimensionOnly ? 'Dimension' : move ? 'Move selection' : corner ? corner.kind === 'fillet' ? 'Sketch fillet' : 'Sketch chamfer' : pointPair ? 'Point pair' : linePair ? 'Line pair' : curvePair ? 'Curve pair' : selection.length > 1 ? `${selection.length} selected` : selectedPoint ? 'Point' : selectedEntity?.kind === 'circle' ? 'Circle' : selectedEntity?.kind === 'line' ? 'Line' : 'Arc'}
       {move && <CadContextHelp label="Move selection">Translate the selected points and edges together without changing their sizes. Shared endpoints also change their incident edges. Outside points and existing dimensions stay in place; a blocked move rejects instead of stretching the selection or releasing constraints.</CadContextHelp>}
       {corner && <CadContextHelp label="Corner treatment">The original corner stays as a reference, preserving its dimensions. Fillet radius rounds this corner tangentially. Chamfer setbacks measure from the original corner along the two incident lines.</CadContextHelp>}
       {!move && pointPair && <CadContextHelp label="Point pair dimensions">Aligned measures straight-line distance. Horizontal measures ΔX; Vertical measures ΔY, from the first point to the second. Positive X is right and positive Y is up; negative values reverse the direction. These dimensions keep the separation, leaving the reference free until you fix it. Horizontal/Vertical checkboxes align points without setting a size.</CadContextHelp>}
@@ -494,7 +507,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       {!move && curvePair && <CadContextHelp label="Equal radius">Keeps the actual radii of these circles or arcs equal. Arc sweep and position remain independent. Add a radius or diameter dimension to control their shared size; two free curves still have a size freedom. Existing drivers stay in force.</CadContextHelp>}</div>
     <fieldset key={resetVersion} className="cad-feature-fields" disabled={interactionLocked || submission.applying}>
       {selectedPattern && <div className="cad-sketch-profile-actions"><span>{selectedPattern.index === 0 ? 'Pattern seed' : `Pattern occurrence ${selectedPattern.index + 1}`}</span><Button type="button" disabled={pending || !onEditPattern} onClick={() => onEditPattern?.(selectedPattern.relation.id)}>Edit pattern</Button>{selectedPattern.index > 0 && <Button type="button" disabled={pending || !onSelectPatternSeed} onClick={() => onSelectPatternSeed?.(selectedPattern.relation.seed.entityId)}>Select seed</Button>}<CadContextHelp label="Pattern ownership">Copies follow the seed and pitch. Edit the pattern to omit or restore copies; detach before moving or resizing one independently.</CadContextHelp></div>}
-      {!pending && sketch.graph && <CadSketchSelectionMeasurements graph={sketch.graph} parameters={cadDocument.parameters} selection={selection} pointPair={pointRoles} />}
+      {!pending && !dimensionOnly && sketch.graph && <CadSketchSelectionMeasurements graph={sketch.graph} parameters={cadDocument.parameters} selection={selection} pointPair={pointRoles} />}
       {selectedReference && <div className="cad-sketch-profile-heading"><LinkIcon size={13} /><span className="min-w-0 truncate">{referenceSourceName}</span>
         <CadContextHelp label="Linked reference">This construction edge follows its source sketch. Its position and size are read-only; use it for snaps or to constrain other geometry. Detach retains the current shape and local relations.</CadContextHelp>
         {selectedEntity?.kind === 'circle' && <span>R {formatCadQuantity(evaluateCadScalar(selectedEntity.radius, parameters))} mm</span>}
@@ -504,27 +517,27 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       {selection.length > 1 && <div className="text-xs text-muted-foreground">{pointRoles ? pointRoles.map((id, index) => `${index ? 'To' : 'From'} Point ${graph.points.findIndex(point => point.id === id) + 1}`).join(' → ') : entityPair ? entityPair.map(id => describeCadSketchConstraintSource(graph, { kind: 'entity', id }).label).join(' · ') : pointLine ? `Point ${graph.points.findIndex(point => point.id === pointLine.pointId) + 1} · ${describeCadSketchConstraintSource(graph, { kind: 'entity', id: pointLine.lineId }).label}` : `${selection.filter(atom => atom.kind === 'point').length} points · ${selection.filter(atom => atom.kind === 'entity').length} edges`}</div>}
       {passiveMeasurement && <div className="cad-sketch-profile-actions"><Button type="button" onClick={addReference}><MeasureIcon size={13} /> Reference {passiveLabel}</Button>
         <CadContextHelp label="Reference dimension">Save a measurement on the sketch. It follows the geometry and does not constrain or move it. Use Make driving to set its size deliberately.</CadContextHelp></div>}
-      {selectedEntity?.kind === 'line' && dimensionPair && <div className="cad-sketch-profile-actions">
+      {!dimensionOnly && selectedEntity?.kind === 'line' && dimensionPair && <div className="cad-sketch-profile-actions">
         {(['horizontal', 'vertical'] as const).map(kind => <label key={kind} className="cad-check"><Input type="checkbox" aria-label={kind === 'horizontal' ? 'Horizontal' : 'Vertical'}
           disabled={Boolean(selectedReference)} title={referenceLock ?? undefined} checked={draft.relations.some(relation => relation.kind === kind && samePair(relation, dimensionPair))} onChange={event => toggleLineAxis(kind, event.target.checked)} />{kind === 'horizontal' ? 'Horizontal' : 'Vertical'}</label>)}
         <Button type="button" title={referenceLock ?? undefined} disabled={Boolean(selectedReference) || draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, dimensionPair))} onClick={() => addLength()}><MeasureIcon size={13} /> Add length</Button>
       </div>}
-      {tangent && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label="Tangent"
+      {!dimensionOnly && tangent && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label="Tangent"
         disabled={!tangent.endpoints || Boolean(patternLock)} title={patternLock ?? tangent.reason ?? undefined}
         checked={draft.relations.some(relation=>sameTangent(relation,tangent.endpoints))} onChange={event=>toggleTangent(event.target.checked)} />Tangent</label>
         <CadContextHelp label="Tangent">Keeps a line and arc smoothly joined at their shared endpoints. Use Coincident to join separate endpoints first. Existing dimensions remain in force. A fillet already controls tangency at its own contacts.</CadContextHelp></div>}
-      {symmetry && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label={symmetry.label} disabled={Boolean(patternLock)} title={patternLock ?? undefined}
+      {!dimensionOnly && symmetry && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label={symmetry.label} disabled={Boolean(patternLock)} title={patternLock ?? undefined}
         checked={draft.relations.some(relation=>relation.kind==='symmetric'&&relation.lineId===symmetry.lineId&&samePair(relation,symmetry.pointIds))}
         onChange={event=>toggleSymmetry(event.target.checked)} />{symmetry.label}</label>
         <CadContextHelp label="Point symmetry">Keeps these two positions mirrored about the selected line. Circle selections use their centers; radii and other dimensions keep their own drivers. The axis follows its existing constraints. Construction and linked reference lines can be axes.</CadContextHelp></div>}
       {pointPair && !patternLock && <div className="cad-sketch-profile-actions cad-sketch-pair-actions">
-        {(['coincident', 'horizontal', 'vertical'] as const).map(kind => <label key={kind} className="cad-check"><Input type="checkbox" aria-label={kind[0].toUpperCase() + kind.slice(1)}
+        {!dimensionOnly && (['coincident', 'horizontal', 'vertical'] as const).map(kind => <label key={kind} className="cad-check"><Input type="checkbox" aria-label={kind[0].toUpperCase() + kind.slice(1)}
           title={kind === 'coincident' ? 'Keeps the selected points together as a shared sketch joint.' : undefined}
           checked={draft.relations.some(relation => relation.kind === kind && samePair(relation, pointPair))} onChange={event => togglePairRelation(kind, event.target.checked)} />{kind[0].toUpperCase() + kind.slice(1)}</label>)}
         <Button type="button" autoFocus={initialCommand?.kind === 'point-dimensions'} onClick={() => addLength()}><MeasureIcon size={13} /> Aligned distance</Button>
         {(['x', 'y'] as const).map(axis => <Button type="button" key={axis} onClick={() => addLength(axis)}><MeasureIcon size={13} />{axis === 'x' ? 'Horizontal distance' : 'Vertical distance'}</Button>)}
       </div>}
-      {pointLine && !patternLock && <div className="cad-sketch-profile-actions cad-sketch-pair-actions">
+      {!dimensionOnly && pointLine && !patternLock && <div className="cad-sketch-profile-actions cad-sketch-pair-actions">
         {(['point-on-line', 'midpoint'] as const).map(kind => {
           const owner = draft.relations.find(relation => (relation.kind === 'midpoint' || relation.kind === 'point-on-line') && relation.pointId === pointLine.pointId && relation.lineId === pointLine.lineId);
           const checked = draft.relations.some(relation => relation.kind === kind && relation.pointId === pointLine.pointId && relation.lineId === pointLine.lineId);
@@ -535,7 +548,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         <CadContextHelp label="Point on line">Keeps the point on the selected line or its extension. It can slide along the guide unless other dimensions constrain it. The guide follows its own constraints. This does not join material boundaries or add a circle-size constraint.</CadContextHelp>
       </div>}
       {linePair && <div className="cad-sketch-profile-actions cad-sketch-pair-actions">
-        {(['parallel', 'perpendicular'] as const).map(kind => {
+        {!dimensionOnly && (['parallel', 'perpendicular'] as const).map(kind => {
           const checked = draft.relations.some(relation => relation.kind === kind && sameEntityPair(relation, linePair));
           const blocker = angleOwner ?? orientationOwner, blocked = !checked && Boolean(blocker);
           return <label key={kind} className="cad-check"><Input type="checkbox" aria-label={relationLabels[kind]}
@@ -546,11 +559,11 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         <Button type="button" disabled={Boolean(orientationOwner)} title={orientationOwner ? `Remove ${relationLabel(orientationOwner)} before adding Angle.` : 'Drive the actual corner angle'} onClick={addAngle}><MeasureIcon size={13} /> {angleOwner ? 'Edit angle' : 'Add angle'}</Button>
       </div>}
       {choosingAngle && angleChoices && <CadSketchAngleSectors sectors={angleChoices} onChoose={relation => { changeRelation(relation); setActiveRelationId(relation.id); setChoosingAngle(false); }} />}
-      {centerPair && !patternLock && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label="Concentric"
+      {!dimensionOnly && centerPair && !patternLock && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label="Concentric"
         checked={sharedCenter || Boolean(centerRelation)} disabled={sharedCenter} title={sharedCenter ? 'These centers already share a point or connected coincidence relations.' : undefined}
         onChange={event => togglePairRelation('coincident', event.target.checked, centerPair)} />Concentric</label>
         <CadContextHelp label="Concentric">Aligns arc and circle centers independently of their sizes. Existing dimensions remain in force; free geometry follows the sketch constraints. Uses a coincidence between their exact center points. Centers that already share a point or connecting relations remain concentric; edit those relations to change the connection.</CadContextHelp></div>}
-      {entityPair && !patternLock && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label={linePair ? 'Equal length' : 'Equal radius'}
+      {!dimensionOnly && entityPair && !patternLock && <div className="cad-sketch-profile-actions cad-sketch-pair-actions"><label className="cad-check"><Input type="checkbox" aria-label={linePair ? 'Equal length' : 'Equal radius'}
         checked={draft.relations.some(relation => relation.kind === (linePair ? 'equal-length' : 'equal-radius') && sameEntityPair(relation, entityPair))}
         onChange={event => toggleEntityPairRelation(linePair ? 'equal-length' : 'equal-radius', event.target.checked)} />{linePair ? 'Equal length' : 'Equal radius'}</label></div>}
       {selectedEntity && selectedEntity.kind !== 'line' && !radialOwner && !selectedReference && !patternLock && <div className="cad-sketch-profile-actions">
@@ -559,7 +572,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
           <MeasureIcon size={13} /> {acceptedRadial ? 'Restore' : 'Add'} {acceptedRadial?.quantity ?? (selectedEntity.kind === 'circle' ? 'diameter' : 'radius')}
         </Button>
       </div>}
-      {!corner && selectedPoint && <div className="cad-sketch-profile-actions">{(['x', 'y'] as const).map(axis => {
+      {!corner && !dimensionOnly && selectedPoint && <div className="cad-sketch-profile-actions">{(['x', 'y'] as const).map(axis => {
         const fixed = draft.relations.some(relation => relation.kind === 'fixed-point' && relation.pointId === selectedPoint.id);
         const own = draft.relations.some(relation => relation.kind === 'fixed-axis' && relation.pointId === selectedPoint.id && relation.axis === axis);
         const driven = typeof selectedPoint.position[axis === 'x' ? 0 : 1] === 'string';
@@ -578,7 +591,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         {selectedEntity?.kind === 'circle' && !radialOwner && !selectedReference && !patternLock && <ScalarField fieldKey="radius" label="Radius" value={selectedEntity.radius} parameters={parameters} onChange={radius => {
           setError(null); setDraft(current => ({ ...current, entities: current.entities.map(entity => entity.id === selectedEntity.id && entity.kind === 'circle' ? { ...entity, radius } : entity) }));
         }} />}
-        {!corner && relations.length > 0 && (relations.length > 4
+        {!corner && !dimensionOnly && relations.length > 0 && (relations.length > 4
           ? <details className="cad-sketch-relations-disclosure" open={Boolean(activeRelation)}><summary>Relations <span>{relations.length}</span></summary>{relationList}</details>
           : relationList)}
         {activeRelation && (activeRelation.kind === 'distance' || activeRelation.kind === 'axis-distance' || activeRelation.kind === 'fixed-axis' || activeRelation.kind === 'line-angle') && <ScalarField fieldKey={`${activeRelation.id}/value`} label={labelRelation(activeRelation)} unit={activeRelation.kind === 'line-angle' ? 'deg' : 'mm'} value={activeRelation.value} parameters={parameters} onChange={value => changeRelation({ ...activeRelation, value })} />}

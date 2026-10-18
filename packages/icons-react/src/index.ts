@@ -75,6 +75,7 @@ export { LocateIcon } from './icons/locate.js';
 export { PinIcon, Pin } from './icons/pin.js';
 export { DepartureIcon, ArrowRightFromLine } from './icons/departure.js';
 export { TurnIcon, CornerDownRight } from './icons/turn.js';
+export { ConstraintIcon, Perpendicular } from './icons/constraint.js';
 export { TrimIcon, Scissors } from './icons/trim.js';
 export { ScanIcon, Scan } from './icons/scan.js';
 export { SectionViewIcon, ScanLine } from './icons/section-view.js';

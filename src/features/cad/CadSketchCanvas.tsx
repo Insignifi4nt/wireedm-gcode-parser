@@ -3,7 +3,7 @@ import { cadSketchLinearPatternForSelection } from '@/domain/cad/cadSketchLinear
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { CloseIcon, ConfirmIcon, FitViewIcon, GridIcon, SnapIcon, UndoIcon } from '@wire-edm/icons-react';
 import { CadContextHelp } from './CadContextHelp';
 import { CadDrawingTools, CadViewTools } from './CadCommandDock';
@@ -12,11 +12,11 @@ import { resolveCadCurveGeometry } from '@/domain/cad/cadCurve';
 import { captureSvgPreview } from '@/features/editor/captureEditorPreview';
 import { ToolError } from '@/features/webmcp/siteTools';
 import type { CadRenderedViewControls, CadRenderedViewState } from './cadViewportControls';
-import { closeSketchPolygon, snapSketchPoint, twoPointSketchProfile, type SketchPoint, type SketchTool } from './cadSketchInteraction';
+import { closeSketchPolygon, DRAG_GRID_CATCH_PIXELS, magnetSketchPoint, snapSketchPoint, twoPointSketchProfile, type SketchPoint, type SketchTool } from './cadSketchInteraction';
 import { CadSketchProfileGeometry } from './CadSketchProfileGeometry';
 import { createCadSketchHandlePicker, createCadSketchProfilePicker, type CadSketchHandlePick } from './cadSketchPicking';
 import { cadPathDraftEndpoint, closeCadPathDraft, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, updateCadPathDraft, type CadPathDraft, type CadPathDrawingAction } from './cadPathDrawing';
-import { prepareCadSketchGeometrySnaps, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
+import { cadSketchSnapRelation, cadSketchSnapTargetLabel, prepareCadSketchGeometrySnaps, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
 import { prepareCadSketchProfilePositionSnaps } from './cadSketchProfilePositionSnaps';
 import { cadSketchProfileSnapLabel } from './cadSketchSnapLabels';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
@@ -28,7 +28,7 @@ import { CadSketchDimensionControls, type CadSketchDimensionControlsProps } from
 import { readCadFitArea, type CadFitAreaReader } from './cadFitArea';
 import { translateCadSketchProfile } from '@/domain/cad/cadSketchConstraints';
 import { cadSketchHandleKey, moveCadSketchHandle, type CadSketchHandle } from '@/domain/cad/cadSketchHandles';
-import { formatCadQuantity } from './cadDisplayQuantity';
+import { formatCadLocalizedQuantity, formatCadQuantity } from './cadDisplayQuantity';
 import { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
 import { cadSketchExternalReferenceForSelection } from '@/domain/cad/cadSketchExternalReferences';
 import { CadSketchLinearPatternPreview } from './CadSketchLinearPatternPreview';
@@ -37,16 +37,21 @@ import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { cadArcSvgPath } from './cadSketchSvg';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadSketchBoxSelection } from './useCadSketchBoxSelection';
-import { cadSketchGeometryPickAllows, cadSketchGraphSelectionsEqual, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
+import { cadSketchDatumLabels, cadSketchGeometryPickAllows, cadSketchGraphSelectionsEqual, pickCadSketchDatum, type CadSketchDatum, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import { CadContextMenu, type CadContextMenuItem } from './CadContextMenu';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
-import type { CadFreshSketchDrawing, CadFreshSketchPick } from '@/domain/cad/cadFreshSketchGraph';
+import { cadFreshSketchDatumAxes, type CadFreshSketchDrawing, type CadFreshSketchPick } from '@/domain/cad/cadFreshSketchGraph';
 import { CadSketchSplitPreview, prepareCadSketchSplitPreview, type CadSketchSplitPreview as SplitPreview } from './CadSketchSplitPreview';
 import { CadSketchTrimPreview, prepareCadSketchTrimPreview, type CadSketchTrimPreview as TrimPreview,
   CadSketchExtendPreview, prepareCadSketchExtendPreview, prepareCadSketchExtendEndPreview, type CadSketchExtendPreview as ExtendPreview } from './CadSketchBoundaryPreview';
 
 const NO_PROFILES: readonly CadSketchProfile[] = Object.freeze([]);
 const snapDraftStart = prepareCadSketchGeometrySnaps();
+/** Snap targets that place a point along a curve or guide rather than at a point of its own. */
+const SNAP_PLACEMENTS: ReadonlySet<CadSketchSnapCandidate['target']['kind']> = new Set(['on-entity', 'on-axis', 'aligned']);
+const ACQUIRED_POINTS = 4;
+/** Picks whose relations name source geometry, so the source must not change while they are pending. */
+const referencesSource = (pick: CadFreshSketchPick) => pick.kind === 'coincident' || pick.kind === 'on-line';
 type DrawingPick = { readonly point: SketchPoint } & (
   | { readonly candidates: readonly CadSketchSnapCandidate[]; readonly existingPointId?: never; readonly candidate?: never }
   | { readonly existingPointId?: string; readonly candidate?: CadSketchSnapCandidate; readonly candidates?: never }
@@ -130,6 +135,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   dimensionControls?: Pick<CadSketchDimensionControlsProps, 'document' | 'onEditMany' | 'onPendingChange' | 'interactionLocked' | 'onInspectInput' | 'onConfigure'>;
   getFitArea?: CadFitAreaReader;
 }) {
+
   const sketch = previewSketch && sourceSketch.kind === 'sketch' && previewSketch.id === sourceSketch.id ? previewSketch : sourceSketch;
   const isPreview = Boolean(previewProfile || sketch !== sourceSketch);
   const submission = useCadEditSubmission();
@@ -144,6 +150,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const overlapPending = overlap !== null;
   const choicePending = snapChoice !== null;
   const interactionLocked = baseInteractionLocked || overlapPending || choicePending;
+  /** Select and Trim pick existing geometry; every other tool places new points. */
+  const drawing = tool !== 'select' && tool !== 'trim';
   const svg = useRef<SVGSVGElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const instructionsId = useId();
@@ -158,6 +166,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const measuredAspect = useRef(aspect);
   const [snap, setSnap] = useState(true);
+  // Sketching is free by default. The grid is a visual reference; snapping to it is an opt-in magnet.
+  const [gridSnap, setGridSnap] = useState(false);
   const [grid, setGrid] = useState(true);
   const [gridStep, setGridStep] = useState(5);
   const profileDrag = useRef<CadSketchProfileDrag | null>(null);
@@ -168,6 +178,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const ownedHandleEdit = useRef<{ readonly profileId: string; readonly handle: CadSketchHandle; readonly expectedText: string } | null>(null);
   const selectionRevision = useRef({ version: documentVersion, sketch });
   const [hoverHandle, setHoverHandle] = useState<CadSketchHandlePick | null>(null);
+  const [datumHover, setDatumHover] = useState<CadSketchDatum | null>(null);
+  // Points the pointer rested on while drawing; each one offers horizontal and vertical guides.
+  const acquired = useRef<readonly SketchPoint[]>([]);
+  // Trim previews the edge piece under the cursor against the exact accepted graph; a click removes it and Trim stays active.
+  const [trimHover, setTrimHover] = useState<{ readonly prepared: CadSketchOverlapPick['prepared']; readonly preview: TrimPreview } | null>(null);
   const suppressProfileClick = useRef(false);
   const pendingChange = useRef(onPendingChange);
   pendingChange.current = onPendingChange;
@@ -214,7 +229,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const graphSourceParameters = graphControls?.document.parameters ?? parameters;
   const attachedSource = useRef<{ readonly sketch: typeof sourceSketch; readonly version: typeof documentVersion;
     readonly parameters: typeof graphSourceParameters; readonly document: CadSketchGraphControls['document'] | undefined } | null>(null);
-  useLayoutEffect(() => { if (!picks.some(pick => pick.kind === 'coincident')) attachedSource.current = null; }, [picks]);
+  useLayoutEffect(() => { if (!picks.some(referencesSource)) attachedSource.current = null; }, [picks]);
   const attachedSourceCurrent = () => {
     const owned = attachedSource.current;
     if (!owned || owned.sketch === sourceSketch && owned.version === documentVersion && owned.parameters === graphSourceParameters && owned.document === graphControls?.document) return true;
@@ -233,6 +248,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     const hits = sourceGraph?.pick(point, millimetersPerPixel, graphPickFilter) ?? [];
     return geometryPick ? hits.filter(hit => cadSketchGeometryPickAllows(geometryPick, hit)) : hits;
   };
+  // The plane origin and axes join a pick only when its owner accepts them.
+  const datumPick = geometryPick?.onPickDatum && geometryPick.eligibleDatums?.length ? geometryPick : undefined;
+  const datumAt = (point: SketchPoint, millimetersPerPixel: number) => datumPick?.eligibleDatums ? pickCadSketchDatum(point, millimetersPerPixel, datumPick.eligibleDatums) : null;
   const selectGraphHit = (hit: CadSketchGraphSelection, additive = false) => {
     if (geometryPick) { if (cadSketchGeometryPickAllows(geometryPick, hit)) geometryPick.onPick(hit); }
     else graphControls?.onSelect(hit, additive);
@@ -256,7 +274,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const visibleHandles = previewHandlePicker.handles.filter(handle => handle.profileId === handleProfile?.id);
   const displayHandles = hoverHandle && hoverHandle.profileId !== handleProfile?.id ? [...visibleHandles, hoverHandle] : visibleHandles;
   useLayoutEffect(() => { finishPan(); }, [documentVersion, interactionLocked, cancelSignal, sketch.id, profilePicker, finishPan]);
-  useLayoutEffect(() => { finishProfileDrag(); }, [documentVersion, sketch, parameters, tool, interactionLocked, cancelSignal, previewProfile, center, span, aspect, snap, gridStep, navigationMode, finishProfileDrag]);
+  useLayoutEffect(() => { finishProfileDrag(); }, [documentVersion, sketch, parameters, tool, interactionLocked, cancelSignal, previewProfile, center, span, aspect, snap, gridSnap, gridStep, navigationMode, finishProfileDrag]);
   useLayoutEffect(() => {
     if (profileDrag.current && profileDrag.current.profile.id !== selectedProfileId) finishProfileDrag();
     setDetailSelection(current => current.kind === 'handle' && current.target.profileId === selectedProfileId ? current : { kind: 'profile' });
@@ -285,33 +303,49 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     const draftStart = positionPick ? undefined : tool === 'path' && pathDraft.kind !== 'idle' && pathDraft.kind !== 'arc-through'
       ? { point: pathDraft.start, ...(pathDraft.startPointId === undefined ? {} : { pointId: pathDraft.startPointId }) }
       : tool === 'polygon' && points.length >= 3 ? { point: points[0] } : undefined;
-    if (tool !== 'select' || positionPick) {
+    if (drawing || positionPick) {
       if (tool === 'polygon' && draftStart) {
         // Closing an owned draft is explicit topology intent, independent of
         // other saved points at that same position. It never borrows their IDs.
         const closure = snapDraftStart({ cursor: raw, mmPerPixel, draftStart });
         if (closure.kind === 'hit') return { point: closure.candidate.point, candidate: closure.candidate };
       }
-      const result = (snap ? drawingSnaps : snapDraftStart)({ cursor: raw, mmPerPixel, draftStart });
-      if (result.kind === 'hit') return drawingCandidate(result.candidate);
+      const result = (snap ? drawingSnaps : snapDraftStart)({ cursor: raw, mmPerPixel, draftStart, references: snap, alignTo: snap ? alignSources() : undefined });
       if (result.kind === 'ambiguous') return { point: raw, candidates: result.candidates };
+      // A grid the user asked to snap to outranks positions along a curve or guide, never a point.
+      if (result.kind === 'hit' && !(gridSnap && SNAP_PLACEMENTS.has(result.candidate.target.kind) && gridNode(raw, mmPerPixel))) return drawingCandidate(result.candidate);
     }
-    return { point: snapSketchPoint(raw, gridStep, snap) };
+    return { point: gridNode(raw, mmPerPixel) ?? raw };
+  };
+  const gridNode = (raw: SketchPoint, mmPerPixel: SketchPoint): SketchPoint | null => {
+    const point = magnetSketchPoint(raw, gridStep, gridSnap, DRAG_GRID_CATCH_PIXELS * Math.max(mmPerPixel[0], mmPerPixel[1]));
+    return point === raw ? null : point;
+  };
+  // Inference guides start from the drawing's own placed points and the points the pointer recently rested on.
+  const alignSources = (): readonly SketchPoint[] => {
+    const own = positionPick ? [] : tool === 'path' ? pathDraft.kind === 'idle' ? [] : [pathDraft.start, ...pathDraft.segments.map(segment => segment.end), ...(pathDraft.kind === 'arc-through' ? [pathDraft.end] : [])]
+      // A rectangle's own first corner would only offer a zero-height or zero-width rectangle.
+      : tool === 'rectangle' ? [] : points;
+    return [...own, ...acquired.current];
   };
   const cursorPick = resolveDrawingPick(cursorInput.point, cursorInput.suppressed, cursorInput.mode);
   const cursor = cursorPick.point;
-  const snapHint = (tool !== 'select' || positionPick) && !interactionLocked ? cursorPick.candidate : undefined;
+  const snapHint = (drawing || positionPick) && !interactionLocked ? cursorPick.candidate : undefined;
   const freshDrawing = sourceSketch.kind === 'sketch' && (tool === 'rectangle' || tool === 'circle' || tool === 'polygon');
   const canInfer = !positionPick && freshDrawing && Boolean(onAddFreshSketch);
-  const inferencePoint = canInfer && inferCoincidence && !(tool === 'circle' && picks.length) && snapHint && 'pointId' in snapHint.target ? snapHint.target.pointId : undefined;
+  const inferring = canInfer && inferCoincidence && !(tool === 'circle' && picks.length);
+  const inferencePoint = inferring && snapHint && 'pointId' in snapHint.target ? snapHint.target.pointId : undefined;
+  const inferenceRelation = inferring && snapHint ? cadSketchSnapRelation(snapHint.target) : null;
   const snapLabel = inferencePoint ? `Coincident with Point ${(sourceGraph?.graph.points.findIndex(point => point.id === inferencePoint) ?? -1) + 1}`
     : snapHint ? snapHint.target.kind === 'profile-position' ? `${cadSketchProfileSnapLabel(snapHint.target, sourceProfiles)} · Position only · No relation`
     : snapHint.target.kind === 'draft-start' ? tool === 'polygon' ? 'Close profile' : 'Path start'
-    : cursorPick.existingPointId ? `Join ${snapHint.target.kind}` : `${snapHint.target.kind[0].toUpperCase()}${snapHint.target.kind.slice(1)} position · No relation` : '';
+    : cursorPick.existingPointId ? `Join ${snapHint.target.kind}`
+    : 'pointId' in snapHint.target || snapHint.target.kind === 'midpoint' ? `${snapHint.target.kind[0].toUpperCase()}${snapHint.target.kind.slice(1)} position · No relation`
+    : `${cadSketchSnapTargetLabel(snapHint.target)} · ${inferenceRelation ?? 'No relation'}` : '';
   const snapHighlight: CadSketchGraphSelection | null = snapHint && 'pointId' in snapHint.target ? { kind: 'point', id: snapHint.target.pointId }
-    : snapHint?.target.kind === 'midpoint' ? { kind: 'entity', id: snapHint.target.entityId } : null;
+    : snapHint && 'entityId' in snapHint.target ? { kind: 'entity', id: snapHint.target.entityId } : null;
   useEffect(() => {
-    if (tool === 'select' && !positionPick) return;
+    if (!drawing && !positionPick) return;
     const modifiers = (event: KeyboardEvent) => {
       if (event.isComposing || event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
       setCursorInput(current => current.suppressed === (event.ctrlKey || event.metaKey) ? current : { ...current, suppressed: event.ctrlKey || event.metaKey });
@@ -351,14 +385,14 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   }, []);
   const renderedPlane = useMemo(() => typeof sketch.plane === 'string' ? sketch.plane : Object.freeze({ ...sketch.plane }), [sketch.plane]);
   const viewRevision = useRef({ signature: '', revision: 0 });
-  const viewSignature = JSON.stringify([sketch.plane, center, span, aspect, grid, snap, gridStep, pickFilter, boxPending, graphPending, pickHighlight, choicePending,
+  const viewSignature = JSON.stringify([sketch.plane, center, span, aspect, grid, snap, gridSnap, gridStep, pickFilter, boxPending, graphPending, pickHighlight, choicePending,
     choiceHighlight ? [choiceHighlight.target, choiceHighlight.point, choiceHighlight.entityIds] : null,
-    overlap ? [overlap.clientX, overlap.clientY, overlap.target, overlap.split, overlap.trim, overlap.extend, overlap.extendEnds, overlap.extendEnd, overlap.action] : null, tool !== 'select' || positionPick ? [cursor, picks, pathDraft] : null,
+    overlap ? [overlap.clientX, overlap.clientY, overlap.target, overlap.split, overlap.trim, overlap.extend, overlap.extendEnds, overlap.extendEnd, overlap.action] : null, drawing || positionPick ? [cursor, picks, pathDraft] : null, tool === 'trim' ? trimHover?.preview : null,
     snapHint ? [snapHint.target, snapHint.point, snapLabel] : null, previewProfile?.geometry, previewSketch ? [previewSketch.profiles, previewSketch.graph] : null,
     graphControls ? [graphControls.selection, graphControls.relation, graphControls.inspection, graphControls.degreesOfFreedom, graphControls.showDimensions, placement] : null, inspection, dragPreview?.translation]);
   if (viewRevision.current.signature !== viewSignature) { viewRevision.current = { signature: viewSignature, revision: viewRevision.current.revision + 1 }; }
-  const currentView = useRef<CadRenderedViewState>({ mode: sketch.kind, available: false, plane: renderedPlane, gridVisible: grid, snapEnabled: snap, gridStepMm: gridStep, centerMm: center, heightSpanMm: span, revision: viewRevision.current.revision });
-  currentView.current = Object.freeze({ mode: sketch.kind, available: Boolean(svg.current), plane: renderedPlane, gridVisible: grid, snapEnabled: snap, gridStepMm: gridStep, centerMm: Object.freeze([...center] satisfies [number, number]), heightSpanMm: span, revision: viewRevision.current.revision, ...(sketch.kind === 'sketch' ? { sketchPickFilter: pickFilter } : {}) });
+  const currentView = useRef<CadRenderedViewState>({ mode: sketch.kind, available: false, plane: renderedPlane, gridVisible: grid, snapEnabled: snap, gridSnapEnabled: gridSnap, gridStepMm: gridStep, centerMm: center, heightSpanMm: span, revision: viewRevision.current.revision });
+  currentView.current = Object.freeze({ mode: sketch.kind, available: Boolean(svg.current), plane: renderedPlane, gridVisible: grid, snapEnabled: snap, gridSnapEnabled: gridSnap, gridStepMm: gridStep, centerMm: Object.freeze([...center] satisfies [number, number]), heightSpanMm: span, revision: viewRevision.current.revision, ...(sketch.kind === 'sketch' ? { sketchPickFilter: pickFilter } : {}) });
   const fitView = useRef<(() => void) | null>(null);
   const initialCursorFit = useRef(false);
   useLayoutEffect(() => {
@@ -392,8 +426,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     onControlsReady?.(controls);
     return () => onControlsReady?.(null, controls);
   }, [onControlsReady]);
-  useEffect(() => { setPicks([]); setPathDraft(createCadPathDraft()); }, [sketch.id, tool, cancelSignal]);
+  useEffect(() => { setPicks([]); setPathDraft(createCadPathDraft()); setTrimHover(null); }, [sketch.id, tool, cancelSignal]);
   useLayoutEffect(() => { setCursorInput(current => ({ ...current, mode: 'position' })); }, [sourceSketch, graphSourceParameters, tool, cancelSignal, center, span, aspect]);
+  useEffect(() => { acquired.current = []; }, [sourceSketch, tool, cancelSignal]);
   const pathPending = tool === 'path' && pathDraft.kind !== 'idle';
   useLayoutEffect(() => { onPendingChange(points.length > 0 || pathPending || dragPreview !== null || submission.applying || graphPending || boxPending || overlapPending || choicePending); }, [points.length, pathPending, dragPreview !== null, submission.applying, graphPending, boxPending, overlapPending, choicePending, onPendingChange]);
   const publishGraphPending = useCallback((value: boolean) => {
@@ -407,6 +442,18 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     if (!rect || rect.width === 0 || rect.height === 0) return null;
     return [center[0] + (event.clientX - rect.left - rect.width / 2) / rect.width * width, center[1] - (event.clientY - rect.top - rect.height / 2) / rect.height * span];
   };
+  const trimAt = (event: { clientX: number; clientY: number }): TrimPreview | null => {
+    const point = getRawPoint(event), rect = svg.current?.getBoundingClientRect();
+    if (tool !== 'trim' || !sourceGraph || !graphControls || sourceSketch.kind !== 'sketch' || isPreview || !point || !rect?.height) return null;
+    const edge = sourceGraph.pick(point, span / rect.height, 'edges').find(hit => hit.kind === 'entity');
+    return edge ? prepareCadSketchTrimPreview(sourceGraph, sourceSketch.id, edge.id, point) : null;
+  };
+  const trimEdge = (event: { clientX: number; clientY: number }) => {
+    const preview = interactionLocked || viewLocked ? null : trimAt(event);
+    if (preview?.kind !== 'ready' || !graphControls) return;
+    const { edit } = preview; setTrimHover(null);
+    submitEdit(signal => graphControls.onEditMany([edit], signal), () => undefined, 'Unable to trim this edge.');
+  };
   const spatialFrameKey = JSON.stringify([renderedPlane, center, span, aspect, viewportSize]);
   const projectSelection = (event: { clientX: number; clientY: number }) => {
     const point = getRawPoint(event), rect = svg.current?.getBoundingClientRect();
@@ -415,9 +462,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   // Identity pins the complete accepted source, unfinished drawing and camera.
   // Cursor movement over the menu does not change the captured drawing intent.
   const drawingOwner = useMemo(() => ({ sourceSketch, drawingSnaps, parameters: graphSourceParameters, document: graphControls?.document,
-    documentVersion, tool, picks, pathDraft, inferCoincidence, snap, gridStep, cancelSignal, spatialFrameKey, positionPick,
+    documentVersion, tool, picks, pathDraft, inferCoincidence, snap, gridSnap, gridStep, cancelSignal, spatialFrameKey, positionPick,
     pathAvailable: Boolean(onAddPath), freshAvailable: Boolean(onAddFreshSketch) }),
-  [sourceSketch, drawingSnaps, graphSourceParameters, graphControls?.document, documentVersion, tool, picks, pathDraft, inferCoincidence, snap, gridStep, cancelSignal, spatialFrameKey, positionPick, Boolean(onAddPath), Boolean(onAddFreshSketch)]);
+  [sourceSketch, drawingSnaps, graphSourceParameters, graphControls?.document, documentVersion, tool, picks, pathDraft, inferCoincidence, snap, gridSnap, gridStep, cancelSignal, spatialFrameKey, positionPick, Boolean(onAddPath), Boolean(onAddFreshSketch)]);
   const choiceEnvironment = useRef({ owner: drawingOwner, locked: false });
   // Our own drawing pending locks navigation; viewLocked must not dismiss its chooser.
   choiceEnvironment.current = { owner: drawingOwner, locked: baseInteractionLocked || overlapPending || isPreview };
@@ -564,7 +611,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const getDrawingPick = (event: { clientX: number; clientY: number; ctrlKey: boolean; metaKey: boolean }): DrawingPick => {
     const raw = getRawPoint(event) ?? [0, 0], suppressed = event.ctrlKey || event.metaKey, rect = svg.current?.getBoundingClientRect();
     setCursorInput({ point: raw, suppressed, mode: 'pointer' });
-    return resolveDrawingPick(raw, suppressed, 'pointer', [width / (rect?.width || 0), span / (rect?.height || 0)]);
+    const pick = resolveDrawingPick(raw, suppressed, 'pointer', [width / (rect?.width || 0), span / (rect?.height || 0)]);
+    const target = pick.candidate?.target;
+    if (pick.candidate && target && !SNAP_PLACEMENTS.has(target.kind) && target.kind !== 'draft-start'
+      && !acquired.current.some(point => point[0] === pick.point[0] && point[1] === pick.point[1])) acquired.current = [pick.candidate.point, ...acquired.current].slice(0, ACQUIRED_POINTS);
+    return pick;
   };
   const pickGrip = (event: { target: EventTarget | null }, point: SketchPoint, millimetersPerPixel: number) => {
     const key = event.target instanceof Element ? event.target.closest('[data-cad-sketch-grip]')?.getAttribute('data-cad-sketch-grip') : null;
@@ -594,7 +645,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     if (!active.moved && Math.hypot(event.clientX - active.clientX, event.clientY - active.clientY) <= 4) return;
     active.moved = true; suppressProfileClick.current = true;
     const anchor = active.anchor ?? [0, 0];
-    const snapped = snapSketchPoint([anchor[0] + (event.clientX - active.clientX) * active.mmPerPixelX, anchor[1] - (event.clientY - active.clientY) * active.mmPerPixelY], active.gridStep, active.snap);
+    const snapped = magnetSketchPoint([anchor[0] + (event.clientX - active.clientX) * active.mmPerPixelX, anchor[1] - (event.clientY - active.clientY) * active.mmPerPixelY], active.gridStep, active.snap,
+      DRAG_GRID_CATCH_PIXELS * Math.max(active.mmPerPixelX, active.mmPerPixelY));
     const translation: SketchPoint = [snapped[0] - anchor[0], snapped[1] - anchor[1]];
     try {
       const profile = active.handle ? moveCadSketchHandle({ profile: active.profile, handle: active.handle, translation, parameters: active.parameters })
@@ -637,7 +689,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const add = (geometry: CadProfile, drawing?: CadFreshSketchDrawing) => {
     try {
       if (!attachedSourceCurrent()) return;
-      if (drawing && !onAddFreshSketch && picks.some(pick => pick.kind === 'coincident')) throw new Error('The attached drawing cannot be saved by this editor. Cancel or release its pending relations.');
+      if (drawing && !onAddFreshSketch && picks.some(pick => pick.kind !== 'position')) throw new Error('The attached drawing cannot be saved by this editor. Cancel or release its pending relations.');
       submitEdit(signal => drawing && onAddFreshSketch ? onAddFreshSketch(drawing, signal) : onAddProfile(geometry, signal), () => setPicks([]), 'Unable to add this profile.');
     }
     catch (error) { onError(error instanceof Error ? error.message : 'Unable to add this profile.'); }
@@ -671,7 +723,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       target[1] + (area.top + area.height / 2 - viewport.clientHeight / 2) * heightSpan / viewport.clientHeight] : target;
     setCenter(framedCenter); setSpan(heightSpan);
     if (initialCursorFit.current) {
-      const snapped = snapSketchPoint(target, gridStep, snap);
+      const snapped = snapSketchPoint(target, gridStep, gridSnap);
       setCursorInput({ point: Math.abs(snapped[0] - target[0]) <= heightSpan * measuredAspect.current / 2 && Math.abs(snapped[1] - target[1]) <= heightSpan / 2 ? snapped : target, suppressed: false, mode: 'position' });
     }
   };
@@ -685,12 +737,34 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const pathEnd = pathDraft.kind === 'idle' ? null : cadPathDraftEndpoint(pathDraft);
   const pathNeedsClosingLine = pathDraft.kind === 'ready' && pathDraft.segments.length > 0 && pathEnd !== null
     && (pathEnd[0] !== pathDraft.start[0] || pathEnd[1] !== pathDraft.start[1]);
-  const instruction = positionPick ? `${positionPick.label} · Escape cancels` : geometryPick ? `${geometryPick.label} · Escape cancels` : tool === 'path' ? pathDraft.kind === 'idle' ? sketch.kind === 'curve' ? 'Click the curve start.' : 'Click the path start.' : pathDraft.kind === 'arc-through' ? pathPreview.kind === 'invalid' ? pathPreview.message : 'Click a point on the arc.' : pathMode === 'arc' ? 'Click the arc endpoint.' : sketch.kind === 'curve' ? 'Click the next endpoint; Finish curve to save.' : onAddPath ? 'Click the next endpoint; finish open or close the path.' : 'Click the next endpoint; Close profile to finish.' : tool === 'select' ? sketch.kind === 'curve' ? 'Edit curve dimensions in Properties.' : 'Select a profile to edit dimensions' : tool === 'polygon' ? points.length ? 'Click vertices. Click the first point or Close profile to finish.' : 'Click the first vertex of a closed profile' : points.length ? tool === 'circle' ? 'Click to set the radius' : tool === 'slot' ? 'Click an axis endpoint. Edit the slot width in Properties.' : 'Click the opposite corner' : tool === 'circle' ? 'Click the circle center' : tool === 'slot' ? 'Click the slot center' : 'Click the first corner';
+  const currentTrim = tool === 'trim' && trimHover?.prepared === sourceGraph && !interactionLocked ? trimHover.preview : null;
+  const datumProps = (datum: CadSketchDatum, className: string) => {
+    const eligible = Boolean(datumPick?.eligibleDatums?.includes(datum)) && !interactionLocked, picked = Boolean(geometryPick?.pickedDatums?.includes(datum));
+    const state = `${className}${eligible ? ' is-pick-eligible' : ''}${eligible && datumHover === datum ? ' is-pick-highlighted' : ''}${picked ? ' is-selected' : ''}`;
+    return eligible ? { className: state, strokeWidth: span / 300, role: 'button', tabIndex: 0, 'aria-label': `Use ${cadSketchDatumLabels[datum].toLowerCase()}`, 'data-cad-sketch-datum': datum,
+      onKeyDown: (event: ReactKeyboardEvent<SVGElement>) => { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); event.stopPropagation(); datumPick?.onPickDatum?.(datum); } }
+      : { className: state, 'aria-hidden': true, 'data-cad-sketch-datum': datum };
+  };
+  const instruction = positionPick ? `${positionPick.label} · Escape cancels` : geometryPick ? `${geometryPick.label} · Escape cancels`
+    : tool === 'trim' ? currentTrim?.kind === 'ready' ? 'Click to remove the red piece · Escape returns to Select' : currentTrim?.reason ?? 'Point at the piece of an edge to remove · Escape returns to Select'
+    : tool === 'path' ? pathDraft.kind === 'idle' ? sketch.kind === 'curve' ? 'Click the curve start.' : 'Click the path start.' : pathDraft.kind === 'arc-through' ? pathPreview.kind === 'invalid' ? pathPreview.message : 'Click a point on the arc.' : pathMode === 'arc' ? 'Click the arc endpoint.' : sketch.kind === 'curve' ? 'Click the next endpoint; Finish curve to save.' : onAddPath ? 'Click the next endpoint; finish open or close the path.' : 'Click the next endpoint; Close profile to finish.' : tool === 'select' ? sketch.kind === 'curve' ? 'Edit curve dimensions in Properties.' : 'Select a profile to edit dimensions' : tool === 'polygon' ? points.length ? 'Click vertices. Click the first point or Close profile to finish.' : 'Click the first vertex of a closed profile' : points.length ? tool === 'circle' ? 'Click to set the radius' : tool === 'slot' ? 'Click an axis endpoint. Edit the slot width in Properties.' : 'Click the opposite corner' : tool === 'circle' ? 'Click the circle center' : tool === 'slot' ? 'Click the slot center' : 'Click the first corner';
   let preview: CadProfile | null = null;
   const first = points[0];
   if (first && (tool === 'rectangle' || tool === 'circle' || tool === 'slot')) {
     try { preview = twoPointSketchProfile(tool, first, cursor); } catch { /* The preview starts at zero size. */ }
   }
+  // The unfinished shape's size follows the cursor; the accepted geometry keeps the exact picked positions.
+  const readout = (value: number) => formatCadLocalizedQuantity(value, 2);
+  const segmentReadout = (from: SketchPoint) => {
+    const dx = cursor[0] - from[0], dy = cursor[1] - from[1];
+    return `${readout(Math.hypot(dx, dy))} mm · ${readout(Math.atan2(dy, dx) * 180 / Math.PI)}°`;
+  };
+  const drawingReadout = interactionLocked || positionPick ? null
+    : preview?.kind === 'rectangle' && typeof preview.width === 'number' && typeof preview.height === 'number' ? `${readout(Math.abs(preview.width))} × ${readout(Math.abs(preview.height))} mm`
+    : preview?.kind === 'circle' && typeof preview.radius === 'number' ? `Ø ${readout(preview.radius * 2)} mm`
+    : preview?.kind === 'slot' && typeof preview.length === 'number' && typeof preview.angle === 'number' ? `${readout(preview.length)} mm · ${readout(preview.angle)}°`
+    : tool === 'polygon' && points.length ? segmentReadout(points[points.length - 1])
+    : tool === 'path' && pathPreview.kind === 'line' && pathEnd ? segmentReadout(pathEnd) : null;
   const placePoint = (point: SketchPoint, existingPointId?: string, candidate?: CadSketchSnapCandidate) => {
     if (interactionLocked) return;
     if (positionPick) {
@@ -698,13 +772,19 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       return;
     }
     if (tool === 'select') { onSelectProfile(null); return; }
+    if (tool === 'trim') return;
     if (tool === 'path') { changePath({ kind: 'point', point, ...(existingPointId === undefined ? {} : { existingPointId }) }); return; }
     if (!attachedSourceCurrent()) return;
-    const authoredPick = (): CadFreshSketchPick => canInfer && inferCoincidence && candidate && 'pointId' in candidate.target
-      ? Object.freeze({ kind: 'coincident', point, sourcePointId: candidate.target.pointId, relationId: crypto.randomUUID() })
-      : Object.freeze({ kind: 'position', point });
+    const authoredPick = (): CadFreshSketchPick => {
+      const target = canInfer && inferCoincidence ? candidate?.target : undefined;
+      if (target && 'pointId' in target) return Object.freeze({ kind: 'coincident', point, sourcePointId: target.pointId, relationId: crypto.randomUUID() });
+      if (target?.kind === 'on-entity' && target.entityKind === 'line') return Object.freeze({ kind: 'on-line', point, lineId: target.entityId, relationId: crypto.randomUUID() });
+      const datum = target?.kind === 'origin' ? 'origin' as const : target?.kind === 'on-axis' ? target.axis === 'x' ? 'x-axis' as const : 'y-axis' as const : null;
+      return datum ? Object.freeze({ kind: 'datum', point, datum, relationIds: Object.freeze(cadFreshSketchDatumAxes(datum).map(() => crypto.randomUUID())) })
+        : Object.freeze({ kind: 'position', point });
+    };
     const appendPick = (pick: CadFreshSketchPick) => {
-      if (pick.kind === 'coincident' && !attachedSource.current) attachedSource.current = { sketch: sourceSketch, version: documentVersion, parameters: graphSourceParameters, document: graphControls?.document };
+      if (referencesSource(pick) && !attachedSource.current) attachedSource.current = { sketch: sourceSketch, version: documentVersion, parameters: graphSourceParameters, document: graphControls?.document };
       setPicks([...picks, pick]);
     };
     if (tool === 'polygon') {
@@ -747,7 +827,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     return { x: Math.max(125, Math.min(viewportSize.width - 125, x)), y: Math.max(60, Math.min(viewportSize.height - 220, y)) };
   }, [dimensionBounds, viewportSize, center, width, span]);
   return <div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}>
-    <svg ref={svg} className={`cad-sketch-canvas ${tool !== 'select' ? 'is-drawing' : ''}`} role="application" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio="none"
+    <svg ref={svg} className={`cad-sketch-canvas ${drawing ? 'is-drawing' : tool === 'trim' ? 'is-trimming' : ''}`} role="application" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio="none"
       onContextMenu={(event) => event.preventDefault()}
       onPointerDownCapture={event => {
         if (positionPick && event.button === 0) {
@@ -776,11 +856,14 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           // focus on the canvas rather than the profile's millimetre bounding box.
           event.preventDefault();
           event.currentTarget.focus({ preventScroll: true });
+          if (tool === 'trim') { suppressProfileClick.current = true; trimEdge(event); return; }
           if (tool === 'select' && sketch.kind === 'sketch' && !viewLocked && !isPreview) {
             const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
             const graphHit = point && rect.height ? graphPicks(point, span / rect.height)[0] : null;
             if (graphHit) { selectGraphHit(graphHit, event.shiftKey); suppressProfileClick.current = true; return; }
-            if (geometryPick) return;
+            const datum = point && rect.height ? datumAt(point, span / rect.height) : null;
+            if (datum) { datumPick?.onPickDatum?.(datum); suppressProfileClick.current = true; return; }
+            if (geometryPick) { geometryPick.onConfirm?.(); return; }
             const grip = pickFilter === 'auto' && onMoveHandle && point && rect.height ? pickGrip(event, point, span / rect.height) : null;
             if (grip) {
               setActiveHandle(grip);
@@ -794,7 +877,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             if (profile && rect.width && rect.height) {
               profileDrag.current = { profile, sketch, parameters, pointerId: event.pointerId, element: event.currentTarget,
                 clientX: event.clientX, clientY: event.clientY, mmPerPixelX: width / rect.width, mmPerPixelY: span / rect.height,
-                snap, gridStep, handle: grip?.handle ?? null, anchor: grip?.point ?? null, moved: false, translation: [0, 0] };
+                snap: gridSnap, gridStep, handle: grip?.handle ?? null, anchor: grip?.point ?? null, moved: false, translation: [0, 0] };
               try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishProfileDrag(); }
             }
           }
@@ -840,6 +923,16 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           setCenter([active.center[0] - (event.clientX - active.x) / rect.width * width, active.center[1] + (event.clientY - active.y) / rect.height * span]);
         } else {
           getDrawingPick(event);
+          if (tool === 'trim') {
+            const preview = interactionLocked || viewLocked ? null : trimAt(event);
+            setTrimHover(preview && sourceGraph ? { prepared: sourceGraph, preview } : null);
+          }
+          if (datumPick && !interactionLocked && !viewLocked) {
+            const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
+            const graphHit = event.target instanceof Element && event.target.closest('[data-cad-sketch-point], [data-cad-sketch-entity]');
+            const next = !graphHit && point && rect.height ? datumAt(point, span / rect.height) : null;
+            if (next !== datumHover) setDatumHover(next);
+          }
           if (tool === 'select' && !geometryPick && !positionPick && onMoveHandle && !interactionLocked && !viewLocked) {
             const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
             const graphHit = event.target instanceof Element && event.target.closest('[data-cad-sketch-point], [data-cad-sketch-entity]');
@@ -847,7 +940,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           }
         }
       }}
-      onPointerLeave={() => { setHoverHandle(null); setCursorInput(current => ({ ...current, point: cursor, mode: 'position' })); }}
+      onPointerLeave={() => { setHoverHandle(null); setDatumHover(null); setTrimHover(null); setCursorInput(current => ({ ...current, point: cursor, mode: 'position' })); }}
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing) return;
         if (positionPick && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); positionPick.onCancel(); return; }
@@ -876,6 +969,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         }
         if (event.ctrlKey || event.metaKey || event.altKey || event.target !== event.currentTarget) return;
         if (event.key.toLowerCase() === 'f') { if (!viewLocked) { event.preventDefault(); fit(); } return; }
+        if (geometryPick?.onConfirm && !positionPick && !interactionLocked && event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); geometryPick.onConfirm(); return; }
         if (interactionLocked || geometryPick && !positionPick) return;
         if (event.key === 'Delete' && !positionPick && tool === 'select' && graphControls?.selection.length && graphControls.onDelete) {
           event.preventDefault(); event.stopPropagation(); graphControls.onDelete(graphControls.selection[graphControls.selection.length - 1]); return;
@@ -884,7 +978,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
           event.preventDefault();
           setCursorInput({ point: [cursor[0] + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0), cursor[1] + (event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0)], suppressed: false, mode: 'position' });
-        } else if ((event.key === 'Enter' || event.key === ' ') && (tool !== 'select' || positionPick)) {
+        } else if ((event.key === 'Enter' || event.key === ' ') && (drawing || positionPick)) {
           event.preventDefault();
           if (positionPick) acceptDrawingPick(cursorPick);
           else if (event.key === 'Enter' && tool === 'path' && pathDraft.kind === 'ready') finishPath(true);
@@ -910,12 +1004,13 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             setActiveHandle(grip);
             onSelectProfile(grip?.profileId ?? profilePicker.pick(point, span / rect.height));
           }
-        } else acceptDrawingPick(getDrawingPick(event), event);
+        } else if (drawing) acceptDrawingPick(getDrawingPick(event), event);
       }}>
       <defs><pattern id="cad-sketch-grid" x={-center[0] % gridStep} y={center[1] % gridStep} width={gridStep} height={gridStep} patternUnits="userSpaceOnUse"><path d={`M ${gridStep} 0 H 0 V ${gridStep}`} fill="none" stroke="#29373f" strokeWidth={span / 1000} /></pattern></defs>
       {grid && span / gridStep < 2000 && <rect x={-width / 2} y={-span / 2} width={width} height={span} fill="url(#cad-sketch-grid)" />}
-      {Math.abs(center[1]) <= span / 2 && <path d={`M ${-width / 2} ${center[1]} H ${width / 2}`} className="cad-axis-x" strokeWidth={span / 700} />}
-      {Math.abs(center[0]) <= width / 2 && <path d={`M ${-center[0]} ${-span / 2} V ${span / 2}`} className="cad-axis-y" strokeWidth={span / 700} />}
+      {Math.abs(center[1]) <= span / 2 && <path d={`M ${-width / 2} ${center[1]} H ${width / 2}`} strokeWidth={span / 700} {...datumProps('x-axis', 'cad-axis-x')} />}
+      {Math.abs(center[0]) <= width / 2 && <path d={`M ${-center[0]} ${-span / 2} V ${span / 2}`} strokeWidth={span / 700} {...datumProps('y-axis', 'cad-axis-y')} />}
+      {Math.abs(center[0]) <= width / 2 && Math.abs(center[1]) <= span / 2 && <circle cx={-center[0]} cy={center[1]} r={span / 140} strokeWidth={span / 700} {...datumProps('origin', 'cad-sketch-origin')} />}
       <g transform="scale(1,-1)" strokeWidth={span / 450}>
         {savedCurve && <g className="cad-profile is-selected"><CadPathDraftGeometry segments={savedCurve.segments} preview={false} viewCenter={center} /></g>}
         {(!graphControls || !sourceGraph) && graphGeometry?.segments.map(segment => {
@@ -955,11 +1050,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           })}
         </g>}
         {graphControls && sourceSketch.kind === 'sketch' && sourceGraph && <CadSketchGraphLayer controls={boxSelection.box ? { ...graphControls, selection: boxSelection.box.selections } : graphControls} sketch={sourceSketch} version={documentVersion} prepared={sourceGraph} visual={visualGraph ?? undefined}
-          center={center} scaleX={width / (viewportSize.width || 800)} scaleY={span / (viewportSize.height || 600)} gridStep={gridStep} snap={snap} active={tool === 'select'}
+          center={center} scaleX={width / (viewportSize.width || 800)} scaleY={span / (viewportSize.height || 600)} gridStep={gridStep} snap={snap} gridSnap={gridSnap} active={tool === 'select'}
           filter={graphPickFilter} highlighted={snapHighlight ?? pickHighlight} pickAt={event => { const point = getRawPoint(event), rect = svg.current?.getBoundingClientRect(); return point && rect?.height ? graphPicks(point, span / rect.height)[0] ?? null : null; }}
           locked={externalInteractionLocked || Boolean(positionPick && !geometryPick) || submission.applying || points.length > 0 || pathPending || dragPreview !== null || boxPending || overlapPending || choicePending} cancelSignal={cancelSignal} onPendingChange={publishGraphPending} onError={onError} />}
         {graphControls?.patternInteraction && sourceSketch.kind === 'sketch' && (previewSketch ?? sourceSketch).graph && <CadSketchLinearPatternPreview graph={(previewSketch ?? sourceSketch).graph!} parameters={parameters} interaction={graphControls.patternInteraction} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {currentOverlap?.action === 'split' && currentOverlap.split?.kind === 'ready' && <CadSketchSplitPreview preview={currentOverlap.split} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
+        {currentTrim?.kind === 'ready' && <CadSketchTrimPreview preview={currentTrim} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {currentOverlap?.action === 'trim' && currentOverlap.trim?.kind === 'ready' && <CadSketchTrimPreview preview={currentOverlap.trim} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {currentOverlap?.action === 'extend' && activeExtend?.kind === 'ready' && <CadSketchExtendPreview preview={activeExtend} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {inspection?.gear && inspectedGear?.geometry.kind === 'plugin' && <CadGearInspectionOverlay profile={inspectedGear.geometry} parameters={parameters} inputName={inspection.gear.inputName} span={span} viewCenter={center} />}
@@ -972,6 +1068,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           <circle cx={pathDraft.start[0] - center[0]} cy={pathDraft.start[1] - center[1]} r={span / 170} className="cad-sketch-vertex" />
           {pathDraft.kind === 'arc-through' && <circle cx={pathDraft.end[0] - center[0]} cy={pathDraft.end[1] - center[1]} r={span / 170} className="cad-sketch-vertex" />}
         </>}
+        {drawingReadout && viewportSize.height > 0 && <g data-cad-drawing-readout="" pointerEvents="none" aria-hidden="true"
+          transform={`translate(${cursor[0] - center[0]},${cursor[1] - center[1]}) scale(${width / viewportSize.width},${-span / viewportSize.height})`}>
+          <rect className="cad-sketch-snap-label-bg" x="12" y="10" width={drawingReadout.length * 5.6 + 12} height="19" rx="3" />
+          <text className="cad-sketch-snap-label" x="18" y="23">{drawingReadout}</text>
+        </g>}
         {snapHint && viewportSize.height > 0 && <CadSketchSnapHint candidate={snapHint} center={center} scaleX={width / viewportSize.width} scaleY={span / viewportSize.height} label={snapLabel} />}
         {placement && <g data-cad-sketch-placement="" pointerEvents="none" aria-hidden="true">
           {placement.anchor && placement.target && <line className="cad-sketch-snap-target"
@@ -998,9 +1099,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
               : choicePointId === undefined ? 'Choose midpoint' : `Choose Point ${(sourceGraph?.graph.points.findIndex(point => point.id === choicePointId) ?? -1) + 1}`} />
         </g>}
         {points.map(([x, y], index) => <circle key={index} cx={x - center[0]} cy={y - center[1]} r={span / 170} className="cad-sketch-vertex" />)}
-        {picks.filter(pick => pick.kind === 'coincident').map(pick => <circle key={pick.relationId} data-cad-sketch-attachment={pick.sourcePointId}
-          cx={pick.point[0] - center[0]} cy={pick.point[1] - center[1]} r={6 * span / (viewportSize.height || 600)} className="cad-sketch-snap-target"><title>Pending coincidence with Point {(sourceGraph?.graph.points.findIndex(point => point.id === pick.sourcePointId) ?? -1) + 1}</title></circle>)}
-        {(tool !== 'select' || positionPick) && <g className="cad-crosshair"><path d={`M ${cursor[0] - center[0] - span / 70} ${cursor[1] - center[1]} h ${span / 35} M ${cursor[0] - center[0]} ${cursor[1] - center[1] - span / 70} v ${span / 35}`} /></g>}
+        {picks.map((pick, index) => pick.kind === 'position' ? null : <circle key={index} data-cad-sketch-attachment={pick.kind === 'coincident' ? pick.sourcePointId : pick.kind === 'on-line' ? pick.lineId : pick.datum}
+          cx={pick.point[0] - center[0]} cy={pick.point[1] - center[1]} r={6 * span / (viewportSize.height || 600)} className="cad-sketch-snap-target"><title>{pick.kind === 'coincident'
+            ? `Pending coincidence with Point ${(sourceGraph?.graph.points.findIndex(point => point.id === pick.sourcePointId) ?? -1) + 1}`
+            : pick.kind === 'on-line' ? 'Pending point on line' : `Pending ${pick.datum === 'origin' ? 'fix at the origin' : `point on the ${pick.datum === 'x-axis' ? 'X' : 'Y'} axis`}`}</title></circle>)}
       </g>
       {boxSelection.box && <rect className={`cad-sketch-selection-box is-${boxSelection.box.mode}`} pointerEvents="none"
         x={Math.min(boxSelection.box.start[0], boxSelection.box.end[0]) - center[0]} y={center[1] - Math.max(boxSelection.box.start[1], boxSelection.box.end[1])}
@@ -1015,8 +1117,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     {dimensionControls && sketch.kind === 'sketch' && dimensionProfile && dimensionAnchor && tool === 'select' && !isPreview && <CadSketchDimensionControls {...dimensionControls} interactionLocked={dimensionControls.interactionLocked || submission.applying || dragPreview !== null} sketch={sketch} profile={dimensionProfile} parameters={parameters} anchor={dimensionAnchor} project={point => ({ x: (point[0] - center[0]) / width * viewportSize.width + viewportSize.width / 2, y: (center[1] - point[1]) / span * viewportSize.height + viewportSize.height / 2 })} cancelSignal={cancelSignal} />}
     {isPreview && <div className="cad-sketch-context" role="status">Preview · Apply to keep changes</div>}
     {!isPreview && inspection && inspection.profileIds.length > 0 && <div className="cad-sketch-context" role="status">Highlighted geometry · {inspection.profileIds.length} {inspection.profileIds.length === 1 ? 'profile' : 'profiles'}</div>}
-    <p id={instructionsId} className="cad-sr-only">{interactionLocked ? 'Drawing is paused while another edit or operation is active.' : instruction} Keyboard: arrow keys move the cursor, Shift moves ten grid steps, Space adds a point, Enter accepts an arc through-point or closes a ready path or polyline, Backspace undoes the last point or segment, Escape cancels drawing, F fits the sketch.</p>
-    <CadViewTools label="Sketch controls">{sketch.kind === 'sketch' && <Select aria-label="Sketch selection filter" title="Auto includes points, edges and profiles. Points or Edges restrict direct picking and box selection; Shift toggles selection." density="compact" value={pickFilter} disabled={viewLocked || interactionLocked || Boolean(geometryPick || positionPick)} onChange={event => setPickFilter(event.target.value as CadSketchGraphPickFilter)}><option value="auto">Auto</option><option value="points">Points</option><option value="edges">Edges</option></Select>}<span className="cad-plane-label">{placementLabel ?? (typeof sketch.plane === 'string' ? sketch.plane : 'Datum plane')}</span><Button aria-label={sketch.kind === 'curve' ? 'Fit curve' : 'Fit sketch'} disabled={viewLocked} onClick={fit}><FitViewIcon size={14} /></Button><Button aria-label="Toggle sketch grid" disabled={viewLocked} aria-pressed={grid} onClick={() => setGrid(!grid)}><GridIcon size={14} /></Button><Button aria-label="Toggle snapping" title="Snap to grid, endpoints, centers and midpoints. Hold Ctrl or Cmd to temporarily disable snapping." disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><SnapIcon size={14} /></Button><label className="cad-grid-step">Grid <Input aria-label="Grid spacing" disabled={viewLocked} type="number" min="0.01" value={gridStep} onChange={(event) => { const value = Number(event.target.value); if (value > 0 && Number.isFinite(value)) setGridStep(value); }} /> mm</label><CadContextHelp label="Sketch navigation">{navigationMode === 'trackpad' ? 'Use two-finger scrolling to pan and pinch to zoom.' : 'Drag with the right mouse button to pan and use the wheel to zoom.'} Press F to fit the sketch and Escape to cancel unfinished drawing.</CadContextHelp></CadViewTools>
+    <p id={instructionsId} className="cad-sr-only">{interactionLocked ? 'Drawing is paused while another edit or operation is active.' : currentTrim?.kind === 'ready' ? `${instruction}. ${currentTrim.help}` : instruction} Keyboard: arrow keys move the cursor, Shift moves ten grid steps, Space adds a point, Enter accepts an arc through-point or closes a ready path or polyline, Backspace undoes the last point or segment, Escape cancels drawing, F fits the sketch.</p>
+    <CadViewTools label="Sketch controls">{sketch.kind === 'sketch' && <Select aria-label="Sketch selection filter" title="Auto includes points, edges and profiles. Points or Edges restrict direct picking and box selection; Shift toggles selection." density="compact" value={pickFilter} disabled={viewLocked || interactionLocked || Boolean(geometryPick || positionPick)} onChange={event => setPickFilter(event.target.value as CadSketchGraphPickFilter)}><option value="auto">Auto</option><option value="points">Points</option><option value="edges">Edges</option></Select>}<span className="cad-plane-label">{placementLabel ?? (typeof sketch.plane === 'string' ? sketch.plane : 'Datum plane')}</span><Button aria-label={sketch.kind === 'curve' ? 'Fit curve' : 'Fit sketch'} disabled={viewLocked} onClick={fit}><FitViewIcon size={14} /></Button><Button aria-label="Toggle sketch grid" disabled={viewLocked} aria-pressed={grid} onClick={() => setGrid(!grid)}><GridIcon size={14} /></Button><Button aria-label="Toggle snapping" title="Snap to endpoints, centers, midpoints and other geometry. Hold Ctrl or Cmd to temporarily disable snapping." disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><SnapIcon size={14} /></Button><label className="cad-grid-step">Grid <Input aria-label="Grid spacing" disabled={viewLocked} type="number" min="0.01" value={gridStep} onChange={(event) => { const value = Number(event.target.value); if (value > 0 && Number.isFinite(value)) setGridStep(value); }} /> mm</label><label className="cad-check"><Input type="checkbox" aria-label="Snap to grid" title="Catch the pointer at grid nodes it passes close to. Off, the grid is only a visual reference." disabled={viewLocked} checked={gridSnap} onChange={event => setGridSnap(event.target.checked)} />Snap to grid</label><CadContextHelp label="Sketch navigation">{navigationMode === 'trackpad' ? 'Use two-finger scrolling to pan and pinch to zoom.' : 'Drag with the right mouse button to pan and use the wheel to zoom.'} Press F to fit the sketch and Escape to cancel unfinished drawing.</CadContextHelp></CadViewTools>
     {!externalInteractionLocked && (tool !== 'select' || points.length > 0) && <CadDrawingTools active={points.length > 0 || pathPending}><div className={`cad-sketch-instruction ${tool === 'path' ? 'cad-path-instruction' : ''}`} onKeyDown={event => {
       if (event.nativeEvent.isComposing) return;
       if (event.key === 'Escape' && submission.applying) { event.preventDefault(); event.stopPropagation(); cancelDrawing(); svg.current?.focus(); return; }
@@ -1024,14 +1126,14 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       if (event.key === 'Backspace' || event.key === 'Escape') { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }, true); }
     }}><span>{instruction}</span>
       {canInfer && <label className="cad-check"><Input type="checkbox" aria-label="Create coincident relations" checked={inferCoincidence} disabled={interactionLocked}
-        title="Attach future snapped endpoints or centers with removable coincidence relations. Switching off releases pending attachments; accepted geometry is unchanged. Path uses its own shared-point joins."
+        title="Attach future snapped points with removable relations: coincident with endpoints and centers, on a line, or on the origin and axes. Switching off releases pending attachments; accepted geometry is unchanged. Path uses its own shared-point joins."
         onChange={event => { const enabled = event.target.checked; setInferCoincidence(enabled); if (!enabled) setPicks(current => current.map(pick => ({ kind: 'position', point: pick.point }))); }} />Create relations</label>}
-      {picks.some(pick => pick.kind === 'coincident') && <span aria-label="Pending coincident relations">{picks.filter(pick => pick.kind === 'coincident').length} attached</span>}
+      {picks.some(pick => pick.kind !== 'position') && <span aria-label="Pending relations">{picks.filter(pick => pick.kind !== 'position').length} attached</span>}
       {tool === 'path' && <>
         <div className="cad-path-modes" role="group" aria-label="Path segment mode"><Button disabled={interactionLocked || pathDraft.kind === 'arc-through'} aria-pressed={pathMode === 'line'} onClick={() => changePath({ kind: 'mode', mode: 'line' }, true)}>Line</Button><Button disabled={interactionLocked || pathDraft.kind === 'arc-through'} aria-pressed={pathMode === 'arc'} onClick={() => changePath({ kind: 'mode', mode: 'arc' }, true)}>3-point Arc</Button></div>
         {pathPending && <>{sketch.kind === 'sketch' && onAddPath && <Button aria-label="Finish path" title="Keep this path open without adding a closing edge" disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(false)}><ConfirmIcon size={13} /> Finish path</Button>}<Button aria-label={sketch.kind === 'curve' ? 'Finish curve' : 'Close profile'} title={sketch.kind === 'curve' ? 'Validate and save the open curve without a closing edge' : pathNeedsClosingLine ? 'Close the profile by adding a straight line to its start' : 'Validate and save the closed profile'} disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(true)}><ConfirmIcon size={13} />{sketch.kind === 'curve' ? 'Finish curve' : pathNeedsClosingLine ? 'Close with line' : 'Close profile'}</Button><Button disabled={interactionLocked} onClick={() => changePath({ kind: 'undo-last' }, true)}><UndoIcon size={13} /> Undo last</Button><Button onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button></>}
       </>}
       {tool === 'polygon' && points.length >= 3 && <Button disabled={interactionLocked} onClick={close}><ConfirmIcon size={13} /> Close profile</Button>}{points.length > 0 && <Button onClick={cancelDrawing}><CloseIcon size={13} /> Cancel drawing</Button>}</div></CadDrawingTools>}
-    <div className="cad-view-caption">{formatCadQuantity(cursor[0])}, {formatCadQuantity(cursor[1])} mm</div>
+    <div className="cad-view-caption">{formatCadQuantity(Number(cursor[0].toFixed(3)))}, {formatCadQuantity(Number(cursor[1].toFixed(3)))} mm</div>
   </div>;
 }

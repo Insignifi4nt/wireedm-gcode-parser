@@ -515,6 +515,13 @@ export const iconCatalog = {
       "M5 3v10h15M15 8l5 5-5 5"
     ]
   },
+  "constraint": {
+    "label": "Sketch constraint",
+    "category": "geometry",
+    "paths": [
+      "M3 20h18M9 20V4M9 15h5v5"
+    ]
+  },
   "trim": {
     "label": "Trim geometry",
     "category": "geometry",

@@ -73,6 +73,7 @@ describe('mixed line and three-point arc drawing', () => {
 
   it('keeps the draft provisional and creates one exact closed path in a single undo step', async () => {
     const h = await fixture(); const original = h.session.getSnapshot();
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Snap to grid"]')!.click());
     await h.point(0, 0); await h.point(20, 0); await h.click('3-point Arc'); await h.point(20, 20);
     expect(h.button('Line').disabled).toBe(true); expect(h.button('Close profile').disabled).toBe(true);
     expect(h.session.getSnapshot()).toMatchObject({ document: original.document, version: original.version, workflowOpen: true, canUndo: false });

@@ -146,6 +146,7 @@ it('preserves a human camera through same-document edits, inspector changes and 
   expect(rendered().camera.zoom).not.toBe(initialZoom); const chosen = cameraFrame();
   await act(async () => editDepth(18)); await flushFrame(); expect(cameraFrame()).toEqual(chosen); expect(displayedDepth()).toBe(18);
   await act(async () => controls().apply({ kind: 'select-feature', featureId: 'pad' })); await flushFrame();
+  await act(async () => container.querySelector('.cad-tree-row[aria-pressed="true"]')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))); await flushFrame();
   expect(container.querySelector('[data-cad-properties]')).not.toBeNull(); expect(cameraFrame()).toEqual(chosen);
   const before = session.getSnapshot(), length = [...container.querySelectorAll('label')].find(label => label.querySelector('span')?.childNodes[0]?.textContent === 'Length')?.querySelector('input');
   if (!length) throw new Error('Missing real Pad length field.');

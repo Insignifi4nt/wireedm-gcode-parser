@@ -43,7 +43,7 @@ async function show(document: CadDocument, selectedId: string | null, editing = 
 
 it('fits first-entry geometry clear of the newly revealed long contour row in the same commit', async () => {
   const document = fixture(), original = JSON.stringify(document);
-  await show(document, null); await click('Collapse Model'); await click('Collapse part Fit');
+  await show(document, null); await click('Collapse Body'); await click('Collapse part Fit');
   expect(profileRow()).toBeNull();
   await show(document, 'outline', true);
   expect(profileRow()).not.toBeNull();

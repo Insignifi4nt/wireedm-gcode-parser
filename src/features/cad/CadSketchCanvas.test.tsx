@@ -307,6 +307,7 @@ describe('graph spatial selection', () => {
   it('borrows midpoint and grid positions before graph pointer selection or dragging', async () => {
     const h = await spatialFixture(), onPick = vi.fn(), onCancel = vi.fn(), geometryPick = vi.fn();
     const graph = h.props().graphControls; if (!graph) throw new Error('Graph controls missing.');
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Snap to grid"]')!.click());
     const selection: readonly CadSketchGraphSelection[] = [{ kind: 'entity', id: 'bc' }];
     await h.show({ graphControls: { ...graph, selection, positionPick: { label: 'Place anchor', onPick, onCancel },
       geometryPick: { label: 'Use point position', eligiblePointIds: ['a', 'b', 'c'], eligibleEntityIds: [], onPick: geometryPick, onCancel } } });
@@ -320,7 +321,7 @@ describe('graph spatial selection', () => {
     await h.pointer('pointermove', 8, 4); await h.pointer('pointerup', 8, 4);
     await act(async () => line.dispatchEvent(new MouseEvent('click', { button: 0, detail: 1, bubbles: true })));
     expect(onPick).toHaveBeenCalledExactlyOnceWith([5, 0]);
-    await h.pointer('pointerdown', 44.2, 17.6); await h.pointer('pointerup', 44.2, 17.6);
+    await h.pointer('pointerdown', 44.9, 19.9); await h.pointer('pointerup', 44.9, 19.9);
     expect(onPick).toHaveBeenLastCalledWith([45, 20]);
     expect(geometryPick).not.toHaveBeenCalled(); expect(h.selected).not.toHaveBeenCalled(); expect(h.selectedSet).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
     expect(h.props().graphControls?.selection).toBe(selection); expect(h.release).not.toHaveBeenCalled();
@@ -577,6 +578,23 @@ describe('graph spatial selection', () => {
     await h.show({ sketch: accepted, documentVersion: 'accepted', graphControls: { ...h.props().graphControls!, document: acceptedDocument } });
     await act(async () => operation.resolve(undefined));
     expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: pointId }); expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
+  it('trims the hovered edge piece in one click with the Trim tool, without selecting or opening a menu', async () => {
+    const h = await trimFixture(); await h.show({ tool: 'trim' });
+    const instruction = () => container.querySelector('p.cad-sr-only')?.textContent ?? '';
+    expect(instruction()).toMatch(/Point at the piece of an edge/);
+    await h.pointer('pointermove', 2, .1);
+    const preview = container.querySelector('[aria-label="Trim preview"]'); expect(preview).not.toBeNull();
+    const view = currentControls().getState(); if (view.mode === 'solid') throw new Error('Sketch view missing.');
+    expect(Number(preview?.querySelector('.is-removed')?.getAttribute('x2')) + view.centerMm[0]).toBe(4);
+    expect(instruction()).toMatch(/Click to remove the red piece/);
+    await h.pointer('pointermove', 2, 40); expect(container.querySelector('[aria-label="Trim preview"]')).toBeNull();
+    await h.pointer('pointerdown', 2, 40); await h.pointer('pointerup', 2, 40); expect(h.edited).not.toHaveBeenCalled();
+    await h.pointer('pointerdown', 2, .1); await h.pointer('pointerup', 2, .1);
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'trim-sketch-entity', sketchId: h.feature.id, trim: expect.objectContaining({
+      kind: 'end', entityId: 'ab', end: 'start', boundary: { entityId: 'fence', index: 0, parameter: .4, position: [4, 0] } }) }], expect.any(AbortSignal));
+    expect(h.selected).not.toHaveBeenCalled(); expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Trim preview"]')).toBeNull();
   });
   it('previews no-hit Trim as complete edge removal and retains source after dismissal', async () => {
     const h = await spatialFixture();

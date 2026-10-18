@@ -4,14 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadBuildResult, CadCurveFeature, CadDocument } from '@/domain/cad/cadDocument';
 import { createCadDocument } from '@/domain/cad/cadSchema';
 import { resolveCadCurve } from '@/domain/cad/cadCurve';
+import { measureCadCurve } from '@/domain/cad/cadCurveMeasurements';
 import { exportCadCurveDxf, importCadDxfCurve } from '@/domain/cad/cadCurveDxf';
 import { CadSession } from './cadSession';
 import { CadWorkbench } from './CadWorkbench';
 import type { CadCurveViewportReference } from './cadCurveRendering';
 import type { CadWorkbenchViewportControls } from './cadViewportControls';
 
-vi.mock('./CadViewport', () => ({ CadViewport: ({ references, meshes, onSelect }: { references: readonly CadCurveViewportReference[]; meshes: readonly { featureId: string }[]; onSelect(id: string): void }) =>
-  <div aria-label="3D model viewport" data-solid-count={meshes.length}>{references.flatMap(reference => reference.featureId === null ? [] : [<button key={reference.referenceId} onClick={() => { if (reference.featureId !== null) onSelect(reference.featureId); }}>Select world {reference.name}</button>])}</div> }));
+vi.mock('./CadViewport', () => ({ CadViewport: ({ hidden, references, meshes, onSelect }: { hidden?: boolean; references: readonly CadCurveViewportReference[]; meshes: readonly { featureId: string }[]; onSelect(id: string): void }) =>
+  hidden ? <div className="cad-viewport" hidden /> : <div aria-label="3D model viewport" data-solid-count={meshes.length}>{references.flatMap(reference => reference.featureId === null ? [] : [<button key={reference.referenceId} onClick={() => { if (reference.featureId !== null) onSelect(reference.featureId); }}>Select world {reference.name}</button>])}</div> }));
 let root: Root; let container: HTMLDivElement; let session: CadSession; let controls: CadWorkbenchViewportControls | null;
 beforeEach(() => {
   controls = null; vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -73,7 +74,7 @@ describe('Curve foundation workbench', () => {
     const accepted = currentCurve(); expect(accepted).toMatchObject({ name: 'Guide', plane: 'XZ', offset: 'lift / 2' }); expect(accepted.segments).toHaveLength(2);
     expect(resolveCadCurve(accepted, session.getSnapshot().document.parameters).endWorld).toEqual([20, -4, 20]);
     expect(session.getSnapshot().workflowOpen).toBe(false); expect(controls?.getState()).toMatchObject({ curveId: accepted.id, sketchId: null, view: { mode: 'curve', available: true } });
-    expect(container.querySelector('[aria-label="Curve measurements"]')?.textContent).toContain('51.4159 mm');
+    expect(measureCadCurve(session.getSnapshot().document, accepted.id).lengthMm).toBeCloseTo(51.4159, 4);
     await click('Finish curve editing'); expect(button('Select world Guide')).toBeDefined();
     await click('Undo'); expect(session.getSnapshot().document).toEqual(before.document); expect(session.getSnapshot().canUndo).toBe(false);
   });
@@ -98,7 +99,7 @@ describe('Curve foundation workbench', () => {
     const originalText = exportCadCurveDxf(curve(), {});
     const imported = importCadDxfCurve({ fileName: 'rail.dxf', text: originalText, units: 'mm', curveId: 'rail', name: 'Rail' }).curve;
     await mount({ ...createCadDocument(), parameters: { length: 20 }, features: [imported] });
-    await click('Select world Rail'); await click('Edit curve'); const before = session.getSnapshot();
+    await act(async () => button('Select Rail in history').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))); const before = session.getSnapshot();
     await input('End X', 'length + 5'); await click('Apply'); expect(session.getSnapshot().document).toBe(before.document); expect(session.getSnapshot().version).toBe(before.version);
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('connect');
     await click('Next curve segment'); await input('Center X', 'length + 5');
