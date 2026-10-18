@@ -1,6 +1,6 @@
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { dxfUnitsFromInsunitsCode, parseDxf } from '@/domain/dxf/parseDxf';
+import { dxfUnitsFromInsunitsCode, parseDxf, splitDxfLines } from '@/domain/dxf/parseDxf';
 import type { DxfUnitDeclaration } from '@/domain/dxf/types';
 import { pathSegmentsFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
@@ -69,7 +69,7 @@ export function isCadDxfImportResult(value: unknown): value is CadDxfImportResul
 
 /** The shared parser is intentionally tolerant; CAD authoring requires a complete file. */
 export function assertCompleteCadDxf(text: string): void {
-  const lines = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
+  const lines = splitDxfLines(text.replace(/^\uFEFF/, ''));
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
   if (lines.length % 2 !== 0) throw new CadError('dxf-incomplete', 'DXF group-code/value pairs are incomplete. Preserve the original file.');
   let section: string | null = null; let entitiesSections = 0; let eof = false; let entity: string | null = null;

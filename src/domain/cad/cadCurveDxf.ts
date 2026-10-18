@@ -1,6 +1,6 @@
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { dxfUnitsFromInsunitsCode, parseDxf } from '@/domain/dxf/parseDxf';
+import { dxfUnitsFromInsunitsCode, parseDxf, splitDxfLines } from '@/domain/dxf/parseDxf';
 import type { DxfEntity, DxfUnitDeclaration } from '@/domain/dxf/types';
 import { pathSegmentsFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
@@ -76,7 +76,7 @@ function exactSegments(entities: DxfEntity[]): PathSegment[] {
 
 /** Classic fit vertices are control/generated points, not an exact line/arc chain. */
 function assertExactCurvePolylineModes(text: string): void {
-  const lines = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
+  const lines = splitDxfLines(text.replace(/^\uFEFF/, ''));
   let section: string | null = null; let entity: string | null = null;
   for (let index = 0; index + 1 < lines.length; index += 2) {
     const code = Number(lines[index]); const value = lines[index + 1].trim().toUpperCase();

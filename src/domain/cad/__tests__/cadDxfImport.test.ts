@@ -145,6 +145,11 @@ describe('DXF units, exact source lineage and import rejection', () => {
     expect(edited.features[0]).toMatchObject({ source: { text } });
     expect(sketch.source?.text).toBe(text);
   });
+  it.each([['CR', '\r'], ['CRCRLF', '\r\r\n']])('imports a complete DXF whose lines end with %s', (_, ending) => {
+    const imported = importCadDxfSketch({ fileName: 'part.dxf', text: dxf(circleBody).replaceAll('\n', ending) });
+    expect(imported.contourCount).toBe(1);
+    expect(measureCadSketch(fromSketch(imported.sketch), imported.sketch.id).materialAreaMm2).toBeCloseTo(4 * Math.PI, 7);
+  });
   it.each([
     { name: 'open line', body: ['0', 'LINE', '10', '0', '20', '0', '11', '10', '21', '0'] },
     { name: 'unsupported ellipse', body: [...circleBody, '0', 'ELLIPSE', '10', '0', '20', '0'] },

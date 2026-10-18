@@ -31,16 +31,19 @@ describe('parseDxf', () => {
     expect(parsed.unsupportedEntities).toEqual([]);
   });
 
-  it('reads files whose lines end with a lone CR like their LF equivalent', () => {
+  it('reads CR, CRLF, CRCRLF and mixed line endings like their LF equivalent', () => {
     const lines = [
       '0', 'SECTION', '2', 'ENTITIES',
       '0', 'LINE', '8', 'CUT', '10', '0', '20', '0', '11', '10', '21', '0',
       '0', 'ENDSEC', '0', 'EOF'
     ];
-    const parsed = parseDxf(lines.join('\r'));
+    const expected = parseDxf(lines.join('\n'));
+    const mixed = lines.reduce((text, line, index) => text + (index ? ['\r', '\n', '\r\n', '\r\r\n'][index % 4] : '') + line, '');
 
-    expect(parsed).toEqual(parseDxf(lines.join('\n')));
-    expect(parsed.entities).toHaveLength(1);
+    expect(expected.entities).toHaveLength(1);
+    for (const text of [lines.join('\r'), `${lines.join('\r')}\n`, lines.join('\r\n'), lines.join('\r\r\n'), mixed]) {
+      expect(parseDxf(text)).toEqual(expected);
+    }
   });
 
   it('exports the complete DXF unit declaration status vocabulary', () => {
