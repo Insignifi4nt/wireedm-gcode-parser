@@ -1,6 +1,7 @@
 import { MAX_STORAGE_INVENTORY_ENTRIES, type WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 import { assertReadLimit } from './boundedExactText';
 import { readExactUtf8Blob } from './exactTextStream';
+import { withStorageFullGuidance } from './storageFull';
 
 export function createBrowserDirectoryAdapter(
   root: FileSystemDirectoryHandle
@@ -38,9 +39,9 @@ export function createBrowserDirectoryAdapter(
         throw new Error(`Cannot back up ${path} as exact UTF-8 text: ${error instanceof Error ? error.message : String(error)}`);
       }
     },
-    ensureDirectory: async (path: string) => {
+    ensureDirectory: (path: string) => withStorageFullGuidance('directory', path, async () => {
       await getDirectory(root, splitPath(path), true);
-    },
+    }),
     readText: async (path: string) => {
       try {
         const handle = await getFile(root, splitPath(path), false);
@@ -64,7 +65,7 @@ export function createBrowserDirectoryAdapter(
         throw error;
       }
     },
-    writeText: async (path: string, contents: string) => {
+    writeText: (path: string, contents: string) => withStorageFullGuidance('directory', path, async () => {
       const handle = await getFile(root, splitPath(path), true);
       const writable = await handle.createWritable();
       try {
@@ -74,7 +75,7 @@ export function createBrowserDirectoryAdapter(
         try { await writable.abort(); } catch { /* Preserve the original storage failure. */ }
         throw error;
       }
-    }
+    })
   };
 }
 

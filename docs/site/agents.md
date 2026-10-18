@@ -570,6 +570,8 @@ Return to the project library, then open **Settings → Storage → Backup & res
 
 Use **Choose backup to restore** and review its project, machine and revision counts. Restore requires an empty workbench, such as a newly selected empty folder or a fresh browser's workbench. Existing libraries are never overwritten or merged. The app reloads after successful restoration. Backups are limited to 128 MiB of portable UTF-8 files; pending recovery, incomplete inventories, corrupt files or unrelated binary data block export rather than producing an incomplete backup.
 
+When browser storage for the site is full, a save fails with a message that says so. Earlier saved files are kept; if undoing a partial save also fails, reopening the workbench restores them. Create and download a backup, select an empty folder workbench and restore the backup there. A folder workbench is limited only by its disk space. If backup is blocked, export readable recovery files instead. A folder workbench on a full disk reports that disk space must be freed before retrying.
+
 Unreferenced-file cleanup appears after backup creation. Select only files the user wants removed and obtain their confirmation that the backup was saved. Any storage change requires a new backup. Referenced files, migration backups, machine/post storage and saved revisions are protected. These operations use ordinary browser controls; no repository checkout is needed.
 
 ### Copying files for recovery
