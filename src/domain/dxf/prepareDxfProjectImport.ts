@@ -91,7 +91,9 @@ export function prepareDxfImportSource(
     throw error;
   }
   const rawSegments = pathSegmentsFromDxfEntities(parseResult.entities, DEFAULT_DXF_UPID_OPTIONS);
-  if (rawSegments.segments.length === 0) {
+  // Geometry too large to measure in raw units may fit once a smaller unit is selected; the preview decides.
+  const unmeasuredGeometry = rawSegments.diagnostics.some(({ code }) => code === 'non-finite-geometry');
+  if (rawSegments.segments.length === 0 && !unmeasuredGeometry) {
     return {
       ok: false,
       error: {

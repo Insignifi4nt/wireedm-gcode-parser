@@ -697,3 +697,43 @@ export function vector(a: Point2, b: Point2): Point2 {
 export function cross(a: Point2, b: Point2) {
   return a.x * b.y - a.y * b.x;
 }
+
+/**
+ * Path quantities past this cannot be measured: summed cut lengths, rapids and
+ * contour areas would overflow, so the document could not be saved.
+ */
+export const MAX_MEASURABLE_PATH_MAGNITUDE = 1e300;
+
+/** Whether imported or edited geometry stays inside MAX_MEASURABLE_PATH_MAGNITUDE. */
+export function pathSegmentIsMeasurable(segment: PathSegment) {
+  const angles: number[] = [];
+  const values = [
+    segment.start.x,
+    segment.start.y,
+    segment.end.x,
+    segment.end.y,
+    segment.length,
+    segment.bounds.minX,
+    segment.bounds.minY,
+    segment.bounds.maxX,
+    segment.bounds.maxY
+  ];
+
+  if (segment.kind === 'arc') {
+    values.push(segment.center.x, segment.center.y, segment.radius);
+    angles.push(segment.startAngleRadians, segment.endAngleRadians, segment.sweepRadians);
+  }
+
+  if (segment.kind === 'circle') {
+    values.push(
+      segment.center.x,
+      segment.center.y,
+      segment.radius,
+      segment.preferredStart.x,
+      segment.preferredStart.y
+    );
+  }
+
+  return values.every((value) => Math.abs(value) <= MAX_MEASURABLE_PATH_MAGNITUDE) &&
+    angles.every(Number.isFinite);
+}

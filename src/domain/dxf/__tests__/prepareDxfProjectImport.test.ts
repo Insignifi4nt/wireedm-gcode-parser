@@ -51,6 +51,35 @@ describe('prepareDxfProjectImport', () => {
     ]);
   });
 
+  it('previews no cut geometry when unit conversion makes it too large to measure', () => {
+    const prepared = prepareDxfProjectImport(
+      workbenchWithImportUnits({ mode: 'ask' }),
+      { fileName: 'huge.dxf', text: lineDxf(0, 5e299) }
+    );
+    if (!prepared.ok) throw new Error(prepared.error.message);
+
+    expect(previewDxfProjectImport(prepared.preparation, { unitCandidateId: 'millimeters' })).toMatchObject({
+      ok: true,
+      preview: { sizeMm: { widthMm: 5e299 } }
+    });
+    expect(previewDxfProjectImport(prepared.preparation, { unitCandidateId: 'inches' })).toMatchObject({
+      ok: false,
+      error: { code: 'DXF_IMPORT_PREVIEW_INVALID' }
+    });
+  });
+
+  it('prepares geometry too large to measure until a smaller declared unit is applied', () => {
+    const prepared = prepareDxfProjectImport(
+      workbenchWithImportUnits({ mode: 'ask' }),
+      { fileName: 'angstroms.dxf', text: lineDxf(11, 1e301) }
+    );
+    if (!prepared.ok) throw new Error(prepared.error.message);
+
+    expect(previewDxfProjectImport(prepared.preparation, {
+      unitCandidateId: prepared.preparation.defaultUnitCandidateId!
+    })).toMatchObject({ ok: true, preview: { sizeMm: { widthMm: 1e294 } } });
+  });
+
   it('returns typed errors for missing geometry and an unknown reviewed candidate', () => {
     const workbench = workbenchWithImportUnits({ mode: 'ask' });
     expect(prepareDxfProjectImport(workbench, {
@@ -104,11 +133,11 @@ function workbenchWithImportUnits(
   };
 }
 
-function lineDxf(unitsCode: number) {
+function lineDxf(unitsCode: number, endX = 1) {
   return [
     '0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', String(unitsCode),
     '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES',
-    '0', 'LINE', '8', 'CUT', '10', '0', '20', '0', '11', '1', '21', '0',
+    '0', 'LINE', '8', 'CUT', '10', '0', '20', '0', '11', String(endX), '21', '0',
     '0', 'ENDSEC', '0', 'EOF'
   ].join('\n');
 }

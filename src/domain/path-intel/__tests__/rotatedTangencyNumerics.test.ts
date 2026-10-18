@@ -211,9 +211,10 @@ describe('rotated adjacent tangent joins', () => {
 
   it('preserves a finite whole-turn identity even when subtracting the origin would overflow', () => {
     const source = createUpidFromDxfEntities([
-      { type: 'line', layer: 'CUT', start: { x: 1e308, y: 0 }, end: { x: 1e308, y: 1 } }
+      { type: 'line', layer: 'CUT', start: { x: 1e300, y: 0 }, end: { x: 1e300, y: 1 } }
     ]);
-    const rotated = rotatePathDocument(source, 360, { x: -1e308, y: 0 });
+    expect(source.segments).toHaveLength(1);
+    const rotated = rotatePathDocument(source, 360, { x: -Number.MAX_VALUE, y: 0 });
     expect(rotated?.segments).toEqual(source.segments);
   });
 

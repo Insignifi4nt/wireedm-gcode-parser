@@ -12,6 +12,7 @@ import {
   createCircleSegment,
   createLineSegment,
   distance,
+  pathSegmentIsMeasurable,
   pointsEqual,
   resolvePathPlanningOptions
 } from './segments';
@@ -147,7 +148,7 @@ export function pathSegmentsFromDxfEntities(
         start: entity.start,
         end: entity.end
       });
-      if (!pathSegmentHasFiniteGeometry(segment)) {
+      if (!pathSegmentIsMeasurable(segment)) {
         diagnostics.push(
           nonFiniteGeometryDiagnostic(
             nextDiagnosticId,
@@ -214,7 +215,7 @@ export function pathSegmentsFromDxfEntities(
         clockwise,
         sweepRadians
       });
-      if (!pathSegmentHasFiniteGeometry(segment)) {
+      if (!pathSegmentIsMeasurable(segment)) {
         diagnostics.push(
           nonFiniteGeometryDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type)
         );
@@ -246,7 +247,7 @@ export function pathSegmentsFromDxfEntities(
         center: entity.center,
         radius: entity.radius
       });
-      if (!pathSegmentHasFiniteGeometry(segment)) {
+      if (!pathSegmentIsMeasurable(segment)) {
         diagnostics.push(
           nonFiniteGeometryDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type)
         );
@@ -428,7 +429,7 @@ function segmentsFromPolyline(
         start,
         end
       });
-      if (!pathSegmentHasFiniteGeometry(segment)) {
+      if (!pathSegmentIsMeasurable(segment)) {
         diagnostics.push(
           nonFiniteGeometryDiagnostic(
             nextDiagnosticId,
@@ -471,7 +472,7 @@ function segmentsFromPolyline(
       clockwise: start.bulge < 0,
       sweepRadians: arc.sweepRadians
     });
-    if (!pathSegmentHasFiniteGeometry(segment)) {
+    if (!pathSegmentIsMeasurable(segment)) {
       diagnostics.push(
         nonFiniteGeometryDiagnostic(
           nextDiagnosticId,
@@ -534,43 +535,6 @@ function arcFromBulge(start: DxfPoint, end: DxfPoint, bulge: number) {
   return { center, radius, sweepRadians };
 }
 
-function pathSegmentHasFiniteGeometry(segment: PathSegment) {
-  const values = [
-    segment.start.x,
-    segment.start.y,
-    segment.end.x,
-    segment.end.y,
-    segment.length,
-    segment.bounds.minX,
-    segment.bounds.minY,
-    segment.bounds.maxX,
-    segment.bounds.maxY
-  ];
-
-  if (segment.kind === 'arc') {
-    values.push(
-      segment.center.x,
-      segment.center.y,
-      segment.radius,
-      segment.startAngleRadians,
-      segment.endAngleRadians,
-      segment.sweepRadians
-    );
-  }
-
-  if (segment.kind === 'circle') {
-    values.push(
-      segment.center.x,
-      segment.center.y,
-      segment.radius,
-      segment.preferredStart.x,
-      segment.preferredStart.y
-    );
-  }
-
-  return values.every(Number.isFinite);
-}
-
 function pointsHaveFiniteCoordinates(...points: DxfPoint[]) {
   return points.every((point) => numbersAreFinite(point.x, point.y));
 }
@@ -619,7 +583,7 @@ function nonFiniteGeometryDiagnostic(
     id: nextDiagnosticId(),
     severity: 'error',
     code: 'non-finite-geometry',
-    message: `Skipped ${sourceEntityType.toUpperCase()} at DXF entity index ${sourceEntityIndex}; derived path geometry is non-finite.`,
+    message: `Skipped ${sourceEntityType.toUpperCase()} at DXF entity index ${sourceEntityIndex}; derived path geometry is non-finite or too large to measure.`,
     details: {
       sourceEntityIndex,
       sourceEntityType,

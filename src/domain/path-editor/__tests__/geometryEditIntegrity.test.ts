@@ -156,6 +156,18 @@ describe('geometry edit identity integrity', () => {
     expect(document).toEqual(before);
   });
 
+  it('rejects moves past the range import accepts so rapids and label points stay finite', () => {
+    const document = rectangle(), before = structuredClone(document);
+    expect(translatePathDocument(document, { x: Number.MAX_VALUE, y: 0 })).toBeNull();
+    expect(document).toEqual(before);
+
+    const lines = createPathPlanningDocumentFromDxfEntities([line(0, 0, 1e299, 0), line(0, 1, 1e299, 1)]);
+    expect(translatePathSegment(lines, lines.segments[0].id, { x: 1e308, y: 0 })).toBeNull();
+    const moved = translatePathSegment(lines, lines.segments[0].id, { x: 1e299, y: 0 });
+    if (!moved) throw new Error('A move inside the range should apply');
+    expect(validateUpidDocument(moved).structuralDiagnostics).toEqual([]);
+  });
+
   it('reflects the physical excluded range of a circle while preserving its source and span IDs', () => {
     const document = createPathPlanningDocumentFromDxfEntities([{ type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }]);
     const source = document.segments[0];

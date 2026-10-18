@@ -22,6 +22,7 @@ import {
   orientedSegmentStart,
   pathCutLength,
   pathEndPoint,
+  pathSegmentIsMeasurable,
   pathStartPoint,
   pointOnArcAtParameter,
   pointOnCircle,
@@ -1076,9 +1077,8 @@ function transformPathSegments(
     return transformSegmentGeometry(segment, transformPoint, determinant);
   });
 
-  if (!changed || next.segments.some((segment) => transformedSegmentIds.has(segment.id) &&
-    (![segment.start.x, segment.start.y, segment.end.x, segment.end.y, segment.length].every(Number.isFinite) ||
-      (segment.kind !== 'line' && ![segment.center.x, segment.center.y, segment.radius].every(Number.isFinite))))) return null;
+  // Edits keep geometry inside the range import accepts, so derived lengths, rapids and areas stay finite.
+  if (!changed || next.segments.some((segment) => transformedSegmentIds.has(segment.id) && !pathSegmentIsMeasurable(segment))) return null;
 
   if (determinant < 0 && next.machiningParticipation) {
     const mirroredCircles = new Set(next.segments.filter((segment) => segment.kind === 'circle' && transformedSegmentIds.has(segment.id)).map((segment) => segment.id));

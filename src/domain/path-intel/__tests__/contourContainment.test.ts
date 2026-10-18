@@ -75,6 +75,32 @@ describe('exact contour containment', () => {
       expect(point.y - offset).toBeCloseTo(363.5 / 79, 3);
     }
   });
+
+  it('places the label point of a part too large for cubic centroid terms at its centroid', () => {
+    const outline = [[0, 0], [10, 0], [10, 3], [7, 3], [7, 10], [0, 10]];
+    for (const scale of [1e100, 1e120, 1e150]) {
+      const document = createUpidFromDxfEntities([polygon(outline.map(([x, y]) => [x * scale, y * scale]))]);
+      expect(validateUpidDocument(document).structurallyValid).toBe(true);
+      const point = document.contours[0].representativePoint!;
+      expect(point.x / scale).toBeCloseTo(321.5 / 79, 9);
+      expect(point.y / scale).toBeCloseTo(363.5 / 79, 9);
+    }
+  });
+
+  it('keeps a thin side of a huge part when placing its label point', () => {
+    // The cubic terms overflow, and one scale for both axes would flush the unit-high side to zero.
+    const document = createUpidFromDxfEntities([polygon([[0, 0], [1e170, 0], [1e170, 1], [0, 3]])]);
+    expect(validateUpidDocument(document).structurallyValid).toBe(true);
+    const point = document.contours[0].representativePoint!;
+    expect(point.x / 1e170).toBeCloseTo(5 / 12, 12);
+    expect(point.y).toBeCloseTo(13 / 12, 12);
+  });
+
+  it('keeps the direct label point wherever it is finite', () => {
+    // Scaling these into a common frame would underflow the short side and move the point.
+    const document = createUpidFromDxfEntities([polygon([[0, 0], [1e156, 0], [5e155, 3e-6]])]);
+    expect(document.contours[0].representativePoint).toEqual({ x: 5e155, y: 0.0000010000000000000002 });
+  });
 });
 
 function polygon(points: number[][]): DxfEntity {

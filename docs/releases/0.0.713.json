@@ -1,0 +1,32 @@
+{
+  "version": "0.0.713",
+  "previousVersion": "0.0.712",
+  "postCompatibility": "preserved-output-bounded-huge-drawing-geometry",
+  "summary": "Huge drawings now import as valid documents or report clear diagnostics instead of saving a structurally invalid project. Contour label points overflowed for parts larger than about 1e103 mm because the centroid sums cubic terms. The existing calculation is kept wherever it is finite; only when it overflows is each axis rescaled by an exact power of two, falling back to the bounds midpoint. DXF segments whose coordinates, bounds or lengths exceed 1e300 mm are skipped with the existing non-finite-geometry error, and geometry edits that would move a segment past that range are rejected, so summed cut lengths, rapids and areas stay finite.",
+  "warning": "Potentially breaking only for drawings with coordinates beyond 1e300 mm, which previously produced invalid or non-finite projects. Posted output, post schemas, capabilities and the post engine API are unchanged, and label points are bit-identical wherever they were finite before. A DXF whose only geometry exceeds 1e300 mm in its declared unit now prepares, so a smaller unit can be chosen; if no unit brings it into range, the preview fails with DXF_IMPORT_PREVIEW_INVALID (\"DXF unit preview did not contain supported cut geometry.\") instead of preparation failing with DXF_IMPORT_GEOMETRY_REQUIRED. Move, rotate and mirror edits that would leave a segment beyond 1e300 mm are refused and leave the document unchanged.",
+  "checklist": {
+    "schema": "No UPID, portable UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "Output for documents within 1e300 mm is unchanged: label points keep their exact previous values wherever they were finite, and planning, compensation and posting are untouched. Segments beyond the range are skipped at import with the existing non-finite-geometry diagnostic code.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Saved revisions are not rewritten.",
+    "verification": "New tests cover a thin side of a 1e170 mm part, a finite direct label point that must be kept exactly, preparing an out-of-range drawing that a smaller unit brings into range, and edits past the import range; each fails on the old code. A second review compared 72 edit cases and 20,000 random finite polygons against main with no differences. The pure-domain suite (1,378 tests), DXF and browser import suites, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Robofil 2.6.0 package and current-contract tests pass unchanged; posting code is untouched. No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Very large drawings import as valid projects or explain what was skipped.",
+    "changes": [
+      "Parts larger than about 1e103 mm no longer save as invalid projects.",
+      "DXF geometry beyond 1e300 mm is skipped with an error diagnostic, and a smaller import unit can bring it back into range.",
+      "Moves, rotations and mirrors that would push geometry beyond 1e300 mm are refused."
+    ],
+    "compatibility": "Posted programs, installed posts and saved projects are unchanged for drawings within 1e300 mm.",
+    "action": "No action needed. If a drawing reports skipped geometry, check its import unit."
+  }
+}
