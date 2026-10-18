@@ -1,0 +1,30 @@
+{
+  "version": "0.0.714",
+  "previousVersion": "0.0.713",
+  "postCompatibility": "preserved-output-correct-released-piece-preview",
+  "summary": "The simulation preview no longer loses released pieces after sampling a NaN time. The interval-cached released-piece sampler placed NaN in the final interval and cached an empty state there, so later valid samples in that interval reused it and showed no released pieces. NaN samples are now prepared directly without touching the cache.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Only the simulation preview of released pieces changes, and only after a NaN sample time.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. Simulation sampling for finite times is unchanged.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "The released-piece snapshot test now samples NaN between valid samples and fails on the old code. An independent review made 288 comparisons against uncached preparation (NaN, plus and minus Infinity, signed zero, unordered seeks, falling and retained pieces, empty collections) with no differences. Simulation suites, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Posting code is untouched; Robofil 2.6.0 package and current-contract tests pass unchanged. No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "The simulation preview keeps showing released pieces after an invalid time sample.",
+    "changes": [
+      "Released pieces no longer disappear from the simulation preview after the playhead receives an invalid time."
+    ],
+    "compatibility": "Posted programs, installed posts and saved projects are unchanged.",
+    "action": "No action needed."
+  }
+}

@@ -83,7 +83,8 @@ describe('released material snapshot preparation', () => {
     const pieces = [piece('outer', 1), { ...piece('middle', 3, 'outer'), removalSeconds: 6 }, piece('inner', 3, 'middle'),
       { ...piece('slug', 2), removalSeconds: 2 }, piece('late', 9, 'outer')];
     const sample = createReleasedPieceSnapshotSampler(pieces, sampled);
-    const times = [-1, 0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5.99, 6, 7, 8.5, 9, 12, Infinity, 2.5, 0, 6, 5.99, 9, 1];
+    // An unordered time such as NaN must not leave a cached interval behind for later seeks.
+    const times = [-1, 0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5.99, 6, 7, 8.5, 9, 12, Infinity, NaN, 12, -Infinity, NaN, 0, 2.5, 6, 5.99, 9, 1];
     for (const time of times) expect(sample(time)).toEqual(releasedPieceSnapshots(pieces, sampled, time));
   });
 

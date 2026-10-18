@@ -244,6 +244,10 @@ export function createReleasedPieceSnapshotSampler(pieces: readonly SimulationPi
     removalSeconds === null ? [releaseSeconds] : [releaseSeconds, removalSeconds]))].sort((a, b) => a - b);
   let cached: { from: number; until: number; state: ReleasedPieceState; snapshot: ReleasedPieceSnapshots | null } | null = null;
   return (elapsedSeconds: number): ReleasedPieceSnapshots => {
+    // NaN belongs to no interval; prepare it directly so it cannot replace the cached state.
+    if (Number.isNaN(elapsedSeconds)) {
+      return snapshotPieceState(releasedPieceState(pieces, elapsedSeconds, topology), settings, elapsedSeconds, topology);
+    }
     if (!cached || !(elapsedSeconds >= cached.from && elapsedSeconds < cached.until)) {
       const next = changeTimes.findIndex((time) => time > elapsedSeconds);
       const until = next < 0 ? Infinity : changeTimes[next];
