@@ -45,12 +45,11 @@ export function normalizeToISO(inputText: string, options: NormalizeToISOOptions
       if (!s) continue;
     }
 
-    s = canonicalizeMotionCodes(stripLeadingBlockNumber(s).replace(/\s+/g, ' ').trim());
-
-    if (ensureM02) {
-      s = removeEndCommands(s).trim();
-      if (!s) continue;
-    }
+    s = stripLeadingBlockNumber(s);
+    // Remove end commands first so the words they separated are spaced and canonicalized too.
+    if (ensureM02) s = removeEndCommands(s);
+    s = canonicalizeMotionCodes(s.replace(/\s+/g, ' ').trim());
+    if (!s) continue;
 
     outLines.push(`N${n} ${s}`);
     n += step;
