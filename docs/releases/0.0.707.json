@@ -1,0 +1,24 @@
+{
+  "version": "0.0.707",
+  "previousVersion": "0.0.706",
+  "postCompatibility": "preserved-output-faster-simulation",
+  "summary": "Simulation of jobs with many released parts compiles faster. The obstruction scan's released-material sampler prepares released, removed and nested material once per release or removal interval instead of re-filtering every piece at every sample, and reuses the whole snapshot while parts are retained. Parent association for released pieces skips candidates whose padded vertex bounds cannot contain the piece, and the point-in-polygon test runs the boundary-distance check only for points the crossing test places outside.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Simulation results (pieces, parents, snapshots, warnings and diagnostics) are unchanged, including the obstruction scan sample limit.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. Simulation is a preview and does not feed controller output.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Full simulation results hash identically before and after for 4, 9, 30 and 100 part jobs under retain and fall retention with kept and removed waste. New tests compare the sampler with a fresh snapshot preparation across forward and backward seeks in both retention modes, bound release-time reads for 10,001 samples of 128 nested pieces (1,288,512 reads before, under 65,536 now), and pin point-in-polygon boundary tolerance. A 100-part simulation compile went from about 4.4 s to 0.8 s (retain) and 4.1 s to 1.2 s (fall). The pure-domain simulation suite, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Simulating jobs with many parts is faster.",
+    "changes": [
+      "Preparing the simulation for a job with dozens of parts that drop out takes a fraction of the time it did, with the same results."
+    ],
+    "compatibility": "Simulation results, execution plans and posted programs are unchanged. Installed machine packages, posts, saved revisions and CAD files are unchanged.",
+    "action": "No action needed."
+  }
+}
