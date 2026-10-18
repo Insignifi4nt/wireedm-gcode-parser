@@ -49,6 +49,7 @@ export function buildChains(
   const pairBySegmentId = new Map(segmentPairs.map((pair) => [pair.segmentId, pair]));
   const adjacency = buildAdjacency(segmentPairs);
   const unused = new Set(segmentPairs.map((pair) => pair.segmentId));
+  const nextStart = createChainStartPicker(segmentPairs, adjacency);
   const chains: PathChain[] = [];
 
   for (const [clusterId, incidents] of adjacency) {
@@ -83,7 +84,7 @@ export function buildChains(
   }
 
   while (unused.size > 0) {
-    const start = chooseNextStart(unused, pairBySegmentId, adjacency);
+    const start = nextStart(unused);
     const walked = walkChain(start, {
       adjacency,
       pairBySegmentId,
@@ -185,25 +186,40 @@ function buildAdjacency(segmentPairs: SegmentClusterPair[]) {
   return adjacency;
 }
 
-function chooseNextStart(
-  unused: Set<SegmentId>,
-  pairBySegmentId: Map<SegmentId, SegmentClusterPair>,
+interface ChainStart {
+  segmentId: SegmentId;
+  startClusterId: EndpointClusterId;
+}
+
+/**
+ * Returns a picker for the next chain start: the first unused segment, in segment id order, with
+ * a free end, else the first unused segment. Adjacency never changes and segments are only ever
+ * used up, so both cursors only move forward.
+ */
+function createChainStartPicker(
+  segmentPairs: SegmentClusterPair[],
   adjacency: Map<EndpointClusterId, IncidentEndpoint[]>
 ) {
-  const candidates = [...unused].sort();
-
-  for (const segmentId of candidates) {
-    const pair = requiredPair(pairBySegmentId, segmentId);
+  const ordered = segmentPairs.slice().sort((a, b) => (a.segmentId < b.segmentId ? -1 : a.segmentId > b.segmentId ? 1 : 0));
+  const freeEndStarts: ChainStart[] = [];
+  for (const pair of ordered) {
     if ((adjacency.get(pair.startClusterId)?.length ?? 0) === 1) {
-      return { segmentId, startClusterId: pair.startClusterId };
-    }
-    if ((adjacency.get(pair.endClusterId)?.length ?? 0) === 1) {
-      return { segmentId, startClusterId: pair.endClusterId };
+      freeEndStarts.push({ segmentId: pair.segmentId, startClusterId: pair.startClusterId });
+    } else if ((adjacency.get(pair.endClusterId)?.length ?? 0) === 1) {
+      freeEndStarts.push({ segmentId: pair.segmentId, startClusterId: pair.endClusterId });
     }
   }
+  let freeEndCursor = 0;
+  let orderedCursor = 0;
 
-  const segmentId = candidates[0];
-  return { segmentId, startClusterId: requiredPair(pairBySegmentId, segmentId).startClusterId };
+  return (unused: Set<SegmentId>): ChainStart => {
+    while (freeEndCursor < freeEndStarts.length && !unused.has(freeEndStarts[freeEndCursor].segmentId)) freeEndCursor++;
+    if (freeEndCursor < freeEndStarts.length) return freeEndStarts[freeEndCursor];
+
+    while (!unused.has(ordered[orderedCursor].segmentId)) orderedCursor++;
+    const pair = ordered[orderedCursor];
+    return { segmentId: pair.segmentId, startClusterId: pair.startClusterId };
+  };
 }
 
 interface WalkState {

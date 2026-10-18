@@ -1,0 +1,24 @@
+{
+  "version": "0.0.704",
+  "previousVersion": "0.0.703",
+  "postCompatibility": "preserved-output-faster-contour-ordering",
+  "summary": "Makes DXF import and path re-planning scale with drawing size: contour containment, chain starts and cut ordering no longer rescan or re-sort every contour for each step, and the shared spatial index avoids bigint and string work for ordinary coordinates.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Cut order, start points, directions, containment and diagnostics are unchanged for the same geometry and options. One theoretical exception: when three or more candidate starts have rapid lengths that differ by less than the coincidence epsilon pairwise but more than it end to end, the previous sort's pick depended on engine sort internals; the planner now takes the first best by a fixed scan. No such case appeared in 15,000 randomized comparisons, including near-epsilon jitter.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. Imported and re-planned documents keep the same operation order, start rotation, direction, rapid lengths, containment depth and parents, chain walks and diagnostics, so posted programs are unchanged.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change and no cleanup of user files.",
+    "verification": "Old and new chain building, containment and planning were compared on 15,000 randomized plans (random, grid, 1e-12 noise and near-epsilon layouts; open, branching, duplicate, bulge and nested shapes; sheet outlines; all strategies, reverse options and start points; reordered contours, dependency cycles and repeated contour ids) with byte-identical JSON. A brute-force test checks every nearest step against all eligible contours, and a mutation of the pruning cutoff fails it. The new scaling test plans 4,000 nested contours in 78 ms (3.7x growth from 1,000); the previous code took 10.2 s (41x). path-intel, UPID, path-editor, DXF and CAD domain suites, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Large DXF drawings import and re-plan much faster.",
+    "changes": [
+      "Importing or editing drawings with thousands of contours no longer slows down sharply as the drawing grows. A 14,400-entity nest plans about seven times faster, and larger drawings gain more."
+    ],
+    "compatibility": "Cut order, start points, directions and posted programs are unchanged. Installed machine packages, posts, saved revisions and CAD files are unchanged.",
+    "action": "No action needed."
+  }
+}
