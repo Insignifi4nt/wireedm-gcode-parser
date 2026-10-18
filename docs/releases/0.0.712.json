@@ -1,0 +1,32 @@
+{
+  "version": "0.0.712",
+  "previousVersion": "0.0.711",
+  "postCompatibility": "changed-custom-post-error-diagnostics",
+  "summary": "A custom post that throws an unusual value now fails with a bounded diagnostic instead of aborting the post runtime. Before, formatting the thrown value could itself throw (a BigInt), leave the exception and event handles undisposed, or dispose a Promise handle twice, which aborted QuickJS during onEvent and package checks. Cleanup now runs in finally blocks and checks that each handle is still alive, and thrown values are formatted into a message of at most 4,096 characters.",
+  "warning": "Potentially breaking for installed posts that rely on the text of their own failure diagnostics. Successful post output, diagnostic codes, package formats and the post engine API are unchanged. Messages change for some thrown values: throw 1n reports \"1\" instead of aborting; undefined reports \"undefined\" and Symbol(\"thrown\") reports \"Symbol(thrown)\" instead of an undefined message; NaN, Infinity and -Infinity report those words instead of \"null\"; an empty message, including Error(\"\"), reports \"Custom post threw an unprintable value.\"; messages over 4,096 characters keep their first 4,093 followed by \"...\"; thrown Promises report their dumped state. Finite numbers, booleans, null, strings, objects with a message and other JSON objects keep their existing text. Resource-limit classification is decided before truncation, so it does not change.",
+  "checklist": {
+    "schema": "No UPID, portable UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change. onEvent handlers receive the same events; only failure handling after a throw changes.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "Post generation, audit, numbering, encoding and controller-file rules are unchanged for runs that succeed. Failed runs keep their diagnostic codes (POST_CUSTOM_RUNTIME_FAILED, POST_CUSTOM_SOURCE_INVALID, POST_CUSTOM_RESOURCE_LIMIT); only the message text changes for the thrown values listed in the warning.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Installed posts are not rewritten.",
+    "verification": "92 new runtime cases and one worker-entry case cover thrown primitives, BigInt, Symbol, Promises, cyclic and hostile objects, long messages, host callbacks, interrupts, deadlines, stack overflow, repeated runs and a successful run after each failure. The BigInt rejection, the onEvent and package-check aborts, the undefined messages, unbounded messages and the Promise double disposal each fail on the old code. The post-processor, Robofil, wire-edm-job and package-tool suites, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Robofil 2.6.0 package and current-contract tests pass unchanged; its successful output is identical. No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "A custom post that throws an unusual value reports a readable error instead of stopping the post runtime.",
+    "changes": [
+      "Custom posts that throw a BigInt, a Symbol, undefined or a Promise fail with a readable diagnostic.",
+      "Very long custom-post error messages are shortened to 4,096 characters.",
+      "A failed custom post no longer leaves the post runtime unusable for the next run."
+    ],
+    "compatibility": "Posted programs and installed posts are unchanged. Error messages change for some unusual thrown values; diagnostic codes stay the same.",
+    "action": "If a workflow matches the text of a custom-post error, check it against the new messages."
+  }
+}
