@@ -1,0 +1,30 @@
+{
+  "version": "0.0.716",
+  "previousVersion": "0.0.715",
+  "postCompatibility": "preserved-output-stable-endpoint-diagnostic-identity",
+  "summary": "Endpoint diagnostics stay on the joints they describe after edits. Endpoint cluster ids are positional and are renumbered whenever an edit re-clusters endpoints, and a split start replaces segments with new pieces, so snap, ambiguity, branching, open-chain and gap diagnostics could keep stale segment or cluster references, or a reused id could silently describe a different joint. After each edit, these diagnostics are now rebuilt from the current topology. An id is kept only when every surviving endpoint agrees on one successor joint; otherwise the diagnostic gets a fresh id, and every chain, contour, path element and plan reference to a retired id is removed. Diagnostics are recognized by code and ownership rather than by id prefix, so saved diagnostics with any id are preserved.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions or controller output. Diagnostic ids and references can change after an edit, where they previously went stale: a diagnostic whose joint changed gets a new diag_endpoint_refresh_ id, and an analysis diagnostic whose generated id collides with a saved diagnostic gets a __refresh_ suffix. Diagnostic codes, severities and blocking are unchanged.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding or controller-file change. Planning, compensation and posting read the same diagnostic codes; only their ids and references after an edit are corrected.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Saved documents are not rewritten until edited.",
+    "verification": "Fifteen new path-editor tests cover a split start that renumbers clusters, a bow-tie branching junction split, successor disagreement between nearby joints, saved diagnostics with arbitrary or misleading id prefixes, repeated reversals with plan copies, and a resolved warning whose id must not be reused; the original cases fail on the previous code. The pure-domain suite (1,395 tests), the path-editor, UPID and storage suites (815 tests), tsc -b and npm run lint pass."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Posting code is untouched; Robofil 2.6.0 package and current-contract tests pass unchanged. No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Geometry warnings stay attached to the right joints after edits.",
+    "changes": [
+      "After splitting, reversing or moving a start, endpoint warnings point at the current segments and joints instead of stale or reused ones."
+    ],
+    "compatibility": "Posted programs, installed posts and saved projects are unchanged.",
+    "action": "No action needed."
+  }
+}
