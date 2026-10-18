@@ -5,7 +5,9 @@ import { reversePathOperation } from '@/domain/path-editor/pathDocumentOperation
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { compileSimulation } from '../simulation';
 
-import { arcSweep, distanceToMotion, interpolateMotion, motionLength, motionPolyline, type SimulationMotion } from '../geometry';
+import {
+  arcSweep, distanceToMotion, interpolateMotion, motionLength, motionPolyline, pointInPolygon, type SimulationMotion
+} from '../geometry';
 
 function tinyArcMotion(clockwise: boolean, reversed: boolean, radius = 2.5e15): SimulationMotion {
   const centerY = clockwise ? -radius : radius;
@@ -153,3 +155,16 @@ const clearanceSettings = {
   wireDiameter: 0.1, cutSpeedMmPerSecond: 1, rapidSpeedMmPerSecond: 1,
   eventHoldSeconds: 0, guideClearanceMm: 20, guideRadiusMm: 0, supportFloorZ: 0
 };
+
+describe('point in polygon', () => {
+  const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+
+  it('counts the boundary and points just outside it as inside, and nothing farther out', () => {
+    for (const point of [{ x: 5, y: 5 }, { x: 0, y: 0 }, { x: 10, y: 5 }, { x: 5, y: 10 }, { x: 10 + 5e-9, y: 5 }, { x: 5, y: -5e-9 }]) {
+      expect(pointInPolygon(point, square)).toBe(true);
+    }
+    for (const point of [{ x: 10 + 2e-8, y: 5 }, { x: -2e-8, y: -2e-8 }, { x: 20, y: 5 }]) {
+      expect(pointInPolygon(point, square)).toBe(false);
+    }
+  });
+});

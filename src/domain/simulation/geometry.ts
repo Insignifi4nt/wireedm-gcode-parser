@@ -76,9 +76,11 @@ export function distanceToPolygon(point: Point2, polygon: readonly Point2[]): nu
   return minimum;
 }
 
+/** Points this close to an edge count as inside. */
+export const POINT_IN_POLYGON_BOUNDARY_TOLERANCE = 1e-8;
+
 /** Boundary is included; collision consumers apply their own kerf clearance. */
 export function pointInPolygon(point: Point2, polygon: readonly Point2[]): boolean {
-  if (distanceToPolygon(point, polygon) < 1e-8) return true;
   let inside = false;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
     const a = polygon[i];
@@ -87,7 +89,7 @@ export function pointInPolygon(point: Point2, polygon: readonly Point2[]): boole
       inside = !inside;
     }
   }
-  return inside;
+  return inside || distanceToPolygon(point, polygon) < POINT_IN_POLYGON_BOUNDARY_TOLERANCE;
 }
 
 export function distanceToMotion(point: Point2, motion: SimulationMotion): number {

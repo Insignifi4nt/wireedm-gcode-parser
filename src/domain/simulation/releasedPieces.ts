@@ -1,7 +1,7 @@
 import { approximatePath, segmentMap } from '@/domain/path-intel/segments';
 import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 
-import { distance, pointInPolygon, polygonArea } from './geometry';
+import { distance, POINT_IN_POLYGON_BOUNDARY_TOLERANCE, pointInPolygon, polygonArea } from './geometry';
 import { unsupportedMaterialPolygons } from './materialTopology';
 import { operationMaterialRole } from './materialRoles';
 import type {
@@ -138,13 +138,31 @@ export function compileReleasedPieces(
 }
 
 function associateParents(pieces: readonly SimulationPiece[]): SimulationPiece[] {
-  const measured = pieces.map(piece => ({ piece, area: polygonArea(piece.polygon) }));
-  return measured.map(({ piece, area }) => {
-    const parents = measured.filter(({ piece: other, area: otherArea }) => other.id !== piece.id && otherArea > area
+  const measured = pieces.map(piece => ({ piece, area: polygonArea(piece.polygon), bounds: vertexBounds(piece.polygon) }));
+  return measured.map(({ piece, area, bounds }) => {
+    // Points inside a polygon, or within its boundary tolerance, lie within its padded vertex bounds.
+    const parents = measured.filter(({ piece: other, area: otherArea, bounds: otherBounds }) => other.id !== piece.id && otherArea > area
+      && boundsContain(otherBounds, bounds, POINT_IN_POLYGON_BOUNDARY_TOLERANCE)
       && piece.polygon.every((point) => pointInPolygon(point, other.polygon)));
     parents.sort((a, b) => a.area - b.area);
     return { ...piece, parentPieceId: parents[0]?.piece.id ?? null };
   });
+}
+
+interface VertexBounds { minX: number; minY: number; maxX: number; maxY: number }
+
+function vertexBounds(polygon: readonly Point2[]): VertexBounds {
+  const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const { x, y } of polygon) {
+    bounds.minX = Math.min(bounds.minX, x); bounds.minY = Math.min(bounds.minY, y);
+    bounds.maxX = Math.max(bounds.maxX, x); bounds.maxY = Math.max(bounds.maxY, y);
+  }
+  return bounds;
+}
+
+function boundsContain(outer: VertexBounds, inner: VertexBounds, padding: number) {
+  return inner.minX >= outer.minX - padding && inner.maxX <= outer.maxX + padding
+    && inner.minY >= outer.minY - padding && inner.maxY <= outer.maxY + padding;
 }
 
 /** Keep disjoint sorted intervals so chronological contour fragments collapse immediately. */
@@ -172,10 +190,13 @@ function completeCoverage(ranges: readonly CutRange[]): boolean {
   return ranges.length === 1 && ranges[0].start <= 0 && ranges[0].end >= 1;
 }
 
+type ReleasedPieceSnapshots = { pieces: SimulationPieceSnapshot[]; stockHoles: (readonly Point2[])[]; removedPieceIds: string[] };
+
 export function releasedPieceSnapshots(
   pieces: readonly SimulationPiece[], settings: ResolvedSimulationSettings, elapsedSeconds: number
-): { pieces: SimulationPieceSnapshot[]; stockHoles: (readonly Point2[])[]; removedPieceIds: string[] } {
-  return snapshotReleasedPieces(pieces, settings, elapsedSeconds, pieceTopology(pieces));
+): ReleasedPieceSnapshots {
+  const topology = pieceTopology(pieces);
+  return snapshotPieceState(releasedPieceState(pieces, elapsedSeconds, topology), settings, elapsedSeconds, topology);
 }
 
 interface PieceTopology {
@@ -211,16 +232,41 @@ function pieceTopology(pieces: readonly SimulationPiece[]): PieceTopology {
   return topology;
 }
 
-/** A synchronous obstruction scan owns a stable piece collection for all its samples. */
+/**
+ * A synchronous obstruction scan owns a stable piece collection for all its samples.
+ * Released and removed pieces only change at release and removal times, so the
+ * sampler reuses that state between them and recomputes only falling heights.
+ * Callers must not mutate the returned snapshots.
+ */
 export function createReleasedPieceSnapshotSampler(pieces: readonly SimulationPiece[], settings: ResolvedSimulationSettings) {
   const topology = pieceTopology(pieces);
-  return (elapsedSeconds: number) => snapshotReleasedPieces(pieces, settings, elapsedSeconds, topology);
+  const changeTimes = [...new Set(pieces.flatMap(({ releaseSeconds, removalSeconds }) =>
+    removalSeconds === null ? [releaseSeconds] : [releaseSeconds, removalSeconds]))].sort((a, b) => a - b);
+  let cached: { from: number; until: number; state: ReleasedPieceState; snapshot: ReleasedPieceSnapshots | null } | null = null;
+  return (elapsedSeconds: number): ReleasedPieceSnapshots => {
+    if (!cached || !(elapsedSeconds >= cached.from && elapsedSeconds < cached.until)) {
+      const next = changeTimes.findIndex((time) => time > elapsedSeconds);
+      const until = next < 0 ? Infinity : changeTimes[next];
+      const from = next < 0 ? changeTimes.at(-1) ?? -Infinity : next === 0 ? -Infinity : changeTimes[next - 1];
+      cached = { from, until, state: releasedPieceState(pieces, elapsedSeconds, topology), snapshot: null };
+    }
+    if (settings.retention === 'retain') {
+      return cached.snapshot ??= snapshotPieceState(cached.state, settings, elapsedSeconds, topology);
+    }
+    return snapshotPieceState(cached.state, settings, elapsedSeconds, topology);
+  };
 }
 
-function snapshotReleasedPieces(
-  pieces: readonly SimulationPiece[], settings: ResolvedSimulationSettings, elapsedSeconds: number,
-  { byId, fallStarts }: PieceTopology
-): { pieces: SimulationPieceSnapshot[]; stockHoles: (readonly Point2[])[]; removedPieceIds: string[] } {
+interface ReleasedPieceState {
+  readonly visible: readonly SimulationPiece[];
+  readonly holesByParent: ReadonlyMap<string, (readonly Point2[])[]>;
+  readonly stockHoles: (readonly Point2[])[];
+  readonly removedPieceIds: string[];
+}
+
+function releasedPieceState(
+  pieces: readonly SimulationPiece[], elapsedSeconds: number, { byId }: PieceTopology
+): ReleasedPieceState {
   const released = pieces.filter(({ releaseSeconds }) => releaseSeconds <= elapsedSeconds);
   const releasedIds = new Set(released.map(({ id }) => id));
   function nearestReleasedParent(piece: SimulationPiece): SimulationPiece | null {
@@ -238,9 +284,21 @@ function snapshotReleasedPieces(
     holesByParent.set(parentId, holes);
   }
   return {
+    holesByParent,
     stockHoles: released.filter(({ id }) => parents.get(id) === null).map(({ polygon }) => polygon),
     removedPieceIds: released.filter(piece => piece.removalSeconds !== null && piece.removalSeconds <= elapsedSeconds).map(piece => piece.id),
-    pieces: released.filter(piece => piece.removalSeconds === null || piece.removalSeconds > elapsedSeconds).map((piece) => {
+    visible: released.filter(piece => piece.removalSeconds === null || piece.removalSeconds > elapsedSeconds)
+  };
+}
+
+function snapshotPieceState(
+  { visible, holesByParent, stockHoles, removedPieceIds }: ReleasedPieceState,
+  settings: ResolvedSimulationSettings, elapsedSeconds: number, { fallStarts }: PieceTopology
+): ReleasedPieceSnapshots {
+  return {
+    stockHoles,
+    removedPieceIds,
+    pieces: visible.map((piece) => {
       // An earlier enclosing release carries still-attached inner material with it.
       const fallStart = fallStarts.get(piece)!;
       const elapsed = Math.max(0, elapsedSeconds - fallStart);

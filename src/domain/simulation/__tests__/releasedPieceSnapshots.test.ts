@@ -77,4 +77,31 @@ describe('released material snapshot preparation', () => {
     }
     expect(releaseReads).toBeLessThan(count * 15);
   });
+
+  it.each(['fall', 'retain'] as const)('samples the same snapshots as a fresh preparation in any seek order (%s)', retention => {
+    const sampled = { ...settings, retention };
+    const pieces = [piece('outer', 1), { ...piece('middle', 3, 'outer'), removalSeconds: 6 }, piece('inner', 3, 'middle'),
+      { ...piece('slug', 2), removalSeconds: 2 }, piece('late', 9, 'outer')];
+    const sample = createReleasedPieceSnapshotSampler(pieces, sampled);
+    const times = [-1, 0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5.99, 6, 7, 8.5, 9, 12, Infinity, 2.5, 0, 6, 5.99, 9, 1];
+    for (const time of times) expect(sample(time)).toEqual(releasedPieceSnapshots(pieces, sampled, time));
+  });
+
+  it('prepares released material once per release or removal interval, however densely it samples', () => {
+    const count = 128;
+    let releaseReads = 0;
+    const pieces = Array.from({ length: count }, (_, index) => {
+      const current = piece(`piece-${index}`, index, index ? `piece-${index - 1}` : null);
+      Object.defineProperty(current, 'releaseSeconds', { get: () => { releaseReads++; return index; } });
+      return current;
+    });
+    const sample = createReleasedPieceSnapshotSampler(pieces, settings);
+    const samples = 10_000;
+    for (let index = 0; index <= samples; index++) {
+      const time = count * index / samples;
+      expect(sample(time).pieces).toHaveLength(Math.min(count, Math.floor(time) + 1));
+    }
+    // Re-filtering every piece per sample would read release times over a million times.
+    expect(releaseReads).toBeLessThan(count * count * 4);
+  });
 });
