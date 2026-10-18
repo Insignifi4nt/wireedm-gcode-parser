@@ -31,6 +31,18 @@ describe('parseDxf', () => {
     expect(parsed.unsupportedEntities).toEqual([]);
   });
 
+  it('reads files whose lines end with a lone CR like their LF equivalent', () => {
+    const lines = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LINE', '8', 'CUT', '10', '0', '20', '0', '11', '10', '21', '0',
+      '0', 'ENDSEC', '0', 'EOF'
+    ];
+    const parsed = parseDxf(lines.join('\r'));
+
+    expect(parsed).toEqual(parseDxf(lines.join('\n')));
+    expect(parsed.entities).toHaveLength(1);
+  });
+
   it('exports the complete DXF unit declaration status vocabulary', () => {
     expect(DXF_UNIT_DECLARATION_STATUSES).toEqual([
       'missing',

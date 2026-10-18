@@ -1,3 +1,5 @@
+import { splitGCodeLines } from './gcodeLines';
+
 /** Interactive inspection limits are independent of editable project imports. */
 export const GCODE_INSPECTION_MAX_BYTES = 2 * 1024 * 1024;
 export const GCODE_INSPECTION_MAX_LINES = 50_000;
@@ -22,7 +24,7 @@ export function validateGCodeInspectionSource(text: string): string | null {
     return 'Inspection supports up to 2 MiB of program text. Open a smaller program or paste the section to inspect.';
   }
   if (text.includes('\0')) return 'This file contains binary or unsupported text encoding. Choose a plain-text program.';
-  if (text.split(/\r\n|\r|\n/).length > GCODE_INSPECTION_MAX_LINES) {
+  if (splitGCodeLines(text).length > GCODE_INSPECTION_MAX_LINES) {
     return 'Inspection supports up to 50,000 source lines. Paste the section to inspect.';
   }
   return null;

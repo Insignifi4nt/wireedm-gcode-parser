@@ -1,3 +1,5 @@
+import { splitGCodeLines } from './gcodeLines';
+
 const DEFAULT_PRECISION = 3;
 
 export interface NormalizeToISOOptions {
@@ -19,7 +21,7 @@ export function normalizeToISO(inputText: string, options: NormalizeToISOOptions
     stripSemicolon = true
   } = options;
 
-  const srcLines = String(inputText ?? '').split(/\r?\n/);
+  const srcLines = splitGCodeLines(String(inputText ?? ''));
   const outLines: string[] = [];
 
   if (addPercent) {
@@ -43,12 +45,11 @@ export function normalizeToISO(inputText: string, options: NormalizeToISOOptions
       if (!s) continue;
     }
 
-    s = canonicalizeMotionCodes(stripLeadingBlockNumber(s).replace(/\s+/g, ' ').trim());
-
-    if (ensureM02) {
-      s = removeEndCommands(s).trim();
-      if (!s) continue;
-    }
+    s = stripLeadingBlockNumber(s);
+    // Remove end commands first so the words they separated are spaced and canonicalized too.
+    if (ensureM02) s = removeEndCommands(s);
+    s = canonicalizeMotionCodes(s.replace(/\s+/g, ' ').trim());
+    if (!s) continue;
 
     outLines.push(`N${n} ${s}`);
     n += step;
@@ -65,7 +66,7 @@ export function normalizeToISO(inputText: string, options: NormalizeToISOOptions
 export function stripForEditing(inputText: string) {
   if (typeof inputText !== 'string') return '';
 
-  const lines = inputText.split(/\r?\n/);
+  const lines = splitGCodeLines(inputText);
   const out: string[] = [];
   let startIndex = 0;
 

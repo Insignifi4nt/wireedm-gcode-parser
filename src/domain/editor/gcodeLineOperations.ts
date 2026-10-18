@@ -1,6 +1,7 @@
 import { isMotionCommand, organizeGCodeStructure, type GCodeContourGroup, type GCodeStructure } from './gcodeStructure';
 import { canonicalizeMotionCodes } from './isoNormalizer';
 import { createGCodeInterpreterState, interpretGCodeBlock, type GCodeInterpreterState } from './gcodeBlockInterpreter';
+import { splitGCodeLines } from './gcodeLines';
 
 export interface MoveBodyGroupResult {
   text: string;
@@ -45,7 +46,7 @@ export function moveBodyGroup(
   const neighborGroup = groups[targetIndex];
   if (currentGroup.lines.length === 0 || neighborGroup.lines.length === 0) return null;
 
-  const allLines = splitProgramLines(text);
+  const allLines = splitGCodeLines(text);
   const startIndex = currentGroup.lines[0].num - 1;
   const endIndex = currentGroup.lines.at(-1)!.num - 1;
   const blockLength = endIndex - startIndex + 1;
@@ -81,7 +82,7 @@ export function deleteBodyGroup(
   const deletedSet = new Set(deletedLineNumbers);
 
   return {
-    text: splitProgramLines(text)
+    text: splitGCodeLines(text)
       .filter((_, index) => !deletedSet.has(index + 1))
       .join('\n'),
     deletedLineNumbers
@@ -93,7 +94,7 @@ export function moveSelectedLines(
   selectedLineNumbers: number[],
   direction: -1 | 1
 ): MoveSelectedLinesResult | null {
-  const lines = splitProgramLines(text);
+  const lines = splitGCodeLines(text);
   const selected = uniqueSortedLineNumbers(selectedLineNumbers, lines.length);
   if (selected.length === 0) return null;
   if (direction < 0 && selected[0] <= 1) return null;
@@ -123,7 +124,7 @@ export function setStartAtLine(
   options: { ensureClosure?: boolean; interpreterProfile?: GCodeInterpreterState['profile'] } = {}
 ): SetStartAtLineResult | null {
   const ensureClosure = options.ensureClosure ?? true;
-  const lines = splitProgramLines(text);
+  const lines = splitGCodeLines(text);
   const interpreter = createGCodeInterpreterState(options.interpreterProfile ?? 'neutral');
   const motionUnits = new Set<typeof interpreter.units>();
   for (const [index, line] of lines.entries()) {
@@ -208,10 +209,6 @@ export function setStartAtLine(
     ].join('\n'),
     newStartLine: structure.header.lines.length + prefix.length + 1
   };
-}
-
-function splitProgramLines(text: string) {
-  return text.split(/\r?\n/);
 }
 
 function uniqueSortedLineNumbers(lineNumbers: number[], lineCount: number) {

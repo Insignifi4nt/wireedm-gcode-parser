@@ -254,7 +254,8 @@ const DXF_INSUNITS: Record<number, { label: string; scaleToMillimeters: number |
 };
 
 function toPairs(text: string, budget: DxfResourceBudget): DxfPair[] {
-  const lines = text.replace(/\r/g, '').split('\n');
+  // Files without any LF end lines with a lone CR; otherwise CR is stripped as before.
+  const lines = text.includes('\n') ? text.replace(/\r/g, '').split('\n') : text.split('\r');
   const pairs: DxfPair[] = [];
   const firstCodeLine = lines.findIndex((line) => isGroupCodeLine(line.trim()));
   if (firstCodeLine < 0) return pairs;

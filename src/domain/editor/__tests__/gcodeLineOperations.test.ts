@@ -166,6 +166,13 @@ describe('gcodeLineOperations', () => {
     expect(output.indexOf('M00')).toBeGreaterThan(output.indexOf('G1 X0 Y0'));
     expect(output[result!.newStartLine - 1]).toBe('G1 X30 Y0');
   });
+
+  it('addresses the same rows as the parser when lines end with a lone CR', () => {
+    expect(moveSelectedLines(['A', 'B', 'C'].join('\r'), [2], 1)).toEqual({
+      text: ['A', 'C', 'B'].join('\n'),
+      movedLineNumbers: [3]
+    });
+  });
 });
 
 function sampleGroupedProgram() {

@@ -1,5 +1,6 @@
 import type { MagnetizedPathPoint } from '@/domain/path-editor/pathPointInference';
 import { createGCodeInterpreterState, interpretGCodeBlock, type GCodeInterpreterState } from './gcodeBlockInterpreter';
+import { splitGCodeLines } from './gcodeLines';
 
 export interface MeasurementPoint {
   id: string;
@@ -69,7 +70,7 @@ export function insertMeasurementPointsIntoText(
     };
   }
 
-  const lines = text.split(/\r?\n/);
+  const lines = splitGCodeLines(text);
   const insertAfterLine = clampLine(options.insertAfterLine ?? 1, lines.length);
   const insertIndex = insertAfterLine;
   const state = createGCodeInterpreterState(options.interpreterProfile ?? 'neutral');

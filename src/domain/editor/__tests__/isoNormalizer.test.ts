@@ -88,4 +88,19 @@ describe('isoNormalizer', () => {
 
     expect(result).toBe(['%', 'N10 G0 X0 Y0', 'N20 G1 X1 Y0', 'N30 M02', ''].join('\n'));
   });
+
+  it('spaces and canonicalizes the words an end command separated, so output is stable', () => {
+    const result = normalizeToISO('X10 M02 Y5\nM2G00 X1', { crlf: false });
+
+    expect(result).toBe('%\nN10 X10 Y5\nN20 G0 X1\nN30 M02\n');
+    expect(normalizeToISO(result, { crlf: false })).toBe(result);
+  });
+
+  it('keeps every block of programs that end lines with a lone CR', () => {
+    const lines = ['%', 'G90 G21', 'G0 X0 Y0', 'G1 X10 Y0', 'G1 X10 Y10', 'M02'];
+
+    expect(normalizeToISO(lines.join('\r'))).toBe(normalizeToISO(lines.join('\n')));
+    expect(normalizeToISO(lines.join('\r'))).toContain('N40 G1 X10 Y10');
+    expect(stripForEditing(lines.join('\r'))).toBe(stripForEditing(lines.join('\r\n')));
+  });
 });
