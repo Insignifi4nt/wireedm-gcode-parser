@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import ts from 'typescript';
+// TypeScript 7 ships no compiler API yet; AST tooling uses the TypeScript 6 package.
+import ts from '@typescript/typescript6';
 import { iconSource } from './icon-source.mjs';
 
 const root = process.cwd();
@@ -102,7 +103,6 @@ for (const file of files) {
 }
 const contextId = use => {
   const alias = use.importedAlias;
-  const text = `${use.file} ${use.control ? JSON.stringify(use.control) : ''} ${use.context} ${use.lineContext}`.toLowerCase();
   if (alias === 'Box') {
     if (use.file.includes('SimulationPanel')) return { intendedCatalogId: 'body', confidence: 'medium', semanticNote: 'Stock settings and dimensions. The same Box glyph represents CAD solid-body operations, the simulation workspace tab, and a loading illustration in other call sites.' };
     if (use.file.includes('SimulationViewport')) return { intendedCatalogId: 'simulation', confidence: 'low', semanticNote: 'Loading illustration for the 3D simulation workspace; same Box symbol is used for stock and CAD bodies elsewhere.' };

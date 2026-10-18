@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import ts from 'typescript';
+// TypeScript 7 ships no compiler API yet; AST tooling uses the TypeScript 6 package.
+import ts from '@typescript/typescript6';
 import { iconSource } from './icon-source.mjs';
 
 // Source-only inventory. It never changes app files or requires a running app.
@@ -16,7 +17,7 @@ const walk = directory => readdirSync(directory, { withFileTypes: true }).flatMa
 const sourceFiles = [...walk(path.join(root, 'src')), ...walk(path.join(root, 'package-tools')), path.join(root, 'index.html')].sort();
 const isFixture = file => /(?:\/__tests__\/|\.(?:test|spec)\.|\/test[A-Z]|\/test-)/.test(slash(path.relative(root, file)));
 const production = sourceFiles.filter(file => !isFixture(file));
-const codeFiles = production.filter(file => /\.[cm]?[jt]sx?$/.test(file) && !/\.d\.ts$/.test(file));
+const codeFiles = production.filter(file => /\.[cm]?[jt]sx?$/.test(file) && !file.endsWith('.d.ts'));
 const program = ts.createProgram(codeFiles, { jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ESNext, noResolve: true, allowJs: true });
 const checker = program.getTypeChecker();
 const imports = [], occurrences = [], dynamicSlots = [], glyphCandidates = [], graphics = [], nativeControls = [], cssVisuals = [], assets = [], renderCalls = [], primitives = [], sharedGraphicCalls = [], programmaticGraphics = [], cursorLocations = [];
