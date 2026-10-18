@@ -86,6 +86,23 @@ describe('geometry edit identity integrity', () => {
     expect(validateUpidDocument(edited!).structuralDiagnostics).toEqual([]);
   });
 
+  it('records every intersection a split start creates on a self-crossing contour', () => {
+    const bowtie = createPathPlanningDocumentFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 10 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 10 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 0, y: 10 } },
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 10 }, end: { x: 0, y: 0 } }
+    ]);
+
+    const edited = setClosedOperationStartNearPoint(bowtie, bowtie.plan.operations[0].id, { x: 5, y: 5 });
+
+    expect(edited).not.toBeNull();
+    const diagnosticIds = new Set(edited!.diagnostics.map(({ id }) => id));
+    expect(edited!.contours[0].diagnosticIds.filter((id) => !diagnosticIds.has(id))).toEqual([]);
+    expect(edited!.diagnostics.filter(({ code }) => code === 'intersecting-topology')).toHaveLength(2);
+    expect(validateUpidDocument(edited!).structuralDiagnostics).toEqual([]);
+  });
+
   it('rejects non-finite transform input without changing the source document', () => {
     const document = rectangle(), before = structuredClone(document);
     expect(translatePathSegment(document, document.segments[0].id, { x: Infinity, y: 0 })).toBeNull();

@@ -1463,15 +1463,29 @@ function refreshPlan(document: PathPlanningDocument) {
   document.plan.metrics = planMetrics(document.plan);
   const contourResult = analyzeContours(document.chains, document.segments, document.options);
   retainContourIds(contourResult, document.contours);
+  replaceContourAnalysisDiagnostics(document, contourResult.diagnostics);
   const manualClassificationsByContourId = manualClassifications(document);
+  const refreshedContoursById = new Map(contourResult.contours.map((contour) => [contour.id, contour]));
   document.contours = document.contours.map((contour) => {
-    const refreshed = contourResult.contours.find((candidate) => candidate.id === contour.id);
+    const refreshed = refreshedContoursById.get(contour.id);
     const nextContour = refreshed ?? contour;
     const classification = manualClassificationsByContourId.get(contour.id);
     return classification ? { ...nextContour, classification } : nextContour;
   });
   refreshOperationDisplayNames(document);
   refreshPathElements(document);
+}
+
+// Contour analysis renumbers its intersection and contour diagnostics, and a
+// split start can turn one intersection into two. Replace the previous set in
+// place so refreshed contours never name a diagnostic the document lacks.
+function replaceContourAnalysisDiagnostics(document: PathPlanningDocument, diagnostics: PathDiagnostic[]) {
+  const fromContourAnalysis = (diagnostic: PathDiagnostic) =>
+    diagnostic.id.startsWith('diag_intersection_') || diagnostic.id.startsWith('diag_contour_');
+  const first = document.diagnostics.findIndex(fromContourAnalysis);
+  const kept = document.diagnostics.filter((diagnostic) => !fromContourAnalysis(diagnostic));
+  kept.splice(first < 0 ? kept.length : first, 0, ...diagnostics);
+  document.diagnostics = kept;
 }
 
 function refreshPathElements(document: PathPlanningDocument) {

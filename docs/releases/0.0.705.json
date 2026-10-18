@@ -1,22 +1,23 @@
 {
   "version": "0.0.705",
   "previousVersion": "0.0.704",
-  "postCompatibility": "preserved-output-valid-endpoint-diagnostics",
-  "summary": "Stops endpoint clustering from adding an empty relatedClusterIds property to diagnostics that name no clusters, which made re-planned or structurally cloned documents fail UPID validation before they were saved.",
-  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Saved documents never contained the empty property because JSON drops it; only in-memory documents were affected. Cluster ids, diagnostics and plans are otherwise unchanged.",
+  "postCompatibility": "preserved-output-valid-edited-diagnostics",
+  "summary": "Keeps documents structurally valid after path edits: endpoint clustering no longer adds an empty relatedClusterIds property to diagnostics that name no clusters, and moving a closed contour start now records the intersection diagnostics its re-analysis produces instead of leaving contours pointing at missing ones.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Saved documents never contained the empty property because JSON drops it. Moving a start on a self-intersecting contour now replaces its intersection and contour diagnostics with the re-analysed set, so the diagnostic list can gain or renumber intersection entries; these are blocking errors either way. Cluster ids, plans and posted programs are otherwise unchanged.",
   "checklist": {
     "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
     "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
     "capabilities": "No post or machine capability change.",
-    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. Diagnostics that name clusters keep the same renumbered ids; diagnostics that name none no longer carry an undefined relatedClusterIds key.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. Diagnostics that name clusters keep the same renumbered ids; diagnostics that name none no longer carry an undefined relatedClusterIds key. After a start move, intersection and contour diagnostics match the contours that reference them.",
     "installationAndStorage": "No installed package, revision, browser-cache or folder storage change and no cleanup of user files.",
-    "verification": "New tests validate a drawing with ambiguous endpoint joins in memory and after structuredClone, and a saved drawing after moving an unrelated segment in the path editor; both fail without the fix. A randomized import fuzzer found the issue in 145 of 600 drawings and finds no structural, round-trip or execution-plan failures in 4,600 drawings after it, including randomized endpoint tolerance and coincidence epsilon. The pure-domain suite, tsc -b and npm run lint pass."
+    "verification": "New tests cover an ambiguous endpoint join validated in memory and after structuredClone, a saved drawing after moving an unrelated segment, and a start set at the crossing of a self-intersecting contour; each fails without its fix. Randomized fuzzers found the issues (145 of 600 imports; 4 of 200 twelve-step edit sequences) and find no structural, round-trip or execution-plan failures afterwards in 4,600 imports, including randomized endpoint tolerance and coincidence epsilon, and 600 edit sequences across document, operation, element and segment transforms, reversals, start moves, classification and ordering. The pure-domain suite, browser editor and WebMCP suites, tsc -b and npm run lint pass."
   },
   "testedPosts": [],
   "publicNotes": {
-    "summary": "Edited drawings with ambiguous endpoint joins no longer report an invalid project.",
+    "summary": "Edited drawings no longer report an invalid project after certain path edits.",
     "changes": [
-      "After a path edit on a drawing where nearby endpoints could join more than one way, the edited project could fail validation, which blocks its execution plan. It now stays valid."
+      "After a path edit on a drawing where nearby endpoints could join more than one way, the edited project could fail validation, which blocks its execution plan. It now stays valid.",
+      "Moving the start of a self-intersecting contour onto its crossing point no longer leaves the project invalid; every intersection is listed."
     ],
     "compatibility": "Cut order, start points, directions and posted programs are unchanged. Installed machine packages, posts, saved revisions and CAD files are unchanged.",
     "action": "No action needed."
