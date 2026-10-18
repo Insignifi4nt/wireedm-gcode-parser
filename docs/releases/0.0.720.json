@@ -1,0 +1,30 @@
+{
+  "version": "0.0.720",
+  "previousVersion": "0.0.719",
+  "postCompatibility": "preserved-output-folder-failed-write-cleanup",
+  "summary": "A failed write in a folder workbench no longer leaves an empty file behind. Opening a file for writing creates it empty before any contents are written, so a write refused for lack of disk space or permission left a zero-byte file at a path that did not exist before. Readers took it for contents: a version-1 or version-2 workbench upgrade whose backup write failed reported a conflicting backup on every later open and could not be retried without deleting the file by hand. The folder adapter now removes a file it created during a failed write, only while that file is still empty. Existing files, files written empty on purpose and contents already committed are kept. Browser-cache writes were already atomic and are unchanged.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions or controller output. Folder workbenches that already hold an empty file from an earlier failed write keep it and keep reporting the conflict; the app does not delete existing files.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding or controller-file change.",
+    "installationAndStorage": "Folder adapter writeText checks whether the target exists before opening it and, after a failed open, write or close, removes the target only if this write created it and it is still empty. Successful writes, overwrites, transaction journals, rollback and the browser-cache adapter behave as before. Cleanup is best effort and never replaces the original error.",
+    "verification": "Tests refuse writes in both adapters and require a new path to stay absent, an existing file to keep its contents and the inventory to list only real files, and run a version-2 workbench upgrade whose backup write is refused, then retry it once space returns; the folder cases fail on the previous adapter. An independent review probed stream-creation and close failures, intentional empty writes, committed contents and cleanup errors. Storage, workbench catalog, saved-revision and app suites, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Posting code is untouched; Robofil 2.6.0 package and current-contract tests pass unchanged. No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "A failed save in a folder workbench no longer leaves an empty file that blocks the next open.",
+    "changes": [
+      "If the disk is full while the app upgrades or saves a folder workbench, retrying after freeing space now works instead of reporting a conflicting backup."
+    ],
+    "compatibility": "Posted programs, installed posts and saved projects are unchanged.",
+    "action": "No action needed for new failures. A folder workbench that already reports a conflicting backup keeps both files unchanged; the app does not remove them. Use Export readable recovery files on the startup error screen to download a copy of its contents for recovery."
+  }
+}
