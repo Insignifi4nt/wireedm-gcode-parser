@@ -336,7 +336,7 @@ test('editor keeps common floating workspace panels readable through workflow sw
     });
   await confirmPendingDxfImport(page);
 
-  const panelIds = ['path-transform', 'statistics'];
+  const panelIds = ['path-transform', 'statistics'] as const;
   for (const panelId of panelIds) {
     await showPanels(page, [panelId]);
     await expect(page.locator(`[data-editor-floating-panel="${panelId}"]`)).toBeVisible();
@@ -767,10 +767,6 @@ test('editor rectangle-selects path geometry from a blank canvas drag in select 
 
 type WorkspacePanelId = keyof typeof WORKSPACE_PANEL_COMMANDS;
 
-async function hidePanels(page: import('@playwright/test').Page, panelIds: WorkspacePanelId[]) {
-  await setPanelVisibility(page, panelIds, false);
-}
-
 async function showPanels(page: import('@playwright/test').Page, panelIds: WorkspacePanelId[]) {
   await setPanelVisibility(page, panelIds, true);
 }
@@ -816,38 +812,6 @@ function workflowMenuForCommand(commandId: string) {
   }[prefix] ?? 'View';
 }
 
-async function dragHandleToDock(
-  page: import('@playwright/test').Page,
-  panelId: string,
-  side: 'left' | 'right'
-) {
-  const handle = page.locator(`[data-editor-workspace-panel-handle="${panelId}"]`);
-  const dock = page.locator(`[data-editor-panel-dock-zone="${side}"]`);
-  const handleBox = await handle.boundingBox();
-  const dockBox = await dock.boundingBox();
-
-  expect(handleBox).not.toBeNull();
-  expect(dockBox).not.toBeNull();
-  if (!handleBox || !dockBox) return;
-
-  await page.mouse.move(handleBox.x + Math.min(12, handleBox.width / 2), handleBox.y + handleBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(dockBox.x + dockBox.width / 2, dockBox.y + Math.min(80, dockBox.height / 2), {
-    steps: 8
-  });
-  await page.mouse.up();
-}
-
-async function readFloatingPanelBoxes(page: import('@playwright/test').Page, panelIds: string[]) {
-  const boxes = [];
-  for (const panelId of panelIds) {
-    const box = await page.locator(`[data-editor-floating-panel="${panelId}"]`).boundingBox();
-    expect(box).not.toBeNull();
-    if (box) boxes.push(box);
-  }
-  return boxes;
-}
-
 async function dragPanelControlBeyondViewport(
   page: import('@playwright/test').Page,
   control: import('@playwright/test').Locator
@@ -880,18 +844,6 @@ async function expectFloatingPanelInsideViewport(
       );
     })
     .toBe(true);
-}
-
-function panelsOverlap(
-  first: { x: number; y: number; width: number; height: number },
-  second: { x: number; y: number; width: number; height: number }
-) {
-  return (
-    first.x < second.x + second.width &&
-    first.x + first.width > second.x &&
-    first.y < second.y + second.height &&
-    first.y + first.height > second.y
-  );
 }
 
 function rectangleDxf() {

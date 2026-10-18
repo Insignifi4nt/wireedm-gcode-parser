@@ -13,11 +13,12 @@ async function instrumentWorkers(page: Page) {
     Object.assign(window, { dxfWorkerLog: logs });
     window.Worker = class extends NativeWorker {
       private kind = '';
-      postMessage(message: unknown, transfer?: Transferable[]) {
+      postMessage(message: unknown, options?: Transferable[] | StructuredSerializeOptions) {
         const request = message as { kind?: string };
         this.kind = request.kind ?? '';
         if (this.kind === 'prepare' || this.kind === 'plan') logs.push({ kind: this.kind, event: 'start' });
-        super.postMessage(message, transfer ?? []);
+        if (Array.isArray(options)) super.postMessage(message, options);
+        else super.postMessage(message, options);
       }
       terminate() {
         if (this.kind === 'prepare' || this.kind === 'plan') logs.push({ kind: this.kind, event: 'terminate' });

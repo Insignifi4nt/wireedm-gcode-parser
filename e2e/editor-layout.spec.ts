@@ -2,13 +2,7 @@ import { expect, test } from '@playwright/test';
 import { reloadEditorAndReturnToLibrary } from './fixtures/navigation';
 
 import { confirmPendingDxfImport } from './dxf-import';
-
-async function openReadyWorkbench(page: import('@playwright/test').Page) {
-  await page.goto('/');
-  await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
-  await expect(page.locator('input[aria-label="Machine program file"]')).toBeEnabled();
-  await dismissOnboarding(page);
-}
+import { dismissOnboarding, openReadyWorkbench } from './fixtures/onboarding';
 
 test('machine program editor keeps resizable code panels and full-height text editing', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -829,12 +823,6 @@ async function openCompactWorkflowCommand(
   await page.locator(
     `[data-editor-workflow-compact] [data-editor-workflow-command="${commandId}"]`
   ).click();
-}
-
-async function dismissOnboarding(page: import('@playwright/test').Page) {
-  const dialog = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
-  await dialog.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
-  if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Go Build!' }).click();
 }
 
 async function drag(locator: import('@playwright/test').Locator, deltaX: number, deltaY: number) {
