@@ -10,7 +10,8 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 - `npm test -- --run` - run tests once
 - `npm test -- --run --project pure-domain` - run pure geometry/planning suites in Node
 - `npm test -- --run --project browser` - run browser storage, DOM and app suites
-- `npm run build` - type-check and build
+- `npm run build` - type-check (TypeScript 7 native `tsc`) and build
+- `npm run lint` - oxlint correctness rules; must stay at zero findings
 - `npm run ui:check` - enforce shared controls, menus and tooltip ownership
 - `npm run preview` - preview production build on port **3778**
 
@@ -25,10 +26,10 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 
 - Vite
 - React
-- TypeScript
+- TypeScript 7 (`typescript`); AST scripts that need the compiler API import `@typescript/typescript6`
 - Tailwind CSS
 - shadcn/ui-compatible component structure
-- Vitest
+- Vitest 5, oxlint, Playwright
 
 ## Structure
 
