@@ -7,9 +7,13 @@ import {
 } from '@/domain/path-intel/segments';
 import type {
   ClosedContourCompensationIntent,
+  PathChain,
+  PathContour,
   PathDiagnostic,
   PathOperation,
-  PathPlanningDocument
+  PathPlanningDocument,
+  PathSegment,
+  SegmentId
 } from '@/domain/path-intel/types';
 
 export interface CompensationIntentSuggestionInput {
@@ -107,33 +111,75 @@ export function setManualCompensationIntent(
   return next;
 }
 
+/**
+ * Document-wide indexes for checking compensation on many operations. Build it
+ * once per document version; the document must not change while it is in use.
+ */
+export interface CompensationTopologyLookup {
+  readonly segmentsById: ReadonlyMap<SegmentId, PathSegment>;
+  readonly chainsById: ReadonlyMap<string, PathChain>;
+  readonly contoursById: ReadonlyMap<string, PathContour>;
+  readonly blockingDiagnosticIds: ReadonlySet<string>;
+  readonly blockedChainIds: ReadonlySet<string>;
+  readonly blockedContourIds: ReadonlySet<string>;
+  readonly blockedSegmentIds: ReadonlySet<SegmentId>;
+}
+
+export function createCompensationTopologyLookup(document: PathPlanningDocument): CompensationTopologyLookup {
+  const blockingDiagnosticIds = new Set<string>();
+  const blockedChainIds = new Set<string>();
+  const blockedContourIds = new Set<string>();
+  const blockedSegmentIds = new Set<SegmentId>();
+  for (const diagnostic of document.diagnostics) {
+    if (!BLOCKING_TOPOLOGY_CODES.has(diagnostic.code)) continue;
+    blockingDiagnosticIds.add(diagnostic.id);
+    for (const id of diagnostic.relatedChainIds ?? []) blockedChainIds.add(id);
+    for (const id of diagnostic.relatedContourIds ?? []) blockedContourIds.add(id);
+    for (const id of diagnostic.relatedSegmentIds ?? []) blockedSegmentIds.add(id);
+  }
+  return {
+    segmentsById: segmentMap(document.segments),
+    chainsById: firstById(document.chains),
+    contoursById: firstById(document.contours),
+    blockingDiagnosticIds,
+    blockedChainIds,
+    blockedContourIds,
+    blockedSegmentIds
+  };
+}
+
+function firstById<T extends { id: string }>(items: readonly T[]) {
+  const byId = new Map<string, T>();
+  for (const item of items) if (!byId.has(item.id)) byId.set(item.id, item);
+  return byId;
+}
+
 export function operationHasEligibleClosedTopology(
   document: PathPlanningDocument,
-  operation: PathOperation
+  operation: PathOperation,
+  lookup: CompensationTopologyLookup = createCompensationTopologyLookup(document)
 ): boolean {
   if (!operation.closed || operation.segmentRefs.length === 0) return false;
 
-  const chain = document.chains.find((candidate) => candidate.id === operation.chainId);
-  const contour = document.contours.find((candidate) => candidate.id === operation.contourId);
+  const chain = lookup.chainsById.get(operation.chainId);
+  const contour = lookup.contoursById.get(operation.contourId);
   if (!chain?.closed || !contour?.closed || chain.kind !== 'closed-contour') return false;
-  if (!orientedRefsFormContinuousClosedPath(document, operation)) return false;
+  if (!orientedRefsFormContinuousClosedPath(document, operation, lookup.segmentsById)) return false;
 
-  const associatedDiagnosticIds = new Set([...chain.diagnosticIds, ...contour.diagnosticIds]);
-  const operationSegmentIds = new Set(operation.segmentRefs.map((ref) => ref.segmentId));
-  return !document.diagnostics.some((diagnostic) => {
-    if (!BLOCKING_TOPOLOGY_CODES.has(diagnostic.code)) return false;
-    if (associatedDiagnosticIds.has(diagnostic.id)) return true;
-    if (diagnostic.relatedChainIds?.includes(operation.chainId)) return true;
-    if (diagnostic.relatedContourIds?.includes(operation.contourId)) return true;
-    return diagnostic.relatedSegmentIds?.some((id) => operationSegmentIds.has(id)) ?? false;
-  });
+  return !(
+    chain.diagnosticIds.some((id) => lookup.blockingDiagnosticIds.has(id)) ||
+    contour.diagnosticIds.some((id) => lookup.blockingDiagnosticIds.has(id)) ||
+    lookup.blockedChainIds.has(operation.chainId) ||
+    lookup.blockedContourIds.has(operation.contourId) ||
+    operation.segmentRefs.some((ref) => lookup.blockedSegmentIds.has(ref.segmentId))
+  );
 }
 
 function orientedRefsFormContinuousClosedPath(
   document: PathPlanningDocument,
-  operation: PathOperation
+  operation: PathOperation,
+  segmentsById: ReadonlyMap<SegmentId, PathSegment>
 ) {
-  const segmentsById = segmentMap(document.segments);
   const tolerance = Number.isFinite(document.options.coincidenceEpsilon)
     ? Math.max(0, document.options.coincidenceEpsilon)
     : 0;

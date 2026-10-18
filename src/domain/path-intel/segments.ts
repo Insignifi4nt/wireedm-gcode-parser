@@ -496,7 +496,7 @@ export function pathBounds(refs: OrientedSegmentRef[], segmentsById: Map<Segment
   );
 }
 
-export function signedAreaOfPath(refs: OrientedSegmentRef[], segmentsById: Map<SegmentId, PathSegment>) {
+export function signedAreaOfPath(refs: OrientedSegmentRef[], segmentsById: ReadonlyMap<SegmentId, PathSegment>) {
   const firstRef = refs[0];
   if (!firstRef) return 0;
 
@@ -517,7 +517,7 @@ export function signedAreaOfPath(refs: OrientedSegmentRef[], segmentsById: Map<S
 
 export function signedAreaOfSegmentRef(
   ref: OrientedSegmentRef,
-  segmentsById: Map<SegmentId, PathSegment>,
+  segmentsById: ReadonlyMap<SegmentId, PathSegment>,
   origin: Point2 = { x: 0, y: 0 }
 ) {
   const segment = requiredSegment(segmentsById, ref.segmentId);
@@ -648,7 +648,7 @@ function sweepMinusSin(sweepRadians: number) {
   );
 }
 
-export function requiredSegment(segmentsById: Map<SegmentId, PathSegment>, segmentId: SegmentId) {
+export function requiredSegment(segmentsById: ReadonlyMap<SegmentId, PathSegment>, segmentId: SegmentId) {
   const segment = segmentsById.get(segmentId);
   if (!segment) throw new Error(`Path segment not found: ${segmentId}`);
   return segment;
