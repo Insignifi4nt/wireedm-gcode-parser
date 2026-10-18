@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseDxf } from '../parseDxf';
+import { parseDxf, splitDxfLines } from '../parseDxf';
 import type { DxfEntity, DxfPoint, DxfUnitDeclarationStatus } from '../types';
 
 const DXF_UNIT_DECLARATION_STATUSES: DxfUnitDeclarationStatus[] = [
@@ -31,16 +31,28 @@ describe('parseDxf', () => {
     expect(parsed.unsupportedEntities).toEqual([]);
   });
 
-  it('reads files whose lines end with a lone CR like their LF equivalent', () => {
+  it('reads CR, CRLF, CRCRLF and mixed line endings like their LF equivalent', () => {
     const lines = [
       '0', 'SECTION', '2', 'ENTITIES',
       '0', 'LINE', '8', 'CUT', '10', '0', '20', '0', '11', '10', '21', '0',
       '0', 'ENDSEC', '0', 'EOF'
     ];
-    const parsed = parseDxf(lines.join('\r'));
+    const expected = parseDxf(lines.join('\n'));
+    const mixed = lines.reduce((text, line, index) => text + (index ? ['\r', '\n', '\r\n', '\r\r\n'][index % 4] : '') + line, '');
 
-    expect(parsed).toEqual(parseDxf(lines.join('\n')));
-    expect(parsed.entities).toHaveLength(1);
+    expect(expected.entities).toHaveLength(1);
+    for (const text of [lines.join('\r'), `${lines.join('\r')}\n`, lines.join('\r\n'), lines.join('\r\r\n'), mixed]) {
+      expect(parseDxf(text)).toEqual(expected);
+    }
+  });
+
+  it('keeps empty values between mixed line endings and splits long CR runs in linear time', () => {
+    expect(splitDxfLines('1\r\r\r\n0\nENDSEC')).toEqual(['1', '', '0', 'ENDSEC']);
+    expect(splitDxfLines('1\n\r\n0')).toEqual(['1', '', '0']);
+
+    const started = performance.now();
+    expect(splitDxfLines(`0\nEOF${'\r'.repeat(200_000)}`)).toHaveLength(200_002);
+    expect(performance.now() - started).toBeLessThan(2_000);
   });
 
   it('exports the complete DXF unit declaration status vocabulary', () => {

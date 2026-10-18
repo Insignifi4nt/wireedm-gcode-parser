@@ -253,9 +253,17 @@ const DXF_INSUNITS: Record<number, { label: string; scaleToMillimeters: number |
   20: { label: 'parsecs', scaleToMillimeters: 3.085677581491367e19 }
 };
 
+/**
+ * DXF text lines. LF, CR, CRLF and the CRCRLF written by Windows text-mode exporters
+ * are each one break. Every alternative has a fixed length, so splitting stays linear
+ * and a CR-terminated line followed by an empty CRCRLF-terminated value keeps it.
+ */
+export function splitDxfLines(text: string): string[] {
+  return text.split(/\r\r\n|\r\n|\r|\n/);
+}
+
 function toPairs(text: string, budget: DxfResourceBudget): DxfPair[] {
-  // Files without any LF end lines with a lone CR; otherwise CR is stripped as before.
-  const lines = text.includes('\n') ? text.replace(/\r/g, '').split('\n') : text.split('\r');
+  const lines = splitDxfLines(text);
   const pairs: DxfPair[] = [];
   const firstCodeLine = lines.findIndex((line) => isGroupCodeLine(line.trim()));
   if (firstCodeLine < 0) return pairs;

@@ -1,0 +1,31 @@
+{
+  "version": "0.0.715",
+  "previousVersion": "0.0.714",
+  "postCompatibility": "preserved-output-shared-dxf-line-endings",
+  "summary": "DXF files with mixed line endings, or with the doubled CR before LF that Windows text-mode exporters write, now read the same as their LF equivalent in path import and in the CAD readers. All three readers share one line splitter that treats LF, CR, CRLF and CRCRLF as one break each. Every alternative has a fixed length, so the split stays linear and an empty value between differently terminated lines is kept.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions or controller output. DXF reading changes only for files whose line endings are mixed or doubled: the CAD readers previously read CRCRLF as two breaks and lost group alignment, and path import previously stripped every CR from files that contained any LF. A bare CR inside a value is now a line break in path import as well, as it already was in the CAD readers; CR is a DXF line terminator, so no valid file carries one inside a value.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending or controller-file change. Files with uniform LF, CR, CRLF or CRCRLF endings read exactly as before; mixed-ending files now produce the geometry of their LF equivalent.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Previously imported projects are unchanged.",
+    "verification": "Tests read one drawing with CR, CRLF, CRCRLF and mixed endings and require the LF result, keep an empty value after a CR-terminated code followed by CRCRLF, and split 200,000 trailing CRs in under two seconds; the empty-value case fails on the previous splitter, which also took about 43 s on 160,000 trailing CRs. An independent review parsed a 16 MiB input in 695 ms and a near-limit DXF in 179 ms. DXF and CAD domain suites, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Posting code is untouched; Robofil 2.6.0 package and current-contract tests pass unchanged. No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "DXF files with mixed or doubled line endings import correctly.",
+    "changes": [
+      "DXF files that mix line-ending styles, or end lines with CR CR LF, import and open in CAD like any other DXF.",
+      "Very long runs of blank CR line endings no longer slow DXF import."
+    ],
+    "compatibility": "Posted programs, installed posts and saved projects are unchanged.",
+    "action": "No action needed. Re-import a DXF that previously lost geometry because of its line endings."
+  }
+}
