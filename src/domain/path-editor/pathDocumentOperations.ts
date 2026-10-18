@@ -6,6 +6,7 @@ import { threadingIntentIsCompatible } from '@/domain/path-intel/threadingIntent
 import { suggestCompensationIntent } from '@/domain/compensation/intent';
 import { buildChains } from '@/domain/path-intel/chains';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
+import { refreshEndpointTopologyDiagnostics, preserveEndpointDiagnosticRefs } from './endpointTopologyDiagnostics';
 import { buildPathElements } from '@/domain/path-intel/pathElements';
 import { buildContourDisplayNames } from '@/domain/path-intel/pathNaming';
 import { planOperations } from '@/domain/path-intel/planOperations';
@@ -47,9 +48,7 @@ import {
 import type {
   CirclePathSegment,
   ContourClassification,
-  EndpointCluster,
   EndpointClusterId,
-  EndpointClusterResult,
   EndpointSide,
   OperationPlan,
   OrientedSegmentRef,
@@ -1450,13 +1449,14 @@ function syncChainRefs(document: PathPlanningDocument, operation: PathOperation)
 }
 
 function refreshPlan(document: PathPlanningDocument) {
+  const previousPathElements = document.pathElements;
   const previousClusters = document.endpointClusters;
   const clusterResult = clusterSegmentEndpoints(document.segments, document.options);
   document.endpointClusters = clusterResult.clusters;
 
   const segmentsById = segmentMap(document.segments);
   document.chains.forEach((chain) => refreshChainTopology(chain, segmentsById, clusterResult.endpointToCluster));
-  refreshEndpointTopologyDiagnostics(document, previousClusters, clusterResult, segmentsById);
+  const endpointDiagnosticIds = refreshEndpointTopologyDiagnostics(document, previousClusters, clusterResult);
 
   const initialWire = resolveInitialWirePosition(document);
   let current = initialWire.status === 'ready' ? initialWire.point : document.options.startPoint;
@@ -1480,12 +1480,13 @@ function refreshPlan(document: PathPlanningDocument) {
   document.plan.metrics = planMetrics(document.plan);
   const contourResult = analyzeContours(document.chains, document.segments, document.options);
   retainContourIds(contourResult, document.contours);
-  replaceContourAnalysisDiagnostics(document, contourResult.diagnostics);
+  replaceContourAnalysisDiagnostics(document, contourResult);
   const manualClassificationsByContourId = manualClassifications(document);
   const refreshedContoursById = new Map(contourResult.contours.map((contour) => [contour.id, contour]));
   document.contours = document.contours.map((contour) => {
     const refreshed = refreshedContoursById.get(contour.id);
     const nextContour = refreshed ?? contour;
+    preserveEndpointDiagnosticRefs(nextContour, contour, endpointDiagnosticIds);
     const classification = manualClassificationsByContourId.get(contour.id);
     return classification ? { ...nextContour, classification } : nextContour;
   });
@@ -1498,86 +1499,49 @@ function refreshPlan(document: PathPlanningDocument) {
   }
   refreshOperationDisplayNames(document);
   refreshPathElements(document);
+  const previousElementsById = new Map(previousPathElements.map((element) => [element.id, element]));
+  for (const element of document.pathElements) {
+    const previous = previousElementsById.get(element.id);
+    if (previous) preserveEndpointDiagnosticRefs(element, previous, endpointDiagnosticIds);
+  }
 }
 
 // Contour analysis renumbers its intersection and contour diagnostics, and a
 // split start can turn one intersection into two. Replace the previous set in
 // place so refreshed contours never name a diagnostic the document lacks.
-function replaceContourAnalysisDiagnostics(document: PathPlanningDocument, diagnostics: PathDiagnostic[]) {
+function replaceContourAnalysisDiagnostics(document: PathPlanningDocument, result: ReturnType<typeof analyzeContours>) {
+  const owned = new Set(document.contours.flatMap(({ diagnosticIds }) => diagnosticIds));
   const fromContourAnalysis = (diagnostic: PathDiagnostic) =>
-    diagnostic.id.startsWith('diag_intersection_') || diagnostic.id.startsWith('diag_contour_');
+    owned.has(diagnostic.id) && (diagnostic.code === 'intersecting-topology' || diagnostic.code === 'degenerate-contour' ||
+      (diagnostic.code === 'non-finite-geometry' && diagnostic.details?.metric === 'signed-area'));
   const first = document.diagnostics.findIndex(fromContourAnalysis);
   const kept = document.diagnostics.filter((diagnostic) => !fromContourAnalysis(diagnostic));
-  kept.splice(first < 0 ? kept.length : first, 0, ...diagnostics);
-  document.diagnostics = kept;
-}
-
-// Refreshing renumbers endpoint clusters, and a split start replaces a segment with
-// two new ones. Rebuild cluster diagnostics in place and move chain diagnostics onto
-// the clusters and segments now at the endpoints they describe, so neither names a
-// different joint or a segment the document no longer has.
-function refreshEndpointTopologyDiagnostics(
-  document: PathPlanningDocument,
-  previousClusters: EndpointCluster[],
-  clusterResult: EndpointClusterResult,
-  segmentsById: Map<SegmentId, PathSegment>
-) {
-  const clustersById = new Map(clusterResult.clusters.map((cluster) => [cluster.id, cluster]));
-  const previousSegmentIds = new Set(previousClusters.flatMap(({ members }) => members.map(({ segmentId }) => segmentId)));
-  const successors = new Map<EndpointClusterId, EndpointCluster>();
-  for (const cluster of previousClusters) {
-    const successor = cluster.members
-      .map(({ segmentId, side }) => clusterResult.endpointToCluster[endpointKey(segmentId, side)])
-      .find((id) => id !== undefined);
-    const next = successor === undefined ? undefined : clustersById.get(successor);
-    if (next) successors.set(cluster.id, next);
+  const keptIds = new Set(kept.map(({ id }) => id));
+  const reserved = new Set([...document.diagnostics, ...result.diagnostics].map(({ id }) => id));
+  const analysisIdsByContour = new Map<string, string[]>();
+  for (const diagnostic of result.diagnostics) {
+    // Saved endpoint diagnostics can use any id, including the number that a
+    // newly discovered intersection would otherwise claim.
+    if (keptIds.has(diagnostic.id)) {
+      let counter = 1;
+      let id: string;
+      do { id = `${diagnostic.id}__refresh_${counter++}`; } while (reserved.has(id));
+      diagnostic.id = id;
+      reserved.add(id);
+    }
+    for (const contourId of diagnostic.relatedContourIds ?? []) {
+      analysisIdsByContour.set(contourId, [...(analysisIdsByContour.get(contourId) ?? []), diagnostic.id]);
+    }
   }
-  const chainsByDiagnosticId = new Map(document.chains.flatMap((chain) => chain.diagnosticIds.map((id) => [id, chain] as const)));
-  const fromClustering = (diagnostic: PathDiagnostic) => diagnostic.id.startsWith('diag_cluster_');
-  const first = document.diagnostics.findIndex(fromClustering);
-  const kept = document.diagnostics
-    .filter((diagnostic) => !fromClustering(diagnostic))
-    .map((diagnostic) => diagnostic.id.startsWith('diag_chain_')
-      ? refreshChainDiagnostic(diagnostic, chainsByDiagnosticId.get(diagnostic.id), successors, previousSegmentIds, segmentsById)
-      : diagnostic);
-  kept.splice(first < 0 ? kept.length : first, 0, ...clusterResult.diagnostics);
-  document.diagnostics = kept;
-}
-
-function refreshChainDiagnostic(
-  diagnostic: PathDiagnostic,
-  chain: PathChain | undefined,
-  successors: Map<EndpointClusterId, EndpointCluster>,
-  previousSegmentIds: Set<SegmentId>,
-  segmentsById: Map<SegmentId, PathSegment>
-): PathDiagnostic {
-  if (chain && (diagnostic.code === 'open-chain' || diagnostic.code === 'closed-chain-gap')) {
-    const clusterIds = diagnostic.code === 'open-chain' ? [chain.startClusterId, chain.endClusterId] : [chain.startClusterId];
-    return {
-      ...diagnostic,
-      relatedSegmentIds: chain.segmentRefs.map(({ segmentId }) => segmentId),
-      relatedClusterIds: clusterIds.filter((id): id is EndpointClusterId => id !== null),
-      ...(diagnostic.code === 'closed-chain-gap' ? { details: { ...diagnostic.details, gapLength: chain.metrics.gapLength } } : {})
-    };
+  const chainsById = new Map(document.chains.map((chain) => [chain.id, chain]));
+  for (const contour of result.contours) {
+    contour.diagnosticIds = [...new Set([
+      ...(chainsById.get(contour.chainId)?.diagnosticIds ?? []),
+      ...(analysisIdsByContour.get(contour.id) ?? [])
+    ])];
   }
-  // A branching junction: follow its cluster, and name the new pieces of a split segment there.
-  const junctions = (diagnostic.relatedClusterIds ?? []).map((id) => successors.get(id));
-  if (diagnostic.relatedClusterIds === undefined || !junctions.every((cluster) => cluster !== undefined)) return diagnostic;
-  const pieces = [...new Set(junctions.flatMap(({ members }) => members.map(({ segmentId }) => segmentId)))]
-    .filter((segmentId) => !previousSegmentIds.has(segmentId));
-  const currentSegmentIds = (segmentIds: SegmentId[]) =>
-    [...new Set(segmentIds.flatMap((segmentId) => segmentsById.has(segmentId) ? [segmentId] : pieces))];
-  const chosenSegmentId = diagnostic.details?.chosenSegmentId;
-  const renamed = new Map([...successors].map(([id, cluster]) => [id, cluster.id]));
-  return {
-    ...diagnostic,
-    message: diagnostic.message.replace(/\bec_\d+\b/g, (id) => renamed.get(id) ?? id),
-    relatedClusterIds: junctions.map(({ id }) => id),
-    ...(diagnostic.relatedSegmentIds ? { relatedSegmentIds: currentSegmentIds(diagnostic.relatedSegmentIds) } : {}),
-    ...(typeof chosenSegmentId === 'string' && !segmentsById.has(chosenSegmentId) && pieces.length > 0
-      ? { details: { ...diagnostic.details, chosenSegmentId: pieces[0] } }
-      : {})
-  };
+  kept.splice(first < 0 ? kept.length : first, 0, ...result.diagnostics);
+  document.diagnostics = kept;
 }
 
 function refreshPathElements(document: PathPlanningDocument) {
