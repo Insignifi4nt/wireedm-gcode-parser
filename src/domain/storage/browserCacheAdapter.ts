@@ -3,6 +3,7 @@ import { gunzip, gunzipSync, gzip, gzipSync, strFromU8, strToU8 } from 'fflate';
 import { MAX_STORAGE_INVENTORY_ENTRIES, type WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 import { assertReadLimit, exceedsUtf8Limit, isWellFormedText, readBoundedGzip } from './boundedExactText';
 import { readExactUtf8GzipBase64 } from './exactTextStream';
+import { isStorageQuotaError, withStorageFullGuidance } from './storageFull';
 
 const COMPRESSED_TEXT_PREFIX = '\u0000wire-edm-cache-gzip-v1:';
 const MIN_COMPRESS_LENGTH = 4096;
@@ -25,10 +26,11 @@ export function createBrowserCacheAdapter(
 ): BrowserCacheWorkbenchAdapter {
   const namespace = options.namespace ?? 'wire-edm-workbench';
   const directoriesKey = `${namespace}:directories`;
+  const kind = options.kind ?? 'browser-cache';
 
   return {
     name: options.name ?? 'Local storage',
-    kind: options.kind ?? 'browser-cache',
+    kind,
     mutationScope: `browser-storage:${namespace}`,
     ...(options.persistenceWarning ? { persistenceWarning: options.persistenceWarning } : {}),
     ensureDirectory: async (path: string) => {
@@ -36,7 +38,7 @@ export function createBrowserCacheAdapter(
       if (!directories.includes(path)) {
         directories.push(path);
         directories.sort();
-        storage.setItem(directoriesKey, JSON.stringify(directories));
+        await withStorageFullGuidance(kind, path, () => storage.setItem(directoriesKey, JSON.stringify(directories)));
       }
     },
     readText: async (path: string) => decodeStoredText(storage.getItem(fileKey(namespace, path))),
@@ -60,7 +62,8 @@ export function createBrowserCacheAdapter(
       storage.removeItem(fileKey(namespace, path));
     },
     writeText: async (path: string, contents: string) => {
-      storage.setItem(fileKey(namespace, path), await encodeStoredText(contents));
+      const encoded = await encodeStoredText(contents);
+      await withStorageFullGuidance(kind, path, () => storage.setItem(fileKey(namespace, path), encoded));
     },
     listFiles: async (signal) => {
       const paths: string[] = [];
@@ -140,6 +143,11 @@ function readDirectories(storage: Storage, namespace: string): string[] {
     }
   }
   const recovered = [...directories].sort();
-  if (raw !== null || recovered.length > 0) storage.setItem(key, JSON.stringify(recovered));
+  try {
+    if (raw !== null || recovered.length > 0) storage.setItem(key, JSON.stringify(recovered));
+  } catch (error) {
+    // Repair is best effort: full storage must not block reading files it already holds.
+    if (!isStorageQuotaError(error)) throw error;
+  }
   return recovered;
 }

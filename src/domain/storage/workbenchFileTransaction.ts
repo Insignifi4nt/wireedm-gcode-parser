@@ -1,6 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
+import { WorkbenchStorageFullError } from './storageFull';
 import {
   cleanupFailedTransactionJournalWrite,
   readExactTransactionText as readExact,
@@ -213,7 +214,8 @@ export async function commitWorkbenchFileTransaction(
       for (const file of files) await put(adapter, file.path, file.previous);
       await finish(adapter, raw);
     } catch {
-      throw new Error('Storage write and rollback failed. Recovery data is retained; reopen the workbench before editing.');
+      const guidance = error instanceof WorkbenchStorageFullError ? ` ${error.message}` : '';
+      throw new Error(`Storage write and rollback failed. Recovery data is retained; reopen the workbench before editing.${guidance}`);
     }
     throw new WorkbenchFileWriteError(writingPath, error);
   }

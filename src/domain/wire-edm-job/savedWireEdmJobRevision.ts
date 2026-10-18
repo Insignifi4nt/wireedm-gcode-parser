@@ -1277,7 +1277,7 @@ async function rollbackCatalogRevision(
     ok: false,
     error: {
       code: 'SAVED_REVISION_CATALOG_ROLLBACK_FAILED',
-      message: `Saved revision transaction failed and ${rollbackErrors.length} rollback operation(s) also failed.`,
+      message: `Saved revision transaction failed and ${rollbackErrors.length} rollback operation(s) also failed. ${[originalError, ...rollbackErrors].map(({ message }) => message).join(' ')}`,
       originalError,
       rollbackErrors
     }

@@ -8,6 +8,10 @@ import { importExternalProgram } from '@/domain/editor/importExternalProgram';
 import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
 import { connectWorkbenchDirectory } from '@/domain/storage/connectWorkbenchDirectory';
 import { FakeDirectoryHandle } from '@/domain/storage/__tests__/fakeDirectoryHandle';
+import { cacheStorage, folderStorage } from '@/domain/storage/__tests__/storageFullFixture';
+import { SAVED_REVISION_TRANSACTION_PATH } from '@/domain/storage/savedRevisionTransaction';
+import { readExactTransactionText as exact } from '@/domain/storage/transactionFileState';
+import { captureWorkbenchRecovery, recoveryStorageSource } from '@/domain/storage/workbenchRecovery';
 import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
 import { createBrowserDirectoryAdapter } from '@/domain/storage/browserDirectoryAdapter';
 import { initializeWorkbenchCatalog, type ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
@@ -66,6 +70,73 @@ describe('workbench controller asynchronous operations', () => {
     if (!imported.ok) throw new Error(imported.error.message);
     return imported;
   }
+
+  it.each([
+    ['cache', 'write-and-rollback'], ['folder', 'write-and-rollback'],
+    ['cache', 'rollback-only'], ['folder', 'rollback-only']
+  ] as const)('keeps full-storage guidance in the controller generation error (%s, %s)', async (kind, failure) => {
+    const { adapter, refuse } = kind === 'cache' ? cacheStorage() : folderStorage();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const geometry = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 5, y: 5 }, radius: 2 }
+    ]);
+    const document = setManualCompensationIntent(geometry, geometry.plan.operations[0].id, 'centerline');
+    if (!document) throw new Error('Expected explicit centerline fixture');
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: 7, y: 5 }, review: 'reviewed' } };
+    const project = createWorkbenchProjectDocument({ id: 'quota.part', name: 'Quota part', now: new Date('2026-10-04T00:00:00.000Z'),
+      source: { kind: 'upid', files: [] }, content: { kind: 'upid-document', document } });
+    if (!project.ok) throw new Error(project.error.message);
+    const added = await addStoredWorkbenchProject(initialized.workbench, { project: project.project, ownedFiles: [] });
+    if (!added.ok) throw new Error(added.error.message);
+    const source = await machinePackageFixture({ machineId: 'quota.machine' });
+    const built = await buildMachinePackageArchive({ ...source, document: { ...source.document, machine: { ...source.document.machine,
+      limits: { ...source.document.machine.limits, yTravel: { status: 'known', millimeters: 100 } } } } });
+    if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
+    const prepared = await prepareStoredMachinePackageInstallation(added.workbench, built.archive);
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    const installed = await commitStoredMachinePackageInstallation(prepared.prepared, { kind: 'install-new' });
+    if (!installed.ok) throw new Error(installed.error.message);
+    const read = await mount({ connectCachedWorkbench: async () => ({ ok: true, kind: 'opened', workbench: installed.workbench }) });
+    await act(async () => { await read().handleOpenWorkbenchProject(project.project.id); });
+    const projectPath = 'projects/quota.part.json';
+    const originalProject = await exact(adapter, projectPath);
+    const originalManifest = await exact(adapter, 'workbench.json');
+    const write = adapter.writeText.bind(adapter);
+    const writeSpy = vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      if (failure === 'rollback-only' && path === 'workbench.json' && text !== originalManifest) throw new Error('Injected manifest failure');
+      return write(path, text);
+    });
+    refuse((path, text) => (failure === 'write-and-rollback' && path === 'workbench.json' && text !== originalManifest) ||
+      (path === projectPath && text === originalProject));
+    const result = await act(async () => read().handleGenerateControllerArtifact({ machineId: 'quota.machine' }));
+    if (result.ok) throw new Error('Expected generation to fail');
+    const diagnostic = result.error;
+    expect(diagnostic.message).toContain('rollback operation(s) also failed');
+    const journal = await exact(adapter, SAVED_REVISION_TRANSACTION_PATH);
+    if (journal === null) throw new Error('Expected a retained recovery journal');
+    expect(JSON.parse(journal).previousProject).toBe(originalProject);
+    expect(await exact(adapter, 'workbench.json')).toBe(originalManifest);
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: false });
+
+    writeSpy.mockClear();
+    const remove = vi.spyOn(adapter, 'deleteText');
+    const recovery = await captureWorkbenchRecovery(recoveryStorageSource(adapter, diagnostic));
+    expect(recovery.receipt.contentComplete).toBe(true);
+    expect(recovery.text).toContain(SAVED_REVISION_TRANSACTION_PATH);
+    expect(writeSpy).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(await exact(adapter, SAVED_REVISION_TRANSACTION_PATH)).toBe(journal);
+
+    refuse(() => false);
+    writeSpy.mockRestore();
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: true });
+    expect(await exact(adapter, projectPath)).toBe(originalProject);
+    expect(await exact(adapter, 'workbench.json')).toBe(originalManifest);
+    expect(await exact(adapter, SAVED_REVISION_TRANSACTION_PATH)).toBeNull();
+    expect(diagnostic.message).toContain(kind === 'cache' ? 'Browser storage for this site is full.' : 'The disk holding the workbench folder is full or over its quota.');
+    expect(diagnostic.message).toContain(kind === 'cache' ? 'Settings → Storage → Backup & restore' : 'Free disk space, then try again.');
+  });
 
   it.each(['cache', 'folder'])('refreshes matching posts after activation so another-tab machine can generate, preserving stale-manifest rejection (%s)', async kind => {
     const adapter = kind === 'cache' ? createBrowserCacheAdapter(localStorage, { namespace: crypto.randomUUID() })
