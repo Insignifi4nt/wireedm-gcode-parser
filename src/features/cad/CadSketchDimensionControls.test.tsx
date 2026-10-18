@@ -77,7 +77,7 @@ describe('on-part sketch dimension editing', () => {
     await click('Edit Diameter'); expect(pending).toHaveBeenLastCalledWith(true);
     await input('Diameter value', '10'); await click('Apply');
     expect(session.getSnapshot().document.parameters.shaftRadius).toBe(5); const geometry = currentGeometry(session); expect(geometry.kind === 'circle' && geometry.radius).toBe('shaftRadius');
-    expect(edit).toHaveBeenCalledWith([{ kind: 'set-parameter', name: 'shaftRadius', value: 5 }]); expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(edit).toHaveBeenCalledWith([{ kind: 'set-parameter', name: 'shaftRadius', value: 5 }], expect.any(AbortSignal)); expect(container.querySelector('[role="dialog"]')).toBeNull();
     await act(async () => session.undo()); expect(session.getSnapshot().document.parameters.shaftRadius).toBe(3);
   });
   it('updates a literal rectangle dimension without changing its other coordinates or dimensions', async () => {

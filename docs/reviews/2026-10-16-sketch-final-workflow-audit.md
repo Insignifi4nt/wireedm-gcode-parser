@@ -1,0 +1,30 @@
+# Sketch workflow completeness audit
+
+Refreshed against accepted Tangent `ef63efa` and Placement `dcfff9e`, original [S01–S22 reference](2026-10-16-sketch-workflow-reference.md), [checklist](2026-10-16-sketch-workspace-checklist.md) and prior inventories. This independent pass read source and recorded acceptance; it ran no tests, native/browser work or builds and changed no saved records. Historical missing Trim, Offset, cells, references, dimensions and pattern entries are superseded. Passing gates alone do not close the goal.
+
+## Supported everyday workflows
+
+| Original scenarios | Current supported outcome and evidence |
+| --- | --- |
+| S01–S06 | Typed point/edge/profile selection, filters, directional boxes, overlap choices and matching highlights/focus; guarded preview/Cancel/history. `cadSketchGraphInteraction.ts`, Canvas/GraphLayer and the spatial-selection review support this. The latest checklist records the repaired single-gesture drag from a mixed selection; current GraphLayer no longer requires a preliminary singleton gesture. |
+| S07–S12 | Legacy primitive/slot/path grips, graph free-point and circle-radius gestures, exact selected-set translation, expression-aware axes, open/closed line–arc drawing and shared geometry snaps. Circle-radius, Move, fresh-path and legacy-position-snap acceptance include actual parts and exact source/history checks. Generated or linked geometry retains deliberate owner restrictions. |
+| S10, S13–S15 | Driving aligned/X/Y, conventional angle and radial dimensions; saved calculated references and Make driving; inspectable freedoms and rejection operands. Coincident, H/V, fixed, equal size, parallel/perpendicular/collinear, midpoint, concentric, point symmetry, sliding point-on-line and declared line–arc Tangent are delivered. Guided-bore and rounded-profile proofs include parameter following, private Finish and native solids. |
+| S16–S17 | Exact Split; end/middle line and arc Trim; circle Trim; line/arc Extend; independent signed analytic Offset. Witnessed proposals, explicit dependency blockers, retained direction/radius owners and native whole-candidate certification are implemented. The arc-boundary/Offset reviews record complete human/agent parts, not merely successful queries. |
+| S18–S20 | Same-base preceding line/circle Use with refresh/Detach; independent legacy/DXF/plugin profile Copy; detached Mirror; persistent circle rows with count/pitch/omissions; construction conversion. Placement adds exact anchor/target/rotation. Intersecting-cell union and explicit consumer-area repair make these useful downstream. Broader eligibility is bounded. |
+| S04, S21–S22 | Owned consumed-sketch editing supplies local Undo/Cancel and one strict whole-part Finish, with explicit area repair. Recorded browser/native journeys exercise toolbar/context/keyboard routes, exact history, guarded agent equivalents and save/reopen. Browser-cache and folder tests preserve identities/drivers and reject forged source before writes. This is substantial coverage, not every cross-command permutation. |
+
+## Earlier blockers reconciled
+
+**Smooth rounded-profile edits are accepted.** The perpendicular mapping supersedes the old angle-mapping R5→8 failure. Chromium/Firefox and native pointer acceptance cover radius following, private Finish, exact section/DXF, history and save/reopen. Strict contact/branch/arc checks and source authority remain. The dropped fillet owner ID was repaired at the agent boundary.
+
+**Precise reused-detail placement is accepted.** Human selection, center anchor, trackpad pan, grid target[30,20], +90°, private Apply/Finish and exact Undo/Redo produce one1347.1487177940908mm³ Pad with a true major R10 arc/chord section, preserving the original. The ordinary oblique semicircle rejection was repaired narrowly. Native preview exposed blocked F; its source repair retains modifier/IME/canvas-focus/view-lock checks before navigation, with mutations still locked. Root's refreshed complete Chromium/Firefox placement/F journeys pass; the disposable native draft is empty and closed.
+
+## Context route closure, 17 October
+
+**S21's identified access gap is closed.** The existing graph context menu now opens normal Dimension and Move with the exact targeted point/edge or current selected set. Independent review found and closed linked-guide angle eligibility. The broader production run caught and repaired direct point targeting bypassing the multi-atom chooser; established Split/Extend preview order remains. Final spatial135 and relevant Workbench3 cases pass, with prior236/146 overlapping groups and scoped types. No duplicate operation/form or saved model was introduced.
+
+Root acceptance is separate from this read-only audit: native pointer/keyboard Cancel/Apply, selected two-circle Move, private Finish, one4685.84073464102mm³ solid and exact Undo/Redo pass, with the disposable draft restored empty/closed without Save. The final8 affected production journeys pass Chromium and Firefox after complete types/build plus scoped guard checks. The broader83-journey run and its four investigated failures are reconciled in the [context acceptance](2026-10-17-sketch-context-editing.md).
+
+No further measured failure in the supported everyday sketch loop was established by this independent pass. Selection, free editing, dimensions/relations, topology, independent reuse/placement, deliberate material areas, private recovery, native parts, history and saving have concrete accepted paths. This is not proof of every S01–S22 variant or CAD-platform parity. Wider patterns(S19), broader projection(S18), associative Offset(S17), extra inference and arbitrary curve corners remain explicit optional expansions or coverage limits.
+
+The practical sketch phase can now give way to the requested existing-workspace UX audit. Do not restart numerical sweeps or add features just to keep the sketch audit open. The [workspace audit](2026-10-17-cad-workspace-tools-audit.md) identifies Section for CAM's invalid starting height and a separate topology-repick affordance for assessment; the overall goal remains active.

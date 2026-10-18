@@ -4,22 +4,30 @@ import type { CadBuildResult, CadDocument } from '@/domain/cad/cadDocument';
 import { cadFeatureProducesBody, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { archiveCadDocument, listCadDocuments, loadCadDocument, renameCadDocument, restoreCadDocument, saveCadDocument, type CadLibraryEntry } from '@/domain/cad/cadStorage';
 import { readExactUtf8Blob } from '@/domain/storage/exactTextStream';
-import type { CadEdit } from '@/domain/cad/cadOperations';
+import { applyCadEdits, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { isCadSectionResult, parseCadSectionRequest, type CadSectionRequest } from '@/domain/cad/cadSection';
 import type { DraftReadSnapshot } from '@/features/webmcp/workbenchSiteTools';
 import { ToolError } from '@/features/webmcp/siteTools';
 import { CadSession, hasUnsavedCadDraft } from './cadSession';
 import { useCadUnloadGuard } from './useCadUnloadGuard';
 import { installCadPlugin, listCadPlugins } from '@/domain/cad/plugins/cadPluginStorage';
-import type { CadViewportCommand, CadWorkbenchViewportControls, CadViewportState } from './cadViewportControls';
+import { cadViewportVisualIdentity, type CadViewportCommand, type CadWorkbenchViewportControls, type CadViewportState } from './cadViewportControls';
 import { preparePreviewCapture, downloadPreviewCapture, type PreviewCaptureArtifact } from '@/features/webmcp/previewCapture';
 import { createCadTopologyActions } from './cadTopologyActions';
+import type { CadTopologyInspectRequest, CadTopologyResolvePicksRequest } from '@/domain/cad/cadTopology';
+import { createCadFeatureInputCoordinator } from './cadFeatureInput';
 import { cadBytesToBase64, cadSolidImportByteLength, isCadSolidImportResult, parseCadSolidImportSource, type CadSolidImportSource } from '@/domain/cad/cadImports';
 import { parseCadDxfImportSource, type CadDxfUnits } from '@/domain/cad/cadDxfSource';
 import type { DxfUnitDeclaration } from '@/domain/dxf/types';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { createCadFeaturePreviewCoordinator, type CadFeaturePreviewState } from './cadFeaturePreview';
-import type { CadSketchRegionProposal } from '@/domain/cad/cadSketchRegionInspection';
+import { CadSketchRegionReadTargetSchema, type CadSketchRegionReadTarget, type CadSketchRegionInspectionInput, type CadSketchRegionProposal } from '@/domain/cad/cadSketchRegionInspection';
+import { Value } from '@sinclair/typebox/value';
+import { isCadImportData } from '@/domain/cad/cadImportData';
+import { needsCadSketchPreparation, prepareCadEdits } from './cadEditPreparation';
+import type { CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
+import type { CadSketchConstraintInspection } from './cadSketchConstraintInspection';
+import { useCadSketchEditing } from './useCadSketchEditing';
 
 type App = Pick<ReturnType<typeof useWorkbenchAppController>, 'connectedWorkbench' | 'workbenchInteractionLocked' | 'runAgentWorkbenchOperation'>;
 type Kernel = ReturnType<typeof import('./kernel/cadKernelClient').createCadKernelClient>;
@@ -42,7 +50,6 @@ function matchingSectionResult(value: unknown, request: CadSectionRequest, param
   return value;
 }
 type CadPreviewArtifact = PreviewCaptureArtifact & { documentId: string; viewState: CadViewportState; sketchId: string | null; curveId: string | null };
-const viewIdentity = (state: CadViewportState) => JSON.stringify([state.documentVersion, state.buildVersion, state.buildId, state.selectedFeatureId, state.selectedProfileId, state.sketchId, state.curveId, state.selectedReferencePlane, state.awaitingSketchPlane, state.pickMode, state.topologySelection, state.view]);
 
 export function useCadController(app: App, session: CadSession, open: boolean, setOpen: (open: boolean) => void,
   getCamDraft: () => DraftReadSnapshot | null) {
@@ -69,20 +76,42 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   const proposedRegionReferenceTexts = useRef<{ document: CadDocument; sketchId: string; proposalKey: string; texts: Map<string, string> } | null>(null);
   const setViewportControls = useCallback((controls: CadWorkbenchViewportControls | null) => { viewport.current = controls; }, []);
   const busy = useRef(false);
+  const preparing = useRef<AbortController | null>(null);
+  const sketchSolver = useRef<Promise<CadSketchSolverClient> | null>(null);
+  const constraintInspections = useRef(new WeakMap<CadDocument, Map<string, CadSketchConstraintInspection>>());
   const current = useRef({ app, open }); current.current = { app, open };
   const kernel = useRef<Promise<Kernel> | null>(null);
   const buildAbort = useRef<AbortController | null>(null);
   const boundAdapter = useRef(app.connectedWorkbench?.adapter);
+  const sketchEditing = useCadSketchEditing({ session, storage: app.connectedWorkbench?.adapter ?? null, open,
+    locked: storageBusy || app.workbenchInteractionLocked, prepare: prepareDocument, inspect: readSketchConstraintInspection,
+    commit: (edits, version, signal) => edit(edits, version, false, signal) });
   const featurePreviewCoordinator = useMemo(() => createCadFeaturePreviewCoordinator({
     assertCurrent(expectedVersion) {
       const workbench = connected(); editable(expectedVersion); session.assertWorkflowClosed('editor');
       return { document: session.getSnapshot().document, storage: workbench.adapter };
     },
     createKernel: async () => (await import('./kernel/cadKernelClient')).createCadKernelClient(),
+    prepare: async (document, edits, signal) => needsCadSketchPreparation(document, edits)
+      ? (await prepareCadEdits(document, edits, await getSketchSolver(), signal)).document : applyCadEdits(document, edits),
     onChange: setFeaturePreview
   }), [session]);
   useLayoutEffect(() => { featurePreviewCoordinator.invalidate(); }, [featurePreviewCoordinator, snapshot.version, app.connectedWorkbench?.adapter, open, app.workbenchInteractionLocked, storageBusy]);
   useEffect(() => () => featurePreviewCoordinator.dispose(), [featurePreviewCoordinator]);
+  const featureInputCoordinator = useMemo(() => createCadFeatureInputCoordinator({
+    assertCurrent(expectedVersion, scope) {
+      const workbench = connected(); editable(expectedVersion); session.assertWorkflowClosed(scope);
+      return { document: session.getSnapshot().document, storage: workbench.adapter };
+    },
+    createKernel: async () => (await import('./kernel/cadKernelClient')).createCadKernelClient(),
+    prepare: prepareDocument,
+  }), [session]);
+  useLayoutEffect(() => { featureInputCoordinator.invalidate(); }, [featureInputCoordinator, snapshot.version, app.connectedWorkbench?.adapter, open, app.workbenchInteractionLocked, storageBusy]);
+  useLayoutEffect(() => {
+    try { session.assertWorkflowClosed('editor'); } catch { featureInputCoordinator.invalidate(); }
+  }, [featureInputCoordinator, session, snapshot]);
+  useEffect(() => () => featureInputCoordinator.dispose(), [featureInputCoordinator]);
+  const releaseFeatureInput = useCallback((inputToken: string) => featureInputCoordinator.clear(inputToken), [featureInputCoordinator]);
   function changeOpen(value: boolean) {
     current.current.open = value;
     setOpen(value);
@@ -91,6 +120,26 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   function getKernel() {
     kernel.current ??= import('./kernel/cadKernelClient').then(module => module.createCadKernelClient());
     return kernel.current;
+  }
+  function getSketchSolver() {
+    if (sketchSolver.current) return sketchSolver.current;
+    const pending = import('./sketch-solver/cadSketchSolverClient').then(module => module.createCadSketchSolverClient());
+    sketchSolver.current = pending;
+    void pending.catch(() => { if (sketchSolver.current === pending) sketchSolver.current = null; });
+    return pending;
+  }
+  async function prepareDocument(document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) {
+    return needsCadSketchPreparation(document, edits)
+      ? (await prepareCadEdits(document, edits, await getSketchSolver(), signal)).document : applyCadEdits(document, edits);
+  }
+  async function readSketchConstraintInspection(source: CadDocument, sketchId: string, signal?: AbortSignal) {
+    let inspection = constraintInspections.current.get(source)?.get(sketchId);
+    if (!inspection) {
+      const { inspectCadSketchConstraints } = await import('./cadSketchConstraintInspection'); signal?.throwIfAborted();
+      inspection = await inspectCadSketchConstraints(source, sketchId, getSketchSolver, signal);
+      signal?.throwIfAborted();
+    }
+    return inspection;
   }
   function publishBuild(result: CadBuildResult, version: string) {
     const state = result.diagnostics.length ? 'error' : 'ready';
@@ -117,6 +166,8 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     setLibrary(null); setLibraryDiagnostic(null); setBuild(null); setBuildVersion(null); setErrorMessage(null);
   }, [app.connectedWorkbench?.adapter, session]);
   useEffect(() => () => {
+    preparing.current?.abort();
+    void sketchSolver.current?.then(client => client.dispose(), () => undefined);
     libraryAbort.current?.abort(); session.setWorkflowOpen(false, 'library');
     importAbort.current?.abort();
     buildAbort.current?.abort();
@@ -146,7 +197,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   }, [open, snapshot.document, app.connectedWorkbench?.adapter]);
 
   function connected() {
-    if (busy.current || current.current.app.workbenchInteractionLocked) throw new ToolError('BUSY', 'A workbench operation is running.');
+    if (busy.current || preparing.current || current.current.app.workbenchInteractionLocked) throw new ToolError('BUSY', 'A workbench operation is running.');
     const workbench = current.current.app.connectedWorkbench;
     if (!workbench) throw new ToolError('WORKBENCH_UNAVAILABLE', 'Wait for the workbench to open.');
     return workbench;
@@ -188,9 +239,37 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       if (current.current.app.connectedWorkbench !== workbench) throw new ToolError('STALE_STATE', 'Workbench changed before plugin installation.');
     } }));
   }
-  function edit(edits: readonly CadEdit[], expectedVersion?: string, fromAgent = false) {
+  const preparePreviewEdits = useCallback(async (edits: readonly CadEdit[], signal: AbortSignal) => {
+    signal.throwIfAborted(); editable(snapshot.version); session.assertWorkflowClosed('editor');
+    validateCadEditBatch(edits);
+    const captured = structuredClone(edits), source = session.getSnapshot().document, workbench = connected();
+    const candidate = await prepareDocument(source, captured, signal);
+    signal.throwIfAborted(); editable(snapshot.version); session.assertWorkflowClosed('editor');
+    if (session.getSnapshot().document !== source || current.current.app.connectedWorkbench !== workbench)
+      throw new ToolError('STALE_STATE', 'The CAD workspace changed while preparing this preview.');
+    return candidate;
+  }, [session, snapshot.version]);
+  function edit(edits: readonly CadEdit[], expectedVersion?: string, fromAgent = false, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     editable(expectedVersion, fromAgent); setErrorMessage(null);
-    return session.edit(edits, expectedVersion);
+    validateCadEditBatch(edits);
+    const captured = structuredClone(edits);
+    const source = session.getSnapshot();
+    if (needsCadSketchPreparation(source.document, captured)) {
+      const workbench = current.current.app.connectedWorkbench;
+      const owner = new AbortController(); preparing.current = owner;
+      const combined = signal ? AbortSignal.any([signal, owner.signal]) : owner.signal;
+      session.setWorkflowOpen(true, 'preparation');
+      const solver = getSketchSolver();
+      return session.editPrepared(expectedVersion ?? source.version, async (document, signal) =>
+        (await prepareCadEdits(document, captured, await solver, signal)).document, combined, () => {
+        if (!current.current.open || current.current.app.connectedWorkbench !== workbench || current.current.app.workbenchInteractionLocked)
+          throw new ToolError('STALE_STATE', 'The CAD workspace changed while the sketch was being solved.');
+      }).finally(() => {
+        if (preparing.current === owner) { preparing.current = null; session.setWorkflowOpen(false, 'preparation'); }
+      });
+    }
+    return session.edit(captured, expectedVersion);
   }
   async function persistReviewed(workbench: NonNullable<App['connectedWorkbench']>, expectedVersion: string, signal?: AbortSignal) {
     const reviewed = session.getSnapshot();
@@ -429,6 +508,28 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       return await importSolidSource(source, pending.version, controller.signal, 'import');
     } finally { if (importAbort.current === controller) importAbort.current = null; }
   }
+  async function inspectSketchConstraints(sketchId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
+    editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
+    const source = session.getSnapshot().document, workbench = connected();
+    const inspection = await readSketchConstraintInspection(source, sketchId, signal);
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
+    if (session.getSnapshot().document !== source || current.current.app.connectedWorkbench !== workbench)
+      throw new ToolError('STALE_STATE', 'The CAD workspace changed while inspecting sketch constraints.');
+    if (inspection.analysis.kind !== 'unavailable') {
+      const cached = constraintInspections.current.get(source) ?? new Map<string, CadSketchConstraintInspection>();
+      cached.set(sketchId, inspection); constraintInspections.current.set(source, cached);
+    }
+    return { version: expectedVersion, persisted: false, ...inspection };
+  }
+  async function inspectSketchHandles(sketchId: string, profileId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
+    editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
+    const { inspectCadSketchHandles } = await import('@/domain/cad/cadSketchHandles');
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
+    const document = session.getSnapshot().document, sketch = document.features.find(feature => feature.id === sketchId);
+    const profile = sketch?.kind === 'sketch' ? sketch.profiles.find(profile => profile.id === profileId) : undefined;
+    if (!profile) throw new ToolError('NOT_FOUND', 'Choose an existing profile in a sketch.');
+    return inspectCadSketchHandles(profile, document.parameters);
+  }
   async function measureSketch(sketchId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
     const { measureCadSketch } = await import('@/domain/cad/cadMeasurements');
@@ -441,40 +542,45 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
     return measureCadCurve(session.getSnapshot().document, curveId);
   }
-  async function inspectSketchRegions(sketchId: string, page: { offset?: number; limit?: number; proposal?: CadSketchRegionProposal } = {}, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
+  async function inspectSketchRegions(sketchId: string, page: CadSketchRegionInspectionInput = {}, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
+    if (!isCadImportData(page)) throw new ToolError('INVALID_ARGUMENT', 'Malformed sketch region query.');
+    const captured = structuredClone(page);
     const { inspectCadSketchRegions } = await import('@/domain/cad/cadSketchRegionInspection');
     signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
-    const result = inspectCadSketchRegions(session.getSnapshot().document, sketchId, page);
-    signal?.throwIfAborted(); return result;
+    const result = inspectCadSketchRegions(session.getSnapshot().document, sketchId, captured);
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed(); return result;
   }
-  async function readSketchRegionReference(sketchId: string, boundaryProfileId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal, proposal?: CadSketchRegionProposal) {
+  async function readSketchRegionReference(sketchId: string, target: CadSketchRegionReadTarget, expectedVersion = session.getSnapshot().version, signal?: AbortSignal, proposal?: CadSketchRegionProposal) {
     editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
-    const document = session.getSnapshot().document, key = `${sketchId}/${boundaryProfileId}`;
-    if (proposal !== undefined) {
+    if (!isCadImportData(target) || !Value.Check(CadSketchRegionReadTargetSchema, target) || proposal !== undefined && !isCadImportData(proposal))
+      throw new ToolError('INVALID_ARGUMENT', 'Choose one contour boundary or unique graph cell IDs.');
+    const capturedTarget = structuredClone(target), capturedProposal = proposal === undefined ? undefined : structuredClone(proposal);
+    const document = session.getSnapshot().document, targetKey = JSON.stringify(capturedTarget), key = JSON.stringify([sketchId, capturedTarget]);
+    if (capturedProposal !== undefined) {
       const { readCadSketchRegionReference, validateCadSketchRegionProposal } = await import('@/domain/cad/cadSketchRegionInspection');
       signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
-      validateCadSketchRegionProposal(proposal);
-      const proposalKey = JSON.stringify(proposal), previous = proposedRegionReferenceTexts.current;
+      validateCadSketchRegionProposal(capturedProposal);
+      const proposalKey = JSON.stringify(capturedProposal), previous = proposedRegionReferenceTexts.current;
       const cache = previous?.document === document && previous.sketchId === sketchId && previous.proposalKey === proposalKey
         ? previous : { document, sketchId, proposalKey, texts: new Map<string, string>() };
-      let text = cache.texts.get(boundaryProfileId);
+      let text = cache.texts.get(targetKey);
       if (text === undefined) {
-        text = JSON.stringify(readCadSketchRegionReference(document, sketchId, boundaryProfileId, proposal));
-        signal?.throwIfAborted(); cache.texts.set(boundaryProfileId, text);
+        text = JSON.stringify(readCadSketchRegionReference(document, sketchId, capturedTarget, capturedProposal));
+        signal?.throwIfAborted(); cache.texts.set(targetKey, text);
         proposedRegionReferenceTexts.current = cache;
       }
-      return text;
+      signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed(); return text;
     }
     let cache = regionReferenceTexts.current.get(document), text = cache?.get(key);
     if (text === undefined) {
       const { readCadSketchRegionReference } = await import('@/domain/cad/cadSketchRegionInspection');
       signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed();
-      text = JSON.stringify(readCadSketchRegionReference(document, sketchId, boundaryProfileId));
+      text = JSON.stringify(readCadSketchRegionReference(document, sketchId, capturedTarget));
       signal?.throwIfAborted();
       cache ??= new Map<string, string>(); cache.set(key, text); regionReferenceTexts.current.set(document, cache);
     }
-    return text;
+    signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed(); return text;
   }
   async function inspectPlugin(sketchId: string, profileId: string, expectedVersion = session.getSnapshot().version, signal?: AbortSignal) {
     editable(expectedVersion); session.assertWorkflowClosed(); signal?.throwIfAborted();
@@ -537,7 +643,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       const prepared = await preparePreviewCapture(captured.image, { projectId: null, draftVersion: expectedVersion, dirty: captured.dirty, contentSource: 'cad-draft' }, signal);
       try {
         signal.throwIfAborted(); session.assertVersion(expectedVersion); session.assertWorkflowClosed();
-        if (viewport.current !== controls || viewIdentity(controls.getState()) !== viewIdentity(captured.viewState)) throw new ToolError('STALE_VIEW', 'The CAD view changed during capture. Capture the current view again.');
+        if (viewport.current !== controls || cadViewportVisualIdentity(controls.getState()) !== cadViewportVisualIdentity(captured.viewState)) throw new ToolError('STALE_VIEW', 'The CAD view changed during capture. Capture the current view again.');
       } catch (error) { URL.revokeObjectURL(prepared.previewUrl); throw error; }
       const artifact: CadPreviewArtifact = { ...prepared, fileName: `cad-preview-${captured.image.source}.png`, documentId: captured.documentId, sketchId: captured.sketchId, curveId: captured.curveId, viewState: captured.viewState };
       const previous = previewUrl.current;
@@ -581,6 +687,14 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     getBuild: () => liveBuild.current,
     getKernel
   });
+  function inspectTopology(request: CadTopologyInspectRequest, expectedVersion: string, signal?: AbortSignal, scope?: 'editor', inputToken?: string) {
+    return inputToken === undefined ? topology.inspect(request, expectedVersion, signal, scope)
+      : featureInputCoordinator.inspect(request, expectedVersion, signal, scope, inputToken);
+  }
+  function resolveTopologyPicks(request: CadTopologyResolvePicksRequest, expectedVersion: string, signal?: AbortSignal, scope?: 'editor', inputToken?: string) {
+    return inputToken === undefined ? topology.resolve(request, expectedVersion, signal, scope)
+      : featureInputCoordinator.resolve(request, expectedVersion, signal, scope, inputToken);
+  }
   async function inspectSection(request: CadSectionRequest, expectedVersion: string, signal?: AbortSignal, scope?: 'section' | 'dxf-export') {
     editable(expectedVersion); session.assertWorkflowClosed(scope);
     signal?.throwIfAborted();
@@ -682,11 +796,11 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     } };
   }
   function back() { connected(); session.assertWorkflowClosed(); changeOpen(false); }
-  const isBusy = () => busy.current;
-  return { session, snapshot, open, enter, edit, save, list, projectActions, plugins, installPlugin, showLibrary, library, libraryLoading, libraryDiagnostic, closeLibrary,
-    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, measureCurve, inspectSketchRegions, readSketchRegionReference, inspectPlugin, inspectParameters, inspectPlane, inspectLoft, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, exportSectionDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
+  const isBusy = () => busy.current || preparing.current !== null;
+  return { session, snapshot, sketchEditing, open, enter, edit, preparePreviewEdits, save, list, projectActions, plugins, installPlugin, showLibrary, library, libraryLoading, libraryDiagnostic, closeLibrary,
+    openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, inspectSketchConstraints, inspectSketchHandles, measureCurve, inspectSketchRegions, readSketchRegionReference, inspectPlugin, inspectParameters, inspectPlane, inspectLoft, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, exportSectionDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
     setViewportControls, readViewport: (expectedVersion: string) => getViewport(expectedVersion).getState(), changeViewport, captureViewport, previewArtifact,
-    inspectTopology: topology.inspect, resolveTopologyPicks: topology.resolve,
+    inspectTopology, resolveTopologyPicks, buildFeatureInput: featureInputCoordinator.build, releaseFeatureInput,
     build, buildVersion, buildState, featurePreview, previewFeature: featurePreviewCoordinator.update, errorMessage, setErrorMessage, storageBusy, isBusy, isOpen: () => current.current.open,
     undo: (expected?: string) => { editable(expected); session.undo(expected); },
     redo: (expected?: string) => { editable(expected); session.redo(expected); }

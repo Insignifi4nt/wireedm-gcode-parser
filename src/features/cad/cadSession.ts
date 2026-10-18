@@ -22,7 +22,7 @@ export function hasUnsavedCadDraft(snapshot: Pick<CadSessionSnapshot, 'dirty' | 
   return snapshot.dirty && (snapshot.savedVersion !== null || hasCadDraftContent(snapshot.document));
 }
 interface HistoryEntry { readonly document: CadDocument; readonly textLength: number }
-type CadWorkflowScope = 'editor' | 'section' | 'import' | 'dxf-export' | 'library';
+type CadWorkflowScope = 'editor' | 'section' | 'import' | 'dxf-export' | 'library' | 'preparation' | 'sketch-edit';
 const MAX_HISTORY_STEPS = 50;
 const MAX_HISTORY_CHARACTERS = 8 * 1024 * 1024;
 
@@ -35,6 +35,7 @@ export class CadSession {
   private currentText: string;
   private savedText: string | null = null;
   private workflows = new Set<CadWorkflowScope>();
+  private workflowRevision = 0;
   private snapshot: CadSessionSnapshot;
   constructor(document = createCadDocument()) {
     this.snapshot = Object.freeze({ document: parseCadDocument(document), version: crypto.randomUUID(), savedVersion: null,
@@ -54,6 +55,8 @@ export class CadSession {
     if (hasUnsavedCadDraft(this.snapshot)) throw new CadSessionError('UNSAVED_DRAFT', 'Save the CAD draft before switching workbench storage.');
   }
   setWorkflowOpen = (open: boolean, scope: CadWorkflowScope = 'editor') => {
+    if (this.workflows.has(scope) === open) return;
+    this.workflowRevision++;
     if (open) this.workflows.add(scope); else this.workflows.delete(scope);
     const workflowOpen = this.workflows.size > 0;
     if (this.snapshot.workflowOpen === workflowOpen) return;
@@ -61,14 +64,28 @@ export class CadSession {
   };
   edit = (edits: readonly CadEdit[], expectedVersion = this.snapshot.version) => {
     this.assertVersion(expectedVersion);
-    const next = applyCadEdits(this.snapshot.document, edits);
+    return this.acceptEdit(applyCadEdits(this.snapshot.document, edits));
+  };
+  /** Preparation never owns accepted data/history. Recheck the exact workflow before one commit. */
+  editPrepared = async (expectedVersion: string, prepare: (document: CadDocument, signal?: AbortSignal) => Promise<CadDocument>, signal?: AbortSignal, assertCurrent?: () => void) => {
+    signal?.throwIfAborted(); this.assertVersion(expectedVersion);
+    const source = this.snapshot.document, workflowRevision = this.workflowRevision;
+    const candidate = await prepare(source, signal);
+    signal?.throwIfAborted(); this.assertVersion(expectedVersion);
+    if (this.workflowRevision !== workflowRevision) throw new CadSessionError('WORKFLOW_CHANGED', 'The CAD editor changed while this edit was being prepared. Apply the current edit again.');
+    assertCurrent?.();
+    const next = parseCadDocument(candidate);
+    if (next.id !== source.id) throw new CadSessionError('IDENTITY_MISMATCH', 'An edit cannot replace the identity of the open part.');
+    return this.acceptEdit(next);
+  };
+  private acceptEdit(next: CadDocument) {
     const text = JSON.stringify(next);
     if (text === this.currentText) return this.snapshot;
     this.pushPast(this.currentEntry());
     this.future = [];
     this.changed(next, text);
     return this.snapshot;
-  };
+  }
   undo = (expectedVersion = this.snapshot.version) => {
     this.assertVersion(expectedVersion); this.assertWorkflowClosed();
     const previous = this.past.pop();
@@ -88,6 +105,7 @@ export class CadSession {
       throw new CadSessionError('INVALID_SAVE_RECEIPT', 'The saved CAD receipt does not describe the document being opened.');
     }
     this.workflows.clear();
+    this.workflowRevision++;
     this.past = []; this.future = []; this.pastTextLength = 0;
     this.currentText = JSON.stringify(parsed);
     this.savedText = saved ? this.currentText : null;

@@ -33,7 +33,7 @@ Selection, diagnostic and geometry colors carry domain meaning and may remain in
 
 These are defaults for new work. Existing measured layouts and shared controls' intrinsic padding, strokes and alignment may use smaller increments. Canvas handles, source rows and narrow technical rails retain functional sizing. This does not claim every legacy layout already uses every token.
 
-Use sentence case for headings, labels, help and commands. Preserve authored acronyms such as CAD, CAM, DXF and UPID, axis names, identifiers, filenames and source text. Forced-uppercase styles are banned. Do not rewrite stored values or program text to satisfy a presentation rule.
+Use sentence case for headings, labels, help and commands. Preserve authored acronyms such as CAD, CAM, DXF and UPID, axis names, identifiers, filenames and source text. Forced uppercase and title-capitalization styles are banned by the shared UI check. Author the intended sentence case; do not rewrite stored values or program text to satisfy a presentation rule.
 
 Use weight, spacing and grouping to distinguish headings. Keep secondary metadata quieter than its value. Technical readouts may use tabular numerals. Formatting human summaries must not round pending edit text or replace raw expressions.
 
@@ -47,7 +47,7 @@ Icons come from `@wire-edm/icons-react`. Use semantic named exports such as `Pad
 | `Input` | Native types, labels, constraints, values and refs. Default 28px; `density="compact"` is 24px. Checkbox, radio, range, color and file types retain native behavior and intrinsic size. |
 | `Textarea` | Native multiline editing, selection, reset, rows and refs. Content/layout owns height; source editors retain monospace, whitespace and independent scrolling. |
 | `Select` | One native select with options/optgroups, native values, forms and keyboard behavior. `density="compact"` gives a quiet 24px toolbar trigger. No mirrored selection state. |
-| `MenuSurface`, `MenuItem`, `MenuCheckboxItem`, `MenuLabel`, `MenuSeparator` | Shared command rows and fallback Arrow/Home/End/typeahead navigation. Owner key handlers run first. Checkbox rows expose `aria-checked` without a nested control. Menu commands default to `type="button"`. |
+| `MenuSurface`, `MenuItem`, `MenuCheckboxItem`, `MenuRadioItem`, `MenuLabel`, `MenuSeparator` | Shared command rows and fallback Arrow/Home/End/typeahead navigation. Owner key handlers run first. Checkbox and radio rows expose `aria-checked` without a nested control. Radio groups keep one selected value. Menu commands default to `type="button"`. |
 | `Tooltip` | Descriptive, noninteractive help. Hover opens after 400ms; focus opens without another Tab stop. Portals use collision handling. Leaving the trigger closes pointer help. Help never intercepts command clicks. Escape closes help while preserving the original event for the native field and workflow owner. |
 | `InfoTip` | An icon button with an explicit accessible label and descriptive content, for optional heading help. Prefer it to permanent explanatory paragraphs in compact sections. |
 | `SearchField` | One controlled query and stable native input. Empty search may collapse; an active query stays visible. Opening focuses input. Escape clears/collapses and restores trigger focus; composing Escape stays with the input method. Blur outside collapses an empty query. |
@@ -68,6 +68,8 @@ Menu owners retain anchoring, outside dismissal, workflow locking, initial focus
 Button/field `title` props become shared help. Names identify controls; help describes them. Preserve existing description IDs. Provider/root/trigger structure stays stable as help and disabled state change, so edits, focus, refs, selection and chosen files survive.
 
 Shared help has no links or actions. `pointer-events: none` and Radix's nonhoverable-content behavior keep it clear of commands. Rich illustrated CAD help remains `CadContextHelp`, with preview, pinning, dismissal and an interactive close control. Interactive content does not belong in a pointer-transparent tooltip.
+
+Portal context menus use `--layer-context-menu`; shared tooltip portals use the higher `--layer-tooltip`. Keep that order so an open menu cannot obscure its own explanation. `MenuItem` places help to the side, with normal collision handling. `Button.tooltipSide` can select a side when a real layout needs it; ordinary controls retain the default. Help remains pointer-transparent; feature-specific tooltip layering is unnecessary.
 
 ## Layout and responsive patterns
 

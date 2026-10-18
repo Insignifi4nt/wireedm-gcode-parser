@@ -61,6 +61,26 @@ describe('pending mixed path drawing', () => {
     expect(draft).toMatchObject({ start: [1, 2] });
     if (draft.kind === 'idle') throw new Error('Expected anchor'); expect(Object.isFrozen(draft.start)).toBe(true);
   });
+
+  it('retains deliberately picked endpoint identities through modes and undo while ignoring arc through-point identities', () => {
+    let draft = updateCadPathDraft(createCadPathDraft(), { kind: 'point', point: [5, 0], existingPointId: 'start' });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 0], existingPointId: 'line-end' });
+    draft = updateCadPathDraft(draft, { kind: 'mode', mode: 'arc' });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 10], existingPointId: 'arc-end' });
+    expect(draft).toMatchObject({ startPointId: 'start', endPointId: 'arc-end', segments: [{ endPointId: 'line-end' }] });
+    draft = updateCadPathDraft(draft, { kind: 'undo-last' });
+    expect(draft).toMatchObject({ kind: 'ready', startPointId: 'start', segments: [{ endPointId: 'line-end' }] });
+    expect(draft).not.toHaveProperty('endPointId');
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 10], existingPointId: 'arc-end' });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [15, 5], existingPointId: 'through-only' });
+    expect(draft).toMatchObject({ kind: 'ready', startPointId: 'start', segments: [{ endPointId: 'line-end' }, { endPointId: 'arc-end' }] });
+    expect(JSON.stringify(draft)).not.toContain('through-only');
+    const curve = finishCadCurveDraft(draft);
+    expect(curve).toHaveLength(2); expect(JSON.stringify(curve)).not.toContain('PointId');
+    draft = updateCadPathDraft(draft, { kind: 'undo-last' });
+    expect(draft).toMatchObject({ startPointId: 'start', segments: [{ endPointId: 'line-end' }] });
+    expect(updateCadPathDraft(draft, { kind: 'cancel' })).toEqual({ kind: 'idle', mode: 'arc' });
+  });
   it('computes hover previews without traversing or regenerating previous segments', () => {
     // The endpoint lookup is the only allowed read of a large committed chain.
     const segments = new Proxy([{ kind: 'line' as const, start: [0, 0] as const, end: [5, 0] as const }], {

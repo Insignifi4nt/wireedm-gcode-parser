@@ -7,7 +7,9 @@ import { signedDxfArcSweepRadians } from '@/domain/dxf/arcSweep';
 import { angleIsOnSweep, pathBounds, signedAreaOfPath } from '@/domain/path-intel/segments';
 import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
 import { cadAnalyticSegments, cadPathClosureTolerance, resolveCadPathSegments, type ResolvedCadPathSegment } from './cadAnalyticSegments';
-import { selectCadSketchRegions, type CadSketchCellReference } from './cadSketchRegionSelection';
+import { selectCadSketchRegions, isCadSketchGraphCellSelection, type CadSketchCellReference, type CadSketchRegionSelection } from './cadSketchRegionSelection';
+import { prepareCadSketchGraphCells } from './cadSketchGraphCells';
+import { compileCadSketchGeometry, type CadCompiledSketchProfile } from './compileCadSketchGeometry';
 export { cadPathClosureTolerance, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 
 export type ResolvedCadProfile =
@@ -117,7 +119,7 @@ export function cadSketchToEntities(sketch: CadSketchFeature, parameters: Readon
   const regions = resolveCadSketchRegions(sketch, parameters);
   const contours = new Map(regions.flatMap(region => [region.boundary, ...region.voids]).map(contour => [contour.profile.id, contour]));
   // Keep original contour order for existing exact DXF/CAM handoffs.
-  return sketch.profiles.filter(profile => !profile.construction).flatMap(profile => {
+  return compileCadSketchGeometry(sketch, parameters).profiles.filter(profile => !profile.construction).flatMap(profile => {
     const contour = contours.get(profile.id);
     if (!contour) throw new CadError('invalid-profile', 'The sketch contour has no resolved material region.');
     return cadProfileToEntities(contour.geometry, contour.depth % 2 === 0 ? 'CAD_OUTER' : 'CAD_HOLE');
@@ -125,7 +127,7 @@ export function cadSketchToEntities(sketch: CadSketchFeature, parameters: Readon
 }
 
 export interface CadResolvedSketchContour {
-  readonly profile: CadSketchProfile; readonly geometry: ResolvedCadProfile;
+  readonly profile: CadCompiledSketchProfile; readonly geometry: ResolvedCadProfile;
   readonly depth: number; readonly parentId: string | null; readonly point: DxfPoint;
   /** Reuses this resolution's prepared analytic path during physical area picking. */
   readonly containsPoint: (point: DxfPoint) => boolean;
@@ -133,6 +135,11 @@ export interface CadResolvedSketchContour {
 /** Every even-depth boundary adds material; its immediate children leave voids. */
 export interface CadSketchRegion {
   readonly boundary: CadResolvedSketchContour; readonly voids: readonly CadResolvedSketchContour[];
+}
+export interface CadSketchMaterialBoundary { readonly geometry: ResolvedCadProfile }
+export interface CadSketchMaterialRegion {
+  readonly boundary: CadSketchMaterialBoundary;
+  readonly voids: readonly CadSketchMaterialBoundary[];
 }
 
 export type CadAnalyticBoundary = Extract<DxfEntity, { type: 'line' | 'arc' | 'circle' }>;
@@ -281,7 +288,7 @@ export function cadProfileContainsPoint(profile: ResolvedCadProfile, point: DxfP
 
 /** Infer regions from exact analytic contours, independent of authored orientation or CAM. */
 export function resolveCadSketchContours(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): readonly CadResolvedSketchContour[] {
-  const profiles = sketch.profiles.map(profile => ({ profile, geometry: resolveCadProfile(profile.geometry, parameters) }));
+  const profiles = compileCadSketchGeometry(sketch, parameters).profiles.map(profile => ({ profile, geometry: resolveCadProfile(profile.geometry, parameters) }));
   // Preparation belongs to this resolution only: parameter edits always rebuild
   // the exact curves, but containment comparisons reuse them within this call.
   const prepared = profiles.map(({ profile, geometry }) => {
@@ -367,8 +374,11 @@ export function resolveCadSketchContours(sketch: CadSketchFeature, parameters: R
   return resolved;
 }
 
-export function resolveCadSketchRegions(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>, selection?: readonly CadSketchCellReference[]): readonly CadSketchRegion[] {
-  return selectCadSketchRegions(resolveCadSketchContours(sketch, parameters), selection);
+export function resolveCadSketchRegions(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>, selection?: readonly CadSketchCellReference[]): readonly CadSketchRegion[];
+export function resolveCadSketchRegions(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>, selection?: CadSketchRegionSelection): readonly CadSketchMaterialRegion[];
+export function resolveCadSketchRegions(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>, selection?: CadSketchRegionSelection): readonly CadSketchMaterialRegion[] {
+  return isCadSketchGraphCellSelection(selection) ? prepareCadSketchGraphCells(sketch, parameters).resolve(selection)
+    : selectCadSketchRegions(resolveCadSketchContours(sketch, parameters), selection);
 }
 
 export function validateCadSketchGeometry(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): void {

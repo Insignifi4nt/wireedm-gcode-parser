@@ -7,14 +7,14 @@ import {
 import { cadPathClosureTolerance, type ResolvedCadPathSegment } from '@/domain/cad/cadSketchGeometry';
 
 export type CadPathDrawingMode = 'line' | 'arc';
-export type CadPathDraftSegment = Extract<ResolvedCadPathSegment, { kind: 'line' }>
-  | (CadConstructedArc & { readonly end: CadConstructionPoint; readonly through: CadConstructionPoint });
+export type CadPathDraftSegment = (Extract<ResolvedCadPathSegment, { kind: 'line' }>
+  | (CadConstructedArc & { readonly end: CadConstructionPoint; readonly through: CadConstructionPoint })) & { readonly endPointId?: string };
 export type CadPathDraft =
   | { readonly kind: 'idle'; readonly mode: CadPathDrawingMode }
-  | { readonly kind: 'ready'; readonly start: CadConstructionPoint; readonly segments: readonly CadPathDraftSegment[]; readonly mode: CadPathDrawingMode }
-  | { readonly kind: 'arc-through'; readonly start: CadConstructionPoint; readonly segments: readonly CadPathDraftSegment[]; readonly end: CadConstructionPoint };
+  | { readonly kind: 'ready'; readonly start: CadConstructionPoint; readonly startPointId?: string; readonly segments: readonly CadPathDraftSegment[]; readonly mode: CadPathDrawingMode }
+  | { readonly kind: 'arc-through'; readonly start: CadConstructionPoint; readonly startPointId?: string; readonly segments: readonly CadPathDraftSegment[]; readonly end: CadConstructionPoint; readonly endPointId?: string };
 export type CadPathDrawingAction =
-  | { readonly kind: 'point'; readonly point: CadConstructionPoint }
+  | { readonly kind: 'point'; readonly point: CadConstructionPoint; readonly existingPointId?: string }
   | { readonly kind: 'mode'; readonly mode: CadPathDrawingMode }
   | { readonly kind: 'undo-last' }
   | { readonly kind: 'cancel' };
@@ -38,6 +38,7 @@ export function cadPathDraftEndpoint(draft: Exclude<CadPathDraft, { kind: 'idle'
 /** Only committed segments are retained. Arc endpoints remain logical picks, not rounded circle samples. */
 export function updateCadPathDraft(draft: CadPathDraft, action: CadPathDrawingAction): CadPathDraft {
   const mode = draft.kind === 'arc-through' ? 'arc' : draft.mode;
+  const startReference = draft.kind !== 'idle' && draft.startPointId !== undefined ? { startPointId: draft.startPointId } : {};
   switch (action.kind) {
     case 'cancel': return createCadPathDraft(mode);
     case 'mode': {
@@ -46,24 +47,27 @@ export function updateCadPathDraft(draft: CadPathDraft, action: CadPathDrawingAc
     }
     case 'undo-last': {
       if (draft.kind === 'idle') return draft;
-      if (draft.kind === 'arc-through') return Object.freeze({ kind: 'ready', start: draft.start, segments: draft.segments, mode: 'arc' });
+      if (draft.kind === 'arc-through') return Object.freeze({ kind: 'ready', start: draft.start, ...startReference, segments: draft.segments, mode: 'arc' });
       if (!draft.segments.length) return createCadPathDraft(mode);
       return Object.freeze({ ...draft, segments: Object.freeze(draft.segments.slice(0, -1)) });
     }
     case 'point': {
       const point = copyCadConstructionPoint(action.point);
-      if (draft.kind === 'idle') return Object.freeze({ kind: 'ready', start: point, segments: Object.freeze([]), mode });
+      if (draft.kind === 'idle') return Object.freeze({ kind: 'ready', start: point,
+        ...(action.existingPointId !== undefined ? { startPointId: action.existingPointId } : {}), segments: Object.freeze([]), mode });
       if (draft.segments.length >= MAX_CAD_PATH_CONSTRUCTION_EDGES) throw new CadError('construction-limit', 'A path can contain at most 2048 edges including its closing edge.');
       const start = cadPathDraftEndpoint(draft);
       if (draft.kind === 'ready' && mode === 'arc') {
         const uncertainty = cadPathClosureTolerance([{ x: start[0], y: start[1] }, { x: point[0], y: point[1] }]);
         if (Math.hypot(point[0] - start[0], point[1] - start[1]) <= uncertainty) throw new CadError('degenerate-arc', 'Choose an arc endpoint distinct from its start.');
-        return Object.freeze({ kind: 'arc-through', start: draft.start, segments: draft.segments, end: point });
+        return Object.freeze({ kind: 'arc-through', start: draft.start, ...startReference, segments: draft.segments, end: point,
+          ...(action.existingPointId !== undefined ? { endPointId: action.existingPointId } : {}) });
       }
       const segment: CadPathDraftSegment = draft.kind === 'arc-through'
-        ? Object.freeze({ ...createCadThreePointArc({ start, end: draft.end, through: point }), end: draft.end, through: point })
-        : createCadConstructionLine(start, point);
-      return Object.freeze({ kind: 'ready', start: draft.start, segments: Object.freeze([...draft.segments, segment]), mode });
+        ? Object.freeze({ ...createCadThreePointArc({ start, end: draft.end, through: point }), end: draft.end, through: point,
+          ...(draft.endPointId !== undefined ? { endPointId: draft.endPointId } : {}) })
+        : Object.freeze({ ...createCadConstructionLine(start, point), ...(action.existingPointId !== undefined ? { endPointId: action.existingPointId } : {}) });
+      return Object.freeze({ kind: 'ready', start: draft.start, ...startReference, segments: Object.freeze([...draft.segments, segment]), mode });
     }
     default: { const exhaustive: never = action; throw new CadError('invalid-construction', `Unsupported drawing action: ${String(exhaustive)}`); }
   }

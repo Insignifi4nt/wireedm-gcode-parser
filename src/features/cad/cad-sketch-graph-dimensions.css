@@ -1,0 +1,2 @@
+.cad-sketch-graph-dimension-label { outline: none; }
+.cad-sketch-graph-dimension-label:is(:hover, :focus-visible, [aria-pressed="true"]) .cad-sketch-graph-dimension-label-box { stroke: var(--primary); stroke-width: 1.5; }

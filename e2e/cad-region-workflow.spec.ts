@@ -43,7 +43,9 @@ test('agent repairs two correlated selected sources atomically through discovere
   await prepareCadTools(page);
   await page.getByRole('button', { name: 'Design in CAD', exact: true }).click();
   await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible();
-  expect(await call(page, 'cad_describe_features', { kind: 'extrude' })).toMatchObject({ kind: 'extrude', schema: { properties: { regionSelection: { minItems: 1 } } } });
+  expect(await call(page, 'cad_describe_features', { kind: 'extrude' })).toMatchObject({ kind: 'extrude', schema: { properties: {
+    regionSelection: { anyOf: expect.arrayContaining([expect.objectContaining({ type: 'array', minItems: 1 })]) }
+  } } });
   const blank = await context(page);
   await call(page, 'cad_import_document', { expectedVersion: blank.version, document });
   const before = await context(page);

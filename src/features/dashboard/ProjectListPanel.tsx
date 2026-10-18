@@ -1,7 +1,6 @@
 import { SearchField } from '@/components/ui/search-field';
 import { Tooltip } from '@/components/ui/tooltip';
 import { MenuSurface, MenuItem } from '@/components/ui/menu';
-import { Select } from '@/components/ui/select';
 import { useRef, useState } from 'react';
 import { Box, ChevronDown, Download, FileCode, History, Pencil, Save, Trash2, Waypoints } from '@wire-edm/icons-react';
 
@@ -11,6 +10,7 @@ import { supportsSaveTextFileAs } from '@/domain/post/saveTextFileAs';
 import type { ArchivedCadLibraryEntry, CadLibraryEntry } from '@/domain/cad/cadStorage';
 import { dashboardProjectRows, projectSourceLabel, visibleDashboardProjects, type CadDashboardProject, type DashboardProject, type ProjectSourceFilter, type ProjectSortMode, type ProjectStateFilter } from './dashboardProjects';
 import { useDashboardMenu } from './useDashboardMenu';
+import { ProjectFilters } from './ProjectFilters';
 import './dashboard.css';
 
 type WorkbenchProjectIndexEntry = WorkbenchCatalogManifest['projects'][number];
@@ -106,44 +106,9 @@ export function ProjectListPanel({
           {availability === 'ready' && <span className="dashboard-count">{projectCountLabel}</span>}
         </div>
         {availability === 'ready' && rows.length > 0 && <div className="dashboard-library-controls" data-project-list-controls>
-              <Select aria-label="Project state filter" density="compact" value={stateFilter}
-                onChange={event => {
-                  const value = event.currentTarget.value;
-                  if (value === 'active' || value === 'archived' || value === 'all') setStateFilter(value);
-                }}>
-                <option value="active">Active projects</option>
-                <option value="archived">Archived</option>
-                <option value="all">All projects</option>
-              </Select>
               <SearchField label="Search projects" value={searchText} onValueChange={setSearchText} />
-              <Select
-                aria-label="Project source filter"
-                density="compact"
-                onChange={(event) =>
-                  setSourceFilter(event.currentTarget.value === 'cad' ? 'cad' : event.currentTarget.value === 'dxf' ? 'dxf' : event.currentTarget.value === 'external-gcode' ? 'external-gcode' : 'all')
-                }
-                value={sourceFilter}
-              >
-                <option value="all">All sources</option>
-                <option value="cad">CAD project</option>
-                <option value="dxf">Path project</option>
-                <option value="external-gcode">Machine program</option>
-              </Select>
-              <Select
-                aria-label="Project sort"
-                density="compact"
-                onChange={(event) => {
-                  const value = event.currentTarget.value;
-                  if (value === 'updated-desc' || value === 'updated-asc' || value === 'name-asc' || value === 'name-desc' || value === 'type') setSortMode(value);
-                }}
-                value={sortMode}
-              >
-                <option value="updated-desc">Newest first</option>
-                <option value="updated-asc">Oldest first</option>
-                <option value="name-asc">Name A-Z</option>
-                <option value="name-desc">Name Z-A</option>
-                <option value="type">Type</option>
-              </Select>
+              <ProjectFilters state={stateFilter} source={sourceFilter} sort={sortMode} disabled={interactionLocked || pending}
+                onStateChange={setStateFilter} onSourceChange={setSourceFilter} onSortChange={setSortMode} />
         </div>}
       </header>
       <div className="dashboard-library-content">

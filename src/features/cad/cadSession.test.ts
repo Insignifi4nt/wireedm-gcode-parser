@@ -1,8 +1,36 @@
 import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession, hasCadDraftContent, hasUnsavedCadDraft } from './cadSession';
+import { applyCadEdits } from '@/domain/cad/cadOperations';
 
 describe('shared CAD editing session', () => {
+  it('accepts one asynchronously prepared edit, deduplicates no-ops and restores it through history', async () => {
+    const session = new CadSession(), before = session.getSnapshot();
+    session.setWorkflowOpen(true);
+    const prepared = await session.editPrepared(before.version, async document => applyCadEdits(document, [{ kind: 'rename-document', name: 'Prepared' }]));
+    expect(prepared.document.name).toBe('Prepared'); expect(prepared.canUndo).toBe(true);
+    expect(await session.editPrepared(prepared.version, async document => document)).toBe(prepared);
+    session.setWorkflowOpen(false); session.undo();
+    expect(session.getSnapshot().document).toBe(before.document);
+    session.redo(); expect(session.getSnapshot().document.name).toBe('Prepared');
+  });
+
+  it('rejects a cancelled, stale or replaced workflow result without changing the accepted revision', async () => {
+    for (const invalidate of ['cancel', 'version', 'workflow'] as const) {
+      const session = new CadSession(), signal = new AbortController();
+      session.setWorkflowOpen(true);
+      let complete: (document: ReturnType<typeof createCadDocument>) => void = () => { throw new Error('Preparation did not start.'); };
+      const candidate = applyCadEdits(session.getSnapshot().document, [{ kind: 'rename-document', name: 'Late' }]);
+      const pending = session.editPrepared(session.getSnapshot().version, () => new Promise(resolve => { complete = resolve; }), signal.signal);
+      const rejected = expect(pending).rejects.toThrow();
+      if (invalidate === 'cancel') signal.abort();
+      else if (invalidate === 'version') session.edit([{ kind: 'rename-document', name: 'Current' }]);
+      else { session.setWorkflowOpen(false); session.setWorkflowOpen(true); }
+      const accepted = session.getSnapshot();
+      complete(candidate); await rejected;
+      expect(session.getSnapshot()).toBe(accepted);
+    }
+  });
   it('protects deleting all saved geometry while keeping the new-empty draft disposable', () => {
     const session = new CadSession();
     expect(hasUnsavedCadDraft(session.getSnapshot())).toBe(false);

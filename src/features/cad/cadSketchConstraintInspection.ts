@@ -1,0 +1,145 @@
+import type { CadDocument, CadScalar } from '@/domain/cad/cadDocument';
+import { CadError } from '@/domain/cad/cadError';
+import { createCadSketchMeasurementReader } from '@/domain/cad/cadSketchMeasurements';
+import { measureCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
+import { evaluateCadScalar } from '@/domain/cad/cadExpression';
+import { parseCadDocument } from '@/domain/cad/cadSchema';
+import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import { cadSketchLinearPatternForSelection, cadSketchLinearPatternInstances } from '@/domain/cad/cadSketchLinearPattern';
+import { cadSketchExternalReferenceComponents } from '@/domain/cad/cadSketchExternalReferences';
+import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
+import { page } from '@/features/webmcp/siteTools';
+import { summarizeMessage, summarizeDiagnostic } from '@/features/webmcp/diagnosticSummaries';
+import type { CadSketchSolveDiagnostics, CadSketchSolveResult, CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
+import type { CadSketchConstraintSection } from './cadToolSchemas';
+import { deepFreezeCadData } from '@/domain/cad/cadDeepFreeze';
+
+export type CadSketchConstraintAnalysis = { readonly kind: 'solved'; readonly diagnostics: CadSketchSolveDiagnostics }
+  | { readonly kind: 'rejected'; readonly reason: Extract<CadSketchSolveResult, { kind: 'rejected' }>['reason']; readonly message: string; readonly diagnostics: CadSketchSolveDiagnostics }
+  | { readonly kind: 'unavailable' | 'legacy'; readonly message: string; readonly diagnostics: CadSketchSolveDiagnostics };
+export interface CadSketchConstraintInspection {
+  readonly sketchId: string;
+  readonly pointCount: number; readonly entityCount: number; readonly relationCount: number;
+  readonly legacyProfileCount: number; readonly legacyDimensionCount: number;
+  /** Native freedom describes graph variables only, not legacy primitive groups. */
+  readonly degreesOfFreedomScope: 'graph';
+  readonly analysis: CadSketchConstraintAnalysis;
+  readonly graph: CadSketchGraph | null;
+  readonly parameters: CadDocument['parameters'];
+}
+const unknownDiagnostics = (): CadSketchSolveDiagnostics => ({ status: null, degreesOfFreedom: null,
+  conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] });
+const freezeData = (value: unknown) => deepFreezeCadData(value, { skipFrozen: true });
+
+/** Analyze copied numeric geometry; the accepted source and its exact drivers remain authoritative. */
+export async function inspectCadSketchConstraints(document: CadDocument, sketchId: string,
+  getSolver: () => Promise<Pick<CadSketchSolverClient, 'solve'>>, signal?: AbortSignal): Promise<CadSketchConstraintInspection> {
+  signal?.throwIfAborted();
+  const accepted = parseCadDocument(document), sketch = accepted.features.find(feature => feature.id === sketchId);
+  if (sketch?.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose an existing sketch to inspect its constraints.');
+  const graph = sketch.graph ?? null;
+  let analysis: CadSketchConstraintAnalysis;
+  if (!graph) analysis = { kind: 'legacy', message: 'Legacy profiles keep their primitive dimensions. General graph freedom is unavailable.', diagnostics: unknownDiagnostics() };
+  else {
+    try {
+      const solver = await getSolver(); signal?.throwIfAborted();
+      const result = await solver.solve({ graph, parameters: accepted.parameters }, signal); signal?.throwIfAborted();
+      const diagnostics = { ...result.diagnostics, degreesOfFreedom: result.diagnostics.degreesOfFreedom !== null && result.diagnostics.degreesOfFreedom >= 0
+        ? result.diagnostics.degreesOfFreedom : null };
+      analysis = result.kind === 'solved' ? { kind: 'solved', diagnostics }
+        : { kind: 'rejected', reason: result.reason, message: result.message, diagnostics };
+    } catch (error) {
+      signal?.throwIfAborted();
+      analysis = { kind: 'unavailable', message: error instanceof Error ? error.message : 'Constraint analysis is unavailable. Retry to restart the solver.', diagnostics: unknownDiagnostics() };
+    }
+  }
+  const result: CadSketchConstraintInspection = { sketchId, graph, parameters: accepted.parameters,
+    pointCount: graph?.points.length ?? 0, entityCount: graph?.entities.length ?? 0, relationCount: graph?.relations.length ?? 0,
+    legacyProfileCount: sketch.profiles.length, legacyDimensionCount: sketch.profiles.reduce((total, profile) => total + (profile.constraints?.length ?? 0), 0),
+    degreesOfFreedomScope: 'graph', analysis };
+  freezeData(result); return result;
+}
+
+const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
+  'tangent-joint': 'Keeps one line and one arc smoothly opposed at their explicitly joined endpoints. Declared endpoint identity, arc direction and existing size drivers remain authoritative; it adds no coincidence or radius driver.',
+  'point-on-line': 'Keeps a point on the infinite supporting line of the named guide, with sliding freedom unless other dimensions constrain it. Does not join material boundaries, fix the guide or drive a circle radius.',
+  symmetric: 'Keeps two point positions reflected about the infinite supporting line of the named axis. It does not fix that axis, join points or equalize circle radii.',
+  'linear-pattern': 'Owns a row of circles. Copies follow the seed center and radius at the declared signed axis pitch. Edit this owner to change count, direction or exclusions; detach before independent copy edits.',
+  'reference-dimension': 'Measures current geometry without driving it or adding a native equation.',
+  coincident: 'Keeps two distinct source points at the same location.', horizontal: 'Keeps two points at the same Y coordinate.',
+  midpoint: 'Keeps one distinct graph point halfway between a graph line’s endpoints, including construction lines. Does not join material boundaries.',
+  'external-reference': 'Linked construction geometry follows a stable preceding sketch edge along the shared plane normal. Detach explicitly to retain its current numeric shape without the source link.',
+  vertical: 'Keeps two points at the same X coordinate.', 'fixed-point': 'Fixes a point at its driving X and Y coordinates.',
+  parallel: 'Keeps two line directions parallel.', perpendicular: 'Keeps two line directions at a right angle.',
+  collinear: 'Keeps two lines on the same infinite supporting line without joining endpoints or fixing lengths.',
+  'equal-length': 'Keeps two line lengths equal.', 'equal-radius': 'Keeps two circle or arc radii equal.',
+  'line-angle': 'Drives the declared clockwise or counterclockwise sector between two explicit line rays in degrees.',
+  'radial-size': 'Drives circle or arc size using the declared radius or diameter.',
+  'fixed-axis': 'Fixes one point coordinate; the other axis can remain free.', distance: 'Keeps the straight-line distance between two points.',
+  'axis-distance': 'Drives the signed second-minus-first point coordinate along the declared sketch axis.',
+  'fillet-corner': 'Keeps a tangent minor arc at the original reference corner, with a driving radius and finite trimmed sides.',
+  'chamfer-corner': 'Keeps two driving setbacks along the finite sides of the original reference corner.'
+};
+const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
+  : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
+
+/** Exact source rows are paged separately from bounded native diagnostic summaries. */
+export function pageCadSketchConstraints(inspection: CadSketchConstraintInspection, input: { section?: CadSketchConstraintSection; offset?: number; limit?: number }) {
+  const graph = inspection.graph, points = new Map(graph?.points.map(point => [point.id, point]));
+  const analysis = inspection.analysis, diagnostics = analysis.diagnostics;
+  const conflicting = new Set(diagnostics.conflictingIds), redundant = new Set(diagnostics.redundantIds), partiallyRedundant = new Set(diagnostics.partiallyRedundantIds);
+  const diagnosticState = (id: string) => analysis.kind === 'unavailable' || analysis.kind === 'legacy' ? null
+    : { conflicting: conflicting.has(id), redundant: redundant.has(id), partiallyRedundant: partiallyRedundant.has(id) };
+  const adjacency = new Map<string, string[]>();
+  for (const entity of graph?.entities ?? []) for (const id of entityPoints(entity)) {
+    const edges = adjacency.get(id) ?? []; edges.push(entity.id); adjacency.set(id, edges);
+  }
+  const referenceComponents = graph ? cadSketchExternalReferenceComponents(graph) : null;
+  const scalar = (value: CadScalar, driving = false, linked = false) => ({ scalar: value, valueMm: evaluateCadScalar(value, inspection.parameters),
+    role: linked ? 'linked-reference' : typeof value === 'string' ? 'expression-driver' : driving ? 'constant-driver' : 'solver-variable' });
+  const pattern = (kind: 'point' | 'entity', id: string) => {
+    const owner = graph && cadSketchLinearPatternForSelection(graph, { kind, id });
+    return owner ? { pattern: { relationId: owner.relation.id, index: owner.index, seedEntityId: owner.relation.seed.entityId,
+      role: owner.index === 0 ? 'seed' as const : 'generated' as const } } : {};
+  };
+  const point = (id: string) => {
+    const source = points.get(id); if (!source) throw new CadError('missing-sketch-point', 'The inspected point no longer exists.');
+    const entities = adjacency.get(id) ?? [];
+    return { id, ...pattern('point', id), position: source.position.map(value => scalar(value, false, referenceComponents?.pointIds.has(id))), diagnostics: diagnosticState(id), entityIds: entities.slice(0, 8), entityCount: entities.length,
+      omittedEntityCount: Math.max(0, entities.length - 8) };
+  };
+  if (input.section === 'points') return page(graph?.points ?? [], input, source => point(source.id));
+  if (input.section === 'entities') {
+    const reader = graph ? createCadSketchMeasurementReader(graph, inspection.parameters) : null;
+    return page(graph?.entities ?? [], input, source => {
+      const row = { source, ...pattern('entity', source.id), diagnostics: diagnosticState(source.id), points: entityPoints(source).map(point),
+        ...(source.kind === 'circle' ? { radius: scalar(source.radius, false, referenceComponents?.circleIds.has(source.id)) } : {}) };
+      try { return { ...row, measurement: reader ? { coordinateSystem: 'sketch-local' as const, ...reader.entity(source.id) } : null }; }
+      catch (error) { return { ...row, measurement: null, measurementDiagnostic: summarizeMessage(error instanceof Error ? error.message : 'Unable to measure this edge.') }; }
+    });
+  }
+  return page(graph?.relations ?? [], input, source => ({ source, meaning: relationMeanings[source.kind], diagnostics: diagnosticState(source.id),
+    points: graph ? cadSketchRelationPointIds(graph, source).map(point) : [],
+    ...(cadSketchRelationEntityIds(source).length ? { entityIds: cadSketchRelationEntityIds(source) } : {}),
+    ...(source.kind === 'linear-pattern' ? { pattern: { seed: source.seed, count: source.count, direction: source.direction,
+      pitch: scalar(source.spacing, true), instances: cadSketchLinearPatternInstances(source) } }
+      : source.kind === 'reference-dimension' && graph ? { measurement: { coordinateSystem: 'sketch-local' as const,
+      valueMm: measureCadSketchReferenceDimension(graph, inspection.parameters, source), role: 'reference-measurement' as const } }
+      : source.kind === 'line-angle' ? { value: { scalar: source.value, valueDegrees: evaluateCadScalar(source.value, inspection.parameters), unit: 'deg' as const,
+      role: typeof source.value === 'string' ? 'expression-driver' as const : 'constant-driver' as const } }
+      : source.kind === 'distance' || source.kind === 'axis-distance' || source.kind === 'fixed-axis' || source.kind === 'fillet-corner' || source.kind === 'radial-size' ? { value: scalar(source.value, true) }
+      : source.kind === 'fixed-point' ? { position: source.position.map(value => scalar(value, true)) }
+      : source.kind === 'chamfer-corner' ? { values: source.values.map(value => scalar(value, true)) } : {}) }));
+}
+
+/** Do not duplicate unbounded native ID/message arrays beside a source page. */
+export function summarizeCadSketchConstraintAnalysis(analysis: CadSketchConstraintAnalysis) {
+  const { diagnostics } = analysis;
+  const ids = (values: readonly string[]) => ({ ids: values.slice(0, 8), count: values.length, omittedCount: Math.max(0, values.length - 8) });
+  return { kind: analysis.kind, status: diagnostics.status, degreesOfFreedom: diagnostics.degreesOfFreedom,
+    ...(analysis.kind === 'rejected' ? { reason: analysis.reason } : {}),
+    ...('message' in analysis ? summarizeMessage(analysis.message) : {}),
+    conflicting: ids(diagnostics.conflictingIds), redundant: ids(diagnostics.redundantIds), partiallyRedundant: ids(diagnostics.partiallyRedundantIds),
+    issues: diagnostics.issues.slice(0, 2).map(summarizeDiagnostic), issueCount: diagnostics.issues.length,
+    omittedIssueCount: Math.max(0, diagnostics.issues.length - 2) };
+}

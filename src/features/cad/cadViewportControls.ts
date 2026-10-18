@@ -4,6 +4,8 @@ import { CadSketchPlaneSchema } from '@/domain/cad/cadPrimitives';
 import { CadTopologyPickSetSchema, type CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import type { EditorPreviewCapture } from '@/features/webmcp/previewCapture';
 import type { CadPickMode, CadTopologyHit } from './cadTopologyPicking';
+import { CadSketchGraphPickFilterSchema, CadSketchGraphSelectionSchema, CadSketchGraphSelectionSetSchema, type CadSketchGraphPickFilter, type CadSketchGraphSelection } from './cadSketchGraphSelection';
+export { CadSketchGraphSelectionSchema, type CadSketchGraphSelection } from './cadSketchGraphSelection';
 
 export const CadNamedViewSchema = Type.Union([Type.Literal('Isometric'), Type.Literal('Top'), Type.Literal('Front'), Type.Literal('Right')]);
 export type CadNamedView = Static<typeof CadNamedViewSchema>;
@@ -19,6 +21,9 @@ export const CadViewportCommandSchema = Type.Union([
   Type.Object({ kind: Type.Literal('edit-sketch'), sketchId: id }, strict),
   Type.Object({ kind: Type.Literal('edit-curve'), curveId: id }, strict),
   Type.Object({ kind: Type.Literal('select-profile'), profileId: Type.Union([id, Type.Null()]) }, strict),
+  Type.Object({ kind: Type.Literal('select-sketch-geometry'), selection: Type.Union([CadSketchGraphSelectionSchema, Type.Null()]) }, strict),
+  Type.Object({ kind: Type.Literal('select-sketch-geometry-set'), selections: CadSketchGraphSelectionSetSchema }, strict),
+  Type.Object({ kind: Type.Literal('set-sketch-pick-filter'), filter: CadSketchGraphPickFilterSchema }, strict),
   Type.Object({ kind: Type.Literal('finish-sketch') }, strict),
   Type.Object({ kind: Type.Literal('finish-curve') }, strict),
   Type.Object({ kind: Type.Literal('set-pick-mode'), mode: CadPickModeSchema }, strict),
@@ -29,12 +34,13 @@ export type CadViewportCommand = Static<typeof CadViewportCommandSchema>;
 
 export type CadRenderedViewState = { readonly navigationMode?: 'mouse' | 'trackpad'; readonly onPartDimensionsVisible?: boolean } & (
   | { readonly mode: 'solid'; readonly available: boolean; readonly view: CadNamedView | 'Custom'; readonly gridVisible: boolean; readonly zoom: number; readonly revision: number; readonly hoveredTopology?: CadTopologyHit | null; readonly referenceVersion?: string | null; readonly referenceFeatureIds?: readonly string[]; readonly referencePlanes?: readonly CadPlane[] }
-  | { readonly mode: 'sketch' | 'curve'; readonly available: boolean; readonly plane: CadSketchPlane; readonly gridVisible: boolean; readonly snapEnabled: boolean; readonly gridStepMm: number; readonly centerMm: readonly [number, number]; readonly heightSpanMm: number; readonly revision: number });
+  | { readonly mode: 'sketch' | 'curve'; readonly available: boolean; readonly plane: CadSketchPlane; readonly gridVisible: boolean; readonly snapEnabled: boolean; readonly gridStepMm: number; readonly centerMm: readonly [number, number]; readonly heightSpanMm: number; readonly revision: number; readonly sketchPickFilter?: CadSketchGraphPickFilter });
 
 export interface CadRenderedViewControls {
   getState(): CadRenderedViewState;
   fit(): void;
   setGrid(visible: boolean): void;
+  setSketchPickFilter?(filter: CadSketchGraphPickFilter): void;
   setView?(view: CadNamedView): void;
   capture(signal: AbortSignal): Promise<EditorPreviewCapture>;
 }
@@ -45,6 +51,9 @@ export interface CadViewportState {
   readonly dirty: boolean;
   readonly selectedFeatureId: string | null;
   readonly selectedProfileId: string | null;
+  readonly selectedSketchGeometrySet: readonly CadSketchGraphSelection[];
+  /** Compatibility projection only; present when exactly one graph item is selected. */
+  readonly selectedSketchGeometry?: CadSketchGraphSelection;
   readonly selectedReferencePlane: CadSketchPlane | null;
   readonly awaitingSketchPlane: boolean;
   readonly sketchId: string | null;
@@ -58,6 +67,13 @@ export interface CadViewportState {
   readonly buildState: 'idle' | 'building' | 'ready' | 'error';
   readonly visibleBodyIds: readonly string[];
   readonly view: CadRenderedViewState | null;
+}
+
+/** Capture identity excludes temporary locks and the unrelated solid build while editing in 2D. */
+export function cadViewportVisualIdentity(state: CadViewportState): string {
+  return JSON.stringify([state.documentId, state.documentVersion, state.selectedFeatureId, state.selectedProfileId, state.selectedSketchGeometrySet,
+    state.sketchId, state.curveId, state.selectedReferencePlane, state.awaitingSketchPlane,
+    state.view?.mode === 'solid' ? [state.buildVersion, state.buildId, state.buildState, state.pickMode, state.topologySelection, state.visibleBodyIds] : null, state.view]);
 }
 
 /** Both 2D and 3D show the current CAD draft, including unsaved edits. */

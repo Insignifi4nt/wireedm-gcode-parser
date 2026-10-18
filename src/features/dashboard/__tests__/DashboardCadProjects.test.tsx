@@ -59,12 +59,15 @@ describe('saved CAD projects in the shared dashboard', () => {
     assertion();
   }
   async function selectState(value: string) {
+    await act(async () => button('Filter projects').click());
     await act(async () => {
-      const control = container.querySelector<HTMLSelectElement>('[aria-label="Project state filter"]');
+      const control = container.querySelector<HTMLButtonElement>(`[aria-label="Project state filter"] button[value="${value}"]`);
       if (!control) throw new Error('Missing project state filter');
-      control.value = value; control.dispatchEvent(new Event('change', { bubbles: true }));
+      control.click();
     });
+    await act(async () => controlEscape());
   }
+  function controlEscape() { document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); }
 
   it('opens saved CAD beside CAM, downloads importable data, and archives/restores through the same list', async () => {
     const storage = await workbench('shared-projects');

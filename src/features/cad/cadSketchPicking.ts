@@ -4,10 +4,40 @@ import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
 import { createArcSegment, createCircleSegment, createLineSegment, signedAreaOfPath } from '@/domain/path-intel/segments';
 import type { PathSegment, Point2 } from '@/domain/path-intel/types';
 import type { SketchPoint } from './cadSketchInteraction';
+import { inspectCadSketchHandles, type CadSketchHandleDescriptor } from '@/domain/cad/cadSketchHandles';
+
+export interface CadSketchHandlePick extends CadSketchHandleDescriptor { readonly profileId: string; readonly profileName: string }
+
+/** Grip eligibility precedes contour picking, so a vertex never falls through to a whole-profile move. */
+export function createCadSketchHandlePicker(profiles: readonly CadSketchProfile[], parameters: Readonly<Record<string, number>>) {
+  const handles = profiles.flatMap(profile => {
+    try { return inspectCadSketchHandles(profile, parameters).map(handle => ({ ...handle, profileId: profile.id, profileName: profile.name })); }
+    catch { return []; }
+  });
+  return {
+    handles,
+    pick(point: SketchPoint, millimetersPerPixel: number, preferredProfileId?: string | null): CadSketchHandlePick | null {
+      if (!point.every(Number.isFinite) || !Number.isFinite(millimetersPerPixel) || millimetersPerPixel <= 0) return null;
+      const tolerance = CAD_SKETCH_PICK_RADIUS_PX * millimetersPerPixel;
+      let selected: CadSketchHandlePick | null = null, closest = tolerance, selectedPreferred = false;
+      for (const handle of handles) {
+        const distance = Math.hypot(point[0] - handle.point[0], point[1] - handle.point[1]);
+        if (distance > tolerance) continue;
+        const preferred = handle.profileId === preferredProfileId;
+        // Visible owned grips precede hidden ones. Equal-distance ties retain
+        // prepared profile/handle order, including locked grips.
+        if (!selected || preferred && !selectedPreferred || preferred === selectedPreferred && distance < closest) {
+          selected = handle; closest = distance; selectedPreferred = preferred;
+        }
+      }
+      return selected;
+    }
+  };
+}
 
 export const CAD_SKETCH_PICK_RADIUS_PX = 6;
 const tau = 2 * Math.PI;
-function boundaryDistance(point: Point2, segment: PathSegment): number {
+export function cadSketchBoundaryDistance(point: Point2, segment: PathSegment): number {
   if (segment.kind === 'circle') return Math.abs(Math.hypot(point.x - segment.center.x, point.y - segment.center.y) - segment.radius);
   if (segment.kind === 'line') {
     const dx = segment.end.x - segment.start.x; const dy = segment.end.y - segment.start.y;
@@ -49,7 +79,7 @@ export function createCadSketchProfilePicker(profiles: readonly CadSketchProfile
       let boundary: { id: string; distance: number } | null = null;
       let interior: { id: string; area: number } | null = null;
       for (const profile of prepared) {
-        const distance = profile.segments.reduce((closest, segment) => Math.min(closest, boundaryDistance(location, segment)), Infinity);
+        const distance = profile.segments.reduce((closest, segment) => Math.min(closest, cadSketchBoundaryDistance(location, segment)), Infinity);
         if (distance <= tolerance && (!boundary || distance < boundary.distance)) boundary = { id: profile.id, distance };
         if (!profile.construction && profile.area > 0 && (!interior || profile.area < interior.area) && profile.contains(location)) interior = { id: profile.id, area: profile.area };
       }

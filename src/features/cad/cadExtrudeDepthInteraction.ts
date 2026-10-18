@@ -3,10 +3,9 @@ import { cadFramePointToWorld, prepareCadDatumFrames, resolveCadSketchPlacement,
 import { cadScalarParameterNames } from '@/domain/cad/cadParameters';
 import type { CadNumericPoint3 } from '@/domain/cad/cadPlanes';
 import { inspectCadScalarValue, type CadScalarValueBinding } from '@/domain/cad/cadScalarValueIntent';
-import { cadSketchSourceIssue } from '@/domain/cad/cadSketchSources';
-import { prepareCadSketchCells, type CadPreparedSketchCells } from '@/domain/cad/cadSketchRegionInspection';
+import { prepareCadSketchCells, type CadPreparedSketchCatalog } from '@/domain/cad/cadSketchRegionInspection';
 import { measureCadResolvedProfile, type CadBounds2 } from '@/domain/cad/cadMeasurements';
-import type { CadSketchCellReference } from '@/domain/cad/cadSketchRegionSelection';
+import { isCadSketchGraphCellSelection, type CadSketchRegionSelection } from '@/domain/cad/cadSketchRegionSelection';
 
 export type CadExtrudeDepthCapability = { readonly kind: 'editable' } | { readonly kind: 'locked'; readonly reason: string };
 export interface CadExtrudeDepthModel {
@@ -44,9 +43,9 @@ export interface CadExtrudeDepthControl {
 
 // The domain owns source preparation. Each prepared result keeps only its latest
 // selected material bounds, so a changed source/driver cannot reuse old bounds.
-const selectedBounds = new WeakMap<CadPreparedSketchCells, { selectionKey: string; bounds: CadBounds2 | null }>();
-function materialBounds(sketch: CadSketchFeature, parameters: CadDocument['parameters'], selection?: readonly CadSketchCellReference[]): CadBounds2 | null {
-  const cells = prepareCadSketchCells(sketch, parameters), entry = selectedBounds.get(cells);
+const selectedBounds = new WeakMap<CadPreparedSketchCatalog, { selectionKey: string; bounds: CadBounds2 | null }>();
+function materialBounds(sketch: CadSketchFeature, parameters: CadDocument['parameters'], selection?: CadSketchRegionSelection): CadBounds2 | null {
+  const cells = prepareCadSketchCells(sketch, parameters, isCadSketchGraphCellSelection(selection) ? 'graph-cells' : 'contours'), entry = selectedBounds.get(cells);
   const selectionKey = JSON.stringify(selection ?? null);
   if (entry && selectionKey === entry.selectionKey) return entry.bounds;
   let bounds: CadBounds2 | null = null;
@@ -65,7 +64,7 @@ export function inspectCadExtrudeDepth(document: CadDocument, feature: CadFeatur
   const index = document.features.findIndex(entry => entry.id === feature.id);
   const preceding = index < 0 ? document.features : document.features.slice(0, index);
   const sketch = preceding.find(entry => entry.id === feature.sketchId);
-  if (sketch?.kind !== 'sketch' || cadSketchSourceIssue(sketch, 'extrude')) return null;
+  if (sketch?.kind !== 'sketch' || sketch.suppressed) return null;
   const binding = inspectCadScalarValue(feature.distance, document.parameters);
   if (binding.kind === 'invalid') return null;
   const materialBoundsMm = materialBounds(sketch, document.parameters, feature.regionSelection);

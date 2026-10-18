@@ -40,6 +40,6 @@ it.each([
   expect(onApply).not.toHaveBeenCalled();
   const apply = container.querySelector<HTMLButtonElement>('button[type="submit"]'); if (!apply) throw new Error('Missing Apply');
   await act(async () => apply.click());
-  expect(onApply).toHaveBeenCalledExactlyOnceWith(expected, {});
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(expected, {}, expect.any(AbortSignal));
   expect(JSON.stringify(document)).toBe(before);
 });

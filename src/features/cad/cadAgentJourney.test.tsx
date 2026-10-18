@@ -52,6 +52,31 @@ async function mount() {
   return { session, call, success, workbench };
 }
 describe('CAD agent discovery and authoring journeys', () => {
+  it('discovers revision-scoped grips and edits one vertex through the guarded shared operation', async () => {
+    const h = await mount();
+    await h.success('cad_edit_document', { expectedVersion: h.session.getSnapshot().version, edits: [{ kind: 'add-feature', feature: {
+      id: 'outline', name: 'Outline', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+      profiles: [{ id: 'plate', name: 'Plate', construction: false, geometry: { kind: 'polygon', points: [[0, 0], [20, 0], [20, 10], [0, 10]] } }]
+    } }] });
+    const before = h.session.getSnapshot(), query = { expectedVersion: before.version, sketchId: 'outline', profileId: 'plate', offset: 1, limit: 1 };
+    const contract = await h.success('cad_describe_edits', { kind: 'move-sketch-handle' });
+    expect(object(contract.schema).required).toEqual(expect.arrayContaining(['sketchId', 'profileId', 'handle', 'translation']));
+    const handles = await h.success('cad_inspect_sketch_handles', query);
+    expect(handles).toMatchObject({ total: 4, nextOffset: 2, items: [{ handle: { kind: 'vertex', index: 1 }, point: [20, 0], draggable: true }] });
+    expect(h.session.getSnapshot()).toBe(before);
+    if (!Array.isArray(handles.items)) throw new Error('Missing handle page');
+    const edit = { kind: 'move-sketch-handle', sketchId: 'outline', profileId: 'plate', handle: object(handles.items[0]).handle, translation: [5, -2] };
+    await h.success('cad_edit_document', { expectedVersion: before.version, edits: [edit] });
+    const after = h.session.getSnapshot();
+    expect(after.document.features[0]).toMatchObject({ profiles: [{ geometry: { points: [[0, 0], [25, -2], [20, 10], [0, 10]] } }] });
+    expect(await h.call('cad_inspect_sketch_handles', query)).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    await h.success('cad_history', { expectedVersion: after.version, direction: 'undo' });
+    expect(h.session.getSnapshot().document).toEqual(before.document);
+    await act(async () => h.session.setWorkflowOpen(true));
+    expect(await h.call('cad_inspect_sketch_handles', { ...query, expectedVersion: h.session.getSnapshot().version })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    expect(await h.call('cad_edit_document', { expectedVersion: h.session.getSnapshot().version, edits: [edit] })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+  });
+
   it('keeps initial CAD discovery below 50 KiB without repeating complete plugin recipe schemas', () => {
     const tools = cadSiteTools(() => { throw new Error('Registration must not invoke a controller'); });
     const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;

@@ -1,12 +1,14 @@
 import { Value } from '@sinclair/typebox/value';
 import type { CadDocument, CadMesh, CadPlane, CadSketchPlane } from '@/domain/cad/cadDocument';
 import { cadFeatureProducesBody } from '@/domain/cad/cadSchema';
+import { CadError } from '@/domain/cad/cadError';
 import { parseCadTopologyPickSet, type CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import { ToolError } from '@/features/webmcp/siteTools';
-import { CadViewportCommandSchema, type CadRenderedViewControls, type CadViewportCapture, type CadViewportState, type CadWorkbenchViewportControls } from './cadViewportControls';
+import { CadViewportCommandSchema, cadViewportVisualIdentity, type CadSketchGraphSelection, type CadRenderedViewControls, type CadViewportCapture, type CadViewportState, type CadWorkbenchViewportControls } from './cadViewportControls';
 import { validateTopologySelection, type CadPickMode } from './cadTopologyPicking';
+import { cadSketchGraphSelectionSet } from './cadSketchGraphSelection';
 
-export interface CadViewportBindings extends Omit<CadViewportState, 'documentId' | 'view'> {
+export interface CadViewportBindings extends Omit<CadViewportState, 'documentId' | 'view' | 'selectedSketchGeometry'> {
   readonly document: CadDocument;
   readonly rendered: CadRenderedViewControls | null;
   readonly meshes: readonly CadMesh[];
@@ -18,6 +20,7 @@ export interface CadViewportBindings extends Omit<CadViewportState, 'documentId'
   editSketch(id: string): void;
   editCurve(id: string): void;
   selectProfile(id: string | null): void;
+  selectSketchGeometrySet(selections: readonly CadSketchGraphSelection[]): void;
   finishSketch(): void;
   finishCurve(): void;
   selectTopology(selection: CadTopologyPickSet | null, additive: boolean): void;
@@ -35,18 +38,16 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
   }
   function getState(): CadViewportState {
     const bindings = getBindings();
+    const selectedSketchGeometrySet = Object.freeze(bindings.selectedSketchGeometrySet.map(selection => Object.freeze({ kind: selection.kind, id: selection.id })));
     return Object.freeze({ documentId: bindings.document.id, documentVersion: bindings.documentVersion, dirty: bindings.dirty,
       selectedFeatureId: bindings.selectedFeatureId, selectedProfileId: bindings.selectedProfileId, sketchId: bindings.sketchId, curveId: bindings.curveId,
+      selectedSketchGeometrySet,
+      ...(selectedSketchGeometrySet.length === 1 ? { selectedSketchGeometry: selectedSketchGeometrySet[0] } : {}),
       selectedReferencePlane: typeof bindings.selectedReferencePlane === 'object' && bindings.selectedReferencePlane !== null ? Object.freeze({ ...bindings.selectedReferencePlane }) : bindings.selectedReferencePlane,
       awaitingSketchPlane: bindings.awaitingSketchPlane,
       workflowOpen: bindings.workflowOpen, busy: bindings.busy, buildVersion: bindings.buildVersion,
       buildId: bindings.buildId, pickMode: bindings.pickMode, topologySelection: bindings.topologySelection ? parseCadTopologyPickSet(bindings.topologySelection) : null,
       buildState: bindings.buildState, visibleBodyIds: Object.freeze([...bindings.visibleBodyIds]), view: bindings.rendered?.getState() ?? null });
-  }
-  // Busy may change because the caller acquires the capture lock. Only visual content matters.
-  function visualIdentity(state: CadViewportState) {
-    return JSON.stringify([state.documentId, state.documentVersion, state.selectedFeatureId, state.selectedProfileId,
-      state.sketchId, state.curveId, state.selectedReferencePlane, state.awaitingSketchPlane, state.view?.mode === 'solid' ? [state.buildVersion, state.buildId, state.buildState, state.pickMode, state.topologySelection] : null, state.view]);
   }
   function referencesInstalled(bindings: CadViewportBindings, state: CadViewportState): boolean {
     if (state.view?.mode !== 'solid') return true;
@@ -84,6 +85,27 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
             if (sketch?.kind !== 'sketch') throw new ToolError('WRONG_VIEW', 'Open the sketch editor before selecting a profile.');
             if (command.profileId !== null && !sketch.profiles.some((profile) => profile.id === command.profileId)) throw new ToolError('NOT_FOUND', 'Profile does not exist in the active sketch.');
             bindings.selectProfile(command.profileId); return;
+          }
+          case 'select-sketch-geometry':
+          case 'select-sketch-geometry-set': {
+            const sketch = bindings.document.features.find(feature => feature.kind === 'sketch' && feature.id === bindings.sketchId && !feature.suppressed);
+            if (sketch?.kind !== 'sketch') throw new ToolError('WRONG_VIEW', 'Open the sketch editor before selecting points or edges.');
+            const request = command.kind === 'select-sketch-geometry-set' ? command.selections : command.selection ? [command.selection] : [];
+            let selections: readonly CadSketchGraphSelection[];
+            try { selections = cadSketchGraphSelectionSet(sketch.graph, request); }
+            catch (error) {
+              if (error instanceof CadError) throw new ToolError(error.code === 'missing-sketch-selection' ? 'NOT_FOUND' : 'INVALID_INPUT', error.message);
+              throw error;
+            }
+            bindings.selectSketchGeometrySet(selections); return;
+          }
+          case 'set-sketch-pick-filter': {
+            if (bindings.curveId || !bindings.document.features.some(feature => feature.kind === 'sketch' && feature.id === bindings.sketchId && !feature.suppressed)) throw new ToolError('WRONG_VIEW', 'Open an active sketch editor before changing its pick filter.');
+            if (!rendered) throw new ToolError('VIEW_UNAVAILABLE', 'Wait for the sketch viewport to load.');
+            const view = rendered.getState();
+            if (view.mode !== 'sketch') throw new ToolError('WRONG_VIEW', 'Open the sketch viewport before changing its pick filter.');
+            if (!view.available || !rendered.setSketchPickFilter) throw new ToolError('VIEW_UNAVAILABLE', 'Wait for sketch picking controls to load.');
+            rendered.setSketchPickFilter(command.filter); return;
           }
           case 'finish-sketch':
             if (!bindings.sketchId) throw new ToolError('WRONG_VIEW', 'No sketch editor is open.');
@@ -123,7 +145,7 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
       const rendered = bindings.rendered;
       const before = getState();
       if (!rendered || !before.view?.available) throw new ToolError('CAPTURE_UNAVAILABLE', 'Wait for a visible CAD viewport to load.');
-      const hasReferences = bindings.visibleReferencePlanes.length > 0 || before.view.mode === 'solid' && Boolean(before.view.referencePlanes?.length) || bindings.document.features.some(feature => !feature.suppressed && (feature.kind === 'datum-plane' || feature.kind === 'curve' || feature.kind === 'sketch' && feature.profiles.length > 0));
+      const hasReferences = bindings.visibleReferencePlanes.length > 0 || before.view.mode === 'solid' && Boolean(before.view.referencePlanes?.length) || bindings.document.features.some(feature => !feature.suppressed && (feature.kind === 'datum-plane' || feature.kind === 'curve' || feature.kind === 'sketch' && (feature.profiles.length > 0 || Boolean(feature.graph?.entities.length))));
       const requiresBuild = !hasReferences || bindings.document.features.some(feature => cadFeatureProducesBody(feature) && !feature.suppressed);
       if (before.view.mode === 'solid') {
         if (requiresBuild && (bindings.buildState !== 'ready' || bindings.buildVersion !== bindings.documentVersion)) throw new ToolError('STALE_STATE', 'Wait for this exact CAD draft to finish building before capturing its solid view.');
@@ -133,7 +155,7 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
       signal.throwIfAborted();
       const after = getState();
       if (after.documentId !== before.documentId || after.documentVersion !== before.documentVersion) throw new ToolError('STALE_STATE', 'The CAD draft changed during capture. Read context and capture again.');
-      if (after.workflowOpen || visualIdentity(after) !== visualIdentity(before)) throw new ToolError('STALE_VIEW', 'The CAD view changed during capture. Capture the current view again.');
+      if (after.workflowOpen || cadViewportVisualIdentity(after) !== cadViewportVisualIdentity(before)) throw new ToolError('STALE_VIEW', 'The CAD view changed during capture. Capture the current view again.');
       if (hasReferences && !referencesInstalled(getBindings(), after)) throw new ToolError('STALE_VIEW', 'The visible CAD references changed during capture. Capture the current view again.');
       return Object.freeze({ image, contentSource: 'cad-draft', documentId: before.documentId, documentVersion: before.documentVersion,
         dirty: before.dirty, sketchId: before.sketchId, curveId: before.curveId,

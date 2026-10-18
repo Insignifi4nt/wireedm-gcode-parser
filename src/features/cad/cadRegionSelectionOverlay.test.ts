@@ -6,8 +6,10 @@ import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
 import { cadFramePointToWorld, prepareCadDatumFrames, resolveCadSketchPlacement } from '@/domain/cad/cadDatumPlanes';
 import { sketch } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
 import type { CadSketchFeature } from '@/domain/cad/cadDocument';
+import { cadSketchRegionSelectionCount } from '@/domain/cad/cadSketchRegionSelection';
+import { measureCadResolvedProfile } from '@/domain/cad/cadMeasurements';
 
-function command(origin = 0, datum = false): CadFeatureRegionPickCommand {
+function command(origin = 0, datum = false) {
   const source = sketch();
   const placed: CadSketchFeature = { ...source, offset: 5,
     ...(datum ? { plane: { kind: 'datum-plane', featureId: 'datum' } } : { profiles: source.profiles.map(profile => {
@@ -18,7 +20,7 @@ function command(origin = 0, datum = false): CadFeatureRegionPickCommand {
     definition: { kind: 'world', basePlane: 'XY', origin: [origin, origin, origin], rotation: [30, 40, 20] } }], {});
   return { kind: 'pick-regions', owner: 'editor', expectedVersion: 'accepted', label: 'Areas', sketchId: placed.id,
     cells: prepareCadSketchCells(placed, {}), placement: resolveCadSketchPlacement(placed, {}, frames), selection: undefined,
-    onSelect: vi.fn(), onFinish: vi.fn(), onCancel: vi.fn() };
+    onSelect: vi.fn(), onFinish: vi.fn(), onCancel: vi.fn() } satisfies CadFeatureRegionPickCommand;
 }
 function rayAt(value: CadFeatureRegionPickCommand, x: number, y: number) {
   const point = new THREE.Vector3(...cadFramePointToWorld(value.placement.frame, value.placement.offsetMm, [x, y]));
@@ -31,17 +33,61 @@ function meshes(overlay: ReturnType<typeof createCadRegionSelectionOverlay>) {
     return { mesh: child, geometry: child.geometry, material: child.material, id: child.userData.boundaryProfileId as string };
   });
 }
-const ids = (selection: ReturnType<ReturnType<typeof createCadRegionSelectionOverlay>['selectionForRay']>) => selection?.map(cell => cell.boundaryProfileId).sort();
+const ids = (selection: ReturnType<ReturnType<typeof createCadRegionSelectionOverlay>['selectionForRay']>) => {
+  if (selection === null) return undefined;
+  if (!Array.isArray(selection)) throw new Error('Expected contour selection in this legacy fixture.');
+  return selection.map(cell => cell.boundaryProfileId).sort();
+};
 
 describe('analytic closed-area viewport overlay', () => {
+  it('picks the true circle lens and unions adjacent graph cells while cancellation keeps the old selection exact', () => {
+    const source: CadSketchFeature = { id: 'overlap', kind: 'sketch', name: 'Overlap', suppressed: false, plane: 'XY', offset: 5, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [6, 0] }], entities: [
+        { id: 'left', kind: 'circle', construction: false, centerPointId: 'a', radius: 5 },
+        { id: 'right', kind: 'circle', construction: false, centerPointId: 'b', radius: 5 }], relations: []
+    } };
+    const saved = JSON.stringify(source), cells = prepareCadSketchCells(source, {}, 'graph-cells');
+    const baseline = [{ boundaryProfileId: 'old-cycle', voidProfileIds: [], ancestorProfileIds: [] }];
+    const current = { ...command(), sketchId: source.id, cells, placement: resolveCadSketchPlacement(source, {}), selection: baseline };
+    const overlay = createCadRegionSelectionOverlay(); overlay.update(current);
+    try {
+      expect(cells.cells).toHaveLength(3);
+      const shaded = overlay.group.children.filter(child => child instanceof THREE.Mesh);
+      const materials = shaded.map(mesh => { if (!(mesh.material instanceof THREE.MeshBasicMaterial)) throw new Error('Missing cell material'); return mesh.material; });
+      expect(materials.every(material => material.opacity === .09)).toBe(true);
+      const lens = overlay.pick(rayAt(current, 3, 0)); expect(lens?.areaMm2).toBeCloseTo(50 * Math.acos(.6) - 24, 10);
+      const single = overlay.selectionForRay(rayAt(current, 3, 0), false); if (!single) throw new Error('Lens selection missing.');
+      expect(cadSketchRegionSelectionCount(single)).toBe(1);
+      overlay.update({ ...current, selection: single });
+      const joined = overlay.selectionForRay(rayAt(current, -2, 0), true); if (!joined) throw new Error('Disk union missing.');
+      const material = cells.resolve(joined); expect(material).toHaveLength(1); expect(material[0].voids).toEqual([]);
+      expect(measureCadResolvedProfile(material[0].boundary.geometry).areaMm2).toBeCloseTo(25 * Math.PI, 10);
+      overlay.hover(rayAt(current, 3, 0)); overlay.hover(null);
+      const empty = overlay.selectionForRay(rayAt(current, 3, 0), true); if (!empty) throw new Error('Empty area choice missing.');
+      expect(cadSketchRegionSelectionCount(empty)).toBe(0); overlay.update({ ...current, selection: empty });
+      expect(materials.every(material => material.opacity === .09)).toBe(true);
+      overlay.update(current);
+      expect(materials.every(material => material.opacity === .09)).toBe(true);
+      expect(overlay.group.children.filter(child => child instanceof THREE.Mesh)).toEqual(shaded);
+      expect(current.selection).toEqual(baseline); expect(JSON.stringify(source)).toBe(saved);
+      if (!source.graph) throw new Error('Source graph missing.');
+      const changed = prepareCadSketchCells({ ...source, graph: { ...source.graph,
+        entities: source.graph.entities.map(entity => entity.id === 'left' ? { ...entity, id: 'replacement' } : entity) } }, {}, 'graph-cells');
+      expect(() => changed.resolve(single)).toThrow(expect.objectContaining({ code: 'stale-sketch-region' }));
+      expect(() => overlay.update({ ...current, cells: changed, selection: single })).not.toThrow();
+      const repaired = overlay.selectionForRay(rayAt(current, 3, 0), false); if (!repaired) throw new Error('Deliberate replacement missing.');
+      expect(changed.resolve(repaired)).toHaveLength(1);
+    } finally { overlay.dispose(); }
+  });
+
   it.each([[0, false], [100000000, false], [100000000, true]] as const)('picks actual prepared cells in placement at origin %s/datum %s independently of GPU sampling', (origin, datum) => {
     const current = command(origin, datum), before = JSON.stringify(current.cells.cells);
     const overlay = createCadRegionSelectionOverlay(); overlay.update(current);
     const local = datum ? 0 : origin;
     try {
-      expect(overlay.pick(rayAt(current, local + 4, local))?.reference.boundaryProfileId).toBe('bore');
-      expect(overlay.pick(rayAt(current, local, local))?.reference.boundaryProfileId).toBe('island');
-      expect(overlay.pick(rayAt(current, local + 8, local))?.reference.boundaryProfileId).toBe('outer');
+      expect(overlay.pick(rayAt(current, local + 4, local))?.name).toBe('bore');
+      expect(overlay.pick(rayAt(current, local, local))?.name).toBe('island');
+      expect(overlay.pick(rayAt(current, local + 8, local))?.name).toBe('outer');
       expect(overlay.pick(rayAt(current, local + 50, local))).toBeNull();
       expect(ids(overlay.selectionForRay(rayAt(current, local + 4, local), false))).toEqual(['bore']);
       expect(ids(overlay.selectionForRay(rayAt(current, local + 4, local), true))).toEqual(['bore', 'island', 'outer', 'separate']);
@@ -56,7 +102,7 @@ describe('analytic closed-area viewport overlay', () => {
       // Destructively alter only an uploaded display mesh: analytic picking must
       // still read the immutable prepared cell, not triangulated ray hits.
       shaded[0].geometry.getAttribute('position').array.fill(0);
-      expect(overlay.pick(rayAt(current, local + 4, local))?.reference.boundaryProfileId).toBe('bore');
+      expect(overlay.pick(rayAt(current, local + 4, local))?.name).toBe('bore');
       expect(JSON.stringify(current.cells.cells)).toBe(before);
     } finally { overlay.dispose(); }
   });
@@ -116,7 +162,7 @@ describe('analytic closed-area viewport overlay', () => {
     const overlay = createCadRegionSelectionOverlay(); overlay.update(current);
     try {
       expect(current.cells.cells[0].areaMm2).toBeCloseTo(75 * Math.PI + 50, 10);
-      expect(overlay.pick(rayAt(current, -5, 0))?.reference.boundaryProfileId).toBe('curved');
+      expect(overlay.pick(rayAt(current, -5, 0))?.name).toBe('Curved');
       expect(overlay.pick(rayAt(current, 6, 6))).toBeNull();
       const raycaster = new THREE.Raycaster(), mesh = meshes(overlay)[0].mesh; overlay.group.updateMatrixWorld(true);
       raycaster.ray.copy(rayAt(current, -5, 0)); expect(raycaster.intersectObject(mesh).length).toBeGreaterThan(0);

@@ -20,6 +20,8 @@ import { CadFeatureBaseSchemaFields, CadIdentifierSchema, CadLabelSchema, CadNum
 import { CadDatumPlaneFeatureSchema, resolveCadWorldDatum, resolveCadSketchPlacement, resolveCadExtrudeRevolvePlacement, type CadResolvedFrame } from './cadDatumPlanes';
 import { cadConsumedBodyIds, cadFeatureInputs, cadFeatureProducesBody } from './cadFeatureInputs';
 import { CadSketchDimensionConstraintSchema, validateCadSketchConstraints } from './cadSketchConstraints';
+import { CadSketchGraphSchema, parseCadSketchGraph } from './cadSketchGraph';
+import { assertCadSketchExternalReferences } from './cadSketchExternalReferences';
 export { cadConsumedBodyIds, cadFeatureDependencies, cadFeatureInputs, cadFeatureProducesBody, cadVisibleBodyIds, type CadBodyFeature } from './cadFeatureInputs';
 export { CadPathSegmentSchema } from './cadPrimitives';
 
@@ -45,7 +47,7 @@ export const CadSketchProfileSchema = Type.Object({ id: identifier, name: label,
   role: Type.Optional(Type.Union([Type.Literal('outer'), Type.Literal('hole')])), geometry: CadProfileSchema,
   constraints: Type.Optional(Type.Array(CadSketchDimensionConstraintSchema, { maxItems: 6 })) }, strict);
 export const CadSketchFeatureSchema = Type.Object({ ...base, kind: Type.Literal('sketch'), plane: CadSketchPlaneSchema, offset: scalar,
-  profiles: Type.Array(CadSketchProfileSchema), source: Type.Optional(CadDxfImportSourceSchema) }, strict);
+  profiles: Type.Array(CadSketchProfileSchema), source: Type.Optional(CadDxfImportSourceSchema), graph: Type.Optional(CadSketchGraphSchema) }, strict);
 export const CadFeatureSchema = Type.Union([
   CadDatumPlaneFeatureSchema,
   CadCurveFeatureSchema,
@@ -66,7 +68,7 @@ export const CadFeatureSchema = Type.Union([
   Type.Object({ ...base, kind: Type.Literal('mirror'), sourceId: identifier, plane }, strict)
 ]);
 export const CadDocumentSchema = Type.Object({
-  format: Type.Literal('wireedm-cad'), schemaVersion: Type.Literal(1),
+  format: Type.Literal('wireedm-cad'), schemaVersion: Type.Union([Type.Literal(1), Type.Literal(2)]),
   id: Type.String({ pattern: '^[a-z0-9][a-z0-9_-]{0,95}$' }), name: label, units: Type.Literal('mm'),
   parameters: Type.Record(Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]{0,63}$' }), number, { additionalProperties: false }),
   parameterGroups: Type.Optional(Type.Array(CadParameterGroupSchema)),
@@ -133,8 +135,11 @@ export function parseCadDocument(value: unknown): CadDocument {
       if (!visibleBodies.has(id)) throw new CadError('unavailable-body', `Feature "${feature.name}" references suppressed or already consumed body "${id}". Select its current successor.`);
     }
     const operandInstances = solidDependencies.reduce((total, id) => total + (expandedInstances.get(id) ?? 1), 0);
-    if ((feature.kind === 'extrude' || feature.kind === 'pocket') && feature.regionSelection !== undefined)
+    if ((feature.kind === 'extrude' || feature.kind === 'pocket') && feature.regionSelection !== undefined) {
       validateCadSketchRegionSelection(feature.regionSelection);
+      if (!Array.isArray(feature.regionSelection) && document.schemaVersion !== 2)
+        throw new CadError('unsupported-sketch-format', 'Graph cell area selections require CAD schema 2. Preserve the schema 1 original when saving an upgrade.');
+    }
     const pocket = feature.kind === 'pocket' && !feature.suppressed ? resolveCadPocketInputs(feature, previous, document.parameters) : null;
     // New section generators add one operand before join/cut. Keep the existing
     // Pad/Revolve preflight counts unchanged for saved-history compatibility.
@@ -156,6 +161,11 @@ export function parseCadDocument(value: unknown): CadDocument {
       }
       case 'sketch': {
         e(feature.offset);
+        if (feature.graph) {
+          if (document.schemaVersion !== 2) throw new CadError('unsupported-sketch-format', 'Stable sketch entities require CAD schema 2. Preserve the schema 1 original when saving an upgrade.');
+          parseCadSketchGraph(feature.graph);
+          assertCadSketchExternalReferences({ sketch: feature, parameters: document.parameters, previous });
+        }
         if (feature.source) parseCadDxfImportSource(feature.source);
         const ids = new Set<string>();
         const dimensionIds = new Set<string>();
@@ -176,11 +186,11 @@ export function parseCadDocument(value: unknown): CadDocument {
         const sketch = previous.get(feature.sketchId);
         if (sketch?.kind !== 'sketch') throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding sketch.`);
         if (feature.operation === 'new' && feature.targetId !== null || feature.operation !== 'new' && feature.targetId === null) throw new CadError('invalid-operation', 'New bodies have no target; join and cut require a target body.');
-        if (!feature.suppressed && (sketch.suppressed || !sketch.profiles.some(profile => !profile.construction))) throw new CadError('empty-sketch', `Feature "${feature.name}" needs an active nonempty sketch.`);
+        if (!feature.suppressed && (sketch.suppressed || !resolveCadSketchRegions(sketch, document.parameters,
+          feature.kind === 'extrude' ? feature.regionSelection : undefined).length)) throw new CadError('empty-sketch', `Feature "${feature.name}" needs an active nonempty sketch.`);
         if (feature.kind === 'extrude') {
           const distance = e(feature.distance);
           if (Math.abs(distance) <= 1e-7 || Math.abs(distance) > 1e6) throw new CadError('invalid-dimension', 'Extrusion distance must be nonzero and within one million millimetres.');
-          if (!feature.suppressed && feature.regionSelection !== undefined) resolveCadSketchRegions(sketch, document.parameters, feature.regionSelection);
         } else {
           const angle = e(feature.angle);
           if (angle <= 1e-7 || angle > 360) throw new CadError('invalid-dimension', 'Revolve angle must be greater than zero and at most 360 degrees.');

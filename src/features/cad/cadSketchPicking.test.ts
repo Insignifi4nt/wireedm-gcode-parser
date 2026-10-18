@@ -1,11 +1,36 @@
 import { describe, expect, it } from 'vitest';
 import type { CadProfile, CadSketchProfile } from '@/domain/cad/cadDocument';
-import { createCadSketchProfilePicker } from './cadSketchPicking';
+import { createCadSketchHandlePicker, createCadSketchProfilePicker } from './cadSketchPicking';
 
 function profile(id: string, geometry: CadProfile, construction = false): CadSketchProfile {
   return { id, name: id, geometry, construction };
 }
 const circle = (radius: number): CadProfile => ({ kind: 'circle', x: 0, y: 0, radius });
+
+describe('sketch handle ownership picking', () => {
+  it('keeps the selected profile grip ahead of overlapping hidden grips, including a locked point', () => {
+    const selected = profile('selected', { kind: 'polygon', points: [['origin', 'origin'], [20, 0], [0, 10]] });
+    const other = profile('other', { kind: 'polygon', points: [[0, 0], [30, 0], [0, 20]] });
+    const pick = createCadSketchHandlePicker([selected, other], { origin: 0 }).pick;
+    expect(pick([0, 0], .1, 'selected')).toMatchObject({ profileId: 'selected', draggable: false, handle: { kind: 'vertex', index: 0 } });
+    expect(pick([0, 0], .1, 'other')).toMatchObject({ profileId: 'other', draggable: true });
+    expect(pick([0, 0], .1)).toMatchObject({ profileId: 'selected' });
+    expect(pick([30, 0], .1, 'selected')).toMatchObject({ profileId: 'other', handle: { kind: 'vertex', index: 1 } });
+  });
+
+  it('limits ownership priority to the pixel hit radius and otherwise picks the nearest grip', () => {
+    const pick = createCadSketchHandlePicker([
+      profile('selected', circle(5)), profile('other', { kind: 'circle', x: .2, y: 0, radius: 4 })
+    ], {}).pick;
+    expect(pick([.2, 0], .1, 'selected')).toMatchObject({ profileId: 'selected', handle: { kind: 'center' } });
+    expect(pick([.2, 0], .01, 'selected')).toMatchObject({ profileId: 'other', handle: { kind: 'center' } });
+    expect(pick([.2, 0], .1)).toMatchObject({ profileId: 'other' });
+    expect(pick([-.59, 0], .1, 'selected')).toMatchObject({ profileId: 'selected' });
+    expect(pick([-.61, 0], .1, 'selected')).toBeNull();
+    expect(pick([0, 0], 0, 'selected')).toBeNull();
+    expect(pick([NaN, 0], .1, 'selected')).toBeNull();
+  });
+});
 
 describe('analytic sketch profile picking', () => {
   it('selects innermost nested contours regardless of legacy role or array ordering', () => {

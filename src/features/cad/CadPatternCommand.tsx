@@ -9,7 +9,7 @@ import { cadToolbarPopupPosition } from './cadToolbarPopupPosition';
 type PatternKind = Extract<CadFeature['kind'], 'linear-pattern' | 'circular-pattern'>;
 
 /** A toolbar popup escapes the horizontally scrolling toolstrip. */
-export function CadPatternCommand({ disabled, onChoose }: { disabled: boolean; onChoose(kind: PatternKind): void }) {
+export function CadPatternCommand({ disabled, onChoose, context = 'body' }: { disabled: boolean; context?: 'sketch' | 'body'; onChoose(kind: PatternKind): void }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0 });
   const trigger = useRef<HTMLButtonElement>(null);
@@ -66,7 +66,7 @@ export function CadPatternCommand({ disabled, onChoose }: { disabled: boolean; o
         commands[next]?.focus();
       }}>
       <MenuItem onClick={() => { close(); onChoose('linear-pattern'); }}><LinearPatternIcon size={14} /> Linear pattern</MenuItem>
-      <MenuItem onClick={() => { close(); onChoose('circular-pattern'); }}><CircularPatternIcon size={14} /> Circular pattern</MenuItem>
+      {context === 'body' && <MenuItem onClick={() => { close(); onChoose('circular-pattern'); }}><CircularPatternIcon size={14} /> Circular pattern</MenuItem>}
     </MenuSurface>, window.document.body)}
   </>;
 }

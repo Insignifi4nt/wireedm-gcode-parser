@@ -21,7 +21,7 @@ afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMo
 async function fixture(overrides: Partial<ComponentProps<typeof CadSketchCanvas>> = {}) {
   let controls: CadRenderedViewControls | null = null;
   const sketch: CadSketchFeature = overrides.sketch?.kind === 'sketch' ? overrides.sketch : { id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [] };
-  const session = new CadSession({ ...createCadDocument(), features: [sketch] });
+  const session = new CadSession({ ...createCadDocument(), schemaVersion: sketch.graph ? 2 : 1, parameters: overrides.parameters ?? {}, features: [sketch] });
   const added = vi.fn((geometry: CadProfile) => session.edit([{ kind: 'update-feature', feature: {
     ...sketch, profiles: [...sketch.profiles, { id: 'drawn', name: 'Path', construction: false, geometry }]
   } }]));
@@ -51,6 +51,26 @@ async function fixture(overrides: Partial<ComponentProps<typeof CadSketchCanvas>
 }
 
 describe('mixed line and three-point arc drawing', () => {
+  it.each([true, false])('connects deliberate existing-point snaps while honoring disabled snapping (%s)', async enabled => {
+    const onAddPath = vi.fn();
+    const h = await fixture({ onAddPath, sketch: { id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+      points: [{ id: 'a', position: ['anchorX', 3.2] }, { id: 'b', position: [22.1, 3.2] },
+        { id: 'bottom', position: ['anchorX', 0] }, { id: 'top', position: ['anchorX', 6.4] }],
+      entities: [{ id: 'fence', kind: 'line', construction: true, startPointId: 'bottom', endPointId: 'top' }], relations: []
+    } }, parameters: { anchorX: 2.1 } });
+    if (!enabled) await h.click('Toggle snapping');
+    await h.point(2.2, 3.3, 'pointermove');
+    expect(container.querySelector('[data-cad-sketch-snap="a"]') !== null).toBe(enabled);
+    // Space accepts the displayed snap, just as a pointer click does.
+    await h.key(' '); await h.point(22.2, 3.3); await h.click('Finish path');
+    expect(h.error).not.toHaveBeenCalled(); expect(h.added).not.toHaveBeenCalled(); expect(onAddPath).toHaveBeenCalledTimes(1);
+    const draft = onAddPath.mock.calls[0][0];
+    expect(draft.kind).toBe('ready'); expect(draft.startPointId).toBe(enabled ? 'a' : undefined);
+    expect(draft.segments[0].endPointId).toBe(enabled ? 'b' : undefined);
+    expect(draft.start[0]).toBeCloseTo(enabled ? 2.1 : 2.2, 10);
+    expect(draft.segments[0].end[0]).toBeCloseTo(enabled ? 22.1 : 22.2, 10);
+  });
+
   it('keeps the draft provisional and creates one exact closed path in a single undo step', async () => {
     const h = await fixture(); const original = h.session.getSnapshot();
     await h.point(0, 0); await h.point(20, 0); await h.click('3-point Arc'); await h.point(20, 20);
@@ -121,7 +141,7 @@ describe('mixed line and three-point arc drawing', () => {
   });
 
   it.each([0, -Math.log(2) * 1000])('snaps to an off-grid anchor within six pixels without automatically saving at zoom %s', async deltaY => {
-    const h = await fixture(); await h.click('Toggle grid snapping');
+    const h = await fixture(); await h.click('Toggle snapping');
     await h.point(2.1, 3.2); await h.point(22.1, 3.2); await h.point(22.1, 23.2);
     await act(async () => h.svg.dispatchEvent(new WheelEvent('wheel', { deltaY, bubbles: true })));
     const span = Number(h.svg.getAttribute('viewBox')!.split(' ')[3]);

@@ -4,9 +4,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { createCadDocument } from '@/domain/cad/cadSchema';
 import { applyCadEdits } from '@/domain/cad/cadOperations';
-import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
+import { prepareCadSketchCells, type CadPreparedSketchCells } from '@/domain/cad/cadSketchRegionInspection';
 import { prepareCadDatumFrames, resolveCadSketchPlacement } from '@/domain/cad/cadDatumPlanes';
-import { CadFeatureReferencePickingContext, type CadFeatureReferencePickCommand } from './cadFeatureReferencePicking';
+import { CadFeatureReferencePickingContext, type CadFeatureReferencePickCommand, type CadFeatureRegionPickCommand } from './cadFeatureReferencePicking';
 import { CadFeatureEditor } from './CadFeatureEditor';
 import { CadSession } from './cadSession';
 import { cadFeatureCandidateEdits, cadFeatureCandidateKey, type CadFeaturePreviewCommand, type CadFeaturePreviewState } from './cadFeaturePreview';
@@ -35,6 +35,9 @@ function part(): CadDocument {
 }
 function length() { const input = container.querySelector<HTMLInputElement>('[aria-label="Length mm"]'); if (!input) throw new Error('Missing Length'); return input; }
 async function type(text: string) { await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(length(), text); length().dispatchEvent(new Event('input', { bubbles: true })); }); }
+function assertContourCommand(command: CadFeatureRegionPickCommand): asserts command is CadFeatureRegionPickCommand & { cells: CadPreparedSketchCells } {
+  if (command.cells.mode !== 'contours') throw new Error('Expected whole-contour catalog for this legacy fixture.');
+}
 async function mount(forcePreviewEnabled = false) {
   const session = new CadSession(part()), before = session.getSnapshot(), preview = vi.fn<(command: CadFeaturePreviewCommand) => void>();
   let picker: CadFeatureReferencePickCommand = { kind: 'clear', owner: '' }, publish: ((state: CadFeaturePreviewState) => void) | undefined,
@@ -48,7 +51,7 @@ async function mount(forcePreviewEnabled = false) {
       onCancel={() => session.setWorkflowOpen(false)} onApply={(feature, parameters) => session.edit(cadFeatureCandidateEdits({ feature, isNew: false, parameters }))} />;
   }
   await act(async () => root.render(<Harness />));
-  const command = () => { if (picker.kind !== 'pick-regions') throw new Error('Expected region command'); return picker; };
+  const command = () => { if (picker.kind !== 'pick-regions') throw new Error('Expected region command'); assertContourCommand(picker); return picker; };
   const candidate = () => { const latest = preview.mock.calls.at(-1)?.[0]; if (!latest || latest.kind !== 'candidate') throw new Error('Expected candidate'); return latest; };
   const ready = async () => { const next = candidate(); await act(async () => publish?.({ kind: 'ready', owner: next.owner, baseVersion: next.expectedVersion, featureId: 'pad', candidateId: 'region_preview',
     definitionKey: cadFeatureCandidateKey(next.edits), document: applyCadEdits(session.getSnapshot().document, next.edits), result: { buildId: 'region_preview', meshes: [], diagnostics: [], durationMs: 0 } })); };
@@ -62,6 +65,28 @@ async function mount(forcePreviewEnabled = false) {
   };
   return { session, before, preview, command, candidate, ready, begin };
 }
+
+it('waits for explicit intersection areas before requesting a native preview, then publishes only the deliberate choice', async () => {
+  const document: CadDocument = { ...createCadDocument(), schemaVersion: 2, features: [{ id: 'overlap', kind: 'sketch', name: 'Overlap', suppressed: false,
+    plane: 'XY', offset: 0, profiles: [], graph: { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [6, 0] }], entities: [
+      { id: 'left', kind: 'circle', construction: false, centerPointId: 'a', radius: 5 },
+      { id: 'right', kind: 'circle', construction: false, centerPointId: 'b', radius: 5 }], relations: [] } }] };
+  const feature = { id: 'pad', kind: 'extrude', name: 'Lens', suppressed: false, sketchId: 'overlap', distance: 5,
+    symmetric: false, operation: 'new', targetId: null } as const;
+  const preview = vi.fn<(command: CadFeaturePreviewCommand) => void>(), apply = vi.fn();
+  let owned: CadFeatureReferencePickCommand | undefined;
+  await act(async () => root.render(<CadFeatureEditor feature={feature} document={document} documentVersion="accepted" isNew
+    onPendingChange={vi.fn()} onReferencePick={command => { owned = command; }} onFeaturePreview={preview} onApply={apply} onCancel={vi.fn()} />));
+  expect(preview.mock.calls.every(([command]) => command.kind === 'clear')).toBe(true);
+  const pick = container.querySelector<HTMLButtonElement>('[aria-label="Pick closed areas from model"]'); if (!pick) throw new Error('Area action missing.');
+  await act(async () => pick.click());
+  const picker = owned; if (picker?.kind !== 'pick-regions') throw new Error('Owned area selection missing.');
+  const lens = picker.cells.pick({ x: 3, y: 0 }); if (!lens) throw new Error('Lens missing.');
+  const selection = picker.cells.pack([lens.id]);
+  await act(async () => picker.onSelect(selection)); await act(async () => picker.onFinish());
+  expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'candidate', edits: [expect.objectContaining({ feature: { ...feature, regionSelection: selection } })] }));
+  expect(apply).not.toHaveBeenCalled(); expect(document.features).toHaveLength(1);
+});
 
 it('publishes actual provisional placement and live area selection, then Cancel restores only the pre-picker feature while retaining the typed shared depth', async () => {
   const h = await mount(); await type('20'); await h.ready(); const picker = await h.begin();

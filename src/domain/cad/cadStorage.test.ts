@@ -1,3 +1,7 @@
+import { symmetricRelation, symmetryPart, symmetrySketch } from './__tests__/cadSketchSymmetryFixtures';
+import { pointOnLineRelation, pointOnLinePart, pointOnLineSketch } from './__tests__/cadSketchPointOnLineFixtures';
+import { tangentJoint, tangentPart, tangentSketch } from './__tests__/cadSketchTangentFixtures';
+import { circleRow, circleRowPart, rowSketch } from './__tests__/cadSketchLinearPatternFixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
 import { createBrowserDirectoryAdapter } from '@/domain/storage/browserDirectoryAdapter';
@@ -13,7 +17,12 @@ import { CAD_GEAR_V2_PLUGIN } from './plugins/cadPlugins';
 import { importCadDxfSketch } from './cadDxfImport';
 import { importCadDxfCurve } from './cadCurveDxf';
 import { cadDocumentPath, listCadDocuments, loadCadDocument, saveCadDocument } from './cadStorage';
+import { measureCadSketchReferenceDimension } from './cadSketchReferenceDimensions';
 import { CAD_FORMER_DOCUMENT_BYTES } from './__tests__/cadBudgetFixture';
+import { graphCellSelectionAt, intersectingCircleSketch } from './__tests__/cadIntersectingCellFixtures';
+import { pairedBoreMirrorPart, mirrorBoreRequest } from './__tests__/cadSketchMirrorFixtures';
+import { profileCopySlotPart, slotProfileCopyRequest } from './__tests__/cadSketchProfileCopyFixtures';
+import { lineReferencePart, lineUseReference, lineMidpoint } from './__tests__/cadSketchExternalReferenceFixtures';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -24,6 +33,114 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     adapter = kind === 'browser-cache' ? createBrowserCacheAdapter(localStorage)
       : createBrowserDirectoryAdapter(new FakeDirectoryHandle('cad-test') as unknown as FileSystemDirectoryHandle);
   });
+  it('preserves declared tangent ownership and radius text, rejecting a non-smooth revision before writes',async()=>{
+    const source=applyCadEdits(tangentPart(),[{kind:'set-sketch-relation',sketchId:'sketch',relation:tangentJoint}]);
+    const saved=await saveCadDocument(adapter,source,{expectedSavedVersion:null});expect((await loadCadDocument(adapter,source.id)).document).toEqual(source);
+    const sketch=tangentSketch(source),raw=await adapter.readExactText?.(cadDocumentPath(source.id)),writes=vi.spyOn(adapter,'writeText');
+    const forged={...source,features:[{...sketch,graph:{...sketch.graph,points:sketch.graph.points.map(point=>point.id==='a'?{...point,position:[' -10 ','2'] as const}:point)}}]};
+    await expect(saveCadDocument(adapter,forged,{expectedSavedVersion:saved.savedVersion})).rejects.toThrow();expect(writes).not.toHaveBeenCalled();expect(await adapter.readExactText?.(cadDocumentPath(source.id))).toBe(raw);
+    const released=applyCadEdits(source,[{kind:'remove-sketch-relation',sketchId:'sketch',relationId:tangentJoint.id}]);await saveCadDocument(adapter,released,{expectedSavedVersion:saved.savedVersion});expect((await loadCadDocument(adapter,source.id)).document).toEqual(released);expect(released.features).toEqual(tangentPart().features);
+  });
+  it('round trips a sliding point without a cached position or forged off-guide save',async()=>{
+    const base=pointOnLinePart(),sketch=pointOnLineSketch(base),source=parseCadDocument({...base,features:[{...sketch,graph:{...sketch.graph,
+      points:sketch.graph.points.map(point=>point.id==='p'?{...point,position:[10,5]}:point),relations:[pointOnLineRelation]}}]});
+    const saved=await saveCadDocument(adapter,source,{expectedSavedVersion:null});expect((await loadCadDocument(adapter,source.id)).document).toEqual(source);
+    const graph=pointOnLineSketch(source).graph,raw=await adapter.readExactText?.(cadDocumentPath(source.id)),writes=vi.spyOn(adapter,'writeText');
+    const forged={...source,features:[{...pointOnLineSketch(source),graph:{...graph,points:graph.points.map(point=>point.id==='p'?{...point,position:[10,6] as const}:point)}}]};
+    await expect(saveCadDocument(adapter,forged,{expectedSavedVersion:saved.savedVersion})).rejects.toThrow();expect(writes).not.toHaveBeenCalled();expect(await adapter.readExactText?.(cadDocumentPath(source.id))).toBe(raw);
+    const detached=applyCadEdits(source,[{kind:'remove-sketch-relation',sketchId:'sketch',relationId:pointOnLineRelation.id}]);await saveCadDocument(adapter,detached,{expectedSavedVersion:saved.savedVersion});expect((await loadCadDocument(adapter,source.id)).document).toEqual(detached);expect(pointOnLineSketch(detached).graph).toEqual({...graph,relations:[]});
+  });
+  it('round trips point symmetry and independent bore drivers, rejecting a forged reflection before writes',async()=>{
+    const base=symmetryPart(),sketch=symmetrySketch(base),source=parseCadDocument({...base,features:[{...sketch,graph:{...sketch.graph,
+      points:sketch.graph.points.map(point=>point.id==='right'?{...point,position:[55,10]}:point),relations:[symmetricRelation]}}]});
+    const saved=await saveCadDocument(adapter,source,{expectedSavedVersion:null}),reopened=await loadCadDocument(adapter,source.id);expect(reopened.document).toEqual(source);
+    const graph=symmetrySketch(source).graph,raw=await adapter.readExactText?.(cadDocumentPath(source.id)),writes=vi.spyOn(adapter,'writeText');
+    const forged={...source,features:[{...symmetrySketch(source),graph:{...graph,points:graph.points.map(point=>point.id==='right'?{...point,position:[54,10] as const}:point)}}]};
+    await expect(saveCadDocument(adapter,forged,{expectedSavedVersion:saved.savedVersion})).rejects.toThrow();expect(writes).not.toHaveBeenCalled();expect(await adapter.readExactText?.(cadDocumentPath(source.id))).toBe(raw);
+    const detached=applyCadEdits(source,[{kind:'remove-sketch-relation',sketchId:'sketch',relationId:symmetricRelation.id}]);await saveCadDocument(adapter,detached,{expectedSavedVersion:saved.savedVersion});expect((await loadCadDocument(adapter,source.id)).document).toEqual(detached);
+    expect(symmetrySketch(detached).graph).toEqual({...graph,relations:[]});
+  });
+  it('preserves circle-row identities, exclusions and detached geometry through successive saves',async()=>{
+    const source=applyCadEdits(circleRowPart(),[{kind:'set-sketch-relation',sketchId:'sketch',relation:{...circleRow,omittedInstances:[2]}}]);
+    const first=await saveCadDocument(adapter,source,{expectedSavedVersion:null});expect((await loadCadDocument(adapter,source.id)).document).toEqual(source);
+    const shrunk=applyCadEdits(source,[{kind:'set-sketch-relation',sketchId:'sketch',relation:{...circleRow,count:2,omittedInstances:[2]}}]);
+    const second=await saveCadDocument(adapter,shrunk,{expectedSavedVersion:first.savedVersion});expect((await loadCadDocument(adapter,source.id)).document).toEqual(shrunk);
+    const regrown=applyCadEdits(shrunk,[{kind:'set-sketch-relation',sketchId:'sketch',relation:{...circleRow,spacing:' 16.00 ',omittedInstances:[2]}}]);
+    const third=await saveCadDocument(adapter,regrown,{expectedSavedVersion:second.savedVersion}), reopened=(await loadCadDocument(adapter,source.id)).document;
+    expect(reopened).toEqual(regrown);expect(rowSketch(reopened).graph.points.slice(1).map(p=>p.position)).toEqual([[26,10],[58,10]]);
+    const graph=rowSketch(regrown).graph,path=cadDocumentPath(source.id),raw=await adapter.readExactText?.(path),writes=vi.spyOn(adapter,'writeText');
+    const forged={...regrown,features:[{...rowSketch(regrown),graph:{...graph,entities:graph.entities.map(e=>e.id==='holes_i1_e0'&&e.kind==='circle'?{...e,radius:4}:e)}}]};
+    await expect(saveCadDocument(adapter,forged,{expectedSavedVersion:third.savedVersion})).rejects.toThrow();expect(writes).not.toHaveBeenCalled();expect(await adapter.readExactText?.(path)).toBe(raw);
+    const detached=applyCadEdits(reopened,[{kind:'remove-sketch-relation',sketchId:'sketch',relationId:'row'}]);await saveCadDocument(adapter,detached,{expectedSavedVersion:third.savedVersion});
+    const final=(await loadCadDocument(adapter,source.id)).document;expect(final).toEqual(detached);expect(rowSketch(final).graph).toEqual({...graph,relations:[]});
+  });
+  it('reopens passive dimension descriptors exactly and recomputes them after parameter changes', async () => {
+    const source=parseCadDocument({...createCadDocument('Reference annotations','reference-dimensions'),schemaVersion:2,parameters:{span:20,bore:6},features:[{
+      id:'sketch',kind:'sketch',name:'Sketch',suppressed:false,plane:'XY',offset:0,profiles:[],graph:{
+        points:[{id:'a',position:[' 0.00 ',0]},{id:'b',position:[' span ',10]},{id:'o',position:[40,0]}],
+        entities:[{id:'line',kind:'line',startPointId:'a',endPointId:'b',construction:true},{id:'bore',kind:'circle',centerPointId:'o',radius:' bore / 2 ',construction:false}],
+        relations:[{id:'length',kind:'reference-dimension',measurement:{kind:'line-length',entityId:'line'}},
+          {id:'pair',kind:'reference-dimension',measurement:{kind:'point-distance',pointIds:['b','a']}},
+          {id:'size',kind:'reference-dimension',measurement:{kind:'radial-size',entityId:'bore',quantity:'diameter'}}]}
+    }]});
+    const first=await saveCadDocument(adapter,source,{expectedSavedVersion:null});expect((await loadCadDocument(adapter,source.id)).document).toEqual(source);
+    const changed=applyCadEdits(source,[{kind:'set-parameter',name:'span',value:30},{kind:'set-parameter',name:'bore',value:8}]);
+    const saved=await saveCadDocument(adapter,changed,{expectedSavedVersion:first.savedVersion}), reopened=await loadCadDocument(adapter,source.id);
+    expect(reopened).toEqual(saved);expect(reopened.document.features).toEqual(source.features);
+    const sketch=reopened.document.features[0];if(sketch.kind!=='sketch'||!sketch.graph)throw Error('Missing reference graph');
+    const graph=sketch.graph, values=graph.relations.filter(r=>r.kind==='reference-dimension').map(r=>measureCadSketchReferenceDimension(graph,reopened.document.parameters,r));
+    expect(values[0]).toBeCloseTo(Math.sqrt(1000),12);expect(values[1]).toBeCloseTo(Math.sqrt(1000),12);expect(values[2]).toBe(8);
+  });
+  it('round trips exact reference witnesses and numeric snapshots and refuses a stale or forged cache before writes', async () => {
+    const old = lineReferencePart(false, true), first = await saveCadDocument(adapter, old, { expectedSavedVersion: null });
+    const linked = applyCadEdits(old, [lineUseReference, lineMidpoint]), second = await saveCadDocument(adapter, linked, { expectedSavedVersion: first.savedVersion });
+    expect((await loadCadDocument(adapter, old.id)).document).toEqual(linked);
+    const target = linked.features[1]; if (target.kind !== 'sketch' || !target.graph) throw new Error('Reference target missing.');
+    const graph = target.graph;
+    const changed = parseCadDocument({ ...linked, parameters: { ...linked.parameters, span: 60 }, features: linked.features.map(feature => feature.id === 'plate'
+      ? { ...target, graph: { ...graph, points: graph.points.map(point => point.id === 'ref_p1' ? { ...point, position: [60, 10] }
+        : point.id === 'hole-center' ? { ...point, position: [30, 10] } : point) } } : feature) });
+    const saved = await saveCadDocument(adapter, changed, { expectedSavedVersion: second.savedVersion }), reopened = await loadCadDocument(adapter, old.id);
+    expect(reopened).toEqual(saved); expect(reopened.document.features[0]).toEqual(old.features[0]);
+    expect(reopened.document.features[1]).toMatchObject({ graph: { relations: graph.relations } });
+    const path = cadDocumentPath(old.id), raw = await adapter.readExactText?.(path), writes = vi.spyOn(adapter, 'writeText');
+    await expect(saveCadDocument(adapter, { ...changed, parameters: { ...changed.parameters, span: 61 } }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrowError(expect.objectContaining({ code: 'stale-sketch-reference' }));
+    const forged = structuredClone(changed), owner = forged.features[1]; if (owner.kind !== 'sketch' || !owner.graph) throw new Error('Owner missing.');
+    const reference = owner.graph.relations.find(relation => relation.kind === 'external-reference'); if (!reference || reference.source.kind !== 'line') throw new Error('Line witness missing.');
+    Reflect.set(reference.source, 'endPointId', 'replaced');
+    await expect(saveCadDocument(adapter, forged, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow();
+    expect(writes).not.toHaveBeenCalled(); expect(await adapter.readExactText?.(path)).toBe(raw); expect(await loadCadDocument(adapter, old.id)).toEqual(reopened);
+  });
+  it('saves an independent copied outline with its exact schema-1 original and keeps later source size/offset edits detached', async () => {
+    const document = profileCopySlotPart(), first = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const raw = await adapter.readExactText?.(cadDocumentPath(document.id)); expect(raw).toEqual(expect.any(String));
+    const copied = applyCadEdits(document, [{ kind: 'copy-sketch-profile', ...slotProfileCopyRequest }]);
+    const second = await saveCadDocument(adapter, copied, { expectedSavedVersion: first.savedVersion });
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(copied);
+    expect(await adapter.readExactText?.(`cad/originals/${document.id}/schema-1-${first.savedVersion}.cad.json`)).toBe(raw);
+    const changed = applyCadEdits(copied, [{ kind: 'set-parameter', name: 'slotLength', value: 40 }, { kind: 'set-parameter', name: 'sourceOffset', value: 7 }]);
+    const third = await saveCadDocument(adapter, changed, { expectedSavedVersion: second.savedVersion }), reopened = await loadCadDocument(adapter, document.id);
+    expect(reopened).toEqual(third); expect(reopened.document.schemaVersion).toBe(2); expect(reopened.document.features).toEqual(copied.features);
+    expect(reopened.document.features[0]).toEqual(document.features[0]); expect(reopened.document.features[1]).toMatchObject({ plane: 'XZ', offset: 2.5, profiles: [] });
+    expect(reopened.document.parameterMetadata).toEqual(document.parameterMetadata);
+    expect(await adapter.readExactText?.(`cad/originals/${document.id}/schema-1-${first.savedVersion}.cad.json`)).toBe(raw);
+  });
+  it('saves a detached mirrored bore exactly and preserves its numeric independence on a later source parameter edit', async () => {
+    const document = pairedBoreMirrorPart(), first = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    const copied = applyCadEdits(document, [{ kind: 'mirror-sketch-geometry', sketchId: 'sketch', ...mirrorBoreRequest }]);
+    const second = await saveCadDocument(adapter, copied, { expectedSavedVersion: first.savedVersion });
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(copied);
+    const changed = applyCadEdits(copied, [{ kind: 'set-parameter', name: 'boreDiameter', value: 10 }]);
+    const saved = await saveCadDocument(adapter, changed, { expectedSavedVersion: second.savedVersion }), reopened = await loadCadDocument(adapter, document.id);
+    expect(reopened).toEqual(saved); expect(reopened.document.schemaVersion).toBe(2);
+    expect(reopened.document.features).toEqual(copied.features);
+    const source = document.features[0], sketch = reopened.document.features[0];
+    if (source.kind !== 'sketch' || !source.graph || sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Bore graph missing.');
+    expect(sketch.graph.points.slice(0, source.graph.points.length)).toEqual(source.graph.points);
+    expect(sketch.graph.entities.slice(0, source.graph.entities.length)).toEqual(source.graph.entities);
+    expect(sketch.graph.entities.at(-1)).toEqual({ id: 'mirror_e0', kind: 'circle', centerPointId: 'mirror_p0', radius: 3, construction: false });
+    expect(sketch.graph.relations).toEqual(source.graph.relations);
+  });
   it('round trips the exact parametric document and detects concurrent saved changes', async () => {
     const document = createCadDocument('Bracket', 'cad_bracket');
     const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
@@ -32,6 +149,77 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     await expect(saveCadDocument(adapter, { ...document, name: 'Stale' }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow('changed in storage');
     expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(next.savedVersion);
     expect((await listCadDocuments(adapter)).entries).toMatchObject([{ id: 'cad_bracket', name: 'Edited' }]);
+  });
+  it('round trips exact graph-cell witnesses and refuses stale or malformed selections before writes', async () => {
+    const sketch = intersectingCircleSketch(), parameters = { separation: 6 }, selection = graphCellSelectionAt(sketch, parameters, [[3, 0]]);
+    const document = parseCadDocument({ ...createCadDocument('Lens', 'cad_graph_cells'), schemaVersion: 2, parameters, features: [sketch,
+      { id: 'pad', kind: 'extrude', name: 'Lens pad', suppressed: false, sketchId: sketch.id, distance: 5,
+        symmetric: false, operation: 'new', targetId: null, regionSelection: selection }] });
+    const first = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(document);
+    const changed = applyCadEdits(document, [{ kind: 'set-parameter', name: 'separation', value: 7 }]);
+    const saved = await saveCadDocument(adapter, changed, { expectedSavedVersion: first.savedVersion });
+    const reopened = await loadCadDocument(adapter, document.id), path = cadDocumentPath(document.id), exact = await adapter.readExactText?.(path);
+    expect(reopened.document).toEqual(changed); expect(reopened.document.features[1]).toMatchObject({ regionSelection: selection });
+    expect(reopened.document.features[0]).toEqual(sketch);
+    const write = vi.spyOn(adapter, 'writeText');
+    await expect(saveCadDocument(adapter, { ...changed, parameters: { separation: 11 } }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow();
+    const pad = changed.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad');
+    await expect(saveCadDocument(adapter, { ...changed, features: [changed.features[0], { ...pad,
+      regionSelection: { ...selection, cells: [selection.cells[0], selection.cells[0]] } }] }, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow();
+    expect(write).not.toHaveBeenCalled(); expect(await adapter.readExactText?.(path)).toBe(exact);
+    expect((await loadCadDocument(adapter, document.id)).savedVersion).toBe(saved.savedVersion);
+  });
+  it('round trips ordered signed and zero graph offsets exactly and refuses malformed axes before overwriting the saved revision', async () => {
+    const document = parseCadDocument({ ...createCadDocument('Located bore', 'cad_axis_distances'), schemaVersion: 2,
+      parameters: { spacing: 30, level: 0 }, features: [{ id: 'sketch', kind: 'sketch', name: 'Bore', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'corner', position: [' 0.00 ', '0'] }, { id: 'center', position: [' spacing ', ' level '] }],
+        entities: [{ id: 'bore', kind: 'circle', centerPointId: 'center', radius: 4, construction: false }], relations: [
+          { id: 'left', kind: 'axis-distance', pointIds: ['center', 'corner'], axis: 'x', value: ' -spacing ' },
+          { id: 'level', kind: 'axis-distance', pointIds: ['corner', 'center'], axis: 'y', value: ' level ' }
+        ] } }] });
+    const saved = await saveCadDocument(adapter, document, { expectedSavedVersion: null });
+    expect((await loadCadDocument(adapter, document.id)).document).toEqual(document);
+    const edited = applyCadEdits(document, [{ kind: 'set-parameter', name: 'spacing', value: 35 }]);
+    const next = await saveCadDocument(adapter, edited, { expectedSavedVersion: saved.savedVersion });
+    const reopened = await loadCadDocument(adapter, document.id);
+    expect(reopened).toEqual(next); expect(reopened.document.features).toEqual(document.features);
+    expect(reopened.document.parameters).toEqual({ spacing: 35, level: 0 });
+    const path = cadDocumentPath(document.id), raw = await adapter.readExactText?.(path), writes = vi.spyOn(adapter, 'writeText');
+    const malformed = structuredClone(reopened.document), sketch = malformed.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing offset graph.');
+    Reflect.set(sketch.graph.relations[0], 'axis', 'z');
+    await expect(saveCadDocument(adapter, malformed, { expectedSavedVersion: next.savedVersion })).rejects.toThrow();
+    expect(writes).not.toHaveBeenCalled(); expect(await adapter.readExactText?.(path)).toBe(raw);
+    expect(await loadCadDocument(adapter, document.id)).toEqual(reopened);
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+  });
+  it('preserves old schema 2 and exact midpoint drivers through ordinary saves and rejects a non-line owner before writes', async () => {
+    const old = parseCadDocument({ ...createCadDocument('Located bore', 'cad_midpoint'), schemaVersion: 2, parameters: { span: 22, boreRadius: 3 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Located bore', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+        points: [{ id: 'a', position: ['2.000', '-4.00'] }, { id: 'b', position: [' span ', '6.000'] }, { id: 'middle', position: ['(2 + span) / 2', '1.000'] }],
+        entities: [{ id: 'ab', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },
+          { id: 'bore', kind: 'circle', construction: false, centerPointId: 'middle', radius: ' boreRadius ' }], relations: []
+      }
+    }] });
+    const first = await saveCadDocument(adapter, old, { expectedSavedVersion: null });
+    expect((await loadCadDocument(adapter, old.id)).document).toEqual(old);
+    const related = applyCadEdits(old, [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'middle-of-ab', kind: 'midpoint', pointId: 'middle', lineId: 'ab' } }]);
+    const second = await saveCadDocument(adapter, related, { expectedSavedVersion: first.savedVersion });
+    expect((await loadCadDocument(adapter, old.id)).document).toEqual(related);
+    const changed = applyCadEdits(related, [{ kind: 'set-parameter', name: 'span', value: 24 }]);
+    const saved = await saveCadDocument(adapter, changed, { expectedSavedVersion: second.savedVersion });
+    const reopened = await loadCadDocument(adapter, old.id), oldSketch = old.features[0];
+    if (oldSketch.kind !== 'sketch' || !oldSketch.graph) throw new Error('Missing midpoint source');
+    expect(reopened.document.schemaVersion).toBe(2); expect(reopened.document.features[0]).toEqual({ ...oldSketch,
+      graph: { ...oldSketch.graph, relations: [{ id: 'middle-of-ab', kind: 'midpoint', pointId: 'middle', lineId: 'ab' }] } });
+    const path = cadDocumentPath(old.id), raw = await adapter.readExactText?.(path), writes = vi.spyOn(adapter, 'writeText');
+    const malformed = structuredClone(reopened.document), sketch = malformed.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing midpoint graph');
+    Reflect.set(sketch.graph.relations[0], 'lineId', 'bore');
+    await expect(saveCadDocument(adapter, malformed, { expectedSavedVersion: saved.savedVersion })).rejects.toThrow();
+    expect(writes).not.toHaveBeenCalled(); expect(await adapter.readExactText?.(path)).toBe(raw);
+    expect(await loadCadDocument(adapter, old.id)).toEqual(reopened);
   });
   it('preserves explicit sketch dimensions and rejects invalid constraint revisions before storage writes', async () => {
     const original = parseCadDocument({ ...createCadDocument('Dimensioned section', 'cad_dimensioned'), parameters: { width: 20 }, features: [
@@ -396,6 +584,7 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     const document = createCadDocument('Backed up', 'cad_backup');
     await saveCadDocument(adapter, document, { expectedSavedVersion: null });
     const retained = [
+      { path: 'cad/originals/cad_backup/schema-1-original.cad.json', text: '\ufeff{ exact pre-upgrade save }\r\n' },
       { path: 'cad/plugins/user.gear/1.0.0.cad-plugin.json', text: '{ preserved plugin original }\r\n' },
       { path: 'cad/documents/cad_broken.cad.json', text: '\ufeff{broken original\r\n' },
       { path: 'CAD/recovery/part.cad.json', text: 'unindexed original\r\n' }

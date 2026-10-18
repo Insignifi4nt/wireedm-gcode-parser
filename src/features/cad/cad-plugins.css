@@ -67,7 +67,9 @@
 .cad-properties .cad-property-form { padding: 11px 12px; }
 .cad-properties .cad-property-title { margin-bottom: 11px; font-size: 12px; }
 .cad-properties .cad-field { display: grid; grid-template-columns: minmax(85px, .9fr) minmax(0, 1.1fr); align-items: center; gap: 5px 8px; margin-bottom: 7px; }
-.cad-properties .cad-field > span { gap: 5px; font-size: 11px; }
+.cad-properties .cad-field > span { justify-content: flex-start; align-items: center; gap: 4px; font-size: 11px; line-height: 1.25; }
+/* Unit stays beside its label; help and relation affordances sit together at the column edge. */
+.cad-properties .cad-field > span > .cad-context-help:first-of-type { margin-left: auto; }
 .cad-properties .cad-field input, .cad-properties .cad-field select { min-height: 27px; font-size: 11px; }
 .cad-properties .cad-field > .cad-field-hint { display: none; }
 .cad-properties .cad-field.is-invalid > .cad-field-hint { display: block; grid-column: 2; font-size: 10px; margin: 0; }

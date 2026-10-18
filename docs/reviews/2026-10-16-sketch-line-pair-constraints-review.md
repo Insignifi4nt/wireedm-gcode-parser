@@ -1,0 +1,26 @@
+# Sketch line-pair constraints: independent review
+
+Bounded working-tree review against `db1f805f9dcf005e13108701c57cdc3d69ba969a`, 2026-10-16. Scope: [line-pair plan](2026-10-16-sketch-line-pair-constraints-plan.md), new line-relation helper/tests, graph schema/references, native runtime, feedback/inspection/discovery, and RelationsPanel integration. Production remained read-only. No build, browser, broad suite or remote operation was run by this reviewer. Isolated arrangement files were excluded.
+
+No actionable defect was found in the reviewed slice.
+
+- Structural parsing requires two distinct owned line entities, retaining construction operands, shared endpoints and exact tuple order. It accepts unsolved intent separately from final residual validation. New relations neither create joints nor alter the material compiler.
+- Native compilation uses existing line objects and source relation diagnostic IDs. Initial degenerate directions reject before native initialization. Final acceptance independently checks nondegenerate solved directions, normalized cross/dot error at `1e-12`, and maximum-line endpoint deflection against the unchanged world tolerance. There is no native tuning or coordinate repair.
+- Shared references include both entities and deduplicated endpoints. Deletion therefore requires explicit dependency removal or cascade; construction toggles retain relations. Scalar traversal introduces no synthetic point or value, and exact expression drivers remain authoritative.
+- The panel adds only the selected two-line relation, retains other drivers and requires deliberate removal of a direct opposite. Remove/re-enable restores the original relation ID and operand order. Existing pinned-source preparation, whole-document preview, submission cancellation and stale-result guards remain in use. Inspection highlights both source lines without an angular scalar editor.
+
+An independent temporary probe accepted disjoint/opposite-direction supports and swapped operands for both kinds. It rejected disparate-length errors with approximately `0.1 mm` long-line deflection. Deleting a referenced point rejected without cascade; explicit cascade removed its incident line/relation, retained unrelated/orphan points and left original source JSON unchanged. No permanent probe test was added.
+
+Inspected owner evidence: `tmp/sketch-line-pair-trial/focused-tests.log` reports 117/117 across 15 focused domain/native/boundary files; `tmp/sketch-line-pair-ui-related.log` reports 144/144 across four UI/tool files. The native fixtures cover DOF reduction, shared/disjoint construction operands, exact expression/parameter retention, ordinary drags, conflict/redundancy atomicity and scale rejection. The separate 14-fixture numeric report records ten native successes and four safe failures, including far-origin micron lines that pass only the world-distance gate.
+
+Compatibility remains explicit: existing schema-2 variants keep their semantics; older readers reject the two unfamiliar variants even though the format number stays 2. Public guidance records this. Representationally uncertain directions may reject safely. Production browser/build acceptance remains root-owned; this review does not certify broader sketch completion.
+
+## Root acceptance
+
+The completed production build passes TypeScript, documentation/discovery parity and all three corresponding-source distribution checks. Shared UI controls and icon integration checks pass. No native settings, world tolerance, dependency payload or migration changed.
+
+All 16 production sketch/region journeys pass in Firefox, `tmp/sketch-line-pair-all-firefox.log`. Chromium passes the 15 existing journeys in `tmp/sketch-line-pair-all-chromium.log`; its new line-pair case initially failed because Playwright treats the perfectly horizontal SVG group as zero-height. The test now uses supported Shift+Enter selection and passes in `tmp/sketch-line-pair-chromium-focused.log`. No production patch was needed. The journey previews and cancels parallel alignment, accepts both relations against a construction reference, checks exact drivers, global Undo/Redo, 800 mm² material, native 4000 mm³ Pad and exact Save/reopen.
+
+The native in-app browser independently selects the sloped material edge, Shift-clicks the actual painted horizontal construction stroke, previews/Cancel/restores the complete original and then accepts Parallel and Perpendicular. The source corner moves `[35,15] → [35,20] → [40,20]`, freedom count falls `2 → 1 → 0`, and exact anchor `" 0 "` remains unchanged. Inspection highlights both actual operands. The resulting Pad is one solid with bounds `[0,0,0]` to `[40,20,5]`, volume `3999.999999999999 mm³` and no diagnostics. An incompatible agent relation returns `sketch-conflicting` with exact structured subjects, unchanged accepted version and complete sketch. Three Undo operations restore the original sketch after removing Pad and both accepted relations. The disposable unsaved tab was closed; user project records were untouched. Screenshot: `tmp/sketch-line-pair-relations.png`.
+
+This accepts the bounded line-pair checkpoint. It does not complete sketch mode, authorize remote actions or change the wider goal's open acceptance boxes.

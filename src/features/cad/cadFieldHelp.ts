@@ -25,11 +25,14 @@ export const cadFeatureHelp: Record<CadFeature['kind'], string> = {
 export function cadScalarHelp(label: string) {
   switch (label) {
     case 'Radius': return 'Distance from a circle center to its outline, or the radius of a rounded edge.';
+    case 'Fillet radius': return 'Radius of the circular arc tangent to both sides of the selected sketch corner. The original corner stays as a reference with its dimensions. The arc must fit inside both finite sides.';
+    case 'Setback 1': case 'Setback 2': return 'Distance from the original reference corner to the chamfer endpoint along this side. The on-part dimension identifies that side. The two setbacks can differ; both must leave a positive length of the original line.';
     case 'Corner radius': return 'Rounding at rectangle corners. Zero keeps square corners; it must fit inside the rectangle.';
     case 'Wall thickness': return 'Material left between the inner and outer walls of the shell. A value too large for the body is rejected.';
     case 'Angular extent': return 'The angle occupied by the circular pattern. A full turn distributes instances around 360 degrees.';
     case 'Angle': return 'Rotation or angular extent in degrees, according to the selected feature and axis.';
     case 'Offset': return 'Signed displacement along the selected reference plane normal.';
+    case 'Offset distance': return 'Distance between the source and copied supports in the sketch plane. Positive is outside the selected loop; negative is inside. Line corners use miter intersections. An expression is evaluated once; the copy does not follow later source or parameter changes.';
     case 'Width': return 'The transverse size of this profile in its local reference frame.';
     case 'Height': return 'The profile size along its local Y direction.';
     case 'Length': return 'The distance used by this profile or solid feature. For a Pad, it follows the sketch normal.';

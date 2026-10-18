@@ -18,19 +18,51 @@ import { jsonByteLength, summarizeDiagnostic } from '@/features/webmcp/diagnosti
 import { CadSessionError } from './cadSession';
 import { CadPluginPackageSchema, fingerprintCadPluginPackage } from '@/domain/cad/plugins/cadPlugins';
 import type { CadController } from './useCadController';
-import { CadToolDocumentEnvelope, CadToolEditEnvelope, CadToolPluginPackageEnvelope, CadToolSketchEnvelope } from './cadToolSchemas';
-import { CadSketchRegionProposalSchema } from '@/domain/cad/cadSketchRegionInspection';
+import { CadToolDocumentEnvelope, CadToolEditDefinitions, CadToolEditEnvelope, CadToolPluginPackageEnvelope, CadToolSketchEnvelope, CadToolSketchConstraintsQuerySchema } from './cadToolSchemas';
+import { pageCadSketchConstraints, summarizeCadSketchConstraintAnalysis } from './cadSketchConstraintInspection';
+import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
+import { CadSketchRegionProposalSchema, CadSketchTrimAtSchema, CadSketchExtendAtSchema, CadSketchRegionReadTargetSchema } from '@/domain/cad/cadSketchRegionInspection';
+import { CadSketchSplitDependencyError } from '@/domain/cad/cadSketchSplit';
+import { CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '@/domain/cad/cadSketchTrimExtend';
+import { CadSketchTangentOwnershipError } from '@/domain/cad/cadSketchTangentRelations';
+import { CadSketchPlacementDependencyError } from '@/domain/cad/cadSketchPlacement';
+import { CadSketchGraphSchema } from '@/domain/cad/cadSketchGraph';
 import { CadConstructionPointSchema, CadPathConstructionStepSchema, createCadPathProfile, createCadOpenCurveSegments } from '@/domain/cad/cadPathConstruction';
 import { cadAnalyticPathMetrics, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
 import { resolveCadCurve } from '@/domain/cad/cadCurve';
 import { CadIdentifierSchema } from '@/domain/cad/cadPrimitives';
 import { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS } from '@/domain/cad/cadLoft';
+import { CadFeatureInputRequestSchema } from './cadFeatureInput';
 
 const id = Type.String({ minLength: 1, maxLength: 160 });
 const version = { expectedVersion: id };
 const pageFields = { ...workbenchPageFields, offset: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })) };
-const regionProposalEnvelope = Type.Object({ ...CadSketchRegionProposalSchema.properties, sketch: Type.Optional(CadToolSketchEnvelope) },
-  { additionalProperties: false, minProperties: 1 });
+/** Discovery names each proposal branch; execution validates the complete witnessed target. */
+const proposalTarget = (description: string) => Type.Object({}, { additionalProperties: true, description });
+const regionProposalEnvelope = Type.Object({ sketch: Type.Optional(CadToolSketchEnvelope),
+  split: Type.Optional(proposalTarget('split-sketch-entity target fields.')),
+  trim: Type.Optional(proposalTarget('trimPreview.target plus allocated trim-sketch-entity IDs.')),
+  extend: Type.Optional(proposalTarget('extendPreview.target plus endPointId.')),
+  offset: Type.Optional(proposalTarget('{source,distance,idPrefix}')),
+  mirror: Type.Optional(proposalTarget('{entityIds,axisLineId,idPrefix}')),
+  parameterValues: CadSketchRegionProposalSchema.anyOf[0].properties.parameterValues
+}, { additionalProperties: false, minProperties: 1, description: 'At most one of sketch, split, trim, extend, offset or mirror.' });
+const regionInspectionSchema = Type.Union([
+  object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')), proposal: Type.Optional(CadSketchRegionProposalSchema) }),
+  object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')), trimAt: CadSketchTrimAtSchema }),
+  object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')), extendAt: CadSketchExtendAtSchema })
+]);
+const regionReferenceCommon = { ...version, sketchId: CadIdentifierSchema, offset: pageFields.offset,
+  length: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096 })), proposal: Type.Optional(CadSketchRegionProposalSchema) };
+const regionReferenceSchema = Type.Union([object({ ...regionReferenceCommon, boundaryProfileId: CadSketchRegionReadTargetSchema.anyOf[0] }),
+  object({ ...regionReferenceCommon, ...CadSketchRegionReadTargetSchema.anyOf[1].properties })]);
+/** Flat discovery rows; the execution unions above still reject combined or missing selectors. */
+const regionInspectionDiscovery = Type.Object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')),
+  proposal: Type.Optional(regionProposalEnvelope), trimAt: Type.Optional(CadSketchTrimAtSchema), extendAt: Type.Optional(CadSketchExtendAtSchema)
+}, { additionalProperties: false, description: 'proposal, trimAt and extendAt are mutually exclusive.' });
+const regionReferenceDiscovery = Type.Object({ ...regionReferenceCommon, proposal: Type.Optional(proposalTarget('The identical proposal object given to cad_inspect_sketch_regions.')),
+  boundaryProfileId: Type.Optional(CadSketchRegionReadTargetSchema.anyOf[0]), cellIds: Type.Optional(CadSketchRegionReadTargetSchema.anyOf[1].properties.cellIds)
+}, { additionalProperties: false, description: 'Exactly one of boundaryProfileId or cellIds.' });
 const pathConstructionSchema = object({ start: CadConstructionPointSchema,
   steps: Type.Array(CadPathConstructionStepSchema, { minItems: 1, maxItems: 128 }) });
 const documentText = new WeakMap<CadDocument, string>();
@@ -68,9 +100,9 @@ function parameterContext(document: CadDocument) {
 const featureDescriptions: Record<CadFeature['kind'], string> = {
   'datum-plane': 'An independent world reference plane. definition.kind=world uses basePlane XY/XZ/YZ, world origin in mm and rotation in degrees around world X then Y then Z. Rotation turns its basis without rotating its origin. All coordinates accept parameter expressions. Sketch/Curve plane may reference this preceding active feature with {kind:datum-plane,featureId}; offset remains along its normal. No body, material or CAM role. cad_inspect_plane resolves the frame without loading the solid engine. Datum Pad/Revolve/Loft/Sweep require conservative placement precision. Loft sections must share oriented axes and normal; use cad_inspect_loft before adding one. Sweep preserves authored section and rail frames; its section normal must align with the first rail tangent. Datum Through-all Pocket is not yet supported and is rejected before editing.',
   curve: 'An ordered open reference chain of exact lines and circular arcs on XY, XZ, YZ or a preceding active datum-plane at a signed normal offset. Dimensions accept parameter expressions. Segments must connect within modeling precision without closing, crossing, touching nonadjacent segments or overlapping. Sharp corners are allowed. Curves are independent references, never solid bodies or closed material profiles. Retains original DXF source when imported; exact open DXF export preserves traversal in local millimeters.',
-  sketch: 'Plane-local closed profiles on XY/XZ/YZ or a preceding active datum-plane, with optional construction geometry. Offset follows the resolved plane normal; changing placement preserves local coordinates. Nesting automatically determines material, voids and islands. Dimensions accept finite arithmetic over document parameters. Use cad_inspect_plane for world placement.',
+  sketch: 'Plane-local legacy closed profiles and optional schema-2 graph of stable open/closed line, arc and circle entities on XY/XZ/YZ or a preceding active datum-plane, with optional construction geometry. Offset follows the resolved plane normal; changing placement preserves local coordinates. Nesting automatically determines material, voids and islands. Dimensions accept finite arithmetic over document parameters. Use cad_inspect_plane for world placement.',
   imported: 'An independent solid from an original STEP or STL file. Original source bytes are preserved in the document. STEP retains exact BRep; STL is faceted and requires explicit mm/inch source units. Native validation rejects open or invalid solids.',
-  extrude: 'Pad the preceding sketch, symmetrically if requested. New creates a body; join/cut consumes and replaces targetId. Absent regionSelection keeps whole-sketch automatic holes. Explicit nonempty regionSelection selects bounded cells inspected by cad_inspect_sketch_regions: exact boundaryProfileId, sorted immediate voidProfileIds and complete ordered ancestorProfileIds. Neighboring selected cells cancel their shared contour. Changed/missing topology rejects; never infer references from profile names, array indices or points.',
+  extrude: 'Pad the preceding sketch, symmetrically if requested. New creates a body; join/cut consumes and replaces targetId. Absent regionSelection keeps whole-sketch automatic holes. Explicit regionSelection accepts the unchanged nonempty contour-reference array, or a graph-cells envelope packed from inspected cellIds. Contour references retain exact boundaryProfileId, sorted immediate voidProfileIds and complete ordered ancestorProfileIds. Graph cells require schema 2 and deliberate selection; exact source/event witnesses reject topology changes. Neighboring selected cells cancel their shared contour. Changed/missing topology rejects; never infer references from profile names, array indices or points.',
   pocket: 'Cut the whole sketch automatic material regions, or explicit bounded regionSelection cells, through a current target body. Obtain complete cell references from cad_inspect_sketch_regions; changed/missing topology rejects instead of substituting another area. extent.kind is through-all; direction positive follows the sketch normal (XY +Z, XZ -Y, YZ +X) from its authored plane, negative follows the opposite side, and both spans the complete target independent of sketch offset. Recomputes finite caps from exact target bounds on each build. Replaces targetId and retains the sketch. No distance, symmetric or operation fields. Rejects no material, complete erasure, uncertain native precision and required spans above one million mm; build and inspect diagnostics before export or CAM handoff.',
   revolve: 'Revolve the preceding sketch around its local x or y axis by degrees. New creates a body; join/cut replaces targetId.',
   loft: 'Build a solid through 2–16 unique sketchIds in their supplied order. Each active sketch must have one closed material boundary without holes; construction geometry is ignored. All sections share oriented local axes and normal, on a principal plane or compatible datum planes. Effective normal stations must increase or decrease strictly beyond modeling precision; authored origin translations and in-plane shifts are preserved. Call cad_inspect_loft before adding the feature. No sorting or dropped contours. ruled=true connects consecutive sections directly; false uses fitted native smooth surfaces. New creates a body; join/cut replaces targetId while retaining sketches. Invalid solids and end-plane overshoot fail. STEP preserves the resulting BRep; some section curves cannot transfer to analytic-only CAM.',
@@ -92,6 +124,17 @@ export function cadSiteTools(getController: () => CadController) {
     const operation = siteTool(name, description, schema, async (input, signal) => {
       try { return await execute(getController(), input, signal); }
       catch (error) {
+        if (error instanceof CadSketchPreparationError) throw new ToolError(error.code, error.message, { feedback: error.feedback,
+          analysis: summarizeCadSketchConstraintAnalysis({ kind: 'rejected', reason: error.feedback.reason, message: error.solverMessage, diagnostics: error.diagnostics }) });
+        if (error instanceof CadSketchSplitDependencyError) throw new ToolError(error.code, error.message, {
+          relationIds: error.relationIds.slice(0, 8), relationCount: error.relationIds.length, omittedRelationCount: Math.max(0, error.relationIds.length - 8)
+        });
+        if (error instanceof CadSketchTrimDependencyError || error instanceof CadSketchExtendDependencyError || error instanceof CadSketchPlacementDependencyError) throw new ToolError(error.code, error.message, {
+          ...(error instanceof CadSketchPlacementDependencyError ? { entityIds: error.entityIds.slice(0, 8), entityCount: error.entityIds.length, omittedEntityCount: Math.max(0, error.entityIds.length - 8) } : {}),
+          relationIds: error.relationIds.slice(0, 8), relationCount: error.relationIds.length, omittedRelationCount: Math.max(0, error.relationIds.length - 8),
+          pointIds: error.pointIds.slice(0, 8), pointCount: error.pointIds.length, omittedPointCount: Math.max(0, error.pointIds.length - 8)
+        });
+        if (error instanceof CadSketchTangentOwnershipError) throw new ToolError(error.code, error.message, { ownerRelationId: error.ownerRelationId });
         if (error instanceof CadError || error instanceof CadSessionError || error instanceof CadStorageError) throw new ToolError(error.code, error.message);
         throw error;
       }
@@ -113,7 +156,7 @@ export function cadSiteTools(getController: () => CadController) {
       canUndo: state.canUndo, canRedo: state.canRedo, workflowOpen: state.workflowOpen, busy: cad.isBusy(),
       buildState: cad.buildState, buildVersion: cad.buildVersion, buildId: cad.build?.buildId ?? null,
       ...diagnosticSummary(cad.build?.diagnostics ?? []),
-      supported: { sketches: ['rectangle', 'circle', 'polygon', 'slot', 'path', 'plugin'], sketchDimensions: { rectangle: ['width', 'height'], circle: ['diameter', 'radius'], slot: ['length', 'width', 'angle'], intent: 'Optional constraints bind existing geometry scalars. Numeric geometry stays free; existing expressions stay driven. Radius/diameter share one freedom. No general path constraint solver.' }, sketchTranslation: ['rectangle', 'circle', 'slot', 'polygon', 'path'], plugins: { apiVersion: 2, acceptedApiVersions: [1, 2], instances: 'Exact package embedded in each profile; inputs accept named CAD parameter expressions.', relations: 'API 2 supports derived values, conditional editing, dynamic ranges, choices and constraints. Derived values cannot be stored as editable inputs.', generators: ['builtin-spur-gear', 'polygon-recipe'] }, references: ['curve', 'datum-plane'], planes: ['XY', 'XZ', 'YZ'],
+      supported: { sketchEntities: { schemaVersion: 2, definition: 'cad_describe_features(kind=sketch)', inspection: 'cad_inspect_sketch_constraints', edits: ['append-sketch-entities', 'delete-sketch-elements', 'set-sketch-construction', 'translate-sketch-geometry', 'place-sketch-geometry', 'move-sketch-point', 'set-sketch-relation', 'remove-sketch-relation', 'create-sketch-corner', 'split-sketch-entity', 'trim-sketch-entity', 'extend-sketch-entity', 'offset-sketch-loop', 'mirror-sketch-geometry', 'copy-sketch-profile', 'use-sketch-entity'], relations: CadSketchGraphSchema.properties.relations.items.anyOf.map(relation => relation.properties.kind.const), material: 'Whole sketch retains simple closed cycles connected by shared point IDs or explicit coincidence. Deliberate graph-cells selection can Pad/Pocket exact bounded intersection cells; inspect mode=graph-cells and pack numeric cellIds with cad_read_sketch_region_reference. Unsupported contacts reject; new cells never become automatic material.' }, sketches: ['rectangle', 'circle', 'polygon', 'slot', 'path', 'plugin'], sketchDimensions: { rectangle: ['width', 'height'], circle: ['diameter', 'radius'], slot: ['length', 'width', 'angle'], intent: 'Legacy profile dimensions bind their geometry scalars. Numeric geometry stays free; expressions stay driven. Radius/diameter share one freedom. Graph point/entity constraints are listed under sketchEntities.' }, sketchTranslation: ['rectangle', 'circle', 'slot', 'polygon', 'path'], sketchHandles: { inspection: 'cad_inspect_sketch_handles', edit: 'move-sketch-handle', scope: 'Accepted revision only; free components move without replacing dimensions or expressions.' }, plugins: { apiVersion: 2, acceptedApiVersions: [1, 2], instances: 'Exact package embedded in each profile; inputs accept named CAD parameter expressions.', relations: 'API 2 supports derived values, conditional editing, dynamic ranges, choices and constraints. Derived values cannot be stored as editable inputs.', generators: ['builtin-spur-gear', 'polygon-recipe'] }, references: ['curve', 'datum-plane'], planes: ['XY', 'XZ', 'YZ'],
         datumPlacement: { definition: 'world', supported: ['sketch', 'curve', 'extrude', 'revolve', 'loft', 'sweep'], unsupported: ['pocket'], inspection: 'cad_inspect_plane' },
         solids: ['imported', 'extrude', 'pocket', 'revolve', 'loft', 'sweep', 'fillet', 'chamfer', 'shell', 'boolean', 'transform', 'linear-pattern', 'circular-pattern', 'mirror'],
         imports: ['cad-json', 'dxf', 'step', 'stl'],
@@ -121,7 +164,7 @@ export function cadSiteTools(getController: () => CadController) {
       camHandoff: 'Choose a sketch or exact planar section of a final solid. Local 2D millimeter contours become a new detached CAM project. Sections preserve lines/arcs; unsupported curves are rejected. CAD is saved first; CAM retains its own revisions and installed machine checks.',
       nextSteps: state.workflowOpen ? ['Finish or cancel the visible CAD editor.'] : !cad.isOpen() ? ['cad_open_workspace', 'cad_create_document', 'cad_list_documents']
         : referenceOnly ? ['cad_read_features', 'cad_inspect_plane', ...(hasCurves ? ['cad_measure_curve', 'cad_export_curve_dxf'] : []), 'cad_edit_document', 'cad_save_document']
-        : ['cad_read_features', 'cad_edit_document', 'cad_measure_sketch', 'cad_build', 'cad_save_document', 'cad_send_to_cam'] };
+        : ['cad_read_features', 'cad_edit_document', 'cad_inspect_sketch_regions', 'cad_measure_sketch', 'cad_build', 'cad_save_document', 'cad_send_to_cam'] };
   }
   return [
     tool('cad_describe_plugin_api', 'Discover declarative CAD plugin package contracts without changing a document or storage. No arguments lists accepted API versions; apiVersion returns its complete strict package schema. Inputs and math recipes are data, never executable code. Use complete packages for installation or add-plugin-profile.', object({
@@ -158,9 +201,12 @@ export function cadSiteTools(getController: () => CadController) {
     }, false, object({ ...version, package: CadToolPluginPackageEnvelope })),
     tool('cad_inspect_plane', 'Resolve the current active datum, sketch or curve world frame and signed offset in mm. Preserves authored placement; does not certify native solid precision. Finish pending workflows; stale/unavailable references and cancellation reject. Feature definitions: cad_describe_features.', object({ ...version, featureId: id }),
       (cad, input, signal) => cad.inspectPlane(input.featureId, input.expectedVersion, signal)),
-    tool('cad_inspect_sketch_regions', 'Inspect current or proposed closed sketch cells with local area/bounds and exact regionSelection references for extrude/pocket. proposal uses a complete same-ID sketch and/or numeric parameterValues additions/overrides; source preflight only. Full sketch schema: cad_describe_features(kind=sketch). Read omitted references with cad_read_sketch_region_reference. No edits/native work.', object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, proposal: Type.Optional(CadSketchRegionProposalSchema) }), async (cad, input, signal) => {
-      const inspection = await cad.inspectSketchRegions(input.sketchId, input, input.expectedVersion, signal);
-      const projected = page(inspection.items, { limit: input.limit }, cell => {
+    tool('cad_inspect_sketch_regions', 'Inspect current or proposed closed sketch cells with local area/bounds. Default rows keep contour references; mode=graph-cells lists all graph-owned bounded cells, including intersections, as numeric cellId receipts to pack with cad_read_sketch_region_reference. Pin version, sketch, mode and identical proposal across pages. proposal previews one complete same-ID sketch, split, trim, extend, offset or mirror, with optional numeric parameterValues; source preflight only. trimAt:{entityId,parameter} or extendAt:{entityId,end} return trimPreview/extendPreview without allocating IDs. Complete targets per cad_describe_edits, reusing witnessed endpoint IDs, then inspect proposal.trim/extend with that exact target. offset and mirror reuse the exact edit request. Reads reserve no IDs; apply topology and consumer repairs atomically. Full sketch: cad_describe_features(kind=sketch). No edits.', regionInspectionSchema, async (cad, input, signal) => {
+      const { expectedVersion, mode, limit, offset = 0 } = input;
+      const inspection = await cad.inspectSketchRegions(input.sketchId, input, expectedVersion, signal);
+      const rows: ReadonlyArray<(typeof inspection.items)[number]> = inspection.items;
+      const projected = page(rows, { limit }, cell => {
+        if ('cellId' in cell) return cell;
         const referenceText = JSON.stringify(cell.reference);
         const complete = { ...cell, referenceOmitted: false, voidProfileCount: cell.reference.voidProfileIds.length,
           ancestorProfileCount: cell.reference.ancestorProfileIds.length, referenceLength: referenceText.length,
@@ -169,20 +215,19 @@ export function cadSiteTools(getController: () => CadController) {
         const { reference: _reference, ...summary } = complete;
         return { ...summary, referenceOmitted: true, readReferenceWith: 'cad_read_sketch_region_reference' };
       });
-      return { version: input.expectedVersion, sketchId: inspection.sketchId, ...(inspection.proposed ? { proposed: true } : {}), coordinateSystem: inspection.coordinateSystem, units: inspection.units,
+      return { version: expectedVersion, sketchId: inspection.sketchId, ...(mode === undefined ? {} : { mode }), ...(inspection.proposed ? { proposed: true } : {}), ...(inspection.trimPreview ? { trimPreview: inspection.trimPreview } : {}), ...(inspection.extendPreview ? { extendPreview: inspection.extendPreview } : {}), coordinateSystem: inspection.coordinateSystem, units: inspection.units,
         items: projected.items, total: inspection.total,
-        nextOffset: projected.nextOffset !== null ? (input.offset ?? 0) + projected.nextOffset : inspection.nextOffset };
-    }, true, object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, proposal: Type.Optional(regionProposalEnvelope) })),
-    tool('cad_read_sketch_region_reference', 'Read exact regionSelection reference JSON in UTF-16 chunks. Concatenate text until nextOffset=null. Pin version, sketch/boundary IDs and identical optional proposal for every chunk. Proposed reads are source preflight only; full sketch schema: cad_describe_features(kind=sketch). No edits/native work.', object({ ...version, sketchId: CadIdentifierSchema, boundaryProfileId: CadIdentifierSchema,
-      offset: pageFields.offset, length: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096 })), proposal: Type.Optional(CadSketchRegionProposalSchema) }), async (cad, input, signal) => {
-      const text = await cad.readSketchRegionReference(input.sketchId, input.boundaryProfileId, input.expectedVersion, signal, input.proposal);
-      const offset = input.offset ?? 0;
+        nextOffset: projected.nextOffset !== null ? offset + projected.nextOffset : inspection.nextOffset };
+    }, true, regionInspectionDiscovery),
+    tool('cad_read_sketch_region_reference', 'Read exact regionSelection reference JSON in UTF-16 chunks; concatenate until nextOffset=null. Give boundaryProfileId for an unchanged contour, or nonempty unique cellIds for one packed graph-cells selection; cell IDs are read-only locators, never saved topology. Pin version, sketch, mode and the identical optional proposal from cad_inspect_sketch_regions for every chunk. Source preflight only. Full sketch: cad_describe_features(kind=sketch). No edits.', regionReferenceSchema, async (cad, input, signal) => {
+      const { expectedVersion, sketchId, proposal, offset = 0, length = 4096 } = input;
+      const target = 'cellIds' in input ? { cellIds: [...input.cellIds] } : input.boundaryProfileId;
+      const text = await cad.readSketchRegionReference(sketchId, target, expectedVersion, signal, proposal);
       if (offset > text.length) throw new ToolError('INVALID_ARGUMENT', 'Offset exceeds the region reference text length.');
-      const end = Math.min(text.length, offset + (input.length ?? 4096));
-      return { version: input.expectedVersion, sketchId: input.sketchId, boundaryProfileId: input.boundaryProfileId, ...(input.proposal === undefined ? {} : { proposed: true }),
+      const end = Math.min(text.length, offset + length);
+      return { version: expectedVersion, sketchId, ...(typeof target === 'string' ? { boundaryProfileId: target } : { mode: 'graph-cells', cellIds: target.cellIds }), ...(proposal === undefined ? {} : { proposed: true }),
         offset, totalLength: text.length, nextOffset: end < text.length ? end : null, text: text.slice(offset, end) };
-    }, true, object({ ...version, sketchId: CadIdentifierSchema, boundaryProfileId: CadIdentifierSchema,
-      offset: pageFields.offset, length: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096 })), proposal: Type.Optional(regionProposalEnvelope) })),
+    }, true, regionReferenceDiscovery),
     tool('cad_inspect_loft', 'Preflight 2–16 ordered sketch sources for a new Loft: exact common-frame placement, station order and precision. Does not reorder geometry or certify Join/Cut/native material. Authoring semantics: cad_describe_features(kind=loft); finish with cad_build. No edits/native work.', object({ ...version,
       sketchIds: Type.Array(CadIdentifierSchema, { minItems: MIN_CAD_LOFT_SECTIONS, maxItems: MAX_CAD_LOFT_SECTIONS, uniqueItems: true }) }),
       (cad, input, signal) => cad.inspectLoft(input.sketchIds, input.expectedVersion, signal)),
@@ -279,9 +324,15 @@ export function cadSiteTools(getController: () => CadController) {
       if (!feature) throw new ToolError('NOT_FOUND', 'Feature does not exist. Read cad_read_features.');
       return { version: input.expectedVersion, feature };
     }),
-    tool('cad_edit_document', 'Apply typed edits atomically to the CAD draft: parameters, sketch dimensions/translations, rename, reorder or cascade deletion. One undo step; no save. Call cad_describe_features for complete add/update definitions; compact discovery retains strict execution. Rejects invalid geometry, references, stale versions and active workflows. No code execution.', object({ ...version, edits: Type.Array(CadEditSchema, { minItems: 1, maxItems: 128 }) }), (cad, input) => {
-      cad.edit(input.edits, input.expectedVersion, true); return context(cad);
+    tool('cad_edit_document', 'Apply typed edits atomically to the CAD draft: parameters, sketch grips/dimensions/translations, independent profile copies, preceding-sketch construction references, rename, reorder or cascade deletion. copy-sketch-profile creates a new editable numeric graph sketch from one actual accepted profile; source data stays exact. One undo step; no save. Call cad_describe_edits(kind) for fields, cad_describe_features for complete add/update definitions; execution stays strict. Rejects invalid geometry, references, stale versions and active workflows. No code execution.', object({ ...version, edits: Type.Array(CadEditSchema, { minItems: 1, maxItems: 128 }) }), async (cad, input, signal) => {
+      await cad.edit(input.edits, input.expectedVersion, true, signal); return context(cad);
     }, false, object({ ...version, edits: Type.Array(CadToolEditEnvelope, { minItems: 1, maxItems: 128 }) })),
+    tool('cad_describe_edits', 'Discover CAD edit fields without opening or changing a draft. No kind returns a catalog; kind returns its strict contract. Add/update features and plugin packages use their separate complete discovery tools. Execution always validates full definitions.', object({ kind: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })) }), (_cad, input) => {
+      if (!input.kind) return { items: CadToolEditDefinitions.map(schema => ({ kind: schema.properties.kind.const, description: schema.description ?? null })) };
+      const schema = CadToolEditDefinitions.find(schema => schema.properties.kind.const === input.kind);
+      if (!schema) throw new ToolError('NOT_FOUND', 'This CAD edit kind is unavailable. Read cad_describe_edits without kind.');
+      return { kind: input.kind, schema };
+    }),
     tool('cad_history', 'Undo or redo one CAD edit batch. Draft versions always advance; saved storage is unchanged until Save.', object({ ...version, direction: Type.Union([Type.Literal('undo'), Type.Literal('redo')]) }), (cad, input) => {
       if (input.direction === 'undo') cad.undo(input.expectedVersion); else cad.redo(input.expectedVersion);
       return context(cad);
@@ -298,34 +349,60 @@ export function cadSiteTools(getController: () => CadController) {
       if (rows === undefined) throw new ToolError('VIEW_UNAVAILABLE', 'Installed reference IDs are available in the solid viewport. Finish sketch or curve editing and wait for the reference layer.');
       return { documentId: state.documentId, documentVersion: state.documentVersion, viewportToken, collection: input.collection, ...page(rows, input) };
     }),
-    tool('cad_set_viewport', 'Use visible CAD viewport operations: named view, fit/grid, feature/profile/reference-plane selection, enter/finish sketch or curve editing, body/face/edge pick mode and exact-build topology selection. Plane selection never inserts a sketch: use cad_edit_document with an explicit plane to create one. Does not edit geometry or save. Active workflows block changes. Read cad_get_viewport after applying.', object({ ...version, command: CadViewportCommandSchema }), (cad, input) => cad.changeViewport(input.command, input.expectedVersion), false),
+    tool('cad_set_viewport', 'Use visible CAD viewport operations: named view, fit/grid, feature/profile/reference-plane selection and ordered sketch point/edge sets, enter/finish sketch or curve editing, body/face/edge pick mode and exact-build topology selection. Plane selection never inserts a sketch: use cad_edit_document with an explicit plane to create one. Does not edit geometry or save. Active workflows block changes. Read cad_get_viewport after applying.', object({ ...version, command: CadViewportCommandSchema }), (cad, input) => cad.changeViewport(input.command, input.expectedVersion), false),
     tool('cad_capture_preview', 'Capture current CAD draft pixels as a local PNG receipt with version, view metadata and SHA-256. Requires current build/reference layers; stale views reject. Read omitted IDs via cad_get_viewport collection pages. The blob URL is browser-local. Optional download requests a browser save; no CAD/storage edits.', object({ ...version, download: Type.Optional(Type.Boolean()) }), async (cad, input, signal) => {
       const captured = await cad.captureViewport(input.expectedVersion, input.download ?? false, signal);
       const receipt = (viewState: unknown) => ({ ...captured, viewState });
       return receipt(cadViewportToolState(cad.session, captured.viewState, receipt));
     }, false),
-    tool('cad_build', 'Evaluate current CAD history in the exact solid kernel and inspect paginated body volume (mm³), bounds (mm), native solidCount (null if unavailable) and feature diagnostics. One body can contain multiple solids. Follow nextBodyOffset with offset/limit on the same version. Lazy kernel initialization may take several seconds. Does not save or create CAM output.', object({ ...version, ...pageFields }), async (cad, input, signal) => {
+    tool('cad_build', 'Evaluate current CAD history in the exact solid kernel and inspect paginated body volume (mm³), bounds (mm), native solidCount (null if unavailable) and feature diagnostics. Use each returned featureId as bodyId in section and topology tools. One body can contain multiple solids. Follow nextBodyOffset with offset/limit on the same version. Lazy kernel initialization may take several seconds. Does not save or create CAM output.', object({ ...version, ...pageFields }), async (cad, input, signal) => {
       const result = await cad.inspectBuild(input.expectedVersion, signal);
       const bodies = page(result.meshes, input, mesh => ({ featureId: mesh.featureId, name: mesh.name, volumeMm3: mesh.volume, solidCount: mesh.solidCount ?? null, boundsMm: mesh.bounds, triangles: mesh.indices.length / 3,
         previewFaces: new Set(mesh.faceGroups.map(group => group.key)).size, previewEdges: new Set(mesh.edgeGroups.map(group => group.key)).size }));
       return { version: input.expectedVersion, buildId: result.buildId, durationMs: result.durationMs, ...diagnosticSummary(result.diagnostics),
         bodies: bodies.items, totalBodies: bodies.total, nextBodyOffset: bodies.nextOffset };
     }),
-    tool('cad_inspect_topology', 'Inspect exact faces or edges of a successfully built body in world coordinates. Pin expectedVersion and expectedBuildId from cad_build. Returns bounded descriptors and opaque keys for this build only; follow nextOffset. Lengths/coordinates are mm; areas mm². Stale snapshots are rejected without rebuilding. Keys must never be saved in features.', object({
+    tool('cad_build_feature_input', 'Build the strict history before an existing Fillet, Chamfer or Shell to replace its selected edges/opening. Choose a body visible at that point; optional finite numeric parameterValues propose correlated edits without accepting them. Returns an ephemeral inputToken/buildId for the existing topology tools. The accepted document/build is unchanged. Use the resulting geometric selector and same parameter batch in cad_edit_document. Finish visible editors before agent calls.', object({ ...version, ...CadFeatureInputRequestSchema.properties }), async (cad, input, signal) => {
+      const { expectedVersion, ...request } = input;
+      const snapshot = await cad.buildFeatureInput(request, expectedVersion, signal);
+      const mesh = snapshot.result.meshes.find(body => body.featureId === snapshot.bodyId);
+      if (!mesh) throw new ToolError('NOT_FOUND', 'The requested input body is unavailable.');
+      return { inputToken: snapshot.inputToken, documentId: snapshot.documentId, version: snapshot.version, featureId: snapshot.featureId, bodyId: snapshot.bodyId,
+        parameterValues: snapshot.parameterValues, buildId: snapshot.result.buildId, durationMs: snapshot.result.durationMs,
+        body: { featureId: mesh.featureId, name: mesh.name, volumeMm3: mesh.volume, solidCount: mesh.solidCount ?? null, boundsMm: mesh.bounds,
+          previewFaces: new Set(mesh.faceGroups.map(group => group.key)).size, previewEdges: new Set(mesh.edgeGroups.map(group => group.key)).size } };
+    }),
+    tool('cad_inspect_topology', 'Inspect exact faces or edges of a successfully built body in world coordinates. Pin expectedVersion and expectedBuildId from cad_build, or include inputToken from cad_build_feature_input for that isolated feature input. Returns bounded descriptors and opaque keys for this build only; follow nextOffset. Lengths/coordinates are mm; areas mm². Stale snapshots are rejected without rebuilding. Keys must never be saved in features.', object({
       ...version, bodyId: id, expectedBuildId: id, kind: Type.Union([Type.Literal('edge'), Type.Literal('face')]),
+      inputToken: Type.Optional(id),
       offset: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 }))
     }), async (cad, input, signal) => {
       const offset = input.offset ?? 0;
-      const result = await cad.inspectTopology({ bodyId: input.bodyId, expectedBuildId: input.expectedBuildId,
-        selection: { kind: 'page', topology: input.kind, offset, limit: input.limit ?? 10 } }, input.expectedVersion, signal);
+      const request = { bodyId: input.bodyId, expectedBuildId: input.expectedBuildId,
+        selection: { kind: 'page' as const, topology: input.kind, offset, limit: input.limit ?? 10 } };
+      const result = await (input.inputToken === undefined ? cad.inspectTopology(request, input.expectedVersion, signal)
+        : cad.inspectTopology(request, input.expectedVersion, signal, undefined, input.inputToken));
       const bounded = page(result.descriptors, { limit: result.descriptors.length });
-      return { ...result, descriptors: bounded.items, nextOffset: bounded.nextOffset === null ? result.nextOffset : offset + bounded.nextOffset };
+      return { ...result, ...(input.inputToken === undefined ? {} : { inputToken: input.inputToken }), descriptors: bounded.items, nextOffset: bounded.nextOffset === null ? result.nextOffset : offset + bounded.nextOffset };
     }),
-    tool('cad_resolve_topology', 'Convert up to 32 current edge picks into strict fillet/chamfer geometric selectors, or one planar face into an inward-shell opening query. Read-only: no feature is added. Pin the version/build from topology inspection, then use the returned selection/opening in cad_edit_document. Exact expected counts reject ambiguity; unsupported curves fail instead of broadening selection. Numeric selectors may need explicit parameter expressions when upstream dimensions change.', object({
-      ...version, ...CadTopologyResolvePicksRequestSchema.properties, picks: Type.Array(CadTopologyPickSchema, { minItems: 1, maxItems: 32 })
-    }), (cad, input, signal) => {
-      const { expectedVersion, ...request } = input;
-      return cad.resolveTopologyPicks(request, expectedVersion, signal);
+    tool('cad_resolve_topology', 'Convert up to 32 current edge picks into strict fillet/chamfer geometric selectors, or one planar face into an inward-shell opening query. Read-only: no feature is added. Pin the version/build from topology inspection, including inputToken for an isolated existing-feature input, then use the returned selection/opening in cad_edit_document. Exact expected counts reject ambiguity; unsupported curves fail instead of broadening selection. Numeric selectors may need explicit parameter expressions when upstream dimensions change.', object({
+      ...version, ...CadTopologyResolvePicksRequestSchema.properties, inputToken: Type.Optional(id), picks: Type.Array(CadTopologyPickSchema, { minItems: 1, maxItems: 32 })
+    }), async (cad, input, signal) => {
+      const { expectedVersion, inputToken, ...request } = input;
+      if (inputToken === undefined) return cad.resolveTopologyPicks(request, expectedVersion, signal);
+      return { ...await cad.resolveTopologyPicks(request, expectedVersion, signal, undefined, inputToken), inputToken };
+    }),
+    tool('cad_inspect_sketch_constraints', 'Read graph freedom/status and paged source relations, points or entities with exact drivers and analytic local measurements. Saved reference-dimension rows report computed measurement separately from driving values; they add no native equation. Does not apply a solve or change history. Requires a current version and closed workflows.', CadToolSketchConstraintsQuerySchema, async (cad, input, signal) => {
+      const inspection = await cad.inspectSketchConstraints(input.sketchId, input.expectedVersion, signal);
+      return { version: input.expectedVersion, persisted: false, sketchId: inspection.sketchId, section: input.section ?? 'relations',
+        pointCount: inspection.pointCount, entityCount: inspection.entityCount, relationCount: inspection.relationCount,
+        legacyProfileCount: inspection.legacyProfileCount, legacyDimensionCount: inspection.legacyDimensionCount,
+        degreesOfFreedomScope: inspection.degreesOfFreedomScope, analysis: summarizeCadSketchConstraintAnalysis(inspection.analysis),
+        ...pageCadSketchConstraints(inspection, input) };
+    }),
+    tool('cad_inspect_sketch_handles', 'Inspect revision-scoped sketch grips: exact local-mm point, handle, label and draggable state. Follow pages at one version; use the returned handle with move-sketch-handle in cad_edit_document. Grips preserve dimensions/expressions; indices are never persistent relation IDs. No edits.', object({ ...version, sketchId: id, profileId: id, ...pageFields }), async (cad, input, signal) => {
+      const handles = await cad.inspectSketchHandles(input.sketchId, input.profileId, input.expectedVersion, signal);
+      return { version: input.expectedVersion, sketchId: input.sketchId, profileId: input.profileId, ...page(handles, input) };
     }),
     tool('cad_measure_sketch', 'Measure one validated sketch analytically in its local millimeter coordinates: paginated per-profile area (mm²), exact perimeter (mm), bounds (mm), total material area with nested holes/islands, and cut boundary length. Construction geometry is measured separately and excluded from cut totals. This measures the sketch, not a projection of the solid. Empty sketches return zero totals and null cut bounds.', object({ ...version, sketchId: id, ...pageFields }), async (cad, input, signal) => {
       const { profiles, ...measurement } = await cad.measureSketch(input.sketchId, input.expectedVersion, signal);

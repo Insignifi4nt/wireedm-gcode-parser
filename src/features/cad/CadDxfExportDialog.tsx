@@ -11,6 +11,7 @@ import { resolveCadCurveGeometry } from '@/domain/cad/cadCurve';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { CadContextHelp } from './CadContextHelp';
 import { CadSectionPreview } from './CadSectionDialog';
+import { cadSectionMiddleOffset } from './cadSectionMidpoint';
 import './cad-dxf-export.css';
 
 type SourceKind = 'sketch' | 'curve' | 'section';
@@ -25,11 +26,6 @@ export interface CadDxfExportDialogProps {
   onExportCurve(id: string, version: string, signal: AbortSignal): Promise<unknown>;
   onInspectSection(request: CadSectionRequest, version: string, signal: AbortSignal): Promise<CadSectionResult>;
   onExportSection(request: CadSectionRequest, version: string, signal: AbortSignal): Promise<unknown>;
-}
-function middleOffset(body: CadMesh | undefined, plane: CadPlane): string {
-  if (!body) return '0';
-  const axis = plane === 'XY' ? 2 : plane === 'XZ' ? 1 : 0;
-  return String((body.bounds.min[axis] / 2 + body.bounds.max[axis] / 2) * (plane === 'XZ' ? -1 : 1));
 }
 
 /** Standalone CAD export. Exact sections are recomputed by the guarded controller before download. */
@@ -46,7 +42,7 @@ export function CadDxfExportDialog({ document: cadDocument, bodies, version, cur
   const [sketchId, setSketchId] = useState(sketches.find(feature => feature.id === initialFeatureId)?.id ?? sketches[0]?.id ?? '');
   const [curveId, setCurveId] = useState(curves.find(feature => feature.id === initialFeatureId)?.id ?? curves[0]?.id ?? '');
   const [bodyId, setBodyId] = useState(initialBody?.featureId ?? '');
-  const [plane, setPlane] = useState<CadPlane>('XY'), [offset, setOffset] = useState(middleOffset(initialBody, 'XY'));
+  const [plane, setPlane] = useState<CadPlane>('XY'), [offset, setOffset] = useState(cadSectionMiddleOffset(initialBody, 'XY'));
   const [review, setReview] = useState<{ key: string; result: CadSectionResult } | null>(null);
   const [error, setError] = useState<string | null>(null), [busy, setBusy] = useState<'preview' | 'export' | null>(null);
   const stale = version !== currentVersion;
@@ -61,7 +57,7 @@ export function CadDxfExportDialog({ document: cadDocument, bodies, version, cur
     if (!next) return;
     // A same-version build can finish while a sketch export dialog is already open.
     // Preserve valid selections and custom heights; initialize only a missing body.
-    setBodyId(next.featureId); setOffset(middleOffset(next, plane)); setReview(null); setError(null);
+    setBodyId(next.featureId); setOffset(cadSectionMiddleOffset(next, plane)); setReview(null); setError(null);
   }, [bodies, bodyId, plane, initialFeatureId, stale]);
   const source = useMemo<{ entities: readonly DxfEntity[]; error: string | null }>(() => {
     try {
@@ -106,8 +102,8 @@ export function CadDxfExportDialog({ document: cadDocument, bodies, version, cur
       <div className="cad-dxf-settings">
         {kind === 'sketch' ? <label>Sketch<Select aria-label="Sketch source" value={sketchId} disabled={busy !== null || stale} onChange={event => { setSketchId(event.target.value); setError(null); }}>{sketches.map(feature => <option key={feature.id} value={feature.id}>{feature.name}</option>)}</Select></label>
           : kind === 'curve' ? <label>Reference curve<Select aria-label="Reference curve source" value={curveId} disabled={busy !== null || stale} onChange={event => { setCurveId(event.target.value); setError(null); }}>{curves.map(feature => <option key={feature.id} value={feature.id}>{feature.name}</option>)}</Select></label>
-            : <><label>Solid body<Select value={bodyId} disabled={busy !== null || stale} onChange={event => { setBodyId(event.target.value); setOffset(middleOffset(bodies.find(body => body.featureId === event.target.value), plane)); setError(null); }}>{bodies.map(body => <option key={body.featureId} value={body.featureId}>{body.name}</option>)}</Select></label>
-              <div className="cad-dxf-plane-row"><label>Plane<Select value={plane} disabled={busy !== null || stale} onChange={event => { const next = event.target.value; if (next === 'XY' || next === 'XZ' || next === 'YZ') { setPlane(next); setOffset(middleOffset(bodies.find(body => body.featureId === bodyId), next)); setError(null); } }}><option>XY</option><option>XZ</option><option>YZ</option></Select></label>
+            : <><label>Solid body<Select value={bodyId} disabled={busy !== null || stale} onChange={event => { setBodyId(event.target.value); setOffset(cadSectionMiddleOffset(bodies.find(body => body.featureId === event.target.value), plane)); setError(null); }}>{bodies.map(body => <option key={body.featureId} value={body.featureId}>{body.name}</option>)}</Select></label>
+              <div className="cad-dxf-plane-row"><label>Plane<Select value={plane} disabled={busy !== null || stale} onChange={event => { const next = event.target.value; if (next === 'XY' || next === 'XZ' || next === 'YZ') { setPlane(next); setOffset(cadSectionMiddleOffset(bodies.find(body => body.featureId === bodyId), next)); setError(null); } }}><option>XY</option><option>XZ</option><option>YZ</option></Select></label>
                 <label><span>Offset <small>mm</small><CadContextHelp label="Section offset"><p>The plane moves along {plane === 'XY' ? '+Z' : plane === 'XZ' ? '−Y' : '+X'}. The initial value cuts through the middle of the selected body's bounds. Set a height inside the material; parameter expressions such as thickness / 2 are accepted.</p><p>Tangent, open, branching, elliptical or spline sections are rejected explicitly. Choose another plane or height if this section is unsupported.</p></CadContextHelp></span><Input aria-label="Section offset (mm)" value={offset} disabled={busy !== null || stale} onChange={event => { setOffset(event.target.value); setError(null); }} /></label></div>
               <Button type="button" className="cad-dxf-secondary" disabled={busy !== null || stale || !hasSource || Boolean(source.error)} onClick={() => { void execute('preview'); }}>Preview section</Button></>}
         <div className="cad-dxf-coordinate-note">{kind === 'section' ? `${plane} · offset along ${plane === 'XY' ? '+Z' : plane === 'XZ' ? '−Y' : '+X'}` : 'Source-local 2D coordinates'}</div>

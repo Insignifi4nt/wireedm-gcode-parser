@@ -25,6 +25,14 @@ it('restores the exact accepted independent representation only when no relation
   expect(cadScalarValueIntent({ source: 20, parameters: { depth: 10 }, quantity: 10, acceptedSource: 'depth' })).toEqual({ kind: 'scalar', source: 10 });
 });
 
+it('keeps numeric string drivers fixed through value edits and restores exact accepted text on revert while explicit unlink stays numeric', () => {
+  const acceptedSource = ' 1.23456789012345e1 ';
+  expect(cadScalarValueIntent({ source: acceptedSource, parameters: {}, quantity: 20.125, acceptedSource })).toEqual({ kind: 'scalar', source: '20.125' });
+  expect(cadScalarValueIntent({ source: '20.125', parameters: {}, quantity: Number(acceptedSource), acceptedSource })).toEqual({ kind: 'scalar', source: acceptedSource });
+  expect(cadScalarValueIntent({ source: 20.125, parameters: {}, quantity: 21, acceptedSource, relationEdited: true })).toEqual({ kind: 'scalar', source: 21 });
+  expect(cadScalarValueIntent({ source: '20.125', parameters: {}, quantity: 21, acceptedSource: 20.125, relationEdited: true })).toEqual({ kind: 'scalar', source: '21' });
+});
+
 it('uses the existing scalar grammar for numeric text, preserving exponent precision and rejecting formulas or JavaScript numeric syntax', () => {
   expect(parseCadNumericQuantity(' 1.23456789012345e1 ')).toBe(12.3456789012345);
   for (const text of ['', '-', 'Infinity', '1e', '0x10', 'depth / 2', '1e10']) expect(() => parseCadNumericQuantity(text)).toThrow();

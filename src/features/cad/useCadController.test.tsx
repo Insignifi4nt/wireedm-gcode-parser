@@ -22,14 +22,27 @@ import { importCadDxfSketch, type CadDxfImportInput, type CadDxfImportResult } f
 import { importCadDxfCurve, type CadDxfCurveImportInput, type CadDxfCurveImportResult } from '@/domain/cad/cadCurveDxf';
 import { parseDxf } from '@/domain/dxf/parseDxf';
 import { part as regionPart, refs as regionRefs, sketch as regionSketch, pad as regionPad } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
+import type { CadEdit } from '@/domain/cad/cadOperations';
+import type { CadSketchSolveInput, CadSketchSolveResult } from './sketch-solver/cadSketchSolverTypes';
+import { inspectCadSketchRegions } from '@/domain/cad/cadSketchRegionInspection';
+import type { CadSketchCellReference } from '@/domain/cad/cadSketchRegionSelection';
+import { endTrim, trimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
+import type { CadSketchEndTrimPreparation } from '@/domain/cad/cadSketchTrimExtend';
+import { extendPart, lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
+import type { CadSketchLineExtendPreparation } from '@/domain/cad/cadSketchTrimExtend';
+import { graphCellSelectionAt, intersectingCircleSketch, lensAreaMm2 } from '@/domain/cad/__tests__/cadIntersectingCellFixtures';
 
 const kernel = vi.hoisted(() => ({ build: vi.fn(), section: vi.fn(), export: vi.fn(), importSolid: vi.fn(), importDxf: vi.fn(), importDxfCurve: vi.fn(), inspectTopology: vi.fn(), resolveTopologyPicks: vi.fn(), dispose: vi.fn() }));
 const createClient = vi.hoisted(() => vi.fn());
 vi.mock('./kernel/cadKernelClient', () => ({ createCadKernelClient: createClient }));
+const sketchSolver = vi.hoisted(() => ({ solve: vi.fn(), dispose: vi.fn() }));
+const createSketchClient = vi.hoisted(() => vi.fn());
+vi.mock('./sketch-solver/cadSketchSolverClient', () => ({ createCadSketchSolverClient: createSketchClient }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
-beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); createClient.mockReset().mockReturnValue(kernel); });
+beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); createClient.mockReset().mockReturnValue(kernel);
+  createSketchClient.mockReset().mockReturnValue(sketchSolver); sketchSolver.solve.mockReset(); });
 afterEach(() => { act(() => root?.unmount()); container?.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function deferred<T>() {
@@ -97,20 +110,161 @@ function completeViewport(h: Awaited<ReturnType<typeof harness>>) {
   const capture = vi.fn(async () => ({ source: '3d' as const, width: 1, height: 1,
     dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDSkAAAAASUVORK5CYII=' }));
   let bindings: CadViewportBindings = { document: snapshot.document, documentVersion: snapshot.version, dirty: snapshot.dirty,
-    selectedFeatureId: null, selectedProfileId: null, selectedReferencePlane: null, awaitingSketchPlane: false, sketchId: null, curveId: null,
+    selectedFeatureId: null, selectedProfileId: null, selectedSketchGeometrySet: [], selectedReferencePlane: null, awaitingSketchPlane: false, sketchId: null, curveId: null,
     workflowOpen: false, busy: false, buildVersion: visibleBodyIds.length ? snapshot.version : null,
     buildId: visibleBodyIds.length ? 'accepted-build' : null, buildState: visibleBodyIds.length ? 'ready' : 'idle', pickMode: 'body', topologySelection: null,
     meshes: [], visibleBodyIds, visibleReferenceIds, visibleReferencePlanes,
     rendered: { getState: () => rendered, fit: vi.fn(), setGrid: vi.fn(), setView: view => { if (rendered.mode === 'solid') rendered = { ...rendered, view, revision: rendered.revision + 1 }; }, capture },
     selectFeature: featureId => { bindings = { ...bindings, selectedFeatureId: featureId }; }, selectReferencePlane: vi.fn(), editSketch: vi.fn(), editCurve: vi.fn(),
-    selectProfile: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: action => action() };
+    selectProfile: vi.fn(), selectSketchGeometrySet: vi.fn(), finishSketch: vi.fn(), finishCurve: vi.fn(), selectTopology: vi.fn(), setPickMode: vi.fn(), updateView: action => action() };
   const controls = createCadWorkbenchViewportControls(() => bindings);
   h.cad().setViewportControls(controls);
   return { controls, capture, updateBindings: (change: Partial<CadViewportBindings>) => { bindings = { ...bindings, ...change }; },
     updateRendered: (change: Partial<CadRenderedViewState>) => { rendered = { ...rendered, ...change } as CadRenderedViewState; } };
 }
 
+function inspectedSketchDocument() {
+  return parseCadDocument({ ...createCadDocument('Constraint inspection', 'cad_constraints'), schemaVersion: 2, parameters: { span: 20 }, features: [{
+    id: 'sketch', kind: 'sketch', name: 'Line', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [20, 0] }],
+      entities: [{ id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+      relations: [{ id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: ' span ' }]
+    }
+  }] });
+}
+function inspectedSolve(input: CadSketchSolveInput): CadSketchSolveResult {
+  return { kind: 'solved', graph: input.graph, diagnostics: { status: 'success', degreesOfFreedom: 0,
+    conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } };
+}
+
+describe('accepted sketch constraint inspection guards', () => {
+  it('shares immutable accepted source across pages without editing, saving or adding history', async () => {
+    const h = await harness(); await act(async () => h.session.replace(inspectedSketchDocument()));
+    await act(async () => { await h.cad().save(); });
+    const before = h.session.getSnapshot(), exact = JSON.stringify(before.document);
+    sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+    const tool = cadSiteTools(h.cad).find(tool => tool.name === 'cad_inspect_sketch_constraints');
+    if (!tool) throw new Error('Missing constraint inspection tool');
+    expect(await tool.execute({ expectedVersion: before.version, sketchId: 'sketch', offset: 0, limit: 1 })).toMatchObject({ ok: true,
+      data: { version: before.version, persisted: false, pointCount: 2, entityCount: 1, relationCount: 2, total: 2, nextOffset: 1,
+        analysis: { kind: 'solved', status: 'success', degreesOfFreedom: 0 }, items: [{ source: { id: 'horizontal' } }] } });
+    const last = await tool.execute({ expectedVersion: before.version, sketchId: 'sketch', offset: 1, limit: 1 });
+    expect(last).toMatchObject({ ok: true, data: { nextOffset: null, items: [{ source: { id: 'length', value: ' span ' },
+      value: { scalar: ' span ', valueMm: 20, role: 'expression-driver' } }] } });
+    expect(last).not.toHaveProperty('data.graph'); expect(last).not.toHaveProperty('data.parameters');
+    expect(await tool.execute({ expectedVersion: before.version, sketchId: 'sketch', section: 'points', offset: 1 })).toMatchObject({ ok: true,
+      data: { section: 'points', total: 2, items: [{ id: 'b', entityIds: ['edge'] }] } });
+    expect(sketchSolver.solve).toHaveBeenCalledOnce(); expect(createSketchClient).toHaveBeenCalledOnce();
+    expect(h.session.getSnapshot()).toBe(before); expect(JSON.stringify(before.document)).toBe(exact);
+    expect((await loadCadDocument(h.workbench().adapter, before.document.id)).document).toEqual(before.document);
+    await act(async () => h.session.edit([{ kind: 'rename-document', name: 'New accepted source' }]));
+    await expect(tool.execute({ expectedVersion: before.version, sketchId: 'sketch' })).resolves.toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    await h.cad().inspectSketchConstraints('sketch'); expect(sketchSolver.solve).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache unavailable native analysis and still checks closed workflows and cancellation on cache hits', async () => {
+    const h = await harness(); await act(async () => h.session.replace(inspectedSketchDocument()));
+    const before = h.session.getSnapshot();
+    sketchSolver.solve.mockRejectedValueOnce(new Error('Worker stopped')).mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+    expect(await h.cad().inspectSketchConstraints('sketch')).toMatchObject({ analysis: { kind: 'unavailable', diagnostics: { degreesOfFreedom: null } } });
+    expect(await h.cad().inspectSketchConstraints('sketch')).toMatchObject({ analysis: { kind: 'solved' } });
+    expect(sketchSolver.solve).toHaveBeenCalledTimes(2);
+    await act(async () => h.session.setWorkflowOpen(true));
+    await expect(h.cad().inspectSketchConstraints('sketch')).rejects.toMatchObject({ code: 'WORKFLOW_OPEN' });
+    await act(async () => h.session.setWorkflowOpen(false));
+    const abort = new AbortController(); abort.abort();
+    await expect(h.cad().inspectSketchConstraints('sketch', before.version, abort.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(h.session.getSnapshot().document).toBe(before.document); expect(sketchSolver.solve).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['cancelled', 'changed', 'workflow', 'storage', 'closed'] as const)('rejects a late constraint analysis after %s without changing accepted work', async cause => {
+    const h = await harness(); await act(async () => h.session.replace(inspectedSketchDocument()));
+    const before = h.session.getSnapshot(), pending = deferred<CadSketchSolveResult>(), abort = new AbortController();
+    sketchSolver.solve.mockReturnValueOnce(pending.promise);
+    const operation = h.cad().inspectSketchConstraints('sketch', before.version, abort.signal);
+    await vi.waitFor(() => expect(sketchSolver.solve).toHaveBeenCalledOnce());
+    if (cause === 'cancelled') abort.abort();
+    if (cause === 'changed') await act(async () => h.session.edit([{ kind: 'rename-document', name: 'Retained new name' }]));
+    if (cause === 'workflow') await act(async () => h.session.setWorkflowOpen(true));
+    if (cause === 'storage') await h.switchWorkbench(await openWorkbench('constraint-other-store'));
+    if (cause === 'closed') await act(async () => h.cad().back());
+    const retained = h.session.getSnapshot();
+    const sketch = before.document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing graph');
+    pending.resolve(inspectedSolve({ graph: sketch.graph, parameters: before.document.parameters }));
+    await expect(operation).rejects.toMatchObject(cause === 'cancelled' ? { name: 'AbortError' }
+      : { code: cause === 'workflow' ? 'WORKFLOW_OPEN' : cause === 'closed' ? 'CAD_NOT_OPEN' : 'STALE_STATE' });
+    expect(h.session.getSnapshot()).toBe(retained);
+    if (cause === 'cancelled' || cause === 'workflow' || cause === 'storage') {
+      if (cause === 'workflow') await act(async () => h.session.setWorkflowOpen(false));
+      sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+      await h.cad().inspectSketchConstraints('sketch'); expect(sketchSolver.solve).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('validates narrow public inspection arguments before native work and returns source errors honestly', async () => {
+    const h = await harness(); await act(async () => h.session.replace(inspectedSketchDocument()));
+    const tool = cadSiteTools(h.cad).find(tool => tool.name === 'cad_inspect_sketch_constraints');
+    if (!tool) throw new Error('Missing constraint inspection tool');
+    const query = { expectedVersion: h.session.getSnapshot().version, sketchId: 'sketch' };
+    for (const input of [{ ...query, section: 'all' }, { ...query, offset: -1 }, { ...query, limit: 51 }, { ...query, graph: {} }, { sketchId: 'sketch' }])
+      expect(await tool.execute(input)).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(createSketchClient).not.toHaveBeenCalled();
+    expect(await tool.execute({ ...query, sketchId: 'missing' })).toMatchObject({ ok: false, error: { code: 'missing-sketch' } });
+    expect(createSketchClient).not.toHaveBeenCalled();
+  });
+
+  it('pages complete large source rows under the public reply budget while reporting complete native diagnostic counts', async () => {
+    const h = await harness(), exactDriver = `${' '.repeat(490)}0`;
+    const points = Array.from({ length: 75 }, (_, index) => ({ id: `point-${index}`, position: [exactDriver, index] }));
+    const relations = points.map((point, index) => ({ id: `axis-${index}-${'x'.repeat(75)}`, kind: 'fixed-axis',
+      pointId: point.id, axis: 'x', value: exactDriver }));
+    const document = parseCadDocument({ ...inspectedSketchDocument(), features: [{ id: 'sketch', kind: 'sketch', name: 'Many drivers',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points, entities: [], relations } }] });
+    await act(async () => h.session.replace(document)); const before = h.session.getSnapshot();
+    const ids = relations.map(relation => relation.id);
+    sketchSolver.solve.mockResolvedValue({ kind: 'rejected', reason: 'redundant', message: '孔'.repeat(5000), diagnostics: {
+      status: 'converged', degreesOfFreedom: 75, conflictingIds: ids, redundantIds: ids, partiallyRedundantIds: ids,
+      issues: ids.map(id => ({ source: { kind: 'relation', id }, code: 'relation-residual', message: '孔'.repeat(2000) })) } });
+    const tool = cadSiteTools(h.cad).find(tool => tool.name === 'cad_inspect_sketch_constraints');
+    if (!tool) throw new Error('Missing constraint inspection tool');
+    let offset: number | null = 0; const read: typeof relations = [];
+    while (offset !== null) {
+      const receipt = await tool.execute({ expectedVersion: before.version, sketchId: 'sketch', offset, limit: 50 });
+      expect(receipt).toMatchObject({ ok: true, data: { pointCount: 75, relationCount: 75, total: 75,
+        analysis: { status: 'converged', degreesOfFreedom: 75, conflicting: { count: 75, omittedCount: 67 }, issueCount: 75, omittedIssueCount: 73 } } });
+      expect(utf8Bytes(JSON.stringify(receipt))).toBeLessThan(32 * 1024);
+      const result = receipt as { data: { items: { source: typeof relations[number]; diagnostics: { redundant: boolean } }[]; nextOffset: number | null } };
+      expect(result.data.items.length).toBeGreaterThan(0); expect(result.data.items.length).toBeLessThan(50);
+      expect(result.data.items.every(row => row.diagnostics.redundant)).toBe(true);
+      read.push(...result.data.items.map(row => row.source)); offset = result.data.nextOffset;
+    }
+    expect(read).toEqual(relations); expect(sketchSolver.solve).toHaveBeenCalledOnce();
+    expect(h.session.getSnapshot()).toBe(before);
+  });
+});
+
 describe('CAD controller asynchronous guards', () => {
+  it('captures the complete edit batch before cold and warm asynchronous solver preparation', async () => {
+    const h = await harness();
+    await act(async () => h.session.replace(parseCadDocument({ ...createCadDocument('Source', 'cad_capture'), schemaVersion: 2, features: [
+      { id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [],
+        graph: { points: [{ id: 'point', position: [1, 2] }], entities: [], relations: [] } }
+    ] })));
+    sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => ({ kind: 'solved', graph: input.graph,
+      diagnostics: { status: 'success', degreesOfFreedom: 2, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } }));
+    for (const name of ['Cold initialization', 'Warm initialization']) {
+      const rename = { kind: 'rename-document' as const, name }, edits: CadEdit[] = [rename];
+      await act(async () => {
+        const pending = h.cad().edit(edits, h.session.getSnapshot().version);
+        rename.name = 'Changed outside the submitted operation';
+        edits.push({ kind: 'set-parameter', name: 'unreviewed', value: 1 });
+        await pending;
+      });
+      expect(h.session.getSnapshot().document.name).toBe(name);
+      expect(h.session.getSnapshot().document.parameters).not.toHaveProperty('unreviewed');
+    }
+    expect(createSketchClient).toHaveBeenCalledOnce();
+  });
   it('synchronizes a canonical saved rename, retains Undo, and rejects archiving an unsaved retained draft', async () => {
     const h = await harness();
     await act(async () => { await h.cad().save(); h.cad().back(); });
@@ -357,6 +511,52 @@ describe('CAD controller asynchronous guards', () => {
     await act(async () => { h.cad().previewFeature({ kind: 'clear', owner: 'pad-editor' }); h.session.setWorkflowOpen(false, 'editor'); });
     expect(previewClient.dispose).toHaveBeenCalledOnce(); expect(kernel.dispose).not.toHaveBeenCalled();
     expect(h.cad().featurePreview).toEqual({ kind: 'idle' }); expect(h.cad().build).toBe(acceptedBuild); expect(h.session.getSnapshot()).toEqual(before); expect(h.session.getSnapshot().document).toBe(before.document);
+  });
+  it('borrows a consumed feature input through the controller without replacing the accepted build or granting tools editor access', async () => {
+    const h = await harness(true);
+    await act(async () => h.session.edit([
+      { kind: 'set-parameter', name: 'height', value: 10 },
+      { kind: 'add-feature', feature: { kind: 'extrude', id: 'pad', name: 'Pad', suppressed: false, sketchId: 'sketch', distance: ' height ', symmetric: false, operation: 'new', targetId: null } },
+      { kind: 'add-feature', feature: { kind: 'fillet', id: 'round', name: 'Round', suppressed: false, targetId: 'pad', radius: ' 1 ', selection: null } },
+    ]));
+    const before = h.session.getSnapshot();
+    const mesh = { featureId: 'round', name: 'Round', positions: [], normals: [], indices: [], edges: [], faceGroups: [], edgeGroups: [], volume: 990, bounds: { min: [0, 0, 0] as const, max: [20, 10, 10] as const } };
+    const accepted: CadBuildResult = { buildId: 'accepted-round', meshes: [mesh], diagnostics: [], durationMs: 1 };
+    kernel.build.mockResolvedValue(accepted);
+    await act(async () => { await h.cad().inspectBuild(before.version); });
+    const inputKernel = { ...kernel, build: vi.fn(async (): Promise<CadBuildResult> => ({ ...accepted, buildId: 'input-pad', meshes: [{ ...mesh, featureId: 'pad', name: 'Pad', volume: 3000 }] })), dispose: vi.fn(),
+      inspectTopology: vi.fn(async () => ({ bodyId: 'pad', buildId: 'input-pad', descriptors: [], total: 0, nextOffset: null })),
+      resolveTopologyPicks: vi.fn(async () => ({ bodyId: 'pad', buildId: 'input-pad', purpose: 'fillet' as const,
+        selection: { expectedCount: 1, queries: [{ kind: 'edges' as const, expectedCount: 1, predicates: [{ kind: 'line-endpoints' as const, start: [0, 0, 0] as const, end: [20, 0, 0] as const }] }] } })),
+    };
+    createClient.mockReturnValue(inputKernel);
+    const borrowed = await h.cad().buildFeatureInput({ featureId: 'round', bodyId: 'pad', parameterValues: { height: 15 } }, before.version);
+    expect(borrowed.document.features.map(feature => feature.id)).toEqual(['sketch', 'pad']);
+    expect(borrowed.document.parameters.height).toBe(15);
+    const query: CadTopologyInspectRequest = { bodyId: 'pad', expectedBuildId: 'input-pad', selection: { kind: 'page', topology: 'edge', offset: 0, limit: 10 } };
+    await h.cad().inspectTopology(query, before.version, undefined, undefined, borrowed.inputToken);
+    expect(inputKernel.inspectTopology).toHaveBeenCalledWith(borrowed.document, query, expect.any(AbortSignal));
+    await expect(h.cad().inspectTopology(query, before.version)).rejects.toMatchObject({ code: 'STALE_BUILD' });
+    expect(h.cad().build).toBe(accepted); expect(h.session.getSnapshot()).toBe(before);
+    const tools = cadSiteTools(h.cad), buildInput = tools.find(tool => tool.name === 'cad_build_feature_input');
+    const inspectInput = tools.find(tool => tool.name === 'cad_inspect_topology'), resolveInput = tools.find(tool => tool.name === 'cad_resolve_topology');
+    if (!buildInput || !inspectInput || !resolveInput) throw new Error('Missing input tools');
+    const receipt = await buildInput.execute({ expectedVersion: before.version, featureId: 'round', bodyId: 'pad', parameterValues: { height: 15 } });
+    expect(receipt).toMatchObject({ ok: true, data: { version: before.version, featureId: 'round', bodyId: 'pad', buildId: 'input-pad', parameterValues: { height: 15 }, body: { volumeMm3: 3000 } } });
+    if (!receipt || typeof receipt !== 'object' || !('data' in receipt) || !receipt.data || typeof receipt.data !== 'object'
+      || !('inputToken' in receipt.data) || typeof receipt.data.inputToken !== 'string') throw new Error('Missing input receipt');
+    const token = receipt.data.inputToken;
+    expect(await inspectInput.execute({ expectedVersion: before.version, expectedBuildId: 'input-pad', bodyId: 'pad', kind: 'edge', inputToken: token })).toMatchObject({ ok: true, data: { inputToken: token, total: 0 } });
+    expect(await resolveInput.execute({ expectedVersion: before.version, expectedBuildId: 'input-pad', bodyId: 'pad', purpose: 'fillet', picks: [{ kind: 'edge', key: 'edge_1' }], inputToken: token })).toMatchObject({ ok: true, data: { inputToken: token, purpose: 'fillet', selection: { expectedCount: 1 } } });
+    expect(h.cad().build).toBe(accepted); expect(h.session.getSnapshot()).toBe(before);
+    await act(async () => h.session.setWorkflowOpen(true));
+    await expect(h.cad().buildFeatureInput({ featureId: 'round', bodyId: 'pad' }, before.version)).rejects.toMatchObject({ code: 'WORKFLOW_OPEN' });
+    expect(await buildInput.execute({ expectedVersion: before.version, featureId: 'round', bodyId: 'pad' })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    const editor = await h.cad().buildFeatureInput({ featureId: 'round', bodyId: 'pad' }, before.version, undefined, 'editor');
+    h.cad().releaseFeatureInput(borrowed.inputToken);
+    await h.cad().inspectTopology({ ...query, expectedBuildId: editor.result.buildId }, before.version, undefined, 'editor', editor.inputToken);
+    h.cad().releaseFeatureInput(editor.inputToken);
+    await Promise.resolve(); expect(inputKernel.dispose).toHaveBeenCalledTimes(3);
   });
   it('keeps agent edits and history blocked while the document library owns the UI, then opens its chosen saved part', async () => {
     const h = await harness(true);
@@ -1076,6 +1276,7 @@ describe('CAD controller asynchronous guards', () => {
     if (!context || !edit) throw new Error('CAD context/edit tools missing.');
     const summary = await context.execute({}) as { ok: boolean; data: { diagnostics: { message: string; messageTruncated?: boolean }[]; omittedDiagnostics: number } };
     expect(summary.ok).toBe(true);
+    expect(summary).toMatchObject({ data: { supported: { sketchEntities: { relations: expect.arrayContaining(['line-angle']) } } } });
     expect(summary.data.diagnostics.length).toBeGreaterThan(0);
     expect(summary.data.diagnostics.every(diagnostic => diagnostic.messageTruncated && diagnostics[0].message.length > diagnostic.message.length)).toBe(true);
     expect(summary.data.omittedDiagnostics + summary.data.diagnostics.length).toBe(256);
@@ -1117,6 +1318,51 @@ describe('CAD controller asynchronous guards', () => {
     expect(await read.execute({ expectedVersion: before.version, sketchId: 'regions', boundaryProfileId: 'bore' })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
     const abort = new AbortController(); abort.abort();
     expect(await inspect.execute({ expectedVersion: h.session.getSnapshot().version, sketchId: 'regions' }, { signal: abort.signal })).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+  });
+
+  it('captures graph receipt inputs before lazy reads, packs exact public references and keeps source/history and cached guards authoritative', async () => {
+    const h = await harness(), sketch = intersectingCircleSketch();
+    await act(async () => h.session.replace(parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters: { separation: 6 }, features: [sketch] })));
+    const before = h.session.getSnapshot(), exact = JSON.stringify(before.document), selection = graphCellSelectionAt(sketch, before.document.parameters, [[3, 0]]);
+    const inspected = await h.cad().inspectSketchRegions(sketch.id, { mode: 'graph-cells' }, before.version);
+    const lens = inspected.items.find(cell => Math.abs(cell.areaMm2 - lensAreaMm2) < 1e-9);
+    if (!lens || !('cellId' in lens)) throw new Error('Missing inspected graph lens');
+    const target = { cellIds: [lens.cellId] }, capturedRead = h.cad().readSketchRegionReference(sketch.id, target, before.version);
+    target.cellIds[0] = Number.MAX_SAFE_INTEGER;
+    expect(JSON.parse(await capturedRead)).toEqual(selection);
+    const proposal = { parameterValues: { separation: 7 } }, proposedRead = h.cad().readSketchRegionReference(sketch.id, { cellIds: [lens.cellId] }, before.version, undefined, proposal);
+    proposal.parameterValues.separation = 11;
+    expect(JSON.parse(await proposedRead)).toEqual(selection);
+    const tools = cadSiteTools(h.cad), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+    if (!inspect || !read) throw new Error('Missing region tools');
+    expect(await inspect.execute({ expectedVersion: before.version, sketchId: sketch.id, mode: 'graph-cells', limit: 1 })).toMatchObject({ ok: true,
+      data: { mode: 'graph-cells', total: 3, nextOffset: 1, items: [{ cellId: expect.any(Number) }] } });
+    const chunks: string[] = []; let offset: number | null = 0;
+    while (offset !== null) {
+      const reply = await read.execute({ expectedVersion: before.version, sketchId: sketch.id, cellIds: [lens.cellId], offset, length: 127 }) as {
+        ok: boolean; data: { text: string; nextOffset: number | null }
+      };
+      expect(reply.ok).toBe(true); chunks.push(reply.data.text); offset = reply.data.nextOffset;
+    }
+    expect(JSON.parse(chunks.join(''))).toEqual(selection); expect(h.session.getSnapshot()).toBe(before);
+    expect(JSON.stringify(before.document)).toBe(exact); expect(createClient).not.toHaveBeenCalled(); expect(createSketchClient).not.toHaveBeenCalled();
+    await act(async () => h.session.setWorkflowOpen(true));
+    expect(await read.execute({ expectedVersion: before.version, sketchId: sketch.id, cellIds: [lens.cellId] })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+    await act(async () => h.session.setWorkflowOpen(false));
+    const cancelled = new AbortController(); cancelled.abort();
+    expect(await read.execute({ expectedVersion: before.version, sketchId: sketch.id, cellIds: [lens.cellId] }, { signal: cancelled.signal })).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    await act(async () => h.session.edit([{ kind: 'rename-document', name: 'Next version' }]));
+    expect(await read.execute({ expectedVersion: before.version, sketchId: sketch.id, cellIds: [lens.cellId] })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    const edit = tools.find(tool => tool.name === 'cad_edit_document'); if (!edit) throw new Error('Missing edit tool');
+    sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+    let receipt: unknown;
+    await act(async () => { receipt = await edit.execute({ expectedVersion: h.session.getSnapshot().version, edits: [{ kind: 'add-feature', feature: {
+      id: 'lens-pad', kind: 'extrude', name: 'Lens pad', suppressed: false, sketchId: sketch.id, distance: 5,
+      symmetric: false, operation: 'new', targetId: null, regionSelection: JSON.parse(chunks.join(''))
+    } }] }); });
+    expect(receipt, JSON.stringify(receipt)).toMatchObject({ ok: true });
+    expect(h.session.getSnapshot().document.features[0]).toEqual(before.document.features[0]);
+    expect(h.session.getSnapshot().document.features[1]).toMatchObject({ regionSelection: selection });
   });
 
   it('preflights proposed source cells through guarded reads and repairs shared-driver selections in one atomic public edit', async () => {
@@ -1178,6 +1424,142 @@ describe('CAD controller asynchronous guards', () => {
     } finally { vi.useRealTimers(); }
   });
 
+  it('queries line Extend through public reads and applies its exact proposal and consumer repair as one guarded Undo', async () => {
+    const h = await harness(); vi.useFakeTimers();
+    try {
+      await act(async () => h.session.replace(extendPart(true)));
+      const before = h.session.getSnapshot(), tools = cadSiteTools(h.cad), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions');
+      const read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference'), edit = tools.find(tool => tool.name === 'cad_edit_document');
+      if (!inspect || !read || !edit) throw new Error('Missing public Extend path.');
+      const extendAt = { entityId: 'ab', end: 'start' };
+      const queried = await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', extendAt }) as {
+        ok: boolean; data: { extendPreview: CadSketchLineExtendPreparation }
+      };
+      expect(queried).toMatchObject({ ok: true, data: { total: 2, extendPreview: { target: {
+        kind: 'line', entityId: 'ab', end: 'start', boundary: { entityId: 'cutter', index: 0, parameter: -.25, position: [-5, 0] }
+      } } } });
+      const target = queried.data.extendPreview.target, extend = { ...target, endPointId: target.boundary.endpointPointId ?? 'extension' };
+      expect(extend).toEqual(lineExtend);
+      const proposal = { extend }, inspected = await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', proposal }) as {
+        ok: boolean; data: { items: { reference: CadSketchCellReference }[] }
+      };
+      expect(inspected).toMatchObject({ ok: true, data: { proposed: true, total: 1, items: [{ areaMm2: 200 }] } });
+      const reference = inspected.data.items[0].reference;
+      expect(await read.execute({ expectedVersion: before.version, sketchId: 'sketch', boundaryProfileId: reference.boundaryProfileId, proposal }))
+        .toMatchObject({ ok: true, data: { text: JSON.stringify(reference) } });
+      expect(h.session.getSnapshot()).toBe(before); expect(createSketchClient).not.toHaveBeenCalled();
+      sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+      const extendEdit = { kind: 'extend-sketch-entity', sketchId: 'sketch', extend } as const;
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits: [extendEdit] })).toMatchObject({ ok: false, error: { code: 'stale-sketch-region' } }); });
+      expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+      const pad = before.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad.');
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits: [extendEdit,
+        { kind: 'update-feature', feature: { ...pad, regionSelection: [reference] } }
+      ] })).toMatchObject({ ok: true }); });
+      const accepted = h.session.getSnapshot(); expect(inspectCadSketchRegions(accepted.document, 'sketch').items.map(cell => cell.reference)).toEqual([reference]);
+      expect(await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', extendAt })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+      await act(async () => h.cad().undo(accepted.version)); expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+      await act(async () => h.cad().redo(h.session.getSnapshot().version)); expect(h.session.getSnapshot().document).toBe(accepted.document);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('queries an end trim through guarded public reads, then applies its exact proposal and consumer repair in one undoable edit', async () => {
+    const h = await harness(); vi.useFakeTimers();
+    try {
+      await act(async () => h.session.replace(trimPart(true)));
+      const before = h.session.getSnapshot(), original = JSON.stringify(before.document), tools = cadSiteTools(h.cad);
+      const inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference'), edit = tools.find(tool => tool.name === 'cad_edit_document');
+      if (!inspect || !read || !edit) throw new Error('Missing public trim path.');
+      const trimAt = { entityId: 'ab', parameter: .1 };
+      const queried = await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', trimAt }) as {
+        ok: boolean; data: { trimPreview: CadSketchEndTrimPreparation }
+      };
+      expect(queried).toMatchObject({ ok: true, data: { total: 2, trimPreview: {
+        target: { kind: 'end', entityId: 'ab', parameter: .1, end: 'start', boundary: { entityId: 'cutter', index: 0, parameter: .25, position: [5, 0] } }
+      } } });
+      const target = queried.data.trimPreview.target;
+      if (target.kind !== 'end') throw new Error('Missing witnessed end trim.');
+      const trim = { ...target, cutPointId: target.boundary.endpointPointId ?? 'cut' };
+      expect(trim).toEqual(endTrim);
+      const proposal = { trim };
+      const inspected = await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', proposal }) as {
+        ok: boolean; data: { items: { reference: CadSketchCellReference }[] }
+      };
+      expect(inspected).toMatchObject({ ok: true, data: { proposed: true, total: 1, items: [{ areaMm2: 200 }] } });
+      const reference = inspected.data.items[0].reference;
+      const chunk = await read.execute({ expectedVersion: before.version, sketchId: 'sketch', boundaryProfileId: reference.boundaryProfileId, proposal }) as {
+        ok: boolean; data: { text: string }
+      };
+      expect(chunk.ok).toBe(true); expect(chunk.data.text).toBe(JSON.stringify(reference));
+      expect(h.session.getSnapshot()).toBe(before); expect(JSON.stringify(before.document)).toBe(original); expect(createSketchClient).not.toHaveBeenCalled();
+      await act(async () => h.session.setWorkflowOpen(true));
+      expect(await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', trimAt })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+      await act(async () => h.session.setWorkflowOpen(false));
+      const abort = new AbortController(), pending = inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', trimAt }, { signal: abort.signal });
+      abort.abort(); expect(await pending).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+      sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+      const trimEdit = { kind: 'trim-sketch-entity', sketchId: 'sketch', trim } as const;
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits: [trimEdit] })).toMatchObject({ ok: false, error: { code: 'stale-sketch-region' } }); });
+      expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+      const pad = before.document.features[1]; if (pad.kind !== 'extrude') throw new Error('Missing pad.');
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits: [trimEdit,
+        { kind: 'update-feature', feature: { ...pad, regionSelection: [reference] } }
+      ] })).toMatchObject({ ok: true }); });
+      const accepted = h.session.getSnapshot();
+      expect(inspectCadSketchRegions(accepted.document, 'sketch').items.map(cell => cell.reference)).toEqual([reference]);
+      expect(await inspect.execute({ expectedVersion: before.version, sketchId: 'sketch', trimAt })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+      await act(async () => h.cad().undo(accepted.version)); expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+      await act(async () => h.cad().redo(h.session.getSnapshot().version)); expect(h.session.getSnapshot().document).toBe(accepted.document);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('reads exact split proposal references through guarded public tools and repairs the consumer in one atomic split batch', async () => {
+    const h = await harness(); vi.useFakeTimers();
+    try {
+      const source = parseCadDocument({ ...createCadDocument('Split proposal', 'split-proposal'), schemaVersion: 2, parameters: { span: 20, retained: 7 }, features: [{
+        id: 'graph', kind: 'sketch', name: 'Outline', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+          points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [' span ', '0'] }, { id: 'c', position: [' span ', 10] }, { id: 'd', position: ['0', 10] }],
+          entities: ['a', 'b', 'c', 'd'].map((id, index) => ({ id: `edge-${id}`, kind: 'line', construction: false, startPointId: id, endPointId: ['b', 'c', 'd', 'a'][index] })), relations: []
+        }
+      }] });
+      const originalReference = inspectCadSketchRegions(source, 'graph').items[0].reference, consumer = { ...regionPad([originalReference]), sketchId: 'graph' };
+      await act(async () => h.session.replace({ ...source, features: [...source.features, consumer] }));
+      const before = h.session.getSnapshot(), original = JSON.stringify(before.document), tools = cadSiteTools(h.cad);
+      const inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference'), edit = tools.find(tool => tool.name === 'cad_edit_document');
+      if (!inspect || !read || !edit) throw new Error('Missing public region operations.');
+      const split = { kind: 'line', entityId: 'edge-a', parameter: .5, splitPointId: 'joint', newEntityId: 'a-new', supportRelationId: 'straight' } as const;
+      const proposal = { split, parameterValues: { span: 30 } };
+      const result = await inspect.execute({ expectedVersion: before.version, sketchId: 'graph', proposal }) as { ok: boolean; data: { items: { reference: CadSketchCellReference }[] } };
+      expect(result).toMatchObject({ ok: true, data: { proposed: true, items: [{ areaMm2: 300, boundaryLengthMm: 80 }] } });
+      const reference = result.data.items[0].reference; expect(reference).not.toEqual(originalReference);
+      let offset: number | null = 0; const chunks: string[] = [];
+      while (offset !== null) {
+        const chunk = await read.execute({ expectedVersion: before.version, sketchId: 'graph', boundaryProfileId: reference.boundaryProfileId, proposal, offset, length: 37 }) as { ok: boolean; data: { text: string; nextOffset: number | null } };
+        expect(chunk.ok).toBe(true); chunks.push(chunk.data.text); offset = chunk.data.nextOffset;
+      }
+      expect(chunks.join('')).toBe(JSON.stringify(reference)); expect(h.session.getSnapshot()).toBe(before);
+      expect(JSON.stringify(before.document)).toBe(original); expect(createSketchClient).not.toHaveBeenCalled();
+      await act(async () => h.session.setWorkflowOpen(true));
+      expect(await read.execute({ expectedVersion: before.version, sketchId: 'graph', boundaryProfileId: reference.boundaryProfileId, proposal })).toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
+      await act(async () => h.session.setWorkflowOpen(false));
+      const abort = new AbortController(), pending = inspect.execute({ expectedVersion: before.version, sketchId: 'graph', proposal }, { signal: abort.signal });
+      abort.abort(); expect(await pending).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+      sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+      const edits = [{ kind: 'set-parameter', name: 'span', value: 30 }, { kind: 'split-sketch-entity', sketchId: 'graph', split }] as const;
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits })).toMatchObject({ ok: false, error: { code: 'stale-sketch-region' } }); });
+      expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().version).toBe(before.version); expect(h.session.getSnapshot().canUndo).toBe(false);
+      await act(async () => { expect(await edit.execute({ expectedVersion: before.version, edits: [...edits, { kind: 'update-feature', feature: { ...consumer, regionSelection: [reference] } }] })).toMatchObject({ ok: true }); });
+      const accepted = h.session.getSnapshot();
+      expect(inspectCadSketchRegions(accepted.document, 'graph').items[0].reference).toEqual(reference);
+      expect(accepted.document.parameters).toEqual({ span: 30, retained: 7 });
+      expect(await read.execute({ expectedVersion: before.version, sketchId: 'graph', boundaryProfileId: reference.boundaryProfileId, proposal })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+      expect(await inspect.execute({ expectedVersion: accepted.version, sketchId: 'graph', proposal: { split: { ...split, splitPointId: 'joint-2', newEntityId: 'new-2', supportRelationId: 'straight-2' } } }))
+        .toMatchObject({ ok: false, error: { code: 'dependent-sketch-split', details: { relationIds: ['straight'], relationCount: 1, omittedRelationCount: 0 } } });
+      await act(async () => h.cad().undo(accepted.version)); expect(h.session.getSnapshot().document).toBe(before.document); expect(h.session.getSnapshot().canUndo).toBe(false);
+      await act(async () => h.cad().redo(h.session.getSnapshot().version)); expect(h.session.getSnapshot().document).toBe(accepted.document);
+    } finally { vi.useRealTimers(); }
+  });
+
   it('returns honest oversized-cell summaries and reads the exact complete signature in bounded public chunks', async () => {
     const h = await harness();
     const childIds = Array.from({ length: 1001 }, (_, index) => `child_${String(index).padStart(5, '0')}_${'x'.repeat(84)}`);
@@ -1209,7 +1591,7 @@ describe('CAD controller asynchronous guards', () => {
   it('captures bounded real-image data with CAD draft provenance and exposes only its local artifact receipt', async () => {
     const h = await harness(true); const snapshot = h.session.getSnapshot();
     let state: CadViewportState = { documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
-      selectedFeatureId: null, selectedProfileId: null, sketchId: null, curveId: null, selectedReferencePlane: null, awaitingSketchPlane: false, workflowOpen: false, busy: false, buildVersion: snapshot.version,
+      selectedFeatureId: null, selectedProfileId: null, selectedSketchGeometrySet: [], sketchId: null, curveId: null, selectedReferencePlane: null, awaitingSketchPlane: false, workflowOpen: false, busy: false, buildVersion: snapshot.version,
       buildState: 'ready', buildId: 'build-preview', pickMode: 'body', topologySelection: null,
       visibleBodyIds: [], view: { mode: 'solid', available: true, view: 'Top', gridVisible: true, zoom: 1, revision: 0 } };
     const capture: CadViewportCapture = { contentSource: 'cad-draft', documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
@@ -1235,7 +1617,7 @@ describe('CAD controller asynchronous guards', () => {
     await act(async () => h.session.replace(parseCadDocument({ ...createCadDocument('Many sections', 'many_sections'), features })));
     const snapshot = h.session.getSnapshot();
     const state: CadViewportState = { documentId: snapshot.document.id, documentVersion: snapshot.version, dirty: true,
-      selectedFeatureId: features[0].id, selectedProfileId: null, sketchId: null, curveId: null, selectedReferencePlane: null, awaitingSketchPlane: false, workflowOpen: false, busy: false,
+      selectedFeatureId: features[0].id, selectedProfileId: null, selectedSketchGeometrySet: [], sketchId: null, curveId: null, selectedReferencePlane: null, awaitingSketchPlane: false, workflowOpen: false, busy: false,
       buildVersion: null, buildState: 'idle', buildId: null, pickMode: 'body', topologySelection: null, visibleBodyIds: [],
       view: { mode: 'solid', available: true, view: 'Isometric', gridVisible: false, zoom: 1, revision: 1,
         referenceVersion: snapshot.version, referenceFeatureIds: Object.freeze(features.map(feature => feature.id).sort()), referencePlanes: cadReferencePlanes(prepareCadViewportReferences(features, {})) } };

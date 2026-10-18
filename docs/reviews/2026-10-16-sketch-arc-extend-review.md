@@ -1,0 +1,47 @@
+# Arc Extend acceptance
+
+Accepted local slice above `3cefc297`, following the [reviewed plan](2026-10-16-sketch-arc-extend-plan.md) and [integration assessment](2026-10-16-sketch-arc-extend-integration-assessment.md). Sketch mode and the overall local-only goal remain incomplete. No release bump, push, PR, merge or deployment.
+
+## Scope
+
+The existing Extend command now grows a line or an open arc to its nearest finite transverse boundary. Arc growth searches the unused circular gap from the explicit source end, preserves center/direction and permits minor-to-major growth while rejecting full-turn completion. The strict target gains only `kind:'arc'`; normalized original-source parameters and existing line receipts stay unchanged. The common preparer retains the strict old line entry point. The current preview renderer, endpoint allocation, private editing, complete-candidate preparation, region proposals and atomic consumer repair are reused.
+
+All old points, scalar strings and unrelated records remain exact. Actual boundary endpoints reuse their witnessed identities; interior contacts create detached numeric endpoints. Whole-arc owners and changed-endpoint drivers remain protected. No relation transfer, cutter rewrite, new native mapping, sampled geometry or precision change.
+
+## Evidence so far
+
+- Before implementation, the Canvas regression fails at the missing arc endpoint command (`tmp/sketch-arc-extend-ui-red.log`). All 46 Canvas cases pass once the generic query is wired (`tmp/sketch-arc-extend-ui-green.log`). The new case checks actual added/retained arcs, real endpoint identity, Escape followed by keyboard-owned Extend, the ordinary edit and exact source preservation. It adds no copy-only test.
+- The complete production journey independently fails on the same unavailable command on frozen `3cefc297` (`tmp/sketch-arc-extend-journey-red.log`). Original source, graph cell, native Pad and real private editor entry pass before that failure.
+- Four integration regressions reproduce the old line-only rejection (`tmp/sketch-arc-extend-integration-red.log`). The final four related suites pass 75 cases (`tmp/sketch-arc-extend-integration-final.log`), with scoped types clean. Both actual queried contact types match the complete native-prepared document, with Success/3 freedoms and no conflict/redundancy/independent issue IDs. A changed-endpoint X expression rejects without committing preceding parameter intent. Current one-cell inspection, proposed two-cell union, packed refs, constructor reduction and explicit consumer repair agree; stale selectors reject and Undo/Redo stay atomic.
+- The all-string endpoint variant reaches native redundancy during the preceding solve, before Extend. The regression uses one driven X component and free Y to exercise the intended detached-driver guard. The measured fixed limit remains in `tmp/sketch-arc-extend-driver-native-limit.log`; no constraints or solver settings were changed.
+- Shared UI control validation passes (`tmp/sketch-arc-extend-ui-standard.log`). The separately authorized two-candidate native preflight and existing arrangement union evidence are recorded in the integration assessment; they are not counted as new query acceptance.
+
+## Root acceptance
+
+All bounded domain and independent source review gates pass, including the three genuine defects detailed below. Six pure suites pass 54 cases; the final integrated Canvas/native preparation/region inspection run passes 75 cases across three suites (overlapping earlier owner runs). Full production build and TypeScript, 31 public documentation pages/98 files and source distributions, shared UI validation and icon integration pass. Logs: `tmp/sketch-arc-extend-{domain-final,integrated-final,build,ui-standard,icons}.log`.
+
+The new complete consumed-part journey passes in Chromium, followed by six related Trim/Extend/intersecting-area regressions. All seven pass in Firefox. Each starts with an actual native Pad, enters the real private sketch editor and exercises accepted history/save behavior. Logs: `tmp/sketch-arc-extend-{journey-first,chromium-regression,firefox-final}.log`.
+
+In native in-app browser tab 15, a quarter-circle segment with exact string coordinates and a 5 mm Pad grows to the finite endpoint `[-6,8]`. Pointer preview, Escape/Cancel, keyboard-owned Extend, deliberate two-cell union repair and Finish all work. Cancel leaves the accepted version and Pad unchanged. The accepted sketch changes only the arc's endpoint ID; all original point/scalar/entity records remain exact. Volume changes from 142.69908169872411 to 353.5743588970452 mm³, with one solid and no diagnostics. One Undo restores both original sketch and original Pad.
+
+Actual WebMCP inspection discovers the same outward endpoint, proposes the same two cells and packs exactly the human-selected reference. Extend alone rejects with `stale-sketch-region` without advancing the version. Extend plus explicit Pad repair commits once and produces the identical full sketch, Pad and volume. Its XY section at 2.5 mm contains one closed contour: one closure line and two true R10 arcs, with no internal old-chord wall. Native floating-point bounds/radii retain ordinary arithmetic residuals; no sampled replacement or tolerance change was made.
+
+Evidence: `tmp/sketch-arc-extend-native-proof.json`, `tmp/sketch-arc-extend-{preview,solid}.png`. The disposable draft was undone through its three global operations to zero features, empty parameters and no Undo, then closed without saving any user record. All verification processes are stopped. Existing nonblocking bundler dynamic-import notices remain outside this bounded slice.
+
+## Compatibility
+
+Saved output remains an existing schema-2 graph arc with one endpoint changed. Strict line fields and receipts remain supported; older operations can reject the additive arc kind. No storage migration or installed machine/post change. Existing conservative driver/overlap policies remain explicit; circle source extension, arbitrary release, joining and full-circle conversion remain unavailable. Retained radius-owner policy, ordinary Tangent, source reuse and sketch transforms remain separate unfinished work.
+
+## Independent actual-source review
+
+Reviewed the frozen working-tree implementation above `3cefc297`, including the new domain fixtures, generic boundary preview, keyboard entry, region query/proposal routing and production journey. This follows the earlier design review; it is an actual source review, without a duplicated test run, native probe or build.
+
+One concrete review finding was repaired. For the quarter arc `[10,0]`→`[0,10]`, a construction tangent sharing the current endpoint incorrectly blocked extension toward `[-6,8]`: transversality ran before excluding its proven zero-travel contact. The genuine failure is in `tmp/sketch-arc-extend-origin-red.log`. The repair excludes only an arc's proven current/opposite endpoint before testing eligible contact tangency. Positive-travel tangencies still reject, and the line path retains its prior policy.
+
+Root also reproduced a distinct near-opposite contact rounding onto the full-turn barrier (`tmp/sketch-arc-extend-barrier-red.log`). Final code rejects that contact rather than silently skipping it. A declared common line endpoint is excluded only with its analytic root-side proof, so a nearby second root cannot inherit its identity. The combined origin/barrier regressions pass in `tmp/sketch-arc-extend-barrier-origin-green.log`.
+
+The reviewed normalized source-parameter witness, finite cutter membership, unused-gap ordering, Cartesian minor/major certificate, center/opposite identity protection and exact constructor requery remain coherent. The strict old line entry point stays strict; generic line queries share its implementation. UI changes reuse the existing preview/submission owner, frame/cancellation checks and stable endpoint allocation. Shared preparation still checks the complete native candidate, and consumers still require deliberate area repair.
+
+The reopened ordinary radius-10 variant `[-8,6]` exposed a second ordering defect, now repaired. Its desired cutter contact is exactly `t=0`; the irrelevant old opposite endpoint instead returns `[10.000000000000004,-1.1102230246251565e-15]`, cutter `t=1.0000000000000002`. Strict finite membership rejected that root before its declared identity/root-side proof could exclude it. The repair moves only that ineligible-endpoint proof before cutter validation, retaining source-circle residual validation first. Every advertised contact still passes the original finite and tangent checks; no generic endpoint clamping, classifier change, projection or tolerance change was introduced. Exact source strings/identity survive the public query and constructor regression (`tmp/sketch-arc-extend-ordinary-{red,green}.log`; raw root evidence in `tmp/sketch-arc-extend-ordinary-probe.log`).
+
+Final frozen-source reinspection found no remaining actionable issue in this bounded slice. Read the final owner evidence: six pure suites, 54 cases pass (`tmp/sketch-arc-extend-domain-final.log`), with seven-path scoped types clean (`tmp/sketch-arc-extend-domain-types.log`). These are author-run results, alongside the integration evidence above. Production browser/native acceptance remains root-owned and pending here. This review does not certify every scale or remove the documented native driver limitations.

@@ -8,10 +8,11 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const callbacks = { onOpenProject: vi.fn(), onDeleteProject: vi.fn(), onExportUpidProject: vi.fn(), onSaveUpidProjectAs: vi.fn(), onShowRevisions: vi.fn(), onRenameProject: vi.fn() };
 async function showArchive(container: HTMLElement) {
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Filter projects"]')?.click());
   await act(async () => {
-    const select = container.querySelector<HTMLSelectElement>('[aria-label="Project state filter"]');
-    if (!select) throw new Error('Project state filter missing');
-    select.value = 'archived'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    const option = container.querySelector<HTMLButtonElement>('[aria-label="Project state filter"] button[value="archived"]');
+    if (!option) throw new Error('Archived project filter missing');
+    option.click();
   });
 }
 

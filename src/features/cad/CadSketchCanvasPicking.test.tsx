@@ -55,6 +55,268 @@ async function fixture(profiles: readonly CadSketchProfile[], overrides: Partial
 }
 
 describe('sketch canvas profile picking', () => {
+  const graphSketch = { id: 'snaps', name: 'Snap references', suppressed: false, kind: 'sketch' as const, plane: 'XY' as const, offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: ['anchor', 3.2] as const }, { id: 'b', position: [22.1, 3.2] as const }, { id: 'c', position: [12.1, 13.2] as const }],
+    entities: [{ id: 'line', kind: 'line' as const, startPointId: 'a', endPointId: 'b', construction: false }, { id: 'circle', kind: 'circle' as const, centerPointId: 'c', radius: 3.4, construction: false }], relations: []
+  } };
+  const inference = () => {
+    const checkbox = container.querySelector<HTMLInputElement>('[aria-label="Create coincident relations"]');
+    if (!checkbox) throw new Error('Missing relation inference control'); return checkbox;
+  };
+  const ambiguousSketch = () => ({ ...graphSketch, graph: { ...graphSketch.graph, points: [...graphSketch.graph.points,
+    { id: 'ghost-a', position: [2.1, 3.2] as const }, { id: 'ghost-b', position: [22.1, 3.2] as const }] } });
+  const snapChoice = (point: number) => {
+    const menu = document.querySelector('[aria-label="Choose snap target actions"]');
+    const item = [...menu?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []].find(button => new RegExp(`^Point ${point}(?:\\D|$)`).test(button.textContent ?? ''));
+    if (!item) throw new Error(`Missing snap choice ${point}.`); return item;
+  };
+  const legacySlot = { id: 'slot', name: 'Mounting slot', construction: false,
+    geometry: { kind: 'slot' as const, x: 2.1, y: 3.2, length: 12, width: 4, angle: 30 } };
+  const profileChoice = (name: string) => {
+    const item = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="Choose snap target actions"] [role="menuitem"]')].find(button => button.textContent?.startsWith(name));
+    if (!item) throw new Error(`Missing profile snap ${name}.`); return item;
+  };
+  it('draws a detached Path from a legacy-only slot center and retains its numeric start after the source moves', async () => {
+    const onAddPath = vi.fn(), h = await fixture([legacySlot], { tool: 'path', onAddPath });
+    await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
+    const hint = container.querySelector('[data-cad-sketch-snap-kind="profile-position"]');
+    expect(hint?.getAttribute('aria-label')).toMatch(/Mounting slot.*Center.*No relation/);
+    expect(container.querySelector('[data-cad-drawing-snap-profile="slot"]')).not.toBeNull();
+    await h.click(2.2, 3.3);
+    await h.render({ sketch: { id: 'sketch', name: 'Sketch', suppressed: false, kind: 'sketch', plane: 'XY', offset: 0,
+      profiles: [{ ...legacySlot, geometry: { ...legacySlot.geometry, x: 42.1 } }] } });
+    await h.click(30, 30, h.svg, { ctrlKey: true });
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]')!.click());
+    const draft = onAddPath.mock.calls[0]?.[0];
+    expect(draft).toMatchObject({ start: [2.1, 3.2], segments: [{ kind: 'line', end: [expect.closeTo(30, 10), expect.closeTo(30, 10)] }] });
+    expect(draft).not.toHaveProperty('startPointId'); expect(draft.segments[0]).not.toHaveProperty('endPointId');
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+  });
+  it('keeps legacy positions detached with inference enabled and preserves modifier bypass', async () => {
+    const onAddFreshSketch = vi.fn(), h = await fixture([legacySlot], { tool: 'rectangle', onAddFreshSketch });
+    await act(async () => inference().click()); await h.click(2.2, 3.3);
+    expect(container.querySelector('[data-cad-sketch-attachment]')).toBeNull();
+    await h.click(22.1, 13.2, h.svg, { ctrlKey: true });
+    expect(onAddFreshSketch).toHaveBeenNthCalledWith(1, { kind: 'rectangle', first: { kind: 'position', point: [2.1, 3.2] },
+      opposite: { kind: 'position', point: [expect.closeTo(22.1, 10), expect.closeTo(13.2, 10)] } }, expect.any(AbortSignal));
+    await h.click(2.2, 3.3, h.svg, { ctrlKey: true }); await h.click(22.2, 13.3, h.svg, { ctrlKey: true });
+    expect(onAddFreshSketch.mock.calls[1][0].first).toEqual({ kind: 'position', point: [expect.closeTo(2.2, 10), expect.closeTo(3.3, 10)] });
+    expect(h.added).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+  });
+  it('chooses among graph and legacy owners at the same position without turning the chosen profile into a graph join', async () => {
+    const onAddPath = vi.fn(), source = { ...graphSketch, profiles: [legacySlot, { ...circle('bore', 2.1, 3.2, 4), name: 'Pilot bore' }] };
+    const h = await fixture([], { sketch: source, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    await h.click(2.2, 3.3); expect(snapChoice(1)).toBeDefined(); expect(profileChoice('Pilot bore')).toBeDefined();
+    const slot = profileChoice('Mounting slot'); await act(async () => slot.focus());
+    expect(container.querySelector('[data-cad-drawing-snap-profile="slot"]')).not.toBeNull();
+    expect(container.querySelector('[data-cad-sketch-snap-kind="profile-position"]')?.getAttribute('aria-label')).toMatch(/No relation/);
+    expect(h.selected).not.toHaveBeenCalled(); await act(async () => slot.click());
+    await h.click(40, 30, h.svg, { ctrlKey: true }); await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]')!.click());
+    expect(onAddPath.mock.calls[0][0]).toMatchObject({ start: [2.1, 3.2] }); expect(onAddPath.mock.calls[0][0]).not.toHaveProperty('startPointId');
+    expect(h.selected).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+  });
+  it('invalidates legacy-only ambiguous ownership on source replacement and dismisses outside without placing', async () => {
+    const profiles = [legacySlot, { ...circle('bore', 2.1, 3.2, 4), name: 'Pilot bore' }], onAddPath = vi.fn();
+    const h = await fixture(profiles, { tool: 'path', onAddPath, documentVersion: 'one' });
+    await h.click(2.2, 3.3); const stale = profileChoice('Mounting slot');
+    await h.render({ documentVersion: 'two' }); await act(async () => stale.click());
+    expect(h.pending).toHaveBeenLastCalledWith(false); expect(container.querySelector('[aria-label="Finish path"]')).toBeNull();
+    await h.click(2.2, 3.3); expect(profileChoice('Pilot bore')).toBeDefined();
+    await h.pointer('pointerdown', { ...h.position(50, 50), button: 0, buttons: 1 }); await h.click(50, 50);
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull(); expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect(container.querySelector('[aria-label="Finish path"]')).toBeNull(); expect(onAddPath).not.toHaveBeenCalled();
+  });
+  it('requires the chosen exact Path identity and preserves its first point when an ambiguous endpoint is dismissed', async () => {
+    const onAddPath = vi.fn(), source = ambiguousSketch(), h = await fixture([], { sketch: source, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    const before = h.frame(); await h.click(2.2, 3.3);
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull(); expect(h.pending).toHaveBeenLastCalledWith(true);
+    // Workbench locks camera navigation while this canvas owns a pending drawing.
+    await h.render({ viewLocked: true });
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull();
+    expect(h.frame()).not.toBe(before); expect(container.querySelector('[aria-label="Finish path"]')).toBeNull();
+    await act(async () => snapChoice(1).focus()); expect(container.querySelector('[data-cad-drawing-snap-owner="line"]')).not.toBeNull();
+    await act(async () => snapChoice(4).focus()); expect(container.querySelector('[data-cad-sketch-snap="ghost-a"]')).not.toBeNull();
+    await act(async () => snapChoice(4).click()); await h.click(22.2, 3.3);
+    await act(async () => snapChoice(2).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(document.activeElement).toBe(h.svg); expect(h.pending).toHaveBeenLastCalledWith(true); expect(onAddPath).not.toHaveBeenCalled();
+    await h.click(22.2, 3.3); await act(async () => snapChoice(2).click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]')!.click());
+    expect(onAddPath).toHaveBeenCalledWith(expect.objectContaining({ start: [2.1, 3.2], startPointId: 'ghost-a', segments: [
+      expect.objectContaining({ kind: 'line', end: [22.1, 3.2], endPointId: 'b' })
+    ] }), false, expect.any(AbortSignal)); expect(h.error).not.toHaveBeenCalled();
+  });
+
+  it('drops an ambiguous choice after source replacement or actual SVG-frame movement without placing or outside-click fallback', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), documentVersion: 'one', parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    await h.click(2.2, 3.3); expect(snapChoice(1)).toBeDefined();
+    await h.render({ sketch: ambiguousSketch(), documentVersion: 'two' });
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull(); expect(h.pending).toHaveBeenLastCalledWith(false);
+    await h.click(2.2, 3.3); const held = snapChoice(1);
+    Object.assign(h.svg, { getBoundingClientRect: () => ({ left: 30, top: 20, width: 800, height: 600 }) });
+    await act(async () => held.click()); expect(container.querySelector('[aria-label="Finish path"]')).toBeNull();
+    Object.assign(h.svg, { getBoundingClientRect: () => ({ left: 10, top: 20, width: 800, height: 600 }) });
+    await h.click(2.2, 3.3);
+    await h.pointer('pointerdown', { ...h.position(50, 50), button: 0, buttons: 1 }); await h.click(50, 50);
+    expect(container.querySelector('[aria-label="Finish path"]')).toBeNull(); expect(onAddPath).not.toHaveBeenCalled();
+    expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
+
+  it('keeps chosen Circle centers opt-in, radius choices position-only and Ctrl acceptance independent', async () => {
+    const onAddFreshSketch = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'circle', onAddFreshSketch });
+    await h.click(2.2, 3.3); await act(async () => snapChoice(4).click());
+    await h.click(22.2, 3.3); await act(async () => snapChoice(2).click());
+    expect(onAddFreshSketch).toHaveBeenNthCalledWith(1, { kind: 'circle', center: { kind: 'position', point: [2.1, 3.2] }, radius: 20 }, expect.any(AbortSignal));
+    await act(async () => inference().click());
+    await h.click(2.2, 3.3); await act(async () => snapChoice(1).click());
+    await h.click(22.2, 3.3); await act(async () => snapChoice(5).click());
+    expect(onAddFreshSketch).toHaveBeenNthCalledWith(2, { kind: 'circle', center: { kind: 'coincident', point: [2.1, 3.2], sourcePointId: 'a', relationId: expect.any(String) }, radius: 20 }, expect.any(AbortSignal));
+    await h.click(2.2, 3.3, h.svg, { ctrlKey: true }); expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull();
+    await h.click(7.2, 3.3, h.svg, { ctrlKey: true });
+    expect(onAddFreshSketch).toHaveBeenNthCalledWith(3, { kind: 'circle', center: { kind: 'position', point: [expect.closeTo(2.2, 10), expect.closeTo(3.3, 10)] }, radius: expect.closeTo(5, 10) }, expect.any(AbortSignal));
+  });
+
+  it('pages every ambiguous point with bounded rendering and retains canvas focus ownership through dismissal', async () => {
+    const source = { ...graphSketch, graph: { points: Array.from({ length: 30 }, (_, index) => ({ id: `point_${String(index + 1).padStart(2, '0')}`, position: [2.1, 3.2] as const })), entities: [], relations: [] } };
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: source, tool: 'path', onAddPath }); await h.click(2.2, 3.3);
+    const next = () => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === 'Next candidates')!;
+    expect(document.querySelectorAll('[role="menuitem"]').length).toBeLessThanOrEqual(14);
+    await act(async () => next().click()); expect(document.activeElement).toBe(snapChoice(13));
+    await act(async () => next().click()); expect(document.activeElement).toBe(snapChoice(25));
+    await act(async () => snapChoice(30).click()); expect(document.activeElement).toBe(h.svg);
+    await h.click(30, 30); await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]')!.click());
+    expect(onAddPath.mock.calls[0][0]).toMatchObject({ startPointId: 'point_30', start: [2.1, 3.2] });
+  });
+  it('retains deliberate first/opposite attachment roles while drawing a rectangle in reverse', async () => {
+    const onAddFreshSketch = vi.fn(), original = structuredClone(graphSketch);
+    const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'rectangle', onAddFreshSketch });
+    expect(inference().checked).toBe(false); await act(async () => inference().click());
+    await h.click(12.2, 13.3); expect(container.querySelector('[data-cad-sketch-attachment="c"]')).not.toBeNull();
+    await h.click(2.2, 3.3);
+    expect(onAddFreshSketch).toHaveBeenCalledWith({ kind: 'rectangle',
+      first: { kind: 'coincident', point: [12.1, 13.2], sourcePointId: 'c', relationId: expect.any(String) },
+      opposite: { kind: 'coincident', point: [2.1, 3.2], sourcePointId: 'a', relationId: expect.any(String) }
+    }, expect.any(AbortSignal));
+    expect(h.added).not.toHaveBeenCalled(); expect(graphSketch).toEqual(original);
+    expect(onAddFreshSketch.mock.calls[0][0].first.relationId).not.toBe(onAddFreshSketch.mock.calls[0][0].opposite.relationId);
+  });
+  it('applies inference only to future picks and explicitly clears pending links when switched off', async () => {
+    const onAddFreshSketch = vi.fn();
+    const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'polygon', onAddFreshSketch });
+    await h.click(2.2, 3.3); await act(async () => inference().click()); await h.click(12.2, 13.3);
+    expect(container.querySelector('[data-cad-sketch-attachment="a"]')).toBeNull(); expect(container.querySelector('[data-cad-sketch-attachment="c"]')).not.toBeNull();
+    await act(async () => inference().click()); expect(container.querySelector('[data-cad-sketch-attachment="c"]')).toBeNull();
+    await h.click(22.2, 3.3); await h.click(2.2, 3.3);
+    expect(onAddFreshSketch).toHaveBeenCalledWith({ kind: 'polygon', vertices: [
+      { kind: 'position', point: [2.1, 3.2] }, { kind: 'position', point: [12.1, 13.2] }, { kind: 'position', point: [22.1, 3.2] }
+    ] }, expect.any(AbortSignal)); expect(h.added).not.toHaveBeenCalled();
+  });
+  it('attaches only a circle center while radius and midpoint picks remain position-only', async () => {
+    const onAddFreshSketch = vi.fn(); const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'circle', onAddFreshSketch });
+    await act(async () => inference().click()); await h.click(12.2, 13.3); await h.click(2.2, 3.3);
+    expect(onAddFreshSketch).toHaveBeenNthCalledWith(1, { kind: 'circle',
+      center: { kind: 'coincident', point: [12.1, 13.2], sourcePointId: 'c', relationId: expect.any(String) }, radius: Math.sqrt(200)
+    }, expect.any(AbortSignal));
+    await h.click(12.2, 3.3); await h.click(17.1, 3.2, h.svg, { ctrlKey: true });
+    expect(onAddFreshSketch).toHaveBeenNthCalledWith(2, { kind: 'circle', center: { kind: 'position', point: [12.1, 3.2] }, radius: expect.closeTo(5, 10) }, expect.any(AbortSignal));
+  });
+  it('refuses to silently drop a pending attachment if the fresh editor becomes unavailable', async () => {
+    const onAddFreshSketch = vi.fn(); const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'rectangle', onAddFreshSketch });
+    await act(async () => inference().click()); await h.click(12.2, 13.3); await h.render({ onAddFreshSketch: undefined }); await h.click(2.2, 3.3);
+    expect(onAddFreshSketch).not.toHaveBeenCalled(); expect(h.added).not.toHaveBeenCalled(); expect(h.error).toHaveBeenCalledOnce();
+    expect(container.querySelector('[data-cad-sketch-attachment="c"]')).not.toBeNull();
+  });
+  it.each(['sketch', 'version', 'parameters'] as const)('pins an earlier attached pick across a same-position %s replacement until its links are released', async changed => {
+    const onAddFreshSketch = vi.fn();
+    const h = await fixture([], { sketch: graphSketch, documentVersion: 'one', parameters: { anchor: 2.1 }, tool: 'circle', onAddFreshSketch });
+    await act(async () => inference().click()); await h.click(2.2, 3.3);
+    await h.render(changed === 'sketch' ? { sketch: structuredClone(graphSketch) } : changed === 'version' ? { documentVersion: 'two' } : { parameters: { anchor: 2.1 } });
+    await h.click(12.2, 13.3);
+    expect(onAddFreshSketch).not.toHaveBeenCalled(); expect(h.added).not.toHaveBeenCalled(); expect(h.error).toHaveBeenCalledOnce();
+    expect(container.querySelector('[data-cad-sketch-attachment="a"]')).not.toBeNull();
+    await act(async () => inference().click()); await h.click(12.2, 13.3);
+    expect(onAddFreshSketch).toHaveBeenCalledOnce();
+    expect(onAddFreshSketch.mock.calls[0][0]).toMatchObject({ kind: 'circle', center: { kind: 'position', point: [2.1, 3.2] } });
+  });
+  it('accepts its own deferred attachment result after the accepted source renders without reporting stale ownership', async () => {
+    let resolve: () => void = () => { throw new Error('Pending append missing.'); };
+    const onAddFreshSketch = vi.fn(() => new Promise<void>(accept => { resolve = accept; }));
+    const h = await fixture([], { sketch: graphSketch, documentVersion: 'one', parameters: { anchor: 2.1 }, tool: 'circle', onAddFreshSketch });
+    await act(async () => inference().click()); await h.click(2.2, 3.3); await h.click(12.2, 13.3);
+    expect(onAddFreshSketch).toHaveBeenCalledOnce();
+    await h.render({ sketch: structuredClone(graphSketch), documentVersion: 'two' });
+    await act(async () => resolve());
+    expect(h.error).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect(container.querySelector('[data-cad-sketch-attachment]')).toBeNull();
+  });
+  it('places rectangle corners on actual endpoint and center targets without borrowing graph identities', async () => {
+    const original = structuredClone(graphSketch);
+    const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'rectangle' });
+    await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).not.toBeNull();
+    await h.click(2.2, 3.3); await h.click(12.2, 13.3);
+    expect(h.added).toHaveBeenCalledWith({ kind: 'rectangle', x: 2.1, y: 3.2, width: 10, height: 10, cornerRadius: 0 }, expect.any(AbortSignal));
+    expect(graphSketch).toEqual(original); expect(h.error).not.toHaveBeenCalled();
+  });
+  it('uses the analytic line midpoint for a circle center and suppresses magnets on the committing click', async () => {
+    const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'circle' });
+    await h.pointer('pointermove', { ...h.position(12.2, 3.3), buttons: 0 });
+    expect(container.querySelector('[data-cad-sketch-snap-kind="midpoint"]')).not.toBeNull();
+    await h.click(12.2, 3.3); await h.click(17.1, 3.2, h.svg, { ctrlKey: true });
+    expect(h.added).toHaveBeenCalledWith(expect.objectContaining({ kind: 'circle', x: 12.1, y: 3.2, radius: expect.closeTo(5, 10) }), expect.any(AbortSignal));
+  });
+  it.each(['ctrlKey', 'metaKey'] as const)('temporarily suppresses geometry and grid on %s without changing the stored setting', async modifier => {
+    const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'circle' });
+    await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).not.toBeNull();
+    await h.click(2.2, 3.3, h.svg, { [modifier]: true }); await h.click(7.2, 3.3, h.svg, { [modifier]: true });
+    expect(h.added).toHaveBeenCalledWith(expect.objectContaining({ kind: 'circle', x: expect.closeTo(2.2, 10), y: expect.closeTo(3.3, 10), radius: expect.closeTo(5, 10) }), expect.any(AbortSignal));
+    expect(container.querySelector('[aria-label="Toggle snapping"]')?.getAttribute('aria-pressed')).toBe('true');
+  });
+  it('updates a stationary inference on modifier changes and invalidates captures when its visible meaning changes', async () => {
+    const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'rectangle' });
+    await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 }); const before = h.frame();
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).not.toBeNull();
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control', ctrlKey: true, bubbles: true })));
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).toBeNull(); expect(h.frame()).not.toBe(before);
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Control', bubbles: true })));
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).not.toBeNull();
+    await act(async () => window.dispatchEvent(new Event('blur')));
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).toBeNull(); expect(h.added).not.toHaveBeenCalled();
+  });
+  it('closes a polygon only on its acquired start, without swallowing a nearby fourth vertex', async () => {
+    const h = await fixture([], { tool: 'polygon' });
+    // At the default view 7 pixels is inside the old span-based closure zone.
+    await h.click(0, 0); await h.click(30, 0); await h.click(30, 30);
+    const span = Number(h.svg.getAttribute('viewBox')!.split(' ')[3]);
+    await h.click(7 * span / 600, 0, h.svg, { ctrlKey: true }); expect(h.added).not.toHaveBeenCalled();
+    await h.click(0, 0);
+    expect(h.added).toHaveBeenCalledWith({ kind: 'polygon', points: [[0, 0], [30, 0], [30, 30], [expect.closeTo(7 * span / 600, 10), 0]] }, expect.any(AbortSignal));
+  });
+  it('clears a borrowed point hint when the accepted source changes before keyboard placement', async () => {
+    const onAddPath = vi.fn(); const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).not.toBeNull();
+    await h.render({ parameters: { anchor: 100 } });
+    expect(container.querySelector('[data-cad-sketch-snap="a"]')).toBeNull();
+    await act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })));
+    await h.click(30, 30); const finish = container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]');
+    if (!finish) throw new Error('Missing Finish path'); await act(async () => finish.click());
+    expect(onAddPath.mock.calls[0][0]).not.toHaveProperty('startPointId'); expect(h.error).not.toHaveBeenCalled();
+  });
+  it('retains an acquired off-grid Path endpoint after placement instead of inventing a grid segment on repeated Space', async () => {
+    const onAddPath = vi.fn(); const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
+    const key = async (value: string) => act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })));
+    await key(' '); await key(' ');
+    expect(h.error).toHaveBeenCalledOnce();
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]')?.disabled).toBe(true);
+    await key('ArrowRight'); await key(' ');
+    const finish = container.querySelector<HTMLButtonElement>('[aria-label="Finish path"]'); if (!finish) throw new Error('Missing Finish path.');
+    await act(async () => finish.click());
+    expect(onAddPath).toHaveBeenCalledOnce();
+    expect(onAddPath.mock.calls[0][0]).toMatchObject({ start: [2.1, 3.2], startPointId: 'a', segments: [{ kind: 'line', end: [7.1, 3.2] }] });
+    expect(onAddPath.mock.calls[0][0].segments[0]).not.toHaveProperty('endPointId');
+  });
   it('keeps pointer focus on the canvas while allowing profile keyboard activation', async () => {
     const h = await fixture([circle('circle', 0, 0, 10)]);
     const group = container.querySelector('[aria-label="Select circle profile"]');
@@ -114,7 +376,7 @@ describe('sketch canvas profile picking', () => {
     const h = await fixture([], { tool: 'rectangle' });
     await h.click(2, 2); expect(h.pending).toHaveBeenLastCalledWith(true);
     await h.click(12, 12);
-    expect(h.added).toHaveBeenCalledWith({ kind: 'rectangle', x: 0, y: 0, width: 10, height: 10, cornerRadius: 0 });
+    expect(h.added).toHaveBeenCalledWith({ kind: 'rectangle', x: 0, y: 0, width: 10, height: 10, cornerRadius: 0 }, expect.any(AbortSignal));
     expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.selected).not.toHaveBeenCalled();
     await h.render({ tool: 'select' }); await h.click(2, 2);
     expect(h.added).toHaveBeenCalledTimes(1); expect(h.selected).toHaveBeenLastCalledWith(null);

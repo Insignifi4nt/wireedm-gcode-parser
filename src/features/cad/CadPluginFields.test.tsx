@@ -177,7 +177,7 @@ describe('correlated plugin configuration', () => {
     const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Apply');
     expect(button?.disabled).toBe(true); expect(container.querySelector('[role="alert"]')?.textContent).toContain('integer');
     await click('Apply'); expect(apply).not.toHaveBeenCalled(); expect(profile.geometry.inputs.teeth).toBe(18);
-    await change('Teeth', '24'); expect(button?.disabled).toBe(false); await click('Apply'); expect(apply).toHaveBeenCalledWith(expect.objectContaining({ geometry: expect.objectContaining({ inputs: expect.objectContaining({ teeth: '24' }) }) }), {});
+    await change('Teeth', '24'); expect(button?.disabled).toBe(false); await click('Apply'); expect(apply).toHaveBeenCalledWith(expect.objectContaining({ geometry: expect.objectContaining({ inputs: expect.objectContaining({ teeth: '24' }) }) }), {}, expect.any(AbortSignal));
   });
   it('links focus and contextual diagrams to the actual current gear dimensions without editing inputs', async () => {
     const inspected = vi.fn(), update = vi.fn(), profile = createCadPluginProfile(CAD_GEAR_V2_PLUGIN);

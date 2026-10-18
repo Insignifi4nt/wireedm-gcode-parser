@@ -10,6 +10,12 @@ import type { CadFeature, CadPlane, CadSketchFeature } from '../../../domain/cad
 import { inspectCadSketchRegions } from '../../../domain/cad/cadSketchRegionInspection';
 import { CadSession } from '../cadSession';
 import { refs, sketch, pad, part, stock, pocket } from '../../../domain/cad/__tests__/cadSketchRegionFixtures';
+import { createCadDocument } from '@/domain/cad/cadSchema';
+import { measureCadSketch } from '@/domain/cad/cadMeasurements';
+import { cadSketchToDxf } from '@/domain/cad/cadCam';
+import { parseDxf } from '@/domain/dxf/parseDxf';
+import { resolveCadSketchRegions, cadProfileToEntities } from '@/domain/cad/cadSketchGeometry';
+import { dividedRectangleSketch, graphCellSelectionAt, intersectingCircleSketch, lensAreaMm2 } from '@/domain/cad/__tests__/cadIntersectingCellFixtures';
 
 beforeAll(async () => {
   const wasmBinary = await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));
@@ -17,6 +23,78 @@ beforeAll(async () => {
 }, 60_000);
 
 describe('native selected-cell input', () => {
+  it.each([false, true])('extrudes only the exact graph lens with circular walls, selected hole=%s', hole => {
+    const source = intersectingCircleSketch(hole), parameters = { separation: 6 }, area = lensAreaMm2 - (hole ? Math.PI : 0);
+    const selection = graphCellSelectionAt(source, parameters, [[3, hole ? 2 : 0]]);
+    const document = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters, features: [source,
+      { id: 'lens-pad', kind: 'extrude', name: 'Lens pad', suppressed: false, sketchId: source.id,
+        distance: 5, symmetric: false, operation: 'new', targetId: null, regionSelection: selection }] });
+    const exact = JSON.stringify(document), model = buildCadKernelModel(document);
+    try {
+      expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes).toHaveLength(1);
+      expect(model.result.meshes[0].volume).toBeCloseTo(area * 5, 6); expect(model.result.meshes[0].solidCount).toBe(1);
+      const faces = model.inspectTopology({ bodyId: 'lens-pad', expectedBuildId: model.result.buildId, selection: { kind: 'page', topology: 'face', offset: 0, limit: 100 } }).descriptors;
+      const caps = faces.filter(face => face.kind === 'face' && face.surfaceType === 'plane');
+      const cylinders = faces.filter(face => face.kind === 'face' && face.surfaceType === 'cylinder');
+      expect(caps.reduce((sum, face) => sum + face.area, 0)).toBeCloseTo(area * 2, 7);
+      expect(caps.length + cylinders.length).toBe(faces.length);
+      for (const radius of hole ? [1, 5] : [5]) expect(cylinders.some(face => Math.abs(face.radius - radius) < 1e-12)).toBe(true);
+      for (const face of cylinders) expect(Math.min(...(hole ? [1, 5] : [5]).map(radius => Math.abs(face.radius - radius)))).toBeLessThan(1e-12);
+      expect(cylinders.reduce((sum, face) => sum + face.area, 0)).toBeCloseTo((20 * Math.acos(.6) + (hole ? 2 * Math.PI : 0)) * 5, 6);
+      expect(model.section({ bodyId: 'lens-pad', plane: 'XY', offset: 2 }).contourCount).toBe(hole ? 2 : 1);
+      expect(JSON.stringify(document)).toBe(exact);
+    } finally { model.dispose(); }
+  });
+
+  it('unions both divider cells before native extrusion without an internal divider wall', () => {
+    const source = dividedRectangleSketch(), selection = graphCellSelectionAt(source, {}, [[2, 5], [8, 5]]);
+    const regions = resolveCadSketchRegions(source, {}, selection); expect(regions).toHaveLength(1);
+    expect(regions[0].voids).toEqual([]);
+    expect(cadProfileToEntities(regions[0].boundary.geometry).some(edge => edge.type === 'line' && edge.start.x === 5 && edge.end.x === 5)).toBe(false);
+    const document = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [source,
+      { id: 'divided-pad', kind: 'extrude', name: 'United pad', suppressed: false, sketchId: source.id,
+        distance: 5, symmetric: false, operation: 'new', targetId: null, regionSelection: selection }] });
+    const exact = JSON.stringify(document), model = buildCadKernelModel(document);
+    try {
+      expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes).toHaveLength(1);
+      expect(model.result.meshes[0].volume).toBeCloseTo(500, 7); expect(model.result.meshes[0].solidCount).toBe(1);
+      expect(model.section({ bodyId: 'divided-pad', plane: 'XY', offset: 2 }).contourCount).toBe(1);
+      const faces = model.inspectTopology({ bodyId: 'divided-pad', expectedBuildId: model.result.buildId, selection: { kind: 'page', topology: 'face', offset: 0, limit: 100 } }).descriptors;
+      const planes = faces.filter(face => face.kind === 'face' && face.surfaceType === 'plane');
+      expect(planes.reduce((sum, face) => sum + face.area, 0)).toBeCloseTo(400, 7);
+      expect(planes.some(face => Math.abs(face.normal[0]) > .99 && Math.abs(Math.abs(face.offset) - 5) < 1e-7)).toBe(false);
+      expect(JSON.stringify(document)).toBe(exact);
+    } finally { model.dispose(); }
+  });
+  it('carries declared line/major-arc joints through exact material, DXF and STEP without changing source', async () => {
+    const document = parseCadDocument({ ...createCadDocument('Declared arc joint'), schemaVersion: 2, parameters: { radius: 5 }, features: [
+      { id: 'sketch', name: 'Joined supports', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'o', position: [0, 0] }, { id: 'a', position: [' radius ', 0] }, { id: 'b', position: [0, 'radius'] },
+          { id: 'a2', position: ['radius', 0] }, { id: 'b2', position: [0, ' radius '] }],
+        entities: [{ id: 'arc', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 'a', endPointId: 'b', direction: 'cw' },
+          { id: 'chord', kind: 'line', construction: false, startPointId: 'b2', endPointId: 'a2' }],
+        relations: [{ id: 'join-a', kind: 'coincident', pointIds: ['a', 'a2'] }, { id: 'join-b', kind: 'coincident', pointIds: ['b', 'b2'] }] } },
+      { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false, sketchId: 'sketch', distance: ' 5e0 ', symmetric: false, operation: 'new', targetId: null },
+    ] });
+    const before = JSON.stringify(document), expectedArea = 18.75 * Math.PI + 12.5;
+    expect(measureCadSketch(document, 'sketch').materialAreaMm2).toBeCloseTo(expectedArea, 10);
+    const dxf = parseDxf(cadSketchToDxf(document, 'sketch'));
+    expect(dxf.entities).toHaveLength(2);
+    expect(dxf.entities.find(entity => entity.type === 'arc')).toMatchObject({ center: { x: 0, y: 0 }, radius: 5 });
+    const exportedArc = dxf.entities.find(entity => entity.type === 'arc');
+    if (exportedArc?.type !== 'arc') throw new Error('Exported arc missing');
+    expect(((exportedArc.endAngle - exportedArc.startAngle) % 360 + 360) % 360).toBe(270);
+    // The existing material exporter normalizes the outer contour winding.
+    expect(dxf.entities.find(entity => entity.type === 'line')).toMatchObject({ start: { x: 5, y: 0 }, end: { x: 0, y: 5 } });
+    const model = buildCadKernelModel(document);
+    try {
+      expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes).toHaveLength(1);
+      expect(model.result.meshes[0].volume).toBeCloseTo(expectedArea * 5, 7);
+      const imported = prepareCadSolidImport({ format: 'step', fileName: 'declared-joints.step', encoding: 'utf8', data: await model.export('step').text() });
+      expect(imported.volume).toBeCloseTo(expectedArea * 5, 6); expect(imported.solidCount).toBe(1);
+      expect(JSON.stringify(document)).toBe(before);
+    } finally { model.dispose(); }
+  });
   it('builds independently expected material after one shared-driver source and reference repair batch', () => {
     const first: CadSketchFeature = { ...sketch(), profiles: sketch().profiles.map(profile => profile.id === 'bore' && profile.geometry.kind === 'circle'
       ? { ...profile, geometry: { ...profile.geometry, x: 'location' } } : profile) };

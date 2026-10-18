@@ -1,14 +1,165 @@
+import { placementPart, dPlacement } from '@/domain/cad/__tests__/cadSketchPlacementFixtures';
 import { describe, expect, it, vi } from 'vitest';
 import { Value } from '@sinclair/typebox/value';
-import { CadDocumentSchema, CadFeatureSchema } from '@/domain/cad/cadSchema';
-import { CadEditSchema } from '@/domain/cad/cadOperations';
-import { CadToolEditEnvelope } from './cadToolSchemas';
+import { CadDocumentSchema, CadFeatureSchema, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import { applyCadEdits, CadEditSchema } from '@/domain/cad/cadOperations';
+import { CadToolEditDefinitions, CadToolEditEnvelope } from './cadToolSchemas';
 import { cadSiteTools } from './cadSiteTools';
 import type { CadController } from './useCadController';
 import type { CadBuildResult } from '@/domain/cad/cadDocument';
 import { refs as regionRefs, pad as regionPad, pocket as regionPocket, sketch as regionSketch } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
+import { CadSketchSplitDependencyError } from '@/domain/cad/cadSketchSplit';
+import { CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '@/domain/cad/cadSketchTrimExtend';
+import { endTrim, middleTrim } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
+import { lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
+import { CadSession } from './cadSession';
+
+it('offers explicit graph-cell inspection and unique numeric receipt reads without accepting mixed legacy targets', async () => {
+  const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid graph receipt reached operations'); });
+  const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+  if (!inspect || !read) throw new Error('Missing region tools');
+  expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', sketchId: 'sketch', mode: 'graph-cells' })).toBe(true);
+  expect(Value.Check(read.inputSchema, { expectedVersion: 'current', sketchId: 'sketch', cellIds: [0, 2], proposal: { parameterValues: { separation: 7 } } })).toBe(true);
+  for (const cellIds of [[], [0, 0], [-1], [.5], [Infinity], ['0']])
+    expect(await read.execute({ expectedVersion: 'current', sketchId: 'sketch', cellIds })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+  expect(await read.execute({ expectedVersion: 'current', sketchId: 'sketch', cellIds: [0], boundaryProfileId: 'old' })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+  expect(await inspect.execute({ expectedVersion: 'current', sketchId: 'sketch', mode: 'guess' })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+  expect(controller).not.toHaveBeenCalled();
+});
 
 describe('CAD tool argument boundary and discovery', () => {
+  it('discovers strict reference creation and typed source witnesses without accepting caller snapshots', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid reference reached controller.'); });
+    const edit = cadSiteTools(controller).find(tool => tool.name === 'cad_edit_document');
+    const discovery = cadSiteTools(() => ({} as CadController)).find(tool => tool.name === 'cad_describe_edits');
+    if (!edit || !discovery) throw new Error('Edit tools missing.');
+    const request = { kind: 'use-sketch-entity', sketchId: 'target', sourceSketchId: 'layout', sourceEntityId: 'line', idPrefix: 'ref' };
+    expect(await discovery.execute({ kind: request.kind })).toMatchObject({ ok: true, data: { schema: { additionalProperties: false,
+      required: expect.arrayContaining(['sketchId', 'sourceSketchId', 'sourceEntityId', 'idPrefix']) } } });
+    expect(Value.Check(CadEditSchema, request)).toBe(true);
+    const relation = { id: 'ref_reference', kind: 'external-reference', entityId: 'ref_e0', sourceSketchId: 'layout',
+      source: { kind: 'line', entityId: 'line', startPointId: 'a', endPointId: 'b' } };
+    expect(Value.Check(CadEditSchema, { kind: 'set-sketch-relation', sketchId: 'target', relation })).toBe(true);
+    for (const invalid of [{ ...request, position: [0, 10] }, { ...request, source: relation.source }, { ...request, idPrefix: 'x'.repeat(65) },
+      { kind: 'set-sketch-relation', sketchId: 'target', relation: { ...relation, source: { ...relation.source, position: [0, 10] } } }])
+      expect(await edit.execute({ expectedVersion: 'current', edits: [invalid] })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(controller).not.toHaveBeenCalled();
+  });
+  it('discovers the document-level profile copy edit and rejects caller geometry before controller access', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed profile copy reached controller.'); });
+    const tools = cadSiteTools(controller), edit = tools.find(tool => tool.name === 'cad_edit_document');
+    const describe = cadSiteTools(() => ({} as CadController)).find(tool => tool.name === 'cad_describe_edits');
+    if (!edit || !describe) throw new Error('Missing edit tools.');
+    const request = { kind: 'copy-sketch-profile', sourceSketchId: 'source', profileId: 'slot', newSketchId: 'copy', name: 'Editable outline', idPrefix: 'copy' };
+    const discovered = await describe.execute({ kind: request.kind });
+    expect(discovered).toMatchObject({ ok: true, data: { schema: { additionalProperties: false, required: expect.arrayContaining(['sourceSketchId', 'profileId', 'newSketchId', 'name', 'idPrefix']) } } });
+    expect(Value.Check(CadEditSchema, request)).toBe(true);
+    for (const invalid of [{ ...request, plane: 'XY' }, { ...request, geometry: {} }, { ...request, targetProfileId: 'other' },
+      { ...request, newSketchId: 'bad/id' }, { ...request, name: ' ' }, { ...request, idPrefix: 'x'.repeat(65) }])
+      expect(await edit.execute({ expectedVersion: 'current', edits: [invalid] })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(controller).not.toHaveBeenCalled();
+  });
+  it('shares strict Mirror identities between edit discovery and mutually exclusive read proposals', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed mirror reached controller.'); });
+    const tools = cadSiteTools(controller), reads = tools.filter(tool => tool.name === 'cad_inspect_sketch_regions' || tool.name === 'cad_read_sketch_region_reference');
+    const mirror = { entityIds: ['bore'], axisLineId: 'axis', idPrefix: 'mirror' };
+    const definition = CadToolEditDefinitions.find(edit => edit.properties.kind.const === 'mirror-sketch-geometry');
+    if (!definition) throw new Error('Mirror edit definition missing.');
+    expect(Value.Check(definition, { kind: 'mirror-sketch-geometry', sketchId: 'sketch', ...mirror })).toBe(true);
+    for (const tool of reads) {
+      const query = { expectedVersion: 'current', sketchId: 'sketch', ...(tool.name === 'cad_read_sketch_region_reference' ? { cellIds: [0] } : { mode: 'graph-cells' }) };
+      expect(Value.Check(tool.inputSchema, { ...query, proposal: { mirror, parameterValues: { axisX: 35 } } })).toBe(true);
+      for (const proposal of [{ mirror, sketch: regionSketch() }, { mirror, offset: {} }, { mirror: { ...mirror, entityIds: [] } },
+        { mirror: { ...mirror, entityIds: ['bore', 'bore'] } }, { mirror: { ...mirror, entityIds: Array.from({ length: 65 }, (_, i) => `e${i}`) } },
+        { mirror: { ...mirror, reflectedPoints: [[45, 15]] } }, { mirror: { ...mirror, idPrefix: 'x'.repeat(65) } }])
+        expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(controller).not.toHaveBeenCalled();
+  });
+  it('exposes the same strict detached offset request in edit discovery and mutually exclusive region proposals', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed offset reached controller.'); });
+    const tools = cadSiteTools(controller), reads = tools.filter(tool => tool.name === 'cad_inspect_sketch_regions' || tool.name === 'cad_read_sketch_region_reference');
+    const offset = { source: { kind: 'graph-cycle', sourceRefs: [{ entityId: 'edge', reversed: false }] }, distance: ' inset ', idPrefix: 'copy' };
+    const definition = CadToolEditDefinitions.find(edit => edit.properties.kind.const === 'offset-sketch-loop');
+    if (!definition) throw new Error('Offset edit definition missing.');
+    expect(Value.Check(definition, { kind: 'offset-sketch-loop', sketchId: 'sketch', ...offset })).toBe(true);
+    for (const tool of reads) {
+      const query = { expectedVersion: 'current', sketchId: 'sketch', ...(tool.name === 'cad_read_sketch_region_reference' ? { boundaryProfileId: 'circle' } : {}) };
+      expect(Value.Check(tool.inputSchema, { ...query, proposal: { offset, parameterValues: { inset: -2 } } })).toBe(true);
+      for (const proposal of [{ offset, trim: endTrim }, { offset, sketch: regionSketch() }, { offset: { ...offset, idPrefix: 'x'.repeat(65) } },
+        { offset: { ...offset, source: { ...offset.source, sourceRefs: [] } } }, { offset: { ...offset, geometry: {} } }])
+        expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(controller).not.toHaveBeenCalled();
+  });
+  it('exposes line-Extend query and exact proposals with mutually exclusive modes and finite unbounded source parameters', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid extend reached operations.'); });
+    const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+    if (!inspect || !read) throw new Error('Missing region tools.');
+    expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', sketchId: 'regions', extendAt: { entityId: 'ab', end: 'start' } })).toBe(true);
+    for (const tool of [inspect, read]) {
+      const query = { expectedVersion: 'current', sketchId: 'regions', ...(tool === read ? { boundaryProfileId: 'outer' } : {}) };
+      expect(Value.Check(tool.inputSchema, { ...query, proposal: { extend: lineExtend } })).toBe(true);
+      expect(Value.Check(tool.inputSchema, { ...query, proposal: { extend: { ...lineExtend, boundary: { ...lineExtend.boundary, parameter: -2e9 } }, parameterValues: { span: 30 } } })).toBe(true);
+      for (const proposal of [{ extend: lineExtend, trim: endTrim }, { extend: lineExtend, sketch: regionSketch() }, { extend: lineExtend, split: {} },
+        { extend: { ...lineExtend, endPointId: undefined } }, { extend: { ...lineExtend, boundary: { ...lineExtend.boundary, parameter: Infinity } } }])
+        expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    for (const mode of [{ extendAt: { entityId: 'ab', end: 'start' }, proposal: { extend: lineExtend } },
+      { extendAt: { entityId: 'ab', end: 'start' }, trimAt: { entityId: 'ab', parameter: .1 } },
+      { extendAt: { entityId: 'ab', end: 'middle' } }, { extendAt: { entityId: 'ab', end: 'start', parameter: -.25 } }])
+      expect(await inspect.execute({ expectedVersion: 'current', sketchId: 'regions', ...mode })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(controller).not.toHaveBeenCalled();
+  });
+
+  it('accepts end/middle/circle/delete trim proposals on the existing reads and refuses mixed or unwitnessed input before controller access', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed trim reached controller.'); });
+    const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+    if (!inspect || !read) throw new Error('Missing region reads.');
+    const deletion = { kind: 'delete', entityId: 'edge', parameter: .5 };
+    const circle = { kind: 'circle', entityId: 'disk', parameter: .25, boundaries: [
+      { entityId: 'chord', index: 0, parameter: .1, position: [8, 6], endpointPointId: 'b' },
+      { entityId: 'chord', index: 1, parameter: .4, position: [-8, 6], endpointPointId: 'a' }], cutPointIds: ['b', 'a'] };
+    const trimEdit = CadToolEditDefinitions.find(schema => schema.properties.kind.const === 'trim-sketch-entity');
+    if (!trimEdit) throw new Error('Missing Trim edit discovery.');
+    expect(Value.Check(trimEdit, { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: circle })).toBe(true);
+    expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', sketchId: 'regions', trimAt: { entityId: 'ab', parameter: .1 } })).toBe(true);
+    for (const input of [{ trimAt: { entityId: 'ab', parameter: .1 }, proposal: { trim: endTrim } },
+      { trimAt: { entityId: 'ab', parameter: .1, cutPointId: 'forbidden' } }, { trimAt: { entityId: 'ab', parameter: 2 } }])
+      expect(await inspect.execute({ expectedVersion: 'current', sketchId: 'regions', ...input })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    for (const tool of [inspect, read]) {
+      const query = { expectedVersion: 'current', sketchId: 'regions', ...(tool === read ? { boundaryProfileId: 'outer' } : {}) };
+      for (const proposal of [{ trim: endTrim }, { trim: middleTrim }, { trim: circle }, { trim: deletion, parameterValues: { span: 30 } }])
+        expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(true);
+      for (const proposal of [{ trim: endTrim, sketch: regionSketch() }, { trim: endTrim, split: {} },
+        { trim: { ...endTrim, boundary: undefined } }, { trim: { ...endTrim, end: 'middle' } },
+        { trim: { ...endTrim, boundary: { ...endTrim.boundary, parameter: '0.25' } } },
+        { trim: { ...middleTrim, supportRelationId: undefined } }, { trim: { ...middleTrim, boundaries: [middleTrim.boundaries[0]] } },
+        { trim: { ...middleTrim, cutPointIds: ['one'] } }, { trim: { ...middleTrim, end: 'start' } },
+        { trim: { ...circle, cutPointIds: ['one'] } }, { trim: { ...circle, boundaries: [circle.boundaries[0]] } },
+        { trim: { ...circle, newEntityId: 'unused' } },
+        { trim: { ...deletion, cutPointId: 'unused' } }, { trim: endTrim, parameterValues: { span: '30' } }]) {
+        expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+      }
+    }
+    expect(controller).not.toHaveBeenCalled();
+  });
+
+  it.each([CadSketchTrimDependencyError, CadSketchExtendDependencyError])('bounds exact trim/extend relation and endpoint-driver blocker IDs independently for %s', async DependencyError => {
+    const relationIds = Array.from({ length: 12 }, (_, index) => `relation-${index}`), pointIds = Array.from({ length: 10 }, (_, index) => `point-${index}`);
+    const failure = new DependencyError(relationIds, pointIds);
+    const tool = cadSiteTools(() => { throw failure; }).find(tool => tool.name === 'cad_inspect_sketch_regions');
+    if (!tool) throw new Error('Missing region inspection.');
+    const proposal = DependencyError === CadSketchTrimDependencyError ? { trim: endTrim } : { extend: lineExtend };
+    expect(await tool.execute({ expectedVersion: 'current', sketchId: 'graph', proposal })).toMatchObject({
+      ok: false, error: { code: failure.code, details: {
+        relationIds: relationIds.slice(0, 8), relationCount: 12, omittedRelationCount: 4,
+        pointIds: pointIds.slice(0, 8), pointCount: 10, omittedPointCount: 2
+      } }
+    });
+    expect(failure.relationIds).toEqual(relationIds); expect(failure.pointIds).toEqual(pointIds);
+  });
+
   it.each(['extrude', 'pocket'] as const)('advertises the exact optional closed-cell selection schema for %s without widening other feature kinds', async kind => {
     const describe = cadSiteTools(() => ({} as CadController)).find(tool => tool.name === 'cad_describe_features');
     if (!describe) throw new Error('Missing feature discovery');
@@ -47,6 +198,68 @@ describe('CAD tool argument boundary and discovery', () => {
     expect(controller).not.toHaveBeenCalled(); expect(inspect.annotations?.readOnlyHint).toBe(true); expect(read.annotations?.readOnlyHint).toBe(true);
   });
 
+  it('accepts split proposals on both existing region reads and rejects mixed/extra arms before controller access', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid split proposal reached operations'); });
+    const tools = cadSiteTools(controller), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions'), read = tools.find(tool => tool.name === 'cad_read_sketch_region_reference');
+    if (!inspect || !read) throw new Error('Missing region reads.');
+    const line = { kind: 'line', entityId: 'edge', parameter: .5, splitPointId: 'joint', newEntityId: 'second', supportRelationId: 'straight' };
+    const arc = { kind: 'arc', entityId: 'edge', parameter: .25, splitPointId: 'joint', newEntityId: 'second' };
+    for (const tool of [inspect, read]) {
+      const query = { expectedVersion: 'current', sketchId: 'regions', ...(tool === read ? { boundaryProfileId: 'outer' } : {}) };
+      for (const proposal of [{ split: line }, { split: arc, parameterValues: { span: 30 } }]) expect(Value.Check(tool.inputSchema, { ...query, proposal })).toBe(true);
+      for (const proposal of [{ split: line, sketch: regionSketch() }, { split: { ...line, parameter: 0 } }, { split: { ...arc, supportRelationId: 'unused' } },
+        { split: { ...line, newEntityId: undefined } }, { split: { ...line, parameter: '0.5' } }, { split: line, parameterValues: { span: '30' } }, { split: line, edits: [] }]) {
+        expect(await tool.execute({ ...query, proposal })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+      }
+    }
+    expect(controller).not.toHaveBeenCalled();
+  });
+
+  it('returns exact bounded split blocker identities without putting machine IDs in the human repair message', async () => {
+    const ids = Array.from({ length: 12 }, (_, index) => `whole-edge-${index}`), failure = new CadSketchSplitDependencyError(ids);
+    const tools = cadSiteTools(() => { throw failure; }), inspect = tools.find(tool => tool.name === 'cad_inspect_sketch_regions');
+    if (!inspect) throw new Error('Missing region inspection.');
+    const reply = await inspect.execute({ expectedVersion: 'current', sketchId: 'graph', proposal: {
+      split: { kind: 'line', entityId: 'edge', parameter: .5, splitPointId: 'joint', newEntityId: 'second', supportRelationId: 'straight' }
+    } });
+    expect(reply).toMatchObject({ ok: false, error: { code: 'dependent-sketch-split', details: { relationIds: ids.slice(0, 8), relationCount: 12, omittedRelationCount: 4 } } });
+    expect(JSON.stringify(reply)).not.toContain('whole-edge-11'); expect(failure.message).not.toContain(ids[0]);
+    expect(failure.relationIds).toEqual(ids);
+  });
+
+  it('identifies unselected placement dependencies and preserves the actual session after rejection',async()=>{
+    const source=placementPart(),session=new CadSession(source),before=session.getSnapshot();
+    const request={kind:'place-sketch-geometry',sketchId:'sketch',...dPlacement,selections:[{kind:'entity',id:'arc'}]}as const;
+    const tool=cadSiteTools(()=>{session.edit([request],before.version);throw Error('Expected the incident boundary to reject');}).find(t=>t.name==='cad_edit_document');
+    if(!tool)throw Error('Missing edit tool');
+    expect(await tool.execute({expectedVersion:before.version,edits:[request]})).toMatchObject({ok:false,error:{code:'dependent-sketch-placement',details:{entityIds:expect.arrayContaining(['chord'])}}});
+    expect(session.getSnapshot()).toBe(before);
+  });
+
+  it('returns the actual fillet owner for a duplicate tangent without changing accepted source or history', async () => {
+    const source = applyCadEdits(parseCadDocument({ ...createCadDocument('Corner'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Corner', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'v', position: [0, 0] }, { id: 'a', position: [20, 0] }, { id: 'b', position: [0, 20] }],
+        entities: [{ id: 'first', kind: 'line', construction: false, startPointId: 'v', endPointId: 'a' },
+          { id: 'second', kind: 'line', construction: false, startPointId: 'v', endPointId: 'b' }], relations: []
+      }
+    }] }), [{ kind: 'create-sketch-corner', sketchId: 'sketch', pointId: 'v', treatment: {
+      kind: 'fillet', radius: 2, trimPointIds: ['trim-a', 'trim-b'], centerPointId: 'center', entityId: 'arc', relationId: 'fillet-owner'
+    } }]);
+    const session = new CadSession(source), before = session.getSnapshot();
+    const duplicate = { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'duplicate', kind: 'tangent-joint', endpoints: [
+      { entityId: 'first', pointId: 'trim-a' }, { entityId: 'arc', pointId: 'trim-a' }
+    ] } } as const;
+    const tool = cadSiteTools(() => {
+      session.edit([duplicate], before.version);
+      throw new Error('The fillet-owned contact should have rejected before controller access.');
+    }).find(entry => entry.name === 'cad_edit_document');
+    if (!tool) throw new Error('Missing edit tool.');
+    expect(await tool.execute({ expectedVersion: before.version, edits: [duplicate] })).toMatchObject({ ok: false,
+      error: { code: 'already-driven-sketch-tangent', details: { ownerRelationId: 'fillet-owner' } } });
+    expect(session.getSnapshot()).toBe(before);
+  });
+
   it('advertises the same complete sketch profile capacity that the shared authoring schema accepts', async () => {
     const tool = cadSiteTools(() => ({} as CadController)).find(entry => entry.name === 'cad_describe_features');
     if (!tool) throw new Error('Missing feature discovery');
@@ -57,6 +270,19 @@ describe('CAD tool argument boundary and discovery', () => {
       profiles: Array.from({ length: 257 }, (_, index) => ({ id: `circle_${index}`, name: `Circle ${index}`, construction: false, geometry: { kind: 'circle', x: index * 4, y: 0, radius: 1 } })) };
     expect(Value.Check(CadFeatureSchema, sketch)).toBe(true); expect(Value.Check(data.schema, sketch)).toBe(true);
     expect(Value.Check(data.schema, { ...sketch, unknown: true })).toBe(false);
+  });
+  it('offers a narrow feature-input build and tokened topology reads without granting editor workflow scope', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid input reached controller'); });
+    const tools = cadSiteTools(controller), build = tools.find(tool => tool.name === 'cad_build_feature_input');
+    const inspect = tools.find(tool => tool.name === 'cad_inspect_topology'), resolve = tools.find(tool => tool.name === 'cad_resolve_topology');
+    if (!build || !inspect || !resolve) throw new Error('Missing feature-input topology tools');
+    expect(Value.Check(build.inputSchema, { expectedVersion: 'current', featureId: 'round', bodyId: 'pad', parameterValues: { height: 15 } })).toBe(true);
+    expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', expectedBuildId: 'input', bodyId: 'pad', kind: 'edge', inputToken: 'input-token' })).toBe(true);
+    expect(Value.Check(resolve.inputSchema, { expectedVersion: 'current', expectedBuildId: 'input', bodyId: 'pad', purpose: 'fillet', picks: [{ kind: 'edge', key: 'edge' }], inputToken: 'input-token' })).toBe(true);
+    for (const invalid of [{ scope: 'editor' }, { parameterValues: { height: '15' } }, { document: createCadDocument() }]) {
+      expect(await build.execute({ expectedVersion: 'current', featureId: 'round', bodyId: 'pad', ...invalid })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    }
+    expect(controller).not.toHaveBeenCalled();
   });
   it('reports native solid counts per paginated body and keeps older unknown counts explicitly null', async () => {
     const mesh = { featureId: 'joined', name: 'Joined', positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2], edges: [],
@@ -99,14 +325,14 @@ describe('CAD tool argument boundary and discovery', () => {
     };
     expect(edit.inputSchema.properties.edits.items).toBe(CadToolEditEnvelope);
     for (const [kind, meaning] of Object.entries(descriptions)) {
-      const declared = CadToolEditEnvelope.anyOf.find(schema => schema.properties.kind.const === kind);
+      const declared = CadToolEditDefinitions.find(schema => schema.properties.kind.const === kind);
       const shared = CadEditSchema.anyOf.find(schema => schema.properties.kind.const === kind);
       expect(declared?.description).toContain(meaning);
       expect(declared?.properties).toEqual(shared?.properties);
       expect(declared?.required).toEqual(shared?.required);
       expect(declared?.additionalProperties).toBe(false);
     }
-    const dimension = CadToolEditEnvelope.anyOf.find(schema => schema.properties.kind.const === 'set-sketch-dimension');
+    const dimension = CadToolEditDefinitions.find(schema => schema.properties.kind.const === 'set-sketch-dimension');
     expect(dimension?.description).toContain('Named bindings update parameters');
     expect(dimension?.description).toContain('compound drivers reject');
   });
@@ -127,6 +353,32 @@ describe('CAD tool argument boundary and discovery', () => {
       { ...move, translation: [1, 2, 3] }, { ...move, translation: [1, NaN] }, { ...move, force: true }]) {
       expect(await edit.execute({ expectedVersion: 'current', edits: [invalid] })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
     }
+    expect(controller).not.toHaveBeenCalled();
+  });
+  it('discovers strict graph authoring edits and rejects implicit repair or widened deletion before draft access', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid graph edit reached operations'); });
+    const tool = cadSiteTools(controller).find(entry => entry.name === 'cad_edit_document');
+    if (!tool) throw new Error('Missing CAD edit tool');
+    const append = { kind: 'append-sketch-entities', sketchId: 'sketch', geometry: { points: [{ id: 'new', position: [' span ', 0] }],
+      entities: [{ id: 'line', kind: 'line', startPointId: 'existing', endPointId: 'new', construction: false }], relations: [] } };
+    const remove = { kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: ['new'], entityIds: [], relationIds: [], cascade: false };
+    const construction = { kind: 'set-sketch-construction', sketchId: 'sketch', entityIds: ['line'], construction: true };
+    for (const edit of [append, remove, construction]) {
+      const declared = CadToolEditDefinitions.find(schema => schema.properties.kind.const === edit.kind);
+      const shared = CadEditSchema.anyOf.find(schema => schema.properties.kind.const === edit.kind);
+      if (!declared || !shared) throw new Error('Graph edit discovery missing.');
+      expect(declared.properties).toEqual(shared.properties);
+      expect(declared.required).toEqual(shared.required);
+      expect(Value.Check(declared, edit)).toBe(true);
+      expect(Value.Check(declared, { ...edit, heal: true })).toBe(false);
+    }
+    for (const edit of [
+      { ...append, geometry: { ...append.geometry, provenance: 'generated' } },
+      { ...append, geometry: { ...append.geometry, points: [{ id: 'new', position: [0, 1, 2] }] } },
+      { ...remove, pointIds: ['new', 'new'] }, { ...remove, cascade: 'automatic' },
+      { kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: [], entityIds: [], cascade: true },
+      { ...construction, entityIds: ['line', 'line'] }, { ...construction, construction: 1 }, { ...construction, force: true }
+    ]) expect(await tool.execute({ expectedVersion: 'current', edits: [edit] })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
     expect(controller).not.toHaveBeenCalled();
   });
   it('bounds ordered Loft preflight and rejects repair or source payloads before reaching operations', async () => {

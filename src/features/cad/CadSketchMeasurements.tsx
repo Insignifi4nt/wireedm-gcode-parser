@@ -16,7 +16,9 @@ export function CadSketchMeasurements({ document, sketchId, profileId }: { docum
   const profile = sketch.profiles.find((entry) => entry.profileId === profileId);
   const bounds = profile?.boundsMm ?? sketch.boundsMm;
   return <section className="cad-measurements" aria-label="Sketch measurements">
-    <div className="cad-measurements-heading">{profile ? 'Profile measurements' : 'Sketch measurements'}<CadContextHelp label="Sketch measurements">Area and perimeter use the current sketch geometry. Nested outlines subtract holes from material area. Construction profiles are measured individually but excluded from material and cutting totals.</CadContextHelp></div>
+    <div className="cad-measurements-heading">{profile ? 'Profile measurements' : 'Whole sketch measurements'}<CadContextHelp label="Sketch measurements">{profile
+      ? 'Area and perimeter describe this profile. Construction profiles are reference geometry and do not contribute material.'
+      : 'These totals describe Whole sketch, independently of any extrusion\'s selected areas. Nested outlines subtract holes; construction geometry is excluded. Open or intersecting geometry can have zero automatic material while still enclosing selectable areas. Use Pick closed areas in Pad / Pocket for those areas.'}</CadContextHelp></div>
     <dl><dt>{profile ? 'Area' : 'Material area'}</dt><dd>{format(profile?.areaMm2 ?? sketch.materialAreaMm2)} mm²</dd><dt>{profile ? 'Perimeter' : 'Boundary length'}</dt><dd>{format(profile?.perimeterMm ?? sketch.boundaryLengthMm)} mm</dd></dl>
     <details className="cad-measurement-details cad-topology-measurements"><summary>Measurements</summary><dl>{bounds && <><dt>Width × height</dt><dd>{format(bounds.maxX - bounds.minX)} × {format(bounds.maxY - bounds.minY)} mm</dd><dt>Min X, Y</dt><dd>{format(bounds.minX)}, {format(bounds.minY)} mm</dd><dt>Max X, Y</dt><dd>{format(bounds.maxX)}, {format(bounds.maxY)} mm</dd></>}<dt>{profile ? 'Sketch closed contours' : 'Closed contours'}</dt><dd>{sketch.cutContourCount}</dd></dl></details>
     {profile?.construction && <span className="cad-measurement-tag">Construction reference</span>}

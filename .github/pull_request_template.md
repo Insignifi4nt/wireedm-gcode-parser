@@ -4,6 +4,7 @@ Describe the user-visible result and link the release record.
 
 ## Postprocessor compatibility
 
+- [ ] Branch is `<type>/<topic>` and the title summarizes the change, with no tool or agent names (see AGENTS.md).
 - [ ] App version is exactly one patch above current main; package.json and lockfile agree.
 - [ ] docs/releases/<version>.json records compatibility and any breaking or potential breaking change.
 - [ ] Schemas, capabilities, execution events, audit/output and installation/storage were checked.

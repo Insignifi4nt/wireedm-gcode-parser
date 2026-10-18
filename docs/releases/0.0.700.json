@@ -1,0 +1,27 @@
+{
+  "version": "0.0.700",
+  "previousVersion": "0.0.699",
+  "postCompatibility": "preserved-sketch-workspace",
+  "summary": "Adds solved, editable sketch graphs with exact constraints, dimensions, Trim/Extend/Split/Offset/Mirror and shared command sessions, plus faster review checks and naming rules.",
+  "warning": "Installed machine/post packages, saved revisions and controller output remain compatible. Potentially breaking for CAD files: saving a sketch graph upgrades a CAD document to schema 2, which earlier app versions cannot open; the schema 1 original is preserved when the upgrade is saved. Trim and Extend now remove a detached endpoint that no entity or relation still uses.",
+  "checklist": {
+    "schema": "CAD documents gain schema 2 with optional sketch graphs (points, entities, relations). Schema 1 documents still open unchanged and are only upgraded on an explicit save that preserves the original. No CAM manifest, UPID, post schema or engine API changes.",
+    "events": "Post execution, simulation and existing WebMCP operations keep their validation and events. New CAD sketch edits run through the shared prepared-edit path with cancellation and input-version checks. CAD tool discovery stays below the 50 KiB budget; edit and proposal contracts are described on demand and validated in full before execution.",
+    "capabilities": "No machine or post capability changes. New sketch edits and region inspections are additive CAD operations that older apps do not offer.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line endings, feed or controller-file behavior changes.",
+    "installationAndStorage": "No installed package or revision migration. Browser cache and folder storage share the CAD schema 2 save path and preserve exact schema 1 originals. No unreferenced file cleanup.",
+    "verification": "Local full pure-domain (125 files, 1255 tests) and browser (368 files, 3938 tests) suites, type-check, shared UI gate and documentation check pass. Far-origin probes confirm position-independent tangency in cells and trims, exact re-solve checks at large coordinates and a precise split rejection. Review checks now run contracts, two unit shards and two browser-journey shards in parallel and verify branch and title naming."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Draw, constrain and edit exact sketch geometry before turning it into solid features.",
+    "changes": [
+      "Sketches keep editable points, lines, arcs and circles with solved constraints and dimensions.",
+      "Trim, extend, split, offset, mirror, fillet and chamfer edit sketch geometry exactly.",
+      "Sketch commands share one consistent form with live previews and cancel safely.",
+      "Agents discover sketch edit contracts on demand and can preview regions before editing."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions and controller output remain compatible. CAD files saved with sketch graphs need this app version or later.",
+    "action": "Keep an exported copy of a CAD part before saving sketch edits if you still need to open it in an older app version."
+  }
+}

@@ -48,6 +48,6 @@ export function cadScalarValueIntent(input: {
   if (binding.kind === 'parameter') return { kind: 'parameter', name: binding.name, value: input.quantity };
   const accepted = input.acceptedSource === undefined ? null : inspectCadScalarValue(input.acceptedSource, input.parameters);
   const source = input.acceptedSource !== undefined && !input.relationEdited && accepted?.kind === 'literal' && accepted.quantity === input.quantity
-    ? input.acceptedSource : input.quantity;
+    ? input.acceptedSource : typeof input.source === 'string' ? String(input.quantity) : input.quantity;
   return { kind: 'scalar', source };
 }

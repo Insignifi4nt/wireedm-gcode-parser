@@ -1,12 +1,14 @@
+import { circleRowPart, rowSketch } from '@/domain/cad/__tests__/cadSketchLinearPatternFixtures';
 import { act, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { AppRailProvider, useAppRail } from '@/app/AppRailContext';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadBuildResult, CadDocument, CadSketchPlane } from '@/domain/cad/cadDocument';
 import type { CadTopologyDescriptor, CadTopologyResolvePicksResult } from '@/domain/cad/cadTopology';
-import { applyCadEdits } from '@/domain/cad/cadOperations';
+import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
+import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
 import { CadWorkbench, type CadWorkbenchProps } from './CadWorkbench';
 import { closeSketchPolygon, snapSketchPoint, twoPointSketchProfile } from './cadSketchInteraction';
 import { CadSession } from './cadSession';
@@ -16,6 +18,8 @@ import type { CadRenderedViewControls, CadWorkbenchViewportControls } from './ca
 import type { CadViewportContextMenuRequest } from './CadViewport';
 import type { CadFeatureRegionPickCommand } from './cadFeatureReferencePicking';
 import type { CadExtrudeDepthControl } from './cadExtrudeDepthInteraction';
+import { useCadSketchEditing } from './useCadSketchEditing';
+import { pairedBoreMirrorPart } from '@/domain/cad/__tests__/cadSketchMirrorFixtures';
 
 let requestViewportMenu: ((request: CadViewportContextMenuRequest) => void) | undefined;
 let pickViewportFeature: ((id: string | null) => void) | undefined;
@@ -77,7 +81,7 @@ function PreviousEditorHeader() {
   return <div>Previous editor content</div>;
 }
 
-async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
+async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onEditMany' | 'onWorkflowChange' | 'onBeginSketchEdit' | 'sketchEdit'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
   const session = new CadSession(initial);
   currentSession = session;
   function Harness() {
@@ -96,10 +100,10 @@ async function mount(initial: CadDocument = createCadDocument(), buildProps: Pic
     replaceDocument = (replacement) => session.replace(replacement);
     const props: CadWorkbenchProps = {
       document, documentVersion: snapshot.version, buildVersion: buildState === 'ready' ? snapshot.version : null, ...buildProps, build, buildState, featurePreview, dirty: true, canUndo: true, canRedo: true,
-      onEdit(edit) { session.edit([edit]); },
-      onEditMany(edits) { session.edit(edits); },
+      onEdit: buildProps.onEdit ?? (edit => { session.edit([edit]); }),
+      onEditMany: buildProps.onEditMany ?? (edits => session.edit(edits)),
       onStatusMessage: statusMessage,
-      onUndo: undo, onRedo: vi.fn(), onSave: save, onBack: vi.fn(), onWorkflowChange: (open) => { workflow(open); session.setWorkflowOpen(open); },
+      onUndo: undo, onRedo: vi.fn(), onSave: save, onBack: vi.fn(), onWorkflowChange: buildProps.onWorkflowChange ?? ((open) => { workflow(open); session.setWorkflowOpen(open); }),
       onSendToCam: sendToCam, onOpenDocument: vi.fn(), onNewDocument: vi.fn(),
       onImportDocument: async () => undefined, onExportDocument: vi.fn(), onExportSolid: async () => undefined, onOpenDxfExport: async () => undefined,
       onViewportControlsReady: (controls) => { currentViewport = controls; },
@@ -157,6 +161,11 @@ async function canvasKey(key: string, shiftKey = false) {
   if (!canvas) throw new Error('Sketch canvas missing.');
   await act(async () => { canvas.focus(); canvas.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true })); });
 }
+async function openLegacyRectangle(parameters: Readonly<Record<string, number>> = {}) {
+  const original = solidDocument();
+  await mount({ ...original, parameters, features: [original.features[0]] });
+  await act(async () => { viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }); viewport().apply({ kind: 'select-profile', profileId: 'rectangle' }); });
+}
 function viewport() {
   if (!currentViewport) throw new Error('Viewport controls unavailable.');
   return currentViewport;
@@ -191,6 +200,337 @@ async function selectTopology(kind: 'edge' | 'face') {
 }
 
 describe('CAD sketch interaction', () => {
+  it('copies an accepted consumed profile without opening its source, then releases its workflow before editing the new sketch', async () => {
+    const source = solidDocument(), begin = vi.fn((id: string) => { currentSession.assertWorkflowClosed(); return id; });
+    await mount(source, { build: null, buildState: 'idle', onBeginSketchEdit: begin });
+    await click('Expand Outline');
+    const openCopy = async () => {
+      await act(async () => button('Plate profile').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 100, clientY: 100 })));
+      const action = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Copy outline to editable sketch');
+      if (!action) throw new Error('Profile copy action missing.'); await act(async () => action.click());
+    };
+    await openCopy(); expect(currentDocument).toBe(source); expect(begin).not.toHaveBeenCalled();
+    expect(container.querySelector('[aria-label="Sketch drawing canvas"]')).not.toBeNull();
+    expect(button('Apply').disabled).toBe(false); await click('Cancel');
+    expect(currentDocument).toBe(source); expect(viewport().getState().workflowOpen).toBe(false);
+    await openCopy(); await click('Apply');
+    expect(currentDocument.features.slice(0, source.features.length)).toEqual(source.features);
+    const copy = currentDocument.features.at(-1); if (copy?.kind !== 'sketch' || !copy.graph) throw new Error('Copied sketch missing.');
+    expect(copy.profiles).toEqual([]); expect(copy.graph.entities).toHaveLength(4);
+    expect(begin).toHaveBeenCalledExactlyOnceWith(copy.id); expect(viewport().getState().workflowOpen).toBe(false);
+    expect(viewport().getState().sketchId).toBe(copy.id);
+  });
+  it('keeps its mirror axis chooser alive through an owned keyboard menu without replacing the copied source selection', async () => {
+    const source = pairedBoreMirrorPart(); await mount(source);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'bore' } }));
+    await click('Mirror copy');
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]');
+    const axis = container.querySelector<SVGGElement>('[data-cad-sketch-entity="axis"]');
+    if (!canvas || !axis) throw new Error('Mirror axis canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    await act(async () => { axis.focus(); axis.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+    const choice = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Use as mirror line');
+    expect(choice).toBeDefined(); expect(viewport().getState().workflowOpen).toBe(true);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'bore' }]); expect(currentDocument).toBe(source);
+    await act(async () => choice?.click()); expect(button('Apply').disabled).toBe(false);
+    await click('Apply');
+    const accepted = currentDocument.features[0]; if (accepted.kind !== 'sketch' || !accepted.graph) throw new Error('Copied bore missing.');
+    expect(accepted.graph.points.at(-1)?.position).toEqual([45, 15]);
+    expect(accepted.graph.entities.at(-1)).toMatchObject({ kind: 'circle', radius: 3 });
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: accepted.graph.entities.at(-1)?.id }]);
+    expect(viewport().getState().workflowOpen).toBe(false);
+  });
+  it('offsets the complete selected graph loop as one detached copy and selects its new geometry', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Plate', 'offset-plate'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Plate', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+        points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: ['40.0000', '20.00'] }, { id: 'd', position: [0, 20] }],
+        entities: ['ab', 'bc', 'cd', 'da'].map((id, index) => ({ id, kind: 'line', construction: false, startPointId: ['a', 'b', 'c', 'd'][index], endPointId: ['b', 'c', 'd', 'a'][index] })), relations: []
+      }
+    }] });
+    await mount(source);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    expect(button('Offset loop').disabled).toBe(true);
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'point', id: 'a' } }));
+    expect(button('Offset loop').disabled).toBe(true);
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'ab' } }));
+    await click('Offset loop');
+    expect(currentDocument).toBe(source); expect(viewport().getState().workflowOpen).toBe(true);
+    await input(field('Offset distance'), '2'); await click('Inside');
+    const sourceSketch = source.features[0]; if (sourceSketch.kind !== 'sketch' || !sourceSketch.graph) throw new Error('Plate missing.');
+    for (const entity of sourceSketch.graph.entities) expect(container.querySelector(`[data-cad-sketch-entity="${entity.id}"]`)?.classList.contains('is-relation-highlighted')).toBe(true);
+    expect(currentDocument).toBe(source); await click('Apply');
+    const accepted = currentDocument.features[0]; if (accepted.kind !== 'sketch' || !accepted.graph) throw new Error('Offset missing.');
+    expect(accepted.graph.points.slice(0, 4)).toEqual(sourceSketch.graph.points);
+    expect(accepted.graph.points.slice(4).map(point => point.position)).toEqual([[2, 2], [38, 2], [38, 18], [2, 18]]);
+    expect(accepted.graph.entities).toHaveLength(8);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: accepted.graph.entities[4].id }]);
+    expect(viewport().getState().workflowOpen).toBe(false);
+  });
+
+  it('opens the same offset editor for a legacy profile, cancels its preview, then accepts a detached graph copy', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), features: [{ id: 'sketch', kind: 'sketch', name: 'Bore', plane: 'XY', offset: 0, suppressed: false,
+      profiles: [{ id: 'bore', name: 'Bore', construction: false, geometry: { kind: 'circle', x: ' 0 ', y: '0.0', radius: '10.000' } }] }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await act(async () => viewport().apply({ kind: 'select-profile', profileId: 'bore' })); await click('Offset loop');
+    expect(viewport().getState().workflowOpen).toBe(true);
+    expect(button('Rectangle').disabled).toBe(true); expect(button('Finish sketch').disabled).toBe(true);
+    expect(container.querySelectorAll('[data-cad-sketch-entity]')).toHaveLength(1);
+    await input(field('Offset distance'), '2'); expect(currentDocument).toBe(source);
+    expect(container.querySelector('[data-cad-sketch-entity] circle')?.getAttribute('r')).toBe('12');
+    await click('Cancel'); expect(currentDocument).toBe(source); expect(viewport().getState().selectedProfileId).toBe('bore');
+    expect(viewport().getState().workflowOpen).toBe(false); await click('Offset loop');
+    await input(field('Offset distance'), '2'); await click('Apply');
+    const accepted = currentDocument.features[0]; if (accepted.kind !== 'sketch' || !accepted.graph) throw new Error('Offset missing.');
+    expect(accepted.profiles).toEqual(source.features[0].kind === 'sketch' ? source.features[0].profiles : []);
+    expect(accepted.graph.entities[0]).toMatchObject({ kind: 'circle', radius: 12 });
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: accepted.graph.entities[0].id }]);
+    expect(viewport().getState().selectedProfileId).toBeNull(); expect(viewport().getState().workflowOpen).toBe(false);
+  });
+  it('selects the accepted Split joint in the real owned sketch workspace after private publication', async () => {
+    const initial = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Outline',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }, { id: 'd', position: [0, 10] }],
+        entities: ['a', 'b', 'c', 'd'].map((id, index) => ({ id: `${id}-edge`, kind: 'line', construction: false, startPointId: id, endPointId: ['b', 'c', 'd', 'a'][index] })), relations: []
+      } }, { id: 'pad', kind: 'extrude', name: 'Pad', suppressed: false, sketchId: 'sketch', distance: 5, symmetric: false, operation: 'new', targetId: null }] });
+    const main = new CadSession(initial), base = main.getSnapshot(), storage = {};
+    function Harness() {
+      useSyncExternalStore(main.subscribe, main.getSnapshot);
+      const editing = useCadSketchEditing({ session: main, storage, open: true, locked: false,
+        prepare: async (document, edits, signal) => { await Promise.resolve(); signal?.throwIfAborted(); return applyCadEdits(document, edits); },
+        inspect: async () => undefined, commit: (edits, version, signal) => main.editPrepared(version, async document => applyCadEdits(document, edits), signal) });
+      const snapshot = editing.snapshot; currentDocument = snapshot.document;
+      return <CadWorkbench document={snapshot.document} documentVersion={snapshot.version} build={null} buildVersion={null} buildState="idle" dirty={snapshot.dirty}
+        canUndo={snapshot.canUndo} canRedo={snapshot.canRedo} onEdit={(edit, signal) => editing.sketchId ? editing.edit([edit], signal) : main.edit([edit])}
+        onEditMany={(edits, signal) => editing.sketchId ? editing.edit(edits, signal) : main.edit(edits)} onBeginSketchEdit={editing.begin}
+        sketchEdit={editing.sketchId ? { sketchId: editing.sketchId, finish: editing.finish, cancel: editing.cancel, inspectAreaRepairs: editing.inspectAreaRepairs } : undefined}
+        onWorkflowChange={editing.setWorkflowOpen} onUndo={editing.undo} onRedo={editing.redo} onSave={save} onBack={vi.fn()} onSendToCam={sendToCam}
+        onOpenDocument={vi.fn()} onNewDocument={vi.fn()} onImportDocument={async () => undefined} onExportDocument={vi.fn()}
+        onExportSolid={async () => undefined} onOpenDxfExport={async () => undefined} onViewportControlsReady={controls => { currentViewport = controls; }} />;
+    }
+    await act(async () => root.render(<Harness />));
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'sketch' })); await click('Edit sketch');
+    expect(currentDocument.features).toHaveLength(1); expect(main.getSnapshot().document).toBe(base.document);
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    let captured = false;
+    Object.assign(canvas, { setPointerCapture: () => { captured = true; }, hasPointerCapture: () => captured, releasePointerCapture: () => { captured = false; } });
+    const state = viewport().getState().view; if (!state || state.mode === 'solid') throw new Error('Sketch frame missing.');
+    const viewWidth = Number(canvas.getAttribute('viewBox')?.split(' ')[2]);
+    const pointer = async (type: string) => {
+      const event = new MouseEvent(type, { button: 2, buttons: type === 'pointerup' ? 0 : 2, bubbles: true, cancelable: true,
+        clientX: 300 + (5 - state.centerMm[0]) / viewWidth * 600, clientY: 200 + state.centerMm[1] / state.heightSpanMm * 400 });
+      Object.defineProperties(event, { pointerId: { value: 11 }, isPrimary: { value: true } });
+      await act(async () => canvas.dispatchEvent(event));
+    };
+    await pointer('pointerdown'); await pointer('pointerup');
+    const id = container.querySelector('[data-cad-sketch-split-point]')?.getAttribute('data-cad-sketch-split-point'); if (!id) throw new Error('Split preview missing.');
+    await click('Split here');
+    const localDocument = currentDocument, accepted = localDocument.features[0]; if (accepted.kind !== 'sketch') throw new Error('Accepted sketch missing.');
+    expect(accepted.graph?.entities).toHaveLength(5);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id }]);
+    expect(container.querySelector(`[data-cad-sketch-point="${id}"]`)?.getAttribute('aria-pressed')).toBe('true');
+    expect(button('Move selection').disabled).toBe(false); expect(main.getSnapshot().document).toBe(base.document);
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'sketch' }));
+    await input(field('Plane offset'), '2.5000');
+    expect(field('Plane offset').value).toBe('2.5000'); expect(button('Rectangle').disabled).toBe(true);
+    expect(viewport().getState().workflowOpen).toBe(true); expect(currentDocument).toBe(localDocument);
+    await click('Cancel'); expect(button('Rectangle').disabled).toBe(false); expect(viewport().getState().workflowOpen).toBe(false);
+    expect(main.getSnapshot().document).toBe(base.document);
+  });
+
+  it('reports an unchanged authoritative point move without inferring permanent mobility, and ignores cancelled receipts', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Constrained points', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+      points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [50, 20] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+      relations: [{ id: 'h', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'd', kind: 'distance', pointIds: ['a', 'b'], value: 40 }]
+    } }] });
+    const edit = vi.fn<NonNullable<CadWorkbenchProps['onEditMany']>>(() => currentSession.getSnapshot());
+    await mount(source, { build: null, buildState: 'idle', onEditMany: edit });
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const point = container.querySelector<SVGGElement>('[data-cad-sketch-point="b"]'); if (!point) throw new Error('Missing point.');
+    await act(async () => point.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
+    expect(edit).toHaveBeenCalledOnce(); expect(statusMessage).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('constrained'), 'info');
+    expect(currentSession.getSnapshot()).toMatchObject({ document: source, canUndo: false, workflowOpen: false });
+    let accept: (value: ReturnType<CadSession['getSnapshot']>) => void = () => { throw new Error('No pending move.'); };
+    edit.mockImplementationOnce(() => new Promise(resolve => { accept = resolve; }));
+    await act(async () => point.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })));
+    const signal = edit.mock.calls[1]?.[1]; expect(signal?.aborted).toBe(false);
+    await act(async () => point.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(signal?.aborted).toBe(true);
+    await act(async () => accept(currentSession.getSnapshot()));
+    expect(statusMessage).toHaveBeenCalledOnce(); expect(currentSession.getSnapshot()).toMatchObject({ document: source, canUndo: false, workflowOpen: false });
+  });
+
+  it('prunes removed graph targets from selection before a later source can reuse their IDs', async () => {
+    const initial = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Source selection', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: []
+    } }] });
+    await mount(initial);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }] }));
+    await act(async () => currentSession.edit([{ kind: 'delete-sketch-elements', sketchId: 'sketch', pointIds: ['b'], entityIds: [], relationIds: [], cascade: true }]));
+    const afterRemoval = currentSession.getSnapshot();
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'a' }]);
+    expect(currentSession.getSnapshot()).toBe(afterRemoval);
+    const sketch = currentDocument.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch missing');
+    const graph = sketch.graph;
+    await act(async () => currentSession.edit([{ kind: 'update-feature', feature: { ...sketch, graph: { ...graph,
+      points: [...graph.points, { id: 'b', position: [50, 40] }] } } }]));
+    const afterReuse = currentSession.getSnapshot();
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'a' }]);
+    expect(currentSession.getSnapshot()).toBe(afterReuse);
+    await act(async () => currentSession.undo());
+    await act(async () => currentSession.undo());
+    expect(currentDocument).toEqual(initial);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'a' }]);
+  });
+  it('owns one graph selection set for Shift selection, agent selection, construction and one-step set deletion', async () => {
+    const initial = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Set sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }], relations: []
+    } }] });
+    await mount(initial);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const target = (id: string) => { const element = container.querySelector(`[data-cad-sketch-point="${id}"]`); if (!element) throw new Error('Point missing'); return element; };
+    await act(async () => target('a').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    await act(async () => target('b').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })));
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }]);
+    expect(viewport().getState().selectedSketchGeometry).toBeUndefined();
+    expect(currentDocument).toEqual(initial); expect(currentSession.getSnapshot().canUndo).toBe(false);
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: [{ kind: 'entity', id: 'ab' }, { kind: 'entity', id: 'bc' }] }));
+    const construction = container.querySelector<HTMLInputElement>('.cad-sketch-options input'); if (!construction) throw new Error('Construction control missing');
+    await act(async () => construction.click());
+    const converted = currentDocument.features[0]; if (converted.kind !== 'sketch') throw new Error('Sketch missing');
+    expect(converted.graph?.entities.map(entity => entity.construction)).toEqual([true, true]);
+    await click('Delete selected geometry');
+    const deleted = currentDocument.features[0]; if (deleted.kind !== 'sketch') throw new Error('Sketch missing');
+    expect(deleted.graph?.entities).toEqual([]); expect(deleted.graph?.points).toEqual(converted.graph?.points);
+    await act(async () => currentSession.undo());
+    expect(currentDocument.features[0]).toEqual(converted);
+  });
+  it('changes the selected legacy profile construction through an owned edit without changing drawing defaults', async () => {
+    const initial = parseCadDocument({ ...createCadDocument(), parameters: { slotLength: 30 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Slot sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [{
+        id: 'slot', name: 'Slot', construction: false, geometry: { kind: 'slot', x: 0, y: 0, length: ' slotLength ', width: 8, angle: 20 }
+      }]
+    }] });
+    let accept: () => void = () => { throw new Error('Missing pending construction edit.'); };
+    let reject: (error: Error) => void = () => { throw new Error('Missing pending construction edit.'); };
+    const edit = vi.fn<NonNullable<CadWorkbenchProps['onEdit']>>((intent, signal) => new Promise((resolve, decline) => {
+      accept = () => { try { signal?.throwIfAborted(); resolve(currentSession.edit([intent])); } catch (error) { decline(error); } };
+      reject = decline;
+    }));
+    await mount(initial, { build: null, buildState: 'idle', onEdit: edit });
+    await act(async () => { viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }); viewport().apply({ kind: 'select-profile', profileId: 'slot' }); });
+    const control = () => {
+      const found = container.querySelector<HTMLInputElement>('.cad-sketch-options input');
+      if (!found) throw new Error('Construction control missing.'); return found;
+    };
+    await act(async () => control().click());
+    expect(edit).toHaveBeenCalledOnce(); expect(currentDocument).toBe(initial); expect(control().disabled).toBe(true);
+    await act(async () => accept());
+    const accepted = currentDocument, sketch = accepted.features[0];
+    if (sketch.kind !== 'sketch' || initial.features[0].kind !== 'sketch') throw new Error('Sketch missing.');
+    expect(sketch.profiles[0]).toEqual({ ...initial.features[0].profiles[0], construction: true });
+    expect(control().checked).toBe(true);
+    await act(async () => currentSession.undo()); expect(currentDocument).toEqual(initial);
+    await act(async () => currentSession.redo()); expect(currentDocument).toEqual(accepted); expect(control().checked).toBe(true);
+    await act(async () => control().click());
+    await act(async () => reject(new Error('A downstream feature needs the material.')));
+    expect(currentDocument).toEqual(accepted); expect(control().checked).toBe(true); expect(currentSession.getSnapshot().workflowOpen).toBe(false);
+    await act(async () => control().click());
+    const signal = edit.mock.calls.at(-1)?.[1]; expect(signal?.aborted).toBe(false);
+    await canvasKey('Escape'); expect(signal?.aborted).toBe(true);
+    await act(async () => accept()); expect(currentDocument).toEqual(accepted);
+    await click('Rectangle'); expect(control().checked).toBe(false);
+  });
+  it('shows only current sketch areas while repairing a consumed boundary, without accepted suffix solids', async () => {
+    const prefix = solidDocument(), sourceSketch = prefix.features[0];
+    if (sourceSketch.kind !== 'sketch') throw new Error('Sketch fixture missing');
+    const edited = { ...sourceSketch, id: 'second-sketch', name: 'Edited outline' };
+    const initial = applyCadEdits(prefix, [{ kind: 'add-feature', feature: edited }]);
+    const cells = prepareCadSketchCells(edited, initial.parameters);
+    const finish = vi.fn();
+    const staleConsumer = { ...prefix.features[1], id: 'second-pad', name: 'Dependent pad', sketchId: edited.id };
+    if (staleConsumer.kind !== 'extrude') throw new Error('Pad fixture missing');
+    const build = { ...topologyBuild, meshes: [...topologyBuild.meshes, { ...topologyBuild.meshes[0], featureId: 'second-pad', volume: 1234 }] };
+    await mount(initial, { build, buildState: 'ready', sketchEdit: { sketchId: edited.id, cancel: vi.fn(), finish,
+      inspectAreaRepairs: () => ({ sketchId: edited.id, localVersion: currentSession.getSnapshot().version,
+        consumers: [{ feature: staleConsumer, issue: 'The selected boundary changed.', cells }] }) } });
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: edited.id }));
+    await click('Finish sketch');
+    await click('Choose areas for Dependent pad');
+    expect(container.querySelector('[aria-label="3D model viewport"]')?.getAttribute('data-displayed-volumes')).toBe('');
+    expect(viewportRegions?.cells).toBe(cells);
+    expect(viewportRegions?.sketchId).toBe(edited.id);
+    await act(async () => viewportRegions?.onSelect([cells.cells[0].reference]));
+    await click('Finish area selection');
+    expect(container.querySelector('form[aria-label="Update dependent sketch areas"]')).not.toBeNull();
+    expect(button('Finish sketch').disabled).toBe(false);
+    expect(finish).not.toHaveBeenCalled();
+    expect(currentDocument).toEqual(initial);
+  });
+  it('releases a clean command workflow when suppression rejects because a dependent solid still needs its source', async () => {
+    const initial = applyCadEdits(solidDocument(), [{ kind: 'add-feature', feature: {
+      id: 'rounded', name: 'Rounded plate', kind: 'fillet', targetId: 'pad', radius: 1, suppressed: false
+    } }]);
+    const onWorkflowChange = (open: boolean) => { workflow(open); currentSession.setWorkflowOpen(open); };
+    await mount(initial, { build: null, buildState: 'idle', onWorkflowChange });
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' }));
+    const before = currentSession.getSnapshot();
+    const suppress = [...container.querySelectorAll('label')].find(label => label.textContent?.trim() === 'Suppress feature')?.querySelector<HTMLInputElement>('input');
+    if (!suppress) throw new Error('Suppress control missing.');
+    await act(async () => suppress.click());
+    expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: false, canUndo: false });
+    expect(workflow).toHaveBeenLastCalledWith(false);
+    expect(suppress.checked).toBe(false);
+  });
+  it('retains actual name-edit ownership after a synchronous command rejection', async () => {
+    const onWorkflowChange = (open: boolean) => { workflow(open); currentSession.setWorkflowOpen(open); };
+    await mount(solidDocument(), { build: null, buildState: 'idle', onWorkflowChange });
+    const before = currentSession.getSnapshot(), name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]');
+    if (!name) throw new Error('Part name missing.');
+    await act(async () => name.focus()); await input(name, '   '); await act(async () => name.blur());
+    expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: true, canUndo: false });
+    expect(name.value).toBe('   '); expect(workflow).toHaveBeenLastCalledWith(true);
+    await act(async () => name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(currentSession.getSnapshot().workflowOpen).toBe(false);
+  });
+  it('waits for sketch creation acceptance, preserves a rejected plane, and ignores a cancelled late creation', async () => {
+    let rejectFirst: (error: Error) => void = () => { throw new Error('No first edit'); };
+    let resolveRetry: () => void = () => { throw new Error('No retry edit'); };
+    const first = new Promise<void>((_accept, reject) => { rejectFirst = reject; });
+    const retry = new Promise<void>(accept => { resolveRetry = accept; });
+    void first.catch(() => undefined);
+    const signals: AbortSignal[] = []; let attempts = 0;
+    await mount(createCadDocument(), { build: null, buildState: 'idle', onEdit: (edit, signal) => {
+      if (signal) signals.push(signal);
+      const wait = ++attempts === 1 ? first : attempts === 2 ? retry : null;
+      currentSession.setWorkflowOpen(true, 'preparation');
+      return currentSession.editPrepared(currentSession.getSnapshot().version, async source => {
+        await wait; return applyCadEdits(source, [edit]);
+      }, signal).finally(() => currentSession.setWorkflowOpen(false, 'preparation'));
+    } });
+    await startSketch();
+    expect(currentDocument.features).toHaveLength(0);
+    expect(container.querySelector('[aria-label="Sketch drawing canvas"]')).toBeNull();
+    expect(currentSession.getSnapshot().workflowOpen).toBe(true);
+    await act(async () => rejectFirst(new Error('The new sketch conflicts.')));
+    expect(viewport().getState().selectedReferencePlane).toBe('XY');
+    await click('Sketch');
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(signals[1]?.aborted).toBe(true);
+    await act(async () => viewport().apply({ kind: 'select-reference-plane', plane: 'XZ' }));
+    await click('Sketch');
+    const accepted = currentDocument;
+    await act(async () => resolveRetry());
+    expect(currentDocument).toBe(accepted);
+    expect(currentDocument.features).toMatchObject([{ kind: 'sketch', plane: 'XZ' }]);
+    expect(viewport().getState()).toMatchObject({ sketchId: currentDocument.features[0].id });
+  });
+
   it.each(['solid', 'sketch'] as const)('keeps the %s context while editing a shared value and navigates only through explicit Inspect', async context => {
     const initial = parseCadDocument({ ...createCadDocument('Tapered outlet', 'parameter_context'), parameters: { height: 20, baseRadius: 10 }, features: [
       { id: 'base', name: 'Base section', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
@@ -339,6 +679,21 @@ describe('CAD sketch interaction', () => {
     await act(async () => currentSession.undo()); expect(currentDocument).toEqual(original);
   });
 
+  it('routes Move to the exact graph selection and owns the workspace until Cancel even at zero displacement', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Movable edges', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }],
+      entities: [{ id: 'line', kind: 'line', startPointId: 'a', endPointId: 'b', construction: true }], relations: []
+    } }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const selections = [{ kind: 'entity' as const, id: 'line' }, { kind: 'point' as const, id: 'a' }];
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections }));
+    await click('Move selection'); expect(container.querySelector('input[aria-label="Move X"]')).not.toBeNull();
+    expect(button('Finish sketch').disabled).toBe(true); expect(button('Save').disabled).toBe(true);
+    expect(currentSession.getSnapshot()).toMatchObject({ document: source, workflowOpen: true, canUndo: false });
+    await click('Cancel'); expect(currentSession.getSnapshot()).toMatchObject({ document: source, workflowOpen: false, canUndo: false });
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual(selections);
+  });
+
   it('finishes the active sketch from its inspector without changing geometry or history', async () => {
     const original = solidDocument();
     await mount(original);
@@ -461,7 +816,7 @@ describe('CAD sketch interaction', () => {
     await act(async () => replaceBuild({ ...topologyBuild, buildId: 'republished-native-build' }));
     expect(viewportRegions).toBe(command); expect(currentDocument).toBe(initial);
     expect(currentSession.getSnapshot()).toMatchObject({ version: before.version, workflowOpen: true });
-    await act(async () => command.onSelect(command.cells.cells.filter(cell => cell.defaultMaterial).map(cell => cell.reference)));
+    await act(async () => command.onSelect(command.cells.pack(command.cells.selectedCellIds(undefined))));
     expect(viewportRegions?.cells).toBe(command.cells); expect(viewportRegions?.placement).toBe(command.placement);
     await click('Cancel area selection'); expect(viewportRegions).toBeNull();
     await click('Pick profile sketch from model');
@@ -714,7 +1069,7 @@ describe('CAD sketch interaction', () => {
     await act(async () => requestViewportMenu?.({ clientX: 100, clientY: 100, trigger: 'pointer', target: { kind: 'feature', featureId: 'pad-b' } }));
     expect(document.querySelector('[role="menu"]')).not.toBeNull();
     expect(() => viewport().apply({ kind: 'select-feature', featureId: 'pad' })).toThrow('Apply or cancel');
-    await click('Move / Rotate');
+    await click('Move / rotate');
     expect([...container.querySelectorAll('select')].find(select => [...select.options].some(option => option.value === 'pad-b'))?.value).toBe('pad-b');
     expect(currentSession.getSnapshot().document).toBe(accepted.document);
     await click('Apply');
@@ -941,12 +1296,76 @@ describe('CAD sketch interaction', () => {
     await canvasClick(450, 100);
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch') throw new Error('Expected sketch.');
-    expect(sketch.profiles[0].geometry).toEqual({ kind: 'rectangle', x: 0, y: 0, width: 50, height: 40, cornerRadius: 0 });
+    expect(sketch.profiles).toEqual([]);
+    expect(sketch.graph?.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [50, 40], [0, 40]]);
+    expect(sketch.graph?.entities.map(entity => entity.kind)).toEqual(['line', 'line', 'line', 'line']);
+    expect(sketch.graph?.relations.map(relation => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical']);
+    expect(currentDocument.schemaVersion).toBe(2);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph?.entities[0].id }]);
     expect(workflow).toHaveBeenLastCalledWith(false);
     expect(container.querySelector('[aria-label="Sketch measurements"]')?.textContent).toContain('2,000 mm²');
     expect(container.querySelector('[aria-label="Sketch measurements"]')?.textContent).toContain('180 mm');
     await click('File'); await click('Send sketch to CAM');
     expect(sendToCam).toHaveBeenCalledWith(sketch.id);
+  });
+
+  it('retains a new graph edge selection when deferred drawing acceptance publishes its source', async () => {
+    let accept: (() => void) | undefined;
+    await mount(createCadDocument(), { build: null, buildState: 'idle', onEdit: (edit, signal) => {
+      if (edit.kind !== 'append-sketch-entities') { currentSession.edit([edit]); return; }
+      return new Promise<void>(resolve => { accept = () => { signal?.throwIfAborted(); currentSession.edit([edit]); resolve(); }; });
+    } });
+    await startSketch(); await canvasClick(300, 200); await canvasClick(450, 100);
+    expect(currentSession.getSnapshot().workflowOpen).toBe(true);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    if (!accept) throw new Error('Drawing acceptance missing');
+    await act(async () => accept?.());
+    const sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph?.entities.length) throw new Error('Accepted graph missing');
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph.entities[0].id }]);
+    expect(currentSession.getSnapshot().workflowOpen).toBe(false);
+    await click('Select');
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph.entities[0].id }]);
+  });
+
+  it('appends a fresh inferred circle atomically after acceptance and aborts a cancelled attachment without clearing redo', async () => {
+    const original = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters: { anchorX: 0 }, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Anchored sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [],
+      graph: { points: [{ id: 'anchor', position: [' anchorX ', ' 0 '] }], entities: [], relations: [] }
+    }] });
+    const pending: { edit: Extract<CadEdit, { kind: 'append-sketch-entities' }>; signal?: AbortSignal; accept(): void }[] = [];
+    await mount(original, { build: null, buildState: 'idle', onEdit: (edit, signal) => {
+      if (edit.kind !== 'append-sketch-entities') { currentSession.edit([edit]); return; }
+      return new Promise<void>((resolve, reject) => pending.push({ edit, signal, accept: () => {
+        if (signal?.aborted) { reject(signal.reason); return; }
+        currentSession.edit([edit]); resolve();
+      } }));
+    } });
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' })); await click('Circle');
+    const infer = container.querySelector<HTMLInputElement>('input[aria-label="Create coincident relations"]');
+    if (!infer) throw new Error('Coincident drawing control missing.');
+    expect(infer.checked).toBe(false); await act(async () => infer.click());
+    await canvasClick(300, 200); await canvasClick(450, 200);
+    expect(pending).toHaveLength(1); expect(currentDocument).toBe(original);
+    expect(currentSession.getSnapshot().workflowOpen).toBe(true);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    const payload = pending[0].edit.geometry, center = payload.points[0], entity = payload.entities[0];
+    expect(payload.points).toHaveLength(1); expect(center.id).not.toBe('anchor');
+    expect(center.position).toEqual([0, 0]);
+    expect(payload.relations).toEqual([{ id: expect.any(String), kind: 'coincident', pointIds: [center.id, 'anchor'] }]);
+    await act(async () => pending[0].accept());
+    const accepted = currentDocument;
+    expect(currentDocument.features[0]).toMatchObject({ graph: { points: [{ id: 'anchor', position: [' anchorX ', ' 0 '] }, center], relations: payload.relations } });
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: entity.id }]);
+    await act(async () => currentSession.undo()); expect(currentDocument).toBe(original);
+    await act(async () => currentSession.redo()); expect(currentDocument).toBe(accepted);
+    await act(async () => currentSession.undo()); const before = currentSession.getSnapshot();
+    await canvasClick(300, 200); await canvasClick(390, 200);
+    expect(pending).toHaveLength(2); expect(pending[1].edit.geometry.relations[0]).toMatchObject({ kind: 'coincident', pointIds: [expect.any(String), 'anchor'] });
+    await canvasKey('Escape'); expect(pending[1].signal?.aborted).toBe(true);
+    await act(async () => pending[1].accept());
+    expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: before.canUndo, canRedo: true, workflowOpen: false });
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
   });
 
   it('keeps a multi-click polygon provisional and Escape cancels it without changing saved geometry', async () => {
@@ -959,6 +1378,222 @@ describe('CAD sketch interaction', () => {
     expect(sketch.kind === 'sketch' && sketch.profiles).toEqual([]);
     expect(button('Finish sketch').disabled).toBe(false);
     expect(workflow).toHaveBeenLastCalledWith(false);
+  });
+
+  it('closes a free polygon into shared point identities and changes only a selected edge to construction', async () => {
+    await mount(); await startSketch(); await click('Polyline');
+    await canvasClick(300, 200); await canvasClick(450, 200); await canvasClick(375, 100); await canvasKey('Enter');
+    const sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
+    expect(sketch.profiles).toEqual([]);
+    expect(sketch.graph.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [25, 40]]);
+    expect(sketch.graph.entities).toHaveLength(3); expect(sketch.graph.relations).toEqual([]);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph.entities[0].id }]);
+    await click('Select');
+    const edge = sketch.graph.entities[1];
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: edge.id } }));
+    const construction = container.querySelector<HTMLInputElement>('.cad-sketch-options input');
+    if (!construction) throw new Error('Construction control missing.');
+    await act(async () => construction.click());
+    expect(currentDocument.features[0]).toMatchObject({ graph: { points: sketch.graph.points, entities: sketch.graph.entities.map(item => ({ ...item, construction: item.id === edge.id })) } });
+    expect(viewport().getState().selectedSketchGeometry).toEqual({ kind: 'entity', id: edge.id });
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
+  it('authors a circle diameter from the toolbar and reopens that exact driver from its native annotation', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Round plate',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points: [{ id: 'center', position: [' 0 ', '0'] }],
+        entities: [{ id: 'circle', kind: 'circle', centerPointId: 'center', radius: 5, construction: false }], relations: [] } }] });
+    setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'circle' } }));
+    expect(button('Dimension').disabled).toBe(false); await click('Dimension');
+    expect(field('Diameter').value).toBe('10'); await click('Cancel'); expect(currentDocument).toBe(source);
+    await click('Dimension'); await click('Apply');
+    const sketch = currentDocument.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing radial sketch.');
+    const relation = sketch.graph.relations[0]; expect(relation).toMatchObject({ kind: 'radial-size', entityId: 'circle', quantity: 'diameter', value: 10 });
+    const label = container.querySelector('[data-cad-sketch-dimension] [role="button"]'); if (!label) throw new Error('Missing radial annotation.');
+    await act(async () => label.dispatchEvent(new MouseEvent('click', { button: 0, bubbles: true, cancelable: true })));
+    expect(field('Diameter').value).toBe('10'); expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'circle' }]);
+    expect(currentDocument.features[0]).toBe(sketch);
+  });
+
+  it('chooses an axis dimension without adding an aligned driver and reopens its annotation as the same ordered point pair', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Point offsets',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [30, 20] }],
+        entities: [{ id: 'reference', kind: 'line', startPointId: 'a', endPointId: 'b', construction: true }], relations: [] } }] });
+    setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const pair = [{ kind: 'point' as const, id: 'b' }, { kind: 'point' as const, id: 'a' }];
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: pair }));
+    await click('Dimension'); expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    expect(currentDocument).toBe(source); await click('Horizontal distance');
+    expect(field('Horizontal distance').value).toBe('-30'); await click('Apply');
+    const sketch = currentDocument.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Offset sketch missing.');
+    expect(sketch.graph.relations).toEqual([expect.objectContaining({ kind: 'axis-distance', axis: 'x', pointIds: ['b', 'a'], value: -30 })]);
+    const annotation = container.querySelector(`[data-cad-sketch-dimension="${sketch.graph.relations[0].id}"] [role="button"]`);
+    if (!annotation) throw new Error('Axis annotation missing.');
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'reference' } }));
+    await act(async () => annotation.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual(pair);
+    expect(field('Horizontal distance').value).toBe('-30'); expect(currentDocument.features[0]).toBe(sketch);
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
+  it('picks two points after Dimension without moving geometry, restores canceled selection and keeps the exact ordered axis driver', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Bore layout',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points: [{ id: 'origin', position: [' 0 ', '0'] }, { id: 'center', position: [18, 12] }],
+        entities: [{ id: 'outer', kind: 'circle', centerPointId: 'origin', radius: ' 50 ', construction: true },
+          { id: 'bore', kind: 'circle', centerPointId: 'center', radius: ' 4 ', construction: false }], relations: [] } }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const point = (id: string) => {
+      const element = container.querySelector(`[data-cad-sketch-point="${id}"]`); if (!element) throw new Error('Point missing.');
+      return element;
+    };
+    const pick = async (id: string) => act(async () => point(id).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    const accepted = currentSession.getSnapshot(); await click('Path'); await click('Dimension');
+    expect(button('Finish sketch').disabled).toBe(true); await pick('origin');
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'origin' }]);
+    expect(currentDocument).toBe(source); expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
+    await pick('origin'); expect(viewport().getState().selectedSketchGeometrySet).toHaveLength(1);
+    await act(async () => point('origin').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
+    expect(currentDocument).toBe(source); await canvasKey('Escape');
+    expect(currentSession.getSnapshot()).toEqual(accepted); expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    expect(button('Path').getAttribute('aria-pressed')).toBe('true');
+    await click('Dimension'); await pick('origin'); await pick('center');
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'origin' }, { kind: 'point', id: 'center' }]);
+    expect(currentDocument).toBe(source); await click('Horizontal distance'); await input(field('Horizontal distance'), '18'); expect(button('Apply').disabled).toBe(false); await click('Apply');
+    expect(container.querySelector('[role=alert]')?.textContent ?? '').toBe('');
+    expect(currentDocument.features[0]).toMatchObject({ graph: { points: source.features[0].kind === 'sketch' ? source.features[0].graph?.points : [],
+      relations: [{ kind: 'axis-distance', axis: 'x', pointIds: ['origin', 'center'], value: 18 }] } });
+    expect(currentSession.getSnapshot().canUndo).toBe(true); expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
+  it('invalidates a pending Dimension pick on a new source and opens arc sizing through the existing editor', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Arc guide',
+      suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points: [{ id: 'center', position: [' 0 ', '0'] },
+        { id: 'start', position: [5, 0] }, { id: 'end', position: [0, 5] }], entities: [
+        { id: 'arc', kind: 'arc', centerPointId: 'center', startPointId: 'start', endPointId: 'end', direction: 'ccw', construction: true }], relations: [] } }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await click('Dimension'); expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
+    const center = container.querySelector('[data-cad-sketch-point="center"]'); if (!center) throw new Error('Center missing.');
+    await act(async () => center.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'center' }]);
+    const changed = { ...source, parameters: { newDriver: 3 } };
+    await act(async () => replaceDocument(changed));
+    expect(currentDocument).toEqual(changed); const replaced = currentDocument; expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'center' }]);
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: null }));
+    await click('Dimension');
+    const arc = container.querySelector('[data-cad-sketch-entity="arc"]'); if (!arc) throw new Error('Arc missing.');
+    await act(async () => arc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(field('Radius').value).toBe('5'); await click('Cancel');
+    expect(currentDocument).toBe(replaced); expect(currentSession.getSnapshot().canUndo).toBe(false);
+  });
+
+  it('opens graph context Dimension on its actual target and moves the retained selected set through the existing editors', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Menu layout'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Menu layout', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }], entities: [
+          { id: 'first', kind: 'circle', construction: false, centerPointId: 'a', radius: 3 },
+          { id: 'second', kind: 'circle', construction: false, centerPointId: 'b', radius: 3 }], relations: []
+      }
+    }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    const edge = (id: string) => { const found = container.querySelector<SVGGElement>(`[data-cad-sketch-entity="${id}"]`); if (!found) throw new Error('Missing graph edge.'); return found; };
+    const key = async (id: string, key: string, shiftKey = false) => act(async () => {
+      const target = edge(id); target.focus(); target.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }));
+    });
+    const menu = async (label: string) => act(async () => {
+      const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === label);
+      if (!item) throw new Error(`${label} menu item missing.`); item.click();
+    });
+    await key('first', 'Enter'); const before = currentSession.getSnapshot();
+    await key('second', 'F10', true);
+    const dimensionItem = document.querySelector<HTMLButtonElement>('[role="menuitem"]'); if (!dimensionItem) throw new Error('Menu missing.');
+    await act(async () => dimensionItem.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(edge('second')); expect(currentSession.getSnapshot()).toEqual(before);
+    await key('second', 'F10', true); await menu('Dimension');
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'second' }]);
+    expect(field('Diameter').value).toBe('6'); expect(currentDocument).toBe(before.document);
+    await click('Cancel'); expect(currentDocument).toBe(before.document);
+    await key('second', 'F10', true); await menu('Dimension'); await click('Apply');
+    const dimensioned = currentDocument.features[0];
+    expect(dimensioned).toMatchObject({ graph: { relations: [{ kind: 'radial-size', entityId: 'second', quantity: 'diameter', value: 6 }] } });
+    await key('first', 'Enter', true); const selected = viewport().getState().selectedSketchGeometrySet, original = currentDocument;
+    expect(selected).toEqual([{ kind: 'entity', id: 'second' }, { kind: 'entity', id: 'first' }]);
+    await key('second', 'F10', true); await menu('Move selection');
+    const moveX = container.querySelector<HTMLInputElement>('[aria-label="Move X"]'); if (!moveX) throw new Error('Move field missing.');
+    await input(moveX, '5'); await click('Cancel'); expect(currentDocument).toBe(original);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual(selected);
+    await key('first', 'F10', true); await menu('Move selection');
+    const nextX = container.querySelector<HTMLInputElement>('[aria-label="Move X"]'); if (!nextX) throw new Error('Move field missing.');
+    await input(nextX, '5'); await click('Apply');
+    expect(currentDocument.features[0]).toEqual({ ...dimensioned, graph: { ...(dimensioned.kind === 'sketch' ? dimensioned.graph : {}),
+      points: [{ id: 'a', position: [5, 0] }, { id: 'b', position: [25, 0] }] } });
+    await act(async () => currentSession.undo()); expect(currentDocument).toEqual(original);
+  });
+
+  it('offers the same angle Dimension from dock and context menu for a linked guide and a free line', async () => {
+    const base = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [
+      { id: 'layout', kind: 'sketch', name: 'Layout', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+        points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: ['20', '0'] }],
+        entities: [{ id: 'guide', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' }], relations: [] } },
+      { id: 'target', kind: 'sketch', name: 'Target', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+        points: [{ id: 'u', position: [0, 0] }, { id: 'v', position: [10, 10] }],
+        entities: [{ id: 'free', kind: 'line', construction: false, startPointId: 'u', endPointId: 'v' }], relations: [] } },
+    ] });
+    const source = applyCadEdits(base, [{ kind: 'use-sketch-entity', sketchId: 'target', sourceSketchId: 'layout', sourceEntityId: 'guide', idPrefix: 'ref' }]);
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'target' }));
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: [{ kind: 'entity', id: 'ref_e0' }, { kind: 'entity', id: 'free' }] }));
+    expect(button('Dimension').disabled).toBe(false); await click('Dimension');
+    expect(Number(field('Angle').value)).toBe(45); await click('Cancel'); expect(currentDocument).toBe(source);
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'), free = container.querySelector<SVGGElement>('[data-cad-sketch-entity="free"]');
+    if (!canvas || !free) throw new Error('Line canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    await act(async () => { free.focus(); free.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+    const action = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Dimension');
+    if (!action) throw new Error('Dimension action missing.'); expect(action.disabled).toBe(false);
+    await act(async () => action.click()); expect(Number(field('Angle').value)).toBe(45); await click('Apply');
+    const target = currentDocument.features[1], original = source.features[1];
+    if (target.kind !== 'sketch' || original.kind !== 'sketch' || !target.graph || !original.graph) throw new Error('Target missing.');
+    expect(currentDocument.features[0]).toEqual(source.features[0]); expect(target.graph.points).toEqual(original.graph.points); expect(target.graph.entities).toEqual(original.graph.entities);
+    expect(target.graph.relations).toEqual([...original.graph.relations, expect.objectContaining({ kind: 'line-angle', value: 45 })]);
+    await act(async () => currentSession.undo()); expect(currentDocument).toEqual(source);
+  });
+
+  it('starts Dimension before picking an edge, cancels cleanly and applies a linked length through the same editor', async () => {
+    await mount({ ...createCadDocument(), parameters: { plateWidth: 50 } }); await startSketch();
+    await canvasClick(300, 200); await canvasClick(450, 100); await click('Select');
+    await click('Expand Parameters');
+    const accepted = currentSession.getSnapshot(), created = currentDocument.features[0];
+    if (created.kind !== 'sketch' || !created.graph) throw new Error('Fresh rectangle missing.');
+    const edgeId = created.graph.entities[0].id;
+    await canvasClick(100, 350);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    expect(button('Dimension').disabled).toBe(false); await click('Dimension');
+    expect(button('Finish sketch').disabled).toBe(true); expect(button('Edit parameter plateWidth').disabled).toBe(true);
+    expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
+    await click('Cancel');
+    expect(currentSession.getSnapshot()).toEqual(accepted); expect(currentDocument).toBe(accepted.document);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    await click('Dimension');
+    const edge = container.querySelector(`[data-cad-sketch-entity="${edgeId}"]`);
+    if (!edge) throw new Error('Dimension edge missing.');
+    await act(async () => edge.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(field('Length').value).toBe('50');
+    expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
+    await click('Cancel');
+    expect(currentDocument.features[0]).toMatchObject({ graph: { relations: Array.from({ length: 4 }, () => expect.any(Object)) } });
+    await click('Dimension'); await relation('Length', 'plateWidth'); await click('Apply');
+    const sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
+    expect(sketch.graph.relations.map(item => item.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical', 'distance']);
+    expect(sketch.graph.relations.at(-1)).toMatchObject({ kind: 'distance', value: 'plateWidth' });
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
   it.each(['name', 'parameter'] as const)('blocks a new path while a %s edit is pending without losing either field or history', async editor => {
@@ -1001,9 +1636,38 @@ describe('CAD sketch interaction', () => {
     expect(button('Finish sketch').disabled).toBe(false); expect(button('Rectangle').disabled).toBe(false);
   });
 
+  it('finishes an open path without inventing material and edits one of its shared joints', async () => {
+    await mount(); await startSketch(); await click('Path');
+    await canvasClick(300, 200); await canvasClick(450, 200); await canvasClick(450, 100);
+    await click('Finish path');
+    const sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph path missing.');
+    expect(sketch.profiles).toEqual([]); expect(sketch.graph.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [50, 40]]);
+    expect(sketch.graph.entities).toHaveLength(2); expect(measureCadSketch(currentDocument, sketch.id).materialAreaMm2).toBe(0);
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    await click('Select');
+    const joint = container.querySelector<SVGGElement>(`[data-cad-sketch-point="${sketch.graph.points[1].id}"]`);
+    if (!joint) throw new Error('Path joint missing.');
+    await act(async () => joint.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
+    expect(currentDocument.features[0]).toMatchObject({ graph: { points: [{ position: [0, 0] }, { position: [55, 0] }, { position: [50, 40] }], entities: sketch.graph.entities } });
+    expect(viewport().getState().selectedSketchGeometry).toEqual({ kind: 'point', id: sketch.graph.points[1].id });
+  });
+
+  it('closes a freshly drawn mixed path with exact shared arc joints and analytic material', async () => {
+    await mount(); await startSketch(); await click('Path');
+    await canvasClick(300, 200); await canvasClick(360, 200); await click('3-point Arc');
+    await canvasClick(360, 150); await canvasClick(390, 175); await click('Line'); await canvasClick(300, 150);
+    await click('Close profile');
+    const sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph path missing.');
+    expect(sketch.profiles).toEqual([]);
+    expect(sketch.graph.entities.map(entity => entity.kind)).toEqual(['line', 'arc', 'line', 'line']);
+    expect(measureCadSketch(currentDocument, sketch.id).materialAreaMm2).toBeCloseTo(400 + 50 * Math.PI, 8);
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
   it('edits a profile with a named expression and leaves Ctrl+Z to focused inputs', async () => {
-    await mount({ ...createCadDocument(), parameters: { plateWidth: 80 } });
-    await startSketch(); await canvasClick(300, 200); await canvasClick(450, 100);
+    await openLegacyRectangle({ plateWidth: 80 });
     await click('Add dimension'); await input(dimensionValue(), 'plateWidth / 2');
     expect(button('Save').disabled).toBe(true);
     expect(workflow).toHaveBeenLastCalledWith(true);
@@ -1019,7 +1683,7 @@ describe('CAD sketch interaction', () => {
   });
 
   it('refreshes selected profile fields when an imported document preserves feature and profile IDs', async () => {
-    await mount(); await startSketch(); await canvasClick(300, 200); await canvasClick(450, 100);
+    await openLegacyRectangle();
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch') throw new Error('Expected sketch.');
     const profile = sketch.profiles[0];
@@ -1034,7 +1698,7 @@ describe('CAD sketch interaction', () => {
   });
 
   it('preserves the document when an expression is invalid and Cancel restores the field', async () => {
-    await mount(); await startSketch(); await canvasClick(300, 200); await canvasClick(450, 100);
+    await openLegacyRectangle();
     await click('Add dimension'); await input(dimensionValue(), 'missingParameter * 2'); await click('Apply');
     expect(container.querySelector('.cad-sketch-intent-editor [role="alert"]')?.textContent).toContain('Unknown parameter');
     const sketch = currentDocument.features[0];
@@ -1122,7 +1786,7 @@ describe('CAD sketch interaction', () => {
     expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
     await canvasKey('ArrowRight', true); await canvasKey('ArrowUp', true); await canvasKey('Enter');
     const sketch = currentDocument.features[0];
-    expect(sketch.kind === 'sketch' && sketch.profiles[0].geometry).toEqual({ kind: 'rectangle', x: 0, y: 0, width: 50, height: 50, cornerRadius: 0 });
+    expect(sketch.kind === 'sketch' && sketch.graph?.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [50, 50], [0, 50]]);
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
@@ -1238,7 +1902,7 @@ describe('CAD sketch interaction', () => {
     expect(signal?.aborted).toBe(true); expect(currentSession.getSnapshot().workflowOpen).toBe(false);
     await click('Chamfer');
     await act(async () => finish?.({ bodyId: 'pad', buildId: 'build-1', purpose: 'fillet', selection: selectedEdgeQuery }));
-    expect(container.querySelector('.cad-property-title')?.textContent).toBe('Create Chamfer');
+    expect(container.querySelector('.cad-property-title')?.textContent).toBe('Create chamfer');
     await click('Apply');
     expect(currentDocument.features.at(-1)?.kind).toBe('chamfer');
   });
@@ -1289,8 +1953,10 @@ describe('CAD sketch interaction', () => {
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch') throw new Error('Sketch missing.');
     expect(sketch.profiles.every((profile) => profile.role === undefined)).toBe(true);
-    const circle = sketch.profiles[1].geometry;
-    if (circle.kind !== 'circle' || typeof circle.radius !== 'number') throw new Error('Numeric circle missing.');
+    expect(sketch.profiles).toEqual([]);
+    expect(sketch.graph?.entities).toHaveLength(5);
+    const circle = sketch.graph?.entities[4];
+    if (!circle || circle.kind !== 'circle' || typeof circle.radius !== 'number') throw new Error('Numeric circle missing.');
     expect(measureCadSketch(currentDocument, sketch.id).materialAreaMm2).toBeCloseTo(2000 - Math.PI * circle.radius * circle.radius, 5);
     await click('Finish sketch'); await click('File'); await click('Send sketch to CAM');
     expect(sendToCam).toHaveBeenCalledWith(sketch.id);
@@ -1355,4 +2021,45 @@ describe('CAD sketch interaction', () => {
     expect(sketch.kind === 'sketch' && sketch.profiles[0]).toMatchObject({ name: 'Renamed contour', geometry });
     expect(measureCadSketch(currentDocument, 'path-sketch').materialAreaMm2).toBeCloseTo(Math.PI * 50, 6);
   });
+});
+
+
+it('owns circle-row preview, Cancel, copy omission and detach through the contextual sketch command', async () => {
+  const initial=circleRowPart(true); await mount(initial);
+  await act(async()=>viewport().apply({kind:'edit-sketch',sketchId:'sketch'}));
+  await act(async()=>viewport().apply({kind:'select-sketch-geometry',selection:{kind:'entity',id:'seed'}}));
+  await click('Pattern'); await click('Linear pattern');
+  await input(field('Pitch'),'15');
+  const occurrence=()=>container.querySelector<SVGGElement>('[data-cad-pattern-instance="2"]')!;
+  await act(async()=>occurrence().dispatchEvent(new MouseEvent('click',{bubbles:true})));
+  expect(occurrence().getAttribute('aria-checked')).toBe('false'); expect(currentDocument).toBe(initial);
+  await click('Cancel'); expect(currentDocument).toBe(initial);
+  await click('Pattern'); await click('Linear pattern'); await input(field('Pitch'),'15'); await click('Apply');
+  let row=rowSketch(currentDocument),owner=row.graph.relations.find(r=>r.kind==='linear-pattern');
+  if(owner?.kind!=='linear-pattern')throw Error('Missing owner');
+  expect(owner).toMatchObject({count:4,spacing:15,direction:'+x',omittedInstances:[]});
+  const member=owner.idPrefix+'_i2_e0';
+  await act(async()=>viewport().apply({kind:'select-sketch-geometry',selection:{kind:'entity',id:member}}));
+  expect(button('Move selection').disabled).toBe(true);
+  const construction=container.querySelector<HTMLInputElement>('.cad-sketch-options input');expect(construction?.disabled).toBe(true);
+  await click('Edit pattern'); await act(async()=>occurrence().dispatchEvent(new MouseEvent('click',{bubbles:true}))); await click('Apply');
+  row=rowSketch(currentDocument); expect(row.graph.entities.some(e=>e.id===member)).toBe(false);
+  await click('Edit pattern'); expect(occurrence().getAttribute('aria-checked')).toBe('false');
+  await act(async()=>occurrence().dispatchEvent(new MouseEvent('click',{bubbles:true})));await click('Apply');
+  row=rowSketch(currentDocument);expect(row.graph.entities.some(e=>e.id===member)).toBe(true);
+  const linked=row.graph; await click('Detach pattern'); expect(field('Pitch').matches(':disabled')).toBe(true);await click('Apply');
+  row=rowSketch(currentDocument);expect(row.graph.relations).toEqual([]);expect(row.graph.entities).toEqual(linked.entities);expect(row.graph.points).toEqual(linked.points);
+  await act(async()=>viewport().apply({kind:'select-sketch-geometry',selection:{kind:'entity',id:member}})); expect(button('Move selection').disabled).toBe(false);
+});
+
+
+it('keeps a linked Use endpoint available as the first Dimension point and as a fixed point-pair anchor',async()=>{
+  const base=parseCadDocument({...createCadDocument(),schemaVersion:2,features:[
+    {id:'layout',kind:'sketch',name:'Layout',plane:'XY',offset:0,suppressed:false,profiles:[],graph:{points:[{id:'a',position:['0','0']},{id:'b',position:['20','0']}],entities:[{id:'edge',kind:'line',construction:true,startPointId:'a',endPointId:'b'}],relations:[]}},
+    {id:'target',kind:'sketch',name:'Target',plane:'XY',offset:0,suppressed:false,profiles:[],graph:{points:[{id:'o',position:[10,8]}],entities:[{id:'hole',kind:'circle',centerPointId:'o',radius:'2',construction:false}],relations:[]}}]});
+  const source=applyCadEdits(base,[{kind:'use-sketch-entity',sketchId:'target',sourceSketchId:'layout',sourceEntityId:'edge',idPrefix:'guide'}]);await mount(source);
+  await act(async()=>viewport().apply({kind:'edit-sketch',sketchId:'target'}));await act(async()=>viewport().apply({kind:'select-sketch-geometry',selection:{kind:'point',id:'guide_p0'}}));
+  expect(button('Dimension').disabled).toBe(false);await click('Dimension');
+  const target=container.querySelector<SVGGElement>('[data-cad-sketch-point="o"]')!;await act(async()=>target.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));
+  expect(button('Horizontal distance').disabled).toBe(false);expect(button('Vertical distance').disabled).toBe(false);expect(currentDocument).toBe(source);
 });

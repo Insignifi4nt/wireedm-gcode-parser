@@ -44,9 +44,9 @@ async function harness(origin = 0) {
     normals: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2, 0, 2, 3], edges: [], faceGroups: [], edgeGroups: [], volume: 32000,
     bounds: { min: [origin, origin, 0], max: [origin + 80, origin + 40, 10] } };
   const meshes = [stock], references = prepareCadViewportReferences([source], {}), sourceIds = [source.id];
-  const command: CadFeatureRegionPickCommand = { kind: 'pick-regions', owner: 'editor', expectedVersion: 'accepted', label: 'Areas', sketchId: source.id,
+  const command = { kind: 'pick-regions', owner: 'editor', expectedVersion: 'accepted', label: 'Areas', sketchId: source.id,
     cells: prepareCadSketchCells(source, {}), placement: resolveCadSketchPlacement(source, {}), selection: undefined,
-    onSelect: vi.fn(), onFinish: vi.fn(), onCancel: vi.fn() };
+    onSelect: vi.fn(), onFinish: vi.fn(), onCancel: vi.fn() } satisfies CadFeatureRegionPickCommand;
   const select = vi.fn(), menu = vi.fn(), original = JSON.stringify({ source, stock, references });
   const show = async (regionSelection: CadFeatureRegionPickCommand | null, publication = false) => {
     await act(async () => root.render(<CadViewport regionSelection={regionSelection} meshes={publication ? [{ ...stock, volume: 31999 }] : meshes}

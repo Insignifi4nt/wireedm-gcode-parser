@@ -4,17 +4,44 @@
 .cad-sketch-profile-heading > span { margin-left: auto; font-size: 9px; color: var(--foreground); white-space: nowrap; }
 .cad-sketch-profile-actions { display: flex; gap: 5px; margin-bottom: 10px; }
 .cad-sketch-profile-actions > button { flex: 1; padding: 5px; font-size: 10px; }
+.cad-sketch-pair-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; }
+.cad-sketch-angle-sectors { margin-bottom: 10px; }
+.cad-sketch-angle-sectors > span { display: flex; align-items: center; gap: 4px; margin-bottom: 5px; }
+.cad-sketch-angle-sectors > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.cad-sketch-angle-sectors button { flex-direction: column; height: auto; padding: 4px; gap: 2px; font-size: var(--text-caption); }
 .cad-sketch-constraint-list { margin: 0 0 10px; padding: 0; list-style: none; border-top: 1px solid var(--border); }
 .cad-sketch-constraint-list li { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
 .cad-sketch-constraint-list li > button:first-child { flex: 1; justify-content: flex-start; padding: 7px 0; font-size: 10px; }
 .cad-sketch-constraint-list button span { margin-left: auto; font-variant-numeric: tabular-nums; }
 .cad-sketch-constraint-list li > button:last-child:not(:first-child) { padding: 3px; }
-.cad-sketch-intent-editor > label { display: flex; align-items: center; gap: 7px; margin: 8px 0; }
-.cad-sketch-intent-editor > label > span { flex: 1; display: flex; align-items: center; gap: 4px; }
-.cad-sketch-intent-editor > label > input, .cad-sketch-intent-editor > label > select { width: 140px; min-width: 0; font-size: 11px; }
+.cad-sketch-diagnostic-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.cad-sketch-diagnostic-list button { width: 100%; min-width: 0; height: auto; min-height: var(--control-height); display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; text-align: left; white-space: normal; }
+.cad-sketch-diagnostic-list button > span { min-width: 0; }
+.cad-sketch-diagnostic-list small { color: var(--muted-foreground); font-size: var(--text-caption); white-space: nowrap; }
+.cad-sketch-intent-editor > .cad-feature-fields > label { display: grid; grid-template-columns: minmax(70px, 1fr) minmax(0, 140px) auto; align-items: center; gap: 7px; margin: 8px 0; }
+.cad-sketch-intent-editor > .cad-feature-fields > label > span { display: flex; align-items: center; gap: 4px; }
+.cad-sketch-intent-editor > .cad-feature-fields > label > :is(input, .ui-select, strong) { width: 100%; min-width: 0; font-size: 11px; }
+.cad-sketch-intent-editor > .cad-feature-fields > label > strong { color: var(--foreground); font-weight: 500; }
 .cad-sketch-intent-editor small { font-size: 9px; color: var(--muted-foreground); }
-.cad-sketch-intent-editor .cad-placement-row { display: flex; align-items: center; gap: 6px; }
-.cad-sketch-intent-editor .cad-placement-row label { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
-.cad-sketch-intent-editor .cad-placement-row input { width: 100%; min-width: 0; font-size: 11px; }
+.cad-sketch-profile-panel .cad-placement-row { display: flex; align-items: center; gap: 6px; }
+.cad-sketch-profile-panel .cad-placement-row label { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
+.cad-sketch-profile-panel .cad-placement-row input { width: 100%; min-width: 0; font-size: 11px; }
 .cad-sketch-relation { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
 .cad-workbench .cad-sketch-relation > button { font-size: 9px; padding: 3px 4px; }
+
+.cad-measurements.cad-selection-measurements { padding: 0; border: 0; display: flex; align-items: flex-start; gap: 6px; margin-bottom: 10px; }
+.cad-selection-measurements dl { flex: 1; }
+.cad-sketch-relations-disclosure { margin-bottom: 10px; }
+.cad-sketch-relations-disclosure > summary { cursor: pointer; padding: 6px 0; font-size: 10px; }
+.cad-sketch-relations-disclosure > summary span { margin-left: 5px; font-variant-numeric: tabular-nums; }
+
+.cad-sketch-pattern-preview { fill: none; stroke: var(--cad-accent); }
+.cad-sketch-pattern-axis { opacity: .55; }
+.cad-sketch-pattern-seed { stroke-width: 2; vector-effect: non-scaling-stroke; }
+.cad-sketch-pattern-instance { cursor: pointer; outline: none; }
+.cad-sketch-pattern-instance-hit { stroke: transparent; fill: transparent; pointer-events: all; }
+.cad-sketch-pattern-ghost { opacity: .65; pointer-events: none; }
+.cad-sketch-pattern-index { fill: var(--card); stroke: var(--border); }
+.cad-sketch-pattern-instance text { fill: var(--foreground); stroke: none; pointer-events: none; }
+.cad-sketch-pattern-instance:hover .cad-sketch-pattern-index, .cad-sketch-pattern-instance:focus-visible .cad-sketch-pattern-index { stroke: var(--cad-accent); }
+.cad-sketch-pattern-instance.is-omitted .cad-sketch-pattern-index { fill: var(--background); stroke-dasharray: 2 2; }

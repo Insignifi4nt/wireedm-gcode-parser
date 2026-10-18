@@ -95,7 +95,7 @@
 .cad-selector-summary strong { font-size: 10px; font-weight: 500; color: var(--foreground); }
 .cad-selector-summary dl { margin: 5px 0 11px; }
 .cad-selector-summary dl > div { margin: 6px 0; }
-.cad-selector-summary dt { text-transform: capitalize; color: var(--muted-foreground); }
+.cad-selector-summary dt { color: var(--muted-foreground); }
 .cad-selector-summary dd { margin: 3px 0 0; overflow-wrap: anywhere; color: var(--foreground); font-variant-numeric: tabular-nums; }
 .cad-divider { height: 15px; width: 1px; background: var(--card); margin: 0 3px; }
 .cad-view-message { position: absolute; inset: 35% 15% auto; pointer-events: none; display: flex; flex-direction: column; text-align: center; gap: 9px; color: var(--muted-foreground); font-size: 12px; max-width: 460px; margin: auto; }
@@ -123,7 +123,7 @@
 .cad-panel-heading button { padding: 3px; }
 .cad-property-form { padding: 13px 13px 15px; }
 .cad-editor-fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
-.cad-property-title { color: var(--foreground); font-size: 13px; font-weight: 500; margin-bottom: 17px; text-transform: capitalize; }
+.cad-property-title { color: var(--foreground); font-size: 13px; font-weight: 500; margin-bottom: 17px; }
 .cad-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
 .cad-field > span { display: flex; justify-content: space-between; color: var(--muted-foreground); font-size: 12px; }
 .cad-field > span small { font-size: 10px; color: var(--muted-foreground); }
@@ -187,15 +187,54 @@
 .cad-sketch-context { position: absolute; bottom: 32px; left: 12px; color: var(--muted-foreground); background: var(--card); border: 1px solid var(--border); padding: 4px 7px; font-size: 10px; pointer-events: none; }
 .cad-profile.is-construction { stroke: #628594; fill: none; }
 .cad-profile-preview { stroke: #71d2e1; fill: #56c7d214; pointer-events: none; }
+.cad-sketch-split-preview { fill: none; stroke-width: 2px; }
+.cad-sketch-split-preview > * { vector-effect: non-scaling-stroke; }
+.cad-sketch-split-preview .is-retained { stroke: var(--primary); }
+.cad-sketch-split-preview .is-new { stroke: var(--foreground); stroke-dasharray: 5 3; }
+.cad-sketch-split-preview circle { fill: var(--card); stroke: var(--primary); }
+.cad-sketch-trim-preview { fill: none; stroke-width: 2px; }
+.cad-sketch-trim-preview > * { vector-effect: non-scaling-stroke; }
+.cad-sketch-trim-preview .is-boundary { stroke: var(--muted-foreground); stroke-dasharray: 3 3; }
+.cad-sketch-trim-preview .is-retained { stroke: var(--primary); }
+.cad-sketch-trim-preview .is-removed { stroke: var(--destructive); stroke-dasharray: 6 3; }
+.cad-sketch-trim-preview .is-added { stroke: var(--foreground); stroke-dasharray: 5 3; }
+.cad-sketch-trim-preview .is-cut { fill: var(--card); stroke: var(--primary); }
 .cad-curve-viewport .cad-profile, .cad-curve-viewport .cad-profile.is-selected, .cad-curve-viewport .cad-profile-preview { fill: none; }
 .cad-sketch-vertex { fill: #84dcea; stroke: #143645; }
+.cad-sketch-snap-target { fill: var(--card); fill-opacity: .35; stroke: var(--primary); stroke-width: 1.5px; vector-effect: non-scaling-stroke; pointer-events: none; }
+.cad-sketch-snap-hint { pointer-events: none; opacity: .75; }
+.cad-sketch-snap-hint.is-attained { opacity: 1; }
+.cad-sketch-snap-label-bg { fill: var(--popover); stroke: var(--border); stroke-width: 1px; }
+.cad-sketch-snap-label { fill: var(--popover-foreground); font-size: 10px; }
+.cad-sketch-handle { fill: var(--card); stroke: var(--primary); stroke-width: 1.5px; vector-effect: non-scaling-stroke; cursor: crosshair; }
+.cad-sketch-handle:hover, .cad-sketch-handle.is-active, .cad-sketch-handle:focus-visible { fill: var(--primary); stroke: var(--foreground); outline: none; }
+.cad-sketch-handle.is-locked { stroke: var(--muted-foreground); cursor: not-allowed; }
+.cad-sketch-entity-hit { stroke: transparent; fill: none; pointer-events: stroke; }
+.cad-sketch-entity, .cad-sketch-entity.is-selected { fill: none; }
+.cad-sketch-graph-point { cursor: crosshair; outline: none; }
+.cad-sketch-point-hit { fill: transparent; stroke: none; }
+.cad-sketch-point-mark { fill: var(--card); stroke: var(--primary); stroke-width: 1.5px; vector-effect: non-scaling-stroke; pointer-events: none; }
+.cad-sketch-graph-point:is(:hover, :focus-visible, .is-active) .cad-sketch-point-mark { fill: var(--primary); stroke: var(--foreground); }
+.cad-sketch-graph-point.is-locked .cad-sketch-point-mark { fill: var(--muted-foreground); stroke: var(--card); }
+.cad-sketch-graph-point.is-locked.is-active .cad-sketch-point-mark { fill: var(--primary); stroke: var(--foreground); }
+.cad-sketch-drag-target { fill: none; stroke: var(--primary); stroke-width: 1px; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+.cad-sketch-drag-target.is-invalid { stroke: var(--destructive); }
+.cad-sketch-selection-box { fill: color-mix(in srgb, var(--primary) 12%, transparent); stroke: var(--primary); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.cad-sketch-selection-box.is-cross { stroke-dasharray: 5 3; }
+.cad-sketch-entity.is-relation-highlighted { stroke: var(--warning, #f0bf71); }
+.cad-sketch-graph-point.is-relation-highlighted .cad-sketch-point-mark { fill: var(--warning, #f0bf71); stroke: var(--foreground); }
+.cad-sketch-entity.is-pick-highlighted { stroke: var(--foreground); }
+.cad-sketch-graph-point.is-pick-highlighted .cad-sketch-point-mark { fill: var(--foreground); stroke: var(--primary); }
+.cad-sketch-freedom { display: flex; align-items: center; gap: 5px; padding: 7px 12px; color: var(--muted-foreground); font-size: 10px; border-bottom: 1px solid var(--border); }
 .cad-crosshair { stroke: #9cdae4; pointer-events: none; }
 .cad-plane-label { font-size: 10px; letter-spacing: .5px; margin-right: 7px; }
 .cad-grid-step { display: flex; align-items: center; gap: 5px; font-size: 10px; margin-left: 5px; color: var(--muted-foreground); }
 .cad-grid-step input { width: 55px; padding: 2px 4px; font-size: 12px; }
 .cad-sketch-instruction { position: absolute; bottom: 32px; left: 12px; right: 12px; display: flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid var(--border); background: var(--card); border-radius: 4px; font-size: 10px; color: var(--muted-foreground); }
-.cad-sketch-instruction > span { flex: 1; }
-.cad-sketch-instruction button { font-size: 12px; padding: 3px 6px; }
+/* The live prompt is the primary message; toggles and cancel stay secondary. */
+.cad-sketch-instruction > span { flex: 1; color: var(--foreground); font-size: 11px; font-weight: 500; }
+.cad-sketch-instruction .cad-check { margin: 0; font-size: 11px; }
+.cad-sketch-instruction button { font-size: 11px; font-weight: 400; padding: 3px 6px; }
 .cad-path-instruction { flex-wrap: wrap; }
 .cad-path-instruction > span { flex: 1 1 180px; }
 .cad-path-instruction button { flex-shrink: 0; }

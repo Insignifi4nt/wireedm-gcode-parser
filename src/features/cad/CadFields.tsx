@@ -2,7 +2,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import type { CadDocument, CadScalar } from '@/domain/cad/cadDocument';
-import { createContext, useContext, useLayoutEffect } from 'react';
+import { createContext, useContext, useLayoutEffect, useState } from 'react';
 import { SelectIcon } from '@wire-edm/icons-react';
 import { CadFeatureReferencePickingContext } from './cadFeatureReferencePicking';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
@@ -28,6 +28,7 @@ export const CadScalarEditContext = createContext<CadScalarEditContextValue | nu
 type ScalarFieldProps = { label: string; inputLabel?: string; fieldKey?: string; value: CadScalar; parameters: CadDocument['parameters']; onChange(value: CadScalar): void; unit?: string };
 
 function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onChange, unit = 'mm', context }: ScalarFieldProps & { fieldKey: string; context: CadScalarEditContextValue }) {
+  const [focused, setFocused] = useState(false);
   const binding = inspectCadScalarValue(value, context.parameters);
   const resolved = binding.kind === 'invalid' ? undefined : binding.quantity;
   let issue = binding.kind === 'invalid' ? binding.reason : '';
@@ -35,11 +36,13 @@ function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onC
   const literal = binding.kind === 'literal';
   const locked = binding.kind === 'formula' || binding.kind === 'invalid';
   const raw = context.valueDrafts[key], draft = raw?.source === value ? raw.text : undefined;
-  let text = resolved === undefined ? '—' : String(resolved);
+  let draftText: string | undefined;
   if (draft !== undefined && !locked) {
-    try { if (numericValue(draft) === resolved) text = draft; }
-    catch (error) { text = draft; issue = error instanceof Error ? error.message : 'Invalid numeric value.'; }
+    try { if (numericValue(draft) === resolved) draftText = draft; }
+    catch (error) { draftText = draft; issue = error instanceof Error ? error.message : 'Invalid numeric value.'; }
   }
+  const exactText = draftText ?? (resolved === undefined ? '—' : String(resolved));
+  const text = draftText !== undefined || focused || resolved === undefined ? exactText : formatCadQuantity(resolved);
   useLayoutEffect(() => { context.setIssue(key, issue || null); }, [key, issue, context.setIssue]);
   useLayoutEffect(() => () => { context.setIssue(key, null); }, [key, context.setIssue]);
   const changeRelation = (next: CadScalar) => { context.setValueDraft(key, null); context.markRelationEdited(key); onChange(next); };
@@ -51,6 +54,14 @@ function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onC
         description="A document parameter keeps this value linked. Relation and parameter edits stay in this draft until you Apply."
         onPendingChange={pending => context.setRelationPending(key, pending)} /></CadContextHelp></span>
     <Input value={text} inputMode="decimal" spellCheck={false} readOnly={locked} aria-label={`${inputLabel}${unit ? ` ${unit}` : ''}`} aria-invalid={Boolean(issue) || undefined}
+      onFocus={event => {
+        const control = event.currentTarget;
+        if (control.value !== exactText) {
+          // Expanding a readout changes native selection; select the complete exact value.
+          control.value = exactText; control.setSelectionRange(0, exactText.length);
+        }
+        setFocused(true);
+      }} onBlur={() => setFocused(false)}
       title={`${inputLabel}: ${issue || (locked ? `${value} = ${resolved} ${unit}. Edit this relation with fx.` : alias ? `${value} = ${resolved} ${unit}. Edits update the shared parameter.` : `${resolved} ${unit}`)}`}
       onChange={event => {
         if (locked) return;
@@ -87,6 +98,6 @@ function ScalarExpressionField({ label, inputLabel = label, value, parameters, o
   try { resolved = `${formatCadQuantity(evaluateCadScalar(value, parameters))} ${unit}`; }
   catch (error) { invalid = true; resolved = error instanceof Error ? error.message : 'Invalid expression'; }
   const showResult = invalid || typeof value === 'string' && !Number.isFinite(Number(value));
-  return <label className={`cad-field ${invalid ? 'is-invalid' : ''}`}><span>{label}<small>{unit}</small><CadContextHelp label={label}><div>{cadScalarHelp(label)}</div><dl><dt>Current value</dt><dd>{resolved}</dd>{showResult && !invalid && <><dt>Linked expression</dt><dd><code>{value}</code></dd></>}</dl><div>Enter a number or a named parameter expression. Editing an expression changes this dimension's link.</div></CadContextHelp></span><Input value={value} spellCheck={false} title={resolved} aria-label={`${inputLabel}${unit ? ` ${unit}` : ''}`} aria-invalid={invalid || undefined} onChange={(event) => onChange(event.target.value)} />{showResult && <small className="cad-field-hint">{resolved}</small>}</label>;
+  return <label className={`cad-field ${invalid ? 'is-invalid' : ''}`}><span>{label}<small>{unit}</small><CadContextHelp label={label}><div>{cadScalarHelp(label)}</div><dl><dt>Current value</dt><dd>{resolved}</dd>{showResult && !invalid && <><dt>Expression</dt><dd><code>{value}</code></dd></>}</dl><div>Enter a number or a named parameter expression.</div></CadContextHelp></span><Input value={value} spellCheck={false} title={resolved} aria-label={`${inputLabel}${unit ? ` ${unit}` : ''}`} aria-invalid={invalid || undefined} onChange={(event) => onChange(event.target.value)} />{showResult && <small className="cad-field-hint">{resolved}</small>}</label>;
 }
 

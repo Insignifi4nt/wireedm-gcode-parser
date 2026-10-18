@@ -4,15 +4,17 @@ import { createPortal, flushSync } from 'react-dom';
 import './cad-context-menu.css';
 
 export type CadContextMenuItem = { readonly kind: 'separator' }
-  | { readonly label: string; readonly disabled?: boolean; readonly danger?: boolean; onSelect(): void };
+  | { readonly label: string; readonly disabled?: boolean; readonly danger?: boolean; readonly help?: string; readonly keepOpen?: boolean; onSelect(): void; onHighlight?(): void };
 export interface CadContextMenuAnchor { readonly x: number; readonly y: number }
 
 /** Target actions share existing operations; the menu owns only focus and dismissal. */
-export function CadContextMenu({ anchor, title, items, onClose }: {
+export function CadContextMenu({ anchor, title, items, onClose, onOutsidePointerDown }: {
   anchor: CadContextMenuAnchor; title: string; items: readonly CadContextMenuItem[]; onClose(): void;
+  onOutsidePointerDown?(event: PointerEvent): void;
 }) {
   const menu = useRef<HTMLDivElement>(null);
   const close = useRef(onClose); close.current = onClose;
+  const outsidePointer = useRef(onOutsidePointerDown); outsidePointer.current = onOutsidePointerDown;
   const [position, setPosition] = useState(anchor);
   useLayoutEffect(() => {
     const element = menu.current;
@@ -22,7 +24,7 @@ export function CadContextMenu({ anchor, title, items, onClose }: {
     setPosition({ x: Math.max(4, Math.min(anchor.x, window.innerWidth - bounds.width - 4)),
       y: Math.max(4, Math.min(anchor.y, window.innerHeight - bounds.height - 4)) });
     (element.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? element).focus();
-    const outside = (event: PointerEvent) => { if (event.target instanceof Node && !element.contains(event.target)) close.current(); };
+    const outside = (event: PointerEvent) => { if (event.target instanceof Node && !element.contains(event.target)) { outsidePointer.current?.(event); close.current(); } };
     const dismiss = () => close.current();
     document.addEventListener('pointerdown', outside, true);
     window.addEventListener('blur', dismiss);
@@ -48,7 +50,11 @@ export function CadContextMenu({ anchor, title, items, onClose }: {
     }}>
     <MenuLabel>{title}</MenuLabel>
     {items.map((item, index) => 'kind' in item ? <MenuSeparator key={index} />
-      : <MenuItem type="button" key={index} disabled={item.disabled} danger={item.danger}
-        onClick={() => { flushSync(onClose); item.onSelect(); }}>{item.label}</MenuItem>)}
+      : <MenuItem type="button" key={index} disabled={item.disabled} danger={item.danger} title={item.help}
+        onFocus={() => item.onHighlight?.()} onPointerEnter={() => item.onHighlight?.()}
+        onClick={() => {
+          if (item.keepOpen) { flushSync(item.onSelect); menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus(); }
+          else { flushSync(onClose); item.onSelect(); }
+        }}>{item.label}</MenuItem>)}
   </MenuSurface>, document.body);
 }

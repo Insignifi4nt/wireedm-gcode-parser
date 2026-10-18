@@ -3,6 +3,7 @@ import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { parseCadDocument } from './cadSchema';
 import { cadAnalyticPathMetrics, resolveCadProfile, resolveCadSketchRegions, type ResolvedCadProfile } from './cadSketchGeometry';
+import { compileCadSketchGeometry } from './compileCadSketchGeometry';
 
 import { prepareCadDocumentFrames } from './cadDocumentFrames';
 import { resolveCadSketchPlacement, type CadResolvedFrame } from './cadDatumPlanes';
@@ -77,7 +78,7 @@ export function measureCadSketch(document: CadDocument, sketchId: string): CadSk
   const regions = resolveCadSketchRegions(sketch, validated.parameters);
   const frame = sketch.suppressed ? null : resolveCadSketchPlacement(sketch, validated.parameters, prepareCadDocumentFrames(validated)).frame;
   const depths = new Map(regions.flatMap(region => [region.boundary, ...region.voids]).map(contour => [contour.profile.id, contour.depth]));
-  const profiles = sketch.profiles.map(profile => ({ profileId: profile.id, name: profile.name, kind: profile.geometry.kind,
+  const profiles = compileCadSketchGeometry(sketch, validated.parameters).profiles.map(profile => ({ profileId: profile.id, name: profile.name, kind: profile.geometry.kind,
     role: profile.construction && profile.role !== undefined ? profile.role
       : (depths.get(profile.id) ?? 0) % 2 === 0 ? 'outer' as const : 'hole' as const,
     construction: profile.construction, ...measureCadResolvedProfile(resolveCadProfile(profile.geometry, validated.parameters)) }));

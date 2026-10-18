@@ -101,7 +101,7 @@ it('keeps far-origin pointer selection and keyboard drawing in world millimetres
     expect(Math.abs(Number(marker.getAttribute('cx')))).toBeLessThan(10); expect(Math.abs(Number(marker.getAttribute('cy')))).toBeLessThan(10);
   }
   await key(' ');
-  expect(added).toHaveBeenCalledExactlyOnceWith({ kind: 'circle', x: far, y: -far + 5, radius: 5 });
+  expect(added).toHaveBeenCalledExactlyOnceWith({ kind: 'circle', x: far, y: -far + 5, radius: 5 }, expect.any(AbortSignal));
   expect(currentControls().getState()).toMatchObject({ centerMm: [far + 2, -far + 3], heightSpanMm: 30 });
 });
 
@@ -159,5 +159,5 @@ it('draws a far-origin mixed line/arc preview locally and publishes the unchange
     { kind: 'arc', center: [far + 20, far + 10], radius: 10, startAngle: -90, sweep: 180 },
     { kind: 'line', start: [far + 20, far + 20], end: [far, far + 20] },
     { kind: 'line', start: [far, far + 20], end: [far, far] },
-  ] });
+  ] }, expect.any(AbortSignal));
 });

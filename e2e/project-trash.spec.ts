@@ -18,7 +18,9 @@ test('restores a deleted DXF project after reload and reopens its geometry', asy
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Open project / })).toHaveCount(0);
   await page.reload();
-  await page.getByRole('combobox', { name: 'Project state filter', exact: true }).selectOption('archived');
+  await page.getByRole('button', { name: 'Filter projects', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'Archived', exact: true }).click();
+  await page.keyboard.press('Escape');
   for (const width of [1705, 1280, 700, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
@@ -27,8 +29,10 @@ test('restores a deleted DXF project after reload and reopens its geometry', asy
   await page.setViewportSize({ width: 1705, height: 1000 });
   await page.screenshot({ path: 'tmp/cam-audit/12-project-trash-reload.png', fullPage: true });
   await page.getByRole('button', { name: `Restore ${projectName}`, exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Project state filter', exact: true })).toHaveValue('active');
   await expect(page.getByRole('button', { name: /^Open project / })).toBeFocused();
+  await page.getByRole('button', { name: 'Filter projects', exact: true }).click();
+  await expect(page.getByRole('menuitemradio', { name: 'Active projects', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /^Open project / }).click();
   await expect(page.getByRole('button', { name: 'Save active document', exact: true })).toBeVisible();
   await page.screenshot({ path: 'tmp/cam-audit/13-project-restored-editor.png', fullPage: true });

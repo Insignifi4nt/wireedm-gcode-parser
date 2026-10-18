@@ -20,10 +20,14 @@ it.each(['en-US', 'de-DE', 'ar-EG'])('retains native %s grouping, fraction and s
     for (const grouping of [undefined, false] as const) {
       const options = { maximumFractionDigits: digits, ...(grouping === undefined ? {} : { useGrouping: grouping }) };
       const ordinary = new NativeNumberFormat(locale, options);
-      for (const value of [0, -0, 1000, 1234567.891234567, -1234567.891234567, 0.5 * 10 ** -digits]) {
+      const scientific = new NativeNumberFormat(locale, { notation: 'scientific', maximumSignificantDigits: 6, useGrouping: false });
+      for (const value of [0, -0, 1000, 1234567.891234567, -1234567.891234567]) {
         expect(formatCadLocalizedQuantity(value, digits, grouping)).toBe(ordinary.format(value));
       }
-      const tiny = 4 * 10 ** (-digits - 1), scientific = new NativeNumberFormat(locale, { notation: 'scientific', maximumSignificantDigits: 6, useGrouping: false });
+      // ICU builds differ on the binary half step; whichever way it rounds, a displayed zero must not erase it.
+      const half = 0.5 * 10 ** -digits, nativeHalf = ordinary.format(half);
+      expect(formatCadLocalizedQuantity(half, digits, grouping)).toBe(nativeHalf === ordinary.format(0) ? scientific.format(half) : nativeHalf);
+      const tiny = 4 * 10 ** (-digits - 1);
       expect(formatCadLocalizedQuantity(tiny, digits, grouping)).toBe(scientific.format(tiny));
       expect(formatCadLocalizedQuantity(-tiny, digits, grouping)).toBe(scientific.format(-tiny));
     }

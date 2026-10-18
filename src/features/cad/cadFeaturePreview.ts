@@ -22,7 +22,8 @@ export type CadFeaturePreviewState = { readonly kind: 'idle' }
   | (PreviewIdentity & { readonly kind: 'error'; readonly stage: 'validation' | 'kernel'; readonly message: string; readonly diagnostics: CadBuildResult['diagnostics']; readonly lastValid?: CadFeaturePreviewSnapshot });
 interface Candidate extends PreviewIdentity {
   readonly serial: number;
-  readonly document: CadDocument;
+  readonly document: CadDocument | null;
+  readonly edits: CadFeatureCandidateEdits;
   readonly baseDocument: CadDocument;
   readonly storage: WorkbenchStorageAdapter;
 }
@@ -32,6 +33,7 @@ const idle: CadFeaturePreviewState = Object.freeze({ kind: 'idle' });
 export function createCadFeaturePreviewCoordinator(options: {
   assertCurrent(expectedVersion: string): { readonly document: CadDocument; readonly storage: WorkbenchStorageAdapter };
   createKernel(): Promise<Pick<CadKernelClient, 'build' | 'dispose'>>;
+  prepare?(document: CadDocument, edits: CadFeatureCandidateEdits, signal: AbortSignal): Promise<CadDocument>;
   onChange(state: CadFeaturePreviewState): void;
   debounceMs?: number;
 }) {
@@ -70,23 +72,27 @@ export function createCadFeaturePreviewCoordinator(options: {
     const candidate = latest; latest = null;
     if (!current(candidate)) { if (owns(candidate)) clear(); return; }
     const job = { candidate, controller: new AbortController() }; active = job;
-    const kernel = client ??= Promise.resolve().then(options.createKernel);
-    void kernel.catch(() => { if (client === kernel) client = null; });
     publish({ ...identity(candidate), ...retained(candidate), kind: 'building' });
-    void kernel.then(value => {
+    let stage: 'validation' | 'kernel' = 'validation';
+    void Promise.resolve().then(() => candidate.document ?? options.prepare?.(candidate.baseDocument, candidate.edits, job.controller.signal)).then(document => {
       job.controller.signal.throwIfAborted();
-      return value.build(candidate.document, job.controller.signal);
-    }).then(result => {
       if (!current(candidate)) { if (owns(candidate)) clear(); return; }
-      if (result.diagnostics.length) publish({ ...identity(candidate), ...retained(candidate), kind: 'error', stage: 'kernel', message: result.diagnostics[0].message, diagnostics: result.diagnostics });
-      else {
-        lastValid = { ...identity(candidate), document: candidate.document, result };
-        publish({ ...lastValid, kind: 'ready' });
-      }
+      if (!document) throw new Error('The feature candidate has no prepared document.');
+      stage = 'kernel';
+      const kernel = client ??= Promise.resolve().then(options.createKernel);
+      void kernel.catch(() => { if (client === kernel) client = null; });
+      return kernel.then(value => value.build(document, job.controller.signal)).then(result => {
+        if (!current(candidate)) { if (owns(candidate)) clear(); return; }
+        if (result.diagnostics.length) publish({ ...identity(candidate), ...retained(candidate), kind: 'error', stage: 'kernel', message: result.diagnostics[0].message, diagnostics: result.diagnostics });
+        else {
+          lastValid = { ...identity(candidate), document, result };
+          publish({ ...lastValid, kind: 'ready' });
+        }
+      });
     }).catch((error: unknown) => {
       if (job.controller.signal.aborted) return;
       if (!current(candidate)) { if (owns(candidate)) clear(); return; }
-      publish({ ...identity(candidate), ...retained(candidate), kind: 'error', stage: 'kernel', message: error instanceof Error ? error.message : 'The native candidate could not be built.', diagnostics: [] });
+      publish({ ...identity(candidate), ...retained(candidate), kind: 'error', stage, message: error instanceof Error ? error.message : 'The candidate could not be prepared.', diagnostics: [] });
     }).finally(() => {
       if (active === job) { active = null; run(); }
     });
@@ -110,8 +116,9 @@ export function createCadFeaturePreviewCoordinator(options: {
         publish({ ...request, ...retained(request), kind: 'error', stage: 'validation', message: command.message, diagnostics: [] });
         return;
       }
-      const document = applyCadEdits(accepted.document, command.edits);
-      latest = { ...request, serial, document, baseDocument: accepted.document, storage: accepted.storage };
+      const edits = structuredClone(command.edits);
+      const document = options.prepare ? null : applyCadEdits(accepted.document, edits);
+      latest = { ...request, serial, document, edits, baseDocument: accepted.document, storage: accepted.storage };
       publish({ ...request, ...retained(request), kind: 'waiting' });
       timer = setTimeout(() => { timer = null; run(); }, options.debounceMs ?? 200);
     } catch (error) {
