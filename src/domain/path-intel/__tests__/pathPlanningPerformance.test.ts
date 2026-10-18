@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 
+import { buildChains } from '../chains';
+import { analyzeContours } from '../contours';
 import { clusterSegmentEndpoints } from '../endpointClusters';
+import { pathSegmentsFromDxfEntities } from '../fromDxfEntities';
+import { planOperations } from '../planOperations';
 import { sanitizePathSegments } from '../sanitizeSegments';
 import { createLineSegment } from '../segments';
 import { SpatialHash } from '../spatialIndex';
@@ -105,6 +109,28 @@ describe('path-intel endpoint clustering performance', () => {
         `[path-intel-mixed-size-performance] 1000=${oneThousandMs.toFixed(2)}ms 4000=${fourThousandMs.toFixed(2)}ms ratio=${growthRatio.toFixed(2)}x`
       );
 
+      expect(growthRatio).toBeLessThan(8);
+    }
+  );
+
+  it(
+    'keeps containment and cut ordering of 4,000 nested contours sub-quadratic',
+    { timeout: 60_000 },
+    () => {
+      const oneThousand = nestedPartChains(500);
+      const fourThousand = nestedPartChains(2_000);
+      planNestedParts(nestedPartChains(50));
+      planNestedParts(oneThousand);
+
+      const oneThousandMs = median([0, 1, 2].map(() => timeNestedPlanning(oneThousand)));
+      const fourThousandMs = median([0, 1, 2].map(() => timeNestedPlanning(fourThousand)));
+      const growthRatio = fourThousandMs / Math.max(oneThousandMs, 0.001);
+
+      console.info(
+        `[path-intel-ordering-performance] 1000=${oneThousandMs.toFixed(2)}ms 4000=${fourThousandMs.toFixed(2)}ms ratio=${growthRatio.toFixed(2)}x`
+      );
+
+      expect(fourThousandMs).toBeLessThan(10_000);
       expect(growthRatio).toBeLessThan(8);
     }
   );
@@ -298,4 +324,34 @@ function validateDisjointOpenDocument(document: ReturnType<typeof disjointOpenDo
   if (!report.structurallyValid || !report.valid) {
     throw new Error('Unexpected invalid disjoint G40 open-path document.');
   }
+}
+
+/** Rectangular parts with a centre hole on a square grid, ready for containment and ordering. */
+function nestedPartChains(parts: number) {
+  const side = Math.ceil(Math.sqrt(parts));
+  const entities = Array.from({ length: parts }, (_, index) => {
+    const x = (index % side) * 40;
+    const y = Math.floor(index / side) * 40;
+    return [
+      { type: 'lwpolyline' as const, layer: 'PERF', closed: true,
+        vertices: [[x, y], [x + 30, y], [x + 30, y + 20], [x, y + 20]].map(([vx, vy]) => ({ x: vx, y: vy, bulge: 0 })) },
+      { type: 'circle' as const, layer: 'PERF', center: { x: x + 15, y: y + 10 }, radius: 4 }
+    ];
+  }).flat();
+  const segments = sanitizePathSegments(pathSegmentsFromDxfEntities(entities).segments).segments;
+  return { segments, chains: buildChains(segments, clusterSegmentEndpoints(segments)).chains };
+}
+
+function planNestedParts({ segments, chains }: ReturnType<typeof nestedPartChains>) {
+  const { contours } = analyzeContours(chains, segments);
+  const plan = planOperations({ chains, contours, segments });
+  if (plan.operations.length !== chains.length || plan.operations[0].classification !== 'hole') {
+    throw new Error('Unexpected nested part plan.');
+  }
+}
+
+function timeNestedPlanning(parts: ReturnType<typeof nestedPartChains>) {
+  const start = performance.now();
+  planNestedParts(parts);
+  return performance.now() - start;
 }

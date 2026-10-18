@@ -8,8 +8,9 @@ import {
   segmentMap,
   signedAreaOfPath
 } from './segments';
-import { findPathSegmentIntersectionDiagnostics } from './intersections';
+import { expandBounds, findPathSegmentIntersectionDiagnostics } from './intersections';
 import { closedPathContainsPoint } from './pathContainment';
+import { SpatialHash } from './spatialIndex';
 import type {
   Bounds2,
   ContourAnalysisResult,
@@ -250,12 +251,13 @@ function assignContainment(
   const closedSimple = contours.filter(
     (contour) => contour.closed && contour.classification !== 'ambiguous'
   );
+  const possibleContainers = containerCandidateLookup(closedSimple, epsilon);
 
   for (const contour of closedSimple) {
     // Disjoint simple boundaries lie entirely inside or outside each other. A point
     // on this boundary is a valid witness; a concave polygon's centroid is not.
     const witness = pathStartPoint(chainsById.get(contour.chainId)!.segmentRefs, segmentsById);
-    const containers = closedSimple
+    const containers = possibleContainers(contour)
       .filter((candidate) => candidate.id !== contour.id && (candidate.area ?? 0) > (contour.area ?? 0) + epsilon)
       .filter((candidate) => boundsContain(candidate.bounds, contour.bounds, epsilon))
       .filter((candidate) => witness && closedPathContainsPoint(
@@ -273,11 +275,33 @@ function assignContainment(
     contour.childIds = [];
   }
 
+  const contoursById = new Map<string, PathContour>();
+  for (const contour of contours) {
+    if (!contoursById.has(contour.id)) contoursById.set(contour.id, contour);
+  }
   for (const contour of contours) {
     if (!contour.parentId) continue;
-    const parent = contours.find((candidate) => candidate.id === contour.parentId);
-    parent?.childIds.push(contour.id);
+    contoursById.get(contour.parentId)?.childIds.push(contour.id);
   }
+}
+
+/**
+ * Returns, in contour order, every contour whose bounds could contain the given contour's bounds
+ * within epsilon. Contours with unusable bounds or epsilon fall back to listing every contour.
+ */
+function containerCandidateLookup(contours: PathContour[], epsilon: number): (contour: PathContour) => PathContour[] {
+  const indexable = Number.isFinite(epsilon) && contours.every(({ bounds }) =>
+    boundsAreFinite(bounds) && bounds.minX <= bounds.maxX && bounds.minY <= bounds.maxY);
+  if (!indexable || contours.length < 2) return () => contours;
+
+  const spans = contours
+    .map(({ bounds }) => Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY))
+    .filter((span) => Number.isFinite(span) && span > 0)
+    .sort((left, right) => left - right);
+  const index = new SpatialHash<PathContour>({ cellSize: spans[Math.floor(spans.length / 2)] ?? 1, maxCellsPerBounds: 64 });
+  for (const contour of contours) index.insertBounds(contour.bounds, contour);
+  // A container's bounds reach within epsilon of every side, so they meet the expanded bounds.
+  return (contour) => index.queryBounds(expandBounds(contour.bounds, epsilon));
 }
 
 function boundsContain(outer: Bounds2, inner: Bounds2, epsilon: number) {
