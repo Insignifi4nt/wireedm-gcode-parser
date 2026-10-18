@@ -71,8 +71,8 @@ export function createBrowserDirectoryAdapter(
       if (!fileName) throw new Error('File path is empty.');
       const directory = await getDirectory(root, parts.slice(0, -1), true);
       const created = !(await fileExists(directory, fileName));
-      const handle = await directory.getFileHandle(fileName, { create: true });
       try {
+        const handle = await directory.getFileHandle(fileName, { create: true });
         const writable = await handle.createWritable();
         try {
           await writable.write(contents);
@@ -84,7 +84,7 @@ export function createBrowserDirectoryAdapter(
       } catch (error) {
         // Opening a file for writing creates it empty. A failed write must leave the path absent,
         // or readers would take the empty file for contents, such as a conflicting backup.
-        if (created) await removeIfEmpty(directory, fileName, handle);
+        if (created) await removeIfEmpty(directory, fileName);
         throw error;
       }
     })
@@ -151,9 +151,10 @@ async function fileExists(directory: FileSystemDirectoryHandle, fileName: string
 }
 
 /** Removes a file this write created, only while it is still empty; best effort after a failure. */
-async function removeIfEmpty(directory: FileSystemDirectoryHandle, fileName: string, handle: FileSystemFileHandle) {
+async function removeIfEmpty(directory: FileSystemDirectoryHandle, fileName: string) {
   try {
-    if ((await handle.getFile()).size === 0) await directory.removeEntry(fileName);
+    const file = await (await directory.getFileHandle(fileName)).getFile();
+    if (file.size === 0) await directory.removeEntry(fileName);
   } catch { /* Preserve the original storage failure. */ }
 }
 
