@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 import { createPathPlanningDocumentFromDxfEntities } from '../fromDxfEntities';
 import {
   createArcSegment,
@@ -112,6 +113,21 @@ describe('controller-neutral path planning', () => {
     expect(document.diagnostics).toContainEqual(
       expect.objectContaining({ code: 'non-finite-geometry', severity: 'error' })
     );
+  });
+
+  it('keeps ambiguous endpoint diagnostics structurally valid in memory and after cloning', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [line(0, 0, 10, 0), line(10.009, 0, 20, 0), line(10.018, 0, 30, 0)],
+      { endpointTolerance: 0.01 }
+    );
+    const ambiguous = document.diagnostics.filter(({ code }) => code === 'ambiguous-endpoint-cluster');
+
+    expect(ambiguous).not.toHaveLength(0);
+    expect(ambiguous.every((diagnostic) => !('relatedClusterIds' in diagnostic))).toBe(true);
+    // Path edits re-plan in place and workers hand documents over by structured
+    // clone; both keep own undefined properties that a JSON save would drop.
+    expect(validateUpidDocument(document).structurallyValid).toBe(true);
+    expect(validateUpidDocument(structuredClone(document)).structurallyValid).toBe(true);
   });
 });
 

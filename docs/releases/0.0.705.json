@@ -1,0 +1,27 @@
+{
+  "version": "0.0.705",
+  "previousVersion": "0.0.704",
+  "postCompatibility": "preserved-output-valid-edited-diagnostics",
+  "summary": "Keeps documents structurally valid after path edits. Endpoint clustering no longer adds an empty relatedClusterIds property; start moves record the intersection diagnostics their re-analysis produces, keep operation roles in step with re-analysed contours and record the snapped vertex when no split is needed; and split segments never reuse an id that an earlier start override, provenance record or span still names.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output, and saved documents are read unchanged. New edits differ from previous builds in four recorded details: a split may take a higher seg_edit number because retired ids stay reserved; a start that snaps to an existing vertex records the vertex instead of the requested point (they differ by less than the coincidence epsilon per axis); a start move on a self-intersecting contour can add or renumber intersection diagnostics; and a start move that reclassifies a contour closed across an endpoint gap now updates its operation role too (previously the document became invalid).",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. Cut paths, start points and posted programs for valid documents are unchanged; the recorded start override point can move by less than the coincidence epsilon to the vertex the program already starts from.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change and no cleanup of user files. Saved documents are not rewritten; split id reservation only affects ids allocated by new edits.",
+    "verification": "Six new tests each fail when only their fix is reverted: an ambiguous endpoint join validated in memory and after structuredClone; a saved drawing after moving an unrelated segment; a start at the crossing of a self-intersecting contour; a split that would have reused a retired id followed by moving the other operation; a start requested within epsilon per axis of a diagonal vertex; and a start move that reclassifies a contour closed across a gap. Randomized fuzzers found the issues and find no structural, round-trip or execution-plan failures afterwards in 4,600 imports (including randomized endpoint tolerance and coincidence epsilon) and 2,400 sequences of 30 edits across document, operation, element and segment transforms, reversals, start moves, centre pierce, classification, ordering and initial wire position, with default and randomized tolerances. The pure-domain suite, browser editor and WebMCP suites, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Path edits no longer leave a drawing reported as an invalid project.",
+    "changes": [
+      "After a path edit on a drawing where nearby endpoints could join more than one way, the edited project could fail validation, which blocks its execution plan. It now stays valid.",
+      "Moving the start of a self-intersecting contour onto its crossing point lists every intersection instead of leaving the project invalid.",
+      "Moving one contour no longer shifts the recorded start of another contour whose start was moved twice earlier.",
+      "Starts placed within the coincidence tolerance of a corner record that corner, so tight-tolerance drawings stay valid."
+    ],
+    "compatibility": "Cut order, start points, directions and posted programs are unchanged. Installed machine packages, posts, saved revisions and CAD files are unchanged.",
+    "action": "No action needed."
+  }
+}

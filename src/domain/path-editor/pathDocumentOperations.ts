@@ -552,7 +552,7 @@ export function setClosedOperationStartNearPoint(
     ...operation.overrides,
     start: {
       kind: 'manual',
-      point: { ...nearest.point },
+      point: manualStartPoint(next, operation, split, nearest.point),
       relation: split?.createdSegmentIds?.length ? 'new-split-point' : 'existing-point',
       sourceSegmentId: nearest.segmentId,
       sourceSegmentIndex: nearest.segmentIndex,
@@ -602,7 +602,7 @@ export function setClosedOperationStartAtInferredPoint(
     ...operation.overrides,
     start: {
       kind: 'manual',
-      point: { ...inferred.point },
+      point: manualStartPoint(next, operation, split, inferred.point),
       relation: split?.createdSegmentIds?.length
         ? 'new-split-point'
         : 'existing-point',
@@ -827,6 +827,19 @@ function nearestExistingOperationEndpoint(
     operationId: operation.id,
     hintPoint: point
   });
+}
+
+// Without a split the start snaps to an existing vertex, which can sit up to
+// epsilon away on each axis; record the vertex so the override and the
+// operation start agree within the validator's euclidean tolerance.
+function manualStartPoint(
+  document: PathPlanningDocument,
+  operation: PathOperation,
+  split: ReturnType<typeof splitOperationSegmentAtPoint>,
+  requested: Point2
+): Point2 {
+  if (split?.createdSegmentIds?.length) return { ...requested };
+  return pathStartPoint(operation.segmentRefs, segmentMap(document.segments)) ?? { ...requested };
 }
 
 function splitOperationSegmentAtPoint(
@@ -1463,15 +1476,36 @@ function refreshPlan(document: PathPlanningDocument) {
   document.plan.metrics = planMetrics(document.plan);
   const contourResult = analyzeContours(document.chains, document.segments, document.options);
   retainContourIds(contourResult, document.contours);
+  replaceContourAnalysisDiagnostics(document, contourResult.diagnostics);
   const manualClassificationsByContourId = manualClassifications(document);
+  const refreshedContoursById = new Map(contourResult.contours.map((contour) => [contour.id, contour]));
   document.contours = document.contours.map((contour) => {
-    const refreshed = contourResult.contours.find((candidate) => candidate.id === contour.id);
+    const refreshed = refreshedContoursById.get(contour.id);
     const nextContour = refreshed ?? contour;
     const classification = manualClassificationsByContourId.get(contour.id);
     return classification ? { ...nextContour, classification } : nextContour;
   });
+  // The area of a contour closed across an endpoint gap depends on where its
+  // traversal starts, so a start move can reclassify it; operations follow.
+  const contoursById = new Map(document.contours.map((contour) => [contour.id, contour]));
+  for (const operation of document.plan.operations) {
+    const contour = contoursById.get(operation.contourId);
+    if (contour) operation.classification = contour.classification;
+  }
   refreshOperationDisplayNames(document);
   refreshPathElements(document);
+}
+
+// Contour analysis renumbers its intersection and contour diagnostics, and a
+// split start can turn one intersection into two. Replace the previous set in
+// place so refreshed contours never name a diagnostic the document lacks.
+function replaceContourAnalysisDiagnostics(document: PathPlanningDocument, diagnostics: PathDiagnostic[]) {
+  const fromContourAnalysis = (diagnostic: PathDiagnostic) =>
+    diagnostic.id.startsWith('diag_intersection_') || diagnostic.id.startsWith('diag_contour_');
+  const first = document.diagnostics.findIndex(fromContourAnalysis);
+  const kept = document.diagnostics.filter((diagnostic) => !fromContourAnalysis(diagnostic));
+  kept.splice(first < 0 ? kept.length : first, 0, ...diagnostics);
+  document.diagnostics = kept;
 }
 
 function refreshPathElements(document: PathPlanningDocument) {
@@ -1684,7 +1718,7 @@ function recordManualOrderOverrides(document: PathPlanningDocument) {
 function nextEditSegmentIds(document: PathPlanningDocument, count: number) {
   const ids: string[] = [];
   let index = 1;
-  const existingIds = new Set(document.segments.map((segment) => segment.id));
+  const existingIds = referencedEditSegmentIds(document);
 
   while (ids.length < count) {
     const id = `seg_edit_${String(index).padStart(4, '0')}`;
@@ -1695,6 +1729,24 @@ function nextEditSegmentIds(document: PathPlanningDocument, count: number) {
     index++;
   }
 
+  return ids;
+}
+
+// A split retires its parent segment, but start overrides, edit provenance,
+// machining spans and diagnostics keep naming it. Reusing such an id would
+// attach that history to unrelated geometry, so skip every id still mentioned.
+function referencedEditSegmentIds(document: PathPlanningDocument) {
+  const ids = new Set<string>();
+  const visit = (value: unknown) => {
+    if (typeof value === 'string') {
+      if (value.startsWith('seg_edit_')) ids.add(value);
+    } else if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+    } else if (value && typeof value === 'object') {
+      for (const item of Object.values(value)) visit(item);
+    }
+  };
+  visit(document);
   return ids;
 }
 

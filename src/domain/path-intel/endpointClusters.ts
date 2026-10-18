@@ -53,16 +53,22 @@ export function clusterSegmentEndpoints(
   );
   const endpointToCluster: Record<string, string> = {};
 
+  const renamed = new Map<string, string>();
+
   clusters.forEach((cluster, index) => {
-    const oldId = cluster.id;
-    cluster.id = `ec_${String(index + 1).padStart(4, '0')}`;
-    diagnostics.forEach((diagnostic) => {
-      diagnostic.relatedClusterIds = diagnostic.relatedClusterIds?.map((id) => (id === oldId ? cluster.id : id));
-    });
+    const id = `ec_${String(index + 1).padStart(4, '0')}`;
+    renamed.set(cluster.id, id);
+    cluster.id = id;
     for (const member of cluster.members) {
       endpointToCluster[endpointKey(member.segmentId, member.side)] = cluster.id;
     }
   });
+  // Only rename ids that diagnostics already carry: an own undefined property
+  // survives structured cloning and fails UPID validation.
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.relatedClusterIds === undefined) continue;
+    diagnostic.relatedClusterIds = diagnostic.relatedClusterIds.map((id) => renamed.get(id) ?? id);
+  }
 
   return { clusters, endpointToCluster, diagnostics };
 }

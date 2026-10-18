@@ -3,8 +3,13 @@ import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/f
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 import { normalizeUpidPathElementSelection } from '@/domain/upid/projectRail';
 import { deriveSpanSegment, setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import { inferPathPoint } from '../pathPointInference';
-import { mirrorPathDocument, reversePathOperation, rotatePathDocument, setClosedOperationStartAtInferredPoint, setClosedOperationStartNearPoint, translatePathDocument, translatePathSegment } from '../pathDocumentOperations';
+import { mirrorPathDocument, reversePathOperation, rotatePathDocument, setClosedOperationStartAtInferredPoint, setClosedOperationStartNearPoint, translatePathDocument, translatePathOperation, translatePathSegment } from '../pathDocumentOperations';
+
+function line(startX: number, startY: number, endX: number, endY: number) {
+  return { type: 'line' as const, layer: 'CUT', start: { x: startX, y: startY }, end: { x: endX, y: endY } };
+}
 
 function rectangle() {
   return createPathPlanningDocumentFromDxfEntities([
@@ -69,6 +74,79 @@ describe('geometry edit identity integrity', () => {
     expect(result?.plan.operations[0].segmentRefs).toHaveLength(2);
     expect(document.plan.operations.map((operation) => operation.id)).not.toContain(result?.plan.operations[0].id);
     if (result) expect(validateUpidDocument(result).structuralDiagnostics).toEqual([]);
+  });
+
+  it('keeps a saved drawing with ambiguous endpoint joins structurally valid after an unrelated edit', () => {
+    const saved = JSON.parse(JSON.stringify(createPathPlanningDocumentFromDxfEntities(
+      [line(0, 0, 10, 0), line(10.009, 0, 20, 0), line(10.018, 0, 30, 0), line(0, 5, 10, 5)],
+      { endpointTolerance: 0.01 }
+    )));
+    expect(saved.diagnostics.some(({ code }: { code: string }) => code === 'ambiguous-endpoint-cluster')).toBe(true);
+
+    const edited = translatePathSegment(saved, saved.segments.at(-1).id, { x: 0, y: 1 });
+
+    expect(edited).not.toBeNull();
+    expect(validateUpidDocument(edited!).structuralDiagnostics).toEqual([]);
+  });
+
+  it('records every intersection a split start creates on a self-crossing contour', () => {
+    const bowtie = createPathPlanningDocumentFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 10 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 10 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 0, y: 10 } },
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 10 }, end: { x: 0, y: 0 } }
+    ]);
+
+    const edited = setClosedOperationStartNearPoint(bowtie, bowtie.plan.operations[0].id, { x: 5, y: 5 });
+
+    expect(edited).not.toBeNull();
+    const diagnosticIds = new Set(edited!.diagnostics.map(({ id }) => id));
+    expect(edited!.contours[0].diagnosticIds.filter((id) => !diagnosticIds.has(id))).toEqual([]);
+    expect(edited!.diagnostics.filter(({ code }) => code === 'intersecting-topology')).toHaveLength(2);
+    expect(validateUpidDocument(edited!).structuralDiagnostics).toEqual([]);
+  });
+
+  it('never reuses a split segment id that an earlier start override still names', () => {
+    const square = (x: number) => [line(x, 0, x + 10, 0), line(x + 10, 0, x + 10, 10), line(x + 10, 10, x, 10), line(x, 10, x, 0)];
+    let document: PathPlanningDocument | null = createPathPlanningDocumentFromDxfEntities([...square(0), ...square(20)]);
+    const operationAt = (x: number) => document!.plan.operations.find(({ startPoint }) => startPoint.x >= x && startPoint.x <= x + 10)!.id;
+    const [left, right] = [operationAt(0), operationAt(20)];
+
+    // The second move splits the first move's new segment, retiring an id the override keeps naming.
+    document = setClosedOperationStartNearPoint(document, left, { x: 5, y: 0 })!;
+    document = setClosedOperationStartNearPoint(document, left, { x: 2, y: 0 })!;
+    const retired = document.plan.operations.find(({ id }) => id === left)!.overrides!.start!.sourceSegmentId;
+    document = setClosedOperationStartNearPoint(document, right, { x: 25, y: 0 })!;
+    expect(document.plan.operations.find(({ id }) => id === right)!.overrides!.start!.createdSegmentIds).not.toContain(retired);
+
+    const moved = translatePathOperation(document, right, { x: 0, y: 3 });
+    expect(moved).not.toBeNull();
+    expect(moved!.plan.operations.find(({ id }) => id === left)!.overrides!.start!.point).toEqual({ x: 2, y: 0 });
+    expect(validateUpidDocument(moved!).structuralDiagnostics).toEqual([]);
+  });
+
+  it('records the snapped vertex when a requested start is within epsilon on each axis', () => {
+    const diamond = createPathPlanningDocumentFromDxfEntities([line(0, 0, 10, 10), line(10, 10, 20, 0), line(20, 0, 10, -10), line(10, -10, 0, 0)]);
+    const offset = diamond.options.coincidenceEpsilon * 0.95;
+
+    const edited = setClosedOperationStartNearPoint(diamond, diamond.plan.operations[0].id, { x: 10 + offset, y: 10 - offset });
+
+    expect(edited!.plan.operations[0].overrides!.start).toMatchObject({ relation: 'existing-point', point: { x: 10, y: 10 } });
+    expect(validateUpidDocument(edited!).structuralDiagnostics).toEqual([]);
+  });
+
+  it('keeps operation roles in step when a start move reclassifies a contour closed across a gap', () => {
+    const sliver = createPathPlanningDocumentFromDxfEntities(
+      [line(0, 0, 0.004, 0.004), line(0.004, 0.004, 0.005, 0)],
+      { endpointTolerance: 0.01, coincidenceEpsilon: 2e-6 }
+    );
+    expect(sliver.contours[0]).toMatchObject({ closed: true, classification: 'exterior' });
+
+    const edited = setClosedOperationStartNearPoint(sliver, sliver.plan.operations[0].id, { x: 0.004, y: 0.004 });
+
+    expect(edited!.contours[0].classification).toBe('ambiguous');
+    expect(edited!.plan.operations[0].classification).toBe('ambiguous');
+    expect(validateUpidDocument(edited!).structuralDiagnostics).toEqual([]);
   });
 
   it('rejects non-finite transform input without changing the source document', () => {
