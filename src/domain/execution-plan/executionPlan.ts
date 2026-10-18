@@ -1,3 +1,4 @@
+import { createCompensationTopologyLookup, type CompensationTopologyLookup } from '@/domain/compensation/intent';
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
@@ -249,6 +250,8 @@ export function compileWireEdmExecutionPlan(
     positioningMaterial ??= createPositioningMaterialClassifier(document);
     return positioningMaterial(from, to);
   };
+  let compensationTopology: CompensationTopologyLookup | undefined;
+  const compensationLookup = () => (compensationTopology ??= createCompensationTopologyLookup(document));
 
   for (const [operationIndex, operation] of operations.entries()) {
     const compiled = compileOperation({
@@ -260,6 +263,7 @@ export function compileWireEdmExecutionPlan(
       segmentsById,
       sourceSpansById,
       classifyMaterial,
+      compensationLookup,
       legacySavedRevision: options.legacySavedRevision === true
     });
     if (!compiled.ok) return compiled;
@@ -320,6 +324,7 @@ function compileOperation(input: {
   segmentsById: Map<string, PathSegment>;
   sourceSpansById: Map<string, MachiningSpan>;
   classifyMaterial: ReturnType<typeof createPositioningMaterialClassifier>;
+  compensationLookup: () => CompensationTopologyLookup;
   legacySavedRevision: boolean;
 }): ExecutionPlanFailure | { ok: true; endPoint: Point2 } {
   const { context, document, operation, operationIndex, segmentsById } = input;
@@ -426,7 +431,7 @@ function compileOperation(input: {
     );
   }
   const compensation = document.geometryBasis === 'finished-contour' && operation.compensationIntent?.mode === 'controller'
-    ? resolveControllerCompensation({ document, operation })
+    ? resolveControllerCompensation({ document, operation, lookup: input.compensationLookup() })
     : null;
   if (compensation?.status === 'blocked') {
     return blockedForOperation(

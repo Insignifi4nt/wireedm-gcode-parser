@@ -9,6 +9,7 @@ import {
 } from '@/domain/path-intel/segments';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 
+import { createCompensationTopologyLookup } from '../intent';
 import { resolveControllerCompensation } from '../resolveControllerCompensation';
 
 describe('resolveControllerCompensation', () => {
@@ -252,6 +253,41 @@ describe('resolveControllerCompensation', () => {
     };
 
     expect(resolve(document)).toMatchObject({ status: 'ready' });
+  });
+
+  it('gives the same result with one lookup shared across every operation', () => {
+    const document = finishedDocument([
+      line(0, 0, 10, 0), line(10, 0, 10, 5), line(10, 5, 0, 5), line(0, 5, 0, 0),
+      line(20, 0, 30, 10), line(30, 10, 30, 0), line(30, 0, 20, 6), line(20, 6, 20, 0),
+      line(40, 0, 50, 0), line(50, 0, 50, 5), line(50, 5, 40, 5), line(40, 5, 40, 0),
+      line(60, 0, 70, 0)
+    ]);
+    const blockedBySegment = document.plan.operations.find((operation) =>
+      operation.segmentRefs.some((ref) => document.segments.find((segment) => segment.id === ref.segmentId)?.start.x === 40));
+    if (!blockedBySegment) throw new Error('Expected the third rectangle to be planned.');
+    document.diagnostics.push({
+      id: 'diag_related_segment',
+      severity: 'warning',
+      code: 'overlapping-segment',
+      message: 'Blocks one rectangle only through a related segment id.',
+      relatedSegmentIds: [blockedBySegment.segmentRefs[1].segmentId]
+    });
+    for (const operation of document.plan.operations) {
+      operation.compensationIntent = operation.closed
+        ? { mode: 'controller', keptMaterial: 'inside', source: 'manual' }
+        : { mode: 'controller', wireSide: 'left', source: 'manual' };
+    }
+    const lookup = createCompensationTopologyLookup(document);
+
+    const separate = document.plan.operations.map((operation) =>
+      resolveControllerCompensation({ document, operation }));
+    const shared = document.plan.operations.map((operation) =>
+      resolveControllerCompensation({ document, operation, lookup }));
+
+    expect(shared).toEqual(separate);
+    expect(separate.map((result) => result.status === 'ready' ? 'ready' : result.reason)).toEqual([
+      'ready', 'ineligible-topology', 'ineligible-topology', 'open-path'
+    ]);
   });
 });
 

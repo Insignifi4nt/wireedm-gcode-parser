@@ -7,9 +7,26 @@ import { minimalPostPackage } from '@/domain/post-processor/__tests__/postPackag
 import { CANONICAL_POST_PLAN_FIXTURES } from '../canonicalPostConformanceFixtures';
 
 import { runCustomPostConformance } from '../customPostConformance';
-import { runCustomPost } from '../customPostRuntime';
+import { reconcileDeterminismRuns, runCustomPost, type CustomPostRunResult } from '../customPostRuntime';
 
 describe('isolated custom JavaScript post runtime', () => {
+  it('reports a run stopped by a resource limit instead of calling the post nondeterministic', async () => {
+    const completed = await runCustomPost(runtimeFixture());
+    if (!completed.ok) throw new Error(JSON.stringify(completed.diagnostics));
+    const interrupted: CustomPostRunResult = {
+      ok: false,
+      diagnostics: [{ code: 'POST_CUSTOM_RESOURCE_LIMIT', message: 'interrupted', eventId: 'evt_0007', commandId: null }]
+    };
+    const different: CustomPostRunResult = { ok: false, diagnostics: [{ ...interrupted.diagnostics[0], code: 'POST_CUSTOM_RUNTIME_FAILED' }] };
+
+    expect(reconcileDeterminismRuns(completed, interrupted)).toBe(interrupted);
+    expect(reconcileDeterminismRuns(interrupted, completed)).toBe(interrupted);
+    expect(reconcileDeterminismRuns(completed, different)).toMatchObject({
+      ok: false, diagnostics: [expect.objectContaining({ code: 'POST_CUSTOM_NONDETERMINISTIC' })]
+    });
+    expect(reconcileDeterminismRuns(completed, structuredClone(completed))).toBe(completed);
+  });
+
   it('rejects consumed required compensation and compensation-required centerline plans', async () => {
     const post = minimalPostPackage();
     post.manifest.capabilities.controllerCompensation = 'left-right';

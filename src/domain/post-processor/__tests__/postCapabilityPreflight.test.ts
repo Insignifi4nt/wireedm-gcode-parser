@@ -50,6 +50,36 @@ describe('post capability preflight', () => {
 
     expect(preflightPostCapabilities(compiled.plan, minimalPostPackage())).toEqual([]);
   });
+
+  it('requires compensation on every operation, not just on some of them', () => {
+    let document = createUpidFromDxfEntities([
+      ...rectangle(0, 0, 10, 10),
+      ...rectangle(20, 0, 30, 10)
+    ]);
+    document.setup = {
+      initialWirePosition: {
+        kind: 'manual', point: { x: -2, y: 0 }, review: 'reviewed'
+      },
+      threadingDefault: {
+        mode: 'manual', wireSeparation: 'manual-before-positioning'
+      }
+    };
+    const post = minimalPostPackage();
+    post.manifest.capabilities.controllerCompensation = 'left-right';
+    post.manifest.execution.compensationRequiredForEveryOperation = true;
+    const compileWith = (selections: readonly ('outside' | 'centerline')[]) => {
+      for (const [index, selection] of selections.entries()) {
+        document = setManualCompensationIntent(document, document.plan.operations[index].id, selection) ?? document;
+      }
+      const compiled = compileWireEdmExecutionPlan(document);
+      if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+      return preflightPostCapabilities(compiled.plan, post).map(({ code }) => code);
+    };
+
+    expect(compileWith(['outside', 'centerline'])).toContain('POST_CAPABILITY_COMPENSATION_UNSUPPORTED');
+    expect(compileWith(['centerline', 'outside'])).toContain('POST_CAPABILITY_COMPENSATION_UNSUPPORTED');
+    expect(compileWith(['outside', 'outside'])).not.toContain('POST_CAPABILITY_COMPENSATION_UNSUPPORTED');
+  });
 });
 
 function createUpidFromDxfEntities(...args: Parameters<typeof createUnresolvedUpidFromDxfEntities>) {

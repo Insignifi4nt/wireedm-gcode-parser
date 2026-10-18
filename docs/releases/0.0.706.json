@@ -1,0 +1,26 @@
+{
+  "version": "0.0.706",
+  "previousVersion": "0.0.705",
+  "postCompatibility": "preserved-output-faster-compile-and-resource-limit-diagnostic",
+  "summary": "Large jobs compile and pass post preflight in linear time. Controller compensation is resolved against one document-wide topology lookup per compile instead of rebuilding the segment map and rescanning chains, contours and diagnostics for every operation, and the every-operation compensation preflight uses a set of compensated operations instead of a nested event scan. A custom post run stopped by a resource limit (including the wall-clock deadline) now reports POST_CUSTOM_RESOURCE_LIMIT instead of POST_CUSTOM_NONDETERMINISTIC when the other determinism run finished.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Execution plans and posted programs are byte-identical. One diagnostic changes: when only one of the two isolated determinism runs hits a resource limit (typically the 1 s wall-clock deadline under machine load), the post now fails with POST_CUSTOM_RESOURCE_LIMIT instead of POST_CUSTOM_NONDETERMINISTIC, and a first run stopped by a resource limit is no longer repeated. Both outcomes were and remain failures; no resource limit value changed.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change. compensationRequiredForEveryOperation reports the same diagnostics for the same plans.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. Custom post failures stopped by a resource limit report POST_CUSTOM_RESOURCE_LIMIT, which the event diagnostic catalog already documents; documented limit values are unchanged.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Execution plans plus per-operation compensation resolution, eligibility and suggestions hash identically before and after across 1,800 randomized drawings (default, randomized tolerances and clean part layouts). New tests cover a shared topology lookup giving the same result as per-operation resolution for ready, intersecting, diagnostic-blocked and open operations; the every-operation compensation preflight with one compensated and one centerline operation in either order; and determinism reconciliation when either run hits a resource limit. Compile time for 250/500/2,000 parts went from 201/648/28,781 ms to 111/154/544 ms; preflight on 16,251 events went from 294 ms to 2 ms. The pure-domain suite, browser post and editor suites, tsc -b and npm run lint pass."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Jobs with many parts compile much faster, and posts that run out of time say so.",
+    "changes": [
+      "Building the execution plan for a job with thousands of contours takes well under a second instead of growing with the square of the contour count.",
+      "Checking a machine post against a large execution plan no longer slows down with the number of events.",
+      "When a post stops because it hit its time or memory limit, the error now names the resource limit instead of saying the post produced different results on two runs."
+    ],
+    "compatibility": "Execution plans and posted programs are unchanged. Installed machine packages, posts, saved revisions and CAD files are unchanged.",
+    "action": "No action needed."
+  }
+}

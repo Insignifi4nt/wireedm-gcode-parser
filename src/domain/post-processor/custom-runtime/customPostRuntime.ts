@@ -129,7 +129,22 @@ export async function runCustomPost(input: RunCustomPostInput): Promise<CustomPo
   }
 
   const first = await executeOnce(input.package, input.plan, properties.values, limits);
+  if (isResourceLimitFailure(first)) return first;
   const second = await executeOnce(input.package, input.plan, properties.values, limits);
+  return reconcileDeterminismRuns(first, second);
+}
+
+/**
+ * Compares the two isolated executions. The wall-clock deadline depends on
+ * machine load, so a run stopped by a resource limit reports that limit
+ * instead of an apparent difference between the runs.
+ */
+export function reconcileDeterminismRuns(
+  first: CustomPostRunResult,
+  second: CustomPostRunResult
+): CustomPostRunResult {
+  if (isResourceLimitFailure(first)) return first;
+  if (isResourceLimitFailure(second)) return second;
   if (JSON.stringify(first) !== JSON.stringify(second)) {
     return failure(
       'POST_CUSTOM_NONDETERMINISTIC',
@@ -137,6 +152,10 @@ export async function runCustomPost(input: RunCustomPostInput): Promise<CustomPo
     );
   }
   return first;
+}
+
+function isResourceLimitFailure(result: CustomPostRunResult) {
+  return !result.ok && result.diagnostics.some(({ code }) => code === 'POST_CUSTOM_RESOURCE_LIMIT');
 }
 
 async function executeOnce(

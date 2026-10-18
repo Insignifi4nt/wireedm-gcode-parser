@@ -39,9 +39,7 @@ export function preflightPostCapabilities(
     });
   }
   if (packageValue.manifest.execution.compensationRequiredForEveryOperation &&
-    plan.events.some((event) => event.kind === 'operation-start' &&
-      !plan.events.some((candidate) => candidate.operationId === event.operationId &&
-        candidate.kind === 'compensation-start'))) {
+    hasUncompensatedOperation(plan)) {
     diagnostics.push({
       code: 'POST_CAPABILITY_COMPENSATION_UNSUPPORTED',
       message: `${packageValue.manifest.name} requires controller compensation for every operation.`
@@ -103,4 +101,12 @@ function supportsThreading(
   method: 'manual' | 'automatic'
 ) {
   return capability === method || capability === 'manual-and-automatic';
+}
+
+function hasUncompensatedOperation(plan: WireEdmExecutionPlan) {
+  const compensated = new Set<string | null>();
+  for (const event of plan.events) {
+    if (event.kind === 'compensation-start') compensated.add(event.operationId);
+  }
+  return plan.events.some((event) => event.kind === 'operation-start' && !compensated.has(event.operationId));
 }

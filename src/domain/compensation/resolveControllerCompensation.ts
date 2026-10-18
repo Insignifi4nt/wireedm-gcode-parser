@@ -1,16 +1,21 @@
-import { operationHasEligibleClosedTopology } from '@/domain/compensation/intent';
+import {
+  createCompensationTopologyLookup,
+  operationHasEligibleClosedTopology,
+  type CompensationTopologyLookup
+} from '@/domain/compensation/intent';
 import {
   orientedSegmentEnd,
   orientedSegmentStart,
   pointsEqual,
-  segmentMap,
   signedAreaOfPath
 } from '@/domain/path-intel/segments';
-import type { PathOperation, PathPlanningDocument } from '@/domain/path-intel/types';
+import type { PathOperation, PathPlanningDocument, PathSegment, SegmentId } from '@/domain/path-intel/types';
 
 export interface ResolveControllerCompensationInput {
   document: PathPlanningDocument;
   operation: PathOperation;
+  /** Share one lookup when resolving many operations of the same document. */
+  lookup?: CompensationTopologyLookup;
 }
 
 export type CompensationResolution =
@@ -34,7 +39,8 @@ export type CompensationResolution =
 
 export function resolveControllerCompensation({
   document,
-  operation
+  operation,
+  lookup
 }: ResolveControllerCompensationInput): CompensationResolution {
   if (document.geometryBasis !== 'finished-contour') {
     return { status: 'blocked', reason: 'wire-centre' };
@@ -43,7 +49,8 @@ export function resolveControllerCompensation({
     return { status: 'blocked', reason: 'missing-intent' };
   }
 
-  const segmentsById = segmentMap(document.segments);
+  const topology = lookup ?? createCompensationTopologyLookup(document);
+  const { segmentsById } = topology;
   if (operation.segmentRefs.some((ref) => !segmentsById.has(ref.segmentId))) {
     return { status: 'blocked', reason: 'missing-segment' };
   }
@@ -54,7 +61,7 @@ export function resolveControllerCompensation({
       operation.machiningIntent?.kind !== 'partial-contour' ||
       intent.source !== 'manual' ||
       !('wireSide' in intent) ||
-      !openRefsFormContinuousPath(document, operation)
+      !openRefsFormContinuousPath(document, operation, segmentsById)
     ) {
       return { status: 'blocked', reason: 'open-path' };
     }
@@ -71,7 +78,7 @@ export function resolveControllerCompensation({
   if (!Number.isFinite(signedArea) || signedArea === 0) {
     return { status: 'blocked', reason: 'degenerate' };
   }
-  if (!operationHasEligibleClosedTopology(document, operation)) {
+  if (!operationHasEligibleClosedTopology(document, operation, topology)) {
     return { status: 'blocked', reason: 'ineligible-topology' };
   }
 
@@ -95,10 +102,10 @@ export function resolveControllerCompensation({
 
 function openRefsFormContinuousPath(
   document: PathPlanningDocument,
-  operation: PathOperation
+  operation: PathOperation,
+  segmentsById: ReadonlyMap<SegmentId, PathSegment>
 ) {
   if (operation.segmentRefs.length === 0) return false;
-  const segmentsById = segmentMap(document.segments);
   const tolerance = Number.isFinite(document.options.coincidenceEpsilon)
     ? Math.max(0, document.options.coincidenceEpsilon)
     : 0;
