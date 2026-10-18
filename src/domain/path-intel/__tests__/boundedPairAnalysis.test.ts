@@ -95,6 +95,39 @@ describe('bounded segment pair analysis', () => {
     expect(live.filter(({ code }) => code === 'intersecting-topology')).toHaveLength(MAX_LISTED_SEGMENT_PAIRS + 1);
     expect(relatedIds(live).segments).toEqual(relatedIds(recorded).segments);
   });
+
+  it('does not mistake a new pair for a recorded one when segment ids contain separators', () => {
+    const document = createUpidFromDxfEntities([
+      line(0, 0, 10, 10), line(0, 10, 10, 0),
+      line(100, 0, 110, 10), line(100, 10, 110, 0)
+    ]);
+    const crossings = document.diagnostics.filter(({ code }) => code === 'intersecting-topology');
+    expect(crossings).toHaveLength(2);
+    const [first, second] = crossings.map(({ relatedSegmentIds }) => [...relatedSegmentIds!].sort());
+    // Joined with '|', both renamed pairs read 'a|b|c'.
+    const renamed = new Map([[first[0], 'a'], [first[1], 'b|c'], [second[0], 'a|b'], [second[1], 'c']]);
+    const stripped = JSON.parse(JSON.stringify(withoutDiagnostics(document, new Set([crossings[1].id]))),
+      (_key, value) => typeof value === 'string' ? renamed.get(value) ?? value : value);
+
+    const validation = validateUpidDocument(stripped);
+    expect(validation.structurallyValid).toBe(true);
+    expect(validation.diagnostics.filter(({ id, code }) => id.startsWith('diag_upid_live_') && code === 'intersecting-topology')
+      .map(({ relatedSegmentIds }) => [...relatedSegmentIds!].sort())).toEqual([['a|b', 'c']]);
+  });
+
+  it('does not mistake a new error for a recorded one when segment ids contain commas', () => {
+    const document = createUpidFromDxfEntities([line(0, 0, 10, 0), line(5, 0, 15, 0), line(100, 0, 110, 0), line(105, 0, 115, 0)]);
+    const overlaps = document.diagnostics.filter(({ code }) => code === 'overlapping-segment');
+    expect(overlaps).toHaveLength(2);
+    const [first, second] = overlaps.map(({ relatedSegmentIds }) => [...relatedSegmentIds!].sort());
+    // Joined with ',', both renamed pairs read 'a,b,c'.
+    const renamed = new Map([[first[0], 'a'], [first[1], 'b,c'], [second[0], 'a,b'], [second[1], 'c']]);
+    const stripped = JSON.parse(JSON.stringify(withoutDiagnostics(document, new Set([overlaps[1].id]))),
+      (_key, value) => typeof value === 'string' ? renamed.get(value) ?? value : value);
+
+    const live = validateUpidDocument(stripped).diagnostics.filter(({ id }) => id.startsWith('diag_upid_live_'));
+    expect(live.map(({ code, relatedSegmentIds }) => [code, [...relatedSegmentIds!].sort()])).toContainEqual(['overlapping-segment', ['a,b', 'c']]);
+  });
 });
 
 function crosshatchEntities(count: number) {

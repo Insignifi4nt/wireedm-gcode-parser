@@ -591,14 +591,17 @@ function normalizeSegmentDerivedGeometry(segment: PathSegment): PathSegment {
 
 /** Whether one recorded error with this code relates every given segment. */
 function recordedSegmentCoverage(diagnostics: PathDiagnostic[], code: PathDiagnostic['code']) {
-  const pairs = new Set<string>();
+  // Pairs nest by segment id; joined keys could collide, since ids may hold any separator.
+  const pairs = new Map<string, Set<string>>();
   const groupsBySegmentId = new Map<string, Set<string>[]>();
   for (const diagnostic of diagnostics) {
     if (diagnostic.severity !== 'error' || diagnostic.code !== code) continue;
     const group = new Set(diagnostic.relatedSegmentIds ?? []);
     if (group.size === 2) {
       const [left, right] = [...group].sort();
-      pairs.add(`${left}|${right}`);
+      const partners = pairs.get(left) ?? new Set<string>();
+      partners.add(right);
+      pairs.set(left, partners);
       continue;
     }
     for (const segmentId of group) {
@@ -611,7 +614,7 @@ function recordedSegmentCoverage(diagnostics: PathDiagnostic[], code: PathDiagno
     if (segmentIds.length === 0) return true;
     if (segmentIds.length === 2 && pairs.size > 0) {
       const [left, right] = segmentIds;
-      if (pairs.has(left < right ? `${left}|${right}` : `${right}|${left}`)) return true;
+      if (left < right ? pairs.get(left)?.has(right) : pairs.get(right)?.has(left)) return true;
     }
     return (groupsBySegmentId.get(segmentIds[0]) ?? [])
       .some((group) => segmentIds.every((segmentId) => group.has(segmentId)));
@@ -619,10 +622,8 @@ function recordedSegmentCoverage(diagnostics: PathDiagnostic[], code: PathDiagno
 }
 
 function liveGeometryDiagnosticKey(diagnostic: PathDiagnostic) {
-  return [
-    diagnostic.code,
-    [...(diagnostic.relatedSegmentIds ?? [])].sort().join(',')
-  ].join('|');
+  // JSON keeps ids distinct whatever separators they contain.
+  return JSON.stringify([diagnostic.code, [...(diagnostic.relatedSegmentIds ?? [])].sort()]);
 }
 
 function validateOptions(value: unknown, schemaVersion: unknown, context: ValidationContext) {
