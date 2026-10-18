@@ -136,6 +136,28 @@ describe('path-intel endpoint clustering performance', () => {
   );
 
   it(
+    'links intersection diagnostics to 8,000 crossing chains sub-quadratically',
+    { timeout: 30_000 },
+    () => {
+      const oneThousand = crossingPairChains(1_000);
+      const fourThousand = crossingPairChains(4_000);
+      analyzeCrossingPairs(crossingPairChains(50));
+      analyzeCrossingPairs(oneThousand);
+
+      const oneThousandMs = median([0, 1, 2].map(() => timeCrossingPairs(oneThousand)));
+      const fourThousandMs = median([0, 1, 2].map(() => timeCrossingPairs(fourThousand)));
+      const growthRatio = fourThousandMs / Math.max(oneThousandMs, 0.001);
+
+      console.info(
+        `[path-intel-intersection-linking-performance] 1000=${oneThousandMs.toFixed(2)}ms 4000=${fourThousandMs.toFixed(2)}ms ratio=${growthRatio.toFixed(2)}x`
+      );
+
+      expect(fourThousandMs).toBeLessThan(10_000);
+      expect(growthRatio).toBeLessThan(8);
+    }
+  );
+
+  it(
     'keeps live validation of 4,000 disjoint G40 open paths sub-quadratic',
     { timeout: 30_000 },
     () => {
@@ -348,6 +370,37 @@ function planNestedParts({ segments, chains }: ReturnType<typeof nestedPartChain
   if (plan.operations.length !== chains.length || plan.operations[0].classification !== 'hole') {
     throw new Error('Unexpected nested part plan.');
   }
+}
+
+function crossingPairChains(pairs: number) {
+  const entities = Array.from({ length: pairs }, (_, index) => {
+    const x = index * 10;
+    return [
+      { type: 'line' as const, layer: 'PERF', start: { x, y: 0 }, end: { x: x + 5, y: 5 } },
+      { type: 'line' as const, layer: 'PERF', start: { x, y: 5 }, end: { x: x + 5, y: 0 } }
+    ];
+  }).flat();
+  const segments = sanitizePathSegments(pathSegmentsFromDxfEntities(entities).segments).segments;
+  return { segments, chains: buildChains(segments, clusterSegmentEndpoints(segments)).chains };
+}
+
+function analyzeCrossingPairs({ segments, chains }: ReturnType<typeof crossingPairChains>) {
+  const { contours, diagnostics } = analyzeContours(chains, segments);
+  const intersections = diagnostics.filter(({ code }) => code === 'intersecting-topology');
+  if (intersections.length !== chains.length / 2) throw new Error('Expected one crossing per pair.');
+  for (const [index, contour] of contours.entries()) {
+    const crossing = intersections[Math.floor(index / 2)];
+    const linked = contour.diagnosticIds.filter((id) => id.startsWith('diag_intersection_'));
+    if (linked.length !== 1 || linked[0] !== crossing.id || !crossing.relatedContourIds?.includes(contour.id)) {
+      throw new Error(`Contour ${contour.id} is not linked to only its own crossing.`);
+    }
+  }
+}
+
+function timeCrossingPairs(pairs: ReturnType<typeof crossingPairChains>) {
+  const start = performance.now();
+  analyzeCrossingPairs(pairs);
+  return performance.now() - start;
 }
 
 function timeNestedPlanning(parts: ReturnType<typeof nestedPartChains>) {

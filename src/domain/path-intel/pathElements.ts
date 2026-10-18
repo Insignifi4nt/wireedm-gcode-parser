@@ -47,7 +47,7 @@ export function buildPathElements(
         segmentRefs,
         segmentsById
       ),
-      diagnosticIds: [...contour.diagnosticIds, ...(chain?.diagnosticIds ?? [])].filter(uniqueText),
+      diagnosticIds: [...new Set([...contour.diagnosticIds, ...(chain?.diagnosticIds ?? [])])],
       orderIndex: operation?.orderIndex ?? null,
       direction: operation?.direction ?? null,
       metrics: operation?.metrics ?? null,
@@ -155,8 +155,4 @@ function pathElementPoints(
   }
 
   return points;
-}
-
-function uniqueText(value: string, index: number, values: string[]) {
-  return values.indexOf(value) === index;
 }

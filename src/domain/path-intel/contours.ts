@@ -39,6 +39,7 @@ export function analyzeContours(
     resolved
   );
   const diagnostics: PathDiagnostic[] = [...intersectionDiagnostics];
+  const intersectionDiagnosticsByChainId = groupDiagnosticsByChainId(intersectionDiagnostics);
 
   const contours: PathContour[] = chains.map((chain, index) => {
     const id = `contour_${String(index + 1).padStart(4, '0')}`;
@@ -46,9 +47,7 @@ export function analyzeContours(
     const bounds = boundsAreFinite(pathBounds(chain.segmentRefs, segmentsById))
       ? pathBounds(chain.segmentRefs, segmentsById)
       : boundsFromPolygon(approximatePolygon);
-    const chainIntersectionDiagnostics = intersectionDiagnostics.filter((diagnostic) =>
-      diagnostic.relatedChainIds?.includes(chain.id)
-    );
+    const chainIntersectionDiagnostics = intersectionDiagnosticsByChainId.get(chain.id) ?? [];
     const diagnosticIds = [
       ...chain.diagnosticIds,
       ...chainIntersectionDiagnostics.map((diagnostic) => diagnostic.id)
@@ -178,6 +177,18 @@ export function analyzeContours(
   }
 
   return { contours, diagnostics };
+}
+
+function groupDiagnosticsByChainId(diagnostics: readonly PathDiagnostic[]) {
+  const byChainId = new Map<string, PathDiagnostic[]>();
+  for (const diagnostic of diagnostics) {
+    for (const chainId of new Set(diagnostic.relatedChainIds ?? [])) {
+      const chainDiagnostics = byChainId.get(chainId);
+      if (chainDiagnostics) chainDiagnostics.push(diagnostic);
+      else byChainId.set(chainId, [diagnostic]);
+    }
+  }
+  return byChainId;
 }
 
 function contourLabel(index: number) {
