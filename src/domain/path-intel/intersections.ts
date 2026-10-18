@@ -1021,8 +1021,15 @@ function isCircular(segment: PathSegment): segment is CircularPathSegment {
 }
 
 function linearTolerance(epsilon: number, ...values: number[]) {
-  const magnitude = Math.max(1, ...values.map((value) => Math.abs(value)));
+  const magnitude = largestMagnitude(values);
   return Math.max(epsilon, ROUNDING_FACTOR * Number.EPSILON * magnitude);
+}
+
+/** Math.max(1, ...values.map(Math.abs)) without the intermediate arrays; NaN still propagates. */
+function largestMagnitude(values: readonly number[]) {
+  let magnitude = 1;
+  for (const value of values) magnitude = Math.max(magnitude, Math.abs(value));
+  return magnitude;
 }
 
 /** Unlike coordinateRoundoffTolerance, no unit floor: values near zero keep their own precision. */
@@ -1031,7 +1038,7 @@ function withinCoordinateUlps(left: number, right: number) {
 }
 
 function coordinateRoundoffTolerance(epsilon: number, ...coordinates: number[]) {
-  const magnitude = Math.max(1, ...coordinates.map((value) => Math.abs(value)));
+  const magnitude = largestMagnitude(coordinates);
   return Math.max(epsilon, 8 * Number.EPSILON * magnitude);
 }
 
