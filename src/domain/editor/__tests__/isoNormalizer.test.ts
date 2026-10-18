@@ -88,4 +88,12 @@ describe('isoNormalizer', () => {
 
     expect(result).toBe(['%', 'N10 G0 X0 Y0', 'N20 G1 X1 Y0', 'N30 M02', ''].join('\n'));
   });
+
+  it('keeps every block of programs that end lines with a lone CR', () => {
+    const lines = ['%', 'G90 G21', 'G0 X0 Y0', 'G1 X10 Y0', 'G1 X10 Y10', 'M02'];
+
+    expect(normalizeToISO(lines.join('\r'))).toBe(normalizeToISO(lines.join('\n')));
+    expect(normalizeToISO(lines.join('\r'))).toContain('N40 G1 X10 Y10');
+    expect(stripForEditing(lines.join('\r'))).toBe(stripForEditing(lines.join('\r\n')));
+  });
 });

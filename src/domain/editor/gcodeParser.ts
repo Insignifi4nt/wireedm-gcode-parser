@@ -13,6 +13,7 @@ import type {
   GCodePathPoint
 } from './types';
 import { isRecognizedGCodeSetup } from './gcodeCommands';
+import { splitGCodeLines } from './gcodeLines';
 import type { GCodeInspectionOptions } from './gcodeInspectionTypes';
 
 const POSITION_EPSILON = 1e-9;
@@ -48,7 +49,7 @@ export function parseGCodeProgramDetailed(
 
   const state = createParserState(options.profile ?? 'neutral', options.defaults);
   const contexts = new Map(options.lineContexts?.map(context => [context.line, context]));
-  const lines = gcodeText.split(/\r\n|\r|\n/);
+  const lines = splitGCodeLines(gcodeText);
   state.stats.totalLines = lines.length;
 
   lines.forEach((line, index) => {

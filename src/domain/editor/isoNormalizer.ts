@@ -1,3 +1,5 @@
+import { splitGCodeLines } from './gcodeLines';
+
 const DEFAULT_PRECISION = 3;
 
 export interface NormalizeToISOOptions {
@@ -19,7 +21,7 @@ export function normalizeToISO(inputText: string, options: NormalizeToISOOptions
     stripSemicolon = true
   } = options;
 
-  const srcLines = String(inputText ?? '').split(/\r?\n/);
+  const srcLines = splitGCodeLines(String(inputText ?? ''));
   const outLines: string[] = [];
 
   if (addPercent) {
@@ -65,7 +67,7 @@ export function normalizeToISO(inputText: string, options: NormalizeToISOOptions
 export function stripForEditing(inputText: string) {
   if (typeof inputText !== 'string') return '';
 
-  const lines = inputText.split(/\r?\n/);
+  const lines = splitGCodeLines(inputText);
   const out: string[] = [];
   let startIndex = 0;
 
