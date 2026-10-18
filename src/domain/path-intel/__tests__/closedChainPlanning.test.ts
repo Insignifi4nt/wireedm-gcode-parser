@@ -89,6 +89,57 @@ describe('closed chain arrangements', () => {
     }
   });
 
+  it('orders near-tied rapids that differ end to end by more than the epsilon deterministically', () => {
+    // Pairwise within the epsilon, end to end beyond it. 0.0.704 changed this order.
+    const epsilon = 1e-6;
+    const starts = [{ x: 10, y: 0 }, { x: 0, y: 10 + 0.75 * epsilon }, { x: -10 - 1.5 * epsilon, y: 0 }];
+    const entities = starts.map(({ x, y }) => ({ type: 'circle' as const, layer: 'CUT', center: { x: x - 0.1, y }, radius: 0.1 }));
+    const plan = () => createPathPlanningDocumentFromDxfEntities(entities, { coincidenceEpsilon: epsilon, operationOrderStrategy: 'nearest' })
+      .plan.operations.map((operation) => operation.provenance.sourceEntityIndices[0]);
+
+    expect(plan()).toEqual([1, 0, 2]);
+    expect(plan()).toEqual(plan());
+  });
+
+  it('starts a contour at the first of near-tied vertices by a fixed scan', () => {
+    // The same near tie between candidate starts of one contour; 0.0.703 started at (10, 0).
+    const epsilon = 1e-6;
+    const vertices = [{ x: 10, y: 0 }, { x: -10 - 1.5 * epsilon, y: 0 }, { x: 0, y: 10 + 0.75 * epsilon }];
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [{ type: 'lwpolyline', layer: 'CUT', closed: true, vertices: vertices.map((point) => ({ ...point, bulge: 0 })) }],
+      { coincidenceEpsilon: epsilon, operationOrderStrategy: 'nearest', allowReverseClosedContours: false }
+    );
+
+    expect(document.plan.operations[0]?.startPoint).toEqual(vertices[2]);
+  });
+
+  it('chooses start and direction among near-tied vertices by a fixed scan', () => {
+    // 0.0.703 started forward at (-10 - 1.5 epsilon, 0).
+    const epsilon = 1e-6;
+    const vertices = [{ x: 10, y: 0 }, { x: 0, y: 10 + 0.75 * epsilon }, { x: -10 - 1.5 * epsilon, y: 0 }, { x: 0, y: -10 - 2.25 * epsilon }];
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [{ type: 'lwpolyline', layer: 'CUT', closed: true, vertices: vertices.map((point) => ({ ...point, bulge: 0 })) }],
+      { coincidenceEpsilon: epsilon, operationOrderStrategy: 'nearest', allowReverseClosedContours: true }
+    );
+
+    expect(document.plan.operations[0]).toMatchObject({ startPoint: vertices[1], direction: 'reverse' });
+  });
+
+  it('orders open chains whose starts tie by coordinates within the epsilon by a fixed scan', () => {
+    // Equal rapids; the start coordinates differ pairwise within the epsilon. 0.0.703 cut [0, 1, 2].
+    const epsilon = 1e-6;
+    const starts = [0, 2, 1].map((step) => {
+      const x = 8 + step * 0.75 * epsilon;
+      return { x, y: Math.sqrt(100 - x * x) };
+    });
+    const entities = starts.map((start) => ({ type: 'line' as const, layer: 'CUT', start, end: { x: 2 * start.x, y: 2 * start.y } }));
+    const document = createPathPlanningDocumentFromDxfEntities(entities, {
+      coincidenceEpsilon: epsilon, endpointTolerance: 0, operationOrderStrategy: 'nearest', allowReverseOpenChains: false
+    });
+
+    expect(document.plan.operations.map((operation) => operation.provenance.sourceEntityIndices[0])).toEqual([2, 0, 1]);
+  });
+
   it('falls back to the nearest remaining contour when prerequisites form a cycle', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 10, y: 0 }, radius: 1 },
