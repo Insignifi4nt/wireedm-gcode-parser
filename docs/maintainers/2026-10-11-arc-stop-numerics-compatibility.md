@@ -1,6 +1,6 @@
-# Arc-stop numerical correction candidate
+# Arc-stop numerical corrections
 
-This is a local change candidate on `fix/arc-stop-numerics-2026-10-11`. It has not shipped. App release `0.0.696` and its historical release record are unchanged. Before release, the reviewed pull request must advance the app release once and include the compatibility warning and checklist below.
+These corrections ship in app release `0.0.701`, whose release record carries the compatibility warning and checklist below.
 
 ## Explicit compatibility warning
 
@@ -12,9 +12,9 @@ Saved revisions and installed packages remain untouched. A reviewed editable pro
 
 ## Compatibility checklist
 
-| Area | Candidate behavior |
+| Area | Behavior |
 | --- | --- |
-| App release | Remains `0.0.696` during local development. A later reviewed release advances it once. |
+| App release | Ships in `0.0.701`. |
 | Calculation provenance | New revisions and artifacts use saved-job/generating engine `3`. Artifacts retain `sourceRevisionEngineVersion` for accepted engine-1/2 sources. Older apps whose parser accepts only engines `1` and `2` reject new engine-3 revisions on load and verified backup. |
 | Schemas and engine API | UPID, post, machine package, execution plan, saved revision and storage schema numbers are unchanged. Post `engineApiVersion` remains `1`. |
 | Capabilities and events | Capability declarations and callback vocabulary are unchanged. Serialized motion and stop event shapes are unchanged. Circular source-range values, stop points and partial-range endpoints can change. |

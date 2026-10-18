@@ -63,7 +63,7 @@ describe.each(operations)('plain-cache $name malformed fingerprint retention', o
     expect(await adapter.readExactText!(operation.journal)).toBeNull();
     expect(await adapter.readExactText!('workbench.json')).toBe(indexImages.previousManifest);
     expect(await adapter.readExactText!(operation.paths[0])).toBe('EXACT FIRST ORIGINAL');
-    expect(await adapter.readExactText!(operation.paths[1])).toBe(malformed);
+    expect(await adapter.readText(operation.paths[1])).toBe(malformed);
   });
 
   it.each(['\ud801', '\udc01'])('retains changed malformed contents %j and its older journal through retries', async replacement => {
@@ -81,7 +81,7 @@ describe.each(operations)('plain-cache $name malformed fingerprint retention', o
     for (let attempt = 0; attempt < 2; attempt++) {
       expect(await operation.recover(adapter)).toMatchObject({ ok: false });
       expect(await adapter.readExactText!(operation.paths[0])).toBe(first);
-      expect(await adapter.readExactText!(operation.paths[1])).toBe(replacement);
+      expect(await adapter.readText(operation.paths[1])).toBe(replacement);
       expect(await adapter.readExactText!(operation.journal)).toBe(raw);
     }
     expect(write).not.toHaveBeenCalled();

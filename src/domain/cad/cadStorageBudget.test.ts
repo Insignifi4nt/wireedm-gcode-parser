@@ -116,8 +116,11 @@ describe.each(['browser-cache', 'directory'] as const)('CAD large exact serializ
     let started: () => void = () => { throw new Error('No read started.'); };
     const reading = new Promise<void>(resolve => { started = resolve; });
     const pause = new Promise<void>(resolve => { release = resolve; });
+    const exact = adapter.readExactText!.bind(adapter);
+    // Recovery journal checks read exactly too; only the document read pauses.
     const reads = vi.spyOn(adapter, 'readExactText').mockImplementation(async (target, signal) => {
-      expect(target).toBe(path); expect(signal).toBe(abort.signal);
+      if (target !== path) return exact(target, signal);
+      expect(signal).toBe(abort.signal);
       started(); await pause; return raw;
     });
     const writes = vi.spyOn(adapter, 'writeText');
