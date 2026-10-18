@@ -66,13 +66,25 @@ export function createBrowserDirectoryAdapter(
       }
     },
     writeText: (path: string, contents: string) => withStorageFullGuidance('directory', path, async () => {
-      const handle = await getFile(root, splitPath(path), true);
-      const writable = await handle.createWritable();
+      const parts = splitPath(path);
+      const fileName = parts.at(-1);
+      if (!fileName) throw new Error('File path is empty.');
+      const directory = await getDirectory(root, parts.slice(0, -1), true);
+      const created = !(await fileExists(directory, fileName));
+      const handle = await directory.getFileHandle(fileName, { create: true });
       try {
-        await writable.write(contents);
-        await writable.close();
+        const writable = await handle.createWritable();
+        try {
+          await writable.write(contents);
+          await writable.close();
+        } catch (error) {
+          try { await writable.abort(); } catch { /* Preserve the original storage failure. */ }
+          throw error;
+        }
       } catch (error) {
-        try { await writable.abort(); } catch { /* Preserve the original storage failure. */ }
+        // Opening a file for writing creates it empty. A failed write must leave the path absent,
+        // or readers would take the empty file for contents, such as a conflicting backup.
+        if (created) await removeIfEmpty(directory, fileName, handle);
         throw error;
       }
     })
@@ -126,6 +138,23 @@ async function getFile(
 
   const directory = await getDirectory(root, parts.slice(0, -1), create);
   return directory.getFileHandle(fileName, { create });
+}
+
+async function fileExists(directory: FileSystemDirectoryHandle, fileName: string) {
+  try {
+    await directory.getFileHandle(fileName);
+    return true;
+  } catch (error) {
+    if (isNotFoundError(error)) return false;
+    throw error;
+  }
+}
+
+/** Removes a file this write created, only while it is still empty; best effort after a failure. */
+async function removeIfEmpty(directory: FileSystemDirectoryHandle, fileName: string, handle: FileSystemFileHandle) {
+  try {
+    if ((await handle.getFile()).size === 0) await directory.removeEntry(fileName);
+  } catch { /* Preserve the original storage failure. */ }
 }
 
 function isNotFoundError(error: unknown) {
