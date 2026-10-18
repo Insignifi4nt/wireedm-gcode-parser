@@ -75,6 +75,17 @@ describe('exact contour containment', () => {
       expect(point.y - offset).toBeCloseTo(363.5 / 79, 3);
     }
   });
+
+  it('places the label point of a part too large for cubic centroid terms at its centroid', () => {
+    const outline = [[0, 0], [10, 0], [10, 3], [7, 3], [7, 10], [0, 10]];
+    for (const scale of [1e100, 1e120, 1e150]) {
+      const document = createUpidFromDxfEntities([polygon(outline.map(([x, y]) => [x * scale, y * scale]))]);
+      expect(validateUpidDocument(document).structurallyValid).toBe(true);
+      const point = document.contours[0].representativePoint!;
+      expect(point.x / scale).toBeCloseTo(321.5 / 79, 9);
+      expect(point.y / scale).toBeCloseTo(363.5 / 79, 9);
+    }
+  });
 });
 
 function polygon(points: number[][]): DxfEntity {

@@ -347,47 +347,91 @@ function boundsFromPolygon(points: Point2[]): Bounds2 {
 
 /**
  * Works relative to the first vertex. Absolute shoelace products cancel
- * catastrophically far from the origin and overflow long before coordinates do.
+ * catastrophically far from the origin. Coordinates are also rescaled by powers
+ * of two, which is exact, so the cubic centroid terms cannot overflow for huge
+ * contours while results stay bit-identical wherever they were finite before.
  */
 function polygonCentroidOrAverage(points: Point2[], epsilon: number) {
   const clean = stripClosingDuplicate(points, epsilon);
   if (clean.length === 0) return null;
-  const origin = clean[0];
-  if (clean.length < 3) return averagePoint(clean, origin);
+  const frame = scaledFrame(clean);
+  if (clean.length < 3) return averagePoint(frame);
 
   let twiceArea = 0;
   let cx = 0;
   let cy = 0;
 
-  for (let index = 0; index < clean.length; index++) {
-    const current = clean[index];
-    const next = clean[(index + 1) % clean.length];
-    const currentX = current.x - origin.x;
-    const currentY = current.y - origin.y;
-    const nextX = next.x - origin.x;
-    const nextY = next.y - origin.y;
-    const factor = currentX * nextY - nextX * currentY;
+  for (let index = 0; index < frame.points.length; index++) {
+    const current = frame.points[index];
+    const next = frame.points[(index + 1) % frame.points.length];
+    const factor = current.x * next.y - next.x * current.y;
     twiceArea += factor;
-    cx += (currentX + nextX) * factor;
-    cy += (currentY + nextY) * factor;
+    cx += (current.x + next.x) * factor;
+    cy += (current.y + next.y) * factor;
   }
 
-  if (Math.abs(twiceArea) <= 1e-9) return averagePoint(clean, origin);
+  // The degenerate-area threshold stays in square drawing units.
+  if (Math.abs(twiceArea) * frame.relativeScale * frame.relativeScale * frame.absoluteScale * frame.absoluteScale <= 1e-9) {
+    return averagePoint(frame);
+  }
+  return frameToWorld(frame, cx / (3 * twiceArea), cy / (3 * twiceArea)) ?? averagePoint(frame);
+}
 
+interface ScaledFrame {
+  readonly origin: Point2;
+  readonly absoluteScale: number;
+  readonly relativeScale: number;
+  /** Vertices relative to origin, divided by absoluteScale * relativeScale. */
+  readonly points: readonly Point2[];
+  /** Vertices divided by absoluteScale, for the overflow-free mean. */
+  readonly absolutePoints: readonly Point2[];
+}
+
+function scaledFrame(points: readonly Point2[]): ScaledFrame {
+  const absoluteScale = powerOfTwoScale(points.reduce((max, { x, y }) => Math.max(max, Math.abs(x), Math.abs(y)), 0));
+  const absolutePoints = points.map(({ x, y }) => ({ x: x / absoluteScale, y: y / absoluteScale }));
+  const origin = absolutePoints[0];
+  const shifted = absolutePoints.map(({ x, y }) => ({ x: x - origin.x, y: y - origin.y }));
+  const relativeScale = powerOfTwoScale(shifted.reduce((max, { x, y }) => Math.max(max, Math.abs(x), Math.abs(y)), 0));
   return {
-    x: origin.x + cx / (3 * twiceArea),
-    y: origin.y + cy / (3 * twiceArea)
+    origin: points[0],
+    absoluteScale,
+    relativeScale,
+    points: shifted.map(({ x, y }) => ({ x: x / relativeScale, y: y / relativeScale })),
+    absolutePoints
   };
 }
 
-function averagePoint(points: Point2[], origin: Point2): Point2 {
+/** Largest power of two not above the magnitude; 1 for zero. Dividing by it is exact. */
+function powerOfTwoScale(magnitude: number) {
+  return magnitude > 0 && Number.isFinite(magnitude) ? 2 ** Math.floor(Math.log2(magnitude)) : 1;
+}
+
+function frameToWorld(frame: ScaledFrame, x: number, y: number): Point2 | null {
+  const world = {
+    x: frame.origin.x + x * frame.relativeScale * frame.absoluteScale,
+    y: frame.origin.y + y * frame.relativeScale * frame.absoluteScale
+  };
+  return Number.isFinite(world.x) && Number.isFinite(world.y) ? world : null;
+}
+
+function averagePoint(frame: ScaledFrame): Point2 {
   let x = 0;
   let y = 0;
-  for (const point of points) {
-    x += point.x - origin.x;
-    y += point.y - origin.y;
+  for (const point of frame.points) {
+    x += point.x;
+    y += point.y;
   }
-  return { x: origin.x + x / points.length, y: origin.y + y / points.length };
+  const relative = frameToWorld(frame, x / frame.points.length, y / frame.points.length);
+  if (relative) return relative;
+  // Offsets wider than the number range: average the absolute-scaled vertices instead.
+  let ax = 0;
+  let ay = 0;
+  for (const point of frame.absolutePoints) {
+    ax += point.x;
+    ay += point.y;
+  }
+  return { x: (ax / frame.absolutePoints.length) * frame.absoluteScale, y: (ay / frame.absolutePoints.length) * frame.absoluteScale };
 }
 
 function stripClosingDuplicate(points: Point2[], epsilon = 1e-9) {
