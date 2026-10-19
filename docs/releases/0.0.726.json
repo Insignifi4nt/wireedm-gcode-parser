@@ -10,7 +10,7 @@
     "capabilities": "No post or machine capability change.",
     "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
     "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
-    "verification": "Pending."
+    "verification": "Local full Vitest suite 5873/5875 in 522 files, including tests for plane hover in both directions, the plane and Sketch order matrix, direct depth edits, end face ownership, the direct control's preview, commit, cancel and stale-part handling, face drag and click fallback in the viewport, and one undoable workbench edit; the two failures were existing sketch-editing tests that ran just past the 5 s timeout under load and pass on their own. tsc, oxlint (zero findings), ui:check, the release check and the production build pass. Local Playwright CAD journeys were overloaded by parallel software rendering (cad-kernel passes on one worker); the full Playwright suite runs in pull request CI. Independent Codex review findings fixed with regression tests: a rejected drag value that broke the gesture, a coplanar face of another body editing the selected Pad, canvas plane hover clearing itself, a test depending on an earlier preference, and a pending face press surviving lost pointer capture. The second Codex pass confirmed the fixes."
   },
   "testedPosts": [],
   "publicNotes": {
