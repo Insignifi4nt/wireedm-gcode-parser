@@ -122,6 +122,26 @@ describe('direct Pad depth control', () => {
     expect(control.getState()).toBeNull();
   });
 
+  it('keeps the last valid Length when a drag reaches a value the part rejects', () => {
+    const { control, preview, begin } = harness(), token = begin();
+    control.setQuantity(token, 30); preview.mockClear();
+    expect(control.setQuantity(token, 5_000_000)).toBe(true);
+    expect(preview).not.toHaveBeenCalled();
+    expect(control.getState()).toMatchObject({ gestureActive: true, model: { quantityMm: 30 } });
+    expect(control.setQuantity(token, 31)).toBe(true); expect(control.getState()?.model.quantityMm).toBe(31);
+  });
+
+  it('drags only from an end face of its own Pad, not a coplanar face of another body', () => {
+    const document = part(), sketch = document.features[0], pad = document.features[1];
+    if (sketch.kind !== 'sketch' || pad.kind !== 'extrude') throw new Error('Expected a Pad');
+    const two: CadDocument = { ...document, features: [...document.features,
+      { ...sketch, id: 'boss-sketch', name: 'Boss', profiles: [{ ...sketch.profiles[0], id: 'boss-rectangle' }] }, { ...pad, id: 'boss', name: 'Boss', sketchId: 'boss-sketch' }] };
+    const { control } = harness(two);
+    expect(control.ownsEndFace?.(padMesh(two), 'face:top')).toBe(true);
+    expect(control.ownsEndFace?.({ ...padMesh(two), featureId: 'boss' }, 'face:top')).toBe(false);
+    expect(control.ownsEndFace?.(padMesh(two), 'face:side')).toBe(false);
+  });
+
   it('cancels an open drag when disposed', () => {
     const { control, preview, gesture, begin } = harness(), token = begin();
     control.setQuantity(token, 30); control.dispose();

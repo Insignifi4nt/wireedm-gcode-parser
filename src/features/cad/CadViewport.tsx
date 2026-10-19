@@ -11,7 +11,7 @@ import type { CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import { captureCanvas } from '@/features/editor/captureEditorPreview';
 import { ToolError } from '@/features/webmcp/siteTools';
 import type { CadNamedView, CadRenderedViewControls } from './cadViewportControls';
-import { pickTopology, type CadPickMode, type CadTopologyHit } from './cadTopologyPicking';
+import { pickTopology, topologyGroupAt, type CadPickMode, type CadTopologyHit } from './cadTopologyPicking';
 import { cadBoxSelectedBody, cadProjectedBounds, cadScreenBox } from './cadBoxSelection';
 import { createCadTopologyHighlights } from './cadTopologyHighlights';
 import { pickCadCurveReference } from './cadCurveRendering';
@@ -523,8 +523,11 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     // A press on the Pad's end face waits for a real drag; a plain click still picks that face.
     let facePress: { pointerId: number; x: number; y: number; ray: THREE.Ray; point: [number, number, number]; normal: [number, number, number] } | null = null;
     const endFaceHit = () => {
-      const hit = raycaster.intersectObjects(pickableBodies.filter(body => body.visible), false)[0];
-      if (!hit?.face) return null;
+      const hit = data.current.depthControl?.ownsEndFace ? raycaster.intersectObjects(pickableBodies.filter(body => body.visible), false)[0] : undefined;
+      const mesh = hit && meshByObject.get(hit.object);
+      const group = mesh && typeof hit.faceIndex === 'number' ? topologyGroupAt(mesh.faceGroups, hit.faceIndex * 3) : null;
+      // The face must belong to this Pad, not merely line up with its end cap.
+      if (!hit?.face || !mesh || !group || !data.current.depthControl?.ownsEndFace?.(mesh, group.key)) return null;
       const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
       const point: [number, number, number] = [hit.point.x, hit.point.y, hit.point.z], direction: [number, number, number] = [normal.x, normal.y, normal.z];
       return depth.faceAt(point, direction) ? { point, normal: direction } : null;

@@ -42,6 +42,8 @@ export interface CadExtrudeDepthControl {
   setQuantity(token: string, quantityMm: number): boolean;
   release(token: string): boolean;
   cancel(token: string): boolean;
+  /** Whether this face of a displayed body is this Pad's end cap, so pressing it drags this Length. Absent: only the arrow drags. */
+  ownsEndFace?(mesh: CadMesh, faceKey: string): boolean;
 }
 
 // The domain owns source preparation. Each prepared result keeps only its latest

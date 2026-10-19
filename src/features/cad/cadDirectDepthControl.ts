@@ -78,10 +78,11 @@ export function createCadDirectDepthControl(options: {
     const feature = env.document.features.find(entry => entry.id === featureId);
     let state: CadExtrudeDepthState | null = null;
     if (feature?.kind === 'extrude') {
-      const candidate = edits ? applyCadEdits(env.document, edits) : env.document;
-      const draft = candidate.features.find(entry => entry.id === featureId) ?? feature;
       let model: CadExtrudeDepthModel | null = null;
-      try { model = inspectCadExtrudeDepth(candidate, draft); } catch { model = null; }
+      try {
+        const candidate = edits ? applyCadEdits(env.document, edits) : env.document;
+        model = inspectCadExtrudeDepth(candidate, candidate.features.find(entry => entry.id === featureId) ?? feature);
+      } catch { model = null; }
       if (model) state = { model, gestureActive, capability: model.capability,
         definitionKey: cadFeatureCandidateKey(edits ?? cadFeatureCandidateEdits({ feature, isNew: false })) };
     }
@@ -93,6 +94,10 @@ export function createCadDirectDepthControl(options: {
     return gesture?.token === token && env?.document === gesture.document ? gesture : null;
   };
   return { owner, featureId, baseVersion, getState,
+    ownsEndFace(mesh, faceKey) {
+      const env = environment();
+      return Boolean(env && env.enabled && !gesture && cadExtrudeForEndFace(env.document, mesh, faceKey) === featureId);
+    },
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     begin(expectedDefinitionKey) {
       const state = getState();
@@ -107,6 +112,7 @@ export function createCadDirectDepthControl(options: {
       // Passing through zero or a refused value keeps the last valid preview.
       if (result.kind === 'locked') return true;
       const edits = result.kind === 'edits' ? result.edits : null;
+      if (edits) { try { applyCadEdits(owned.document, edits); } catch { return true; } }
       if (edits && !owned.changed) { owned.changed = true; options.onGestureChange(true); }
       owned.edits = edits;
       options.preview(edits ? { kind: 'candidate', owner, expectedVersion: baseVersion, edits } : { kind: 'clear', owner });

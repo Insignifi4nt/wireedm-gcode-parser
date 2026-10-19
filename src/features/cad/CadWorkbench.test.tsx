@@ -806,6 +806,7 @@ describe('CAD sketch interaction', () => {
   });
 
   it('drags a selected Pad or its picked end face into one undoable Length edit without a dialog', async () => {
+    setCadPreferences({ navigationMode: 'mouse', showOnPartDimensions: true });
     const initial = solidDocument(), preview = vi.fn<NonNullable<CadWorkbenchProps['onFeaturePreview']>>();
     await mount(initial, { build: topologyBuild, buildState: 'ready', onFeaturePreview: preview });
     await selectTopology('edge'); expect(viewportDepth).toBeNull();

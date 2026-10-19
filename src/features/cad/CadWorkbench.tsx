@@ -457,11 +457,15 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const displayedDocument = candidatePreview?.document ?? document;
   const displayedBuild = candidatePreview?.result ?? build;
   const preparedReferences = useMemo(() => prepareCadViewportReferences(displayedDocument.features, displayedDocument.parameters), [displayedDocument.features, displayedDocument.parameters]);
-  const references = useMemo(() => currentTopologyPick ? [] : currentRegionPick ? preparedReferences.filter(reference => reference.featureId === currentRegionPick.sketchId && !reference.construction) : currentReferencePick ? preparedReferences.filter(reference => reference.featureId !== null && currentReferencePick.eligibleIds.includes(reference.featureId))
+  const baseReferences = useMemo(() => currentTopologyPick ? [] : currentRegionPick ? preparedReferences.filter(reference => reference.featureId === currentRegionPick.sketchId && !reference.construction) : currentReferencePick ? preparedReferences.filter(reference => reference.featureId !== null && currentReferencePick.eligibleIds.includes(reference.featureId))
     : currentSketchPlaneRequest ? [...CAD_PRINCIPAL_PLANE_REFERENCES, ...preparedReferences.filter(reference => reference.featureKind === 'datum-plane')]
       // Like CATIA's default planes, XY, XZ and YZ stay in the design area so either view can pick them.
-      : cadReferencesWithHoveredPlane([...CAD_PRINCIPAL_PLANE_REFERENCES, ...selectCadViewportReferences(preparedReferences, displayedDocument.features, selectedId)], preparedReferences, hoveredReferencePlane),
-    [preparedReferences, displayedDocument.features, selectedId, currentReferencePick, currentRegionPick, currentTopologyPick, currentSketchPlaneRequest, hoveredReferencePlane]);
+      : [...CAD_PRINCIPAL_PLANE_REFERENCES, ...selectCadViewportReferences(preparedReferences, displayedDocument.features, selectedId)],
+    [preparedReferences, displayedDocument.features, selectedId, currentReferencePick, currentRegionPick, currentTopologyPick, currentSketchPlaneRequest]);
+  // Hovering an installed plane keeps the same references, so the viewport keeps its own hover.
+  const references = useMemo(() => currentTopologyPick || currentRegionPick || currentReferencePick || currentSketchPlaneRequest ? baseReferences
+    : cadReferencesWithHoveredPlane(baseReferences, preparedReferences, hoveredReferencePlane),
+    [baseReferences, preparedReferences, hoveredReferencePlane, currentTopologyPick, currentRegionPick, currentReferencePick, currentSketchPlaneRequest]);
   const visibleReferenceIds = useMemo(() => cadReferenceFeatureIds(references), [references]);
   const visibleReferencePlanes = useMemo(() => cadReferencePlanes(references), [references]);
   const hasActiveBodyFeatures = document.features.some(feature => !feature.suppressed && cadFeatureProducesBody(feature));

@@ -142,7 +142,9 @@ describe('Reference plane hover and pick order', () => {
     expect(view().references.filter(reference => reference.featureKind === 'principal-plane').map(reference => reference.plane)).toEqual(['XY', 'XZ', 'YZ']);
     await enter(button(`Select ${plane} plane`)); expect(view().hoveredReferencePlane).toBe(plane);
     await leave(button(`Select ${plane} plane`)); expect(view().hoveredReferencePlane).toBeNull();
-    await act(async () => view().hover?.(plane));
+    // Canvas hover must not reinstall the planes, or the viewport would drop the hover it reported.
+    const installed = view().references;
+    await act(async () => view().hover?.(plane)); expect(view().references).toBe(installed);
     expect(button(`Select ${plane} plane`).classList.contains('is-hovered')).toBe(true);
     expect([...container.querySelectorAll('.cad-reference-plane-list .is-hovered')]).toHaveLength(1);
     await act(async () => view().hover?.(null)); expect(button(`Select ${plane} plane`).classList.contains('is-hovered')).toBe(false);
