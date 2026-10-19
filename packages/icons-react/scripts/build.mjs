@@ -14,4 +14,6 @@ run(fileURLToPath(new URL('./generate.mjs', import.meta.url)), ['--check']);
 const output = resolve(root, 'dist');
 if (dirname(output) !== resolve(root)) throw new Error('Invalid icon build output directory.');
 rmSync(output, { recursive: true, force: true });
-run(createRequire(import.meta.url).resolve('typescript/bin/tsc'), ['-p', 'tsconfig.json']);
+// TypeScript 7 exports only its API, so locate tsc through the package's declared bin.
+const require = createRequire(import.meta.url), typescriptManifest = require.resolve('typescript/package.json');
+run(resolve(dirname(typescriptManifest), require(typescriptManifest).bin.tsc), ['-p', 'tsconfig.json']);

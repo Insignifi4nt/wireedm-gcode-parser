@@ -10,6 +10,8 @@ import { iconSource } from '../../../scripts/icon-source.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const require = createRequire(import.meta.url);
+// TypeScript 7 exports only its API, so locate tsc through the package's declared bin.
+const typescriptManifest = require.resolve('typescript/package.json'), tsc = resolve(dirname(typescriptManifest), require(typescriptManifest).bin.tsc);
 const npm = process.env.npm_execpath;
 if (!npm) throw new Error('Run this check with npm run check:package.');
 const temporaryRoot = resolve(tmpdir());
@@ -48,7 +50,7 @@ const invalidName: IconName = 'not-an-icon';
 const props: WorkbenchIconProps = { size: 16, absoluteStrokeWidth: true, onClick: event => event.currentTarget.focus() };
 export const examples = [<AddIcon {...props} />, <PadIcon aria-label="Extrude" />, <WorkbenchIcon name={name} />];
 `);
-  execFileSync(process.execPath, [require.resolve('typescript/bin/tsc'), '--noEmit', '--strict', '--skipLibCheck', '--jsx', 'react-jsx', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2022', 'types.tsx'], { cwd: consumer, stdio: 'pipe' });
+  execFileSync(process.execPath, [tsc, '--noEmit', '--strict', '--skipLibCheck', '--jsx', 'react-jsx', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2022', 'types.tsx'], { cwd: consumer, stdio: 'pipe' });
 
   const bundle = await build({
     absWorkingDir: consumer,
