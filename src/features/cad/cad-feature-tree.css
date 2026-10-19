@@ -36,3 +36,6 @@
 .cad-workbench .cad-tree-rename input { width: 100%; padding: 4px 5px; font-size: 12px; }
 .cad-workbench .cad-tree-rename button { padding: 2px; }
 .cad-tree-rename-error { grid-column: 1 / -1; color: var(--destructive); font-size: 10px; padding: 2px 3px; }
+.cad-tree-document-row { display: flex; align-items: center; min-width: 0; }
+.cad-workbench .cad-specification-tree .cad-tree-document-toggle { width: 21px; min-height: 28px; justify-content: flex-start; padding: 0 0 0 4px; }
+.cad-workbench .cad-specification-tree .cad-tree-document-row > .cad-tree-document { flex: 1; width: auto; min-width: 0; padding-left: 0; }

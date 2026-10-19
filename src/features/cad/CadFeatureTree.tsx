@@ -219,10 +219,17 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
     </li>;
   };
   return <><div className="cad-specification-tree" aria-label="Part specification tree">
-    <Button type="button" className="cad-tree-document" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('part') ? 'Collapse' : 'Expand'} part ${document.name}`}
-      aria-expanded={branches.has('part')} aria-controls={branches.has('part') ? `${treeId}-part` : undefined} onClick={() => toggleBranch('part')}>
-      <ExpandRightIcon size={12} className="cad-tree-hierarchy-toggle" /><FileBodyIcon size={15} /><span>{document.name}</span>
-    </Button>
+    {/* The chevron folds the part; its name opens the part's Properties, where the name is edited. */}
+    <div className="cad-tree-document-row">
+      <Button type="button" className="cad-tree-document-toggle" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('part') ? 'Collapse' : 'Expand'} part ${document.name}`}
+        aria-expanded={branches.has('part')} aria-controls={branches.has('part') ? `${treeId}-part` : undefined} onClick={() => toggleBranch('part')}>
+        <ExpandRightIcon size={12} className="cad-tree-hierarchy-toggle" />
+      </Button>
+      <Button type="button" className="cad-tree-document" disabled={locked || Boolean(renameCurrent) || selectionOnly || !onProperties} aria-label={`Part ${document.name} properties`}
+        title="Show the part name and summary" onClick={() => onProperties?.(null)} onContextMenu={event => openMenu(event, null)} onKeyDown={event => openMenu(event, null)}>
+        <FileBodyIcon size={15} /><span>{document.name}</span>
+      </Button>
+    </div>
     {branches.has('part') && <div id={`${treeId}-part`} className="cad-tree-document-children">
       <Button type="button" className="cad-tree-branch" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('reference') ? 'Collapse' : 'Expand'} Reference`}
         aria-expanded={branches.has('reference')} aria-controls={branches.has('reference') ? `${treeId}-reference` : undefined} onClick={() => toggleBranch('reference')}>
