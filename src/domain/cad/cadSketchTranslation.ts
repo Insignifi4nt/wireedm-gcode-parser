@@ -78,13 +78,14 @@ export function translateCadSketchGraph({ graph, selections, translation, parame
         const center = position(positions, entity.centerPointId), start = position(positions, entity.startPointId), end = position(positions, entity.endPointId);
         const angle = (point: Point2) => Math.atan2(point.y - center.y, point.x - center.x);
         const excess = Math.abs(signedSweep(angle(start), angle(end), entity.direction === 'cw')) - Math.PI;
-        // A half circle, such as a slot end, sits on the branch boundary, where coordinate roundoff alone may tip it either
-        // way. Any arc measurably off a half turn keeps its branch strictly.
         const radius = Math.hypot(start.x - center.x, start.y - center.y);
         const roundoff = 8 * Number.EPSILON * Math.max(1, ...[center, start, end].flatMap(point => [Math.abs(point.x), Math.abs(point.y)]));
-        return Math.abs(excess) * radius <= roundoff ? 0 : Math.sign(excess);
+        return { sign: Math.sign(excess), settled: Math.abs(excess) * radius > roundoff };
       };
-      if (branch(before) !== branch(after))
+      // A half circle, such as a slot end, sits on the branch boundary, where coordinate roundoff alone may tip it either
+      // way. A flip is only a real branch change when either side lies measurably off the half turn.
+      const was = branch(before), now = branch(after);
+      if (was.sign !== now.sign && (was.settled || now.settled))
         throw new CadError('sketch-translation-precision', 'The requested move cannot preserve the arc branch at these coordinates.');
     }
   }

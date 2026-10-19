@@ -55,9 +55,10 @@ export function checkCadSketchTangentJoint(graph: CadSketchGraph, relation: CadS
     const cross = outwardLine.x * tangent.y - outwardLine.y * tangent.x;
     const error = Math.abs(Math.atan2(cross, -dot));
     const residualMm = 2 * Math.sin(error / 2) * Math.max(outwardLine.length, radial.length);
-    // Far from the origin, rounding each coordinate alone turns a short support by more than 1e-12 radians.
+    // Far from the origin, rounding each coordinate alone turns a short support by more than 1e-12 radians. The
+    // allowance stays tiny, so supports only a few roundoff steps long are rejected rather than read as tangent.
     const roundoff = cadPathClosureTolerance([outwardLine.start, outwardLine.end, radial.start, radial.end]) / Math.min(outwardLine.length, radial.length);
-    if (!(dot < 0) || !Number.isFinite(error) || error > Math.max(1e-12, roundoff)
+    if (!(dot < 0) || !Number.isFinite(error) || error > Math.max(1e-12, Math.min(roundoff, 1e-9))
       || residualMm > cadSketchDriverTolerance([outwardLine.start, outwardLine.end, radial.start, radial.end, otherArcEnd]))
       return [{ source, code: 'relation-residual', message: 'The line and arc do not form a smooth tangent joint.', ...(Number.isFinite(residualMm) ? { residualMm } : {}) }];
     return [];

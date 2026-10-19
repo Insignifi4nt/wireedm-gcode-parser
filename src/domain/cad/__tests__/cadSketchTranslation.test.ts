@@ -75,6 +75,10 @@ describe('exact selected sketch translation', () => {
       expect(() => translateCadSketchGraph({ graph, parameters: {}, selections: [{ kind: 'entity', id: 'arc' }], translation: [0, 1e4] }))
         .toThrowError(expect.objectContaining({ code: 'sketch-translation-precision' }));
     }
+    // A far arc just short of a half turn keeps that exact minor sweep when brought home.
+    const far = parseCadSketchGraph({ points: [{ id: 'o', position: [1e8, 0] }, { id: 's', position: [1e8 + 1, 0] }, { id: 'e', position: [1e8 - 1, 1e-8] }], entities: [
+      { id: 'arc', kind: 'arc', centerPointId: 'o', startPointId: 's', endPointId: 'e', direction: 'ccw', construction: false }], relations: [] });
+    expect(translateCadSketchGraph({ graph: far, parameters: {}, selections: [{ kind: 'entity', id: 'arc' }], translation: [-1e8, 0] }).points.find(point => point.id === 'e')?.position).toEqual([-1, 1e-8]);
   });
 
   it('returns the original for zero motion but still rejects empty, duplicate or wrong-owner selections', () => {

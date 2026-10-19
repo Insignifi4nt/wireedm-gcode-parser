@@ -304,6 +304,9 @@ describe('graph spatial selection', () => {
     await h.show({ graphControls: { ...h.props().graphControls!, onSelectDatum: vi.fn(), datumSelection: ['x-axis'] } });
     await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     expect(h.selected).toHaveBeenCalledWith(null);
+    // Escape also clears it while a keyboard-selected datum holds focus.
+    await act(async () => container.querySelector('[data-cad-sketch-datum="x-axis"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(h.selected).toHaveBeenCalledTimes(2);
     expect(origin()?.getAttribute('tabindex')).toBe('0');
     const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
     await h.pointer('pointerdown', 0, 0, false, 7, 2); await h.pointer('pointermove', 0, -3 * state.heightSpanMm, false, 7, 2);
