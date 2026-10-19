@@ -125,18 +125,18 @@ export function StatusNotificationMenu({ notifications, agentContent }: { notifi
 
   return (
     <div className="relative font-mono text-[10px]" data-status-notification-root>
-      <Button variant="outline" size="md"
+      <Button size="icon"
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-controls={open ? `${id}-popover` : undefined}
         aria-label="Open notifications"
-        className="flex items-center gap-1 px-2"
+        className={notifications.length > 0 ? 'w-auto gap-1 px-1' : undefined}
         onClick={() => { if (!open) setTab('notifications'); setOpen(!open); }}
         ref={triggerRef}
         title="Notifications"
         type="button"
       >
-        <Bell className="size-3.5" />
+        <Bell />
         {notifications.length > 0 && (
           <span
             className="min-w-4 border border-primary/50 bg-primary/20 px-1 text-center text-[10px] text-primary"

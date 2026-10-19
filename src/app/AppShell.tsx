@@ -200,7 +200,6 @@ export function AppShell({
             size="icon"
             title="Settings"
             type="button"
-            variant="outline"
           >
             <SettingsIcon />
           </Button>
