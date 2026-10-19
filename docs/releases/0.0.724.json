@@ -1,0 +1,28 @@
+{
+  "version": "0.0.724",
+  "previousVersion": "0.0.723",
+  "postCompatibility": "preserved-output-catia-style-sketch-selection",
+  "summary": "Sketch selection and constraints follow CATIA's select-then-command workflow. The Slot tool draws connected geometry in graph sketches: tangent lines, equal end arcs, a construction axis and a center held at its middle. The sketch origin and axes are drawn as short H and V arrows and can be selected in Select like sketch geometry. With geometry or plane references selected, the Constrain menu and the right-click menu list only the constraints that take that selection. Applied constraints are checked and can be removed there, and conflicting ones are disabled with the reason. A new positional relation that places a free shape onto the origin, an axis or another point first carries the whole shape there, so the solver holds it rather than stretching it. The sketch canvas and 3D view use a navy-to-slate vertical gradient background.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. New slots in graph sketches are stored as ordinary lines, arcs and relations, which existing CAD documents already support. Saved slot profiles still load and edit as before. Axis picking now reaches only along the drawn H and V arrows instead of the whole view. Tangent line-arc joints far from the origin now accept coordinate roundoff in their angle check, so slots and other tangent shapes drawn there validate; any document that validated before still does.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. A slot uses existing sketch graph entities and relations (line, arc, tangent-joint, equal-radius, midpoint). Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event or WebMCP tool change. Constraint edits use the existing set-sketch-relation, remove-sketch-relation and translate-sketch-geometry operations, with their submission, cancellation and version checks.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Full Vitest suite 5846/5846 in 520 files; tsc, oxlint (zero findings), ui:check and production build pass. Playwright cad-sketch-constraints and cad-sketch-editing journeys 29/29. Independent Codex review findings fixed with regression tests: half-circle slot ends moving at any angle, the 64-item geometry move limit, reference dimensions no longer tying shapes together for placement, far-origin rotated slots, Escape clearing a datum-only selection, off-screen datums leaving the keyboard order, a capped far-origin tangent allowance so microscopic supports are never read as tangent, arc-branch checks that only reject a sign flip measurably off a half turn, and Escape from a focused datum. A final Codex pass found no further issues."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Select sketch geometry and the origin or axes, then choose a constraint that fits the selection.",
+    "changes": [
+      "Slots are drawn as connected lines and arcs with a selectable center point.",
+      "The sketch origin and its H and V axes are short arrows you can select and constrain.",
+      "With a selection, Constrain and the right-click menu list the constraints that fit it, check the ones already applied, and remove a checked one when you choose it again.",
+      "Placing a free shape on the origin, an axis or another point moves the whole shape there.",
+      "The sketch and 3D views use a graduated background."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

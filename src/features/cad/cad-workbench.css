@@ -1,4 +1,4 @@
-.cad-workbench { --cad-accent: var(--primary); display: flex; flex-direction: column; height: 100%; min-height: 0; width: 100%; background: var(--card); color: var(--foreground); font: 12px/1.4 Inter, "Segoe UI", sans-serif; overflow: hidden; }
+.cad-workbench { --cad-accent: var(--primary); --cad-view-top: #0e1a2a; --cad-view-bottom: #1a2731; display: flex; flex-direction: column; height: 100%; min-height: 0; width: 100%; background: var(--card); color: var(--foreground); font: 12px/1.4 Inter, "Segoe UI", sans-serif; overflow: hidden; }
 .cad-workbench input[type=checkbox] { margin: 0; flex-shrink: 0; }
 .cad-shell-header { flex: 1; min-width: 0; align-self: stretch; margin-right: 8px; }
 .cad-header { --cad-accent: var(--primary); height: 100%; min-height: 38px; display: flex; align-items: center; gap: 6px; padding: 0; color: var(--foreground); font: 12px/1.4 Inter, "Segoe UI", sans-serif; }
@@ -54,7 +54,7 @@
 .cad-tree-error { color: var(--destructive); margin-left: auto; font-weight: 700; }
 .cad-tree-muted { margin-left: auto; font-size: 10px; color: var(--muted-foreground); }
 .cad-workbench .cad-tree-profile { padding-left: 42px; min-height: 26px; font-size: 12px; }
-.cad-center { display: flex; flex: 1; flex-direction: column; position: relative; overflow: hidden; min-height: 0; min-width: 0; background: radial-gradient(ellipse at 50% 45%, #23313a, #141d24 78%); }
+.cad-center { display: flex; flex: 1; flex-direction: column; position: relative; overflow: hidden; min-height: 0; min-width: 0; background: linear-gradient(180deg, var(--cad-view-top), var(--cad-view-bottom)); }
 .cad-tree-overlay { position: absolute; z-index: 4; top: 10px; left: 10px; width: max-content; max-width: min(340px, 42%); max-height: calc(100% - 80px); display: flex; pointer-events: none; background: transparent; }
 .cad-tree-overlay .cad-specification-tree { max-width: 100%; pointer-events: none; text-shadow: 0 1px 3px #0008; }
 .cad-tree-overlay button, .cad-tree-overlay input, .cad-tree-overlay select, .cad-tree-overlay .cad-parameters { pointer-events: auto; }
@@ -184,15 +184,17 @@
 .cad-error { padding: 7px 9px; background: var(--card); border: 1px solid var(--border); color: var(--destructive); font-size: 12px; overflow-wrap: anywhere; }
 .cad-vertex-fields { display: grid; grid-template-columns: 1fr 1fr; column-gap: 9px; padding-top: 9px; border-top: 1px solid var(--border); }
 .cad-vertex-fields > span { grid-column: 1 / -1; color: var(--muted-foreground); font-size: 10px; margin-bottom: 5px; }
-.cad-sketch-canvas { width: 100%; height: 100%; display: block; background: var(--card); }
+.cad-sketch-canvas { width: 100%; height: 100%; display: block; background: linear-gradient(180deg, var(--cad-view-top), var(--cad-view-bottom)); }
+.cad-sketch-grid-line { stroke: color-mix(in srgb, #9fc2d3 12%, transparent); }
 .cad-sketch-canvas.is-drawing { cursor: crosshair; }
 .cad-sketch-canvas.is-trimming { cursor: pointer; }
 .cad-sketch-canvas:focus-visible { outline: 1px solid var(--border); outline-offset: -2px; }
 .cad-profile:focus { outline: none; }
 .cad-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-.cad-axis-x { stroke: #75534b; fill: none; }
-.cad-axis-y { stroke: #4a6c5b; fill: none; }
+.cad-axis-x { stroke: #b0705f; fill: none; }
+.cad-axis-y { stroke: #6a9e80; fill: none; }
 .cad-sketch-origin { stroke: var(--muted-foreground); fill: none; pointer-events: none; }
+.cad-sketch-axis-label { fill: var(--muted-foreground); pointer-events: none; user-select: none; }
 .cad-axis-x.is-pick-highlighted, .cad-axis-y.is-pick-highlighted, .cad-sketch-origin.is-pick-highlighted { stroke: var(--foreground); }
 .cad-axis-x.is-selected, .cad-axis-y.is-selected, .cad-sketch-origin.is-selected { stroke: var(--primary); }
 .cad-profile { fill: none; stroke: #9fc2d3; cursor: pointer; }

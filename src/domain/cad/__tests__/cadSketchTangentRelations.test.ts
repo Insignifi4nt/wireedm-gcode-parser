@@ -80,6 +80,10 @@ describe('declared line–arc tangent joints', () => {
     expect(checkCadSketchGraph(lineAt(-10, 5e-12), { bendRadius: 5 })).toEqual([]);
     expect(checkCadSketchGraph(lineAt(-10, 2e-11), { bendRadius: 5 })).toContainEqual(expect.objectContaining({ source: { kind: 'relation', id: 'tangent' } }));
     expect(checkCadSketchGraph(lineAt(-1000, 5e-10), { bendRadius: 5 })).toContainEqual(expect.objectContaining({ source: { kind: 'relation', id: 'tangent' } }));
+    // Far from the origin the angular allowance grows with roundoff, but supports a few roundoff steps long never pass as tangent.
+    const o = 9e8, s = 2 ** -22, tiny = parseCadSketchGraph({ ...source, points: [{ id: 'a', position: [o - s, o + s] }, { id: 'j', position: [o, o] },
+      { id: 'c', position: [o, o + s] }, { id: 'e', position: [o + s, o + s] }], relations: [tangentJoint] });
+    expect(checkCadSketchGraph(tiny, {})).toContainEqual(expect.objectContaining({ source: { kind: 'relation', id: 'tangent' } }));
   });
   it('protects both entities and every support point in deletion, surgery and generated-pattern ownership', () => {
     const source = tangentSketch(tangentPart()), sketch = { ...source, graph: parseCadSketchGraph({ ...source.graph, relations: [tangentJoint] }) };

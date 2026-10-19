@@ -77,7 +77,7 @@ old_reference/
 ChatGPT-Pro/
 
 # Agent-local files
-/.claude/settings.local.json
+/.claude/
 .playwright-cli/
 .superpowers/
 .worktrees/

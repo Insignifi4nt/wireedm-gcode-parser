@@ -9,7 +9,9 @@ export const CadSketchGraphSelectionSchema = Type.Object({
   kind: Type.Union([Type.Literal('point'), Type.Literal('entity')]), id: CadIdentifierSchema,
 }, { additionalProperties: false });
 export type CadSketchGraphSelection = Readonly<Static<typeof CadSketchGraphSelectionSchema>>;
-export const CadSketchGraphSelectionSetSchema = Type.Array(CadSketchGraphSelectionSchema, { maxItems: 64, uniqueItems: true });
+/** Most points and edges one selection, or one geometry move, may name. */
+export const CAD_SKETCH_SELECTION_LIMIT = 64;
+export const CadSketchGraphSelectionSetSchema = Type.Array(CadSketchGraphSelectionSchema, { maxItems: CAD_SKETCH_SELECTION_LIMIT, uniqueItems: true });
 
 /** Validate the complete owned set; exact IDs never imply a nearby replacement. */
 export function cadSketchGraphSelectionSet(graph: CadSketchGraph | undefined, selections: unknown): readonly CadSketchGraphSelection[] {

@@ -30,12 +30,16 @@ export interface CadSketchGeometryPick {
 }
 /** Screen reach of a plane reference; the origin reaches a little further so it wins where the axes cross. */
 export const CAD_SKETCH_DATUM_PICK_PIXELS = 6;
-/** The eligible plane reference under a sketch-space point, nearest first, or null. */
+/** Screen length of the drawn H and V axes. As in CATIA they mark the directions from the origin instead of crossing the whole view. */
+export const CAD_SKETCH_AXIS_PIXELS = 72;
+/** The eligible plane reference under a sketch-space point, nearest first, or null. Axes are picked along their drawn length only. */
 export function pickCadSketchDatum(point: readonly [number, number], millimetersPerPixel: number, eligible: readonly CadSketchDatum[]): CadSketchDatum | null {
   if (!eligible.length || !Number.isFinite(millimetersPerPixel) || millimetersPerPixel <= 0) return null;
-  const reach = CAD_SKETCH_DATUM_PICK_PIXELS * millimetersPerPixel;
+  const reach = CAD_SKETCH_DATUM_PICK_PIXELS * millimetersPerPixel, length = CAD_SKETCH_AXIS_PIXELS * millimetersPerPixel;
   if (eligible.includes('origin') && Math.hypot(point[0], point[1]) <= reach * 1.5) return 'origin';
-  const axes = ([['x-axis', Math.abs(point[1])], ['y-axis', Math.abs(point[0])]] as const).filter(([datum, distance]) => eligible.includes(datum) && distance <= reach);
+  const along = (value: number) => value >= -reach && value <= length + reach;
+  const axes = ([['x-axis', Math.abs(point[1]), along(point[0])], ['y-axis', Math.abs(point[0]), along(point[1])]] as const)
+    .filter(([datum, distance, within]) => eligible.includes(datum) && within && distance <= reach);
   return axes.length ? axes.reduce((best, next) => next[1] < best[1] ? next : best)[0] : null;
 }
 export function cadSketchGeometryPickAllows(pick: CadSketchGeometryPick, selection: CadSketchGraphSelection): boolean {

@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LineBasicMaterial, LineSegments, Mesh, MeshStandardMaterial, OrthographicCamera, Vector3, type Camera, type Scene } from 'three';
 import type { CadMesh } from '@/domain/cad/cadDocument';
+import { CAD_VIEW_BACKGROUND } from './cadViewBackground';
 import { CadViewport } from '@/features/cad/CadViewport';
 import { prepareCadViewportReferences } from '@/features/cad/cadViewportReferences';
 import type { CadRenderedViewControls } from '@/features/cad/cadViewportControls';
@@ -113,12 +114,12 @@ it.each([0, 100000000])('reveals and physically picks only owned eligible source
   const sourceColor = h.material('regions').color.getHex();
   // Internal sources must contrast with both the dark canvas and selected cyan
   // material. This is a bounded palette check; actual lit/raster contrast is QA.
-  for (const background of [0x18252e, 0x79c8e6]) expect(contrastRatio(sourceColor, background)).toBeGreaterThanOrEqual(2.5);
+  for (const background of [CAD_VIEW_BACKGROUND.top, CAD_VIEW_BACKGROUND.bottom, 0x79c8e6]) expect(contrastRatio(sourceColor, background)).toBeGreaterThanOrEqual(2.5);
   expect(h.material('blocked').color.getHex()).toBe(ordinaryColors[2]);
   await h.pointer('pointermove'); await flushFrame();
   const hoverColor = h.material('regions').color.getHex();
   expect(hoverColor).not.toBe(sourceColor);
-  for (const background of [0x18252e, 0x79c8e6]) expect(contrastRatio(hoverColor, background)).toBeGreaterThanOrEqual(2.5);
+  for (const background of [CAD_VIEW_BACKGROUND.top, CAD_VIEW_BACKGROUND.bottom, 0x79c8e6]) expect(contrastRatio(hoverColor, background)).toBeGreaterThanOrEqual(2.5);
   expect(h.material('rail').color.getHex()).toBe(sourceColor);
   await h.click(); expect(h.select).toHaveBeenCalledExactlyOnceWith('regions'); h.select.mockClear();
   await h.click(origin + 20, origin + 15); expect(h.select).toHaveBeenCalledExactlyOnceWith('rail'); h.select.mockClear();

@@ -28,7 +28,8 @@ export type CadSketchConstraintPick = CadSketchGraphSelection | { readonly kind:
 export type CadSketchConstraintStep =
   | { readonly status: 'more'; readonly prompt: string; readonly entityIds: readonly string[]; readonly pointIds: readonly string[]; readonly datums: readonly CadSketchDatum[] }
   | { readonly status: 'ready'; readonly relations: readonly CadSketchGraphRelation[] }
-  | { readonly status: 'invalid'; readonly reason: string };
+  /** `applied` names the existing relations when the constraint is already in place, so a caller can offer to remove them. */
+  | { readonly status: 'invalid'; readonly reason: string; readonly applied?: readonly string[] };
 
 type Entity = CadSketchGraphEntity;
 const isLine = (entity: Entity | undefined): entity is Extract<Entity, { kind: 'line' }> => entity?.kind === 'line';
@@ -50,10 +51,12 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
   const datum = picks.find(pick => pick.kind === 'datum')?.id;
   const more = (prompt: string, entityIds: readonly string[], pointIds: readonly string[], datums: readonly CadSketchDatum[] = []): CadSketchConstraintStep => ({ status: 'more', prompt,
     entityIds: entityIds.filter(id => !picks.some(pick => pick.kind === 'entity' && pick.id === id)), pointIds: pointIds.filter(id => !points.includes(id)), datums: datum ? [] : datums });
-  const invalid = (reason: string): CadSketchConstraintStep => ({ status: 'invalid', reason });
+  const invalid = (reason: string, applied?: readonly string[]): CadSketchConstraintStep => applied?.length ? { status: 'invalid', reason, applied } : { status: 'invalid', reason };
   const exists = (match: (relation: CadSketchGraphRelation) => boolean) => graph.relations.some(match);
+  const matching = (match: (relation: CadSketchGraphRelation) => boolean) => graph.relations.filter(match).map(relation => relation.id);
   const ready = (relation: CadSketchGraphRelation, check?: () => unknown): CadSketchConstraintStep => {
-    if (exists(other => other.kind === relation.kind && sameRelation(other, relation))) return invalid(`${cadSketchConstraintToolLabels[tool]} is already applied here.`);
+    const existing = matching(other => other.kind === relation.kind && sameRelation(other, relation));
+    if (existing.length) return invalid(`${cadSketchConstraintToolLabels[tool]} is already applied here.`, existing);
     const reason = check ? attempt(check) : null;
     return reason ? invalid(reason) : { status: 'ready', relations: [relation] };
   };
@@ -68,13 +71,14 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
     const conflict = fixed.find(relation => axes.includes(relation.axis) && relation.value !== 0);
     if (conflict) return invalid(`This point already has a fixed ${conflict.axis.toUpperCase()}. Remove that dimension first.`);
     const relations = axes.filter(axis => !fixed.some(relation => relation.axis === axis)).map(axis => ({ id: newId(), kind: 'fixed-axis' as const, pointId, axis, value: 0 }));
-    return relations.length ? { status: 'ready', relations } : invalid(`This point is already ${label}.`);
+    return relations.length ? { status: 'ready', relations } : invalid(`This point is already ${label}.`, fixed.filter(relation => axes.includes(relation.axis)).map(relation => relation.id));
   };
   // A line follows an axis through horizontal or vertical, the same relations a level or upright line takes.
   const alongAxis = (line: Extract<Entity, { kind: 'line' }>, reference: CadSketchDatum, parallel: boolean) => {
     if (reference === 'origin') return invalid('Choose an axis, not the origin.');
     const kind = (reference === 'x-axis') === parallel ? 'horizontal' : 'vertical', pair = [line.startPointId, line.endPointId] as const;
-    return exists(relation => relation.kind === kind && samePoints(relation.pointIds, pair)) ? invalid(`This line is already ${kind}.`) : axisRelation(kind, pair);
+    const existing = matching(relation => relation.kind === kind && samePoints(relation.pointIds, pair));
+    return existing.length ? invalid(`This line is already ${kind}.`, existing) : axisRelation(kind, pair);
   };
   switch (tool) {
     case 'coincident': {
@@ -83,7 +87,8 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
       if (datum) return more(datum === 'origin' ? 'Choose a point to place at the origin' : 'Choose a point to keep on this axis', [], allPoints);
       if (points.length === 2) {
         const identity = resolveCadSketchPointIdentities(graph);
-        return identity(points[0]) === identity(points[1]) ? invalid('These points are already joined.') : ready({ id: newId(), kind: 'coincident', pointIds: [points[0], points[1]] });
+        return identity(points[0]) === identity(points[1]) ? invalid('These points are already joined.', matching(relation => relation.kind === 'coincident' && samePoints(relation.pointIds, [points[0], points[1]])))
+          : ready({ id: newId(), kind: 'coincident', pointIds: [points[0], points[1]] });
       }
       const line = entities.find(isLine);
       if (points.length === 1 && line) {
@@ -152,7 +157,8 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
       const chosen = entities.filter(isCurve);
       if (chosen.length === 2) {
         const identity = resolveCadSketchPointIdentities(graph);
-        if (identity(chosen[0].centerPointId) === identity(chosen[1].centerPointId)) return invalid('These already share a center.');
+        const centers = [chosen[0].centerPointId, chosen[1].centerPointId] as const;
+        if (identity(centers[0]) === identity(centers[1])) return invalid('These already share a center.', matching(relation => relation.kind === 'coincident' && samePoints(relation.pointIds, centers)));
         return ready({ id: newId(), kind: 'coincident', pointIds: [chosen[0].centerPointId, chosen[1].centerPointId] });
       }
       return more(chosen.length ? 'Choose the second arc or circle' : 'Choose an arc or circle', curves, []);
@@ -182,9 +188,50 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
         return typeof value === 'number' && !exists(relation => relation.kind === 'fixed-axis' && relation.pointId === point.id && relation.axis === axis)
           ? [{ id: newId(), kind: 'fixed-axis' as const, pointId: point.id, axis, value }] : [];
       });
-      return relations.length ? { status: 'ready', relations } : invalid('This point is already fixed or follows expressions.');
+      const held = matching(relation => relation.kind === 'fixed-axis' && relation.pointId === point.id);
+      return relations.length ? { status: 'ready', relations } : invalid('This point is already fixed or follows expressions.', held.length === 2 ? held : undefined);
     }
   }
+}
+
+/** One row of the selection-first constraint list, as CATIA's Constraint Definition dialog offers it. */
+export type CadSketchConstraintChoice =
+  | { readonly tool: CadSketchConstraintTool; readonly state: 'available'; readonly relations: readonly CadSketchGraphRelation[] }
+  | { readonly tool: CadSketchConstraintTool; readonly state: 'applied'; readonly relationIds: readonly string[] }
+  | { readonly tool: CadSketchConstraintTool; readonly state: 'blocked'; readonly reason: string };
+
+/**
+ * The constraints that take exactly the selected operands, in any order: the ones that can be added, the ones already
+ * applied (with the relations that hold them) and the ones that fit but cannot be added now. Each tool's own steps decide,
+ * so this list never offers what the tool-first command would refuse.
+ */
+export function cadSketchConstraintChoices(graph: CadSketchGraph, picks: readonly CadSketchConstraintPick[], newId: () => string): readonly CadSketchConstraintChoice[] {
+  if (!picks.length || picks.length > 3) return [];
+  return CAD_SKETCH_CONSTRAINT_TOOLS.flatMap((tool): CadSketchConstraintChoice[] => {
+    let blocked: string | null = null;
+    for (const order of orders(picks)) {
+      const step = completedStep(graph, tool, order, newId);
+      if (step?.status === 'ready') return [{ tool, state: 'available', relations: step.relations }];
+      if (step?.status === 'invalid' && step.applied) return [{ tool, state: 'applied', relationIds: step.applied }];
+      if (step?.status === 'invalid') blocked ??= step.reason;
+    }
+    return blocked ? [{ tool, state: 'blocked', reason: blocked }] : [];
+  });
+}
+
+/** The final step when every pick is one the tool asked for in turn, or null when the tool takes different operands. */
+function completedStep(graph: CadSketchGraph, tool: CadSketchConstraintTool, picks: readonly CadSketchConstraintPick[], newId: () => string) {
+  for (let index = 0; index < picks.length; index++) {
+    const step = cadSketchConstraintStep(graph, tool, picks.slice(0, index), newId), pick = picks[index];
+    const eligible: readonly string[] = step.status !== 'more' ? [] : pick.kind === 'datum' ? step.datums : pick.kind === 'point' ? step.pointIds : step.entityIds;
+    if (!eligible.includes(pick.id)) return null;
+  }
+  const step = cadSketchConstraintStep(graph, tool, picks, newId);
+  return step.status === 'more' ? null : step;
+}
+
+function orders<T>(items: readonly T[]): readonly (readonly T[])[] {
+  return items.length < 2 ? [items] : items.flatMap((item, index) => orders([...items.slice(0, index), ...items.slice(index + 1)]).map(rest => [item, ...rest]));
 }
 
 function sameRelation(a: CadSketchGraphRelation, b: CadSketchGraphRelation): boolean {

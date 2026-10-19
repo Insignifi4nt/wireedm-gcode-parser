@@ -1699,7 +1699,8 @@ describe('CAD sketch interaction', () => {
     await choose('Perpendicular'); await pick('[data-cad-sketch-entity="third"]'); await pick('[data-cad-sketch-datum="y-axis"]');
     expect(statusMessage).toHaveBeenLastCalledWith(expect.stringContaining('This line is already horizontal.'), 'error');
     await canvasKey('Escape'); expect(button('Constrain').getAttribute('aria-pressed')).toBe('false');
-    expect(container.querySelector('[data-cad-sketch-datum="origin"]')?.getAttribute('aria-hidden')).toBe('true');
+    // Leaving the tool returns the origin to ordinary selection rather than a command operand.
+    expect(container.querySelector('[data-cad-sketch-datum="origin"]')?.getAttribute('aria-label')).toBe('Select origin');
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 

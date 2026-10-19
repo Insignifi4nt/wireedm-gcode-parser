@@ -25,6 +25,7 @@ import { createCadExtrudeDepthHandle } from './cadExtrudeDepthHandle';
 import { readCadFitArea, type CadFitAreaReader } from './cadFitArea';
 import './cad-plane-selection.css';
 import './cad-depth-handle.css';
+import { cadViewBackground } from './cadViewBackground';
 const NO_REFERENCES: readonly CadViewportReference[] = Object.freeze([]);
 const NO_SOURCE_PICK_IDS: readonly string[] = Object.freeze([]);
 export interface CadViewportContextMenuRequest {
@@ -119,7 +120,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     renderer.domElement.tabIndex = data.current.navigationLocked && data.current.interactionLocked ? -1 : 0;
     renderer.domElement.setAttribute('aria-label', '3D model canvas');
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x18252e);
+    const background = cadViewBackground(); scene.background = background;
     const regions = createCadRegionSelectionOverlay(); scene.add(regions.group);
     const camera = new THREE.OrthographicCamera(-100, 100, 100, -100, 0.01, 100000);
     camera.up.set(0, 0, 1);
@@ -859,7 +860,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) material.dispose();
       axes.geometry.dispose();
       for (const material of Array.isArray(axes.material) ? axes.material : [axes.material]) material.dispose();
-      renderer.dispose();
+      renderer.dispose(); background.dispose();
       renderer.forceContextLoss();
       renderer.domElement.remove();
       controller.current = null;
