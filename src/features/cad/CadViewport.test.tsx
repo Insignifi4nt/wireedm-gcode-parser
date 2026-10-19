@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AxesHelper, GridHelper, LineDashedMaterial, LineSegments, Mesh, MeshStandardMaterial, OrthographicCamera, Vector3, type Camera, type Scene } from 'three';
+import { AxesHelper, GridHelper, LineDashedMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial, OrthographicCamera, Vector3, type Camera, type Scene } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { CadMesh } from '@/domain/cad/cadDocument';
 import { CadViewport } from './CadViewport';
@@ -662,5 +662,32 @@ describe('versioned Curve reference rendering', () => {
       expect(world.distanceTo(new Vector3(...references[0].positions.slice(index*3,index*3+3)))).toBeLessThan(1e-6);
     }
     expect(currentControls().getState()).toMatchObject({referenceVersion:'far1',available:true});
+  });
+});
+
+describe('reference plane hover', () => {
+  it('reports the plane under the pointer, shows a plane hovered elsewhere and clears the report on unmount', async () => {
+    const hovered = vi.fn();
+    const render = async (hoveredReferencePlane: 'XY' | null) => act(async () => root.render(<CadViewport meshes={[]} references={CAD_PRINCIPAL_PLANE_REFERENCES} referenceVersion="v1" selectedId={null}
+      onSelect={vi.fn()} onSelectPlane={vi.fn()} onHoverPlane={hovered} hoveredReferencePlane={hoveredReferencePlane} pickingEnabled={false} onControlsReady={value => { controls = value; }} />));
+    await render(null); await flushFrame();
+    const scene = renderer().render.mock.calls.at(-1)![0], camera = renderer().render.mock.calls.at(-1)![1]; camera.updateMatrixWorld();
+    const patch = (plane: string) => { let found: Mesh | null = null; scene.traverse(object => { if (object instanceof Mesh && object.userData.referenceId === `principal:${plane}`) found = object; }); if (!found) throw new Error(`Missing ${plane}`); return found as Mesh; };
+    const color = (plane: string) => (patch(plane).material as MeshBasicMaterial).color.getHex();
+    const resting = color('XZ'), canvas = renderer().domElement;
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) });
+    const move = async (x: number, y: number) => { await act(async () => canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, buttons: 0, clientX: x, clientY: y }))); await flushFrame(); };
+    const point = new Vector3(6, 0, 7).project(camera);
+    await move((point.x + 1) * 400, (1 - point.y) * 300);
+    expect(hovered).toHaveBeenLastCalledWith('XZ'); expect(color('XZ')).not.toBe(resting);
+    await move((point.x + 1) * 400 + 1, (1 - point.y) * 300); expect(hovered).toHaveBeenCalledTimes(1);
+    await move(4, 4); expect(hovered).toHaveBeenLastCalledWith(null); expect(color('XZ')).toBe(resting);
+    const xyResting = color('XY'); await render('XY'); await flushFrame();
+    expect(color('XY')).toBe(0x91edff); expect(color('XY')).not.toBe(xyResting); expect(color('XZ')).toBe(resting);
+    expect(container.querySelector('[aria-label="Select XY plane in design area"]')?.getAttribute('data-hovered')).toBe('true');
+    expect(container.querySelector('[aria-label="Select XZ plane in design area"]')?.hasAttribute('data-hovered')).toBe(false);
+    await move((point.x + 1) * 400, (1 - point.y) * 300); expect(hovered).toHaveBeenLastCalledWith('XZ');
+    const calls = hovered.mock.calls.length; act(() => root.unmount()); expect(hovered).toHaveBeenCalledTimes(calls + 1); expect(hovered).toHaveBeenLastCalledWith(null);
+    root = createRoot(container);
   });
 });

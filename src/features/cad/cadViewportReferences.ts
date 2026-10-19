@@ -164,3 +164,11 @@ export function cadReferencePlanes(references: readonly CadViewportReference[]):
 export function cadSameReferencePlane(a: CadSketchPlane | null, b: CadSketchPlane | null): boolean {
   return a === b || typeof a === 'object' && a !== null && typeof b === 'object' && b !== null && a.featureId === b.featureId;
 }
+
+/** A plane hovered in the tree joins the design area so it can be found there; a datum keeps its feature identity. */
+export function cadReferencesWithHoveredPlane(references: readonly CadViewportReference[], prepared: readonly CadViewportReference[], hovered: CadSketchPlane | null): readonly CadViewportReference[] {
+  if (!hovered || references.some(reference => reference.plane && cadSameReferencePlane(reference.plane, hovered))) return references;
+  const extra = typeof hovered === 'string' ? CAD_PRINCIPAL_PLANE_REFERENCES.find(reference => reference.plane === hovered)
+    : prepared.find(reference => reference.featureKind === 'datum-plane' && reference.featureId === hovered.featureId);
+  return extra ? Object.freeze([...references, extra]) : references;
+}

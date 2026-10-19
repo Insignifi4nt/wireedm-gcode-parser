@@ -50,6 +50,8 @@
 .cad-tree-row span:not(.cad-tree-muted):not(.cad-tree-error) { overflow: hidden; text-overflow: ellipsis; }
 .cad-tree-row svg { flex-shrink: 0; }
 .cad-workbench .cad-tree-row.is-selected { background: var(--accent); border-color: var(--primary); }
+/* A plane hovered in the design area marks its row the way the pointer would. */
+.cad-workbench .cad-tree-row.is-hovered:not(.is-selected) { background: var(--accent); }
 .cad-tree-row.has-error { color: var(--destructive); }
 .cad-tree-error { color: var(--destructive); margin-left: auto; font-weight: 700; }
 .cad-tree-muted { margin-left: auto; font-size: 10px; color: var(--muted-foreground); }

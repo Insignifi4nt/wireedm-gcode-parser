@@ -9,14 +9,17 @@ import type { CadWorkbenchViewportControls } from './cadViewportControls';
 
 let planePick: ((plane: CadSketchPlane) => void) | undefined;
 let featurePick: ((id: string | null) => void) | undefined;
-vi.mock('./CadViewport', () => ({ CadViewport: ({ hidden = false, references = [], onSelectPlane, onSelect }: {
+let viewport: { hoveredReferencePlane: CadSketchPlane | null; references: readonly { featureKind: string; name: string; plane?: CadSketchPlane }[]; hover?(plane: CadSketchPlane | null): void } | undefined;
+vi.mock('./CadViewport', () => ({ CadViewport: ({ hidden = false, references = [], onSelectPlane, onSelect, hoveredReferencePlane = null, onHoverPlane }: {
   hidden?: boolean;
   references?: readonly { featureKind: string; name: string; plane?: CadSketchPlane }[];
   onSelectPlane?(plane: CadSketchPlane): void;
   onSelect(id: string | null): void;
+  hoveredReferencePlane?: CadSketchPlane | null;
+  onHoverPlane?(plane: CadSketchPlane | null): void;
 }) => {
   if (hidden) return <div className="cad-viewport" hidden />;
-  planePick = onSelectPlane; featurePick = onSelect;
+  planePick = onSelectPlane; featurePick = onSelect; viewport = { hoveredReferencePlane, references, hover: onHoverPlane };
   return <div aria-label="3D model viewport">{references.filter(reference => reference.plane).map(reference => <button key={reference.name}
     aria-label={`Select ${reference.name} in design area`} onClick={() => onSelectPlane?.(reference.plane!)}>{reference.name}</button>)}</div>;
 } }));
@@ -124,5 +127,61 @@ describe('Sketch reference-plane workflow', () => {
     await click('Select Mount plane in history'); expect(session.getSnapshot().document.features).toHaveLength(3);
     expect(session.getSnapshot().document.features[2]).toMatchObject({ kind: 'sketch', plane: { kind: 'datum-plane', featureId: 'mount' } });
     expect(state()).toMatchObject({ awaitingSketchPlane: false, workflowOpen: false });
+  });
+});
+
+describe('Reference plane hover and pick order', () => {
+  const enter = (element: Element) => act(async () => { element.dispatchEvent(new MouseEvent('pointerover', { bubbles: true, relatedTarget: document.body })); });
+  const leave = (element: Element) => act(async () => { element.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body })); });
+  const view = () => { if (!viewport) throw new Error('Missing viewport'); return viewport; };
+  const outline = { kind: 'sketch' as const, id: 'outline', name: 'Outline', plane: 'XY' as const, offset: 0, suppressed: false,
+    profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle' as const, x: 0, y: 0, radius: 2 } }] };
+
+  it.each(['XY', 'XZ', 'YZ'] as const)('keeps %s in the design area and mirrors hover between its tree row and the canvas', async plane => {
+    await mount(); await click('Expand Reference'); const before = session.getSnapshot();
+    expect(view().references.filter(reference => reference.featureKind === 'principal-plane').map(reference => reference.plane)).toEqual(['XY', 'XZ', 'YZ']);
+    await enter(button(`Select ${plane} plane`)); expect(view().hoveredReferencePlane).toBe(plane);
+    await leave(button(`Select ${plane} plane`)); expect(view().hoveredReferencePlane).toBeNull();
+    await act(async () => view().hover?.(plane));
+    expect(button(`Select ${plane} plane`).classList.contains('is-hovered')).toBe(true);
+    expect([...container.querySelectorAll('.cad-reference-plane-list .is-hovered')]).toHaveLength(1);
+    await act(async () => view().hover?.(null)); expect(button(`Select ${plane} plane`).classList.contains('is-hovered')).toBe(false);
+    expect(session.getSnapshot()).toEqual(before); expect(state()).toMatchObject({ selectedReferencePlane: null, workflowOpen: false });
+  });
+  it('shows a hidden datum plane while its history row is hovered and marks the row from canvas hover', async () => {
+    await mount({ ...createCadDocument(), features: [datum, outline] });
+    const datumReferences = () => view().references.filter(reference => reference.featureKind === 'datum-plane');
+    expect(datumReferences()).toHaveLength(0);
+    const row = button('Select Mount plane in history');
+    await enter(row); expect(view().hoveredReferencePlane).toEqual({ kind: 'datum-plane', featureId: 'mount' }); expect(datumReferences()).toHaveLength(1);
+    await leave(row); expect(view().hoveredReferencePlane).toBeNull(); expect(datumReferences()).toHaveLength(0);
+    await act(async () => view().hover?.({ kind: 'datum-plane', featureId: 'mount' })); expect(row.classList.contains('is-hovered')).toBe(true);
+    expect(button('Select Outline in history').classList.contains('is-hovered')).toBe(false);
+    await act(async () => session.replace({ ...session.getSnapshot().document, features: [{ ...datum, suppressed: true }, outline] }));
+    expect(view().hoveredReferencePlane).toBeNull(); expect(button('Select Mount plane in history').classList.contains('is-hovered')).toBe(false);
+  });
+
+  type Source = 'tree' | 'canvas';
+  const pickPlane = async (plane: CadSketchPlane, source: Source) => {
+    if (typeof plane !== 'string') await click(source === 'tree' ? 'Select Mount plane in history' : 'Select Mount plane in design area');
+    else if (source === 'canvas') await click(`Select ${plane} plane in design area`);
+    else { if (!container.querySelector(`[aria-label="Select ${plane} plane"]`)) await click('Expand Reference'); await click(`Select ${plane} plane`); }
+  };
+  const created = async (plane: CadSketchPlane, source: Source, order: 'plane-first' | 'sketch-first') => {
+    await mount({ ...createCadDocument(), features: [datum] });
+    if (order === 'plane-first') { await pickPlane(plane, source); await click('Sketch'); }
+    else { await click('Sketch'); expect(state()).toMatchObject({ awaitingSketchPlane: true }); await pickPlane(plane, source); }
+    const snapshot = session.getSnapshot(), sketch = snapshot.document.features[1];
+    expect(snapshot.document.features).toHaveLength(2); expect(sketch).toMatchObject({ kind: 'sketch', plane, offset: 0 });
+    const result = { sketch: { ...sketch, id: 'sketch' }, state: { awaitingSketchPlane: state().awaitingSketchPlane, sketchId: state().sketchId === sketch.id, workflowOpen: state().workflowOpen } };
+    await act(async () => session.undo()); expect(session.getSnapshot().document.features).toEqual([datum]);
+    await act(async () => root.unmount()); root = createRoot(container);
+    return result;
+  };
+  it.each([['XY'], ['XZ'], ['YZ'], [{ kind: 'datum-plane', featureId: 'mount' }]] as const)('starts the same sketch on %j whether the plane or Sketch comes first, from the tree or the canvas', async plane => {
+    const results = [];
+    for (const source of ['tree', 'canvas'] as const) for (const order of ['plane-first', 'sketch-first'] as const) results.push(await created(plane, source, order));
+    expect(results[0]).toEqual({ sketch: expect.objectContaining({ plane }), state: { awaitingSketchPlane: false, sketchId: true, workflowOpen: false } });
+    for (const result of results.slice(1)) expect(result).toEqual(results[0]);
   });
 });

@@ -3,3 +3,4 @@
 .cad-plane-request { position: absolute; z-index: 8; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; max-width: calc(100% - 24px); padding: 6px 9px; border: 1px solid var(--border); border-radius: 4px; background: var(--card); color: var(--muted-foreground); font-size: 12px; }
 .cad-plane-request span { min-width: 0; }
 .cad-workbench .cad-reference-plane-list .cad-tree-row { flex: 1; min-width: 0; padding: 4px 5px; }
+.cad-workbench .cad-plane-labels button[data-hovered='true'] { border-color: var(--primary); }
