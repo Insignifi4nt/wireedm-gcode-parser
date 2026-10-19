@@ -98,6 +98,8 @@ Display controls **On-part dimensions**, the labels for saved driving and refere
 
 Enable **Extrusion depth handles** in Display to drag Length directly on a selected Pad or distance Pocket. Handles are off by default. Release previews the edit; **Apply** accepts it and **Cancel** restores the part. Escape during a drag restores its starting provisional value. A formula-driven length or a length also driving the source placement remains controlled by its relation; use Length or **fx** to edit it.
 
+Click a tree row to select it, and double-click a feature to open it. To rename the part, click its name at the top of the tree to open its Properties and edit **Name**. Enter or leaving the field saves the name; Escape restores it.
+
 Right-click a feature or profile in the tree for Rename, configuration, construction, suppression and deletion actions. F2 renames the focused feature or contour. Keyboard users can press Shift+F10 or the Context Menu key on the focused target. Escape closes a menu and returns focus. A stationary right click opens context actions; dragging with the right button pans the view.
 
 Editing a feature previews the candidate part before Apply. Read-only camera navigation remains available during the edit. Native geometry must finish checking before Apply becomes available. Apply accepts one history step; Cancel restores the accepted part and its exact selections. The current document and saved files remain unchanged while a candidate is being previewed.
