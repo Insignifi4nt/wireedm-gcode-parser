@@ -286,6 +286,31 @@ describe('graph spatial selection', () => {
     await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     expect(onCancel).toHaveBeenCalledOnce();
   });
+  it('selects the plane origin and axes along their drawn arrows in plain selection', async () => {
+    const h = await spatialFixture(), datum = vi.fn();
+    await h.show({ graphControls: { ...h.props().graphControls!, onSelectDatum: datum, datumSelection: ['x-axis'] } });
+    const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
+    const pixel = state.heightSpanMm / 500, click = async (y: number, shift = false) => { await h.pointer('pointerdown', 0, y, shift); await h.pointer('pointerup', 0, y, shift); };
+    await click(36 * pixel); await click(36 * pixel, true);
+    expect(datum.mock.calls).toEqual([['y-axis', false], ['y-axis', true]]);
+    // The V arrow points up from the origin; empty space past its tip or behind the origin is not the axis.
+    await click(200 * pixel); await click(-36 * pixel);
+    expect(datum).toHaveBeenCalledTimes(2); expect(h.selected).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-cad-sketch-datum="x-axis"]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(container.querySelector('[data-cad-sketch-datum="y-axis"]')?.getAttribute('aria-pressed')).toBe('false');
+  });
+  it('clears a datum-only selection on Escape and drops panned-away datums from the keyboard order', async () => {
+    const h = await spatialFixture(), origin = () => container.querySelector('[data-cad-sketch-datum="origin"]');
+    await h.show({ graphControls: { ...h.props().graphControls!, onSelectDatum: vi.fn(), datumSelection: ['x-axis'] } });
+    await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(h.selected).toHaveBeenCalledWith(null);
+    expect(origin()?.getAttribute('tabindex')).toBe('0');
+    const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
+    await h.pointer('pointerdown', 0, 0, false, 7, 2); await h.pointer('pointermove', 0, -3 * state.heightSpanMm, false, 7, 2);
+    await act(async () => window.dispatchEvent(Object.assign(new MouseEvent('pointerup', { button: 2, buttons: 0, bubbles: true }), { pointerId: 7 })));
+    expect(currentControls().getState()).not.toEqual(state);
+    expect(origin()?.getAttribute('tabindex')).toBeNull(); expect(origin()?.getAttribute('aria-hidden')).toBe('true');
+  });
   it('borrows exact point picks before edges and disables geometry mutations while choosing a second operand', async () => {
     const h = await spatialFixture(), onPick = vi.fn(), onCancel = vi.fn();
     const pick = { eligibleEntityIds: ['ab'], eligiblePointIds: ['a', 'b', 'c'], label: 'Choose a dimension operand', onPick, onCancel };

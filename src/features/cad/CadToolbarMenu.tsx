@@ -1,11 +1,14 @@
 import { Button } from '@/components/ui/button';
-import { MenuItem, MenuSurface } from '@/components/ui/menu';
+import { MenuCheckboxItem, MenuItem, MenuLabel, MenuSeparator, MenuSurface } from '@/components/ui/menu';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from '@wire-edm/icons-react';
 import { cadToolbarPopupPosition } from './cadToolbarPopupPosition';
 
-export interface CadToolbarMenuItem { readonly key: string; readonly label: string; readonly icon?: ReactNode; readonly title?: string; onSelect(): void }
+export type CadToolbarMenuItem = { readonly kind?: 'command'; readonly key: string; readonly label: string; readonly icon?: ReactNode; readonly title?: string; readonly disabled?: boolean;
+  /** A toggle row: checked shows the state is already applied, and choosing it again undoes it. */
+  readonly checked?: boolean; onSelect(): void }
+  | { readonly kind: 'label'; readonly key: string; readonly label: string } | { readonly kind: 'separator'; readonly key: string };
 
 /** A toolbar command with a popup of choices. The popup escapes the horizontally scrolling toolstrip. */
 export function CadToolbarMenu({ label, icon, menuLabel, disabled, pressed, title, className, items }: {
@@ -25,7 +28,7 @@ export function CadToolbarMenu({ label, icon, menuLabel, disabled, pressed, titl
     const menuRectangle = popup.current?.getBoundingClientRect();
     if (!rectangle || !menuRectangle) return;
     setPosition(cadToolbarPopupPosition({ trigger: rectangle, popup: menuRectangle, viewport: { width: window.innerWidth, height: window.innerHeight } }));
-    const commands = popup.current?.querySelectorAll<HTMLButtonElement>('button');
+    const commands = popup.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
     (initialFocus.current === 'last' ? commands?.[commands.length - 1] : commands?.[0])?.focus();
     const outside = (event: PointerEvent) => {
       if (event.target instanceof Node && !trigger.current?.contains(event.target) && !popup.current?.contains(event.target)) setOpen(false);
@@ -61,12 +64,14 @@ export function CadToolbarMenu({ label, icon, menuLabel, disabled, pressed, titl
         }
         if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
-        const commands = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
+        const commands = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
         const current = commands.findIndex(command => command === window.document.activeElement);
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? commands.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + commands.length) % commands.length;
         commands[next]?.focus();
       }}>
-      {items.map(item => <MenuItem key={item.key} title={item.title} onClick={() => { close(); item.onSelect(); }}>{item.icon} {item.label}</MenuItem>)}
+      {items.map(item => item.kind === 'separator' ? <MenuSeparator key={item.key} /> : item.kind === 'label' ? <MenuLabel key={item.key}>{item.label}</MenuLabel>
+        : item.checked !== undefined ? <MenuCheckboxItem key={item.key} title={item.title} disabled={item.disabled} checked={item.checked} onCheckedChange={() => { close(); item.onSelect(); }}>{item.icon} {item.label}</MenuCheckboxItem>
+        : <MenuItem key={item.key} title={item.title} disabled={item.disabled} onClick={() => { close(); item.onSelect(); }}>{item.icon} {item.label}</MenuItem>)}
     </MenuSurface>, window.document.body)}
   </>;
 }

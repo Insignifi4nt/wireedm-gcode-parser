@@ -13,6 +13,7 @@ import { translateCadSketchGraph } from '@/domain/cad/cadSketchTranslation';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTreatment';
 import { createCadFreshSketchDrawing } from '@/domain/cad/cadFreshSketchGraph';
+import { cadSketchRelationPlacement } from '@/domain/cad/cadSketchRelationPlacement';
 import { endTrim, trimPart, middleTrim, middleTrimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
 import { trimCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
 import { extendPart, lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
@@ -43,6 +44,23 @@ const splitLine = { kind: 'split-sketch-entity', sketchId: 'sketch', split: { ki
   splitPointId: 'cut', newEntityId: 'after', supportRelationId: 'support' } } satisfies CadEdit;
 
 describe('shared CAD edit preparation with the real sketch solver', () => {
+  it('moves a whole connected slot when its center is placed at the origin', async () => {
+    const created = createCadFreshSketchDrawing({ drawing: { kind: 'slot', center: { kind: 'position', point: [12, 8] }, end: [12, 28], width: 10 }, construction: false, createId: (() => { let next = 0; return () => `slot-${++next}`; })() });
+    if (created.kind !== 'slot') throw new Error('Expected slot role map.');
+    const empty = parseCadDocument({ ...createCadDocument('Slot', 'slot'), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [] }] });
+    const drawn = (await prepareCadEdits(empty, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: created.geometry }], solver)).document;
+    const relations = (['x', 'y'] as const).map(axis => ({ id: `origin-${axis}`, kind: 'fixed-axis' as const, pointId: created.centerPointId, axis, value: 0 }));
+    const placement = cadSketchRelationPlacement(graphOf(drawn), relations);
+    if (!placement) throw new Error('Expected the free slot to be carried.');
+    const centered = (await prepareCadEdits(drawn, [{ kind: 'translate-sketch-geometry', sketchId: 'sketch', ...placement },
+      ...relations.map(relation => ({ kind: 'set-sketch-relation' as const, sketchId: 'sketch', relation }))], solver)).document;
+    const before = new Map(graphOf(drawn).points.map(point => [point.id, point.position as readonly [number, number]]));
+    for (const point of graphOf(centered).points) {
+      const [x, y] = point.position as readonly [number, number], [sourceX, sourceY] = before.get(point.id) ?? [NaN, NaN];
+      expect(x).toBeCloseTo(sourceX - 12, 6); expect(y).toBeCloseTo(sourceY - 8, 6);
+    }
+  });
+
   it('constructs a middle trim from the preceding solved cutters and atomically rejects any later cut-point projection', async () => {
     const source = middleTrimPart(), feature = source.features[0];
     if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Middle source missing.');

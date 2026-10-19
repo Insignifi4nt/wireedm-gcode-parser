@@ -3,6 +3,7 @@ import type { CadSketchGraph, CadSketchTangentJointRelation, CadSketchGraphIssue
 import { resolveCadSketchPointIdentities, resolveCadSketchGraphJoints } from './cadSketchGraphJoints';
 import { resolveCadSketchCornerTopology } from './cadSketchCornerGeometry';
 import { cadSketchLineDirection } from './cadSketchLineRelations';
+import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import type { Point2 } from '@/domain/path-intel/types';
 
@@ -54,7 +55,9 @@ export function checkCadSketchTangentJoint(graph: CadSketchGraph, relation: CadS
     const cross = outwardLine.x * tangent.y - outwardLine.y * tangent.x;
     const error = Math.abs(Math.atan2(cross, -dot));
     const residualMm = 2 * Math.sin(error / 2) * Math.max(outwardLine.length, radial.length);
-    if (!(dot < 0) || !Number.isFinite(error) || error > 1e-12
+    // Far from the origin, rounding each coordinate alone turns a short support by more than 1e-12 radians.
+    const roundoff = cadPathClosureTolerance([outwardLine.start, outwardLine.end, radial.start, radial.end]) / Math.min(outwardLine.length, radial.length);
+    if (!(dot < 0) || !Number.isFinite(error) || error > Math.max(1e-12, roundoff)
       || residualMm > cadSketchDriverTolerance([outwardLine.start, outwardLine.end, radial.start, radial.end, otherArcEnd]))
       return [{ source, code: 'relation-residual', message: 'The line and arc do not form a smooth tangent joint.', ...(Number.isFinite(residualMm) ? { residualMm } : {}) }];
     return [];

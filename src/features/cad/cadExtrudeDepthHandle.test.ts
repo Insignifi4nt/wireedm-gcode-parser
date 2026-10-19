@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import type { CadDocument } from '@/domain/cad/cadDocument';
+import { CAD_VIEW_BACKGROUND } from './cadViewBackground';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { inspectCadExtrudeDepth, type CadExtrudeDepthControl, type CadExtrudeDepthState } from './cadExtrudeDepthInteraction';
 import { createCadExtrudeDepthHandle } from './cadExtrudeDepthHandle';
@@ -76,9 +77,9 @@ it('keeps idle and hovered Length arrows distinct against both dark canvas and s
     handle.setView(cameraAt(), 800, 600); handle.update(h.value);
     const head = handle.group.children[0]; if (!(head instanceof THREE.Mesh) || !(head.material instanceof THREE.MeshBasicMaterial)) throw new Error('Missing Length arrow material');
     const material = head.material, idle = material.color.getHex();
-    for (const background of [0x18252e, 0x79c8e6]) expect(contrast(idle, background)).toBeGreaterThanOrEqual(2.5);
+    for (const background of [CAD_VIEW_BACKGROUND.top, CAD_VIEW_BACKGROUND.bottom, 0x79c8e6]) expect(contrast(idle, background)).toBeGreaterThanOrEqual(2.5);
     handle.hover(handle.getState()?.screenPoint ?? null); const hovered = material.color.getHex(); expect(hovered).not.toBe(idle);
-    for (const background of [0x18252e, 0x79c8e6]) expect(contrast(hovered, background)).toBeGreaterThanOrEqual(2.5);
+    for (const background of [CAD_VIEW_BACKGROUND.top, CAD_VIEW_BACKGROUND.bottom, 0x79c8e6]) expect(contrast(hovered, background)).toBeGreaterThanOrEqual(2.5);
     handle.hover(null); expect(material.color.getHex()).toBe(idle); expect(head.material).toBe(material);
     expect(h.change).not.toHaveBeenCalled(); expect(handle.getState()?.quantityMm).toBe(10);
   } finally { handle.dispose(); }

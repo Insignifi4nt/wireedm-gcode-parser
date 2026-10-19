@@ -14,7 +14,7 @@ import { CadSketchGraphDimensions } from './CadSketchGraphDimensions';
 import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadContinuousPreview, type CadPrepareEdits } from './useCadPreparedPreview';
-import { cadSketchGeometryPickAllows, type CadSketchGeometryPick, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
+import { cadSketchGeometryPickAllows, type CadSketchDatum, type CadSketchGeometryPick, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import { cadSketchSnapTargetLabel, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
 import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
@@ -34,6 +34,9 @@ export interface CadSketchGraphControls {
   onEditPattern?(relationId: string): void;
   onSelect(selection: CadSketchGraphSelection | null, additive?: boolean): void;
   onSelectSet?(selections: readonly CadSketchGraphSelection[]): void;
+  /** Plane references in the plain selection, beside the sketch geometry; a command pick lists its own. */
+  readonly datumSelection?: readonly CadSketchDatum[];
+  onSelectDatum?(datum: CadSketchDatum, additive: boolean): void;
   onDelete?(selection: CadSketchGraphSelection): void;
   onConfigureRelation?(relation: CadSketchDimensionRelation): void;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;

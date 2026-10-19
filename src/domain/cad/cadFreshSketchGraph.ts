@@ -21,11 +21,14 @@ export function cadFreshSketchDatumAxes(datum: CadFreshSketchDatum): readonly ('
 export type CadFreshSketchDrawing =
   | { readonly kind: 'rectangle'; readonly first: CadFreshSketchPick; readonly opposite: CadFreshSketchPick }
   | { readonly kind: 'circle'; readonly center: CadFreshSketchPick; readonly radius: number }
-  | { readonly kind: 'polygon'; readonly vertices: readonly CadFreshSketchPick[] };
+  | { readonly kind: 'polygon'; readonly vertices: readonly CadFreshSketchPick[] }
+  /** A slot from its center to one rounded end; `width` is the end-arc diameter. */
+  | { readonly kind: 'slot'; readonly center: CadFreshSketchPick; readonly end: CadConstructionPoint; readonly width: number };
 export type CadFreshSketchCreated =
   | { readonly kind: 'rectangle'; readonly geometry: CadSketchGraph; readonly pointIds: { readonly first: string; readonly opposite: string } }
   | { readonly kind: 'circle'; readonly geometry: CadSketchGraph; readonly centerPointId: string }
-  | { readonly kind: 'polygon'; readonly geometry: CadSketchGraph; readonly vertexPointIds: readonly string[] };
+  | { readonly kind: 'polygon'; readonly geometry: CadSketchGraph; readonly vertexPointIds: readonly string[] }
+  | { readonly kind: 'slot'; readonly geometry: CadSketchGraph; readonly centerPointId: string };
 
 function numeric(value: CadScalar): number {
   if (typeof value !== 'number' || !Number.isFinite(value))
@@ -50,6 +53,30 @@ function allocateClosedLines(positions: readonly CadConstructionPoint[], rectang
   const relations: CadSketchGraphRelation[] = rectangle ? entities.map((entity, index) => ({ id: createId(), kind: index % 2 === 0 ? 'horizontal' : 'vertical',
     pointIds: [entity.startPointId, entity.endPointId] })) : [];
   return { points, entities, relations };
+}
+
+/**
+ * Two parallel lines joined by two tangent end arcs of equal radius. A construction axis joins the arc centers and the
+ * slot center is held at its middle, so the center, the axis and the ends stay selectable and constrainable.
+ */
+function allocateSlot(center: CadConstructionPoint, end: CadConstructionPoint, width: number, construction: boolean, createId: () => string): { graph: CadSketchGraph; centerPointId: string } {
+  const halfLength = Math.hypot(end[0] - center[0], end[1] - center[1]), radius = width / 2, half = halfLength - radius;
+  if (!(radius > 0) || !(half > 0)) throw new CadError('invalid-fresh-sketch-geometry', 'A slot needs its end beyond half of its width from the center.');
+  const ux = (end[0] - center[0]) / halfLength, uy = (end[1] - center[1]) / halfLength;
+  const at = (along: number, across: number): CadConstructionPoint => [center[0] + along * ux - across * uy, center[1] + along * uy + across * ux];
+  const point = (position: CadConstructionPoint) => ({ id: createId(), position });
+  const [low, high, a, b, c, d, middle] = [at(-half, 0), at(half, 0), at(-half, -radius), at(half, -radius), at(half, radius), at(-half, radius), center].map(point);
+  const entity = <T extends object>(value: T) => ({ id: createId(), construction, ...value });
+  const bottom = entity({ kind: 'line' as const, startPointId: a.id, endPointId: b.id });
+  const highArc = entity({ kind: 'arc' as const, centerPointId: high.id, startPointId: b.id, endPointId: c.id, direction: 'ccw' as const });
+  const top = entity({ kind: 'line' as const, startPointId: c.id, endPointId: d.id });
+  const lowArc = entity({ kind: 'arc' as const, centerPointId: low.id, startPointId: d.id, endPointId: a.id, direction: 'ccw' as const });
+  const axis = { id: createId(), kind: 'line' as const, construction: true, startPointId: low.id, endPointId: high.id };
+  const joint = (line: { id: string }, linePointId: string, arc: { id: string }): CadSketchGraphRelation => ({ id: createId(), kind: 'tangent-joint',
+    endpoints: [{ entityId: line.id, pointId: linePointId }, { entityId: arc.id, pointId: linePointId }] });
+  const relations: CadSketchGraphRelation[] = [joint(bottom, b.id, highArc), joint(top, c.id, highArc), joint(top, d.id, lowArc), joint(bottom, a.id, lowArc),
+    { id: createId(), kind: 'equal-radius', curveIds: [lowArc.id, highArc.id] }, { id: createId(), kind: 'midpoint', pointId: middle.id, lineId: axis.id }];
+  return { graph: { points: [low, high, a, b, c, d, middle], entities: [bottom, highArc, top, lowArc, axis], relations }, centerPointId: middle.id };
 }
 
 function validateFreshProfile(geometry: CadProfile, construction: boolean): void {
@@ -149,6 +176,11 @@ export function createCadFreshSketchDrawing({ drawing, construction, createId, e
       validateFreshProfile({ kind: 'polygon', points: positions }, construction);
       const graph = allocateClosedLines(positions, false, construction, createId), vertexPointIds = Object.freeze(graph.points.map(point => point.id));
       return Object.freeze({ kind: 'polygon', vertexPointIds, geometry: finish(graph, drawing.vertices.map((pick, index) => ({ pick, pointId: vertexPointIds[index] }))) });
+    }
+    case 'slot': {
+      const center = checkedPoint(drawing.center), end = copyCadConstructionPoint(drawing.end), width = numeric(drawing.width);
+      const { graph, centerPointId } = allocateSlot(center, end, width, construction, createId);
+      return Object.freeze({ kind: 'slot', centerPointId, geometry: finish(graph, [{ pick: drawing.center, pointId: centerPointId }]) });
     }
     default: { const exhaustive: never = drawing; throw new CadError('unsupported-fresh-sketch-geometry', `Unsupported authored shape: ${String(exhaustive)}`); }
   }

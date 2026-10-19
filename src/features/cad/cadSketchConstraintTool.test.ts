@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { cadSketchConstraintStep, type CadSketchConstraintPick } from './cadSketchConstraintTool';
+import { cadSketchConstraintChoices, cadSketchConstraintStep, type CadSketchConstraintPick } from './cadSketchConstraintTool';
 import { CAD_SKETCH_DATUMS, pickCadSketchDatum, type CadSketchDatum } from './cadSketchGraphSelection';
 
 const graph: CadSketchGraph = {
@@ -44,7 +44,7 @@ describe('cadSketchConstraintStep', () => {
   });
 
   it('explains picks that cannot take the constraint instead of adding a duplicate or conflict', () => {
-    expect(step('vertical', 'bc')).toEqual({ status: 'invalid', reason: 'Vertical is already applied here.' });
+    expect(step('vertical', 'bc')).toEqual({ status: 'invalid', reason: 'Vertical is already applied here.', applied: ['v'] });
     expect(step('horizontal', 'b', 'c')).toEqual({ status: 'invalid', reason: 'This is already vertical.' });
     expect(step('equal', 'ab', 'c1')).toEqual({ status: 'invalid', reason: 'Choose two lines, or two arcs or circles.' });
     expect(step('tangent', 'cd', 'arc')).toMatchObject({ status: 'invalid', reason: 'Join these endpoints with Coincident before adding Tangent.' });
@@ -70,20 +70,49 @@ describe('cadSketchConstraintStep', () => {
     const fixed: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'fx', kind: 'fixed-axis', pointId: 'e', axis: 'x', value: 60 }, { id: 'fy', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }] };
     expect(stepIn(fixed, 'coincident', 'e', 'origin')).toEqual({ status: 'invalid', reason: 'This point already has a fixed X. Remove that dimension first.' });
     expect(stepIn(fixed, 'coincident', 'e', 'x-axis')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'e', axis: 'y', value: 0 }] });
-    expect(stepIn(fixed, 'coincident', 'a', 'x-axis')).toEqual({ status: 'invalid', reason: 'This point is already on the X axis.' });
+    expect(stepIn(fixed, 'coincident', 'a', 'x-axis')).toEqual({ status: 'invalid', reason: 'This point is already on the X axis.', applied: ['fy'] });
     expect(stepIn(fixed, 'coincident', 'a', 'origin')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'a', axis: 'x', value: 0 }] });
-    expect(step('parallel', 'bc', 'y-axis')).toEqual({ status: 'invalid', reason: 'This line is already vertical.' });
+    expect(step('parallel', 'bc', 'y-axis')).toEqual({ status: 'invalid', reason: 'This line is already vertical.', applied: ['v'] });
+  });
+});
+
+describe('cadSketchConstraintChoices', () => {
+  const choices = (source: CadSketchGraph, ...ids: string[]) => cadSketchConstraintChoices(source, ids.map(id => operand(id, source)), () => `r${++counter}`)
+    .map(choice => choice.state === 'available' ? { tool: choice.tool, state: choice.state, kinds: choice.relations.map(relation => relation.kind) }
+      : choice.state === 'applied' ? { tool: choice.tool, state: choice.state, ids: choice.relationIds } : { tool: choice.tool, state: choice.state, reason: choice.reason });
+
+  it('offers only the constraints that take exactly the selection, whatever order it was picked in', () => {
+    const atOrigin = [{ tool: 'coincident', state: 'available', kinds: ['fixed-axis', 'fixed-axis'] },
+      { tool: 'horizontal', state: 'available', kinds: ['fixed-axis'] }, { tool: 'vertical', state: 'available', kinds: ['fixed-axis'] }];
+    expect(choices(graph, 'e', 'origin')).toEqual(atOrigin);
+    expect(choices(graph, 'origin', 'e')).toEqual(atOrigin);
+    expect(choices(graph, 'ab', 'cd')).toEqual([{ tool: 'parallel', state: 'available', kinds: ['parallel'] },
+      { tool: 'perpendicular', state: 'available', kinds: ['perpendicular'] }, { tool: 'equal', state: 'available', kinds: ['equal-length'] }]);
+    expect(choices(graph, 'o1', 'cd', 'a').map(choice => choice.tool)).toEqual(['symmetric']);
+    // A selection no constraint takes in full offers nothing rather than a constraint on part of it.
+    expect(choices(graph, 'a', 'b', 'e')).toEqual([]);
+    expect(choices(graph, 'origin')).toEqual([]);
+  });
+
+  it('marks constraints already in place with the relations that hold them, and explains conflicts', () => {
+    expect(choices(graph, 'bc')).toEqual([{ tool: 'horizontal', state: 'blocked', reason: 'This is already vertical.' }, { tool: 'vertical', state: 'applied', ids: ['v'] }]);
+    const placed: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'ex', kind: 'fixed-axis', pointId: 'e', axis: 'x', value: 0 }, { id: 'ey', kind: 'fixed-axis', pointId: 'e', axis: 'y', value: 0 }] };
+    expect(choices(placed, 'origin', 'e')).toEqual([{ tool: 'coincident', state: 'applied', ids: ['ex', 'ey'] },
+      { tool: 'horizontal', state: 'applied', ids: ['ey'] }, { tool: 'vertical', state: 'applied', ids: ['ex'] }]);
   });
 });
 
 describe('pickCadSketchDatum', () => {
-  it('prefers the origin where the axes cross and otherwise the nearest eligible axis within reach', () => {
+  it('prefers the origin where the axes cross and otherwise the nearest eligible axis along its drawn length', () => {
     const all = CAD_SKETCH_DATUMS;
     expect(pickCadSketchDatum([0.5, 0.5], 0.1, all)).toBe('origin');
     expect(pickCadSketchDatum([0.5, 0.5], 0.1, ['x-axis', 'y-axis'])).toBe('x-axis');
-    expect(pickCadSketchDatum([30, 0.4], 0.1, all)).toBe('x-axis');
-    expect(pickCadSketchDatum([-0.2, -30], 0.1, all)).toBe('y-axis');
-    expect(pickCadSketchDatum([30, 0.7], 0.1, all)).toBeNull();
+    expect(pickCadSketchDatum([6, 0.4], 0.1, all)).toBe('x-axis');
+    expect(pickCadSketchDatum([-0.2, 7], 0.1, all)).toBe('y-axis');
+    // The axes stop at their drawn arrows, so empty space beyond them or behind the origin stays free for box selection.
+    expect(pickCadSketchDatum([30, 0.4], 0.1, all)).toBeNull();
+    expect(pickCadSketchDatum([-0.2, -30], 0.1, all)).toBeNull();
+    expect(pickCadSketchDatum([6, 0.7], 0.1, all)).toBeNull();
     expect(pickCadSketchDatum([30, 0.4], 0.1, ['origin'])).toBeNull();
     expect(pickCadSketchDatum([0, 0], 0, all)).toBeNull();
   });

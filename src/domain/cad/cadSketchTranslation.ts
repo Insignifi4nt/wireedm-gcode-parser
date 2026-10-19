@@ -75,12 +75,14 @@ export function translateCadSketchGraph({ graph, selections, translation, parame
     for (const id of supports) checkVector(supports[0], id);
     if (entity.kind === 'arc') {
       const branch = (positions: ReadonlyMap<string, Point2>) => {
-        const center = position(positions, entity.centerPointId);
-        const angle = (id: string) => {
-          const point = position(positions, id);
-          return Math.atan2(point.y - center.y, point.x - center.x);
-        };
-        return Math.sign(Math.abs(signedSweep(angle(entity.startPointId), angle(entity.endPointId), entity.direction === 'cw')) - Math.PI);
+        const center = position(positions, entity.centerPointId), start = position(positions, entity.startPointId), end = position(positions, entity.endPointId);
+        const angle = (point: Point2) => Math.atan2(point.y - center.y, point.x - center.x);
+        const excess = Math.abs(signedSweep(angle(start), angle(end), entity.direction === 'cw')) - Math.PI;
+        // A half circle, such as a slot end, sits on the branch boundary, where coordinate roundoff alone may tip it either
+        // way. Any arc measurably off a half turn keeps its branch strictly.
+        const radius = Math.hypot(start.x - center.x, start.y - center.y);
+        const roundoff = 8 * Number.EPSILON * Math.max(1, ...[center, start, end].flatMap(point => [Math.abs(point.x), Math.abs(point.y)]));
+        return Math.abs(excess) * radius <= roundoff ? 0 : Math.sign(excess);
       };
       if (branch(before) !== branch(after))
         throw new CadError('sketch-translation-precision', 'The requested move cannot preserve the arc branch at these coordinates.');

@@ -160,4 +160,22 @@ describe('fresh authored sketch picks', () => {
     expect(() => createCadFreshSketchDrawing({ drawing: { kind: 'circle', center: { kind: 'on-line', point: [5, 20], lineId: 'gone', relationId: 'r' }, radius: 2 },
       construction: false, createId: idFactory(), existingGraph })).toThrow('A picked line changed or no longer exists');
   });
+  it('builds a slot from tangent lines, equal end arcs and a center held at the middle of its axis', () => {
+    const created = createCadFreshSketchDrawing({ drawing: { kind: 'slot', center: { kind: 'position', point: [12, 8] }, end: [12, 28], width: 10 }, construction: false, createId: idFactory() });
+    if (created.kind !== 'slot') throw new Error('Expected slot role map.');
+    const { geometry, centerPointId } = created;
+    expect(geometry.entities.map(entity => [entity.kind, entity.construction])).toEqual([['line', false], ['arc', false], ['line', false], ['arc', false], ['line', true]]);
+    expect(geometry.relations.map(relation => relation.kind)).toEqual(['tangent-joint', 'tangent-joint', 'tangent-joint', 'tangent-joint', 'equal-radius', 'midpoint']);
+    expect(geometry.points.find(point => point.id === centerPointId)?.position).toEqual([12, 8]);
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [] }] });
+    const drawn = applyCadEdits(source, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry }]);
+    // A 40 mm slot 10 mm wide: a 30 x 10 band between centers plus one full 5 mm circle.
+    const area = 30 * 10 + Math.PI * 25;
+    expect(measureCadSketch(drawn, 'sketch').materialAreaMm2).toBeCloseTo(area, 6);
+    expect(() => createCadFreshSketchDrawing({ drawing: { kind: 'slot', center: { kind: 'position', point: [0, 0] }, end: [4, 0], width: 10 }, construction: false, createId: idFactory() }))
+      .toThrow('A slot needs its end beyond half of its width');
+    // Far from the origin, rounding alone turns the short tangent supports of a rotated slot by more than 1e-12 radians.
+    const far = createCadFreshSketchDrawing({ drawing: { kind: 'slot', center: { kind: 'position', point: [100000, 100000] }, end: [100012, 100020], width: 10 }, construction: false, createId: idFactory() });
+    expect(far.geometry.relations.filter(relation => relation.kind === 'tangent-joint')).toHaveLength(4);
+  });
 });
