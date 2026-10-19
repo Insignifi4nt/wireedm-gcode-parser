@@ -166,7 +166,7 @@ export function resolveCadSweepClearance(curve: CadResolvedCurve, profileRadiusM
     if (length <= 8 * band) throw new CadError('unsupported-sweep-precision', `Curve edge ${index + 1} is too short for the sweep precision. Lengthen or remove this edge.`);
     if (edge.type === 'arc') {
       radiusMargin = Math.min(radiusMargin, edge.radius - radius);
-      if (edge.radius - radius <= 4 * band) throw new CadError('unsupported-sweep-clearance', `Curve arc ${index + 1} (radius ${+edge.radius.toFixed(4)} mm) is too tight for a section reaching ${+profileRadiusMm.toFixed(4)} mm from the curve. Use a larger arc radius or a smaller section.`);
+      if (edge.radius - radius <= 4 * band) throw new CadError('unsupported-sweep-clearance', `Curve arc ${index + 1} (radius ${edge.radius} mm) is too tight for a section reaching ${profileRadiusMm} mm from the curve. Use a larger arc radius or a smaller section.`);
     }
     if (index === 0) continue;
     const previous = curve.entities[index - 1]; const a = tangent(previous, true); const b = tangent(edge);

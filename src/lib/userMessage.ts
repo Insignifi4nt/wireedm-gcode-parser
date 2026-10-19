@@ -14,15 +14,19 @@ export function formatUserNumber(value: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: digits, useGrouping: magnitude >= 100000 }).format(value);
 }
 
-// Scientific notation, or a decimal with five or more fraction digits, standing alone: not part of a version, ID, hex
-// colour, file name or path, and not inside quotes, where it is source text the person typed or imported.
-const RAW_NUMBER = /(?<![\w.#/\\"'`-])-?(?:\d+(?:\.\d+)?[eE][+-]?\d+|\d+\.\d{5,})(?![\w."'`/\\-])/g;
+// Computed values as JavaScript prints them, scientific notation with a signed exponent or a decimal with five or more
+// fraction digits, standing alone: not part of a version, ID, hex colour, file name or path. Unsigned forms such as
+// "1e5" are left alone because people write them in names.
+const RAW_NUMBER = /(?<![\w.#/\\"'`-])-?(?:\d+(?:\.\d+)?[eE][+-]\d+|\d+\.\d{5,})(?![\w."'`/\\-]|\)\.\w)/g;
+// Quoted spans are source text the person typed or imported and stay verbatim.
+const VERBATIM = /("[^"\n]*"|\u201c[^\u201d\n]*\u201d|`[^`\n]*`)/;
 // Generated identifiers some domain checks prefix to a message, e.g. "3f2a…-…: The line and arc…".
 const ID_PREFIX = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z][\w-]*[-_]\d+(?:[-_][\w-]+)?):\s+(?=[A-Z])/;
 
 /** Rewrites raw floats and leading internal identifiers in one message without changing its wording. */
 export function readableMessage(text: string): string {
-  return text.replace(ID_PREFIX, '').replace(RAW_NUMBER, match => formatUserNumber(Number(match)));
+  return text.replace(ID_PREFIX, '').split(VERBATIM)
+    .map((part, index) => index % 2 ? part : part.replace(RAW_NUMBER, match => formatUserNumber(Number(match)))).join('');
 }
 
 /** The readable message of an unknown failure, or `fallback` when it carries none. */
