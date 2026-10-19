@@ -128,14 +128,4 @@ describe('constructed analytic paths in the exact native kernel', () => {
     }
     finally { model.dispose(); }
   });
-  it('rejects coincident, collinear, uncertain or out-of-budget picks before any native construction', () => {
-    for (const input of [
-      { start: [0, 0], end: [0, 0], through: [1, 1] },
-      { start: [0, 0], end: [2, 0], through: [1, 0] },
-      { start: [0, 0], end: [2, 0], through: [1, 1e-13] },
-      { start: [1e9, 1e9], end: [1e9 + 1e-7, 1e9], through: [1e9, 1e9 + 1e-7] },
-      { start: [0, 0], end: [2, 0], through: [1, NaN] },
-    ] satisfies readonly { start: CadConstructionPoint; end: CadConstructionPoint; through: CadConstructionPoint }[]) expect(() => createCadThreePointArc(input)).toThrow();
-    expect(() => createCadPathProfile([0, 0], [{ kind: 'line', end: [10, 10] }, { kind: 'line', end: [0, 10] }, { kind: 'line', end: [10, 0] }])).toThrow();
-  });
 });

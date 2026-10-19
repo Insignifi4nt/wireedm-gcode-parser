@@ -320,7 +320,7 @@ describe('exact topology and selected mechanical features', () => {
   it('builds and exports all valid bodies beyond the former complete topology cap', () => {
     const features: CadFeature[] = [];
     for (let body = 0; body < 4; body++) {
-      const points: [number, number][] = Array.from({ length: 2000 }, (_, index) => [body * 3 + Math.cos(index * Math.PI / 1000), Math.sin(index * Math.PI / 1000)]);
+      const points: [number, number][] = Array.from({ length: 1563 }, (_, index) => [body * 3 + Math.cos(index * 2 * Math.PI / 1563), Math.sin(index * 2 * Math.PI / 1563)]);
       features.push({ ...base(`sketch_${body}`), kind: 'sketch', plane: 'XY', offset: 0, profiles: [{ id: `profile_${body}`, name: 'Outline', role: 'outer', construction: false, geometry: { kind: 'polygon', points } }] },
         { ...base(`body_${body}`), kind: 'extrude', sketchId: `sketch_${body}`, distance: 1, symmetric: false, operation: 'new', targetId: null });
     }
@@ -328,9 +328,11 @@ describe('exact topology and selected mechanical features', () => {
       expect(model.result.diagnostics).toEqual([]);
       expect(model.result.meshes.map(mesh => mesh.featureId)).toEqual(['body_0', 'body_1', 'body_2', 'body_3']);
       expect(model.result.meshes.every(mesh => mesh.volume > 3.14 && mesh.volume < 3.142)).toBe(true);
+      // The four bodies together exceed the former 25,000-element topology cap.
+      expect(model.result.meshes.reduce((total, mesh) => total + mesh.faceGroups.length + mesh.edgeGroups.length, 0)).toBeGreaterThan(25_000);
       expect(model.export('step').size).toBeGreaterThan(0);
     });
-  // Four 2,000-edge native solids exercise real geometry beyond the old policy.
+  // Four 1,563-edge native solids exercise real geometry beyond the old policy.
   }, 60_000);
 });
 

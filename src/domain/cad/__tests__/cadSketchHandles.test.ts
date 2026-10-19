@@ -10,11 +10,6 @@ const polygon = profile({ kind: 'polygon', points: [[0, 0], [20, 0], [20, 10], [
 const rectangle = profile({ kind: 'rectangle', x: 0, y: 0, width: 20, height: 10, cornerRadius: 0 });
 
 describe('revision-scoped sketch handles', () => {
-  it('moves one polygon vertex without translating the closed contour or mutating the source', () => {
-    const moved = moveCadSketchHandle({ profile: polygon, handle: { kind: 'vertex', index: 1 }, translation: [5, -3], parameters: {} });
-    expect(moved.geometry).toEqual({ kind: 'polygon', points: [[0, 0], [25, -3], [20, 10], [0, 10]] });
-    expect(polygon.geometry).toEqual({ kind: 'polygon', points: [[0, 0], [20, 0], [20, 10], [0, 10]] });
-  });
 
   it('moves a shared path joint atomically, preserving the other endpoints', () => {
     const path = profile({ kind: 'path', segments: [

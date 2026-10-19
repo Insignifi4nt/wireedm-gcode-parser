@@ -85,11 +85,11 @@ it('builds a larger gear above the former topology policy without changing reque
   const profile = createCadPluginProfile(CAD_GEAR_V2_PLUGIN);
   const doc = parseCadDocument({ ...createCadDocument('Over-budget gear', 'over_budget_gear'), features: [
     { id: 'outline', kind: 'sketch', name: 'Outline', suppressed: false, plane: 'XY', offset: 0, profiles: [
-      { id: 'gear', name: 'Gear', construction: false, geometry: { ...profile, inputs: { ...profile.inputs, teeth: 60 } } },
+      { id: 'gear', name: 'Gear', construction: false, geometry: { ...profile, inputs: { ...profile.inputs, teeth: 57 } } },
     ] },
     { id: 'solid', kind: 'extrude', name: 'Solid', suppressed: false, sketchId: 'outline', distance: 10, symmetric: true, operation: 'new', targetId: null },
   ] });
-  const original = structuredClone(doc), gear = resolveGeneratedCadGear({ ...DEFAULT_CAD_GEAR, teeth: 60 }, {}), model = buildCadKernelModel(doc);
+  const original = structuredClone(doc), gear = resolveGeneratedCadGear({ ...DEFAULT_CAD_GEAR, teeth: 57 }, {}), model = buildCadKernelModel(doc);
   try {
     expect(model.result.diagnostics).toEqual([]);
     expect(model.result.meshes).toHaveLength(1);
@@ -131,13 +131,13 @@ it('builds and sections a custom cutter-root gear using its correlated shift and
 }, 60_000);
 
 it('builds configured gear topology at its requested accuracy beyond the former body policy', () => {
-  const profile = createCadPluginProfile(CAD_GEAR_V3_PLUGIN); profile.inputs.teeth = 120;
+  const profile = createCadPluginProfile(CAD_GEAR_V3_PLUGIN); profile.inputs.teeth = 70;
   const doc = parseCadDocument({ ...createCadDocument(), features: [
     { id: 'outline', kind: 'sketch', name: 'Outline', suppressed: false, plane: 'XY', offset: 0, profiles: [{ id: 'gear', name: 'Gear', construction: false, geometry: profile }] },
     { id: 'solid', kind: 'extrude', name: 'Solid', suppressed: false, sketchId: 'outline', distance: 10, symmetric: true, operation: 'new', targetId: null },
   ] });
   const original = JSON.stringify(doc), values = inspectCadPluginProfile(profile, {}).values;
-  const gear = resolveConfiguredCadGear({ ...DEFAULT_CAD_GEAR, teeth: 120, profileShift: values.effectiveShift, cutterTipRadius: values.effectiveCutterTipRadius }, {});
+  const gear = resolveConfiguredCadGear({ ...DEFAULT_CAD_GEAR, teeth: 70, profileShift: values.effectiveShift, cutterTipRadius: values.effectiveCutterTipRadius }, {});
   const model = buildCadKernelModel(doc);
   try {
     expect(model.result.diagnostics).toEqual([]);

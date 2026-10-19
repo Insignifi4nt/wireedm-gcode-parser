@@ -40,10 +40,6 @@ describe('parseGCodeProgram', () => {
     expect(result.path.at(-1)).toMatchObject({ x: 50.8, y: 25.4 });
   });
 
-  it('preserves words after parenthesized inline comments', () => {
-    expect(parseGCodeProgram('G1 X1 (note) Y2').path.at(-1)).toMatchObject({ x: 1, y: 2 });
-  });
-
   it('treats semicolons inside parenthesized comments as comment text', () => {
     const result = parseGCodeProgram('G1 X1 (note; still note) Y2');
 

@@ -13,10 +13,6 @@ describe('analytic CAD sketch SVG arcs', () => {
       { type: 'line', layer: 'CAD', start: arc.end, end: arc.start },
     ])).toBe('M 10 0 A 10 10 0 1 0 0 10 L 10 0 Z');
   });
-  it('preserves clockwise concave arcs and the large-arc choice rather than sampling them into lines', () => {
-    expect(cadArcSvgPath(arc)).toBe('M 10 0 A 10 10 0 0 1 0 10');
-    expect(cadArcSvgPath({ ...arc, clockwise: true, sweepRadians: -Math.PI * 1.5 })).toBe('M 10 0 A 10 10 0 1 0 0 10');
-  });
   it('draws full turns as two analytic arcs and keeps wrapped angle sweeps short', () => {
     expect(cadArcSvgPath({ ...arc, sweepRadians: Math.PI * 2, end: arc.start })).toBe('M 10 0 A 10 10 0 0 1 -10 0 A 10 10 0 0 1 10 0');
     expect(cadArcSvgPath({ ...arc, startAngle: 350 * Math.PI / 180, endAngle: 10 * Math.PI / 180, sweepRadians: undefined })).toContain(' A 10 10 0 0 1 ');

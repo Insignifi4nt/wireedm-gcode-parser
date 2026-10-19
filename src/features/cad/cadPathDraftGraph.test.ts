@@ -199,7 +199,6 @@ describe('live path draft graph construction', () => {
   it.each([
     { draft: createCadPathDraft(), code: 'empty-path' },
     { draft: lines([[0, 0]]), code: 'empty-path' },
-    { draft: updateCadPathDraft(lines([[0, 0]]), { kind: 'mode', mode: 'arc' }), code: 'empty-path' },
     { draft: updateCadPathDraft(updateCadPathDraft(createCadPathDraft('arc'), { kind: 'point', point: [0, 0] }), { kind: 'point', point: [10, 0] }), code: 'incomplete-arc' }
   ])('rejects an empty or unfinished draft with $code and preserves its authoring state', ({ draft, code }) => {
     const before = JSON.stringify(draft); let allocations = 0;

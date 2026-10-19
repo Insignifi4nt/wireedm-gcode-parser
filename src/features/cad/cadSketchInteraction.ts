@@ -27,13 +27,6 @@ export function magnetSketchValue(value: number, step: number, enabled: boolean,
   return Math.abs(node - value) <= catchRadius ? node : value;
 }
 
-/** The path anchor remains reachable at every zoom, including off-grid anchors. */
-export function snapSketchPathPoint(point: SketchPoint, start: SketchPoint | null, unitsPerPixel: number, gridStep: number, enabled: boolean): SketchPoint {
-  if (start && Number.isFinite(unitsPerPixel) && unitsPerPixel > 0
-    && Math.hypot(point[0] - start[0], point[1] - start[1]) <= 6 * unitsPerPixel) return start;
-  return snapSketchPoint(point, gridStep, enabled);
-}
-
 /** Rectangle origin is always its lower left corner, regardless of drawing direction. */
 export function twoPointSketchProfile(tool: 'rectangle' | 'circle' | 'slot', start: SketchPoint, end: SketchPoint): CadProfile {
   if (tool === 'slot') {

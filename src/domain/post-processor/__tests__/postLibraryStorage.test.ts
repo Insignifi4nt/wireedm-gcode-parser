@@ -68,16 +68,6 @@ describe('post library storage', () => {
     );
   });
 
-  it('round-trips exact installation references and package content', async () => {
-    const adapter = new MemoryAdapter();
-    const installed = await installPostPackage(createEmptyPostLibrary(), parsedPackage());
-    if (!installed.ok) throw new Error(installed.error.message);
-
-    expect(await writePostLibraryStorage(adapter, installed.library)).toEqual({ ok: true });
-
-    expect(await readPostLibraryStorage(adapter)).toEqual({ ok: true, library: installed.library });
-  });
-
   it('preserves installation order and the exact JSON encoding of package text', async () => {
     let library = createEmptyPostLibrary();
     for (const version of ['2.0.0', '1.0.0']) {

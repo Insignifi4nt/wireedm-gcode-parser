@@ -2147,17 +2147,6 @@ describe('CAD sketch interaction', () => {
     expect(sendToCam).toHaveBeenCalledWith(sketch.id);
   });
 
-  it('retains legacy material intent when adding a size constraint', async () => {
-    const initial = solidDocument();
-    await mount(initial);
-    expect(currentDocument.features[0]).toMatchObject({ profiles: [{ role: 'outer' }] });
-    await act(async () => { viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }); viewport().apply({ kind: 'select-profile', profileId: 'rectangle' }); });
-    await click('Add dimension'); await input(dimensionValue(), '51'); await click('Apply');
-    const sketch = currentDocument.features[0];
-    expect(sketch.kind === 'sketch' && sketch.profiles[0]).toMatchObject({ role: 'outer', constraints: [{ kind: 'dimension', quantity: 'width' }], geometry: { width: 51 } });
-    expect(initial.features[0]).toMatchObject({ profiles: [{ role: 'outer', geometry: { width: 50 } }] });
-  });
-
   it('shows imported source metadata without exposing or editing original source contents', async () => {
     const source = { format: 'step', encoding: 'utf8', fileName: 'source.step', data: 'ISO-10303-21;\nEND-ISO-10303-21;' } satisfies Extract<CadDocument['features'][number], { kind: 'imported' }>['source'];
     const initial = applyCadEdits(createCadDocument(), [{ kind: 'add-feature', feature: { id: 'imported', kind: 'imported', name: 'Imported solid', suppressed: false, source } }]);

@@ -1492,7 +1492,8 @@ test('human Curve creation keeps name, plane and geometry atomic and uses the ex
   await page.locator('.cad-header input[type=file]').setInputFiles({ name: 'Mounting rail.dxf', mimeType: 'application/dxf', buffer: bytes });
   const dialog = page.getByRole('dialog', { name: 'Import CAD file' });
   await dialog.getByLabel('Import as').selectOption('curve'); await dialog.getByRole('button', { name: 'Import', exact: true }).click();
-  await expect(dialog).not.toBeVisible();
+  // This is the first kernel-worker request on the page, so the import includes a cold worker start.
+  await expect(dialog).not.toBeVisible({ timeout: 60_000 });
   const imported = await context(page); const importedFeatures = await call(page, 'cad_read_features', { expectedVersion: imported.version });
   expect(importedFeatures).toMatchObject({ items: [{ kind: 'curve', source: { text: bytes.toString('utf8') } }] });
 });

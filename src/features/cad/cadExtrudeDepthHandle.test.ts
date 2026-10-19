@@ -37,7 +37,7 @@ function rayFor(camera: THREE.OrthographicCamera, world: THREE.Vector3) {
 }
 
 it.each([[19.844262327110005, '19.844262'], [-19.844262327110005, '-19.844262'], [10, '10'],
-  [1e-7, '1e-7'], [-1e-7, '-1e-7'], [1e-9, '1e-9'], [-1e-9, '-1e-9'],
+  [1e-7, '1e-7'], [-1e-7, '-1e-7'],
   [1.23456789012345e-9, '1.23457e-9'], [-1.23456789012345e-9, '-1.23457e-9']] as const)(
   'displays compact CAD precision for Length %s while keeping the exact quantity, endpoint and named expression', (quantity, text) => {
     const document = { ...part(), parameters: { depth: quantity } }, original = JSON.stringify(document), h = control(document);

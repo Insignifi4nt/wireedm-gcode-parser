@@ -1,0 +1,24 @@
+{
+  "version": "0.0.723",
+  "previousVersion": "0.0.722",
+  "postCompatibility": "preserved-tests-only",
+  "summary": "Trims the test suite after a test-by-test redundancy review. Tests and it.each rows whose behavior, branch and assertions a kept test already covers are removed, together with one browser journey that repeated the workspace-panel dock flow and a second viewport of the settings focus journey. Unused CAD measurement components, path-point snap helpers and canStartEditorToolSession are deleted. The topology, generated-gear and linear-pattern kernel tests run at smaller sizes that still exceed the former topology caps or exercise every staged fuse release.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Only tests and unreferenced code change. Domain APIs that only tests use today, storage transaction and recovery helpers, legacy G-code rules and compatibility vocabularies are kept.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change. The stale-result, cancellation and version-guard tests remain.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change and no cleanup of user files. No journal, recovery or migration test was removed. One post-library storage round-trip test was removed because the kept exact-encoding test writes and reads the same library back.",
+    "verification": "Every removed test was checked against the kept test that covers it, and an independent review of the diff restored one direct section-inspection stale-result test. The shrunken kernel tests assert they still pass the former 10,000-element body and 25,000-element total topology caps. Native tsc -b, npm run lint with zero findings, the shared UI gate and the production build pass. Full unit suite: 519 files and 5,836 tests pass (56 fewer). The edited browser specs pass; CI runs all browser journeys."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Internal test cleanup; no workbench behavior changes.",
+    "changes": [
+      "Removed duplicated automated checks and unused internal code."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
