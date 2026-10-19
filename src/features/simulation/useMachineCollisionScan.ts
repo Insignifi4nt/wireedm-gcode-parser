@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useEffect, useState } from 'react';
 import type { SimulationPlan } from '@/domain/simulation';
 import type { MachineModel, MachineSimulationScan } from '@/domain/simulation/machine-import';
@@ -18,7 +19,7 @@ export function useMachineCollisionScan(plan: SimulationPlan | null, model: Mach
           ? { status: 'ready', result: response.result } : { status: 'error', message: response.message } });
       }).catch(error => {
         if (!controller.signal.aborted) setState({ plan, model, placement,
-          scan: { status: 'error', message: error instanceof Error ? error.message : 'Machine surface checking failed.' } });
+          scan: { status: 'error', message: userFacingMessage(error, 'Machine surface checking failed.') } });
       });
     return () => controller.abort();
   }, [plan, model, placement]);

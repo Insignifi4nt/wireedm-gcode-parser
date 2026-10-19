@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { CadSketchExtendDependencyError, CadSketchTrimDependencyError, cadSketchCircleTrimParameter, prepareCadSketchTrim, prepareCadSketchExtend,
   type CadSketchTrimPreparation, type CadSketchExtendPreparation } from '@/domain/cad/cadSketchTrimExtend';
@@ -23,7 +24,7 @@ function unavailable(prepared: ReturnType<typeof prepareCadSketchGraphInteractio
     const labels = sources.slice(0, 3).map(source => describeCadSketchConstraintSource(prepared.graph, source).label), omitted = sources.length - labels.length;
     return { kind: 'unavailable', reason: `${cause.message} ${labels.join('; ')}${omitted ? `; ${omitted} more` : ''}` };
   }
-  return { kind: 'unavailable', reason: cause instanceof Error ? cause.message : fallback };
+  return { kind: 'unavailable', reason: userFacingMessage(cause, fallback) };
 }
 
 function contactHelp(boundary: { readonly endpointPointId?: string }, action: 'Trim' | 'Extend'): string {

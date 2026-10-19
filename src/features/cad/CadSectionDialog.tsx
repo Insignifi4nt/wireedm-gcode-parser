@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -69,7 +70,7 @@ export function CadSectionDialog({ bodies, initialBodyId, version, onClose, onIn
         onClose();
       }
     } catch (error) {
-      if (!controller.signal.aborted) setError(error instanceof Error ? error.message : 'Section operation failed.');
+      if (!controller.signal.aborted) setError(userFacingMessage(error, 'Section operation failed.'));
     } finally {
       if (pending.current === controller) { pending.current = null; setBusy(null); }
     }

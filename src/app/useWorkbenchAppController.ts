@@ -1,3 +1,4 @@
+import { readableMessage, userFacingMessage } from '@/lib/userMessage';
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ToolError } from '@/features/webmcp/siteTools';
@@ -148,7 +149,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
           : null;
       readyWorkbench(cached.workbench, warning, cached.recoverySource);
     } catch (error) {
-      failWorkbench(errorText(error));
+      failWorkbench(userErrorText(error));
     }
   }
 
@@ -200,7 +201,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       setRecoveryMessage('Recovery export download requested. Check that the file was saved.');
       return { status: 'download-requested' as const, receipt: prepared.receipt };
     } catch (error) {
-      setRecoveryError(input.signal?.aborted ? 'Recovery capture cancelled. No download was requested.' : errorText(error));
+      setRecoveryError(input.signal?.aborted ? 'Recovery capture cancelled. No download was requested.' : userErrorText(error));
       throw error;
     } finally { activeMutation.current = null; setRecoveryBusy(false); }
   }
@@ -251,7 +252,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
         return;
       }
       setWorkbenchStatus(connectedWorkbench ? 'ready' : 'error');
-      setErrorMessage(errorText(error));
+      setErrorMessage(userErrorText(error));
     } finally {
       activeMutation.current = null;
     }
@@ -277,7 +278,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       showStatusToast('Browser cache active. Folder projects remain in their folder.', 'success');
     } catch (error) {
       setWorkbenchStatus(connectedWorkbench ? 'ready' : 'error');
-      setErrorMessage(errorText(error));
+      setErrorMessage(userErrorText(error));
     } finally {
       activeMutation.current = null;
     }
@@ -315,7 +316,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       });
       setImportStatus('idle');
     } catch (error) {
-      if (dxfTaskCurrent(task, workbench)) setImportFailure(errorText(error));
+      if (dxfTaskCurrent(task, workbench)) setImportFailure(userErrorText(error));
     }
   }
 
@@ -400,10 +401,10 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     } catch (error) {
       if (committed) {
         setImportStatus('idle');
-        showStatusToast(`DXF was committed, but its editor document could not be opened: ${errorText(error)}`, 'error');
+        showStatusToast(`DXF was committed, but its editor document could not be opened: ${userErrorText(error)}`, 'error');
         return;
       }
-      if (dxfTaskCurrent(task, workbench)) setImportFailure(errorText(error));
+      if (dxfTaskCurrent(task, workbench)) setImportFailure(userErrorText(error));
     } finally {
       if (dxfTask.current === task) { dxfTask.current = null; setDxfWriting(false); }
     }
@@ -434,7 +435,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       openEditorProgram(loaded.editorProgram);
       showStatusToast(`Imported ${imported.project.name}.`, 'success');
     } catch (error) {
-      setImportFailure(errorText(error));
+      setImportFailure(userErrorText(error));
     }
   }
 
@@ -460,7 +461,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       setEditorImportStatus('idle');
       showStatusToast(`Program imported: ${file.name}.`, 'success');
     } catch (error) {
-      setEditorImportFailure(errorText(error));
+      setEditorImportFailure(userErrorText(error));
     } finally {
       activeMutation.current = null;
     }
@@ -497,7 +498,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       return true;
     } catch (error) {
       if (signal?.aborted) return false;
-      showStatusToast(errorText(error), 'error');
+      showStatusToast(userErrorText(error), 'error');
       return false;
     } finally {
       activeMutation.current = null;
@@ -587,7 +588,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     } catch (error) {
       if (guardRejected && (options.signal || options.beforeWrite)) { setEditorSaveStatus('idle'); throw error; }
       setEditorSaveStatus('error');
-      setEditorSaveErrorMessage(errorText(error));
+      setEditorSaveErrorMessage(userErrorText(error));
       return null;
     } finally {
       activeMutation.current = null;
@@ -626,7 +627,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       });
       setDxfReimportStatus('idle');
     } catch (error) {
-      if (dxfTaskCurrent(task, workbench)) setDxfReimportFailure(errorText(error));
+      if (dxfTaskCurrent(task, workbench)) setDxfReimportFailure(userErrorText(error));
     }
   }
 
@@ -702,7 +703,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       setDxfReimportStatus('idle');
       showStatusToast(result.mode === 'rebuilt' ? 'DXF project rebuilt with explicit units.' : 'DXF units unchanged.', 'success');
     } catch (error) {
-      if (dxfTaskCurrent(task, workbench)) setDxfReimportFailure(errorText(error));
+      if (dxfTaskCurrent(task, workbench)) setDxfReimportFailure(userErrorText(error));
     } finally {
       if (dxfTask.current === task) { dxfTask.current = null; setDxfWriting(false); }
     }
@@ -789,7 +790,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     try {
       await requestUpidProjectExport(projectId);
     } catch (error) {
-      showStatusToast('Could not export UPID: ' + errorText(error) + ' Retry using Export UPID.', 'error');
+      showStatusToast('Could not export UPID: ' + userErrorText(error) + ' Retry using Export UPID.', 'error');
     }
   }
 
@@ -808,7 +809,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       });
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      showStatusToast('Could not save UPID: ' + errorText(error), 'error');
+      showStatusToast('Could not save UPID: ' + userErrorText(error), 'error');
     }
   }
 
@@ -960,7 +961,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       return result;
     } catch (error) {
       const message = errorText(error);
-      settingsFailure(message);
+      settingsFailure(readableMessage(message));
       return { ok: false, error: { code: 'MACHINE_PACKAGE_READ_FAILED', message } };
     }
   }
@@ -1042,7 +1043,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       return true;
     } catch (error) {
       if (shouldRethrow(error)) { setSettingsStatus('idle'); throw error; }
-      settingsFailure(errorText(error));
+      settingsFailure(userErrorText(error));
       return false;
     } finally {
       activeMutation.current = null;
@@ -1225,6 +1226,11 @@ function artifactAppFailure(message: string): ControllerArtifactResult {
   };
 }
 
+// Results returned to callers, including WebMCP agent tools, keep the exact failure text.
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function userErrorText(error: unknown) {
+  return userFacingMessage(error, String(error));
 }

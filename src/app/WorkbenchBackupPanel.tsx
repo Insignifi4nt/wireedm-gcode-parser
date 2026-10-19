@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Input } from '@/components/ui/input';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -26,7 +27,7 @@ export function WorkbenchBackupPanel({ workbench, disabled }: { workbench: Conne
     const current = ++generation.current;
     setBusy(true); setError(null); setMessage(null);
     try { await operation(() => current === generation.current); }
-    catch (failure) { if (current === generation.current) setError(failure instanceof Error ? failure.message : 'Storage operation failed.'); }
+    catch (failure) { if (current === generation.current) setError(userFacingMessage(failure, 'Storage operation failed.')); }
     finally { if (current === generation.current) setBusy(false); }
   }
   function download(value: PreparedWorkbenchBackup) {

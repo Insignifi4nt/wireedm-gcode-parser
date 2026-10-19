@@ -118,7 +118,7 @@ describe('Sketch reference-plane workflow', () => {
     for (const label of ['Circle profile', 'Edit parameter wall', 'Create sketch on XY plane']) {
       expect(button(label).disabled, label).toBe(true); await click(label);
     }
-    expect(container.querySelector<HTMLInputElement>('[aria-label="Part name"]')?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('.cad-tree-document')?.disabled).toBe(true);
     expect(session.getSnapshot()).toEqual(before);
     expect(button('Select XY plane').disabled).toBe(false); expect(button('Select Mount plane in history').disabled).toBe(false);
     await click('Select Mount plane in history'); expect(session.getSnapshot().document.features).toHaveLength(3);

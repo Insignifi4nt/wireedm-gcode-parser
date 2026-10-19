@@ -1,3 +1,4 @@
+import { readableMessage } from '@/lib/userMessage';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -210,7 +211,7 @@ export default function SimulationPanel({ document, projectName, savedAt, dirty,
       </div>
       <div data-sim-panel="checks" hidden={openPanel !== 'checks'}>
       <div className="sim-section sim-findings"><div className="sim-section-title"><span>Material</span><span className={warnings.length ? 'sim-warning-count' : ''}>{warnings.length}</span></div>
-        {actionableDiagnostics.map((diagnostic, index) => <p className="sim-diagnostic" key={`${diagnostic.code}-${index}`}>{diagnostic.message}</p>)}
+        {actionableDiagnostics.map((diagnostic, index) => <p className="sim-diagnostic" key={`${diagnostic.code}-${index}`}>{readableMessage(diagnostic.message)}</p>)}
         {warnings.length ? <div className="sim-warning-list">{warnings.map(warning => <Button key={warning.id} type="button" onClick={() => { setPlaying(false); setFinalPartOnly(false); setElapsed(warning.elapsedSeconds); }}><AlertTriangle size={13} /><span>{warning.message}<small>{timeLabel(warning.elapsedSeconds)} · {warning.envelope}</small></span></Button>)}</div> : <p>{plan ? 'No material obstruction flagged.' : 'Waiting for a valid saved process.'}</p>}
         {machineScan.status === 'scanning' && <p role="status">Checking wire motion against machine surfaces…</p>}
         {machineScan.status === 'error' && <p className="sim-error" role="alert">{machineScan.message}</p>}

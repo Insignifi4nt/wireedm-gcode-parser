@@ -64,6 +64,7 @@ describe('CAD tools without an evaluated solid', () => {
 
   it('keeps toolbar creation blocked by pending fields and storage work', async () => {
     await mount({ ...createCadDocument(), features: [outline] }); const before = session.getSnapshot();
+    await act(async () => container.querySelector<HTMLButtonElement>('.cad-tree-document')?.click());
     const name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]'); if (!name) throw new Error('Part name missing');
     await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'Pending name'); name.dispatchEvent(new Event('input', { bubbles: true })); });
     expect(namedButton('Sketch').disabled).toBe(true); expect(namedButton('Pad / Pocket').disabled).toBe(true); await click(namedButton('Sketch'));

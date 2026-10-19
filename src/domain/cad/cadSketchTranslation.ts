@@ -51,7 +51,7 @@ export function translateCadSketchGraph({ graph, selections, translation, parame
       if (typeof value === 'string') throw new CadError('driven-sketch-position', `${label(point.id)} ${axis === 0 ? 'X' : 'Y'} follows an expression. Release its driver before moving that axis.`);
       const target = value + step;
       if (!Number.isFinite(target) || Math.abs(target) > 1e9 || target === value)
-        throw new CadError('sketch-translation-precision', 'The requested move cannot be represented at these coordinates.');
+        throw new CadError('sketch-translation-precision', 'This move cannot be made exactly at these coordinates. Try a different distance, or move the geometry nearer the origin first.');
       return target;
     };
     return { ...point, position: [coordinate(0), coordinate(1)] };
@@ -65,7 +65,7 @@ export function translateCadSketchGraph({ graph, selections, translation, parame
     const a = position(before, from), b = position(before, to), c = position(after, from), d = position(after, to);
     const old = { x: b.x - a.x, y: b.y - a.y }, next = { x: d.x - c.x, y: d.y - c.y };
     if (Math.hypot(next.x - old.x, next.y - old.y) > cadPathClosureTolerance([old, next]))
-      throw new CadError('sketch-translation-precision', 'The requested move cannot preserve the selected shape at these coordinates.');
+      throw new CadError('sketch-translation-precision', 'Moving this shape here would distort it slightly. Try a different distance, or move the geometry nearer the origin first.');
   };
   const ids = [...points].sort();
   for (const id of ids) checkVector(ids[0], id);
@@ -86,7 +86,7 @@ export function translateCadSketchGraph({ graph, selections, translation, parame
       // way. A flip is only a real branch change when either side lies measurably off the half turn.
       const was = branch(before), now = branch(after);
       if (was.sign !== now.sign && (was.settled || now.settled))
-        throw new CadError('sketch-translation-precision', 'The requested move cannot preserve the arc branch at these coordinates.');
+        throw new CadError('sketch-translation-precision', 'Moving this arc here would flip it to the other side of its circle. Try a different distance, or move the geometry nearer the origin first.');
     }
   }
   return translated;

@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
@@ -39,7 +40,7 @@ function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onC
   let draftText: string | undefined;
   if (draft !== undefined && !locked) {
     try { if (numericValue(draft) === resolved) draftText = draft; }
-    catch (error) { draftText = draft; issue = error instanceof Error ? error.message : 'Invalid numeric value.'; }
+    catch (error) { draftText = draft; issue = userFacingMessage(error, 'Invalid numeric value.'); }
   }
   const exactText = draftText ?? (resolved === undefined ? '—' : String(resolved));
   const text = draftText !== undefined || focused || resolved === undefined ? exactText : formatCadQuantity(resolved);
@@ -69,7 +70,7 @@ function ScalarValueField({ label, inputLabel = label, fieldKey: key, value, onC
           if (intent.kind === 'parameter') context.changeParameter(intent.name, intent.value);
           else if (intent.kind === 'scalar') { context.setValueDraft(key, { source: intent.source, text: next }); onChange(intent.source); }
           else if (intent.kind === 'locked') context.setIssue(key, intent.reason);
-        } catch (error) { context.setIssue(key, error instanceof Error ? error.message : 'Invalid numeric value.'); }
+        } catch (error) { context.setIssue(key, userFacingMessage(error, 'Invalid numeric value.')); }
       }} />
     <CadContextHelp label={`${label} relation`} buttonLabel={`Edit ${label} relation`} activation="click" triggerContent="fx" className="cad-scalar-relation">
       <CadExpressionBinding label={label} expression={value} parameters={context.parameters} resolved={resolved} onChange={changeRelation}
@@ -96,7 +97,7 @@ function ScalarExpressionField({ label, inputLabel = label, value, parameters, o
   let resolved: string;
   let invalid = false;
   try { resolved = `${formatCadQuantity(evaluateCadScalar(value, parameters))} ${unit}`; }
-  catch (error) { invalid = true; resolved = error instanceof Error ? error.message : 'Invalid expression'; }
+  catch (error) { invalid = true; resolved = userFacingMessage(error, 'Invalid expression'); }
   const showResult = invalid || typeof value === 'string' && !Number.isFinite(Number(value));
   return <label className={`cad-field ${invalid ? 'is-invalid' : ''}`}><span>{label}<small>{unit}</small><CadContextHelp label={label}><div>{cadScalarHelp(label)}</div><dl><dt>Current value</dt><dd>{resolved}</dd>{showResult && !invalid && <><dt>Expression</dt><dd><code>{value}</code></dd></>}</dl><div>Enter a number or a named parameter expression.</div></CadContextHelp></span><Input value={value} spellCheck={false} title={resolved} aria-label={`${inputLabel}${unit ? ` ${unit}` : ''}`} aria-invalid={invalid || undefined} onChange={(event) => onChange(event.target.value)} />{showResult && <small className="cad-field-hint">{resolved}</small>}</label>;
 }

@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { SearchField } from '@/components/ui/search-field';
 import { Tooltip } from '@/components/ui/tooltip';
 import { MenuSurface, MenuItem } from '@/components/ui/menu';
@@ -88,7 +89,7 @@ export function ProjectListPanel({
     setPending(true); setActionError(null);
     try { await action(); if (restored) setStateFilter('active'); }
     catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not update this project.';
+      const message = userFacingMessage(error, 'Could not update this project.');
       if (onActionError) onActionError(message); else setActionError(message);
     } finally { pendingRef.current = false; setPending(false); }
   }

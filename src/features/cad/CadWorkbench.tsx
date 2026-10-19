@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { MenuItem, MenuSeparator, MenuSurface } from '@/components/ui/menu';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
@@ -473,6 +474,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     && currentBodyIds.includes(pickedTopology.bodyId) ? pickedTopology : null;
   const propertiesFeature = properties?.kind === 'selection' ? selected : undefined;
   const currentProperties = properties?.kind === 'body' || propertiesFeature ? properties : null;
+  const partPropertiesOpen = Boolean(currentProperties) && (currentProperties?.kind === 'body' || !propertiesFeature);
   // Selecting only highlights. The panel belongs to an open editor, an active command or an explicit Properties request.
   const featureEditorOpen = Boolean(selected && openFeatureId === selected.id && !sketch);
   const inspectorVisible = Boolean(profileCopyCommand || featureEditorOpen || sketch || curve || newFeature || resolvingTopology || currentProperties);
@@ -492,8 +494,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const sectionBodyId = selected && currentBodyIds.includes(selected.id) ? selected.id : currentBodyIds.at(-1);
   const run = (action: () => CadEditCompletion) => {
     setError(null); setFileMenu(false);
-    try { Promise.resolve(action()).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'The operation could not be completed.')); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'The operation could not be completed.'); }
+    try { Promise.resolve(action()).catch((cause: unknown) => setError(userFacingMessage(cause, 'The operation could not be completed.'))); }
+    catch (cause) { setError(userFacingMessage(cause, 'The operation could not be completed.')); }
   };
   const submitEdit = (apply: (signal: AbortSignal) => CadEditCompletion, accepted: () => void = () => undefined) => {
     props.onWorkflowChange(true);
@@ -501,7 +503,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     commandSubmission.submit(apply, accepted, cause => {
       // A synchronous rejection can batch applying true→false without a pending-effect change.
       props.onWorkflowChange(latestPending.current);
-      setError(cause instanceof Error ? cause.message : 'The edit could not be completed.');
+      setError(userFacingMessage(cause, 'The edit could not be completed.'));
     });
   };
   const deleteProfile = (source: CadSketchFeature, id: string) => submitEdit(signal => props.onEdit({ kind: 'update-feature', feature: {
@@ -530,6 +532,10 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   workflowCallback.current = props.onWorkflowChange;
   useEffect(() => () => workflowCallback.current(false), []);
   useEffect(() => { setNameDraft(document.name); }, [document.name]);
+  // Closing the part's Properties, or a rename rejected after it closed, restores the saved name so no hidden draft holds the commands.
+  useEffect(() => {
+    if (namePending && !partPropertiesOpen && !commandSubmission.applying) { setNameDraft(document.name); setNamePending(false); }
+  }, [namePending, partPropertiesOpen, commandSubmission.applying, document.name]);
   useEffect(() => {
     const dialog = deleteDialog.current;
     if (!deleteFeature || !dialog) return;
@@ -701,7 +707,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const editSketch = (feature: CadSketchFeature, owned = true) => {
     if (interactionState.current.locked) return;
     try { if (owned) props.onBeginSketchEdit?.(feature.id); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to open this sketch edit.'); return; }
+    catch (cause) { setError(userFacingMessage(cause, 'Unable to open this sketch edit.')); return; }
     setGraphPick(null); setGraphRelationCommand(null); setPickedTopology(null); setCurveId(null); setSketchId(feature.id); setSelectedId(feature.id); setProfileId(null); setTool('select'); setProperties(null);
   };
   const beginProfileCopy = (source: CadSketchFeature, id: string) => {
@@ -833,7 +839,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       submitEdit(signal => props.onEditMany(edits, signal), () => {
         setPluginsOpen(false); setSketchId(target.id); setSelectedId(target.id); setProfileId(id); setTool('select');
       });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to add this plugin.'); }
+    } catch (cause) { setError(userFacingMessage(cause, 'Unable to add this plugin.')); }
   };
   const inspectParameterUsage = (usage: Pick<CadParameterUsage, 'featureId' | 'profileId' | 'inputName'>) => {
     const feature = document.features.find(feature => feature.id === usage.featureId);
@@ -876,7 +882,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       try {
         const inspection = props.sketchEdit.inspectAreaRepairs();
         if (inspection) { setAreaRepairReady(false); setAreaRepair({ document, inspection }); setTool('select'); setGraphPick(null); setProfileId(null); setInspectorCollapsed(false); return; }
-      } catch (cause) { setError(cause instanceof Error ? cause.message : 'Correct the sketch before choosing replacement areas.'); return; }
+      } catch (cause) { setError(userFacingMessage(cause, 'Correct the sketch before choosing replacement areas.')); return; }
       submitEdit(signal => props.sketchEdit!.finish(signal), closeSketchView);
     }
     else closeSketchView();
@@ -933,7 +939,11 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const selectedProfileEditor = profile && sketch && profile.geometry.kind !== 'plugin' ? <CadSketchProfilePanel key={`${profile.id}-${cancelSignal}`} document={document} sketch={sketch} profile={profile} command={profileCommand} onCommandConsumed={token => setProfileCommand(current => current?.token === token ? null : current)} otherEditorPending={editorPending} onEditMany={props.onEditMany} onPendingChange={setEditorPending} onPreviewProfile={setProfilePreview} onPreviewParameters={setPreviewParameters} onPrepareEdits={props.onPrepareEdits} onPreviewDocument={publishSketchPreview} interactionLocked={sketchEditorLocked} cancelSignal={cancelSignal} exactGeometryEditor={profile.geometry.kind === 'polygon' || profile.geometry.kind === 'path' ? exactProfileEditor : undefined} /> : exactProfileEditor;
   const propertyRows = useMemo(() => currentProperties ? cadPropertySummary(document, currentProperties.kind === 'body' || !propertiesFeature ? { kind: 'body' } : { kind: 'feature', feature: propertiesFeature }, displayedMeshes, feature => cadPlacementLabel(feature.plane, document.features)) : [], [currentProperties, propertiesFeature, document, displayedMeshes]);
   const propertiesView = currentProperties && <div className="cad-property-form cad-properties-summary">
-    <CadInspectorTitle>{currentProperties.kind === 'body' || !propertiesFeature ? 'Body' : propertiesFeature.name}<small>{currentProperties.kind === 'body' || !propertiesFeature ? document.name : featureLabels[propertiesFeature.kind]}</small></CadInspectorTitle>
+    {currentProperties.kind === 'body' || !propertiesFeature ? <>
+      <CadInspectorTitle>Part<small>{document.name}</small></CadInspectorTitle>
+      {/* The part is renamed here, as in CATIA's part Properties; Enter or leaving the field saves, Escape restores. */}
+      <label className="cad-field"><span>Name</span><Input className="cad-document-name" aria-label="Part name" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} /></label>
+    </> : <CadInspectorTitle>{propertiesFeature.name}<small>{featureLabels[propertiesFeature.kind]}</small></CadInspectorTitle>}
     <dl className="cad-properties-list">{propertyRows.map(row => <div key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>
   </div>;
   const sketchDimensionAvailable = profile && cadSketchDimensionQuantities(profile.geometry).some(quantity => !inspectCadSketchDimensions(profile, document.parameters).some(dimension => dimension.field === (quantity === 'diameter' ? 'radius' : quantity)));
@@ -1186,7 +1196,6 @@ export function CadWorkbench(props: CadWorkbenchProps) {
 
   const header = <div className="cad-header" aria-label="CAD document commands" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}>
       <Button className="cad-back" aria-label="Workbench" title="Back to Workbench" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button>
-      <Input className="cad-document-name" aria-label="Part name" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNameDraft(document.name); setNamePending(false); } }} />
       <span className={`cad-save-state ${dirty ? 'is-dirty' : ''}`}>{dirty ? 'Unsaved' : ''}</span>
       {buildState === 'error' && <span className="cad-header-build-state" role="status">Feature needs attention</span>}
       <div className="cad-header-actions">
@@ -1249,7 +1258,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
         <div hidden={inspectorCollapsed}>
         {resolvingTopology && <div className="cad-topology-resolving" role="status"><Loader2 size={14} className="cad-spin" /><span>Verifying {resolvingTopology === 'shell' ? 'opening face' : 'selected edges'}…</span><Button onClick={cancel}>Cancel</Button></div>}
         {currentProperties && !featureEditorOpen && !currentTopologyPick && !newFeature && !sketch && !resolvingTopology && props.onInspectTopology && topologyReady && build && (topologySelection?.bodyId ?? (selected && currentBodyIds.includes(selected.id) ? selected.id : null)) && <CadTopologyInspector key={`${props.documentVersion}-${build.buildId}-${topologySelection?.bodyId ?? selectedId}-${pickMode}`} bodyId={topologySelection?.bodyId ?? selectedId ?? ''} buildId={build.buildId} documentVersion={props.documentVersion} pickMode={pickMode === 'auto' ? topologySelection?.picks[0]?.kind ?? 'body' : pickMode} selection={topologySelection} locked={locked} onInspect={props.onInspectTopology} onSelect={(pick, additive) => pickTopology({ bodyId: topologySelection?.bodyId ?? selectedId ?? '', pick }, additive)} onClear={() => run(() => viewportControls.apply({ kind: 'clear-topology' }))} />}
-        <fieldset className="cad-editor-fieldset" disabled={commandSubmission.applying || drawingPending && !curveCreation || parameterPending || dimensionPending || namePending || treeRenamePending || storageBusy || resolvingTopology !== null}>{curveCreation ? <CadCurveCreationFields draft={curveCreation} document={document} onChange={setNewFeature} onCancel={cancel} /> : newFeature ? <CadFeatureEditor onDepthInteractionReady={publishDepthInteraction} onReferencePick={requestReferencePick} key={`${newFeature.id}-${cancelSignal}`} feature={newFeature} document={document} documentVersion={props.documentVersion} onFeaturePreview={props.onFeaturePreview} featurePreview={props.featurePreview} previewEnabled={previewEnabled} isNew currentBodyIds={currentBodyIds} onApply={applyFeature} onCancel={cancel} onPendingChange={setEditorPending} /> : currentAreaRepair ? <CadSketchAreaRepairPanel key={currentAreaRepair.localVersion} formId={areaRepairFormId} document={document} documentVersion={props.documentVersion} inspection={currentAreaRepair} interactionLocked={storageBusy || externalWorkflowOpen || commandSubmission.applying} onReferencePick={requestReferencePick} onReadyChange={setAreaRepairReady} onFinish={finishSketchWithAreas} onCancel={() => setAreaRepair(null)} /> : currentDimensionPick ? <div className="cad-property-form"><div className="cad-property-title">Dimension</div><span role="status">{dimensionGeometryPick?.label}</span><div className="cad-form-actions"><Button onClick={cancelDimensionPick}>Cancel</Button></div></div> : profileCopyCommand ? <CadSketchProfileCopyEditor key={profileCopyCommand.token} document={document} documentVersion={props.documentVersion}
+        <fieldset className="cad-editor-fieldset" disabled={commandSubmission.applying || drawingPending && !curveCreation || parameterPending || dimensionPending || namePending && !partPropertiesOpen || treeRenamePending || storageBusy || resolvingTopology !== null}>{curveCreation ? <CadCurveCreationFields draft={curveCreation} document={document} onChange={setNewFeature} onCancel={cancel} /> : newFeature ? <CadFeatureEditor onDepthInteractionReady={publishDepthInteraction} onReferencePick={requestReferencePick} key={`${newFeature.id}-${cancelSignal}`} feature={newFeature} document={document} documentVersion={props.documentVersion} onFeaturePreview={props.onFeaturePreview} featurePreview={props.featurePreview} previewEnabled={previewEnabled} isNew currentBodyIds={currentBodyIds} onApply={applyFeature} onCancel={cancel} onPendingChange={setEditorPending} /> : currentAreaRepair ? <CadSketchAreaRepairPanel key={currentAreaRepair.localVersion} formId={areaRepairFormId} document={document} documentVersion={props.documentVersion} inspection={currentAreaRepair} interactionLocked={storageBusy || externalWorkflowOpen || commandSubmission.applying} onReferencePick={requestReferencePick} onReadyChange={setAreaRepairReady} onFinish={finishSketchWithAreas} onCancel={() => setAreaRepair(null)} /> : currentDimensionPick ? <div className="cad-property-form"><div className="cad-property-title">Dimension</div><span role="status">{dimensionGeometryPick?.label}</span><div className="cad-form-actions"><Button onClick={cancelDimensionPick}>Cancel</Button></div></div> : profileCopyCommand ? <CadSketchProfileCopyEditor key={profileCopyCommand.token} document={document} documentVersion={props.documentVersion}
           request={profileCopyCommand.request} onEditMany={props.onEditMany} onPrepareEdits={props.onPrepareEdits}
           onPreviewDocument={setProfileCopyPreview} onPendingChange={setEditorPending}
           interactionLocked={pendingOtherCommands || drawingPending || storageBusy || externalWorkflowOpen || Boolean(props.sketchEdit)}

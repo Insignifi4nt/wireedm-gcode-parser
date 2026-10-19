@@ -60,7 +60,7 @@ export function placeCadSketchGraph({ graph, parameters, selections, anchor, tar
   }
   const before = new Map(graph.points.map(point => [point.id, { x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters) }]));
   const after = new Map(before), changed = new Set<string>();
-  const precision = () => new CadError('sketch-placement-precision', 'The requested placement cannot preserve this shape at these coordinates.');
+  const precision = () => new CadError('sketch-placement-precision', 'This shape cannot be placed exactly here. Choose a position nearer the origin.');
   for (const id of points) {
     const point = before.get(id); if (!point) throw new CadError('missing-sketch-point', 'A placement support point no longer exists.');
     const local = { x: point.x - origin[0], y: point.y - origin[1] };

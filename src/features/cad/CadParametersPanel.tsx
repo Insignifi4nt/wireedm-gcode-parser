@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -61,7 +62,7 @@ export function CadParametersPanel({ controls, document: cadDocument, onEditMany
   useImperativeHandle(controls, () => ({ create: kind => begin(kind === 'group' ? { kind: 'group', originalId: null, name: '', error: '' }
     : { kind: 'parameter', originalName: null, name: '', value: '', groupId: '', error: '' }) }));
   const update = (values: Partial<Pick<Editor, 'name' | 'error'>>) => setEditor(current => current ? { ...current, ...values } : current);
-  const report = (error: unknown) => update({ error: error instanceof Error ? error.message : 'Unable to apply this change.' });
+  const report = (error: unknown) => update({ error: userFacingMessage(error, 'Unable to apply this change.') });
   const assertCurrent = () => { if (editorDocument.current !== cadDocument) throw new Error('The part changed while this editor was open. Cancel and reopen it to edit the current values.'); };
   const apply = () => {
     if (!editor || interactionLocked || submission.applying) return;

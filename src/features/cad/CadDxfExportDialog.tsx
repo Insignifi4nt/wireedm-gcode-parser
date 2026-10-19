@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -66,7 +67,7 @@ export function CadDxfExportDialog({ document: cadDocument, bodies, version, cur
       const entities = feature?.kind === 'sketch' && kind === 'sketch' ? cadSketchToEntities(feature, cadDocument.parameters)
         : feature?.kind === 'curve' && kind === 'curve' ? resolveCadCurveGeometry(feature, cadDocument.parameters).entities : [];
       return { entities, error: entities.length ? null : 'Choose a source with exportable geometry.' };
-    } catch (cause) { return { entities: [], error: cause instanceof Error ? cause.message : 'Cannot resolve this source.' }; }
+    } catch (cause) { return { entities: [], error: userFacingMessage(cause, 'Cannot resolve this source.') }; }
   }, [cadDocument, kind, sketchId, curveId, offset]);
   const reviewed = !stale && review?.key === key ? review.result : null;
   const previewEntities = kind === 'section' ? reviewed?.entities ?? [] : source.entities;
@@ -88,7 +89,7 @@ export function CadDxfExportDialog({ document: cadDocument, bodies, version, cur
         if (!controller.signal.aborted && liveKey.current === key) onClose();
       }
     } catch (cause) {
-      if (!controller.signal.aborted && liveKey.current === key) setError(cause instanceof Error ? cause.message : 'DXF export failed.');
+      if (!controller.signal.aborted && liveKey.current === key) setError(userFacingMessage(cause, 'DXF export failed.'));
     } finally { if (pending.current === controller) { pending.current = null; setBusy(null); } }
   }
   return <dialog ref={dialog} aria-label="Export DXF" className="cad-dxf-export" onCancel={event => { event.preventDefault(); close(); }}>

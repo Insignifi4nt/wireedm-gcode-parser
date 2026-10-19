@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -17,7 +18,7 @@ export function CadExpressionBinding({ label, expression, parameters, resolved, 
   useLayoutEffect(() => { pendingCallback.current?.(draft !== String(expression)); }, [draft, expression]);
   useEffect(() => () => pendingCallback.current?.(false), []);
   let result: number | undefined, issue = '';
-  try { result = evaluateCadScalar(draft, parameters); } catch (error) { issue = error instanceof Error ? error.message : 'Invalid expression.'; }
+  try { result = evaluateCadScalar(draft, parameters); } catch (error) { issue = userFacingMessage(error, 'Invalid expression.'); }
   const aliases = Object.keys(parameters);
   return <div className="cad-expression-binding">
     <p>{description ?? 'A number is independent. A document parameter or expression keeps this value linked. The profile and any parameter drafts are saved together when you Apply.'}</p>

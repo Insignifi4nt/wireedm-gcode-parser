@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Eye, EyeOff, FitViewIcon, Maximize, SimulationIcon, View, ViewTopIcon } from '@wire-edm/icons-react';
@@ -30,7 +31,7 @@ export function SimulationViewport(props: Props) {
     sceneRef.current = null;
     failed?.dispose();
     latest.current.onCaptureReady(null);
-    setError(reason instanceof Error ? reason.message : 'The 3D renderer could not draw the scene.');
+    setError(userFacingMessage(reason, 'The 3D renderer could not draw the scene.'));
     setStatus('error');
   }, []);
   const withScene = useCallback((action: (scene: SimulationScene) => void) => {

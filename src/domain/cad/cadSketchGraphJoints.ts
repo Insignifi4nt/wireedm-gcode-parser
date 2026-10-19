@@ -41,7 +41,7 @@ export function resolveCadSketchGraphJoints(graph: CadSketchGraph, points: Reado
     for (let left = 0; left < members.length; left++) for (let right = left + 1; right < members.length; right++) {
       const a = members[left], b = members[right];
       if (Math.hypot(a.x - b.x, a.y - b.y) > cadPathClosureTolerance([a, b])) {
-        throw new CadError('sketch-graph-precision', 'Coincident points span more than one roundoff-consistent joint.');
+        throw new CadError('sketch-graph-precision', 'Points that should meet are too far apart to join. Move them together or remove the coincidence.');
       }
     }
   }

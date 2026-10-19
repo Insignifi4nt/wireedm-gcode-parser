@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { downloadProgramFile } from '@/domain/post/downloadProgramFile';
@@ -20,7 +21,7 @@ export function StorageReviewPanel({ workbench, disabled }: { workbench: Connect
       const result = await inspectWorkbenchStorage(workbench);
       if (current === generation.current) setReport(result);
     } catch (failure) {
-      if (current === generation.current) setError(failure instanceof Error ? failure.message : 'Storage review failed.');
+      if (current === generation.current) setError(userFacingMessage(failure, 'Storage review failed.'));
     } finally {
       if (current === generation.current) setScanning(false);
     }

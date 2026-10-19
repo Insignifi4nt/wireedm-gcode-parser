@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CadDocument, CadMesh } from '@/domain/cad/cadDocument';
 import type { CadTopologyPickSet, CadTopologyResolvePicksRequest, CadTopologyResolvePicksResult } from '@/domain/cad/cadTopology';
@@ -38,7 +39,7 @@ export function useCadFeatureTopologyPick(command: CadFeatureTopologyPickCommand
       if (source.documentId !== document.id || source.version !== version || source.featureId !== command.request.featureId || source.bodyId !== command.request.bodyId
         || source.result.diagnostics.length || !source.result.meshes.some(mesh => mesh.featureId === source.bodyId)) throw new Error('The feature input changed. Cancel and choose its geometry again.');
       setState({ command, source, selection: null, busy: false, error: null });
-    }).catch((cause: unknown) => { if (current()) setState({ command, source: null, selection: null, busy: false, error: cause instanceof Error ? cause.message : 'Unable to show the feature input.' }); });
+    }).catch((cause: unknown) => { if (current()) setState({ command, source: null, selection: null, busy: false, error: userFacingMessage(cause, 'Unable to show the feature input.') }); });
     return () => { owner.abort.abort(); if (job.current === owner) job.current = null; if (token) operations.release(token); };
   }, [command, document, version, Boolean(operations)]);
   const current = state?.command === command && job.current?.document === document && job.current.version === version && command?.expectedVersion === version ? state : null;
@@ -58,7 +59,7 @@ export function useCadFeatureTopologyPick(command: CadFeatureTopologyPickCommand
       const incoming: CadTopologyPickSet = { documentVersion: version, buildId: source.result.buildId, bodyId: source.bodyId, picks: [hit.pick] };
       validateTopologySelection(incoming, { documentVersion: version, buildId: source.result.buildId, meshes: source.result.meshes, ready: true });
       setState(previous => previous?.command === command ? { ...previous, selection: mergeTopologySelection(previous.selection, incoming, additive), error: null } : previous);
-    } catch (cause) { setState(previous => previous?.command === command ? { ...previous, error: cause instanceof Error ? cause.message : 'Unable to select this geometry.' } : previous); }
+    } catch (cause) { setState(previous => previous?.command === command ? { ...previous, error: userFacingMessage(cause, 'Unable to select this geometry.') } : previous); }
   };
   const finish = async () => {
     const selection = current?.selection, owner = job.current;
@@ -70,7 +71,7 @@ export function useCadFeatureTopologyPick(command: CadFeatureTopologyPickCommand
       if (!owns()) return;
       if (result.bodyId !== source.bodyId || result.buildId !== source.result.buildId || result.purpose !== command.purpose) throw new Error('The topology result does not belong to this feature input.');
       command.onSelect(result);
-    } catch (cause) { if (owns()) setState(previous => previous?.command === command ? { ...previous, busy: false, error: cause instanceof Error ? cause.message : 'Unable to use this selection.' } : previous); }
+    } catch (cause) { if (owns()) setState(previous => previous?.command === command ? { ...previous, busy: false, error: userFacingMessage(cause, 'Unable to use this selection.') } : previous); }
     finally { owner.resolving = false; }
   };
   const meshes = useMemo(() => source?.result.meshes.filter(mesh => mesh.featureId === source.bodyId) ?? noMeshes, [source]);

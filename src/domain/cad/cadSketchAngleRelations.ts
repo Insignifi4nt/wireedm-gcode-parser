@@ -74,13 +74,13 @@ export function checkCadSketchAngleRelation(graph: CadSketchGraph, relation: Cad
 
 function supportIntersection(a: Direction, b: Direction): Readonly<Point2> {
   const determinant = cross(a, b);
-  if (Math.abs(determinant) <= 32 * Number.EPSILON) throw new CadError('sketch-angle-precision', 'These line supports have no stable finite angle vertex.');
+  if (Math.abs(determinant) <= 32 * Number.EPSILON) throw new CadError('sketch-angle-precision', 'These lines are too close to parallel to measure an angle between them.');
   const delta = { x: b.start.x - a.start.x, y: b.start.y - a.start.y }, distance = cross(delta, b) / determinant;
   const vertex = { x: a.start.x + a.x * distance, y: a.start.y + a.y * distance };
   if (!Number.isFinite(vertex.x) || !Number.isFinite(vertex.y) || Math.abs(vertex.x) > 1e9 || Math.abs(vertex.y) > 1e9
     || [a, b].some(line => Math.abs(cross({ x: vertex.x - line.start.x, y: vertex.y - line.start.y }, line))
       > cadPathClosureTolerance([vertex, line.start, line.end])))
-    throw new CadError('sketch-angle-precision', 'The angle vertex cannot be placed reliably at these coordinates.');
+    throw new CadError('sketch-angle-precision', 'The angle\'s corner cannot be placed reliably at these coordinates. Move the lines nearer the origin.');
   return Object.freeze(vertex);
 }
 function geometry(vertex: Readonly<Point2>, a: Direction, b: Direction, sense: CadSketchAngleRelation['sense']): CadSketchLineAngleGeometry {

@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Input } from '@/components/ui/input';
 import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { X } from '@wire-edm/icons-react';
@@ -87,7 +88,7 @@ export function ProjectActionDialog({
       }
       onClose();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : fallbackError);
+      setErrorMessage(userFacingMessage(error, fallbackError));
     } finally {
       savingRef.current = false;
       setIsSaving(false);

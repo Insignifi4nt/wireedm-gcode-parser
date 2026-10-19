@@ -157,7 +157,7 @@ export function resolveCadSweepClearance(curve: CadResolvedCurve, profileRadiusM
   }
   const band = Math.max(CAD_SWEEP_TOPOLOGY_TOLERANCE, roundingFactor * Number.EPSILON * scale);
   if (!Number.isFinite(profileRadiusMm) || profileRadiusMm <= 0 || accumulated > CAD_SWEEP_NATIVE_PRECISION) {
-    throw new CadError('unsupported-sweep-precision', `Sweep frame uncertainty exceeds ${CAD_SWEEP_NATIVE_PRECISION} mm. Move the sketch and curve nearer the origin or simplify the curve.`);
+    throw new CadError('unsupported-sweep-precision', 'The sweep cannot follow this curve precisely enough. Move the sketch and curve nearer the origin or simplify the curve.');
   }
   const radius = nextUp(profileRadiusMm + 4 * band);
   let radiusMargin = Infinity;
@@ -166,7 +166,7 @@ export function resolveCadSweepClearance(curve: CadResolvedCurve, profileRadiusM
     if (length <= 8 * band) throw new CadError('unsupported-sweep-precision', `Curve edge ${index + 1} is too short for the sweep precision. Lengthen or remove this edge.`);
     if (edge.type === 'arc') {
       radiusMargin = Math.min(radiusMargin, edge.radius - radius);
-      if (edge.radius - radius <= 4 * band) throw new CadError('unsupported-sweep-clearance', `Curve arc ${index + 1} radius ${edge.radius} mm must exceed the section envelope ${radius} mm with precision reserve.`);
+      if (edge.radius - radius <= 4 * band) throw new CadError('unsupported-sweep-clearance', `Curve arc ${index + 1} (radius ${edge.radius} mm) is too tight for a section reaching ${profileRadiusMm} mm from the curve. Use a larger arc radius or a smaller section.`);
     }
     if (index === 0) continue;
     const previous = curve.entities[index - 1]; const a = tangent(previous, true); const b = tangent(edge);
@@ -195,7 +195,7 @@ export function resolveCadSweepClearance(curve: CadResolvedCurve, profileRadiusM
         }
       } else {
         const lower = cadSweepEdgeDistanceLowerBound(edges[a], edges[b], band); separation = Math.min(separation, lower);
-        if (lower <= 4 * band) throw new CadError('unsupported-sweep-clearance', `Sweep envelope edges ${a + 1} and ${b + 1} meet or are within the ${4 * band} mm precision reserve. Reduce the section or separate the curve.`);
+        if (lower <= 4 * band) throw new CadError('unsupported-sweep-clearance', `The swept outline would touch itself near curve edges ${a + 1} and ${b + 1}. Reduce the section or move those parts of the curve apart.`);
       }
     }
     active.push(entry);

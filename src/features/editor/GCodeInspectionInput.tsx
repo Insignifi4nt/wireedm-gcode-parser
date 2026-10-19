@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useRef, useState } from 'react';
@@ -34,7 +35,7 @@ export function GCodeInspectionInput({ onInspect }: {
             setReading(true);
             setError(null);
             try { inspect(await readGCodeInspectionFile(file), file.name); }
-            catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not read this file. Choose it again or paste its text.'); }
+            catch (cause) { setError(userFacingMessage(cause, 'Could not read this file. Choose it again or paste its text.')); }
             finally { setReading(false); }
           }} />
         <p className="text-xs text-muted-foreground">Open a text file or paste code. No project, machine setup, or folder access required.</p>

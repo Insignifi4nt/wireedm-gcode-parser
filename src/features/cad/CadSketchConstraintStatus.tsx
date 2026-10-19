@@ -1,3 +1,4 @@
+import { readableMessage, userFacingMessage } from '@/lib/userMessage';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
 import { Button } from '@/components/ui/button';
@@ -22,13 +23,13 @@ export function CadSketchConstraintStatus({ document, sketch, version, inspect, 
     void callback.current?.(sketch.id, version, controller.signal).then(inspection => {
       if (!controller.signal.aborted) { setResult({ document, version, sketchId: sketch.id, inspection }); setFailure(null); }
     }, cause => {
-      if (!controller.signal.aborted) setFailure({ document, version, sketchId: sketch.id, message: cause instanceof Error ? cause.message : 'Constraint analysis is unavailable.' });
+      if (!controller.signal.aborted) setFailure({ document, version, sketchId: sketch.id, message: userFacingMessage(cause, 'Constraint analysis is unavailable.') });
     });
     return () => controller.abort();
   }, [document, sketch.id, version, enabled, available, hasGraph, retry]);
   const current = result?.document === document && result.version === version && result.sketchId === sketch.id ? result.inspection : null;
   const analysis = current?.analysis, freedom = analysis?.diagnostics.degreesOfFreedom;
-  const message = failure?.document === document && failure.version === version && failure.sketchId === sketch.id ? failure.message : analysis && 'message' in analysis ? analysis.message : null;
+  const message = failure?.document === document && failure.version === version && failure.sketchId === sketch.id ? failure.message : analysis && 'message' in analysis ? readableMessage(analysis.message) : null;
   const unavailable = Boolean(message) && (!analysis || analysis.kind === 'unavailable');
   useLayoutEffect(() => {
     onFreedom?.(enabled && !unavailable && analysis?.kind === 'solved' ? analysis.diagnostics.degreesOfFreedom : null);

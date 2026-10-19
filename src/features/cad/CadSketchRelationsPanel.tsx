@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -92,7 +93,7 @@ function selectedTangent(selection: readonly CadSketchGraphSelection[], graph: C
     .map(second => [{entityId:a.id,pointId:first},{entityId:b.id,pointId:second}] as const));
   if (joints.length !== 1) return { endpoints: null, reason: joints.length ? 'Select a line and arc with one unambiguous shared endpoint.' : 'Join these endpoints with Coincident before adding Tangent.' };
   try { resolveCadSketchTangentJoint(graph,{endpoints:joints[0]}); return {endpoints:joints[0],reason:null}; }
-  catch (cause) { return {endpoints:null,reason:cause instanceof Error ? cause.message : 'This joint is unavailable.'}; }
+  catch (cause) { return {endpoints:null,reason:userFacingMessage(cause, 'This joint is unavailable.')}; }
 }
 function sameTangent(relation: CadSketchGraphRelation, endpoints: CadSketchTangentJointRelation['endpoints'] | null) {
   return relation.kind === 'tangent-joint' && endpoints !== null && endpoints.every(endpoint => relation.endpoints.some(other => other.entityId === endpoint.entityId && other.pointId === endpoint.pointId));
@@ -199,7 +200,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
     if (!existing && orientation) return { relation: null, choose: false, error: `Remove ${relationLabel(orientation)} before adding Angle.` };
     try { return { relation: existing ?? createCadSketchLineAngleRelation({ graph, parameters: cadDocument.parameters, lineIds: linePair, relationId: angleId }), choose: false, error: null }; }
     catch (cause) { return { relation: null, choose: cause instanceof CadError && cause.code === 'ambiguous-sketch-angle-sector',
-      error: cause instanceof CadError && cause.code === 'ambiguous-sketch-angle-sector' ? null : cause instanceof Error ? cause.message : 'Unable to read this angle.' }; }
+      error: cause instanceof CadError && cause.code === 'ambiguous-sketch-angle-sector' ? null : userFacingMessage(cause, 'Unable to read this angle.') }; }
   });
   const [choosingAngle, setChoosingAngle] = useState(initialAngle?.choose ?? false);
   const latest = useRef({ document: cadDocument, sketch, graph }); latest.current = { document: cadDocument, sketch, graph };
@@ -395,14 +396,14 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         ?? distanceForPair(source.graph, dimensionPair, axis)
         ?? distanceRelation(draft, dimensionPair, parameters, axis);
       changeRelation(relation); setActiveRelationId(relation.id);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to read this distance.'); }
+    } catch (cause) { setError(userFacingMessage(cause, 'Unable to read this distance.')); }
   };
   const addRadialSize = () => {
     if (!selectedEntity) return;
     try {
       const relation = acceptedRadial ?? radialDimension(draft, selectedEntity, parameters);
       if (relation) { changeRelation(relation); setActiveRelationId(relation.id); }
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to read this curve size.'); }
+    } catch (cause) { setError(userFacingMessage(cause, 'Unable to read this curve size.')); }
   };
   const addReference = () => {
     if (!passiveMeasurement) return;
@@ -415,7 +416,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const makeDriving = () => {
     if (activeRelation?.kind !== 'reference-dimension' || drivingLock || !measurementDocument || !measurementGraph) return;
     try { changeRelation(cadSketchReferenceDimensionToDriving(measurementGraph, measurementDocument.parameters, activeRelation)); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to drive this measurement.'); }
+    catch (cause) { setError(userFacingMessage(cause, 'Unable to drive this measurement.')); }
   };
   const referenceValue = (relation: CadSketchReferenceDimension) => {
     if (!measurementDocument || !measurementGraph) return '—';
@@ -430,7 +431,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       changeRelation(relation); setActiveRelationId(relation.id); setChoosingAngle(false);
     } catch (cause) {
       if (cause instanceof CadError && cause.code === 'ambiguous-sketch-angle-sector') { setError(null); setChoosingAngle(true); }
-      else setError(cause instanceof Error ? cause.message : 'Unable to read this angle.');
+      else setError(userFacingMessage(cause, 'Unable to read this angle.'));
     }
   };
   const togglePointAxis = (axis: 'x' | 'y', enabled: boolean) => {
@@ -475,7 +476,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         else reduceCadEditIntents(cadDocument, edits);
       }
       return { edits, issue: null, created };
-    } catch (cause) { return { edits: null, issue: cause instanceof Error ? cause.message : 'Invalid sketch relation.' }; }
+    } catch (cause) { return { edits: null, issue: userFacingMessage(cause, 'Invalid sketch relation.') }; }
   }, [parameterEdits, parameters, move, corner, cornerIds, singleton?.kind, singleton?.id, originalEntity, selectedEntity, originalPoint, selectedPoint, source, draft, cadDocument, sketch.id, selection, onPrepareEdits]);
   const scalarPending = Object.keys(fieldIssues).length > 0 || Object.values(relationPending).some(Boolean);
   const changed = Boolean(candidate.edits?.length) || candidate.issue !== null;
@@ -517,7 +518,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       setError(null);
       submission.submit(signal => onEditMany(candidate.edits ?? [], signal), () => {
         reset(); if (candidate.created) onCornerAccepted?.(candidate.created.entityId, candidate.created.relationId);
-      }, cause => setError(cause instanceof CadSketchPreparationError ? cause.feedback : cause instanceof Error ? cause.message : 'Unable to apply this sketch relation.'));
+      }, cause => setError(cause instanceof CadSketchPreparationError ? cause.feedback : userFacingMessage(cause, 'Unable to apply this sketch relation.')));
     }}>
     <div className="cad-property-title">{dimensionOnly ? 'Dimension' : move ? 'Move selection' : corner ? corner.kind === 'fillet' ? 'Sketch fillet' : 'Sketch chamfer' : pointPair ? 'Point pair' : linePair ? 'Line pair' : curvePair ? 'Curve pair' : selection.length > 1 ? `${selection.length} selected` : selectedPoint ? 'Point' : selectedEntity?.kind === 'circle' ? 'Circle' : selectedEntity?.kind === 'line' ? 'Line' : 'Arc'}
       {move && <CadContextHelp label="Move selection">Translate the selected points and edges together without changing their sizes. Shared endpoints also change their incident edges. Outside points and existing dimensions stay in place; a blocked move rejects instead of stretching the selection or releasing constraints.</CadContextHelp>}

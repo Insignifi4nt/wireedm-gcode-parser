@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 import { resolveCadSketchMidpointOperands } from '@/domain/cad/cadSketchMidpointRelations';
@@ -37,7 +38,7 @@ const isCurve = (entity: Entity | undefined): entity is Extract<Entity, { kind: 
 const samePoints = (ids: readonly string[], pair: readonly [string, string]) => ids.length === 2 && ids.includes(pair[0]) && ids.includes(pair[1]);
 const sameIds = (relation: CadSketchGraphRelation, pair: readonly [string, string]) => 'lineIds' in relation ? samePoints(relation.lineIds, pair)
   : 'curveIds' in relation ? samePoints(relation.curveIds, pair) : 'pointIds' in relation && samePoints(relation.pointIds, pair);
-const attempt = (check: () => unknown) => { try { check(); return null; } catch (cause) { return cause instanceof Error ? cause.message : 'These picks cannot take this constraint.'; } };
+const attempt = (check: () => unknown) => { try { check(); return null; } catch (cause) { return userFacingMessage(cause, 'These picks cannot take this constraint.'); } };
 
 /**
  * The next step of a tool-first positional constraint. `picks` are in click order and already passed the previous step's eligible ids.

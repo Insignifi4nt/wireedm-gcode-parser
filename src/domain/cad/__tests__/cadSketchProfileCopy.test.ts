@@ -142,7 +142,7 @@ describe('independent editable profile copy', () => {
     expect(result.sketch.graph?.entities).toEqual([{ id: 'copy_e0', kind: 'circle', centerPointId: 'copy_c0', radius: 5, construction: false }]);
     expect(measure(result.sketch).areaMm2).toBeCloseTo(25 * Math.PI, 10);
     const near = source({ kind: 'slot', x: 2, y: -3, length: 10 + 5e-8, width: 10, angle: 30 }), before = JSON.stringify(near);
-    expect(() => prepareCadSketchProfileCopy({ sketch: near, parameters: { sourceOffset: 0 }, ...request })).toThrow('preserve');
+    expect(() => prepareCadSketchProfileCopy({ sketch: near, parameters: { sourceOffset: 0 }, ...request })).toThrow('cannot keep this shape exact');
     expect(JSON.stringify(near)).toBe(before);
   });
 });

@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -100,7 +101,7 @@ export function CadSketchProfilePanel({ document: cadDocument, sketch, profile, 
       const requiresSolve = needsCadSketchPreparation(cadDocument, edits);
       if (edits.length) reduceCadEditIntents(cadDocument, edits);
       return { edits, issue: null, requiresSolve };
-    } catch (cause) { return { edits: null, document: null, issue: cause instanceof Error ? cause.message : 'Invalid sketch edit.' }; }
+    } catch (cause) { return { edits: null, document: null, issue: userFacingMessage(cause, 'Invalid sketch edit.') }; }
   }, [editor, cadDocument, sketch, profile]);
   const preparedPreview = useCadPreparedPreview(cadDocument, candidate.edits, onPrepareEdits, Boolean(editor && !submission.applying));
   const candidateIssue = candidate.issue ?? (preparedPreview.kind === 'error' ? preparedPreview.message : null);
@@ -114,7 +115,7 @@ export function CadSketchProfilePanel({ document: cadDocument, sketch, profile, 
     return () => { onPreviewDocument?.(null); onPreviewProfile?.(null); onPreviewParameters?.(null); };
   }, [preparedPreview, candidate.edits, candidate.requiresSolve, editor !== null, profile.id, sketch.id, onPreviewDocument, onPreviewProfile, onPreviewParameters]);
   const commit = (edits: readonly CadEdit[], accepted = close) => submission.submit(signal => edits.length ? onEditMany(edits, signal) : undefined, accepted,
-    cause => setError(cause instanceof Error ? cause.message : 'Unable to apply this sketch edit.'));
+    cause => setError(userFacingMessage(cause, 'Unable to apply this sketch edit.')));
   const activeExpression = editor?.kind === 'dimension' ? cadSketchDimensionScalar(profile, editor.quantity) : editor?.kind === 'fillet' && profile.geometry.kind === 'rectangle' ? profile.geometry.cornerRadius : null;
   const expressionDriven = typeof activeExpression === 'string' && !Number.isFinite(Number(activeExpression));
   const compoundDriven = expressionDriven && !Object.hasOwn(cadDocument.parameters, activeExpression.trim());
@@ -132,7 +133,7 @@ export function CadSketchProfilePanel({ document: cadDocument, sketch, profile, 
         next = { ...profile, geometry: { ...profile.geometry, cornerRadius: evaluateCadScalar(profile.geometry.cornerRadius, cadDocument.parameters) } };
       }
       commit([{ kind: 'update-feature', feature: { ...sketch, profiles: sketch.profiles.map(entry => entry.id === profile.id ? next : entry) } }]);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to unlink this expression.'); }
+    } catch (cause) { setError(userFacingMessage(cause, 'Unable to unlink this expression.')); }
   };
   const remove = (id: string) => { if (blocked || editor) return; commit([{ kind: 'remove-sketch-dimension', sketchId: sketch.id, profileId: profile.id, dimensionId: id }], () => setError(null)); };
   return <div className="cad-sketch-profile-panel" onKeyDown={event => { if (event.key === 'Escape' && editor) { event.preventDefault(); event.stopPropagation(); close(); } }}>

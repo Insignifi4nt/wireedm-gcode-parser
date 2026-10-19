@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { useContext, useMemo, useRef } from 'react';
 import { CloseIcon, SelectIcon } from '@wire-edm/icons-react';
@@ -28,7 +29,7 @@ export function CadSketchRegionsField({ document, sketchId, selection, onChange 
         wholeAvailable: cadSketchSourceAvailability(source, 'extrude', document.parameters).kind === 'default-material',
         placement: resolveCadSketchPlacement(source, document.parameters, prepareCadDatumFrames(datum?.kind === 'datum-plane' ? [datum] : [], document.parameters)) };
     } catch (cause) {
-      return { kind: 'unavailable' as const, reason: cause instanceof Error ? cause.message : 'Correct the sketch before choosing its closed areas.' };
+      return { kind: 'unavailable' as const, reason: userFacingMessage(cause, 'Correct the sketch before choosing its closed areas.') };
     }
   }, [source, document.features, document.parameters, selection]);
   const count = cadSketchRegionSelectionCount(selection);

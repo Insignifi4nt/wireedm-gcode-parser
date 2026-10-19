@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Value } from '@sinclair/typebox/value';
 import { Button } from '@/components/ui/button';
@@ -43,7 +44,7 @@ export function useCadSketchCommandSession<P extends CadSketchCommandSessionProp
     submission.submit(signal => callbacks.current.onEditMany(edits, signal), () => {
       if (ended.current) return;
       ended.current = true; accept();
-    }, cause => { submitted.current = null; setError(cause instanceof Error ? cause.message : failure); });
+    }, cause => { submitted.current = null; setError(userFacingMessage(cause, failure)); });
   };
   /** Live check for deferred callbacks such as canvas picks; reads refs, never render-time values. */
   const closed = () => ended.current || applying.current || callbacks.current.interactionLocked || callbacks.current.document !== owner.document || callbacks.current.documentVersion !== owner.version;

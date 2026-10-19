@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
@@ -20,7 +21,7 @@ export function CadImportDialog({ file, onImport, onCancel }: {
     if (pending.current) return;
     pending.current = true; setBusy(true); setError(null);
     try { await onImport(units, dxf ? dxfKind : undefined); }
-    catch (cause) { if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(cause instanceof Error ? cause.message : 'Import failed.'); }
+    catch (cause) { if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(userFacingMessage(cause, 'Import failed.')); }
     finally { pending.current = false; setBusy(false); }
   }
   const button = 'border border-border px-3 py-1.5 text-xs disabled:opacity-40 hover:bg-accent';

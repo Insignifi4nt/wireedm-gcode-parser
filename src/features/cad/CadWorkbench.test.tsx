@@ -119,6 +119,13 @@ async function mount(initial: CadDocument = createCadDocument(), buildProps: Pic
   await act(async () => root.render(<Harness />));
 }
 
+/** The part name lives in the part's Properties, opened from the part row at the top of the tree. */
+async function partName() {
+  const field = () => container.querySelector<HTMLInputElement>('[aria-label="Part name"]');
+  if (!field()) await act(async () => container.querySelector<HTMLButtonElement>('.cad-tree-document')?.click());
+  const name = field(); if (!name) throw new Error('Part name missing.');
+  return name;
+}
 function button(label: string) {
   const found = [...document.querySelectorAll('button')].find((entry) => entry.getAttribute('aria-label') === label || entry.textContent?.trim() === label);
   if (!found) throw new Error(`Button "${label}" missing.`);
@@ -513,8 +520,7 @@ describe('CAD sketch interaction', () => {
   it('retains actual name-edit ownership after a synchronous command rejection', async () => {
     const onWorkflowChange = (open: boolean) => { workflow(open); currentSession.setWorkflowOpen(open); };
     await mount(solidDocument(), { build: null, buildState: 'idle', onWorkflowChange });
-    const before = currentSession.getSnapshot(), name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]');
-    if (!name) throw new Error('Part name missing.');
+    const before = currentSession.getSnapshot(), name = await partName();
     await act(async () => name.focus()); await input(name, '   '); await act(async () => name.blur());
     expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: true, canUndo: false });
     expect(name.value).toBe('   '); expect(workflow).toHaveBeenLastCalledWith(true);
@@ -1203,7 +1209,7 @@ describe('CAD sketch interaction', () => {
       currentSession.edit([{ kind: 'set-parameter', name: 'width', value: 50 }]); currentSession.undo();
     });
     const before = currentSession.getSnapshot(); expect(before.canUndo).toBe(true); expect(before.canRedo).toBe(true);
-    const name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]'); if (!name) throw new Error('Part name missing');
+    const name = await partName();
     await act(async () => name.focus()); await input(name, 'Discard this rename'); expect(currentSession.getSnapshot().workflowOpen).toBe(true);
     await act(async () => name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     expect(name.value).toBe('Reviewed part'); expect(document.activeElement).toBe(name);
@@ -1211,9 +1217,22 @@ describe('CAD sketch interaction', () => {
     await act(async () => name.blur());
     expect(currentSession.getSnapshot()).toEqual(before); expect(currentSession.getSnapshot().workflowOpen).toBe(false);
   });
+  it('keeps the part-name field editable while drafting and restores a rejected draft when Properties closes', async () => {
+    await mount(solidDocument()); const before = currentSession.getSnapshot();
+    const name = await partName();
+    await act(async () => name.focus()); await input(name, '   ');
+    expect(name.matches(':disabled')).toBe(false); expect(document.activeElement).toBe(name);
+    await act(async () => name.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+    expect(currentDocument).toBe(before.document); expect(name.matches(':disabled')).toBe(false);
+    await click('Close properties');
+    expect(container.querySelector('[aria-label="Part name"]')).toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('.cad-tree-document')?.disabled).toBe(false);
+    expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: false });
+    expect((await partName()).value).toBe(before.document.name);
+  });
   it('leaves composing Enter and Escape to the part-name input method', async () => {
     await mount(solidDocument()); const before = currentSession.getSnapshot();
-    const name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]'); if (!name) throw new Error('Part name missing');
+    const name = await partName();
     await act(async () => name.focus()); await input(name, '部品');
     for (const key of ['Enter', 'Escape']) {
       const composing = new KeyboardEvent('keydown', { key, isComposing: true, bubbles: true, cancelable: true });
@@ -1782,16 +1801,10 @@ describe('CAD sketch interaction', () => {
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
-  it.each(['name', 'parameter'] as const)('blocks a new path while a %s edit is pending without losing either field or history', async editor => {
+  it('blocks a new path while a parameter edit is pending without losing either field or history', async () => {
     await mount(); await startSketch(); await click('Path');
     const before = currentSession.getSnapshot();
-    let pendingField: HTMLInputElement;
-    if (editor === 'name') {
-      const name = container.querySelector<HTMLInputElement>('[aria-label="Part name"]');
-      if (!name) throw new Error('Part name missing'); pendingField = name; await input(name, 'Pending rename');
-    } else {
-      await parameterMenu('New parameter'); pendingField = field('Name'); await input(pendingField, 'wall'); await input(field('Value'), '3');
-    }
+    await parameterMenu('New parameter'); const pendingField = field('Name'); await input(pendingField, 'wall'); await input(field('Value'), '3');
     const pendingValue = pendingField.value;
     const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]');
     if (!canvas) throw new Error('Sketch canvas missing');
@@ -1799,8 +1812,7 @@ describe('CAD sketch interaction', () => {
     await canvasClick(300, 200); await canvasKey(' '); await canvasKey('ArrowRight'); await canvasKey(' ');
     expect(container.querySelector('[data-cad-path-segments]')).toBeNull(); expect(pendingField.value).toBe(pendingValue);
     expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: before.canUndo, workflowOpen: true });
-    if (editor === 'name') await act(async () => pendingField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
-    else await click('Cancel');
+    await click('Cancel');
     expect(currentSession.getSnapshot()).toEqual(before); expect(button('Line').disabled).toBe(false);
     await canvasKey(' '); await canvasKey('ArrowRight'); await canvasKey(' ');
     expect(container.querySelector('[data-cad-path-segments]')).not.toBeNull(); expect(button('Undo last').disabled).toBe(false);
@@ -2083,7 +2095,6 @@ describe('CAD sketch interaction', () => {
     await mount(solidDocument(), { build: topologyBuild, buildState: 'ready', onInspectTopology: inspectTopology, onResolveSelection: resolve });
     await selectTopology('edge'); await click('Fillet');
     expect(currentSession.getSnapshot().workflowOpen).toBe(true);
-    expect(container.querySelector<HTMLInputElement>('[aria-label="Part name"]')?.disabled).toBe(true);
     await click('Cancel');
     expect(signal?.aborted).toBe(true); expect(currentSession.getSnapshot().workflowOpen).toBe(false);
     await click('Chamfer');
@@ -2113,15 +2124,13 @@ describe('CAD sketch interaction', () => {
     expect(() => viewport().apply({ kind: 'select-topology', selection: { ...selected, picks: [...selected.picks] }, additive: false })).toThrow('solid build changed');
   });
 
-  it('uses one live shell header, retains its input while editing and restores the shell on CAD exit', async () => {
+  it('uses one live shell header, renames the part from its Properties and restores the shell on CAD exit', async () => {
     await mount(createCadDocument(), { build: null, buildState: 'idle' }, true);
     const header = container.querySelector('[data-app-header]');
-    const name = header?.querySelector<HTMLInputElement>('[aria-label="Part name"]');
-    if (!name) throw new Error('CAD header was not published into the shell.');
     expect(container.querySelectorAll('.cad-header')).toHaveLength(1);
     expect(header?.contains(button('Save'))).toBe(true);
+    const name = await partName(); expect(header?.contains(name)).toBe(false);
     await input(name, 'Edited part');
-    expect(header?.querySelector('[aria-label="Part name"]')).toBe(name);
     expect(button('Save').disabled).toBe(true);
     await act(async () => name.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
     expect(currentDocument.name).toBe('Edited part');

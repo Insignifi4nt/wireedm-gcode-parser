@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { useEffect, useRef, useState } from 'react';
 import type { CadLibraryEntry } from '@/domain/cad/cadStorage';
@@ -22,7 +23,7 @@ export function CadLibraryDialog({ entries, diagnostic, busy, loading = false, o
       {loading && <p className="py-8 text-center text-muted-foreground" role="status">Reading CAD documents...</p>}
       {!loading && !entries.length && <p className="py-8 text-center text-muted-foreground">No saved CAD documents in this workbench. Create a part and save it to build your library.</p>}
       {entries.map(entry => <Button key={entry.id} type="button" disabled={busy}
-        onClick={() => { void onOpen(entry.id).catch(error => setError(error instanceof Error ? error.message : 'Could not open document.')); }}
+        onClick={() => { void onOpen(entry.id).catch(error => setError(userFacingMessage(error, 'Could not open document.'))); }}
         className="flex w-full items-center justify-between border-b border-border px-2 py-3 text-left hover:bg-accent disabled:opacity-50">
         <span><strong className="block font-medium">{entry.name}</strong><span className="text-[10px] text-muted-foreground">{entry.featureCount} features · {new Date(entry.updatedAt).toLocaleString()}</span></span>
         <span className="text-primary">Open</span>

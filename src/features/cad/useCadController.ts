@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
 import type { CadBuildResult, CadDocument } from '@/domain/cad/cadDocument';
@@ -189,7 +190,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
         publishBuild(result, snapshot.version);
       }).catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setBuildState('error'); setErrorMessage(error instanceof Error ? error.message : 'CAD kernel could not build this model.');
+        setBuildState('error'); setErrorMessage(userFacingMessage(error, 'CAD kernel could not build this model.'));
       });
     }, 30);
     return () => { clearTimeout(timer); controller.abort(); };
@@ -216,7 +217,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     try { return await action(); }
     catch (error) {
       const aborted = (error instanceof Error || error instanceof DOMException) && error.name === 'AbortError';
-      if (!aborted) setErrorMessage(error instanceof Error ? error.message : 'CAD operation failed.');
+      if (!aborted) setErrorMessage(userFacingMessage(error, 'CAD operation failed.'));
       throw error;
     }
     finally { busy.current = false; setStorageBusy(false); }
