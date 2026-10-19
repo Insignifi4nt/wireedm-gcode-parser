@@ -78,12 +78,14 @@ it('waits for explicit intersection areas before requesting a native preview, th
   await act(async () => root.render(<CadFeatureEditor feature={feature} document={document} documentVersion="accepted" isNew
     onPendingChange={vi.fn()} onReferencePick={command => { owned = command; }} onFeaturePreview={preview} onApply={apply} onCancel={vi.fn()} />));
   expect(preview.mock.calls.every(([command]) => command.kind === 'clear')).toBe(true);
+  const hint = () => [...container.querySelectorAll('[role="status"]')].find(status => status.textContent === 'Choose the closed areas to pad before Apply');
+  expect(hint()).toBeDefined();
   const pick = container.querySelector<HTMLButtonElement>('[aria-label="Pick closed areas from model"]'); if (!pick) throw new Error('Area action missing.');
   await act(async () => pick.click());
   const picker = owned; if (picker?.kind !== 'pick-regions') throw new Error('Owned area selection missing.');
   const lens = picker.cells.pick({ x: 3, y: 0 }); if (!lens) throw new Error('Lens missing.');
   const selection = picker.cells.pack([lens.id]);
-  await act(async () => picker.onSelect(selection)); await act(async () => picker.onFinish());
+  await act(async () => picker.onSelect(selection)); await act(async () => picker.onFinish()); expect(hint()).toBeUndefined();
   expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'candidate', edits: [expect.objectContaining({ feature: { ...feature, regionSelection: selection } })] }));
   expect(apply).not.toHaveBeenCalled(); expect(document.features).toHaveLength(1);
 });

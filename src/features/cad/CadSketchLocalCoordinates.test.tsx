@@ -101,7 +101,8 @@ it('keeps far-origin pointer selection and keyboard drawing in world millimetres
     expect(Math.abs(Number(marker.getAttribute('cx')))).toBeLessThan(10); expect(Math.abs(Number(marker.getAttribute('cy')))).toBeLessThan(10);
   }
   await key(' ');
-  expect(added).toHaveBeenCalledExactlyOnceWith({ kind: 'circle', x: far, y: -far + 5, radius: 5 }, expect.any(AbortSignal));
+  // Free sketching keeps the keyboard cursor at the view centre rather than a grid node.
+  expect(added).toHaveBeenCalledExactlyOnceWith({ kind: 'circle', x: far + 2, y: -far + 3, radius: 5 }, expect.any(AbortSignal));
   expect(currentControls().getState()).toMatchObject({ centerMm: [far + 2, -far + 3], heightSpanMm: 30 });
 });
 

@@ -10,12 +10,33 @@ export const CadSketchGraphPickFilterSchema = Type.Union([Type.Literal('auto'), 
 export type CadSketchGraphPickFilter = Static<typeof CadSketchGraphPickFilterSchema>;
 
 /** A command borrows selection without enabling geometry edits or changing its frozen operands. */
+/** The sketch plane's own references: its origin and the two axes through it. */
+export const CAD_SKETCH_DATUMS = ['origin', 'x-axis', 'y-axis'] as const;
+export type CadSketchDatum = typeof CAD_SKETCH_DATUMS[number];
+export const cadSketchDatumLabels: Readonly<Record<CadSketchDatum, string>> = { origin: 'Origin', 'x-axis': 'X axis', 'y-axis': 'Y axis' };
+
 export interface CadSketchGeometryPick {
   readonly eligibleEntityIds: readonly string[];
   readonly eligiblePointIds: readonly string[];
+  /** Plane references that may complete this pick; omitted when the pick takes sketch geometry only. */
+  readonly eligibleDatums?: readonly CadSketchDatum[];
+  readonly pickedDatums?: readonly CadSketchDatum[];
   readonly label: string;
   onPick(selection: CadSketchGraphSelection): void;
+  onPickDatum?(datum: CadSketchDatum): void;
+  /** Finishes a pick that already has enough geometry, from Enter or a click on empty space. */
+  onConfirm?(): void;
   onCancel(): void;
+}
+/** Screen reach of a plane reference; the origin reaches a little further so it wins where the axes cross. */
+export const CAD_SKETCH_DATUM_PICK_PIXELS = 6;
+/** The eligible plane reference under a sketch-space point, nearest first, or null. */
+export function pickCadSketchDatum(point: readonly [number, number], millimetersPerPixel: number, eligible: readonly CadSketchDatum[]): CadSketchDatum | null {
+  if (!eligible.length || !Number.isFinite(millimetersPerPixel) || millimetersPerPixel <= 0) return null;
+  const reach = CAD_SKETCH_DATUM_PICK_PIXELS * millimetersPerPixel;
+  if (eligible.includes('origin') && Math.hypot(point[0], point[1]) <= reach * 1.5) return 'origin';
+  const axes = ([['x-axis', Math.abs(point[1])], ['y-axis', Math.abs(point[0])]] as const).filter(([datum, distance]) => eligible.includes(datum) && distance <= reach);
+  return axes.length ? axes.reduce((best, next) => next[1] < best[1] ? next : best)[0] : null;
 }
 export function cadSketchGeometryPickAllows(pick: CadSketchGeometryPick, selection: CadSketchGraphSelection): boolean {
   return (selection.kind === 'point' ? pick.eligiblePointIds : pick.eligibleEntityIds).includes(selection.id);

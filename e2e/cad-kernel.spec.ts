@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import type { CadDocument, CadFeature, CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools, callCadTool, cadContext } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool, cadContext, historyRow } from './cad-tool-helpers';
 
 const base = (id: string) => ({ id, name: id, suppressed: false });
 const source = (id: string, x: number): CadSketchFeature => ({ ...base(id), kind: 'sketch', plane: 'XY', offset: 0,
@@ -52,7 +52,8 @@ test('lazy production WASM worker constructs exact Boolean solids and exports ST
   expect(await callCadTool(page, 'cad_build', { expectedVersion: imported.version })).toMatchObject({
     diagnostics: [], totalBodies: 1, bodies: [{ featureId: 'Cut_result', name: 'Cut_result', volumeMm3: expect.closeTo(500, 7), solidCount: 1,
       boundsMm: { min: [0, 0, 0], max: [10, 10, 5] } }] });
-  await page.getByRole('button', { name: 'Select Cut_result in history', exact: true }).click();
+  await (await historyRow(page, 'Cut_result')).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Properties', exact: true }).click();
   await expect(page.getByRole('complementary', { name: 'Feature properties' })).toContainText('500 mm³');
   expect(wasmRequests).toHaveLength(1);
   const canvas = page.locator('.cad-viewport canvas');
@@ -102,10 +103,11 @@ test('an impossible edge operation retains the exact preceding body and reports 
   await page.getByRole('button', { name: 'Open notifications', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Notifications and agent activity' }).locator('[data-status-notification-type="error"]').filter({ hasText: 'Impossible_fillet' })).toHaveText(message);
   await page.keyboard.press('Escape');
-  const failedFeature = page.getByRole('button', { name: 'Select Impossible_fillet in history', exact: true });
+  const failedFeature = (await historyRow(page, 'Impossible_fillet'));
   await expect(failedFeature).toHaveAttribute('aria-description', /Fillet · Impossible_fillet · .+/);
   await expect(page.getByRole('status').filter({ hasText: 'Feature needs attention' })).toBeVisible();
-  await page.getByRole('button', { name: 'Select Box_A in history', exact: true }).click();
+  await (await historyRow(page, 'Box_A')).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Properties', exact: true }).click();
   await expect(page.getByRole('complementary', { name: 'Feature properties' })).toContainText('1,000 mm³');
   await page.getByRole('button', { name: 'File', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: 'Export STEP', exact: true })).toBeDisabled();

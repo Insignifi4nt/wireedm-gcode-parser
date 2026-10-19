@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools, callCadTool as call, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow } from './cad-tool-helpers';
 
 test('uses graph context Dimension and selected-set Move privately through a complete bored plate', async ({ page }) => {
   await prepareCadTools(page);
@@ -40,7 +40,7 @@ test('uses graph context Dimension and selected-set Move privately through a com
   const read = () => call(page, 'cad_get_feature', {
     expectedVersion: current.version, featureId: 'plate',
   }).then(result => result.feature);
-  await page.getByRole('button', { name: 'Select Bored plate in history', exact: true }).dblclick();
+  await (await historyRow(page, 'Bored plate')).dblclick();
   await expect(page.getByRole('button', { name: 'Cancel sketch edits', exact: true })).toBeVisible();
   const hole = page.locator('[data-cad-sketch-entity="hole"]');
   const second = page.locator('[data-cad-sketch-entity="second"]');

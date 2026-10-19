@@ -76,7 +76,12 @@ async function harness(geometry: CadProfile = rectangle, overrides: Partial<Comp
     return sketch.profiles[0];
   };
   const click = async (point: readonly [number, number]) => act(async () => svg.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1, button: 0, ...position(...point) })));
-  return { svg, session, translated, reshaped, pending, selected, error, added, menu, render, position, pointer, click, capture, release, profile, frame };
+  // Sketching is free by default; grid behaviour is opt-in.
+  const gridSnap = async () => {
+    const toggle = container.querySelector<HTMLInputElement>('input[aria-label="Snap to grid"]'); if (!toggle) throw new Error('Grid snap toggle missing.');
+    await act(async () => toggle.click());
+  };
+  return { svg, session, translated, reshaped, pending, selected, error, added, menu, render, position, pointer, click, capture, release, profile, frame, gridSnap };
 }
 
 describe('direct sketch contour manipulation', () => {
@@ -198,15 +203,18 @@ describe('direct sketch contour manipulation', () => {
     expect(h.translated).not.toHaveBeenCalled();
   });
 
-  it('snaps the dragged point to the grid, cancels its preview, and supports a keyboard point edit', async () => {
+  it('catches the dragged point on a nearby grid node, cancels its preview, and supports a keyboard point edit', async () => {
     const h = await harness({ kind: 'polygon', points: [[0, 0], [22, 2], [20, 20], [0, 20]] });
+    await h.gridSnap();
     await h.render({ onMoveHandle: h.reshaped });
     const initial = h.session.getSnapshot();
     await h.pointer('pointerdown', [22, 2]); await h.pointer('pointermove', [26, 3]);
     await act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     await h.pointer('pointerup', [26, 3]);
     expect(h.session.getSnapshot()).toEqual(initial); expect(h.reshaped).not.toHaveBeenCalled();
-    await h.pointer('pointerdown', [22, 2]); await h.pointer('pointermove', [26, 3]); await h.pointer('pointerup', [26, 3]);
+    // Two pixels from the (25, 5) node is inside its catch radius.
+    const near = { clientX: h.position(25, 5).clientX + 2, clientY: h.position(25, 5).clientY - 2 };
+    await h.pointer('pointerdown', [22, 2]); await h.pointer('pointermove', [25, 5], near); await h.pointer('pointerup', [25, 5], near);
     expect(h.reshaped).toHaveBeenCalledExactlyOnceWith('profile', { kind: 'vertex', index: 1 }, [3, 3], expect.any(AbortSignal));
     expect(h.profile().geometry).toMatchObject({ points: [[0, 0], [25, 5], [20, 20], [0, 20]] });
     const point = container.querySelector<SVGCircleElement>('[aria-label="Point 2 of Profile"]');
@@ -216,15 +224,21 @@ describe('direct sketch contour manipulation', () => {
     expect(h.translated).not.toHaveBeenCalled();
   });
 
-  it('previews a snapped translation without editing, then commits one undoable move preserving dimensions and expressions', async () => {
+  it('previews a free translation that catches a nearby grid node, then commits one undoable move preserving dimensions and expressions', async () => {
     const h = await harness(), initial = h.session.getSnapshot();
+    await h.gridSnap();
     await h.pointer('pointerdown', [4, 3]);
     expect(h.session.getSnapshot().workflowOpen).toBe(false);
-    await h.pointer('pointermove', [8, 5]);
+    await h.pointer('pointermove', [6.5, 4.5]);
     expect(h.session.getSnapshot()).toMatchObject({ document: initial.document, version: initial.version, workflowOpen: true });
+    // Between grid nodes the contour follows the pointer instead of jumping a whole cell.
+    const free = container.querySelector('[aria-label="Select Profile profile"]')?.getAttribute('transform')?.slice('translate('.length, -1).split(' ');
+    expect(free?.map(Number)).toEqual([expect.closeTo(2.5, 9), expect.closeTo(1.5, 9)]);
+    const near = { clientX: h.position(9, 3).clientX + 2, clientY: h.position(9, 3).clientY + 2 };
+    await h.pointer('pointermove', [9, 3], near);
     expect(container.querySelector('[aria-label="Select Profile profile"]')?.getAttribute('transform')).toBe('translate(5 0)');
     expect(h.translated).not.toHaveBeenCalled();
-    await h.pointer('pointerup', [8, 5]);
+    await h.pointer('pointerup', [9, 3], near);
     expect(h.translated).toHaveBeenCalledExactlyOnceWith('profile', [5, 0], expect.any(AbortSignal));
     expect(h.profile()).toMatchObject({ geometry: { ...rectangle, x: 5 }, constraints: [{ id: 'height', kind: 'dimension', quantity: 'height' }] });
     expect(h.session.getSnapshot()).toMatchObject({ canUndo: true, workflowOpen: false });
@@ -266,7 +280,7 @@ describe('direct sketch contour manipulation', () => {
     { geometry: { kind: 'polygon', points: [[0, 0], [10, 0], [0, 10]] }, start: [1, 1], end: [6, 1], expected: { kind: 'polygon', points: [[5, 0], [15, 0], [5, 10]] } },
     { geometry: { kind: 'path', segments: [{ kind: 'arc', center: [0, 0], radius: 5, startAngle: 37, sweep: -360 }] }, start: [0, 0], end: [5, 0], expected: { kind: 'path', segments: [{ kind: 'arc', center: [5, 0], radius: 5, startAngle: 37, sweep: -360 }] } }
   ] satisfies { geometry: CadProfile; start: readonly [number, number]; end: readonly [number, number]; expected: CadProfile }[])('moves the existing $geometry.kind contour without changing its shape', async ({ geometry, start, end, expected }) => {
-    const h = await harness(geometry);
+    const h = await harness(geometry); await h.gridSnap();
     await h.pointer('pointerdown', start); await h.pointer('pointermove', end);
     expect(container.querySelector('[aria-label="Select Profile profile"]')?.getAttribute('transform')).toBe('translate(5 0)');
     await h.pointer('pointerup', end);
@@ -275,9 +289,12 @@ describe('direct sketch contour manipulation', () => {
 
   it('ends a grid-snapped zero-displacement gesture without creating an undo step', async () => {
     const h = await harness(), initial = h.session.getSnapshot();
-    await h.pointer('pointerdown', [4, 3]); await h.pointer('pointermove', [5, 3]);
+    await h.gridSnap();
+    // Five pixels clears the drag threshold but stays inside the start node's catch radius.
+    const near = { clientX: h.position(4, 3).clientX + 5 };
+    await h.pointer('pointerdown', [4, 3]); await h.pointer('pointermove', [4, 3], near);
     expect(h.session.getSnapshot().workflowOpen).toBe(true);
-    await h.pointer('pointerup', [5, 3]); await h.click([5, 3]);
+    await h.pointer('pointerup', [4, 3], near); await h.click([4, 3]);
     expect(h.translated).not.toHaveBeenCalled(); expect(h.session.getSnapshot()).toEqual(initial); expect(h.selected).not.toHaveBeenCalled();
   });
 
@@ -322,6 +339,7 @@ describe('direct sketch contour manipulation', () => {
 
   it('only the initiating pointer can move or release a contour', async () => {
     const h = await harness();
+    await h.gridSnap();
     await h.pointer('pointerdown', [4, 3]); await h.pointer('pointermove', [9, 3], {}, 22);
     expect(h.pending).not.toHaveBeenCalledWith(true);
     await h.pointer('pointerup', [9, 3], {}, 22); expect(h.release).not.toHaveBeenCalled();

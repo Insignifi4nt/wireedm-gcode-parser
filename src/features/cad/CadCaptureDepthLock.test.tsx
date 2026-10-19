@@ -85,6 +85,8 @@ async function harness(depthEnabled = true, selection: string | null = 'pad') {
   await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(performance.now())); });
   expect(cad().buildState).toBe('ready');
   await act(async () => { cad().changeViewport({ kind: 'select-feature', featureId: selection }, before.version); });
+  // Selection alone keeps the editor closed; the depth handle belongs to the opened feature editor.
+  if (selection !== null) await act(async () => { container?.querySelector('.cad-tree-row[aria-pressed="true"]')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); });
   await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(performance.now())); });
   expect(container.querySelector<HTMLElement>('.cad-depth-label')?.hidden).toBe(!depthEnabled || selection === null);
   if (depthEnabled && selection !== null) expect(container.querySelector('.cad-depth-label')?.textContent).toBe('Length 10 mm');

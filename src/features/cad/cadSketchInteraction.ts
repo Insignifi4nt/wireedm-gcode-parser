@@ -1,12 +1,30 @@
 import type { CadProfile } from '@/domain/cad/cadDocument';
 
 export type SketchPoint = readonly [number, number];
-export type SketchTool = 'select' | 'rectangle' | 'circle' | 'slot' | 'polygon' | 'path';
+export type SketchTool = 'select' | 'trim' | 'rectangle' | 'circle' | 'slot' | 'polygon' | 'path';
 
 export function snapSketchPoint(point: SketchPoint, gridStep: number, enabled: boolean): SketchPoint {
   if (!enabled) return point;
   if (!Number.isFinite(gridStep) || gridStep <= 0) throw new Error('Grid spacing must be positive.');
-  return [Math.round(point[0] / gridStep) * gridStep, Math.round(point[1] / gridStep) * gridStep];
+  // `+ 0` keeps a node just below zero from reporting a negative zero.
+  return [Math.round(point[0] / gridStep) * gridStep + 0, Math.round(point[1] / gridStep) * gridStep + 0];
+}
+
+/** Screen distance at which a dragged point sticks to a grid node. */
+export const DRAG_GRID_CATCH_PIXELS = 6;
+
+/** Drags stay continuous: a grid node only catches the pointer within `catchRadius`, so motion never jumps a whole cell. */
+export function magnetSketchPoint(point: SketchPoint, gridStep: number, enabled: boolean, catchRadius: number): SketchPoint {
+  const node = snapSketchPoint(point, gridStep, enabled);
+  return Math.hypot(node[0] - point[0], node[1] - point[1]) <= catchRadius ? node : point;
+}
+
+/** The scalar form of {@link magnetSketchPoint}, for sizes and distances along one direction. */
+export function magnetSketchValue(value: number, step: number, enabled: boolean, catchRadius: number): number {
+  if (!enabled) return value;
+  if (!Number.isFinite(step) || step <= 0) throw new Error('Grid spacing must be positive.');
+  const node = Math.round(value / step) * step + 0;
+  return Math.abs(node - value) <= catchRadius ? node : value;
 }
 
 /** The path anchor remains reachable at every zoom, including off-grid anchors. */

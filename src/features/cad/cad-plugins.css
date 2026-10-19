@@ -64,15 +64,19 @@
 .cad-workbench .cad-plugin-break-link { grid-column: 2; padding: 1px; justify-self: end; font-size: 9px; }
 @media (max-width: 600px) { .cad-plugin-panel footer { gap: 8px; } .cad-plugin-panel footer > span { display: none; } .cad-properties.cad-plugin-inspector { right: 6px; bottom: 108px; width: min(300px, calc(100% - 12px)); max-height: calc(100% - 120px); } }
 .cad-body { position: relative; }
-.cad-properties .cad-property-form { padding: 11px 12px; }
+.cad-properties .cad-property-form { padding: 4px 12px 12px; }
 .cad-properties .cad-property-title { margin-bottom: 11px; font-size: 12px; }
-.cad-properties .cad-field { display: grid; grid-template-columns: minmax(85px, .9fr) minmax(0, 1.1fr); align-items: center; gap: 5px 8px; margin-bottom: 7px; }
-.cad-properties .cad-field > span { justify-content: flex-start; align-items: center; gap: 4px; font-size: 11px; line-height: 1.25; }
-/* Unit stays beside its label; help and relation affordances sit together at the column edge. */
-.cad-properties .cad-field > span > .cad-context-help:first-of-type { margin-left: auto; }
+/* Every inspector row shares one grid: label, control, then an action column for picks and relations. */
+.cad-properties { --cad-field-columns: minmax(78px, 34%) minmax(0, 1fr) 22px; }
+.cad-properties :is(.cad-field, .cad-reference-field, .cad-area-field) { display: grid; grid-template-columns: var(--cad-field-columns); align-items: center; column-gap: 6px; row-gap: 3px; margin: 0 0 6px; }
+.cad-properties .cad-reference-field > .cad-field, .cad-properties .cad-area-actions { display: contents; }
+.cad-properties .cad-field > span { grid-column: 1; justify-content: flex-start; align-items: center; gap: 4px; min-width: 0; font-size: 11px; line-height: 1.25; }
+.cad-properties .cad-field > :is(input, select) { grid-column: 2; }
+.cad-properties .cad-field > .cad-scalar-relation, .cad-properties .cad-reference-field > .cad-pick-reference, .cad-properties .cad-area-reset { grid-column: 3; justify-self: center; }
 .cad-properties .cad-field input, .cad-properties .cad-field select { min-height: 27px; font-size: 11px; }
 .cad-properties .cad-field > .cad-field-hint { display: none; }
-.cad-properties .cad-field.is-invalid > .cad-field-hint { display: block; grid-column: 2; font-size: 10px; margin: 0; }
+.cad-properties .cad-field.is-invalid > .cad-field-hint { display: block; grid-column: 2 / 4; font-size: 10px; margin: 0; }
+.cad-properties .cad-check { margin: 4px 0 8px; font-size: 11px; }
 .cad-properties .cad-field-section { margin: 11px 0 8px; padding-top: 8px; }
 .cad-plugin-lock { position: absolute; right: 8px; top: 8px; color: var(--muted-foreground); pointer-events: none; }
 .cad-plugin-lock.has-unit { right: 29px; }

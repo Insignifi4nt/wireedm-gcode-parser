@@ -8,7 +8,7 @@ import { CadWorkbench } from './CadWorkbench';
 import { CadSession } from './cadSession';
 
 // Geometry is covered by real OpenCascade tests; jsdom has no WebGL context.
-vi.mock('./CadViewport', () => ({ CadViewport: () => <div aria-label="3D model viewport" /> }));
+vi.mock('./CadViewport', () => ({ CadViewport: ({ hidden }: { hidden?: boolean }) => hidden ? <div className="cad-viewport" hidden /> : <div aria-label="3D model viewport" /> }));
 let root: Root; let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);

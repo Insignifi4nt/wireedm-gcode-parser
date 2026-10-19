@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { prepareCadTools, callCadTool as call, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow } from './cad-tool-helpers';
 
 test('positions a bore by Dimension-first point picks with private editing, exact Undo, agent parity and save/reopen', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
@@ -13,7 +13,7 @@ test('positions a bore by Dimension-first point picks with private editing, exac
     { kind: 'add-feature', feature: { id: 'pad', kind: 'extrude', name: 'Thickness', suppressed: false, sketchId: 'plate', distance: ' 5e0 ', symmetric: false, operation: 'new', targetId: null } }] });
   const base = await context(page);
   const read = (version: string) => call(page, 'cad_get_feature', { expectedVersion: version, featureId: 'plate' }).then(r => r.feature);
-  const edit = async () => { await page.getByRole('button', { name: 'Select Located bore in history', exact: true }).dblclick(); await expect(page.getByRole('button', { name: 'Cancel sketch edits', exact: true })).toBeVisible(); };
+  const edit = async () => { await (await historyRow(page, 'Located bore')).dblclick(); await expect(page.getByRole('button', { name: 'Cancel sketch edits', exact: true })).toBeVisible(); };
   const first = page.locator('[data-cad-sketch-point="a"]'), second = page.locator('[data-cad-sketch-point="o"]');
   const choosePair = async () => {
     await page.locator('[aria-label="Sketch drawing canvas"]').click({ position: { x: 10, y: 10 } });

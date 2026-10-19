@@ -5,9 +5,19 @@ import { validateCadSketchGeometry } from './cadSketchGeometry';
 import { copyCadConstructionPoint, type CadConstructionPoint } from './cadPathConstruction';
 import { evaluateCadScalar } from './cadExpression';
 
+/** The sketch plane's origin and its axes, as references a fresh point can be placed on. */
+export type CadFreshSketchDatum = 'origin' | 'x-axis' | 'y-axis';
 export type CadFreshSketchPick =
   | { readonly kind: 'position'; readonly point: CadConstructionPoint }
-  | { readonly kind: 'coincident'; readonly point: CadConstructionPoint; readonly sourcePointId: string; readonly relationId: string };
+  | { readonly kind: 'coincident'; readonly point: CadConstructionPoint; readonly sourcePointId: string; readonly relationId: string }
+  | { readonly kind: 'on-line'; readonly point: CadConstructionPoint; readonly lineId: string; readonly relationId: string }
+  /** Fixes the coordinates the reference sets to zero: both at the origin, Y on the X axis and X on the Y axis. */
+  | { readonly kind: 'datum'; readonly point: CadConstructionPoint; readonly datum: CadFreshSketchDatum; readonly relationIds: readonly string[] };
+
+/** The coordinates a point on a plane reference keeps at zero. */
+export function cadFreshSketchDatumAxes(datum: CadFreshSketchDatum): readonly ('x' | 'y')[] {
+  return datum === 'origin' ? ['x', 'y'] : datum === 'x-axis' ? ['y'] : ['x'];
+}
 export type CadFreshSketchDrawing =
   | { readonly kind: 'rectangle'; readonly first: CadFreshSketchPick; readonly opposite: CadFreshSketchPick }
   | { readonly kind: 'circle'; readonly center: CadFreshSketchPick; readonly radius: number }
@@ -99,11 +109,22 @@ export function createCadFreshSketchDrawing({ drawing, construction, createId, e
       if (!target || !target.position.every((value, axis) => evaluateCadScalar(value, parameters) === point[axis]))
         throw new CadError('stale-fresh-sketch-point-reference', 'A picked graph point changed or no longer exists. Pick its exact current position again.');
     }
+    if (pick.kind === 'on-line' && !existing.entities.some(entity => entity.id === pick.lineId && entity.kind === 'line'))
+      throw new CadError('stale-fresh-sketch-point-reference', 'A picked line changed or no longer exists. Pick a position on it again.');
+    if (pick.kind === 'datum' && (pick.relationIds.length !== cadFreshSketchDatumAxes(pick.datum).length
+      || cadFreshSketchDatumAxes(pick.datum).some(axis => point[axis === 'x' ? 0 : 1] !== 0)))
+      throw new CadError('invalid-fresh-sketch-reference', 'A point placed on the origin or an axis must lie exactly on it.');
     return point;
   }
   function finish(graph: CadSketchGraph, bindings: readonly { readonly pick: CadFreshSketchPick; readonly pointId: string }[]): CadSketchGraph {
-    const relations: CadSketchGraphRelation[] = [...graph.relations, ...bindings.flatMap(({ pick, pointId }): CadSketchGraphRelation[] => pick.kind === 'coincident'
-      ? [{ id: pick.relationId, kind: 'coincident', pointIds: [pointId, pick.sourcePointId] }] : [])];
+    const relations: CadSketchGraphRelation[] = [...graph.relations, ...bindings.flatMap(({ pick, pointId }): CadSketchGraphRelation[] => {
+      switch (pick.kind) {
+        case 'coincident': return [{ id: pick.relationId, kind: 'coincident', pointIds: [pointId, pick.sourcePointId] }];
+        case 'on-line': return [{ id: pick.relationId, kind: 'point-on-line', pointId, lineId: pick.lineId }];
+        case 'datum': return cadFreshSketchDatumAxes(pick.datum).map((axis, index) => ({ id: pick.relationIds[index], kind: 'fixed-axis', pointId, axis, value: 0 }));
+        case 'position': return [];
+      }
+    })];
     const merged = acceptedGraph({ points: [...existing.points, ...graph.points], entities: [...existing.entities, ...graph.entities], relations: [...existing.relations, ...relations] }, parameters);
     return Object.freeze({ points: Object.freeze(merged.points.slice(existing.points.length)), entities: Object.freeze(merged.entities.slice(existing.entities.length)),
       relations: Object.freeze(merged.relations.slice(existing.relations.length)) });

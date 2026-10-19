@@ -56,7 +56,7 @@ describe('unified feature history and dependency tree', () => {
         onEditMany={onEditMany} onInspectParameter={() => undefined} onPendingChange={setPending} interactionLocked={false} cancelSignal={0} />} />;
     }
     await act(async () => root.render(<Harness />));
-    expect(container.querySelector('[aria-label="Edit parameter width"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Edit parameter width"]')?.closest('[hidden]')).not.toBeNull();
     await click('Expand Parameters');
     expect(button('Collapse Parameters').getAttribute('aria-expanded')).toBe('true');
     await act(async () => button('Edit parameter width').focus());
@@ -70,7 +70,7 @@ describe('unified feature history and dependency tree', () => {
     await act(async () => close.click());
     expect(document.activeElement).toBe(button('Edit parameter width'));
     await click('Collapse Parameters');
-    expect(container.querySelector('[aria-label="Edit parameter width"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Edit parameter width"]')?.closest('[hidden]')).not.toBeNull();
     expect(onEditMany).not.toHaveBeenCalled();
     expect(callbacks.document).toBe(cadDocument);
   });
@@ -79,9 +79,9 @@ describe('unified feature history and dependency tree', () => {
     const original = JSON.stringify(callbacks.document);
     await act(async () => root.render(<CadFeatureTree {...callbacks} onCreateSketch={onCreateSketch} />));
     expect(button('Collapse part Bracket').getAttribute('aria-expanded')).toBe('true');
-    await click('Collapse Model');
+    await click('Collapse Body');
     expect(container.querySelector('[aria-label="Feature history and dependencies"]')).toBeNull();
-    await click('Expand Model');
+    await click('Expand Body');
     expect(button('Select Pad in history')).toBeTruthy();
     await click('Expand Reference');
     await click('Create sketch on XZ plane');
@@ -97,7 +97,7 @@ describe('unified feature history and dependency tree', () => {
   it('reveals a newly selected feature through collapsed parent branches without editing the part', async () => {
     const callbacks = props();
     await act(async () => root.render(<CadFeatureTree {...callbacks} />));
-    await click('Collapse Model');
+    await click('Collapse Body');
     await act(async () => root.render(<CadFeatureTree {...callbacks} selectedId="pad" />));
     expect(button('Select Pad in history').getAttribute('aria-pressed')).toBe('true');
     await click('Collapse part Bracket');
@@ -209,7 +209,7 @@ describe('unified feature history and dependency tree', () => {
     await click('Select Outline in history');
     expect(callbacks.onSelect).toHaveBeenCalledExactlyOnceWith('sketch');
     expect(button('Select Pad in history').disabled).toBe(true);
-    expect(button('Select input Mounting plane').disabled).toBe(true);
+    expect(button('Select Mounting plane in history').disabled).toBe(true);
     await click('Select Pad in history');
     expect(callbacks.onSelect).toHaveBeenCalledTimes(1);
     expect(button('Boundary profile').disabled).toBe(true);
@@ -227,7 +227,7 @@ describe('unified feature history and dependency tree', () => {
     expect(onSuppress).not.toHaveBeenCalled();
   });
   it('opens target-specific actions by right click and executes only the chosen current feature', async () => {
-    const callbacks = props(), onSuppress = vi.fn();
+    const callbacks = props({ selectedId: 'pad' }), onSuppress = vi.fn();
     await act(async () => root.render(<CadFeatureTree {...callbacks} onSuppress={onSuppress} />));
     await act(async () => button('Select Outline in history').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 100, clientY: 140 })));
     const menu = document.querySelector('[role="menu"]');
@@ -265,8 +265,10 @@ describe('unified feature history and dependency tree', () => {
   });
   it('retains exact document order and history positions with independent disclosures', async () => {
     const callbacks = props(); await act(async () => root.render(<CadFeatureTree {...callbacks} />));
-    const rows = [...container.querySelectorAll<HTMLElement>('[data-cad-feature-id]')];
-    expect(rows.map(row => [row.dataset.cadFeatureId, row.dataset.cadHistoryPosition])).toEqual([['plane', '1'], ['sketch', '2'], ['pad', '3'], ['move', '4'], ['curve', '5']]);
+    const rows = () => [...container.querySelectorAll<HTMLElement>('[data-cad-feature-id]')].map(row => [row.dataset.cadFeatureId, row.dataset.cadHistoryPosition]);
+    expect(rows()).toEqual([['plane', '1'], ['pad', '3'], ['move', '4'], ['curve', '5']]);
+    await click('Expand Pad');
+    expect(rows()).toEqual([['plane', '1'], ['pad', '3'], ['sketch', '2'], ['move', '4'], ['curve', '5']]);
     expect(button('Expand Outline').getAttribute('aria-expanded')).toBe('false');
     await click('Expand Outline');
     expect(button('Collapse Outline').getAttribute('aria-expanded')).toBe('true'); expect(callbacks.onSelect).not.toHaveBeenCalled();
@@ -275,18 +277,21 @@ describe('unified feature history and dependency tree', () => {
     await click('Select Outline in history'); expect(callbacks.onSelect).toHaveBeenCalledExactlyOnceWith('sketch');
     expect(button('Select Outline in history').getAttribute('aria-description')).toBe('Sketch · Outline');
   });
-  it('navigates actual upstream and downstream inputs and respects workflow locks', async () => {
-    const onSelect = vi.fn(), callbacks = props({ selectedId: 'pad', onSelect });
+  it('nests a consumed sketch under its first solid feature and links later consumers', async () => {
+    const base = sample(), document = parseCadDocument({ ...base, features: [...base.features,
+      { id: 'tall', name: 'Tall pad', kind: 'extrude', suppressed: false, sketchId: 'sketch', distance: 9, symmetric: false, operation: 'new', targetId: null }] });
+    const onSelect = vi.fn(), callbacks = props({ document, selectedId: 'sketch', onSelect });
     await act(async () => root.render(<CadFeatureTree {...callbacks} />));
-    const details = container.querySelector('[data-cad-feature-id="pad"] .cad-feature-details');
-    expect(details?.textContent).toContain('InputsOutline'); expect(details?.textContent).toContain('Used byMoved body');
-    await click('Select input Outline'); await click('Select dependent feature Moved body');
-    expect(onSelect.mock.calls).toEqual([['sketch'], ['move']]);
+    const definition = container.querySelector('[data-cad-feature-id="pad"] [aria-label="Pad definition"]');
+    expect(definition?.querySelector('[data-cad-feature-id="sketch"]')).not.toBeNull();
+    expect(container.querySelector('[data-cad-feature-id="move"]')?.parentElement?.getAttribute('aria-label')).toBe('Feature history and dependencies');
+    expect(container.querySelectorAll('[aria-label="Select Outline in history"]')).toHaveLength(1);
+    await click('Expand Tall pad'); await click('Select shared Outline');
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('sketch');
     await act(async () => root.render(<CadFeatureTree {...callbacks} locked />));
     expect([...container.querySelectorAll('button')].every(button => button.disabled)).toBe(true);
-    await click('Select input Outline'); expect(callbacks.onSelect).toHaveBeenCalledTimes(2);
-    expect(button('Collapse Pad').getAttribute('aria-expanded')).toBe('true'); await click('Collapse Pad');
-    expect(button('Collapse Pad').getAttribute('aria-expanded')).toBe('true');
+    await click('Select shared Outline'); expect(onSelect).toHaveBeenCalledTimes(1);
+    await click('Collapse Pad'); expect(button('Collapse Pad').getAttribute('aria-expanded')).toBe('true');
   });
   it('opens a selected feature once, lets it collapse independently and preserves other expanded branches', async () => {
     const callbacks = props();
@@ -295,11 +300,12 @@ describe('unified feature history and dependency tree', () => {
       return <CadFeatureTree {...callbacks} selectedId={selectedId} onSelect={setSelectedId} />;
     }
     await act(async () => root.render(<Harness />));
-    await click('Expand Outline'); await click('Select Pad in history');
+    await click('Expand Pad'); await click('Expand Outline'); await click('Select Pad in history');
     expect(button('Collapse Outline')).toBeTruthy(); expect(button('Collapse Pad')).toBeTruthy();
-    await click('Collapse Pad'); expect(button('Expand Pad').getAttribute('aria-expanded')).toBe('false');
+    await click('Collapse Outline'); expect(button('Expand Outline').getAttribute('aria-expanded')).toBe('false');
     expect(button('Select Pad in history').getAttribute('aria-pressed')).toBe('true');
-    expect(button('Collapse Outline')).toBeTruthy();
+    await click('Collapse Pad'); await click('Expand Pad');
+    expect(button('Expand Outline').getAttribute('aria-expanded')).toBe('false');
   });
   it('selects nested sketch profiles and edits sketches or curves only through their typed callbacks', async () => {
     const onEditSketch = vi.fn(), onEditCurve = vi.fn(), onSelectProfile = vi.fn();
@@ -326,6 +332,5 @@ describe('unified feature history and dependency tree', () => {
     const suppressed = parseCadDocument({ ...document, features: document.features.map(feature => feature.id === 'move' ? { ...feature, suppressed: true } : feature) });
     await act(async () => root.render(<CadFeatureTree {...props({ document: suppressed, selectedId: 'pad' })} />));
     expect(button('Select Moved body in history').classList.contains('is-suppressed')).toBe(true);
-    expect(button('Select dependent feature Moved body').textContent).toContain('off');
   });
 });

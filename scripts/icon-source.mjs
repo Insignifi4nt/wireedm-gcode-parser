@@ -83,6 +83,7 @@ add('locate','Locate highlighted control','navigation',circle(12,12,5)+'M12 2v5M
 add('pin','Pin line','cam','M8 3h8M9 3v7l3 3 3-3V3M6 15h12M12 15v6M6 15l3-5M18 15l-3-5',['Pin']);
 add('departure','Depart from contour','cam','M5 3v18M8 12h13M16 7l5 5-5 5',['ArrowRightFromLine']);
 add('turn','Turn direction','geometry','M5 3v10h15M15 8l5 5-5 5',['CornerDownRight']);
+add('constraint','Sketch constraint','geometry','M3 20h18M9 20V4M9 15h5v5',['Perpendicular']);
 add('trim','Trim geometry','geometry','M8 9l12 12M8 15L20 3'+circle(5,6,3)+circle(5,18,3),['Scissors']);
 add('scan','Inspect bounds','view','M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5M6 12h12',['Scan']);
 add('section-view','Section view','view',[body,'M6 11l4 2M6 14l4 2'],['ScanLine']);

@@ -59,7 +59,8 @@ describe('signed graph axis dimension layout', () => {
       const layouts=linearDimensions(graph,{},scale), overall=layouts[0], bore=layouts[1], perpendicular=horizontal?1:0;
       const gap=Math.abs(overall.label[perpendicular]-bore.label[perpendicular])/scale;
       const outerBox=cadSketchGraphDimensionLabel(overall.valueMm,overall.kind), innerBox=cadSketchGraphDimensionLabel(bore.valueMm,bore.kind);
-      expect(gap).toBeGreaterThanOrEqual((horizontal?outerBox.height+innerBox.height:outerBox.width+innerBox.width)/2+8-1e-9);
+      // ISO text runs along both lines, so each strip is its line plus the lifted text height.
+      expect(gap).toBeGreaterThanOrEqual((outerBox.height+innerBox.height)/2+2+8-1e-9);
       expect(overall.label[perpendicular]).toBeLessThan(bore.label[perpendicular]);
       expect(overall.relation).toBe(graph.relations[0]); expect(bore.relation).toBe(graph.relations[1]);
       for(const layout of layouts) {
@@ -81,13 +82,14 @@ describe('signed graph axis dimension layout', () => {
       const layout = linearDimensions(graph, { signed }, .1)[0];
       expect(layout?.kind).toBe(axis === 'x' ? 'distance-x' : 'distance-y');
       const positiveSide = outside[0] < 0;
-      expect(layout.line).toEqual(axis === 'x' ? [[30, positiveSide ? 42 : 18], [0, positiveSide ? 42 : 18]]
-        : [[positiveSide ? 32 : -2, 20], [positiveSide ? 32 : -2, 40]]);
+      // Text sits above the line; when that side faces the part the line moves out a further eight pixels.
+      expect(layout.line).toEqual(axis === 'x' ? [[30, positiveSide ? 42 : 17.2], [0, positiveSide ? 42 : 17.2]]
+        : [[positiveSide ? 32.8 : -2, 20], [positiveSide ? 32.8 : -2, 40]]);
       expect(layout.extensions).toEqual(axis === 'x'
-        ? [[[30, expect.closeTo(positiveSide ? 20.3 : 19.7, 12)], [30, expect.closeTo(positiveSide ? 42.2 : 17.8, 12)]],
-          [[0, expect.closeTo(positiveSide ? 40.3 : 39.7, 12)], [0, expect.closeTo(positiveSide ? 42.2 : 17.8, 12)]]]
-        : [[[expect.closeTo(positiveSide ? 30.3 : 29.7, 12), 20], [expect.closeTo(positiveSide ? 32.2 : -2.2, 12), 20]],
-          [[expect.closeTo(positiveSide ? .3 : -.3, 12), 40], [expect.closeTo(positiveSide ? 32.2 : -2.2, 12), 40]]]);
+        ? [[[30, expect.closeTo(positiveSide ? 20.3 : 19.7, 12)], [30, expect.closeTo(positiveSide ? 42.2 : 17, 12)]],
+          [[0, expect.closeTo(positiveSide ? 40.3 : 39.7, 12)], [0, expect.closeTo(positiveSide ? 42.2 : 17, 12)]]]
+        : [[[expect.closeTo(positiveSide ? 30.3 : 29.7, 12), 20], [expect.closeTo(positiveSide ? 33 : -2.2, 12), 20]],
+          [[expect.closeTo(positiveSide ? .3 : -.3, 12), 40], [expect.closeTo(positiveSide ? 33 : -2.2, 12), 40]]]);
       expect(layout.valueMm).toBe(signed); expect(layout.relation).toBe(graph.relations[0]);
       expect(layout.arrows.map(arrow => arrow[0])).toEqual(layout.line);
       for (const [index, extension] of layout.extensions.entries()) {
@@ -111,7 +113,7 @@ describe('signed graph axis dimension layout', () => {
       relations: [{ id: 'zero', kind: 'axis-distance', pointIds: ['from', 'to'], axis, value: ' zero ' }] });
     const layout = linearDimensions(graph, { zero: 0 }, .1)[0];
     expect(layout).toBeDefined(); expect(layout.relation).toBe(graph.relations[0]); expect(layout.valueMm).toBe(0);
-    expect(layout.label).toEqual(axis === 'x' ? [0, -2] : [12, 0]);
+    expect(layout.label).toEqual(axis === 'x' ? [0, expect.closeTo(-1.7, 12)] : [expect.closeTo(11.7, 12), 0]);
     expect(layout.line[0]).toEqual(layout.line[1]); expect(layout.extensions).toHaveLength(2); expect(layout.arrows).toEqual([]);
     expect([...layout.label, ...layout.line.flat(), ...layout.extensions.flat(2)].every(Number.isFinite)).toBe(true);
     const tiny = linearDimensions(parseCadSketchGraph({ ...graph,
@@ -128,7 +130,7 @@ describe('explicit graph distance layout', () => {
       {id:'overall',kind:'distance',pointIds:['a','b'],value:50},{id:'short',kind:'distance',pointIds:['a','c'],value:25}
     ]});
     const [overall,short]=linearDimensions(graph,{},.1), gap=((overall.line[0][0]-short.line[0][0])*.8-(overall.line[0][1]-short.line[0][1])*.6)/.1;
-    expect(gap).toBeGreaterThan(40);
+    expect(gap).toBeGreaterThanOrEqual(18+2+8-1e-6);
     expect(overall.extensions[0][0]).toEqual(short.extensions[0][0]);
     expect(overall.arrows.map(arrow=>arrow[0])).toEqual(overall.line);
   });
@@ -141,13 +143,21 @@ describe('explicit graph distance layout', () => {
     graph.relations.forEach((relation,index)=>expect(together[index]).toEqual(linearDimensions({...graph,relations:[relation]},{},.1)[0]));
   });
 
-  it('places bottom, top and vertical dimensions twenty screen pixels outward from graph bounds', () => {
+  it('places bottom, top and vertical dimensions twenty screen pixels outward, or twenty-eight when their text faces the part', () => {
     const graph = rectangle(), before = JSON.stringify(graph);
     const layouts = linearDimensions(graph, { width: 20 }, .1);
     expect(layouts.map(layout => layout.line)).toEqual([
-      [[0, -2], [20, -2]], [[0, 12], [20, 12]], [[-2, 0], [-2, 10]], [[22, 0], [22, 10]]
+      [[0, expect.closeTo(-2.8, 12)], [20, expect.closeTo(-2.8, 12)]], [[0, 12], [20, 12]], [[-2, 0], [-2, 10]], [[expect.closeTo(22.8, 12), 0], [expect.closeTo(22.8, 12), 10]]
     ]);
-    expect(layouts[0].extensions).toEqual([[[0, expect.closeTo(-.3, 12)], [0, -2.2]], [[20, expect.closeTo(-.3, 12)], [20, -2.2]]]);
+    expect(layouts[0].extensions).toEqual([[[0, expect.closeTo(-.3, 12)], [0, expect.closeTo(-3, 12)]], [[20, expect.closeTo(-.3, 12)], [20, expect.closeTo(-3, 12)]]]);
+    // ISO 129: text is parallel to its line, readable from the bottom or right, and never crosses the line.
+    expect(layouts.map(layout => layout.labelAngle)).toEqual([0, 0, Math.PI / 2, Math.PI / 2]);
+    for (const layout of layouts) {
+      const { height } = cadSketchGraphDimensionLabel(layout.valueMm, layout.kind), vertical = layout.labelAngle !== 0;
+      const fromLine = (layout.label[vertical ? 0 : 1] - layout.line[0][vertical ? 0 : 1]) / .1;
+      expect(Math.abs(fromLine)).toBeCloseTo(height / 2 + 2, 12);
+      expect(Math.sign(fromLine)).toBe(vertical ? -1 : 1);
+    }
     for (const layout of layouts) for (const endpoint of [0, 1]) {
       const tip = layout.arrows[endpoint][0], guide = layout.extensions[endpoint];
       expect(tip).toEqual(layout.line[endpoint]);
@@ -166,7 +176,7 @@ describe('explicit graph distance layout', () => {
         relations: [{ id: 'length', kind: 'distance', pointIds: ['b', 'a'], value: 10 }] }), {}, .1)[0];
       expect(reversed.line).toEqual([...first.line].reverse()); expect(reversed.label).toEqual(first.label);
       expect(reversed.arrows).toEqual([...first.arrows].reverse());
-      expect(first.label).toEqual(end[0] ? [5, -2] : [2, 5]);
+      expect(first.label).toEqual(end[0] ? [5, expect.closeTo(-1.7, 12)] : [expect.closeTo(1.7, 12), 5]);
     }
   });
 
@@ -174,8 +184,9 @@ describe('explicit graph distance layout', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [3, 4] }], entities: [],
       relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 5 }] });
     const layout = linearDimensions(graph, {}, .1)[0];
-    expect(layout.line).toEqual([[expect.closeTo(1.6, 12), expect.closeTo(-1.2, 12)], [expect.closeTo(4.6, 12), expect.closeTo(2.8, 12)]]);
-    expect(layout.label).toEqual([expect.closeTo(3.1, 12), expect.closeTo(.8, 12)]);
+    expect(layout.line).toEqual([[expect.closeTo(2.24, 12), expect.closeTo(-1.68, 12)], [expect.closeTo(5.24, 12), expect.closeTo(2.32, 12)]]);
+    expect(layout.label).toEqual([expect.closeTo(2.86, 12), expect.closeTo(.98, 12)]);
+    expect(layout.labelAngle).toBeCloseTo(Math.atan2(4, 3), 12);
     expect(layout.arrows.map(arrow => arrow[0])).toEqual(layout.line);
     const [start, end] = layout.line;
     for (const arrow of layout.arrows) for (const base of arrow.slice(1)) {
@@ -193,7 +204,7 @@ describe('explicit graph distance layout', () => {
     ] });
     const result = linearDimensions(graph, { size: 1e-9 }, 1e-10);
     expect(result).toHaveLength(1); expect(result[0].relation.id).toBe('small'); expect(result[0].valueMm).toBe(1e-9);
-    expect(result[0].label[0]).toBeCloseTo(1.5e-9, 22); expect(result[0].label[1]).toBeCloseTo(0, 22);
+    expect(result[0].label[0]).toBeCloseTo(1.5e-9, 22); expect(result[0].label[1]).toBeCloseTo(3e-10, 22);
     expect(linearDimensions(parseCadSketchGraph({ ...graph, relations: [] }), {}, 1)).toEqual([]);
     expect(linearDimensions(graph, { size: 1e-9 }, 0)).toEqual([]);
   });
@@ -207,7 +218,7 @@ describe('explicit graph distance layout', () => {
     const result = linearDimensions(graph, {}, .1)[0];
     // The major sweep reaches y=100000000. Point-only bounds would choose the wrong side.
     expect(result.line).toEqual([[99999998, 100000014], [100000002, 100000014]]);
-    expect(result.label).toEqual([100000000, 100000014]);
+    expect(result.label).toEqual([100000000, expect.closeTo(100000015.1, 6)]);
   });
 });
 
@@ -283,8 +294,8 @@ describe('native graph corner dimension layout', () => {
       treatment: { kind: 'chamfer', setbacks: [' first ', 'second'] }, createId: ids() }), before = JSON.stringify(graph);
     const layouts = linearDimensions(graph, { first: 2, second: 3 }, .1);
     expect(layouts).toHaveLength(2);
-    expect(layouts).toMatchObject([{ kind: 'setback', side: 0, lineId: 'line-a', valueMm: 2, line: [[0, -2], [2, -2]], label: [1, -2] },
-      { kind: 'setback', side: 1, lineId: 'line-b', valueMm: 3, line: [[-2, 0], [-2, 3]], label: [-2, 1.5] }]);
+    expect(layouts).toMatchObject([{ kind: 'setback', side: 0, lineId: 'line-a', valueMm: 2, line: [[0, expect.closeTo(-2.8, 12)], [2, expect.closeTo(-2.8, 12)]], label: [1, expect.closeTo(-1.7, 12)] },
+      { kind: 'setback', side: 1, lineId: 'line-b', valueMm: 3, line: [[-2, 0], [-2, 3]], label: [expect.closeTo(-3.1, 12), 1.5] }]);
     for (const layout of layouts) { expect(layout.relation).toBe(graph.relations[0]); expect(layout.arrows.map(arrow => arrow[0])).toEqual(layout.line); }
     expect(JSON.stringify(graph)).toBe(before);
   });
@@ -295,7 +306,8 @@ describe('native graph corner dimension layout', () => {
     const reversed = parseCadSketchGraph({ ...graph, entities: [...graph.entities].reverse().map(entity => entity.kind === 'line'
       ? { ...entity, startPointId: entity.endPointId, endPointId: entity.startPointId } : entity) });
     const layouts = linearDimensions(reversed, { a: 2, b: 3 }, .1);
-    for (const [side, expectedLabel] of [[0, rotate([1, -2])], [1, rotate([-2, 1.5])]] as const) {
+    // Rotating the corner flips the second line's reading direction, so its text and line move to the other side.
+    for (const [side, expectedLabel] of [[0, rotate([1, -1.7])], [1, rotate([-1.7, 1.5])]] as const) {
       const layout = layouts[side]; expect(layout.kind).toBe('setback');
       if (layout.kind !== 'setback') throw new Error('Expected setback');
       expect(layout.side).toBe(side); expect(layout.lineId).toBe(side === 0 ? 'line-a' : 'line-b');

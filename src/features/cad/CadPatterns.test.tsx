@@ -9,7 +9,7 @@ import { CadWorkbench } from './CadWorkbench';
 import { CadSession } from './cadSession';
 
 // WebGL pixels are verified in kernel/browser suites; these tests use real edits.
-vi.mock('./CadViewport', () => ({ CadViewport: () => <div aria-label="3D model viewport" /> }));
+vi.mock('./CadViewport', () => ({ CadViewport: ({ hidden }: { hidden?: boolean }) => hidden ? <div className="cad-viewport" hidden /> : <div aria-label="3D model viewport" /> }));
 let root: Root; let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -23,6 +23,8 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 async function click(label: string) { await act(async () => button(label).click()); }
+/** A history click only selects; double-click on the selected row opens its editor. */
+async function openSelected() { await act(async () => { container.querySelector('.cad-tree-row[aria-pressed="true"]')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); }); }
 async function key(element: HTMLElement, value: string, shiftKey = false) {
   const event = new KeyboardEvent('keydown', { key: value, shiftKey, bubbles: true, cancelable: true });
   await act(async () => element.dispatchEvent(event)); return event;
@@ -150,7 +152,7 @@ describe('circular pattern editing', () => {
     await click('Apply'); const feature = circular(session.getSnapshot().document.features.at(-1));
     expect(feature).toMatchObject({ count: 5, axis: 'x', center: ['offset * 2', 'offset', 'offset / 2'], angle: '-sweep' });
     expect(resolveCadCircularPattern(feature, session.getSnapshot().document.parameters)).toMatchObject({ center: [10, 5, 2.5], angles: [0, -45, -90, -135, -180] });
-    const before = session.getSnapshot(); await relation('Angular extent', '90');
+    const before = session.getSnapshot(); await openSelected(); await relation('Angular extent', '90');
     expect(session.getSnapshot().version).toBe(before.version); await click('Apply');
     expect(circular(session.getSnapshot().document.features.at(-1)).angle).toBe('90');
     expect(session.getSnapshot().document.features).toHaveLength(3);

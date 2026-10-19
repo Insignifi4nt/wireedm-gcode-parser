@@ -10,11 +10,20 @@ const root = process.cwd();
 const baselinePath = path.join(root, 'docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json');
 const outputPath = path.join(root, 'docs/design/current-integration-audit.json');
 const published = JSON.parse(readFileSync(baselinePath, 'utf8'));
+// Checkpoint references whose controls were deliberately removed or replaced.
+const retiredSourceReferences = [
+  {id:'use.78943e173e76',reason:'The shared header storage badge was removed by the user in main bfac856; storage remains in settings.'},
+  {id:'use.35556bc89fbd',reason:'The Pattern command now uses the shared CadToolbarMenu, which owns the expand-down chevron for every toolbar menu.'},
+  {id:'use.5745191fface',reason:'The selected-feature panel with its Edit curve button was removed; curves open by double-click or the history context menu.'},
+  {id:'use.c0d304036f6d',reason:'The selected-feature panel with its Edit sketch button was removed; sketches open by double-click or the history context menu.'},
+  {id:'use.34955e8e553d',reason:'The Parameters header with its Add parameter group button was removed; New group lives in the Parameters context menu.'},
+  {id:'use.789ef07f7f97',reason:'The Parameters header with its Add parameter button was removed; New parameter lives in the Parameters context menu.'},
+];
 const integration = JSON.parse(readFileSync(path.join(root, 'docs/design/icon-integration-map.json'), 'utf8'));
 const intendedByUse = new Map(integration.directUsages.map(row=>[row.usageId,row.replacements]));
 const normalizeAttribute = value => value.startsWith('{') && value.endsWith('}') ? compact(value.slice(1,-1)) : value.startsWith('"') ? JSON.parse(value) : value;
 const baseline = { imports:JSON.parse(readFileSync(path.join(root,'docs/design/icon-usage-scout.json'),'utf8')).imports,
-  occurrences:published.occurrences.filter(row=>row.id!=='use.78943e173e76').map(row=>({
+  occurrences:published.occurrences.filter(row=>!retiredSourceReferences.some(retired=>retired.id===row.id)).map(row=>({
     ...row, importedAlias:row.alias, objectProperty:row.mapProperty,
     usageForm:row.kind==='jsx-icon'?'jsx-component':row.kind==='map-binding'?'object-property-value':row.callName?'call-argument':'reference',
     context:row.call || row.containerText || row.expression,
@@ -25,7 +34,6 @@ const baseline = { imports:JSON.parse(readFileSync(path.join(root,'docs/design/i
   })),
   dynamicSlots:published.dynamicSlots.map(row=>({...row, renderer:row.tag, mapName:row.variable, mapPropertyExpression:row.expression})),
 };
-// The former header storage badge was explicitly removed in main bfac856.
 const catalogIds = new Set(iconSource.map(entry=>entry.id));
 const exportedIds = new Map(iconSource.flatMap(entry=>[...entry.aliases,entry.id.split('-').map(word=>word[0].toUpperCase()+word.slice(1)).join('')+'Icon'].filter(name=>name in iconComponents).map(name=>[name,entry.id])));
 const walk = dir => readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
@@ -205,7 +213,7 @@ const report = {
   currentUsageByCatalogId: Object.fromEntries([...new Set(currentUses.map(use => use.catalogId))].sort().map(id => [id, currentUses.filter(use => use.catalogId === id).length])),
   cadFeatureKindMap: cadMap,
   dynamicSlots: dynamicSlotAudit,
-  retiredSourceReferences: [{id:'use.78943e173e76',reason:'The shared header storage badge was removed by the user in main bfac856; storage remains in settings.'}],
+  retiredSourceReferences,
   newlyAddedCurrentReferences: unmatchedCurrent.map(use => ({ file: use.file, line: use.line, symbol: use.importedSymbol, catalogId: use.catalogId, context: use.context, note: 'Current package reference added after the frozen checkpoint or replacing a recorded text glyph.' })),
   occurrences: occurrenceAudit,
   unresolved,

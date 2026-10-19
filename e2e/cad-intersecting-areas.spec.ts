@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context, historyRow } from './cad-tool-helpers';
 
 const lensArea = (separation: number) => 50 * Math.acos(separation / 10) - separation * Math.sqrt(100 - separation ** 2) / 2;
 
@@ -17,7 +17,7 @@ test('chooses an intersecting circle lens deliberately and keeps its source inte
   let current = await context(page);
   await expect.poll(() => raw(page, 'cad_get_viewport', { expectedVersion: current.version }))
     .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
-  await page.getByRole('button', { name: 'Select Overlapping circles in history', exact: true }).click();
+  await (await historyRow(page, 'Overlapping circles')).click();
   await expect(page.getByRole('button', { name: 'Pad / Pocket', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
   await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('5');

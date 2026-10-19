@@ -11,7 +11,7 @@ export const CadNamedViewSchema = Type.Union([Type.Literal('Isometric'), Type.Li
 export type CadNamedView = Static<typeof CadNamedViewSchema>;
 const id = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' });
 const strict = { additionalProperties: false };
-export const CadPickModeSchema = Type.Union([Type.Literal('body'), Type.Literal('face'), Type.Literal('edge')]);
+export const CadPickModeSchema = Type.Union([Type.Literal('auto'), Type.Literal('body'), Type.Literal('face'), Type.Literal('edge')]);
 export const CadViewportCommandSchema = Type.Union([
   Type.Object({ kind: Type.Literal('set-view'), view: CadNamedViewSchema }, strict),
   Type.Object({ kind: Type.Literal('fit') }, strict),
@@ -34,7 +34,7 @@ export type CadViewportCommand = Static<typeof CadViewportCommandSchema>;
 
 export type CadRenderedViewState = { readonly navigationMode?: 'mouse' | 'trackpad'; readonly onPartDimensionsVisible?: boolean } & (
   | { readonly mode: 'solid'; readonly available: boolean; readonly view: CadNamedView | 'Custom'; readonly gridVisible: boolean; readonly zoom: number; readonly revision: number; readonly hoveredTopology?: CadTopologyHit | null; readonly referenceVersion?: string | null; readonly referenceFeatureIds?: readonly string[]; readonly referencePlanes?: readonly CadPlane[] }
-  | { readonly mode: 'sketch' | 'curve'; readonly available: boolean; readonly plane: CadSketchPlane; readonly gridVisible: boolean; readonly snapEnabled: boolean; readonly gridStepMm: number; readonly centerMm: readonly [number, number]; readonly heightSpanMm: number; readonly revision: number; readonly sketchPickFilter?: CadSketchGraphPickFilter });
+  | { readonly mode: 'sketch' | 'curve'; readonly available: boolean; readonly plane: CadSketchPlane; readonly gridVisible: boolean; readonly snapEnabled: boolean; readonly gridSnapEnabled: boolean; readonly gridStepMm: number; readonly centerMm: readonly [number, number]; readonly heightSpanMm: number; readonly revision: number; readonly sketchPickFilter?: CadSketchGraphPickFilter });
 
 export interface CadRenderedViewControls {
   getState(): CadRenderedViewState;

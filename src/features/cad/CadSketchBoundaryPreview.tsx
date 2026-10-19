@@ -38,7 +38,7 @@ export function prepareCadSketchTrimPreview(prepared: ReturnType<typeof prepareC
   if (!segment) return { kind: 'unavailable', reason: 'The selected edge no longer exists.' };
   const parameter = segment.kind === 'circle' ? cadSketchCircleTrimParameter(segment, { x: cursor[0], y: cursor[1] })
     : nearestPointOnSegment(segment, { segmentId: entityId, reversed: false }, { x: cursor[0], y: cursor[1] }).t;
-  if (parameter === null) return { kind: 'unavailable', reason: 'Right-click the circle span you want to remove.' };
+  if (parameter === null) return { kind: 'unavailable', reason: 'Point at the circle span you want to remove.' };
   try {
     const geometry = prepareCadSketchTrim({ graph: prepared.graph, parameters: prepared.parameters, entityId, parameter });
     const target = geometry.target, trim = target.kind === 'delete' ? target : target.kind === 'end'

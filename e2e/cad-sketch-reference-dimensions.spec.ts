@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { prepareCadTools, callCadTool as call, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
 
 test('persists passive dimensions through private sketch Finish and converts a diameter without losing exact geometry or Undo',async({page})=>{
   await prepareCadTools(page);await call(page,'cad_open_workspace');
@@ -11,13 +11,13 @@ test('persists passive dimensions through private sketch Finish and converts a d
   await call(page,'cad_edit_document',{expectedVersion:(await context(page)).version,edits:[{kind:'set-parameter',name:'width',value:40},
     {kind:'add-feature',feature:sketch},{kind:'add-feature',feature:{id:'pad',kind:'extrude',name:'Thickness',suppressed:false,sketchId:'plate',distance:' 5e0 ',symmetric:false,operation:'new',targetId:null}}]});
   const base=await context(page);await call(page,'cad_build',{expectedVersion:base.version});
-  const edit=async()=>{await page.getByRole('button',{name:'Select Measured plate in history',exact:true}).dblclick();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toBeVisible();};
+  const edit=async()=>{await (await historyRow(page, 'Measured plate')).dblclick();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toBeVisible();};
   const apply=async()=>{await page.getByRole('button',{name:'Apply',exact:true}).click();await expect(page.getByRole('button',{name:'Apply',exact:true})).toHaveCount(0);};
   const finish=async()=>{await page.getByRole('button',{name:'Finish sketch',exact:true}).click();await expect(page.getByRole('button',{name:'Finish sketch',exact:true})).toHaveCount(0);};
   await edit();await page.getByRole('button',{name:'Point 1 in Measured plate',exact:true}).press('Enter');
   await page.getByRole('button',{name:'Point 3 in Measured plate',exact:true}).press('Shift+Enter');
-  await page.getByRole('button',{name:'Reference distance',exact:true}).click();await apply();
-  await page.locator('[data-cad-sketch-entity="bore"]').press('Enter');await page.getByRole('button',{name:'Reference diameter',exact:true}).click();await apply();
+  await (await relationControl(page, 'button', 'Reference distance')).click();await apply();
+  await page.locator('[data-cad-sketch-entity="bore"]').press('Enter');await (await relationControl(page, 'button', 'Reference diameter')).click();await apply();
   expect((await call(page,'cad_get_feature',{expectedVersion:base.version,featureId:'plate'})).feature).toEqual(sketch);
   await finish();let current=await context(page);
   const measured=(await call(page,'cad_get_feature',{expectedVersion:current.version,featureId:'plate'})).feature;

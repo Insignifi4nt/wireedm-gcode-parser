@@ -10,7 +10,7 @@ import { CadSession } from './cadSession';
 import { CadWorkbench } from './CadWorkbench';
 
 // The real DOM/SVG sketch and numeric geometry run; jsdom has no native WebGL context.
-vi.mock('./CadViewport', () => ({ CadViewport: () => <div>Native solid viewport</div> }));
+vi.mock('./CadViewport', () => ({ CadViewport: ({ hidden }: { hidden?: boolean }) => hidden ? <div className="cad-viewport" hidden /> : <div>Native solid viewport</div> }));
 let container: HTMLDivElement, root: Root;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -94,7 +94,7 @@ describe('gear configuration and canvas integration', () => {
     const { session, edits } = await mount(gearDocument(true)); const original = session.getSnapshot().document;
     await openGear(); expect(field('Module').value).toBe('3'); await act(async () => field('Module').focus());
     await input('Module', '4');
-    expect(container.textContent).toContain('Preview · Apply to keep changes'); expect(circleRadius('Pitch circle')).toBe(36);
+    expect(circleRadius('Pitch circle')).toBe(36);
     expect(session.getSnapshot().document).toBe(original); expect(session.getSnapshot().workflowOpen).toBe(true); expect(profileModule(session)).toBe('module');
     await click('Cancel'); expect(session.getSnapshot().workflowOpen).toBe(false); expect(field('Module').value).toBe('3'); expect(session.getSnapshot().document).toBe(original);
     await act(async () => field('Module').focus()); await input('Module', '4'); await click('Apply');

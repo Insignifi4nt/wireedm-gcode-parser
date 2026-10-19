@@ -187,9 +187,28 @@ it('preserves a large-part Fit zoom through named-view OrbitControls recreation 
   }
 });
 
+describe('hidden under a sketch surface', () => {
+  it('keeps one graphics context and its camera, publishes no controls and defers model uploads until shown', async () => {
+    const edited: CadMesh = { ...mesh, featureId: 'edited', bounds: { min: [0, 0, 0], max: [40, 40, 40] } };
+    const view = async (meshes: readonly CadMesh[], hidden: boolean) => { await act(async () => root.render(<CadViewport hidden={hidden} meshes={meshes} selectedId="body" onSelect={vi.fn()} onControlsReady={value => { controls = value; }} />)); };
+    await view([mesh], false); await flushFrame();
+    const shown = currentControls(); await act(async () => shown.setView?.('Top'));
+    const zoom = solidViewState().zoom; const drawn = renderer().render.mock.calls.length;
+    await view([edited], true); await flushFrame();
+    expect(controls).toBeNull(); expect(container.querySelector('button[aria-label="Fit model"]')).toBeNull();
+    expect(renderer().render.mock.calls.length).toBe(drawn);
+    const scene = renderer().render.mock.calls[0][0]; const ids = () => { const found = new Set<string>(); scene.traverse(object => { if (object.userData.featureId) found.add(object.userData.featureId); }); return found; };
+    expect(ids().has('edited')).toBe(false);
+    await view([edited], false); await flushFrame();
+    expect(renderers).toHaveLength(1); expect(controls).toBe(shown); expect(container.querySelector('button[aria-label="Fit model"]')).not.toBeNull();
+    // The user's chosen view survives; a part that already had its first frame is not refit.
+    expect(solidViewState()).toMatchObject({ view: 'Top', zoom }); expect(ids()).toEqual(new Set(['edited']));
+  });
+});
+
 describe('viewport pointer ownership and hover', () => {
   const meshes: readonly CadMesh[] = [{ ...mesh, faceGroups: [{ key: 'face', start: 0, count: 3 }], edgeGroups: [{ key: 'edge', start: 0, count: 2 }] }];
-  async function harness(mode: 'body' | 'face' = 'body') {
+  async function harness(mode: 'body' | 'face' | 'auto' = 'body') {
     const select = vi.fn(), topology = vi.fn(), contextMenu = vi.fn();
     const show = async (locked = false, navigationLocked = locked, selectedId: string | null = null, navigationMode: 'mouse' | 'trackpad' = 'mouse') => { await act(async () => root.render(<CadViewport meshes={meshes} selectedId={selectedId} onSelect={select}
       {...{ navigationLocked, navigationMode, onContextMenu: contextMenu }} pickMode={mode} onTopologyPick={topology} interactionLocked={locked} onControlsReady={value => { controls = value; }} />)); };
@@ -198,8 +217,8 @@ describe('viewport pointer ownership and hover', () => {
     const point = new Vector3(2, 2, 0).project(camera), x = (point.x + 1) * 400, y = (1 - point.y) * 300;
     const canvas = renderer().domElement; canvas.setPointerCapture = vi.fn(); canvas.releasePointerCapture = vi.fn();
     vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) });
-    const pointer = async (type: string, id = 1, dx = 0, dy = 0, pointerType: 'touch' | 'mouse' | 'pen' = 'touch', button = 0) => { await act(async () => {
-      const event = new MouseEvent(type, { bubbles: true, button, buttons: type === 'pointerdown' || type === 'pointermove' && dx ? button === 2 ? 2 : 1 : 0, clientX: x + dx, clientY: y + dy });
+    const pointer = async (type: string, id = 1, dx = 0, dy = 0, pointerType: 'touch' | 'mouse' | 'pen' = 'touch', button = 0, shiftKey = false) => { await act(async () => {
+      const event = new MouseEvent(type, { bubbles: true, button, shiftKey, buttons: type === 'pointerdown' || type === 'pointermove' && dx ? button === 2 ? 2 : 1 : 0, clientX: x + dx, clientY: y + dy });
       Object.defineProperties(event, { pointerId: { value: id }, pointerType: { value: pointerType }, isPrimary: { value: id === 1 } });
       canvas.dispatchEvent(event);
     }); };
@@ -221,6 +240,17 @@ describe('viewport pointer ownership and hover', () => {
     expect(solidViewState().hoveredTopology).toEqual({ bodyId: 'body', pick: { kind: 'face', key: 'face' } });
     await h.pointer('pointerdown'); await h.pointer('pointerup');
     expect(h.topology).toHaveBeenCalledExactlyOnceWith({ bodyId: 'body', pick: { kind: 'face', key: 'face' } }, false);
+  });
+  it.each(['pointercancel', 'lostpointercapture'] as const)('ends a Shift box selection after %s so the next click picks normally', async cancellation => {
+    const h = await harness('auto'); const overlay = () => container.querySelector<HTMLElement>('.cad-box-select');
+    await h.pointer('pointerdown', 1, -60, -60, 'mouse', 0, true); await h.pointer('pointermove', 1, 60, 60, 'mouse', 0, true);
+    expect(overlay()?.hidden).toBe(false);
+    await h.pointer(cancellation, 1, 60, 60, 'mouse');
+    expect(overlay()?.hidden).toBe(true);
+    // The cancelled rectangle never selects, and the box no longer swallows the next press.
+    await h.pointer('pointerup', 1, 60, 60, 'mouse'); expect(h.select).not.toHaveBeenCalled(); expect(h.topology).not.toHaveBeenCalled();
+    await h.pointer('pointerdown', 1, 0, 0, 'mouse'); await h.pointer('pointerup', 1, 0, 0, 'mouse');
+    expect(h.select.mock.calls.length + h.topology.mock.calls.length).toBe(1);
   });
   it('does not turn an orbit drag returning to its start into a selection click', async () => {
     const h = await harness(); await h.pointer('pointerdown'); await h.pointer('pointermove', 1, 20); await h.pointer('pointermove'); await h.pointer('pointerup');

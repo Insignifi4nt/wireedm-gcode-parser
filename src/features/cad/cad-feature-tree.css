@@ -21,18 +21,15 @@
 .cad-feature-disclosure-placeholder { flex: 0 0 18px; }
 .cad-feature-history-row .cad-tree-row { flex: 1; min-width: 0; }
 .cad-feature-name { flex: 1; }
-.cad-feature-details { margin: 1px 0 4px 24px; padding-left: 6px; border-left: 1px solid var(--border); }
+.cad-feature-details { margin: 1px 0 3px 9px; padding-left: 3px; border-left: 1px solid var(--border); }
 .cad-workbench .cad-feature-history .cad-tree-row.is-selected { box-shadow: inset 2px 0 var(--cad-accent); }
 .cad-workbench .cad-feature-history .cad-tree-row.is-context { color: var(--foreground); background: transparent; }
 .cad-workbench .cad-feature-history .cad-tree-row.is-context:hover:not(:disabled) { background: var(--accent); }
 .cad-feature-history .cad-tree-row.is-context svg { color: var(--foreground); }
 .cad-workbench .cad-feature-details .cad-tree-profile { min-height: 25px; padding: 4px 6px; gap: 6px; }
-.cad-feature-relations { display: flex; align-items: baseline; gap: 5px; padding: 3px 4px; font-size: 10px; }
-.cad-feature-relation-label { flex: 0 0 40px; color: var(--primary); white-space: nowrap; }
-.cad-feature-relations > div { display: flex; flex-wrap: wrap; gap: 2px 4px; min-width: 0; }
-.cad-workbench .cad-feature-reference { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 1px 3px; min-height: 18px; font-size: 10px; line-height: 1.3; }
-.cad-feature-reference span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cad-feature-reference small, .cad-feature-details .cad-tree-profile small { font-size: 9px; }
+.cad-feature-list.cad-feature-nested { list-style: none; margin: 0; padding: 0; overflow: visible; }
+.cad-workbench .cad-feature-details .cad-tree-shared { width: 100%; min-height: 25px; padding: 4px 6px; gap: 6px; color: var(--muted-foreground); }
+.cad-feature-details .cad-tree-profile small { font-size: 9px; }
 .cad-feature-missing-reference { color: var(--destructive); overflow-wrap: anywhere; }
 .cad-feature-history .is-parameter-related > .cad-feature-history-row { box-shadow: inset 2px 0 var(--primary); }
 .cad-tree-rename { display: grid; grid-template-columns: minmax(0, 1fr) 22px 22px; flex: 1; gap: 2px; min-width: 0; padding: 2px 0; }

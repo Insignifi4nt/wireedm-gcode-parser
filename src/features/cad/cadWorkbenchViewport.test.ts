@@ -10,7 +10,7 @@ const png: EditorPreviewCapture = { source: '3d', dataUrl: 'data:image/png;base6
 
 function setup(mode: 'solid' | 'sketch' | 'curve' = 'solid') {
   let state: CadRenderedViewState = mode === 'solid' ? { mode, available: true, view: 'Isometric', gridVisible: true, zoom: 1, revision: 1 }
-    : { mode, available: true, plane: 'XY', gridVisible: true, snapEnabled: true, gridStepMm: 5, centerMm: [0, 0], heightSpanMm: 160, revision: 1 };
+    : { mode, available: true, plane: 'XY', gridVisible: true, snapEnabled: true, gridSnapEnabled: false, gridStepMm: 5, centerMm: [0, 0], heightSpanMm: 160, revision: 1 };
   const capture = vi.fn(async (_signal: AbortSignal) => ({ ...png, source: mode === 'solid' ? '3d' : '2d' } satisfies EditorPreviewCapture));
   const bindings: CadViewportBindings = {
     document: createCadDocument('Measured part', 'part'), documentVersion: 'version-1', dirty: true,
@@ -36,7 +36,7 @@ describe('shared CAD viewport controls', () => {
     const context = setup('sketch'), rendered = context.bindings.rendered;
     if (!rendered) throw new Error('Sketch renderer missing');
     const document = { ...context.bindings.document, schemaVersion: 2 as const, features: [graphSketch] };
-    const view = { mode: 'sketch' as const, available: true, plane: 'XY' as const, gridVisible: true, snapEnabled: true,
+    const view = { mode: 'sketch' as const, available: true, plane: 'XY' as const, gridVisible: true, snapEnabled: true, gridSnapEnabled: false,
       gridStepMm: 5, centerMm: [0, 0] as const, heightSpanMm: 160, revision: 1 };
     const setSketchPickFilter = vi.fn((filter: CadSketchGraphPickFilter) => context.updateView({ ...view, sketchPickFilter: filter }));
     context.update({ document, selectedSketchGeometrySet: [{ kind: 'point', id: 'a' }], rendered: { ...rendered, setSketchPickFilter } });
@@ -68,7 +68,7 @@ describe('shared CAD viewport controls', () => {
       [{ curveId: 'curve-1' }, 'WRONG_VIEW'],
       [{ rendered: null }, 'VIEW_UNAVAILABLE'],
       [{ rendered: { ...supported, getState: () => ({ mode: 'sketch', available: false, plane: 'XY', gridVisible: true,
-        snapEnabled: true, gridStepMm: 5, centerMm: [0, 0], heightSpanMm: 160, revision: 1 }) } }, 'VIEW_UNAVAILABLE'],
+        snapEnabled: true, gridSnapEnabled: false, gridStepMm: 5, centerMm: [0, 0], heightSpanMm: 160, revision: 1 }) } }, 'VIEW_UNAVAILABLE'],
       [{ rendered: { ...supported, setSketchPickFilter: undefined } }, 'VIEW_UNAVAILABLE'],
       [{ rendered: { ...supported, getState: () => ({ mode: 'solid', available: true, view: 'Top', gridVisible: true, zoom: 1, revision: 1 }) } }, 'WRONG_VIEW'],
       [{ workflowOpen: true }, 'WORKFLOW_OPEN'], [{ busy: true }, 'BUSY'],
@@ -81,7 +81,7 @@ describe('shared CAD viewport controls', () => {
   });
   it('captures the observed sketch filter and rejects a filter change even when camera and selection stay the same', async () => {
     const context = setup('sketch');
-    const view = { mode: 'sketch' as const, available: true, plane: 'XY' as const, gridVisible: true, snapEnabled: true,
+    const view = { mode: 'sketch' as const, available: true, plane: 'XY' as const, gridVisible: true, snapEnabled: true, gridSnapEnabled: false,
       gridStepMm: 5, centerMm: [0, 0] as const, heightSpanMm: 160, revision: 1, sketchPickFilter: 'points' as const };
     context.updateView(view);
     await expect(context.controls.capture(new AbortController().signal)).resolves.toMatchObject({ viewState: { view: { sketchPickFilter: 'points' } } });
@@ -259,7 +259,7 @@ describe('shared CAD viewport controls', () => {
   it('retains typed datum identity in a local capture and rejects placement changes during capture', async () => {
     const context = setup('sketch');
     const view = { mode: 'sketch' as const, available: true, plane: Object.freeze({ kind: 'datum-plane' as const, featureId: datum.id }),
-      gridVisible: true, snapEnabled: true, gridStepMm: 5, centerMm: [0, 0] as const, heightSpanMm: 160, revision: 1 };
+      gridVisible: true, snapEnabled: true, gridSnapEnabled: false, gridStepMm: 5, centerMm: [0, 0] as const, heightSpanMm: 160, revision: 1 };
     context.updateView(view);
     await expect(context.controls.capture(new AbortController().signal)).resolves.toMatchObject({ viewState: { view: { plane: { kind: 'datum-plane', featureId: datum.id } } } });
     context.capture.mockImplementationOnce(async () => { context.updateView({ ...view, plane: 'XY', revision: 2 }); return { ...png, source: '2d' }; });

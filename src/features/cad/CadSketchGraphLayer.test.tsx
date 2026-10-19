@@ -36,9 +36,9 @@ async function fixture(overrides: Partial<Props> = {}) {
   const render = async (next: Partial<Props> = {}) => {
     props = { ...props, ...next };
     await act(async () => root.render(<svg onPointerDown={parentPointer} onClick={parentClick}><CadSketchGraphLayer {...props} /></svg>));
-    for (const point of container.querySelectorAll<SVGGElement>('[data-cad-sketch-point], [data-cad-sketch-circle-radius]')) if (!captures.has(point)) {
+    for (const point of container.querySelectorAll<SVGGElement>('[data-cad-sketch-point], [data-cad-sketch-circle-radius], [data-cad-sketch-entity]')) if (!captures.has(point)) {
       const owned = new Set<number>(); captures.set(point, owned);
-      const id = point.dataset.cadSketchPoint ?? point.dataset.cadSketchCircleRadius;
+      const id = point.dataset.cadSketchPoint ?? point.dataset.cadSketchCircleRadius ?? point.dataset.cadSketchEntity;
       Object.assign(point, { focus: vi.fn(), setPointerCapture: (pointerId: number) => { owned.add(pointerId); capture(id, pointerId); },
         hasPointerCapture: (pointerId: number) => owned.has(pointerId), releasePointerCapture: (pointerId: number) => { owned.delete(pointerId); release(id, pointerId); } });
     }
@@ -102,25 +102,23 @@ describe('graph circle radius interaction ownership', () => {
     expect(h.edited).not.toHaveBeenCalled(); expect(h.pending.mock.calls.at(-1)).toEqual([false]);
   });
 
-  it('publishes only prepared size previews and clears them on cancel without changing source geometry', async () => {
-    const h = await circleFixture(); vi.useFakeTimers();
+  it('draws prepared size previews locally without publishing them and drops them on cancel without changing source geometry', async () => {
+    const h = await circleFixture();
     const prepared = deferred<CadDocument>(), prepare = vi.fn().mockReturnValue(prepared.promise);
     await h.render({ controls: { ...h.props().controls, onPrepareEdits: prepare } });
     await h.pointer(h.grip(), 'pointerdown'); await h.pointer(h.grip(), 'pointermove', { clientX: 105 });
-    expect(h.previewed).not.toHaveBeenCalled();
-    await act(async () => { vi.advanceTimersByTime(20); });
     const edit = prepare.mock.calls[0][0][0] as CadEdit;
     if (edit.kind !== 'update-feature') throw new Error('Expected the shared feature update.');
     const candidate = parseCadDocument({ ...h.document, features: [edit.feature] });
     await act(async () => prepared.resolve(candidate));
     expect(container.querySelector('[data-cad-sketch-entity="bore"] > circle')?.getAttribute('r')).toBe('10');
-    expect(h.previewed).toHaveBeenLastCalledWith(candidate); expect(h.edited).not.toHaveBeenCalled();
+    expect(h.edited).not.toHaveBeenCalled();
     await h.pointer(h.grip(), 'pointermove', { clientX: 100 });
     expect(container.querySelector('[data-cad-sketch-entity="bore"] > circle')?.getAttribute('r')).toBe('5');
-    expect(h.previewed).toHaveBeenLastCalledWith(null);
     expect(h.pending).toHaveBeenLastCalledWith(true);
     await h.key(h.grip(), 'Escape');
-    expect(h.previewed).toHaveBeenLastCalledWith(null);
+    // Drags redraw only this layer; publishing every solved frame would re-render the whole workbench.
+    expect(h.previewed).not.toHaveBeenCalled();
     expect(container.querySelector('[data-cad-sketch-entity="bore"] > circle')?.getAttribute('r')).toBe('5');
     expect(h.document.features[0]).toMatchObject({ graph: { points: expect.arrayContaining([{ id: 'mixed', position: [' x ', 7] }]) } });
   });
@@ -241,9 +239,10 @@ describe('graph point interaction ownership', () => {
       relations: [{ id: 'joint', kind: 'coincident', pointIds: ['a', 'alias'] }] } }] });
     await h.source(source);
     await h.pointer(h.point(), 'pointerdown');
-    await h.pointer(h.point(), 'pointermove', { clientX: 105, clientY: 100 });
-    expect(container.querySelector('[data-cad-sketch-snap]')).toBeNull();
-    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('5');
+    await h.pointer(h.point(), 'pointermove', { clientX: 110, clientY: 100 });
+    // The joined alias moves along; only the X axis the point slides on attracts it.
+    expect(container.querySelector('[data-cad-sketch-snap]')?.getAttribute('data-cad-sketch-snap')).toBe('x-axis');
+    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('10');
     await h.key(h.point(), 'Escape');
     await h.pointer(h.point('mixed'), 'pointerdown');
     await h.pointer(h.point('mixed'), 'pointermove', { clientX: 116, clientY: 106 });
@@ -254,6 +253,30 @@ describe('graph point interaction ownership', () => {
     await h.pointer(h.point('mixed'), 'pointerup', { clientX: 101, clientY: 88 });
     expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'mixed', translation: [0, 13] }], expect.any(AbortSignal));
     expect(source.features[0]).toMatchObject({ graph: { points: expect.arrayContaining([{ id: 'mixed', position: [' x ', 7] }]) } });
+  });
+
+  it('drags a point onto another edge, a guide crossing or an axis as a position only', async () => {
+    const h = await fixture({ snap: true });
+    const sketch = h.document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch missing.');
+    const source = parseCadDocument({ ...h.document, features: [{ ...sketch, graph: {
+      points: [{ id: 'a', position: [0, 20] }, { id: 'b', position: [40, 20] }, { id: 'p', position: [10, 40] }, { id: 'q', position: [30, 60] }],
+      entities: [{ id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'arm', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }],
+      relations: [] } }] });
+    await h.source(source);
+    const hint = () => container.querySelector('[data-cad-sketch-snap]');
+    // The pointer starts on p at (10, 40); one pixel is one millimetre and Y points up.
+    await h.pointer(h.point('p'), 'pointerdown');
+    await h.pointer(h.point('p'), 'pointermove', { clientX: 102, clientY: 119.7 });
+    expect(hint()?.getAttribute('data-cad-sketch-snap')).toBe('edge'); expect(hint()?.getAttribute('aria-label')).toMatch(/^On line · /);
+    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('12');
+    // Its neighbour q offers a vertical guide, which crosses the edge at (30, 20).
+    await h.pointer(h.point('p'), 'pointermove', { clientX: 119.6, clientY: 119.6 });
+    expect(hint()?.getAttribute('aria-label')).toMatch(/^On line · vertical with point · /);
+    expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('30');
+    await h.pointer(h.point('p'), 'pointermove', { clientX: 89.7, clientY: 90 });
+    expect(hint()?.getAttribute('data-cad-sketch-snap')).toBe('y-axis');
+    await h.pointer(h.point('p'), 'pointerup', { clientX: 89.7, clientY: 90 });
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'p', translation: [-10, 10] }], expect.any(AbortSignal));
   });
 
   it('highlights candidate diagnostic operands independently of accepted relation identity and selection', async () => {
@@ -267,6 +290,18 @@ describe('graph point interaction ownership', () => {
     await h.render({ controls: { ...h.props().controls, inspection: null } });
     expect(h.edge().classList.contains('is-relation-highlighted')).toBe(false);
     expect(h.point('mixed').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('reveals shared vertices only for selection, relations and point picking while free points stay visible', async () => {
+    const h = await fixture(), revealed = (id: string) => h.point(id).classList.contains('is-revealed');
+    expect([revealed('a'), revealed('b'), revealed('mixed')]).toEqual([false, false, true]);
+    await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'entity', id: 'edge' }] } });
+    expect([revealed('a'), revealed('b')]).toEqual([true, true]);
+    await h.render({ controls: { ...h.props().controls, selection: [], inspection: { pointIds: ['b'], entityIds: [] } } });
+    expect([revealed('a'), revealed('b')]).toEqual([false, true]);
+    await h.render({ controls: { ...h.props().controls, inspection: null }, filter: 'points' });
+    expect([revealed('a'), revealed('b')]).toEqual([true, true]);
+    expect(h.point('a').getAttribute('tabindex')).toBe('0');
   });
 
   it('does not infer point freedom from unrelated sketch freedom and keeps driven coordinates protected', async () => {
@@ -328,20 +363,56 @@ describe('graph point interaction ownership', () => {
     expect(h.parentPointer).not.toHaveBeenCalled();
   });
 
-  it('replaces a selected set and drags only the clicked point in the same gesture', async () => {
+  it('moves a free edge as it is and slides a connected line along its normal', async () => {
     const h = await fixture();
-    await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }] } });
+    await h.pointer(h.edge(), 'pointerdown');
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'entity', id: 'edge' }); expect(h.capture).toHaveBeenCalledExactlyOnceWith('edge', 11);
+    await h.pointer(h.edge(), 'pointermove', { clientX: 120, clientY: 90 });
+    await h.pointer(h.edge(), 'pointerup', { clientX: 120, clientY: 90 });
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'translate-sketch-geometry', sketchId: 'sketch', selections: [{ kind: 'entity', id: 'edge' }], translation: [20, 10] }], expect.any(AbortSignal));
+    h.edited.mockClear();
+    const sketch = h.document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch missing.');
+    await h.source(parseCadDocument({ ...h.document, features: [{ ...sketch, graph: { ...sketch.graph, points: [...sketch.graph.points, { id: 'c', position: [10, 20] }],
+      entities: [...sketch.graph.entities, { id: 'riser', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }] } }] }));
+    await h.pointer(h.edge(), 'pointerdown');
+    await h.pointer(h.edge(), 'pointermove', { clientX: 100, clientY: 90 });
+    await h.pointer(h.edge(), 'pointerup', { clientX: 100, clientY: 90 });
+    const edit = h.edited.mock.calls[0]?.[0]?.[0] as CadEdit;
+    if (edit?.kind !== 'translate-sketch-geometry') throw new Error('Expected an exact edge translation.');
+    expect(edit.selections).toEqual([{ kind: 'entity', id: 'edge' }]);
+    expect(edit.translation[0]).toBeCloseTo(-4); expect(edit.translation[1]).toBeCloseTo(8);
+  });
+
+  it('moves points continuously between grid nodes and catches a node only within a few pixels', async () => {
+    const h = await fixture({ snap: true, gridSnap: true, scaleX: 0.1, scaleY: 0.1 });
+    await h.pointer(h.point(), 'pointerdown');
+    await h.pointer(h.point(), 'pointermove', { clientX: 172 });
+    expect(Number(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx'))).toBeCloseTo(7.2);
+    await h.pointer(h.point(), 'pointermove', { clientX: 196 });
+    expect(Number(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx'))).toBe(10);
+    await h.pointer(h.point(), 'pointerup', { clientX: 196 });
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'a', translation: [10, 0] }], expect.any(AbortSignal));
+  });
+
+  it('drags a whole selected set from any member and narrows to the pressed point on a plain click', async () => {
+    const h = await fixture();
+    const set = [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }] as const;
+    await h.render({ controls: { ...h.props().controls, selection: set } });
     expect(h.point('a').getAttribute('aria-pressed')).toBe('true');
     expect(h.point('b').getAttribute('aria-pressed')).toBe('true');
     await h.key(h.point('b'), 'ArrowRight');
     expect(h.edited).not.toHaveBeenCalled();
     await h.pointer(h.point('b'), 'pointerdown');
-    expect(h.capture).toHaveBeenCalledExactlyOnceWith('b',11);
-    await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'point', id: 'b' }] } });
+    expect(h.capture).toHaveBeenCalledExactlyOnceWith('b',11); expect(h.selected).not.toHaveBeenCalled();
     await h.pointer(h.point('b'), 'pointermove', { clientX: 150 });
     await h.pointer(h.point('b'), 'pointerup', { clientX: 150 });
-    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: 'b' });
-    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'b', translation: [50, 0] }], expect.any(AbortSignal));
+    expect(h.selected).not.toHaveBeenCalled();
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'translate-sketch-geometry', sketchId: 'sketch', selections: set, translation: [50, 0] }], expect.any(AbortSignal));
+    h.edited.mockClear();
+    await h.render({ version: 'translated' });
+    await h.pointer(h.point('b'), 'pointerdown'); await h.pointer(h.point('b'), 'pointerup');
+    expect(h.selected).toHaveBeenCalledExactlyOnceWith({ kind: 'point', id: 'b' }); expect(h.edited).not.toHaveBeenCalled();
+    await h.render({ controls: { ...h.props().controls, selection: [{ kind: 'point', id: 'b' }] } });
     expect(h.document.features[0]).toMatchObject({graph:{points:[{id:'a',position:[0,0]},{id:'b',position:[10,5]},{id:'mixed',position:[' x ',7]}]}});
     h.edited.mockClear();
     await h.key(h.point('b'), 'ArrowRight');

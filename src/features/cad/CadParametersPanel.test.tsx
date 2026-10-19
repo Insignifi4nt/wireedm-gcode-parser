@@ -1,13 +1,16 @@
-import { act, useSyncExternalStore } from 'react';
+import { act, createRef, useSyncExternalStore } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCadDocument } from '@/domain/cad/cadSchema';
 import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { CAD_GEAR_V2_PLUGIN } from '@/domain/cad/plugins/cadPlugins';
 import { CadSession } from './cadSession';
-import { CadParametersPanel } from './CadParametersPanel';
+import { CadParametersPanel, type CadParametersPanelControls } from './CadParametersPanel';
 
 let container: HTMLDivElement, root: Root;
+// The tree's Parameters menu drives these commands.
+const controls = createRef<CadParametersPanelControls>();
+async function create(kind: 'parameter' | 'group') { await act(async () => controls.current?.create(kind)); }
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 function dialog() { const panel = document.querySelector<HTMLDivElement>('.cad-parameter-editor'); if (!panel) throw new Error('Missing floating parameter editor'); return panel; }
@@ -30,7 +33,7 @@ async function renderPanel(session = new CadSession(linkedDocument())) {
   const inspect = vi.fn(), pending = vi.fn(), edits = vi.fn((batch: readonly CadEdit[]) => { session.edit(batch); });
   function Harness() {
     const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
-    return <CadParametersPanel document={state.document} onEditMany={edits} onInspectParameter={inspect} onPendingChange={pending} interactionLocked={false} cancelSignal={0} />;
+    return <CadParametersPanel controls={controls} document={state.document} onEditMany={edits} onInspectParameter={inspect} onPendingChange={pending} interactionLocked={false} cancelSignal={0} />;
   }
   await act(async () => root.render(<Harness />)); return { session, inspect, pending, edits };
 }
@@ -90,14 +93,14 @@ describe('document parameter editing', () => {
     const { session, edits } = await renderPanel(); const before = session.getSnapshot().document;
     await click('Edit parameter radius'); await input('Parameter value', '0'); await click('Apply');
     expect(dialog().querySelector('[role="alert"]')).not.toBeNull(); expect(session.getSnapshot().document).toBe(before); expect(document.querySelector<HTMLInputElement>('input[aria-label="Parameter value"]')?.value).toBe('0');
-    await click('Cancel'); await click('Add parameter'); await input('Parameter name', 'radius'); await input('Parameter value', '100'); await click('Apply');
+    await click('Cancel'); await create('parameter'); await input('Parameter name', 'radius'); await input('Parameter value', '100'); await click('Apply');
     expect(dialog().querySelector('[role="alert"]')?.textContent).toContain('already exists'); expect(session.getSnapshot().document).toBe(before);
     await input('Parameter name', 'clearance'); await input('Parameter value', '0.5'); await click('Apply'); expect(session.getSnapshot().document.parameters.clearance).toBe(0.5);
     expect(edits).toHaveBeenCalledTimes(2); // Rejected geometry attempt and accepted addition; duplicate rejected in UI.
   });
   it('creates and renames groups, moves a value, and ungroups without deleting it', async () => {
     const { session } = await renderPanel();
-    await click('Add parameter group'); await input('Group name', 'Dimensions'); await click('Apply');
+    await create('group'); await input('Group name', 'Dimensions'); await click('Apply');
     const groupId = session.getSnapshot().document.parameterGroups?.[0].id; expect(groupId).toBeTruthy();
     await click('Edit parameter freeValue');
     const select = dialog().querySelector<HTMLSelectElement>('select'); if (!select || !groupId) throw new Error('Missing group choice');
@@ -133,9 +136,9 @@ describe('document parameter editing', () => {
   });
   it('cancels through the parent signal and blocks starting a locked editor', async () => {
     const doc = linkedDocument(), pending = vi.fn(), edit = vi.fn(), inspect = vi.fn();
-    const render = (signal: number, locked = false) => root.render(<CadParametersPanel document={doc} onEditMany={edit} onInspectParameter={inspect} onPendingChange={pending} interactionLocked={locked} cancelSignal={signal} />);
+    const render = (signal: number, locked = false) => root.render(<CadParametersPanel controls={controls} document={doc} onEditMany={edit} onInspectParameter={inspect} onPendingChange={pending} interactionLocked={locked} cancelSignal={signal} />);
     await act(async () => render(0)); await click('Edit parameter freeValue'); await input('Parameter value', '75');
     await act(async () => render(1)); expect(document.querySelector('.cad-parameter-editor')).toBeNull(); expect(pending).toHaveBeenLastCalledWith(false); expect(edit).not.toHaveBeenCalled();
-    await act(async () => render(1, true)); await click('Add parameter'); expect(document.querySelector('.cad-parameter-editor')).toBeNull();
+    await act(async () => render(1, true)); await create('parameter'); expect(document.querySelector('.cad-parameter-editor')).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
 import type { CadBuildResult, CadDocument } from '@/domain/cad/cadDocument';
 import { cadFeatureProducesBody, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
@@ -16,6 +16,7 @@ import { preparePreviewCapture, downloadPreviewCapture, type PreviewCaptureArtif
 import { createCadTopologyActions } from './cadTopologyActions';
 import type { CadTopologyInspectRequest, CadTopologyResolvePicksRequest } from '@/domain/cad/cadTopology';
 import { createCadFeatureInputCoordinator } from './cadFeatureInput';
+import { useOwnedDisposable } from '@/lib/useOwnedDisposable';
 import { cadBytesToBase64, cadSolidImportByteLength, isCadSolidImportResult, parseCadSolidImportSource, type CadSolidImportSource } from '@/domain/cad/cadImports';
 import { parseCadDxfImportSource, type CadDxfUnits } from '@/domain/cad/cadDxfSource';
 import type { DxfUnitDeclaration } from '@/domain/dxf/types';
@@ -86,7 +87,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   const sketchEditing = useCadSketchEditing({ session, storage: app.connectedWorkbench?.adapter ?? null, open,
     locked: storageBusy || app.workbenchInteractionLocked, prepare: prepareDocument, inspect: readSketchConstraintInspection,
     commit: (edits, version, signal) => edit(edits, version, false, signal) });
-  const featurePreviewCoordinator = useMemo(() => createCadFeaturePreviewCoordinator({
+  const featurePreviewCoordinator = useOwnedDisposable(() => createCadFeaturePreviewCoordinator({
     assertCurrent(expectedVersion) {
       const workbench = connected(); editable(expectedVersion); session.assertWorkflowClosed('editor');
       return { document: session.getSnapshot().document, storage: workbench.adapter };
@@ -95,22 +96,20 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     prepare: async (document, edits, signal) => needsCadSketchPreparation(document, edits)
       ? (await prepareCadEdits(document, edits, await getSketchSolver(), signal)).document : applyCadEdits(document, edits),
     onChange: setFeaturePreview
-  }), [session]);
+  }), session);
   useLayoutEffect(() => { featurePreviewCoordinator.invalidate(); }, [featurePreviewCoordinator, snapshot.version, app.connectedWorkbench?.adapter, open, app.workbenchInteractionLocked, storageBusy]);
-  useEffect(() => () => featurePreviewCoordinator.dispose(), [featurePreviewCoordinator]);
-  const featureInputCoordinator = useMemo(() => createCadFeatureInputCoordinator({
+  const featureInputCoordinator = useOwnedDisposable(() => createCadFeatureInputCoordinator({
     assertCurrent(expectedVersion, scope) {
       const workbench = connected(); editable(expectedVersion); session.assertWorkflowClosed(scope);
       return { document: session.getSnapshot().document, storage: workbench.adapter };
     },
     createKernel: async () => (await import('./kernel/cadKernelClient')).createCadKernelClient(),
     prepare: prepareDocument,
-  }), [session]);
+  }), session);
   useLayoutEffect(() => { featureInputCoordinator.invalidate(); }, [featureInputCoordinator, snapshot.version, app.connectedWorkbench?.adapter, open, app.workbenchInteractionLocked, storageBusy]);
   useLayoutEffect(() => {
     try { session.assertWorkflowClosed('editor'); } catch { featureInputCoordinator.invalidate(); }
   }, [featureInputCoordinator, session, snapshot]);
-  useEffect(() => () => featureInputCoordinator.dispose(), [featureInputCoordinator]);
   const releaseFeatureInput = useCallback((inputToken: string) => featureInputCoordinator.clear(inputToken), [featureInputCoordinator]);
   function changeOpen(value: boolean) {
     current.current.open = value;
@@ -192,7 +191,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
         if (controller.signal.aborted) return;
         setBuildState('error'); setErrorMessage(error instanceof Error ? error.message : 'CAD kernel could not build this model.');
       });
-    }, 80);
+    }, 30);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [open, snapshot.document, app.connectedWorkbench?.adapter]);
 

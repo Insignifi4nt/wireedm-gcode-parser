@@ -102,7 +102,6 @@ export function createCadFeaturePreviewCoordinator(options: {
     if (command.kind === 'clear') { if (owner === command.owner) clear(); return; }
     if (owner !== command.owner) clear();
     owner = command.owner;
-    if (timer !== null) clearTimeout(timer); timer = null;
     latest = null; ++serial;
     const request: PreviewIdentity = { owner, baseVersion: command.expectedVersion, candidateId: crypto.randomUUID(), featureId: command.edits[0].feature.id, definitionKey: cadFeatureCandidateKey(command.edits) };
     try {
@@ -120,7 +119,8 @@ export function createCadFeaturePreviewCoordinator(options: {
       const document = options.prepare ? null : applyCadEdits(accepted.document, edits);
       latest = { ...request, serial, document, edits, baseDocument: accepted.document, storage: accepted.storage };
       publish({ ...request, ...retained(request), kind: 'waiting' });
-      timer = setTimeout(() => { timer = null; run(); }, options.debounceMs ?? 200);
+      // A short throttle, not a debounce: a dragged handle keeps changing, and restarting the wait would show nothing until the pointer stops.
+      timer ??= setTimeout(() => { timer = null; run(); }, options.debounceMs ?? 50);
     } catch (error) {
       publish({ ...request, ...retained(request), kind: 'error', stage: 'validation', message: error instanceof Error ? error.message : 'The candidate is not valid.', diagnostics: [] });
     }

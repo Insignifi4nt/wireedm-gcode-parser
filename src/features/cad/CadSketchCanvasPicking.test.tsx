@@ -76,6 +76,50 @@ describe('sketch canvas profile picking', () => {
     const item = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="Choose snap target actions"] [role="menuitem"]')].find(button => button.textContent?.startsWith(name));
     if (!item) throw new Error(`Missing profile snap ${name}.`); return item;
   };
+  it('attaches fresh points to the origin, an axis and an existing line, and names each relation before the click', async () => {
+    const onAddFreshSketch = vi.fn(), h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'polygon', onAddFreshSketch });
+    const hint = async (x: number, y: number) => {
+      await h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0 });
+      const found = container.querySelector('.cad-sketch-snap-hint'); return [found?.getAttribute('data-cad-sketch-snap-kind'), found?.getAttribute('aria-label')];
+    };
+    expect(await hint(.05, .05)).toEqual(['origin', 'Origin · No relation']);
+    await act(async () => inference().click());
+    expect(await hint(.05, .05)).toEqual(['origin', 'Origin · Fixed at origin']); await h.click(.05, .05);
+    expect(await hint(8, 3.25)).toEqual(['on-entity', 'On line · Point on line']); await h.click(8, 3.25);
+    expect(await hint(.03, 20)).toEqual(['on-axis', 'On Y axis · Fixed X at 0']); await h.click(.03, 20);
+    expect(container.querySelector('[aria-label="Pending relations"]')?.textContent).toBe('3 attached');
+    await h.click(0, 0);
+    expect(onAddFreshSketch).toHaveBeenCalledExactlyOnceWith({ kind: 'polygon', vertices: [
+      { kind: 'datum', point: [0, 0], datum: 'origin', relationIds: [expect.any(String), expect.any(String)] },
+      { kind: 'on-line', point: [expect.closeTo(8, 10), 3.2], lineId: 'line', relationId: expect.any(String) },
+      { kind: 'datum', point: [0, expect.closeTo(20, 10)], datum: 'y-axis', relationIds: [expect.any(String)] }
+    ] }, expect.any(AbortSignal));
+  });
+  it('guides new points level with or above the points already placed, and Ctrl releases the guide', async () => {
+    const onAddFreshSketch = vi.fn(), h = await fixture([], { tool: 'polygon', onAddFreshSketch });
+    const move = (x: number, y: number, init: MouseEventInit = {}) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0, ...init });
+    await h.click(30, 30); await move(30.03, 50);
+    expect(container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label')).toBe('Vertical with point · No relation');
+    expect(container.querySelectorAll('.cad-sketch-snap-guide')).toHaveLength(1);
+    await move(30.03, 50, { ctrlKey: true }); expect(container.querySelector('.cad-sketch-snap-hint')).toBeNull();
+    await h.click(30.03, 50); await h.click(50, 50.04); await h.click(30, 30);
+    expect(onAddFreshSketch).toHaveBeenCalledOnce();
+    // The first point is free; each guided point copies its source coordinate exactly.
+    const [first, second, third] = onAddFreshSketch.mock.calls[0][0].vertices.map((vertex: { readonly point: readonly [number, number] }) => vertex.point);
+    expect(first).toEqual([expect.closeTo(30, 10), expect.closeTo(30, 10)]);
+    expect(second).toEqual([first[0], expect.closeTo(50, 10)]); expect(third).toEqual([expect.closeTo(50, 10), second[1]]);
+  });
+  it('reads out the unfinished size at the cursor and clears it once the shape is placed or cancelled', async () => {
+    const h = await fixture([], { tool: 'rectangle' }), readout = () => container.querySelector('[data-cad-drawing-readout] text')?.textContent ?? null;
+    const move = (x: number, y: number) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0 });
+    await move(10, 10); expect(readout()).toBeNull();
+    await h.click(10, 10); await move(40, 30);
+    expect(readout()).toBe(`${(30).toLocaleString()} × ${(20).toLocaleString()} mm`);
+    await h.click(40, 30); expect(h.added).toHaveBeenCalledOnce(); expect(readout()).toBeNull();
+    await h.render({ tool: 'circle' }); await h.click(0, 0); await move(0, 10); expect(readout()).toBe(`Ø ${(20).toLocaleString()} mm`);
+    await h.render({ tool: 'polygon' }); expect(readout()).toBeNull();
+    await h.click(0, 0); await move(10, 10); expect(readout()).toBe(`${(Math.hypot(10, 10)).toLocaleString(undefined, { maximumFractionDigits: 2 })} mm · ${(45).toLocaleString()}°`);
+  });
   it('draws a detached Path from a legacy-only slot center and retains its numeric start after the source moves', async () => {
     const onAddPath = vi.fn(), h = await fixture([legacySlot], { tool: 'path', onAddPath });
     await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
@@ -285,6 +329,7 @@ describe('sketch canvas profile picking', () => {
   });
   it('closes a polygon only on its acquired start, without swallowing a nearby fourth vertex', async () => {
     const h = await fixture([], { tool: 'polygon' });
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Snap to grid"]')!.click());
     // At the default view 7 pixels is inside the old span-based closure zone.
     await h.click(0, 0); await h.click(30, 0); await h.click(30, 30);
     const span = Number(h.svg.getAttribute('viewBox')!.split(' ')[3]);
@@ -374,8 +419,10 @@ describe('sketch canvas profile picking', () => {
 
   it('preserves snapped drawing and pending state while selection creates no draft geometry', async () => {
     const h = await fixture([], { tool: 'rectangle' });
-    await h.click(2, 2); expect(h.pending).toHaveBeenLastCalledWith(true);
-    await h.click(12, 12);
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Snap to grid"]')!.click());
+    // The grid magnet catches clicks a few pixels from a node.
+    await h.click(0.05, 0.05); expect(h.pending).toHaveBeenLastCalledWith(true);
+    await h.click(10.05, 9.95);
     expect(h.added).toHaveBeenCalledWith({ kind: 'rectangle', x: 0, y: 0, width: 10, height: 10, cornerRadius: 0 }, expect.any(AbortSignal));
     expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.selected).not.toHaveBeenCalled();
     await h.render({ tool: 'select' }); await h.click(2, 2);

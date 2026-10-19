@@ -37,11 +37,11 @@ export function CadSketchConstraintStatus({ document, sketch, version, inspect, 
   if (!hasGraph) return null;
   const label = !enabled ? 'Editing…' : unavailable || !available ? 'Freedom unavailable'
     : !analysis ? 'Checking freedom…' : analysis.kind === 'rejected' ? analysis.reason === 'redundant' ? 'Redundant relations' : 'Constraint issue'
-      : freedom === 0 ? 'Fully constrained' : freedom === null || freedom === undefined ? 'Freedom unknown' : `${freedom} degree${freedom === 1 ? '' : 's'} of freedom`;
+      : freedom === 0 ? 'Fully constrained' : freedom === null || freedom === undefined ? 'Freedom unknown' : `${freedom} DOF`;
   return <div className="cad-sketch-freedom">
     <output aria-label="Sketch constraint status">{label}</output>
     <CadContextHelp label="Sketch freedom">
-      <p>Each free point starts with two directions of movement. Dimensions, expressions and geometric relations remove those freedoms.</p>
+      <p>DOF counts the degrees of freedom left in the sketch. Each free point starts with two directions of movement. Dimensions, expressions and geometric relations remove those freedoms.</p>
       {current?.legacyProfileCount ? <p>This count covers sketch points and edges. Older profile groups keep their own dimensions.</p> : null}
       {message && <p>{message}</p>}
       {enabled && unavailable && <Button type="button" onClick={() => { setFailure(null); setResult(null); setRetry(value => value + 1); }}>Retry analysis</Button>}

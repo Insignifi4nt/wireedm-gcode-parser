@@ -6,7 +6,7 @@ import { cadVisibleBodyIds, createCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from './cadSession';
 import { CadWorkbench } from './CadWorkbench';
 
-vi.mock('./CadViewport', () => ({ CadViewport: () => <div aria-label="3D model viewport" /> }));
+vi.mock('./CadViewport', () => ({ CadViewport: ({ hidden }: { hidden?: boolean }) => hidden ? <div className="cad-viewport" hidden /> : <div aria-label="3D model viewport" /> }));
 let root: Root; let container: HTMLDivElement; let session: CadSession;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
@@ -85,7 +85,7 @@ describe('Sweep workbench workflow', () => {
     const saved = { ...sweep, operation, targetId: pad.id };
     await mount(part([baseSketch, pad, section, rail, saved])); const before = session.getSnapshot();
     const row = [...container.querySelectorAll<HTMLButtonElement>('.cad-feature-list button')].find(element => element.textContent?.trim() === 'Sweep');
-    if (!row) throw new Error('Saved Sweep missing'); await act(async () => row.click());
+    if (!row) throw new Error('Saved Sweep missing'); await act(async () => row.click()); await act(async () => row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
     expect(select('Target body').value).toBe(pad.id); expect(select('Target body').selectedOptions[0].textContent).toBe('Pad');
     expect(select('Target body').selectedOptions[0].disabled).toBe(false); await rename(row, 'Edited Sweep');
     expect(session.getSnapshot().document.features.at(-1)).toMatchObject({ name: 'Edited Sweep', operation, targetId: pad.id });
@@ -143,8 +143,10 @@ describe('datum Sweep atomic authoring', () => {
     const other = { ...datumSection, id: 'other', name: 'Other section' };
     await mount(authored([railPlane, sectionPlane, datumSection, datumRail, other, sweep])); const before = session.getSnapshot();
     const row = [...container.querySelectorAll<HTMLButtonElement>('.cad-feature-list button')].find(element => element.textContent?.trim() === 'Sweep');
-    if (!row) throw new Error('Saved Sweep missing'); await act(async () => row.click()); await choose('Profile sketch', 'other');
+    if (!row) throw new Error('Saved Sweep missing'); await act(async () => row.click()); await act(async () => row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))); await choose('Profile sketch', 'other');
     expect(session.getSnapshot().workflowOpen).toBe(true); await click('Cancel'); expect(session.getSnapshot()).toEqual(before);
+    // Cancel closes the editor; the selected row reopens it.
+    await act(async () => row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
     await choose('Profile sketch', 'other'); await click('Apply');
     expect(session.getSnapshot().document.features.at(-1)).toMatchObject({ ...sweep, sketchId: 'other' });
     expect(session.getSnapshot().document.features.slice(0, 5)).toEqual(before.document.features.slice(0, 5));

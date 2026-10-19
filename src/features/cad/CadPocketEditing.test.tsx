@@ -6,7 +6,7 @@ import { cadVisibleBodyIds, createCadDocument } from '@/domain/cad/cadSchema';
 import { CadWorkbench } from './CadWorkbench';
 import { CadSession } from './cadSession';
 
-vi.mock('./CadViewport', () => ({ CadViewport: () => <div aria-label="3D model viewport" /> }));
+vi.mock('./CadViewport', () => ({ CadViewport: ({ hidden }: { hidden?: boolean }) => hidden ? <div className="cad-viewport" hidden /> : <div aria-label="3D model viewport" /> }));
 let root: Root; let container: HTMLDivElement; let session: CadSession;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
@@ -37,7 +37,7 @@ async function mount(initial = part()) {
       onOpenDocument={vi.fn()} onNewDocument={vi.fn()} onImportDocument={async () => undefined} onExportDocument={vi.fn()} onExportSolid={async () => undefined}
       onOpenDxfExport={async () => undefined} onSendToCam={async () => undefined} />;
   }
-  await act(async () => root.render(<Harness />)); await click('Bore cut');
+  await act(async () => root.render(<Harness />)); await click('Bore cut'); await openSelected();
 }
 function button(label: string) {
   const result = [...container.querySelectorAll('button')].find(entry => entry.getAttribute('aria-label') === label || entry.textContent?.trim() === label
@@ -45,6 +45,8 @@ function button(label: string) {
   if (!result) throw new Error(`Missing button ${label}`); return result;
 }
 async function click(label: string) { await act(async () => button(label).click()); }
+/** A history click only selects; double-click on the selected row opens its editor. */
+async function openSelected() { await act(async () => { container.querySelector('.cad-tree-row[aria-pressed="true"]')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); }); }
 function field(label: string) {
   const result = [...container.querySelectorAll('label')].find(entry => entry.querySelector('span')?.childNodes[0]?.textContent === label);
   if (!result) throw new Error(`Missing field ${label}`); return result;

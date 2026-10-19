@@ -112,6 +112,14 @@ it('coalesces typing before and during native work without terminating its worke
   expect(h.states.at(-1)).toMatchObject({ kind: 'ready', result: { buildId: 'latest' } }); expect(h.createKernel).toHaveBeenCalledOnce();
   expect(h.session.getSnapshot()).toBe(h.before); h.preview.dispose();
 });
+it('builds during a continuous stream of candidates instead of waiting for the stream to stop', async () => {
+  const h = fixture(); h.kernel.build.mockResolvedValue(built('dragged'));
+  for (const factor of [2, 3, 4]) { h.candidate(`depth * ${factor}`); await vi.advanceTimersByTimeAsync(30); }
+  expect(h.kernel.build).toHaveBeenCalledOnce(); expect(h.kernel.build.mock.calls[0][0].features[1]).toHaveProperty('distance', 'depth * 3');
+  h.candidate('depth * 5'); await vi.advanceTimersByTimeAsync(50);
+  expect(h.kernel.build).toHaveBeenCalledTimes(2); expect(h.kernel.build.mock.calls[1][0].features[1]).toHaveProperty('distance', 'depth * 5');
+  h.preview.dispose();
+});
 it('rejects invalid expressions before allocating native work and suppresses an older successful result', async () => {
   const h = fixture(), response = deferred<CadBuildResult>(); h.kernel.build.mockReturnValue(response.promise);
   h.candidate('depth * 2'); await vi.advanceTimersByTimeAsync(200);

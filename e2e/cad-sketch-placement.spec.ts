@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools, callCadTool as call, cadContext as context } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow } from './cad-tool-helpers';
 
 test('places a copied major-arc detail by its anchor and angle with private recovery, exact history and saved agent parity',async({page})=>{
  await prepareCadTools(page);await call(page,'cad_open_workspace');
@@ -8,7 +8,7 @@ test('places a copied major-arc detail by its anchor and angle with private reco
  const source:CadSketchFeature={id:'source',kind:'sketch',name:'Source detail',suppressed:false,plane:'XY',offset:0,profiles:[{id:'d-profile',name:'D outline',construction:false,geometry:{kind:'path',segments:[{kind:'arc',center:[0,0],radius:10,startAngle,sweep},{kind:'line',start:[8,6],end:[-8,6]}]}}]};
  await call(page,'cad_edit_document',{expectedVersion:(await context(page)).version,edits:[{kind:'add-feature',feature:source},{kind:'copy-sketch-profile',sourceSketchId:'source',profileId:'d-profile',newSketchId:'detail',name:'Placed detail',idPrefix:'copy'},{kind:'add-feature',feature:{id:'pad',kind:'extrude',name:'Detail thickness',suppressed:false,sketchId:'detail',distance:' 5e0 ',symmetric:false,operation:'new',targetId:null}}]});
  let current=await context(page);const base=current;const read=(id:string)=>call(page,'cad_get_feature',{expectedVersion:current.version,featureId:id}).then(r=>r.feature),original=await read('detail');
- const edit=async()=>{await page.getByRole('button',{name:'Select Placed detail in history',exact:true}).dblclick();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toBeVisible();};
+ const edit=async()=>{await (await historyRow(page, 'Placed detail')).dblclick();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toBeVisible();};
  const open=async()=>{for(const [i,e]of original.graph.entities.entries())await page.locator(`[data-cad-sketch-entity="${e.id}"]`).press(i?'Shift+Enter':'Enter');await page.getByRole('button',{name:'Move selection',exact:true}).click();await page.getByRole('button',{name:'Place and rotate…',exact:true}).click();await expect(page.getByRole('form',{name:'Place and rotate',exact:true})).toBeVisible();};
  const choose=async()=>{const arc=original.graph.entities.find((e:{kind:string})=>e.kind==='arc');await page.locator(`[data-cad-sketch-point="${arc.centerPointId}"]`).press('Enter');await page.getByRole('textbox',{name:'Target X',exact:true}).fill('30');await page.getByRole('textbox',{name:'Target Y',exact:true}).fill('20');await page.getByRole('textbox',{name:'Rotation',exact:true}).fill('90');await expect(page.getByRole('button',{name:'Apply',exact:true})).toBeEnabled();await page.getByRole('application',{name:'Sketch drawing canvas',exact:true}).press('f');
    await expect.poll(()=>page.locator('[data-cad-sketch-entity]').evaluateAll(es=>es.every(e=>{const r=e.getBoundingClientRect(),s=e.closest('svg')!.getBoundingClientRect();return r.left>=s.left&&r.right<=s.right&&r.top>=s.top&&r.bottom<=s.bottom;}))).toBe(true);};

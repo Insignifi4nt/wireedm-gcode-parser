@@ -1,29 +1,29 @@
 {
-  "generatedAt": "2026-10-16T05:25:42.025Z",
+  "generatedAt": "2026-10-18T17:20:40.871Z",
   "baseline": {
     "path": "docs/design/inventory/checkpoints/6e2113f/icon-inventory.audit.json",
     "publishedCheckpoint": "6e2113fa0151ef7d0b378ad3de7635664b2fab82",
-    "originalOccurrenceCount": 285,
+    "originalOccurrenceCount": 282,
     "originalDynamicSlotCount": 8,
     "originalContextPreserved": true
   },
   "currentSource": {
-    "scannedProductionTsFiles": 497,
-    "catalogImports": 267,
-    "currentImportedSymbolReferences": 324,
-    "catalogExportsParsed": 227,
-    "catalogEntriesParsed": 134,
+    "scannedProductionTsFiles": 565,
+    "catalogImports": 276,
+    "currentImportedSymbolReferences": 341,
+    "catalogExportsParsed": 229,
+    "catalogEntriesParsed": 135,
     "exportsWithoutCatalogEntries": [],
     "lucideImportsRemaining": 0,
     "unresolvedIconImports": 0,
     "unresolvedCatalogReferences": 0
   },
   "reconciliation": {
-    "matchedOriginOccurrences": 285,
-    "uniquelyClaimedCurrentUses": 285,
-    "resolvedOriginOccurrences": 285,
+    "matchedOriginOccurrences": 282,
+    "uniquelyClaimedCurrentUses": 282,
+    "resolvedOriginOccurrences": 282,
     "unresolvedOriginOccurrences": 0,
-    "unmatchedCurrentReferences": 39
+    "unmatchedCurrentReferences": 59
   },
   "currentUsageByCatalogId": {
     "add": 4,
@@ -38,10 +38,11 @@
     "circle": 2,
     "circle-center": 2,
     "circular-pattern": 2,
-    "close": 34,
+    "close": 38,
     "closed-path": 3,
-    "confirm": 19,
-    "curve": 3,
+    "confirm": 21,
+    "constraint": 1,
+    "curve": 2,
     "datum-plane": 4,
     "delete": 10,
     "download": 8,
@@ -57,7 +58,7 @@
     "file-new": 2,
     "fillet": 4,
     "fit-view": 5,
-    "flip-horizontal": 1,
+    "flip-horizontal": 2,
     "flip-vertical": 1,
     "folder-open": 2,
     "folder-plus": 1,
@@ -72,14 +73,14 @@
     "layers": 1,
     "lead-in": 1,
     "lead-out": 1,
-    "linear-pattern": 2,
-    "link": 4,
+    "linear-pattern": 3,
+    "link": 6,
     "locate": 1,
     "locked": 5,
     "loft": 2,
     "machine-setup": 1,
-    "measure": 4,
-    "mirror": 2,
+    "measure": 8,
+    "mirror": 3,
     "more": 1,
     "move": 3,
     "move-3d": 2,
@@ -90,6 +91,7 @@
     "navigation-mouse": 1,
     "navigation-trackpad": 1,
     "notifications": 1,
+    "offset": 1,
     "pad": 1,
     "pad-pocket": 1,
     "panel-left-close": 2,
@@ -113,12 +115,12 @@
     "save": 3,
     "search": 2,
     "section-cam": 1,
-    "select": 8,
+    "select": 9,
     "send-cam": 1,
     "settings": 1,
     "shell": 2,
     "simulation": 2,
-    "sketch": 5,
+    "sketch": 4,
     "slot": 2,
     "snap": 3,
     "start-point": 1,
@@ -126,6 +128,7 @@
     "step-forward": 1,
     "success": 1,
     "sweep": 2,
+    "trim": 1,
     "undo": 3,
     "upload": 2,
     "view": 2,
@@ -587,7 +590,7 @@
       "mapPropertyExpression": "<Icon size={14} />",
       "currentRenderers": [
         {
-          "line": 207,
+          "line": 220,
           "expression": "<Icon size={14} />"
         }
       ],
@@ -705,7 +708,7 @@
       "mapPropertyExpression": "<Icon size={15} strokeWidth={1.5} />",
       "currentRenderers": [
         {
-          "line": 738,
+          "line": 898,
           "expression": "<Icon size={15} />"
         }
       ],
@@ -1059,7 +1062,7 @@
       "mapPropertyExpression": "<ExpandIcon aria-hidden=\"true\" className=\"size-3.5\" />",
       "currentRenderers": [
         {
-          "line": 308,
+          "line": 309,
           "expression": "<ExpandIcon aria-hidden=\"true\" className=\"size-3.5\" />"
         }
       ],
@@ -1173,6 +1176,18 @@
     {
       "id": "use.78943e173e76",
       "reason": "The shared header storage badge was removed by the user in main bfac856; storage remains in settings."
+    },
+    {
+      "id": "use.35556bc89fbd",
+      "reason": "The Pattern command now uses the shared CadToolbarMenu, which owns the expand-down chevron for every toolbar menu."
+    },
+    {
+      "id": "use.5745191fface",
+      "reason": "The selected-feature panel with its Edit curve button was removed; curves open by double-click or the history context menu."
+    },
+    {
+      "id": "use.c0d304036f6d",
+      "reason": "The selected-feature panel with its Edit sketch button was removed; sketches open by double-click or the history context menu."
     }
   ],
   "newlyAddedCurrentReferences": [
@@ -1209,6 +1224,14 @@
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
+      "file": "src/features/cad/CadFeatureEditor.tsx",
+      "line": 269,
+      "symbol": "SelectIcon",
+      "catalogId": "select",
+      "context": "<Button type=\"button\" disabled={staleDraft || scalarPending || submission.applying || !visibleIds.includes(target.targetId)} onClick={() => { if (pickToken.current || depthGestureActive) return; const token = Symbol('topology-pick'); pickToken.current = token; pickerFocus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null; setPicker({ kind: 'pick-topology', owner: previewOwner, expectedVersion: documentVersion, purpose: target.kind, label: target.kind === 'shell' ? 'Opening face' : 'Edges', request: { featureId: feature.id, bodyId: target.targetId, parameterValues: { ...parameterEdits } }, onSelect(result) { const environment = pickEnvironment.current; if (pickToken.current !== token || environment.document !== document || environment.documentVersion !== documentVersion) return; if (result.bodyId !== target.targetId || result.purpose !== target.kind) throw new Error('The topology choice does not belong to this feature input.'); if (result.purpose === 'shell' && target.kind === 'shell') update({ ...target, opening: result.opening }); else if (result.purpose !== 'shell' && target.kind !== 'shell') { setCapturedEdges(result.selection); update({ ...target, selection: result.selection }); } endPick(token, true); }, onCancel: () => endPick(token) }); }}><SelectIcon size={13} />{target.kind === 'shell' ? 'Choose opening' : 'Choose edg",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
       "file": "src/features/cad/CadFeatureTree.tsx",
       "line": 19,
       "symbol": "SlotIcon",
@@ -1242,10 +1265,10 @@
     },
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 208,
+      "line": 221,
       "symbol": "WarningIcon",
       "catalogId": "warning",
-      "context": "<Button type=\"button\" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)} aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${diagnostic.message}` : ''}`} onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)} onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); }}> <Icon size={14} /><span className=\"cad-feature-name\">{feature.name}</span> {diagnostic && <span className=\"cad-tree-error\" aria-label={diagnostic.message}><WarningIcon size={12} /></span>}{feature.suppressed && <span className=\"cad-tree-muted\">off</span>} </Button>",
+      "context": "<Button type=\"button\" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)} aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${diagnostic.message}` : ''}`} onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)} onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); else onConfigure?.(feature); }}> <Icon size={14} /><span className=\"cad-feature-name\">{feature.name}</span> {diagnostic && <span className=\"cad-tree-error\" aria-label={diagnostic.message}><WarningIcon size={12} /></span>}{feature.suppressed && <span className=\"cad-tree-muted\">off</span>} </Button>",
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
@@ -1282,15 +1305,15 @@
     },
     {
       "file": "src/features/cad/CadSketchAreaRepairPanel.tsx",
-      "line": 79,
+      "line": 84,
       "symbol": "SelectIcon",
       "catalogId": "select",
-      "context": "<Button type=\"button\" className=\"cad-area-choice\" aria-label={`Choose areas for ${feature.name}`} disabled={!inspection.cells.cells.length} onClick={() => begin(feature.id)}> <SelectIcon size={13} /><span>{choices[feature.id]?.length ? `${choices[feature.id].length} ${choices[feature.id].length === 1 ? 'area' : 'areas'}` : 'Choose areas'}</span> </Button>",
+      "context": "<Button type=\"button\" className=\"cad-area-choice\" aria-label={`Choose areas for ${feature.name}`} disabled={!cells.cells.length} onClick={() => begin(feature.id)}> <SelectIcon size={13} /><span>{count ? `${count} ${count === 1 ? 'area' : 'areas'}` : 'Choose areas'}</span> </Button>",
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
       "file": "src/features/cad/CadSketchAreaRepairPanel.tsx",
-      "line": 85,
+      "line": 90,
       "symbol": "CloseIcon",
       "catalogId": "close",
       "context": "<Button type=\"button\" disabled={submission.applying} onClick={onCancel}><CloseIcon size={13} /> Back to sketch</Button>",
@@ -1298,39 +1321,95 @@
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 702,
+      "line": 1076,
       "symbol": "ConfirmIcon",
       "catalogId": "confirm",
       "context": "<Button aria-label=\"Finish path\" title=\"Keep this path open without adding a closing edge\" disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(false)}><ConfirmIcon size={13} /> Finish path</Button>",
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
-      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 259,
-      "symbol": "MeasureIcon",
-      "catalogId": "measure",
-      "context": "<Button type=\"button\" disabled={draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, dimensionPair))} onClick={addLength}><MeasureIcon size={13} /> Add length</Button>",
+      "file": "src/features/cad/CadSketchLinearPatternEditor.tsx",
+      "line": 79,
+      "symbol": "LinearPatternIcon",
+      "catalogId": "linear-pattern",
+      "context": "return <CadSketchCommandForm label=\"Sketch linear pattern\" title=\"Linear pattern\" icon={<LinearPatternIcon size={14} />} session={session} canApply={edits !== null && (edits.length === 0 || prepared.kind === 'ready')} issue={issue} help=\"Repeat this circle along the sketch X or Y axis. Pitch is the distance between neighboring centers. Edit the seed to change every attached circle. Click a numbered occurrence in the preview to exclude or restore it. Exclusions survive count changes.\" status={<>{detaching && <span role=\"status\">Apply keeps these circles as independent geometry.</span>}{prepared.kind === 'waiting' && <span role=\"status\">Preparing preview…</span>}</>} onSubmit={() => { if (!edits) return; if (!edits.length) session.finish(() => props.onAccepted(result)); else if (prepared.kind === 'ready') session.submit(edits, prepared.document, () => props.onAccepted(result), 'The pattern could not be applied.'); }}> <fieldset className=\"cad-editor-fieldset\" disabled={props.interactionLocked || session.applying || detaching}> <label className=\"cad-field\"><span>Count<CadContextHelp label=\"Pattern count\">Total occurrences including the original seed, from 1 to 32. Reducing the count keeps omitted indexes for later increases. Dependent dimensions must be removed before their occurrence.</CadContextHelp></span> <Input aria-label=\"Count\" type=\"number\" min=\"1\" max=\"32\" step=\"1\" value=",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadSketchLinearPatternEditor.tsx",
+      "line": 97,
+      "symbol": "FlipHorizontalIcon",
+      "catalogId": "flip-horizontal",
+      "context": "<Button type=\"button\" aria-label=\"Reverse pattern direction\" title=\"Reverse direction without changing the pitch relation\" aria-pressed={draft.direction.startsWith('-')} onClick={() => { setError(null); setDraft(relation => ({ ...relation, direction: (relation.direction.startsWith('-') ? '+' : '-') + relation.direction.slice(1) as CadSketchLinearPattern['direction'] })); }}><FlipHorizontalIcon size={14} /></Button>",
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 265,
-      "symbol": "MeasureIcon",
-      "catalogId": "measure",
-      "context": "<Button type=\"button\" disabled={draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, pointPair))} onClick={addLength}><MeasureIcon size={13} /> Add distance</Button>",
-      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
-    },
-    {
-      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 290,
+      "line": 489,
       "symbol": "CloseIcon",
       "catalogId": "close",
-      "context": "<Button type=\"button\" aria-label={`Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title=\"Remove this relation and retain the current geometry\" onClick={() => removeRelation(relation.id)}><CloseIcon size={12} /></Button>",
+      "context": "<Button type=\"button\" aria-label={relation.kind === 'linear-pattern' ? 'Detach pattern' : relation.kind === 'external-reference' ? 'Detach reference' : `Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title={relation.kind === 'linear-pattern' ? 'Detach all occurrences and retain their current geometry' : relation.kind === 'external-reference' ? 'Detach this source link and retain the current geometry' : 'Remove this relation and retain the current geometry'} disabled={relation.kind === 'linear-pattern' && (pending || !onEditPattern)} onClick={() => { if (relation.kind === 'linear-pattern') onEditPattern?.(relation.id,true); else removeRelation(relation.id); }}><CloseIcon size={12} /></Button>",
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 306,
+      "line": 511,
+      "symbol": "LinkIcon",
+      "catalogId": "link",
+      "context": "return <form ref={form} className=\"cad-property-form cad-sketch-profile-panel\" aria-label=\"Sketch relations\" aria-busy={submission.applying || undefined} onKeyDown={event => { if (event.key === 'Escape' && pending && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); reset(); } }} onSubmit={event => { event.preventDefault(); if (interactionLocked || submission.applying || scalarPending || !candidate.edits?.length || blockingIssue) return; setError(null); submission.submit(signal => onEditMany(candidate.edits ?? [], signal), () => { reset(); if (candidate.created) onCornerAccepted?.(candidate.created.entityId, candidate.created.relationId); }, cause => setError(cause instanceof CadSketchPreparationError ? cause.feedback : cause instanceof Error ? cause.message : 'Unable to apply this sketch relation.')); }}> <div className=\"cad-property-title\">{dimensionOnly ? 'Dimension' : move ? 'Move selection' : corner ? corner.kind === 'fillet' ? 'Sketch fillet' : 'Sketch chamfer' : pointPair ? 'Point pair' : linePair ? 'Line pair' : curvePair ? 'Curve pair' : selection.length > 1 ? `${selection.length} selected` : selectedPoint ? 'Point' : selectedEntity?.kind === 'circle' ? 'Circle' : selectedEntity?.kind === 'line' ? 'Line' : 'Arc'} {move && <CadContextHelp label=\"Move selection\">Translate the selected points and edges together without changing their sizes",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 518,
+      "symbol": "MeasureIcon",
+      "catalogId": "measure",
+      "context": "<Button type=\"button\" onClick={addReference}><MeasureIcon size={13} /> Reference {passiveLabel}</Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 523,
+      "symbol": "MeasureIcon",
+      "catalogId": "measure",
+      "context": "<Button type=\"button\" title={referenceLock ?? undefined} disabled={Boolean(selectedReference) || draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, dimensionPair))} onClick={() => addLength()}><MeasureIcon size={13} /> Add length</Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 537,
+      "symbol": "MeasureIcon",
+      "catalogId": "measure",
+      "context": "<Button type=\"button\" autoFocus={initialCommand?.kind === 'point-dimensions'} onClick={() => addLength()}><MeasureIcon size={13} /> Aligned distance</Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 538,
+      "symbol": "MeasureIcon",
+      "catalogId": "measure",
+      "context": "<Button type=\"button\" key={axis} onClick={() => addLength(axis)}><MeasureIcon size={13} />{axis === 'x' ? 'Horizontal distance' : 'Vertical distance'}</Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 559,
+      "symbol": "MeasureIcon",
+      "catalogId": "measure",
+      "context": "<Button type=\"button\" disabled={Boolean(orientationOwner)} title={orientationOwner ? `Remove ${relationLabel(orientationOwner)} before adding Angle.` : 'Drive the actual corner angle'} onClick={addAngle}><MeasureIcon size={13} /> {angleOwner ? 'Edit angle' : 'Add angle'}</Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 572,
+      "symbol": "MeasureIcon",
+      "catalogId": "measure",
+      "context": "<Button type=\"button\" disabled={selectedEntity.kind === 'circle' && typeof selectedEntity.radius === 'string'} title={selectedEntity.kind === 'circle' && typeof selectedEntity.radius === 'string' ? 'Radius already follows an expression. Edit or release it with fx.' : 'Add a driving radial dimension'} onClick={addRadialSize}> <MeasureIcon size={13} /> {acceptedRadial ? 'Restore' : 'Add'} {acceptedRadial?.quantity ?? (selectedEntity.kind === 'circle' ? 'diameter' : 'radius')} </Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 630,
       "symbol": "CloseIcon",
       "catalogId": "close",
       "context": "<Button type=\"button\" onClick={reset}><CloseIcon size={13} /> Cancel</Button>",
@@ -1338,10 +1417,18 @@
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 306,
+      "line": 630,
       "symbol": "ConfirmIcon",
       "catalogId": "confirm",
       "context": "<Button variant=\"primary\" type=\"submit\" disabled={interactionLocked || submission.applying || scalarPending || !candidate.edits?.length || Boolean(blockingIssue)}><ConfirmIcon size={13} /> Apply</Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadToolbarMenu.tsx",
+      "line": 49,
+      "symbol": "ChevronDown",
+      "catalogId": "expand-down",
+      "context": "<Button ref={trigger} className=\"cad-tool\" aria-label={label} title={title ?? label} disabled={disabled} aria-pressed={pressed} aria-haspopup=\"menu\" aria-expanded={open && !disabled} aria-controls={open && !disabled ? id : undefined} onPointerDown={event => { if (open) event.preventDefault(); }} onClick={() => { if (open) close(true); else { initialFocus.current = 'first'; setOpen(true); } }} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); initialFocus.current = event.key === 'ArrowUp' ? 'last' : 'first'; setOpen(true); } }}>{icon}<span>{label}</span><ChevronDown size={11} /></Button>",
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
@@ -1362,7 +1449,63 @@
     },
     {
       "file": "src/features/cad/CadWorkbench.tsx",
-      "line": 808,
+      "line": 1153,
+      "symbol": "TrimIcon",
+      "catalogId": "trim",
+      "context": "toolButton('Trim', TrimIcon, () => { setTool('trim'); setProfileId(null); setGraphPick(null); }, locked || !sketch.graph, tool === 'trim', sketch.graph ? 'Click edge pieces to remove them up to the nearest crossing edge' : 'Trim needs a sketch drawn with connected edges', 'T')",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1153,
+      "symbol": "ConstraintIcon",
+      "catalogId": "constraint",
+      "context": "toolbar = <div className=\"cad-toolbar\" aria-label=\"CAD tools\" data-cad-tool-context={sketch ? 'sketch' : curve || curveCreation ? 'curve' : 'model'} inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> {!canvasReference && <div className=\"cad-tool-group\">{toolButton('Sketch', SketchIcon, startSketch, locked)}{toolButton('Plane', DatumPlaneIcon, () => startFeature('datum-plane'), locked)}{toolButton('Curve', CurveIcon, () => startFeature('curve'), locked)}</div>} <div className=\"cad-tool-group\">{toolButton('Plugins', AddIcon, () => setPluginsOpen(true), locked || Boolean(props.sketchEdit))}</div> {sketch ? <><div className=\"cad-tool-group\">{toolButton('Select', SelectIcon, () => setTool('select'), locked, tool === 'select', undefined, 'S')}{toolButton('Rectangle', RectangleIcon, () => { setTool('rectangle'); setProfileId(null); setGraphPick(null); }, locked, tool === 'rectangle', undefined, 'R')}{toolButton('Circle', CircleIcon, () => { setTool('circle'); setProfileId(null); setGraphPick(null); }, locked, tool === 'circle', undefined, 'C')}{toolButton('Slot', SlotIcon, () => { setTool('slot'); setProfileId(null); setGraphPick(null); }, locked, tool === 'slot', undefined, 'O')}{toolButton('Polyline', PolylineIcon, () => { setTool('polygon'); setProfileId(null); setGraphPick(null); }, locked, tool === 'polygon', unde",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1154,
+      "symbol": "OffsetIcon",
+      "catalogId": "offset",
+      "context": "toolButton('Offset loop', OffsetIcon, beginSketchOffset, locked || !offsetSource, Boolean(currentOffset), 'Create an independent copy of one closed nonconstruction loop')",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1154,
+      "symbol": "MirrorIcon",
+      "catalogId": "mirror",
+      "context": "toolButton('Mirror copy', MirrorIcon, beginSketchMirror, locked || !canMirrorSketch, Boolean(currentMirror), 'Mirror selected edges, then choose a line in the sketch. The copy is independent.', 'M')",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1154,
+      "symbol": "LinkIcon",
+      "catalogId": "link",
+      "context": "toolButton('Use reference', LinkIcon, beginSketchReference, locked || !referenceSources.length, Boolean(currentSketchReference), 'Use a linked line or circle from an earlier sketch on this plane')",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1176,
+      "symbol": "Check",
+      "catalogId": "confirm",
+      "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" type=\"button\" aria-label=\"Use topology selection\" disabled={inputPicker.busy || !inputPicker.selection?.picks.length} onClick={() => { void inputPicker.finish(); }}><Check size={16} /></Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1176,
+      "symbol": "CloseIcon",
+      "catalogId": "close",
+      "context": "<Button type=\"button\" aria-label=\"Cancel topology selection\" onClick={currentTopologyPick.onCancel}><CloseIcon size={13} /></Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1176,
       "symbol": "Check",
       "catalogId": "confirm",
       "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" type=\"submit\" form={areaRepairFormId} aria-label=\"Finish sketch\" title=\"Finish sketch with replacement areas\" disabled={!areaRepairReady || storageBusy || externalWorkflowOpen}><Check size={16} /></Button>",
@@ -1370,10 +1513,42 @@
     },
     {
       "file": "src/features/cad/CadWorkbench.tsx",
-      "line": 808,
+      "line": 1176,
       "symbol": "CloseIcon",
       "catalogId": "close",
       "context": "<Button aria-label=\"Cancel sketch edits\" title=\"Discard sketch edits\" disabled={storageBusy} onClick={cancelSketchEdit}><CloseIcon size={13} /></Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1176,
+      "symbol": "CloseIcon",
+      "catalogId": "close",
+      "context": "<Button aria-label=\"Close properties\" title=\"Close properties (Esc)\" onClick={() => setProperties(null)}><CloseIcon size={13} /></Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1176,
+      "symbol": "CloseIcon",
+      "catalogId": "close",
+      "context": "<Button aria-label=\"Close feature editor\" title=\"Close editor (Esc)\" disabled={commandSubmission.applying} onClick={closeFeatureEditor}><CloseIcon size={13} /></Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/useCadSketchCommandSession.tsx",
+      "line": 80,
+      "symbol": "CloseIcon",
+      "catalogId": "close",
+      "context": "<Button type=\"button\" onClick={session.cancel}><CloseIcon size={13} /> Cancel</Button>",
+      "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
+    },
+    {
+      "file": "src/features/cad/useCadSketchCommandSession.tsx",
+      "line": 81,
+      "symbol": "ConfirmIcon",
+      "catalogId": "confirm",
+      "context": "<Button variant=\"primary\" type=\"submit\" disabled={session.blocked || !canApply}><ConfirmIcon size={13} /> Apply</Button>",
       "note": "Current package reference added after the frozen checkpoint or replacing a recorded text glyph."
     },
     {
@@ -2052,12 +2227,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadDxfExportDialog.tsx",
-        "line": 99,
+        "line": 95,
         "column": 183,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 796.17,
+        "confidenceScore": 801.17,
         "context": "<Button type=\"button\" className=\"cad-dxf-close\" aria-label=\"Close DXF export\" onClick={close}><CloseIcon size={15} /></Button>"
       },
       "resolution": "resolved",
@@ -2075,12 +2250,12 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadDxfExportDialog.tsx",
-        "line": 120,
+        "line": 116,
         "column": 447,
         "symbol": "DownloadIcon",
         "exportedSymbol": "DownloadIcon",
         "catalogId": "download",
-        "confidenceScore": 392.96,
+        "confidenceScore": 397.96,
         "context": "<Button variant=\"primary\" type=\"button\" className=\"cad-dxf-primary\" disabled={busy !== null || stale || !hasSource || Boolean(source.error) || kind === 'section' && !reviewed} onClick={() => { void execute('export'); }}><DownloadIcon size={13} />Download DXF</Button>"
       },
       "resolution": "resolved",
@@ -2190,7 +2365,7 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureEditor.tsx",
-        "line": 322,
+        "line": 348,
         "column": 243,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
@@ -2213,7 +2388,7 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureEditor.tsx",
-        "line": 405,
+        "line": 432,
         "column": 127,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
@@ -2236,13 +2411,13 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureEditor.tsx",
-        "line": 330,
-        "column": 409,
+        "line": 357,
+        "column": 425,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
         "catalogId": "confirm",
-        "confidenceScore": 339.27,
-        "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-primary\" disabled={!isNew && !changed || scalarPending || waitingForPreview || Boolean(pickCurrent) || staleDraft || depthGestureActive || submission.applying}><ConfirmIcon size={13} /> Apply</Button>"
+        "confidenceScore": 335.91,
+        "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-primary\" disabled={!isNew && !changed || scalarPending || areasMissing || waitingForPreview || Boolean(pickCurrent) || staleDraft || depthGestureActive || submission.applying}><ConfirmIcon size={13} /> Apply</Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "ConfirmIcon",
@@ -2259,12 +2434,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureEditor.tsx",
-        "line": 330,
+        "line": 357,
         "column": 155,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 337,
+        "confidenceScore": 359.5,
         "context": "<Button type=\"button\" onClick={cancel}><CloseIcon size={13} /> Cancel</Button>"
       },
       "resolution": "resolved",
@@ -2282,7 +2457,7 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureEditor.tsx",
-        "line": 405,
+        "line": 432,
         "column": 318,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -2696,12 +2871,12 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 167,
+        "line": 180,
         "column": 8,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
         "catalogId": "expand-right",
-        "confidenceScore": 783.55,
+        "confidenceScore": 758.55,
         "context": "<Button type=\"button\" className=\"cad-tree-document\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('part') ? 'Collapse' : 'Expand'} part ${document.name}`} aria-expanded={branches.has('part')} aria-controls={branches.has('part') ? `${treeId}-part` : undefined} onClick={() => toggleBranch('part')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><FileBodyIcon size={15} /><span>{document.name}</span> </Button>"
       },
       "resolution": "resolved",
@@ -2719,12 +2894,12 @@
       "scoutActualSymbol": "FileBodyIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 167,
+        "line": 180,
         "column": 75,
         "symbol": "FileBodyIcon",
         "exportedSymbol": "FileBodyIcon",
         "catalogId": "file-body",
-        "confidenceScore": 783.55,
+        "confidenceScore": 758.55,
         "context": "<Button type=\"button\" className=\"cad-tree-document\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('part') ? 'Collapse' : 'Expand'} part ${document.name}`} aria-expanded={branches.has('part')} aria-controls={branches.has('part') ? `${treeId}-part` : undefined} onClick={() => toggleBranch('part')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><FileBodyIcon size={15} /><span>{document.name}</span> </Button>"
       },
       "resolution": "resolved",
@@ -2742,12 +2917,12 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 172,
+        "line": 185,
         "column": 10,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
         "catalogId": "expand-right",
-        "confidenceScore": 783.3,
+        "confidenceScore": 758.3,
         "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('reference') ? 'Collapse' : 'Expand'} Reference`} aria-expanded={branches.has('reference')} aria-controls={branches.has('reference') ? `${treeId}-reference` : undefined} onClick={() => toggleBranch('reference')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><DatumPlaneIcon size={13} /><span>Reference</span> </Button>"
       },
       "resolution": "resolved",
@@ -2765,12 +2940,12 @@
       "scoutActualSymbol": "DatumPlaneIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 172,
+        "line": 185,
         "column": 77,
         "symbol": "DatumPlaneIcon",
         "exportedSymbol": "DatumPlaneIcon",
         "catalogId": "datum-plane",
-        "confidenceScore": 783.3,
+        "confidenceScore": 758.3,
         "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('reference') ? 'Collapse' : 'Expand'} Reference`} aria-expanded={branches.has('reference')} aria-controls={branches.has('reference') ? `${treeId}-reference` : undefined} onClick={() => toggleBranch('reference')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><DatumPlaneIcon size={13} /><span>Reference</span> </Button>"
       },
       "resolution": "resolved",
@@ -2788,12 +2963,12 @@
       "scoutActualSymbol": "DatumPlaneIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 176,
+        "line": 189,
         "column": 181,
         "symbol": "DatumPlaneIcon",
         "exportedSymbol": "DatumPlaneIcon",
         "catalogId": "datum-plane",
-        "confidenceScore": 747,
+        "confidenceScore": 722,
         "context": "<Button type=\"button\" className={`cad-tree-row${selectedReferencePlane === plane ? ' is-selected' : ''}`} aria-label={`Select ${plane} plane`} aria-pressed={selectedReferencePlane === plane} disabled={locked || selectionOnly && !allowPrincipalPlaneSelection || Boolean(renameCurrent) || !onSelectReferencePlane} onClick={() => onSelectReferencePlane?.(plane)}><DatumPlaneIcon size={12} /><span>{plane} plane</span></Button>"
       },
       "resolution": "resolved",
@@ -2811,12 +2986,12 @@
       "scoutActualSymbol": "SketchIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 177,
+        "line": 190,
         "column": 139,
         "symbol": "SketchIcon",
         "exportedSymbol": "SketchIcon",
         "catalogId": "sketch",
-        "confidenceScore": 735.57,
+        "confidenceScore": 710.57,
         "context": "<Button type=\"button\" disabled={locked || selectionOnly || Boolean(renameCurrent)} aria-label={`Create sketch on ${plane} plane`} title={`Create sketch on ${plane} plane`} onClick={() => onCreateSketch(plane)}><SketchIcon size={12} /></Button>"
       },
       "resolution": "resolved",
@@ -2834,12 +3009,12 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 182,
+        "line": 195,
         "column": 12,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
         "catalogId": "expand-right",
-        "confidenceScore": 779.86,
+        "confidenceScore": 754.86,
         "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('parameters') ? 'Collapse' : 'Expand'} Parameters`} aria-expanded={branches.has('parameters')} aria-controls={branches.has('parameters') ? `${treeId}-parameters` : undefined} onClick={() => toggleBranch('parameters')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><AdjustIcon size={13} /><span>Parameters</span> </Button>"
       },
       "resolution": "resolved",
@@ -2857,12 +3032,12 @@
       "scoutActualSymbol": "AdjustIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 182,
+        "line": 195,
         "column": 79,
         "symbol": "AdjustIcon",
         "exportedSymbol": "AdjustIcon",
         "catalogId": "adjust",
-        "confidenceScore": 779.86,
+        "confidenceScore": 754.86,
         "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('parameters') ? 'Collapse' : 'Expand'} Parameters`} aria-expanded={branches.has('parameters')} aria-controls={branches.has('parameters') ? `${treeId}-parameters` : undefined} onClick={() => toggleBranch('parameters')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><AdjustIcon size={13} /><span>Parameters</span> </Button>"
       },
       "resolution": "resolved",
@@ -2880,13 +3055,13 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 188,
+        "line": 201,
         "column": 10,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
         "catalogId": "expand-right",
-        "confidenceScore": 780.75,
-        "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('model') ? 'Collapse' : 'Expand'} Model`} aria-expanded={branches.has('model')} aria-controls={branches.has('model') ? `${treeId}-model` : undefined} onClick={() => toggleBranch('model')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><LayersIcon size={13} /><span>Model</span><small aria-label={`${document.features.length} features`}>{document.features.length}</small> </Button>"
+        "confidenceScore": 340.95,
+        "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('model') ? 'Collapse' : 'Expand'} Body`} onContextMenu={event => openMenu(event, null)} onKeyDown={event => openMenu(event, null)} aria-expanded={branches.has('model')} aria-controls={branches.has('model') ? `${treeId}-model` : undefined} onClick={() => toggleBranch('model')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><LayersIcon size={13} /><span>Body</span><small aria-label={`${document.features.length} features`}>{document.features.length}</small> </Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "ExpandRightIcon",
@@ -2903,13 +3078,13 @@
       "scoutActualSymbol": "LayersIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 188,
+        "line": 201,
         "column": 77,
         "symbol": "LayersIcon",
         "exportedSymbol": "LayersIcon",
         "catalogId": "layers",
-        "confidenceScore": 780.75,
-        "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('model') ? 'Collapse' : 'Expand'} Model`} aria-expanded={branches.has('model')} aria-controls={branches.has('model') ? `${treeId}-model` : undefined} onClick={() => toggleBranch('model')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><LayersIcon size={13} /><span>Model</span><small aria-label={`${document.features.length} features`}>{document.features.length}</small> </Button>"
+        "confidenceScore": 340.95,
+        "context": "<Button type=\"button\" className=\"cad-tree-branch\" disabled={locked || Boolean(renameCurrent)} aria-label={`${branches.has('model') ? 'Collapse' : 'Expand'} Body`} onContextMenu={event => openMenu(event, null)} onKeyDown={event => openMenu(event, null)} aria-expanded={branches.has('model')} aria-controls={branches.has('model') ? `${treeId}-model` : undefined} onClick={() => toggleBranch('model')}> <ExpandRightIcon size={12} className=\"cad-tree-hierarchy-toggle\" /><LayersIcon size={13} /><span>Body</span><small aria-label={`${document.features.length} features`}>{document.features.length}</small> </Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "LayersIcon",
@@ -2926,12 +3101,12 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFeatureTree.tsx",
-        "line": 201,
+        "line": 214,
         "column": 291,
         "symbol": "ExpandRightIcon",
         "exportedSymbol": "ExpandRightIcon",
         "catalogId": "expand-right",
-        "confidenceScore": 716.11,
+        "confidenceScore": 691.11,
         "context": "<Button type=\"button\" className=\"cad-feature-disclosure\" disabled={locked || Boolean(renameCurrent)} aria-label={`${open ? 'Collapse' : 'Expand'} ${feature.name}`} aria-expanded={open} aria-controls={open ? detailsId : undefined} onClick={() => toggle(feature.id)}><ExpandRightIcon size={12} /></Button>"
       },
       "resolution": "resolved",
@@ -2995,12 +3170,12 @@
       "scoutActualSymbol": "SelectIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadFields.tsx",
-        "line": 72,
+        "line": 83,
         "column": 381,
         "symbol": "SelectIcon",
         "exportedSymbol": "SelectIcon",
         "catalogId": "select",
-        "confidenceScore": 798.43,
+        "confidenceScore": 770.93,
         "context": "<Button type=\"button\" disabled={disabled} className=\"cad-pick-reference\" title={`Pick ${label.toLowerCase()} from model or history`} aria-label={`Pick ${label.toLowerCase()} from model`} onClick={() => picking.begin(label, eligible.map(option => option.value), id => { if (eligible.some(option => option.value === id)) onSelect(id); })}><SelectIcon size={13} /></Button>"
       },
       "resolution": "resolved",
@@ -3340,40 +3515,17 @@
       "scoutActualSymbol": "PatternIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadPatternCommand.tsx",
-        "line": 48,
-        "column": 11,
+        "line": 8,
+        "column": 78,
         "symbol": "PatternIcon",
         "exportedSymbol": "PatternIcon",
         "catalogId": "pattern",
-        "confidenceScore": 804.5,
-        "context": "<Button ref={trigger} className=\"cad-tool\" aria-label=\"Pattern\" title=\"Pattern\" disabled={disabled} aria-haspopup=\"menu\" aria-expanded={open && !disabled} aria-controls={open && !disabled ? id : undefined} onPointerDown={event => { if (open) event.preventDefault(); }} onClick={() => { if (open) close(true); else { initialFocus.current = 'first'; setOpen(true); } }} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); initialFocus.current = event.key === 'ArrowUp' ? 'last' : 'first'; setOpen(true); } }}><PatternIcon size={15} strokeWidth={1.5} /><span>Pattern</span><ChevronDown size={11} /></Button>"
+        "confidenceScore": 282,
+        "context": "return <CadToolbarMenu label=\"Pattern\" menuLabel=\"Pattern commands\" icon={<PatternIcon size={15} strokeWidth={1.5} />} disabled={disabled} items={[ { key: 'linear-pattern', label: 'Linear pattern', icon: <LinearPatternIcon size={14} />, onSelect: () => onChoose('linear-pattern') }, ...context === 'body' ? [{ key: 'circular-pattern', label: 'Circular pattern', icon: <CircularPatternIcon size={14} />, onSelect: () => onChoose('circular-pattern') }] : [] ]} />;"
       },
       "resolution": "resolved",
       "actualSymbol": "PatternIcon",
       "actualCatalogId": "pattern",
-      "catalogIdChangedFromOriginalIntent": false
-    },
-    {
-      "originId": "use.35556bc89fbd",
-      "originFile": "src/features/cad/CadPatternCommand.tsx",
-      "originalLine": 46,
-      "originalColumn": 67,
-      "originalSymbol": "ChevronDown",
-      "intendedCatalogId": "expand-down",
-      "scoutActualSymbol": "ExpandDownIcon",
-      "matchedCurrent": {
-        "file": "src/features/cad/CadPatternCommand.tsx",
-        "line": 48,
-        "column": 74,
-        "symbol": "ChevronDown",
-        "exportedSymbol": "ChevronDown",
-        "catalogId": "expand-down",
-        "confidenceScore": 804.5,
-        "context": "<Button ref={trigger} className=\"cad-tool\" aria-label=\"Pattern\" title=\"Pattern\" disabled={disabled} aria-haspopup=\"menu\" aria-expanded={open && !disabled} aria-controls={open && !disabled ? id : undefined} onPointerDown={event => { if (open) event.preventDefault(); }} onClick={() => { if (open) close(true); else { initialFocus.current = 'first'; setOpen(true); } }} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); initialFocus.current = event.key === 'ArrowUp' ? 'last' : 'first'; setOpen(true); } }}><PatternIcon size={15} strokeWidth={1.5} /><span>Pattern</span><ChevronDown size={11} /></Button>"
-      },
-      "resolution": "resolved",
-      "actualSymbol": "ChevronDown",
-      "actualCatalogId": "expand-down",
       "catalogIdChangedFromOriginalIntent": false
     },
     {
@@ -3386,13 +3538,13 @@
       "scoutActualSymbol": "LinearPatternIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadPatternCommand.tsx",
-        "line": 68,
-        "column": 75,
+        "line": 9,
+        "column": 62,
         "symbol": "LinearPatternIcon",
         "exportedSymbol": "LinearPatternIcon",
         "catalogId": "linear-pattern",
-        "confidenceScore": 395.73,
-        "context": "createPortal(<MenuSurface ref={popup} id={id} aria-label=\"Pattern commands\" className=\"cad-pattern-menu\" style={position} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) close(); }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); return; } if (event.key === 'Tab') { event.preventDefault(); const toolbar = trigger.current?.closest('.cad-toolbar') ?? trigger.current?.parentElement; const controls = [...toolbar?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []]; const index = controls.findIndex(control => control === trigger.current); close(); (controls[index + (event.shiftKey ? -1 : 1)] ?? trigger.current)?.focus(); return; } if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const commands = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button')]; const current = commands.findIndex(command => command === window.document.activeElement); const next = event.key === 'Home' ? 0 : event.key === 'End' ? commands.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + commands.length) % commands.length; commands[next]?.focus(); }}> <MenuItem onClick={() => { close(); onChoose('linear-pattern'); }}><LinearPatternIcon size={14} /> Linear pattern</MenuItem> <MenuItem onClick={() => { close(); onChoose('circular-p"
+        "confidenceScore": 264.82,
+        "context": "icon: <LinearPatternIcon size={14} />"
       },
       "resolution": "resolved",
       "actualSymbol": "LinearPatternIcon",
@@ -3409,13 +3561,13 @@
       "scoutActualSymbol": "CircularPatternIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadPatternCommand.tsx",
-        "line": 69,
-        "column": 77,
+        "line": 10,
+        "column": 91,
         "symbol": "CircularPatternIcon",
         "exportedSymbol": "CircularPatternIcon",
         "catalogId": "circular-pattern",
-        "confidenceScore": 395.73,
-        "context": "createPortal(<MenuSurface ref={popup} id={id} aria-label=\"Pattern commands\" className=\"cad-pattern-menu\" style={position} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) close(); }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); return; } if (event.key === 'Tab') { event.preventDefault(); const toolbar = trigger.current?.closest('.cad-toolbar') ?? trigger.current?.parentElement; const controls = [...toolbar?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []]; const index = controls.findIndex(control => control === trigger.current); close(); (controls[index + (event.shiftKey ? -1 : 1)] ?? trigger.current)?.focus(); return; } if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const commands = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button')]; const current = commands.findIndex(command => command === window.document.activeElement); const next = event.key === 'Home' ? 0 : event.key === 'End' ? commands.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + commands.length) % commands.length; commands[next]?.focus(); }}> <MenuItem onClick={() => { close(); onChoose('linear-pattern'); }}><LinearPatternIcon size={14} /> Linear pattern</MenuItem> <MenuItem onClick={() => { close(); onChoose('circular-p"
+        "confidenceScore": 264.82,
+        "context": "icon: <CircularPatternIcon size={14} />"
       },
       "resolution": "resolved",
       "actualSymbol": "CircularPatternIcon",
@@ -3639,8 +3791,8 @@
       "scoutActualSymbol": "FitViewIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 693,
-        "column": 768,
+        "line": 1063,
+        "column": 809,
         "symbol": "FitViewIcon",
         "exportedSymbol": "FitViewIcon",
         "catalogId": "fit-view",
@@ -3662,8 +3814,8 @@
       "scoutActualSymbol": "GridIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 693,
-        "column": 915,
+        "line": 1063,
+        "column": 956,
         "symbol": "GridIcon",
         "exportedSymbol": "GridIcon",
         "catalogId": "grid",
@@ -3685,13 +3837,13 @@
       "scoutActualSymbol": "SnapIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 693,
-        "column": 1125,
+        "line": 1063,
+        "column": 1203,
         "symbol": "SnapIcon",
         "exportedSymbol": "SnapIcon",
         "catalogId": "snap",
-        "confidenceScore": 316.17,
-        "context": "<Button aria-label=\"Toggle snapping\" title=\"Snap to the grid; Path mode also joins existing graph points\" disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><SnapIcon size={14} /></Button>"
+        "confidenceScore": 312,
+        "context": "<Button aria-label=\"Toggle snapping\" title=\"Snap to grid, endpoints, centers and midpoints. Hold Ctrl or Cmd to temporarily disable snapping.\" disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><SnapIcon size={14} /></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "SnapIcon",
@@ -3708,7 +3860,7 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 702,
+        "line": 1076,
         "column": 750,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -3731,7 +3883,7 @@
       "scoutActualSymbol": "UndoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 702,
+        "line": 1076,
         "column": 980,
         "symbol": "UndoIcon",
         "exportedSymbol": "UndoIcon",
@@ -3754,7 +3906,7 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 702,
+        "line": 1076,
         "column": 1082,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
@@ -3777,7 +3929,7 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 704,
+        "line": 1078,
         "column": 106,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
@@ -3800,7 +3952,7 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchCanvas.tsx",
-        "line": 704,
+        "line": 1078,
         "column": 209,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
@@ -3961,12 +4113,12 @@
       "scoutActualSymbol": "MeasureIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchProfilePanel.tsx",
-        "line": 140,
+        "line": 141,
         "column": 210,
         "symbol": "MeasureIcon",
         "exportedSymbol": "MeasureIcon",
         "catalogId": "measure",
-        "confidenceScore": 764.5,
+        "confidenceScore": 762,
         "context": "<Button type=\"button\" aria-label=\"Add dimension\" title=\"Constrain a size or angle\" disabled={blocked || !available.length} onClick={() => begin('dimension')}><MeasureIcon size={14} /> Dimension</Button>"
       },
       "resolution": "resolved",
@@ -3984,12 +4136,12 @@
       "scoutActualSymbol": "MoveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchProfilePanel.tsx",
-        "line": 140,
+        "line": 141,
         "column": 408,
         "symbol": "MoveIcon",
         "exportedSymbol": "MoveIcon",
         "catalogId": "move",
-        "confidenceScore": 764.5,
+        "confidenceScore": 762,
         "context": "<Button type=\"button\" aria-label=\"Move profile\" title=\"Move the contour without changing its dimensions\" disabled={blocked} onClick={() => begin('move')}><MoveIcon size={14} /> Move</Button>"
       },
       "resolution": "resolved",
@@ -4007,12 +4159,12 @@
       "scoutActualSymbol": "FilletIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchProfilePanel.tsx",
-        "line": 140,
+        "line": 141,
         "column": 617,
         "symbol": "FilletIcon",
         "exportedSymbol": "FilletIcon",
         "catalogId": "fillet",
-        "confidenceScore": 763.94,
+        "confidenceScore": 761.44,
         "context": "<Button type=\"button\" aria-label=\"Sketch fillet\" title=\"Round all four corners\" disabled={blocked} onClick={() => begin('fillet')}><FilletIcon size={14} /> Fillet</Button>"
       },
       "resolution": "resolved",
@@ -4030,12 +4182,12 @@
       "scoutActualSymbol": "LinkIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchProfilePanel.tsx",
-        "line": 141,
+        "line": 142,
         "column": 617,
         "symbol": "LinkIcon",
         "exportedSymbol": "LinkIcon",
         "catalogId": "link",
-        "confidenceScore": 733.33,
+        "confidenceScore": 730.83,
         "context": "<Button type=\"button\" aria-label={`Configure ${title(dimension.quantity)} dimension`} disabled={blocked} onClick={() => { captured.current = cadDocument; setEditor(dimensionEditor(dimension.quantity)); }}>{title(dimension.quantity)}<span>{formatCadQuantity(dimension.value)} {dimension.units === 'deg' ? '°' : 'mm'}</span>{dimension.source === 'expression' || typeof dimension.expression === 'string' && !Number.isFinite(Number(dimension.expression)) ? <LinkIcon size={11} /> : null}</Button>"
       },
       "resolution": "resolved",
@@ -4053,12 +4205,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchProfilePanel.tsx",
-        "line": 141,
+        "line": 142,
         "column": 864,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 707.8,
+        "confidenceScore": 705.3,
         "context": "<Button type=\"button\" aria-label={`Remove ${title(dimension.quantity)} dimension`} title=\"Release the dimension and retain the shape\" disabled={blocked} onClick={() => remove(dimension.id!)}><CloseIcon size={12} /></Button>"
       },
       "resolution": "resolved",
@@ -4076,12 +4228,12 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchProfilePanel.tsx",
-        "line": 153,
+        "line": 154,
         "column": 225,
         "symbol": "ConfirmIcon",
         "exportedSymbol": "ConfirmIcon",
         "catalogId": "confirm",
-        "confidenceScore": 329.21,
+        "confidenceScore": 326.71,
         "context": "<Button variant=\"primary\" type=\"submit\" className=\"cad-primary\" disabled={blocked || !candidate.edits || Boolean(candidateIssue)}><ConfirmIcon size={13} /> Apply</Button>"
       },
       "resolution": "resolved",
@@ -4099,13 +4251,13 @@
       "scoutActualSymbol": "SelectIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchRegionsField.tsx",
-        "line": 55,
+        "line": 59,
         "column": 10,
         "symbol": "SelectIcon",
         "exportedSymbol": "SelectIcon",
         "catalogId": "select",
-        "confidenceScore": 807.33,
-        "context": "<Button type=\"button\" className=\"cad-area-choice\" aria-label=\"Pick closed areas from model\" aria-description={prepared.kind === 'unavailable' ? prepared.reason : 'Click an area; hold Shift to add or remove areas.'} disabled={!picking?.beginRegions || !picking.precedingIds.has(sketchId) || prepared.kind !== 'ready'} onClick={begin}> <SelectIcon size={13} /><span>{selection === undefined ? 'Whole sketch' : selection.length ? `${selection.length} ${selection.length === 1 ? 'area' : 'areas'}` : 'No areas'}</span> </Button>"
+        "confidenceScore": 789.5,
+        "context": "<Button type=\"button\" className=\"cad-area-choice\" aria-label=\"Pick closed areas from model\" aria-description={prepared.kind === 'unavailable' ? prepared.reason : 'Click an area; hold Shift to add or remove areas.'} disabled={!picking?.beginRegions || !picking.precedingIds.has(sketchId) || prepared.kind !== 'ready' || !prepared.cells.cells.length} onClick={begin}> <SelectIcon size={13} /><span>{selection === undefined ? wholeAvailable ? 'Whole sketch' : 'Choose areas' : count ? `${count} ${count === 1 ? 'area' : 'areas'}` : 'No areas'}</span> </Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "SelectIcon",
@@ -4122,13 +4274,13 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadSketchRegionsField.tsx",
-        "line": 57,
-        "column": 184,
+        "line": 61,
+        "column": 268,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
-        "confidenceScore": 802.83,
-        "context": "<Button type=\"button\" className=\"cad-area-reset\" aria-label=\"Restore whole sketch\" title=\"Restore whole sketch\" onClick={() => onChange(undefined)}><CloseIcon size={12} /></Button>"
+        "confidenceScore": 367.92,
+        "context": "<Button type=\"button\" className=\"cad-area-reset\" aria-label={wholeAvailable ? 'Restore whole sketch' : 'Clear chosen areas'} title={wholeAvailable ? 'Restore whole sketch' : 'Clear chosen areas'} onClick={() => onChange(undefined)}><CloseIcon size={12} /></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "CloseIcon",
@@ -4191,13 +4343,13 @@
       "scoutActualSymbol": "ViewIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadViewport.tsx",
-        "line": 802,
+        "line": 887,
         "column": 8,
         "symbol": "ViewIcon",
         "exportedSymbol": "ViewIcon",
         "catalogId": "view",
-        "confidenceScore": 355.75,
-        "context": "return <div className=\"cad-viewport\"> <div className=\"cad-webgl\" ref={host} aria-label=\"3D model viewport\" /> <div className=\"cad-depth-label\" ref={depthLabel} hidden aria-live=\"off\" /> <div className=\"cad-plane-labels\" ref={planeLabels} aria-label=\"Reference planes in design area\"> {references.filter(reference => reference.plane && reference.labelPosition).map(reference => <Button key={reference.referenceId} type=\"button\" data-cad-plane-label={reference.referenceId} aria-label={`Select ${reference.name} in design area`} aria-pressed={cadSameReferencePlane(reference.plane ?? null, selectedReferencePlane)} disabled={depthDragging || interactionLocked || unavailable || pickMode !== 'body' || !onSelectPlane} onClick={() => { if (reference.plane) onSelectPlane?.(reference.plane); }}>{reference.name}</Button>)} </div> <CadViewTools label=\"Viewport controls\"> <ViewIcon size={14} /> <Select density=\"compact\" aria-label=\"Named view\" value={viewName} disabled={depthDragging || navigationLocked || unavailable} onChange={(event) => { const name = (['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).find((entry) => entry === event.target.value); if (name) controller.current?.setView?.(name); }}>{viewName === 'Custom' && <option value=\"Custom\" disabled>Custom</option>}{(['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).map((name) => <option key={name} value={name"
+        "confidenceScore": 353.25,
+        "context": "return <div className=\"cad-viewport\"> <div className=\"cad-webgl\" ref={host} aria-label=\"3D model viewport\" /> <div className=\"cad-depth-label\" ref={depthLabel} hidden aria-live=\"off\" /> <div className=\"cad-box-select\" ref={boxOverlay} hidden /> <div className=\"cad-plane-labels\" ref={planeLabels} aria-label=\"Reference planes in design area\"> {references.filter(reference => reference.plane && reference.labelPosition).map(reference => <Button key={reference.referenceId} type=\"button\" data-cad-plane-label={reference.referenceId} aria-label={`Select ${reference.name} in design area`} aria-pressed={cadSameReferencePlane(reference.plane ?? null, selectedReferencePlane)} disabled={depthDragging || interactionLocked || unavailable || !bodyLevel || !onSelectPlane} onClick={() => { if (reference.plane) onSelectPlane?.(reference.plane); }}>{reference.name}</Button>)} </div> <CadViewTools label=\"Viewport controls\"> <ViewIcon size={14} /> <Select density=\"compact\" aria-label=\"Named view\" value={viewName} disabled={depthDragging || navigationLocked || unavailable} onChange={(event) => { const name = (['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedView[]).find((entry) => entry === event.target.value); if (name) controller.current?.setView?.(name); }}>{viewName === 'Custom' && <option value=\"Custom\" disabled>Custom</option>}{(['Isometric', 'Top', 'Front', 'Right'] satisfies CadNamedVi"
       },
       "resolution": "resolved",
       "actualSymbol": "ViewIcon",
@@ -4214,7 +4366,7 @@
       "scoutActualSymbol": "FitViewIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadViewport.tsx",
-        "line": 808,
+        "line": 893,
         "column": 159,
         "symbol": "FitViewIcon",
         "exportedSymbol": "FitViewIcon",
@@ -4237,7 +4389,7 @@
       "scoutActualSymbol": "GridIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadViewport.tsx",
-        "line": 809,
+        "line": 894,
         "column": 189,
         "symbol": "GridIcon",
         "exportedSymbol": "GridIcon",
@@ -4260,7 +4412,7 @@
       "scoutActualSymbol": "NavigateBackIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 773,
+        "line": 1129,
         "column": 167,
         "symbol": "ArrowLeft",
         "exportedSymbol": "ArrowLeft",
@@ -4283,7 +4435,7 @@
       "scoutActualSymbol": "ExpandDownIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 778,
+        "line": 1134,
         "column": 240,
         "symbol": "ChevronDown",
         "exportedSymbol": "ChevronDown",
@@ -4306,13 +4458,13 @@
       "scoutActualSymbol": "FileNewIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 786,
+        "line": 1142,
         "column": 220,
         "symbol": "FilePlus2",
         "exportedSymbol": "FilePlus2",
         "catalogId": "file-new",
         "confidenceScore": 270.64,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNa"
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSu"
       },
       "resolution": "resolved",
       "actualSymbol": "FilePlus2",
@@ -4329,13 +4481,13 @@
       "scoutActualSymbol": "FolderOpenIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 786,
+        "line": 1142,
         "column": 315,
         "symbol": "FolderOpen",
         "exportedSymbol": "FolderOpen",
         "catalogId": "folder-open",
         "confidenceScore": 270.64,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNa"
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSu"
       },
       "resolution": "resolved",
       "actualSymbol": "FolderOpen",
@@ -4352,13 +4504,13 @@
       "scoutActualSymbol": "FolderOpenIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 786,
+        "line": 1142,
         "column": 444,
         "symbol": "FolderOpen",
         "exportedSymbol": "FolderOpen",
         "catalogId": "folder-open",
         "confidenceScore": 268.17,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNa"
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSu"
       },
       "resolution": "resolved",
       "actualSymbol": "FolderOpen",
@@ -4375,13 +4527,13 @@
       "scoutActualSymbol": "CameraCaptureIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 786,
+        "line": 1142,
         "column": 737,
         "symbol": "CameraCaptureIcon",
         "exportedSymbol": "CameraCaptureIcon",
         "catalogId": "camera-capture",
         "confidenceScore": 271.88,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNa"
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSu"
       },
       "resolution": "resolved",
       "actualSymbol": "CameraCaptureIcon",
@@ -4398,13 +4550,13 @@
       "scoutActualSymbol": "RefreshIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 786,
+        "line": 1142,
         "column": 909,
         "symbol": "RefreshIcon",
         "exportedSymbol": "RefreshIcon",
         "catalogId": "refresh",
         "confidenceScore": 271.88,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNa"
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSu"
       },
       "resolution": "resolved",
       "actualSymbol": "RefreshIcon",
@@ -4421,13 +4573,13 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 786,
+        "line": 1142,
         "column": 1014,
         "symbol": "Download",
         "exportedSymbol": "Download",
         "catalogId": "download",
         "confidenceScore": 271.88,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNa"
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSu"
       },
       "resolution": "resolved",
       "actualSymbol": "Download",
@@ -4444,13 +4596,13 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 786,
+        "line": 1142,
         "column": 1155,
         "symbol": "Download",
         "exportedSymbol": "Download",
         "catalogId": "download",
         "confidenceScore": 270.64,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNa"
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSu"
       },
       "resolution": "resolved",
       "actualSymbol": "Download",
@@ -4467,13 +4619,13 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 786,
+        "line": 1142,
         "column": 1285,
         "symbol": "Download",
         "exportedSymbol": "Download",
         "catalogId": "download",
         "confidenceScore": 270.64,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNa"
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSu"
       },
       "resolution": "resolved",
       "actualSymbol": "Download",
@@ -4490,13 +4642,13 @@
       "scoutActualSymbol": "DownloadIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 786,
+        "line": 1142,
         "column": 1581,
         "symbol": "Download",
         "exportedSymbol": "Download",
         "catalogId": "download",
         "confidenceScore": 273.11,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNa"
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSu"
       },
       "resolution": "resolved",
       "actualSymbol": "Download",
@@ -4513,13 +4665,13 @@
       "scoutActualSymbol": "SectionCamIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 786,
+        "line": 1142,
         "column": 2190,
         "symbol": "SectionCamIcon",
         "exportedSymbol": "SectionCamIcon",
         "catalogId": "section-cam",
         "confidenceScore": 274.35,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNa"
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSu"
       },
       "resolution": "resolved",
       "actualSymbol": "SectionCamIcon",
@@ -4536,13 +4688,13 @@
       "scoutActualSymbol": "SendCamIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 786,
+        "line": 1142,
         "column": 2409,
         "symbol": "SendCamIcon",
         "exportedSymbol": "SendCamIcon",
         "catalogId": "send-cam",
         "confidenceScore": 273.11,
-        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSubmission.cancel(); setNa"
+        "context": "header = <div className=\"cad-header\" aria-label=\"CAD document commands\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <Button className=\"cad-back\" aria-label=\"Workbench\" title=\"Back to Workbench\" onClick={() => run(props.onBack)} disabled={locked || Boolean(props.sketchEdit)}><ArrowLeft size={14} /></Button> <Input className=\"cad-document-name\" aria-label=\"Part name\" value={nameDraft} disabled={Boolean(props.sketchEdit || currentDimensionPick) || commandSubmission.applying || drawingPending || editorPending || parameterPending || dimensionPending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy || Boolean(currentSketchPlaneRequest || currentReferencePick)} onChange={(event) => { setNameDraft(event.target.value); setNamePending(event.target.value !== document.name); }} onBlur={(event) => { if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-cad-panel-resizer')) return; if (nameDraft !== document.name) submitEdit(signal => props.onEdit({ kind: 'rename-document', name: nameDraft }, signal), () => setNamePending(false)); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); commandSu"
       },
       "resolution": "resolved",
       "actualSymbol": "SendCamIcon",
@@ -4559,7 +4711,7 @@
       "scoutActualSymbol": "UndoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 787,
+        "line": 1143,
         "column": 122,
         "symbol": "Undo2",
         "exportedSymbol": "Undo2",
@@ -4582,7 +4734,7 @@
       "scoutActualSymbol": "RedoIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 787,
+        "line": 1143,
         "column": 268,
         "symbol": "Redo2",
         "exportedSymbol": "Redo2",
@@ -4605,7 +4757,7 @@
       "scoutActualSymbol": "SaveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 788,
+        "line": 1144,
         "column": 99,
         "symbol": "Save",
         "exportedSymbol": "Save",
@@ -4628,7 +4780,7 @@
       "scoutActualSymbol": "SketchIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 795,
+        "line": 1151,
         "column": 82,
         "symbol": "SketchIcon",
         "exportedSymbol": "SketchIcon",
@@ -4651,7 +4803,7 @@
       "scoutActualSymbol": "DatumPlaneIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 795,
+        "line": 1151,
         "column": 136,
         "symbol": "DatumPlaneIcon",
         "exportedSymbol": "DatumPlaneIcon",
@@ -4674,7 +4826,7 @@
       "scoutActualSymbol": "CurveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 795,
+        "line": 1151,
         "column": 216,
         "symbol": "CurveIcon",
         "exportedSymbol": "CurveIcon",
@@ -4697,7 +4849,7 @@
       "scoutActualSymbol": "AddIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 796,
+        "line": 1152,
         "column": 62,
         "symbol": "AddIcon",
         "exportedSymbol": "AddIcon",
@@ -4720,13 +4872,13 @@
       "scoutActualSymbol": "SelectIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
+        "line": 1153,
         "column": 73,
         "symbol": "SelectIcon",
         "exportedSymbol": "SelectIcon",
         "catalogId": "select",
-        "confidenceScore": 435.33,
-        "context": "toolButton('Select', SelectIcon, () => setTool('select'), locked, tool === 'select')"
+        "confidenceScore": 414.5,
+        "context": "toolButton('Select', SelectIcon, () => setTool('select'), locked, tool === 'select', undefined, 'S')"
       },
       "resolution": "resolved",
       "actualSymbol": "SelectIcon",
@@ -4743,13 +4895,13 @@
       "scoutActualSymbol": "RectangleIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 162,
+        "line": 1153,
+        "column": 178,
         "symbol": "RectangleIcon",
         "exportedSymbol": "RectangleIcon",
         "catalogId": "rectangle",
-        "confidenceScore": 429.78,
-        "context": "toolButton('Rectangle', RectangleIcon, () => { setTool('rectangle'); setProfileId(null); setGraphPick(null); }, locked, tool === 'rectangle')"
+        "confidenceScore": 415.64,
+        "context": "toolButton('Rectangle', RectangleIcon, () => { setTool('rectangle'); setProfileId(null); setGraphPick(null); }, locked, tool === 'rectangle', undefined, 'R')"
       },
       "resolution": "resolved",
       "actualSymbol": "RectangleIcon",
@@ -4766,13 +4918,13 @@
       "scoutActualSymbol": "CircleIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 302,
+        "line": 1153,
+        "column": 334,
         "symbol": "CircleIcon",
         "exportedSymbol": "CircleIcon",
         "catalogId": "circle",
-        "confidenceScore": 427,
-        "context": "toolButton('Circle', CircleIcon, () => { setTool('circle'); setProfileId(null); setGraphPick(null); }, locked, tool === 'circle')"
+        "confidenceScore": 412,
+        "context": "toolButton('Circle', CircleIcon, () => { setTool('circle'); setProfileId(null); setGraphPick(null); }, locked, tool === 'circle', undefined, 'C')"
       },
       "resolution": "resolved",
       "actualSymbol": "CircleIcon",
@@ -4789,13 +4941,13 @@
       "scoutActualSymbol": "SlotIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 431,
+        "line": 1153,
+        "column": 479,
         "symbol": "SlotIcon",
         "exportedSymbol": "SlotIcon",
         "catalogId": "slot",
-        "confidenceScore": 429.78,
-        "context": "toolButton('Slot', SlotIcon, () => { setTool('slot'); setProfileId(null); setGraphPick(null); }, locked, tool === 'slot')"
+        "confidenceScore": 415.64,
+        "context": "toolButton('Slot', SlotIcon, () => { setTool('slot'); setProfileId(null); setGraphPick(null); }, locked, tool === 'slot', undefined, 'O')"
       },
       "resolution": "resolved",
       "actualSymbol": "SlotIcon",
@@ -4812,13 +4964,13 @@
       "scoutActualSymbol": "PolylineIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 558,
+        "line": 1153,
+        "column": 622,
         "symbol": "PolylineIcon",
         "exportedSymbol": "PolylineIcon",
         "catalogId": "polyline",
-        "confidenceScore": 432,
-        "context": "toolButton('Polyline', PolylineIcon, () => { setTool('polygon'); setProfileId(null); setGraphPick(null); }, locked, tool === 'polygon')"
+        "confidenceScore": 418.67,
+        "context": "toolButton('Polyline', PolylineIcon, () => { setTool('polygon'); setProfileId(null); setGraphPick(null); }, locked, tool === 'polygon', undefined, 'L')"
       },
       "resolution": "resolved",
       "actualSymbol": "PolylineIcon",
@@ -4835,13 +4987,13 @@
       "scoutActualSymbol": "ClosedPathIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 691,
+        "line": 1153,
+        "column": 771,
         "symbol": "ClosedPathIcon",
         "exportedSymbol": "ClosedPathIcon",
         "catalogId": "closed-path",
-        "confidenceScore": 427,
-        "context": "toolButton('Path', ClosedPathIcon, () => { setTool('path'); setProfileId(null); setGraphPick(null); }, locked, tool === 'path', 'Draw an open or closed path with lines and three-point arcs')"
+        "confidenceScore": 423.43,
+        "context": "toolButton('Path', ClosedPathIcon, () => { setTool('path'); setProfileId(null); setGraphPick(null); }, locked, tool === 'path', 'Draw an open or closed path with lines and three-point arcs', 'P')"
       },
       "resolution": "resolved",
       "actualSymbol": "ClosedPathIcon",
@@ -4858,13 +5010,13 @@
       "scoutActualSymbol": "MeasureIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 926,
+        "line": 1153,
+        "column": 1290,
         "symbol": "MeasureIcon",
         "exportedSymbol": "MeasureIcon",
         "catalogId": "measure",
-        "confidenceScore": 392,
-        "context": "toolButton('Dimension', MeasureIcon, beginSketchDimension, locked || !sketchDimensionAvailable && selectedGraphEntity?.kind !== 'line' && !graphPointPair)"
+        "confidenceScore": 365.79,
+        "context": "toolButton('Dimension', MeasureIcon, beginSketchDimension, locked || patternDimensionLocked || !sketchDimensionAvailable && !graphDimensionAvailable && !graphPointPair && !canPickDimension, Boolean(currentDimensionPick), circleSourceDriven && !canPickDimension ? 'Radius already follows an expression. Edit or release it with fx.' : 'Add or edit a driving sketch dimension', 'D')"
       },
       "resolution": "resolved",
       "actualSymbol": "MeasureIcon",
@@ -4881,13 +5033,13 @@
       "scoutActualSymbol": "MoveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 1085,
+        "line": 1154,
+        "column": 277,
         "symbol": "MoveIcon",
         "exportedSymbol": "MoveIcon",
         "catalogId": "move",
-        "confidenceScore": 442.91,
-        "context": "toolButton('Move profile', MoveIcon, () => beginProfileCommand('move'), locked || !profile || profile.geometry.kind === 'plugin')"
+        "confidenceScore": 302,
+        "context": "toolButton(graphSelections.length ? 'Move selection' : 'Move profile', MoveIcon, beginSketchMove, locked || Boolean(graphEditLock) || !graphSelections.length && (!profile || profile.geometry.kind === 'plugin'), false, graphEditLock ?? 'Move selected geometry without releasing dimensions')"
       },
       "resolution": "resolved",
       "actualSymbol": "MoveIcon",
@@ -4904,13 +5056,13 @@
       "scoutActualSymbol": "PadPocketIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 1929,
+        "line": 1154,
+        "column": 2023,
         "symbol": "PadPocketIcon",
         "exportedSymbol": "PadPocketIcon",
         "catalogId": "pad-pocket",
-        "confidenceScore": 439.5,
-        "context": "toolButton('Pad / Pocket', PadPocketIcon, () => startFeature('extrude'), locked || !hasSketch)"
+        "confidenceScore": 406.55,
+        "context": "toolButton('Pad / Pocket', PadPocketIcon, () => startFeature('extrude'), locked || !hasPadSketch, false, undefined, 'E')"
       },
       "resolution": "resolved",
       "actualSymbol": "PadPocketIcon",
@@ -4927,13 +5079,13 @@
       "scoutActualSymbol": "RevolveIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 2020,
+        "line": 1154,
+        "column": 2140,
         "symbol": "RevolveIcon",
         "exportedSymbol": "RevolveIcon",
         "catalogId": "revolve",
-        "confidenceScore": 435.33,
-        "context": "toolButton('Revolve', RevolveIcon, () => startFeature('revolve'), locked || !hasSketch)"
+        "confidenceScore": 418.67,
+        "context": "toolButton('Revolve', RevolveIcon, () => startFeature('revolve'), locked || !hasRevolveSketch)"
       },
       "resolution": "resolved",
       "actualSymbol": "RevolveIcon",
@@ -4950,8 +5102,8 @@
       "scoutActualSymbol": "LoftIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 2106,
+        "line": 1154,
+        "column": 2233,
         "symbol": "LoftIcon",
         "exportedSymbol": "LoftIcon",
         "catalogId": "loft",
@@ -4973,8 +5125,8 @@
       "scoutActualSymbol": "SweepIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 2320,
+        "line": 1154,
+        "column": 2447,
         "symbol": "SweepIcon",
         "exportedSymbol": "SweepIcon",
         "catalogId": "sweep",
@@ -4996,8 +5148,8 @@
       "scoutActualSymbol": "ShellIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 2696,
+        "line": 1154,
+        "column": 2823,
         "symbol": "ShellIcon",
         "exportedSymbol": "ShellIcon",
         "catalogId": "shell",
@@ -5019,8 +5171,8 @@
       "scoutActualSymbol": "BooleanIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 2862,
+        "line": 1154,
+        "column": 2989,
         "symbol": "BooleanIcon",
         "exportedSymbol": "BooleanIcon",
         "catalogId": "boolean",
@@ -5042,8 +5194,8 @@
       "scoutActualSymbol": "Move3dIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 3001,
+        "line": 1154,
+        "column": 3128,
         "symbol": "Move3dIcon",
         "exportedSymbol": "Move3dIcon",
         "catalogId": "move-3d",
@@ -5065,8 +5217,8 @@
       "scoutActualSymbol": "MirrorIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 797,
-        "column": 3177,
+        "line": 1154,
+        "column": 3304,
         "symbol": "MirrorIcon",
         "exportedSymbol": "MirrorIcon",
         "catalogId": "mirror",
@@ -5088,13 +5240,13 @@
       "scoutActualSymbol": "SketchIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 814,
-        "column": 2817,
+        "line": 1171,
+        "column": 89,
         "symbol": "PencilRuler",
         "exportedSymbol": "PencilRuler",
         "catalogId": "sketch",
-        "confidenceScore": 281.05,
-        "context": "<Button disabled={locked} onClick={() => editSketch(selected)}><PencilRuler size={13} /> Edit sketch</Button>"
+        "confidenceScore": 271.59,
+        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{currentSketchReferencePick?.source ? <CadSketchCanvas key={`use-source/${currentSketchReferencePick.source.id}`} sketch={currentSketchReferencePick.source} parameters={document.parameters} documentVersion={props.documentVersion} placementLabel={cadPlacementLabel(currentSketchReferencePick.source.plane, document.features)} tool=\"select\" selectedProfileId={null} onSelectProfile={() => undefined} onAddProfile={addProfile} onPendingChange={setDrawingPending} onError={setError} cancelSignal={cancelSignal} interactionLocked={pendingOtherCommands || storageBusy || externalWorkflowOpen} onControlsReady={publishRenderedControls} getFitArea={getFitArea} navigationMode={preferences.navigationMode} graphControls={{ document, selection: [], geometryPick: currentSketchReferencePick.pick, onSelect: () => undefined, onEditMany: props.onEditMany }} /> : copiedPreview?.kind === 'sketch' && profileCopyPreview ? <CadSketchCanvas key={copiedPreview.id} sketch={copiedPreview} parameters={profileCopyPreview.parameters"
       },
       "resolution": "resolved",
       "actualSymbol": "PencilRuler",
@@ -5111,13 +5263,13 @@
       "scoutActualSymbol": "BusyIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 804,
+        "line": 1172,
         "column": 89,
         "symbol": "Loader2",
         "exportedSymbol": "Loader2",
         "catalogId": "busy",
-        "confidenceScore": 264.47,
-        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, relation: inspectedRelation, inspection: inspectedDiagnostic, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onSelectSet: selectGraphSet, onDelete: deleteSketchGe"
+        "confidenceScore": 264.74,
+        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{currentSketchReferencePick?.source ? <CadSketchCanvas key={`use-source/${currentSketchReferencePick.source.id}`} sketch={currentSketchReferencePick.source} parameters={document.parameters} documentVersion={props.documentVersion} placementLabel={cadPlacementLabel(currentSketchReferencePick.source.plane, document.features)} tool=\"select\" selectedProfileId={null} onSelectProfile={() => undefined} onAddProfile={addProfile} onPendingChange={setDrawingPending} onError={setError} cancelSignal={cancelSignal} interactionLocked={pendingOtherCommands || storageBusy || externalWorkflowOpen} onControlsReady={publishRenderedControls} getFitArea={getFitArea} navigationMode={preferences.navigationMode} graphControls={{ document, selection: [], geometryPick: currentSketchReferencePick.pick, onSelect: () => undefined, onEditMany: props.onEditMany }} /> : copiedPreview?.kind === 'sketch' && profileCopyPreview ? <CadSketchCanvas key={copiedPreview.id} sketch={copiedPreview} parameters={profileCopyPreview.parameters"
       },
       "resolution": "resolved",
       "actualSymbol": "Loader2",
@@ -5134,8 +5286,8 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 808,
-        "column": 731,
+        "line": 1176,
+        "column": 1600,
         "symbol": "Check",
         "exportedSymbol": "Check",
         "catalogId": "confirm",
@@ -5157,8 +5309,8 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 808,
-        "column": 930,
+        "line": 1176,
+        "column": 1799,
         "symbol": "CloseIcon",
         "exportedSymbol": "CloseIcon",
         "catalogId": "close",
@@ -5180,13 +5332,13 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 808,
-        "column": 1410,
+        "line": 1176,
+        "column": 2279,
         "symbol": "Check",
         "exportedSymbol": "Check",
         "catalogId": "confirm",
-        "confidenceScore": 749.5,
-        "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" aria-label=\"Finish sketch\" title=\"Finish sketch\" disabled={locked} onClick={finishSketch}><Check size={16} /></Button>"
+        "confidenceScore": 738.47,
+        "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" aria-label=\"Finish sketch\" title=\"Finish sketch\" disabled={locked} onClick={finishSketch}><Check size={14} /><span>Finish</span></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "Check",
@@ -5203,13 +5355,13 @@
       "scoutActualSymbol": "ConfirmIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 808,
-        "column": 1800,
+        "line": 1176,
+        "column": 2688,
         "symbol": "Check",
         "exportedSymbol": "Check",
         "catalogId": "confirm",
-        "confidenceScore": 750.24,
-        "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" aria-label=\"Finish curve editing\" title=\"Finish curve editing\" disabled={locked} onClick={finishCurve}><Check size={16} /></Button>"
+        "confidenceScore": 739.78,
+        "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" aria-label=\"Finish curve editing\" title=\"Finish curve editing\" disabled={locked} onClick={finishCurve}><Check size={14} /><span>Finish</span></Button>"
       },
       "resolution": "resolved",
       "actualSymbol": "Check",
@@ -5226,8 +5378,8 @@
       "scoutActualSymbol": "ExpandDownIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 808,
-        "column": 2057,
+        "line": 1176,
+        "column": 3398,
         "symbol": "ChevronDown",
         "exportedSymbol": "ChevronDown",
         "catalogId": "expand-down",
@@ -5249,8 +5401,8 @@
       "scoutActualSymbol": "ExpandRightIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 808,
-        "column": 2085,
+        "line": 1176,
+        "column": 3426,
         "symbol": "ChevronRight",
         "exportedSymbol": "ChevronRight",
         "catalogId": "expand-right",
@@ -5272,8 +5424,8 @@
       "scoutActualSymbol": "DeleteIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 808,
-        "column": 2502,
+        "line": 1176,
+        "column": 3890,
         "symbol": "Trash2",
         "exportedSymbol": "Trash2",
         "catalogId": "delete",
@@ -5295,63 +5447,17 @@
       "scoutActualSymbol": "BusyIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 812,
+        "line": 1186,
         "column": 86,
         "symbol": "Loader2",
         "exportedSymbol": "Loader2",
         "catalogId": "busy",
-        "confidenceScore": 265.7,
-        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, relation: inspectedRelation, inspection: inspectedDiagnostic, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onSelectSet: selectGraphSet, onDelete: deleteSketchGe"
+        "confidenceScore": 264.74,
+        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{currentSketchReferencePick?.source ? <CadSketchCanvas key={`use-source/${currentSketchReferencePick.source.id}`} sketch={currentSketchReferencePick.source} parameters={document.parameters} documentVersion={props.documentVersion} placementLabel={cadPlacementLabel(currentSketchReferencePick.source.plane, document.features)} tool=\"select\" selectedProfileId={null} onSelectProfile={() => undefined} onAddProfile={addProfile} onPendingChange={setDrawingPending} onError={setError} cancelSignal={cancelSignal} interactionLocked={pendingOtherCommands || storageBusy || externalWorkflowOpen} onControlsReady={publishRenderedControls} getFitArea={getFitArea} navigationMode={preferences.navigationMode} graphControls={{ document, selection: [], geometryPick: currentSketchReferencePick.pick, onSelect: () => undefined, onEditMany: props.onEditMany }} /> : copiedPreview?.kind === 'sketch' && profileCopyPreview ? <CadSketchCanvas key={copiedPreview.id} sketch={copiedPreview} parameters={profileCopyPreview.parameters"
       },
       "resolution": "resolved",
       "actualSymbol": "Loader2",
       "actualCatalogId": "busy",
-      "catalogIdChangedFromOriginalIntent": false
-    },
-    {
-      "originId": "use.5745191fface",
-      "originFile": "src/features/cad/CadWorkbench.tsx",
-      "originalLine": 619,
-      "originalColumn": 1470,
-      "originalSymbol": "Spline",
-      "intendedCatalogId": "curve",
-      "scoutActualSymbol": "CurveIcon",
-      "matchedCurrent": {
-        "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 814,
-        "column": 2638,
-        "symbol": "Spline",
-        "exportedSymbol": "Spline",
-        "catalogId": "curve",
-        "confidenceScore": 362,
-        "context": "<Button disabled={locked || selected.suppressed} onClick={() => editCurve(selected)}><Spline size={13} /> Edit curve</Button>"
-      },
-      "resolution": "resolved",
-      "actualSymbol": "Spline",
-      "actualCatalogId": "curve",
-      "catalogIdChangedFromOriginalIntent": false
-    },
-    {
-      "originId": "use.c0d304036f6d",
-      "originFile": "src/features/cad/CadWorkbench.tsx",
-      "originalLine": 619,
-      "originalColumn": 1649,
-      "originalSymbol": "PencilRuler",
-      "intendedCatalogId": "sketch",
-      "scoutActualSymbol": "SketchIcon",
-      "matchedCurrent": {
-        "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 803,
-        "column": 89,
-        "symbol": "PencilRuler",
-        "exportedSymbol": "PencilRuler",
-        "catalogId": "sketch",
-        "confidenceScore": 263.23,
-        "context": "return <main className=\"cad-workbench\" aria-label=\"Parametric CAD workbench\"> {publishHeader ? headerHost && createPortal(header, headerHost) : header} <div className=\"cad-body\" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> <section className=\"cad-center\" aria-label=\"Modeling area\"><CadCommandDock toolbar={toolbar}>{canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, relation: inspectedRelation, inspection: inspectedDiagnostic, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onSelectSet: selectGraphSet, onDelete: deleteSketchGe"
-      },
-      "resolution": "resolved",
-      "actualSymbol": "PencilRuler",
-      "actualCatalogId": "sketch",
       "catalogIdChangedFromOriginalIntent": false
     },
     {
@@ -5364,7 +5470,7 @@
       "scoutActualSymbol": "DeleteIcon",
       "matchedCurrent": {
         "file": "src/features/cad/CadWorkbench.tsx",
-        "line": 818,
+        "line": 1204,
         "column": 970,
         "symbol": "Trash2",
         "exportedSymbol": "Trash2",
@@ -6123,12 +6229,12 @@
       "scoutActualSymbol": "CamEditorIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorPage.tsx",
-        "line": 936,
+        "line": 937,
         "column": 56,
         "symbol": "PenTool",
         "exportedSymbol": "PenTool",
         "catalogId": "cam-editor",
-        "confidenceScore": 399.5,
+        "confidenceScore": 397,
         "context": "icon: <PenTool />"
       },
       "resolution": "resolved",
@@ -6146,12 +6252,12 @@
       "scoutActualSymbol": "SimulationIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorPage.tsx",
-        "line": 937,
+        "line": 938,
         "column": 64,
         "symbol": "SimulationIcon",
         "exportedSymbol": "SimulationIcon",
         "catalogId": "simulation",
-        "confidenceScore": 399.5,
+        "confidenceScore": 397,
         "context": "icon: <SimulationIcon />"
       },
       "resolution": "resolved",
@@ -6169,12 +6275,12 @@
       "scoutActualSymbol": "PanelRightOpenIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorPage.tsx",
-        "line": 3729,
+        "line": 3733,
         "column": 18,
         "symbol": "PanelRightOpen",
         "exportedSymbol": "PanelRightOpen",
         "catalogId": "panel-right-open",
-        "confidenceScore": 779.5,
+        "confidenceScore": 769.5,
         "context": "<Button variant=\"outline\" size=\"icon\" aria-label=\"Expand Inspector Rail\" title=\"Show code panels\" type=\"button\" className=\"flex size-7 items-center justify-center\" onClick={() => setInspectorRailCollapsed(false)}> <PanelRightOpen className=\"size-3.5\" /> </Button>"
       },
       "resolution": "resolved",
@@ -6192,12 +6298,12 @@
       "scoutActualSymbol": "PanelRightCloseIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorPage.tsx",
-        "line": 3745,
+        "line": 3749,
         "column": 68,
         "symbol": "PanelRightClose",
         "exportedSymbol": "PanelRightClose",
         "catalogId": "panel-right-close",
-        "confidenceScore": 781.38,
+        "confidenceScore": 771.38,
         "context": "<Button variant=\"outline\" size=\"icon\" aria-label=\"Collapse Inspector Rail\" title=\"Focus preview\" type=\"button\" className=\"hidden size-7 shrink-0 items-center justify-center lg:flex\" onClick={() => setInspectorRailCollapsed(true)}><PanelRightClose className=\"size-3.5\" /></Button>"
       },
       "resolution": "resolved",
@@ -6583,12 +6689,12 @@
       "scoutActualSymbol": "SelectIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorPreview.tsx",
-        "line": 950,
+        "line": 965,
         "column": 18,
         "symbol": "MousePointer2",
         "exportedSymbol": "MousePointer2",
         "catalogId": "select",
-        "confidenceScore": 790.87,
+        "confidenceScore": 753.37,
         "context": "<Button aria-label=\"Select geometry on canvas\" aria-pressed={canvasMouseMode === 'select'} className={`flex size-5 items-center justify-center border ${ canvasMouseMode === 'select' ? 'border-primary bg-primary text-primary-foreground' : 'border-border' }`} data-editor-preview-mouse-mode-select onClick={() => onSetCanvasMouseMode('select')} title=\"Select geometry\" type=\"button\" > <MousePointer2 className=\"size-3\" /> </Button>"
       },
       "resolution": "resolved",
@@ -6606,12 +6712,12 @@
       "scoutActualSymbol": "CircleCenterIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorPreview.tsx",
-        "line": 965,
+        "line": 980,
         "column": 18,
         "symbol": "CircleCenterIcon",
         "exportedSymbol": "CircleCenterIcon",
         "catalogId": "circle-center",
-        "confidenceScore": 788.82,
+        "confidenceScore": 751.32,
         "context": "<Button aria-label=\"Place measurement points on canvas\" aria-pressed={canvasMouseMode === 'point'} className={`flex size-5 items-center justify-center border ${ canvasMouseMode === 'point' ? 'border-primary bg-primary text-primary-foreground' : 'border-border' }`} data-editor-preview-mouse-mode-point onClick={() => onSetCanvasMouseMode('point')} title=\"Place measurement points\" type=\"button\" > <CircleCenterIcon className=\"size-3\" /> </Button>"
       },
       "resolution": "resolved",
@@ -6629,12 +6735,12 @@
       "scoutActualSymbol": "ZoomOutIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorPreview.tsx",
-        "line": 978,
+        "line": 993,
         "column": 14,
         "symbol": "ZoomOut",
         "exportedSymbol": "ZoomOut",
         "catalogId": "zoom-out",
-        "confidenceScore": 807,
+        "confidenceScore": 769.5,
         "context": "<Button aria-label=\"Zoom preview out\" disabled={zoom <= MIN_PREVIEW_ZOOM} onClick={() => setZoom((current) => clampZoom(current / PREVIEW_ZOOM_STEP))} size=\"icon\" title=\"Zoom out\" type=\"button\" variant=\"ghost\" > <ZoomOut /> </Button>"
       },
       "resolution": "resolved",
@@ -6652,12 +6758,12 @@
       "scoutActualSymbol": "ZoomInIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorPreview.tsx",
-        "line": 992,
+        "line": 1007,
         "column": 14,
         "symbol": "ZoomIn",
         "exportedSymbol": "ZoomIn",
         "catalogId": "zoom-in",
-        "confidenceScore": 807,
+        "confidenceScore": 769.5,
         "context": "<Button aria-label=\"Zoom preview in\" disabled={zoom >= MAX_PREVIEW_ZOOM} onClick={() => setZoom((current) => clampZoom(current * PREVIEW_ZOOM_STEP))} size=\"icon\" title=\"Zoom in\" type=\"button\" variant=\"ghost\" > <ZoomIn /> </Button>"
       },
       "resolution": "resolved",
@@ -6675,12 +6781,12 @@
       "scoutActualSymbol": "FitViewIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorPreview.tsx",
-        "line": 1003,
+        "line": 1018,
         "column": 14,
         "symbol": "Maximize2",
         "exportedSymbol": "Maximize2",
         "catalogId": "fit-view",
-        "confidenceScore": 807,
+        "confidenceScore": 769.5,
         "context": "<Button aria-label=\"Fit preview to screen\" disabled={zoom === 1 && pan.x === 0 && pan.y === 0} onClick={handleFitPreview} size=\"icon\" title=\"Fit to screen\" type=\"button\" variant=\"ghost\" > <Maximize2 /> </Button>"
       },
       "resolution": "resolved",
@@ -7112,12 +7218,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorWorkspacePanels.tsx",
-        "line": 191,
+        "line": 192,
         "column": 14,
         "symbol": "X",
         "exportedSymbol": "X",
         "catalogId": "close",
-        "confidenceScore": 775,
+        "confidenceScore": 772.5,
         "context": "<Button variant=\"outline\" size=\"icon\" aria-label={`Close ${title}`} className=\"flex items-center justify-center\" onClick={onClose} ref={closeRef} type=\"button\" > <X aria-hidden=\"true\" className=\"size-3\" /> </Button>"
       },
       "resolution": "resolved",
@@ -7135,12 +7241,12 @@
       "scoutActualSymbol": "PanelRightOpenIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorWorkspacePanels.tsx",
-        "line": 291,
+        "line": 292,
         "column": 22,
         "symbol": "PanelRightOpen",
         "exportedSymbol": "PanelRightOpen",
         "catalogId": "panel-right-open",
-        "confidenceScore": 345,
+        "confidenceScore": 342.5,
         "context": "ExpandIcon = PanelRightOpen"
       },
       "resolution": "resolved",
@@ -7158,12 +7264,12 @@
       "scoutActualSymbol": "PanelRightCloseIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorWorkspacePanels.tsx",
-        "line": 376,
+        "line": 377,
         "column": 16,
         "symbol": "PanelRightClose",
         "exportedSymbol": "PanelRightClose",
         "catalogId": "panel-right-close",
-        "confidenceScore": 769.5,
+        "confidenceScore": 767,
         "context": "<Button variant=\"outline\" size=\"icon\" aria-label={`Collapse ${title}`} className=\"flex items-center justify-center\" onClick={onToggleCollapsed} title={`Collapse ${title}`} type=\"button\" > <PanelRightClose aria-hidden=\"true\" className=\"size-3\" /> </Button>"
       },
       "resolution": "resolved",
@@ -7181,12 +7287,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorWorkspacePanels.tsx",
-        "line": 595,
+        "line": 610,
         "column": 12,
         "symbol": "X",
         "exportedSymbol": "X",
         "catalogId": "close",
-        "confidenceScore": 777.97,
+        "confidenceScore": 740.47,
         "context": "<Button variant=\"outline\" size=\"icon\" aria-label={compactDrawerOpen ? `Close ${title} drawer` : `Hide ${title}`} className=\"flex items-center justify-center\" onClick={compactDrawerOpen ? onCloseCompactDrawer : onHide} onPointerDown={(event) => event.stopPropagation()} ref={compactDrawerCloseRef} title={`Hide ${title}`} type=\"button\" > <X className=\"size-3\" /> </Button>"
       },
       "resolution": "resolved",
@@ -7204,12 +7310,12 @@
       "scoutActualSymbol": "CloseIcon",
       "matchedCurrent": {
         "file": "src/features/editor/EditorWorkspacePanels.tsx",
-        "line": 814,
+        "line": 829,
         "column": 14,
         "symbol": "X",
         "exportedSymbol": "X",
         "catalogId": "close",
-        "confidenceScore": 771,
+        "confidenceScore": 733.5,
         "context": "<Button variant=\"outline\" size=\"icon\" aria-label={`Hide ${title}`} className=\"flex items-center justify-center\" onClick={onHide} onPointerDown={(event) => event.stopPropagation()} title={`Hide ${title}`} type=\"button\" > <X className=\"size-3\" /> </Button>"
       },
       "resolution": "resolved",
@@ -8077,6 +8183,13 @@
       "context": "<Button ref={trigger} type=\"button\" size=\"icon\" className=\"ui-search-trigger\" aria-label={label} aria-expanded={expanded} aria-controls={id} title={label} onClick={() => { setRequestedOpen(true); field.current?.focus(); }}> <Search aria-hidden=\"true\" /> </Button>"
     },
     {
+      "file": "src/features/cad/CadFeatureEditor.tsx",
+      "line": 269,
+      "symbol": "SelectIcon",
+      "catalogId": "select",
+      "context": "<Button type=\"button\" disabled={staleDraft || scalarPending || submission.applying || !visibleIds.includes(target.targetId)} onClick={() => { if (pickToken.current || depthGestureActive) return; const token = Symbol('topology-pick'); pickToken.current = token; pickerFocus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null; setPicker({ kind: 'pick-topology', owner: previewOwner, expectedVersion: documentVersion, purpose: target.kind, label: target.kind === 'shell' ? 'Opening face' : 'Edges', request: { featureId: feature.id, bodyId: target.targetId, parameterValues: { ...parameterEdits } }, onSelect(result) { const environment = pickEnvironment.current; if (pickToken.current !== token || environment.document !== document || environment.documentVersion !== documentVersion) return; if (result.bodyId !== target.targetId || result.purpose !== target.kind) throw new Error('The topology choice does not belong to this feature input.'); if (result.purpose === 'shell' && target.kind === 'shell') update({ ...target, opening: result.opening }); else if (result.purpose !== 'shell' && target.kind !== 'shell') { setCapturedEdges(result.selection); update({ ...target, selection: result.selection }); } endPick(token, true); }, onCancel: () => endPick(token) }); }}><SelectIcon size={13} />{target.kind === 'shell' ? 'Choose opening' : 'Choose edg"
+    },
+    {
       "file": "src/features/cad/CadFeatureTree.tsx",
       "line": 19,
       "symbol": "SlotIcon",
@@ -8106,10 +8219,10 @@
     },
     {
       "file": "src/features/cad/CadFeatureTree.tsx",
-      "line": 208,
+      "line": 221,
       "symbol": "WarningIcon",
       "catalogId": "warning",
-      "context": "<Button type=\"button\" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)} aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${diagnostic.message}` : ''}`} onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)} onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); }}> <Icon size={14} /><span className=\"cad-feature-name\">{feature.name}</span> {diagnostic && <span className=\"cad-tree-error\" aria-label={diagnostic.message}><WarningIcon size={12} /></span>}{feature.suppressed && <span className=\"cad-tree-muted\">off</span>} </Button>"
+      "context": "<Button type=\"button\" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)} aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${diagnostic.message}` : ''}`} onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)} onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); else onConfigure?.(feature); }}> <Icon size={14} /><span className=\"cad-feature-name\">{feature.name}</span> {diagnostic && <span className=\"cad-tree-error\" aria-label={diagnostic.message}><WarningIcon size={12} /></span>}{feature.suppressed && <span className=\"cad-tree-muted\">off</span>} </Button>"
     },
     {
       "file": "src/features/cad/CadPathSegmentFields.tsx",
@@ -8141,59 +8254,115 @@
     },
     {
       "file": "src/features/cad/CadSketchAreaRepairPanel.tsx",
-      "line": 79,
+      "line": 84,
       "symbol": "SelectIcon",
       "catalogId": "select",
-      "context": "<Button type=\"button\" className=\"cad-area-choice\" aria-label={`Choose areas for ${feature.name}`} disabled={!inspection.cells.cells.length} onClick={() => begin(feature.id)}> <SelectIcon size={13} /><span>{choices[feature.id]?.length ? `${choices[feature.id].length} ${choices[feature.id].length === 1 ? 'area' : 'areas'}` : 'Choose areas'}</span> </Button>"
+      "context": "<Button type=\"button\" className=\"cad-area-choice\" aria-label={`Choose areas for ${feature.name}`} disabled={!cells.cells.length} onClick={() => begin(feature.id)}> <SelectIcon size={13} /><span>{count ? `${count} ${count === 1 ? 'area' : 'areas'}` : 'Choose areas'}</span> </Button>"
     },
     {
       "file": "src/features/cad/CadSketchAreaRepairPanel.tsx",
-      "line": 85,
+      "line": 90,
       "symbol": "CloseIcon",
       "catalogId": "close",
       "context": "<Button type=\"button\" disabled={submission.applying} onClick={onCancel}><CloseIcon size={13} /> Back to sketch</Button>"
     },
     {
       "file": "src/features/cad/CadSketchCanvas.tsx",
-      "line": 702,
+      "line": 1076,
       "symbol": "ConfirmIcon",
       "catalogId": "confirm",
       "context": "<Button aria-label=\"Finish path\" title=\"Keep this path open without adding a closing edge\" disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(false)}><ConfirmIcon size={13} /> Finish path</Button>"
     },
     {
-      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 259,
-      "symbol": "MeasureIcon",
-      "catalogId": "measure",
-      "context": "<Button type=\"button\" disabled={draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, dimensionPair))} onClick={addLength}><MeasureIcon size={13} /> Add length</Button>"
+      "file": "src/features/cad/CadSketchLinearPatternEditor.tsx",
+      "line": 79,
+      "symbol": "LinearPatternIcon",
+      "catalogId": "linear-pattern",
+      "context": "return <CadSketchCommandForm label=\"Sketch linear pattern\" title=\"Linear pattern\" icon={<LinearPatternIcon size={14} />} session={session} canApply={edits !== null && (edits.length === 0 || prepared.kind === 'ready')} issue={issue} help=\"Repeat this circle along the sketch X or Y axis. Pitch is the distance between neighboring centers. Edit the seed to change every attached circle. Click a numbered occurrence in the preview to exclude or restore it. Exclusions survive count changes.\" status={<>{detaching && <span role=\"status\">Apply keeps these circles as independent geometry.</span>}{prepared.kind === 'waiting' && <span role=\"status\">Preparing preview…</span>}</>} onSubmit={() => { if (!edits) return; if (!edits.length) session.finish(() => props.onAccepted(result)); else if (prepared.kind === 'ready') session.submit(edits, prepared.document, () => props.onAccepted(result), 'The pattern could not be applied.'); }}> <fieldset className=\"cad-editor-fieldset\" disabled={props.interactionLocked || session.applying || detaching}> <label className=\"cad-field\"><span>Count<CadContextHelp label=\"Pattern count\">Total occurrences including the original seed, from 1 to 32. Reducing the count keeps omitted indexes for later increases. Dependent dimensions must be removed before their occurrence.</CadContextHelp></span> <Input aria-label=\"Count\" type=\"number\" min=\"1\" max=\"32\" step=\"1\" value="
+    },
+    {
+      "file": "src/features/cad/CadSketchLinearPatternEditor.tsx",
+      "line": 97,
+      "symbol": "FlipHorizontalIcon",
+      "catalogId": "flip-horizontal",
+      "context": "<Button type=\"button\" aria-label=\"Reverse pattern direction\" title=\"Reverse direction without changing the pitch relation\" aria-pressed={draft.direction.startsWith('-')} onClick={() => { setError(null); setDraft(relation => ({ ...relation, direction: (relation.direction.startsWith('-') ? '+' : '-') + relation.direction.slice(1) as CadSketchLinearPattern['direction'] })); }}><FlipHorizontalIcon size={14} /></Button>"
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 265,
-      "symbol": "MeasureIcon",
-      "catalogId": "measure",
-      "context": "<Button type=\"button\" disabled={draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, pointPair))} onClick={addLength}><MeasureIcon size={13} /> Add distance</Button>"
-    },
-    {
-      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 290,
+      "line": 489,
       "symbol": "CloseIcon",
       "catalogId": "close",
-      "context": "<Button type=\"button\" aria-label={`Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title=\"Remove this relation and retain the current geometry\" onClick={() => removeRelation(relation.id)}><CloseIcon size={12} /></Button>"
+      "context": "<Button type=\"button\" aria-label={relation.kind === 'linear-pattern' ? 'Detach pattern' : relation.kind === 'external-reference' ? 'Detach reference' : `Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title={relation.kind === 'linear-pattern' ? 'Detach all occurrences and retain their current geometry' : relation.kind === 'external-reference' ? 'Detach this source link and retain the current geometry' : 'Remove this relation and retain the current geometry'} disabled={relation.kind === 'linear-pattern' && (pending || !onEditPattern)} onClick={() => { if (relation.kind === 'linear-pattern') onEditPattern?.(relation.id,true); else removeRelation(relation.id); }}><CloseIcon size={12} /></Button>"
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 306,
+      "line": 511,
+      "symbol": "LinkIcon",
+      "catalogId": "link",
+      "context": "return <form ref={form} className=\"cad-property-form cad-sketch-profile-panel\" aria-label=\"Sketch relations\" aria-busy={submission.applying || undefined} onKeyDown={event => { if (event.key === 'Escape' && pending && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); reset(); } }} onSubmit={event => { event.preventDefault(); if (interactionLocked || submission.applying || scalarPending || !candidate.edits?.length || blockingIssue) return; setError(null); submission.submit(signal => onEditMany(candidate.edits ?? [], signal), () => { reset(); if (candidate.created) onCornerAccepted?.(candidate.created.entityId, candidate.created.relationId); }, cause => setError(cause instanceof CadSketchPreparationError ? cause.feedback : cause instanceof Error ? cause.message : 'Unable to apply this sketch relation.')); }}> <div className=\"cad-property-title\">{dimensionOnly ? 'Dimension' : move ? 'Move selection' : corner ? corner.kind === 'fillet' ? 'Sketch fillet' : 'Sketch chamfer' : pointPair ? 'Point pair' : linePair ? 'Line pair' : curvePair ? 'Curve pair' : selection.length > 1 ? `${selection.length} selected` : selectedPoint ? 'Point' : selectedEntity?.kind === 'circle' ? 'Circle' : selectedEntity?.kind === 'line' ? 'Line' : 'Arc'} {move && <CadContextHelp label=\"Move selection\">Translate the selected points and edges together without changing their sizes"
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 518,
+      "symbol": "MeasureIcon",
+      "catalogId": "measure",
+      "context": "<Button type=\"button\" onClick={addReference}><MeasureIcon size={13} /> Reference {passiveLabel}</Button>"
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 523,
+      "symbol": "MeasureIcon",
+      "catalogId": "measure",
+      "context": "<Button type=\"button\" title={referenceLock ?? undefined} disabled={Boolean(selectedReference) || draft.relations.some(relation => relation.kind === 'distance' && samePair(relation, dimensionPair))} onClick={() => addLength()}><MeasureIcon size={13} /> Add length</Button>"
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 537,
+      "symbol": "MeasureIcon",
+      "catalogId": "measure",
+      "context": "<Button type=\"button\" autoFocus={initialCommand?.kind === 'point-dimensions'} onClick={() => addLength()}><MeasureIcon size={13} /> Aligned distance</Button>"
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 538,
+      "symbol": "MeasureIcon",
+      "catalogId": "measure",
+      "context": "<Button type=\"button\" key={axis} onClick={() => addLength(axis)}><MeasureIcon size={13} />{axis === 'x' ? 'Horizontal distance' : 'Vertical distance'}</Button>"
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 559,
+      "symbol": "MeasureIcon",
+      "catalogId": "measure",
+      "context": "<Button type=\"button\" disabled={Boolean(orientationOwner)} title={orientationOwner ? `Remove ${relationLabel(orientationOwner)} before adding Angle.` : 'Drive the actual corner angle'} onClick={addAngle}><MeasureIcon size={13} /> {angleOwner ? 'Edit angle' : 'Add angle'}</Button>"
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 572,
+      "symbol": "MeasureIcon",
+      "catalogId": "measure",
+      "context": "<Button type=\"button\" disabled={selectedEntity.kind === 'circle' && typeof selectedEntity.radius === 'string'} title={selectedEntity.kind === 'circle' && typeof selectedEntity.radius === 'string' ? 'Radius already follows an expression. Edit or release it with fx.' : 'Add a driving radial dimension'} onClick={addRadialSize}> <MeasureIcon size={13} /> {acceptedRadial ? 'Restore' : 'Add'} {acceptedRadial?.quantity ?? (selectedEntity.kind === 'circle' ? 'diameter' : 'radius')} </Button>"
+    },
+    {
+      "file": "src/features/cad/CadSketchRelationsPanel.tsx",
+      "line": 630,
       "symbol": "CloseIcon",
       "catalogId": "close",
       "context": "<Button type=\"button\" onClick={reset}><CloseIcon size={13} /> Cancel</Button>"
     },
     {
       "file": "src/features/cad/CadSketchRelationsPanel.tsx",
-      "line": 306,
+      "line": 630,
       "symbol": "ConfirmIcon",
       "catalogId": "confirm",
       "context": "<Button variant=\"primary\" type=\"submit\" disabled={interactionLocked || submission.applying || scalarPending || !candidate.edits?.length || Boolean(blockingIssue)}><ConfirmIcon size={13} /> Apply</Button>"
+    },
+    {
+      "file": "src/features/cad/CadToolbarMenu.tsx",
+      "line": 49,
+      "symbol": "ChevronDown",
+      "catalogId": "expand-down",
+      "context": "<Button ref={trigger} className=\"cad-tool\" aria-label={label} title={title ?? label} disabled={disabled} aria-pressed={pressed} aria-haspopup=\"menu\" aria-expanded={open && !disabled} aria-controls={open && !disabled ? id : undefined} onPointerDown={event => { if (open) event.preventDefault(); }} onClick={() => { if (open) close(true); else { initialFocus.current = 'first'; setOpen(true); } }} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); initialFocus.current = event.key === 'ArrowUp' ? 'last' : 'first'; setOpen(true); } }}>{icon}<span>{label}</span><ChevronDown size={11} /></Button>"
     },
     {
       "file": "src/features/cad/CadTopologyInspector.tsx",
@@ -8211,17 +8380,94 @@
     },
     {
       "file": "src/features/cad/CadWorkbench.tsx",
-      "line": 808,
+      "line": 1153,
+      "symbol": "TrimIcon",
+      "catalogId": "trim",
+      "context": "toolButton('Trim', TrimIcon, () => { setTool('trim'); setProfileId(null); setGraphPick(null); }, locked || !sketch.graph, tool === 'trim', sketch.graph ? 'Click edge pieces to remove them up to the nearest crossing edge' : 'Trim needs a sketch drawn with connected edges', 'T')"
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1153,
+      "symbol": "ConstraintIcon",
+      "catalogId": "constraint",
+      "context": "toolbar = <div className=\"cad-toolbar\" aria-label=\"CAD tools\" data-cad-tool-context={sketch ? 'sketch' : curve || curveCreation ? 'curve' : 'model'} inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}> {!canvasReference && <div className=\"cad-tool-group\">{toolButton('Sketch', SketchIcon, startSketch, locked)}{toolButton('Plane', DatumPlaneIcon, () => startFeature('datum-plane'), locked)}{toolButton('Curve', CurveIcon, () => startFeature('curve'), locked)}</div>} <div className=\"cad-tool-group\">{toolButton('Plugins', AddIcon, () => setPluginsOpen(true), locked || Boolean(props.sketchEdit))}</div> {sketch ? <><div className=\"cad-tool-group\">{toolButton('Select', SelectIcon, () => setTool('select'), locked, tool === 'select', undefined, 'S')}{toolButton('Rectangle', RectangleIcon, () => { setTool('rectangle'); setProfileId(null); setGraphPick(null); }, locked, tool === 'rectangle', undefined, 'R')}{toolButton('Circle', CircleIcon, () => { setTool('circle'); setProfileId(null); setGraphPick(null); }, locked, tool === 'circle', undefined, 'C')}{toolButton('Slot', SlotIcon, () => { setTool('slot'); setProfileId(null); setGraphPick(null); }, locked, tool === 'slot', undefined, 'O')}{toolButton('Polyline', PolylineIcon, () => { setTool('polygon'); setProfileId(null); setGraphPick(null); }, locked, tool === 'polygon', unde"
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1154,
+      "symbol": "OffsetIcon",
+      "catalogId": "offset",
+      "context": "toolButton('Offset loop', OffsetIcon, beginSketchOffset, locked || !offsetSource, Boolean(currentOffset), 'Create an independent copy of one closed nonconstruction loop')"
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1154,
+      "symbol": "MirrorIcon",
+      "catalogId": "mirror",
+      "context": "toolButton('Mirror copy', MirrorIcon, beginSketchMirror, locked || !canMirrorSketch, Boolean(currentMirror), 'Mirror selected edges, then choose a line in the sketch. The copy is independent.', 'M')"
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1154,
+      "symbol": "LinkIcon",
+      "catalogId": "link",
+      "context": "toolButton('Use reference', LinkIcon, beginSketchReference, locked || !referenceSources.length, Boolean(currentSketchReference), 'Use a linked line or circle from an earlier sketch on this plane')"
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1176,
+      "symbol": "Check",
+      "catalogId": "confirm",
+      "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" type=\"button\" aria-label=\"Use topology selection\" disabled={inputPicker.busy || !inputPicker.selection?.picks.length} onClick={() => { void inputPicker.finish(); }}><Check size={16} /></Button>"
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1176,
+      "symbol": "CloseIcon",
+      "catalogId": "close",
+      "context": "<Button type=\"button\" aria-label=\"Cancel topology selection\" onClick={currentTopologyPick.onCancel}><CloseIcon size={13} /></Button>"
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1176,
       "symbol": "Check",
       "catalogId": "confirm",
       "context": "<Button variant=\"primary\" className=\"cad-panel-finish\" type=\"submit\" form={areaRepairFormId} aria-label=\"Finish sketch\" title=\"Finish sketch with replacement areas\" disabled={!areaRepairReady || storageBusy || externalWorkflowOpen}><Check size={16} /></Button>"
     },
     {
       "file": "src/features/cad/CadWorkbench.tsx",
-      "line": 808,
+      "line": 1176,
       "symbol": "CloseIcon",
       "catalogId": "close",
       "context": "<Button aria-label=\"Cancel sketch edits\" title=\"Discard sketch edits\" disabled={storageBusy} onClick={cancelSketchEdit}><CloseIcon size={13} /></Button>"
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1176,
+      "symbol": "CloseIcon",
+      "catalogId": "close",
+      "context": "<Button aria-label=\"Close properties\" title=\"Close properties (Esc)\" onClick={() => setProperties(null)}><CloseIcon size={13} /></Button>"
+    },
+    {
+      "file": "src/features/cad/CadWorkbench.tsx",
+      "line": 1176,
+      "symbol": "CloseIcon",
+      "catalogId": "close",
+      "context": "<Button aria-label=\"Close feature editor\" title=\"Close editor (Esc)\" disabled={commandSubmission.applying} onClick={closeFeatureEditor}><CloseIcon size={13} /></Button>"
+    },
+    {
+      "file": "src/features/cad/useCadSketchCommandSession.tsx",
+      "line": 80,
+      "symbol": "CloseIcon",
+      "catalogId": "close",
+      "context": "<Button type=\"button\" onClick={session.cancel}><CloseIcon size={13} /> Cancel</Button>"
+    },
+    {
+      "file": "src/features/cad/useCadSketchCommandSession.tsx",
+      "line": 81,
+      "symbol": "ConfirmIcon",
+      "catalogId": "confirm",
+      "context": "<Button variant=\"primary\" type=\"submit\" disabled={session.blocked || !canApply}><ConfirmIcon size={13} /> Apply</Button>"
     },
     {
       "file": "src/features/dashboard/ProjectFilters.tsx",
