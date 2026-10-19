@@ -62,7 +62,7 @@ function StatusToastItem({
       type="button"
     >
       {toastIcon(toast.type)}
-      <span className="min-w-0 break-words">{readableMessage(toast.message)}</span>
+      <span className="min-w-0 break-words">{displayedMessage(toast)}</span>
       <X className="size-3 opacity-70" />
     </Button>
   );
@@ -168,7 +168,7 @@ export function StatusNotificationMenu({ notifications, agentContent }: { notifi
                     className="grid grid-cols-[16px_minmax(0,1fr)] gap-2 border border-border bg-background/50 p-2"
                     data-status-notification-item data-status-notification-type={notification.type} key={notification.id}>
                     {toastIcon(notification.type)}
-                    <span className="min-w-0 break-words text-foreground">{readableMessage(notification.message)}</span>
+                    <span className="min-w-0 break-words text-foreground">{displayedMessage(notification)}</span>
                   </div>)}
                 </div>}
             </div>
@@ -190,4 +190,10 @@ function toneClass(type: StatusToastType) {
   if (type === 'error') return 'border-destructive/65 bg-red-950/90 text-red-100';
   if (type === 'warning') return 'border-amber-500/55 bg-amber-950/85 text-amber-100';
   return 'border-primary/45 bg-sky-950/85 text-sky-100';
+}
+
+// Failures can carry computed values from geometry checks, so they are rounded for reading. Success and info messages
+// are composed by the app and may quote file names, which stay exactly as imported.
+function displayedMessage(toast: StatusToast) {
+  return toast.type === 'error' || toast.type === 'warning' ? readableMessage(toast.message) : toast.message;
 }

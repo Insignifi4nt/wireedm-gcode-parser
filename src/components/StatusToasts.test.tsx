@@ -47,6 +47,8 @@ describe('notification and agent panels', () => {
     click(trigger());
     expect(panel()!.textContent).toContain('Offset 1 mm leaves a less than 0.0001 mm gap.');
     expect(panel()!.textContent).not.toMatch(/3f2a9c1e|2e-13/);
+    render([{ id: 'imported', type: 'success', createdAt: 0, message: 'Program imported: plate 1.234567 final.nc.' }]);
+    expect(panel()!.textContent).toContain('Program imported: plate 1.234567 final.nc.');
   });
 
   it('supports roving keyboard tabs, matching panel labels and Escape focus restoration', () => {
