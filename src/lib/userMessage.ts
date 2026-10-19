@@ -14,8 +14,9 @@ export function formatUserNumber(value: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: digits, useGrouping: magnitude >= 100000 }).format(value);
 }
 
-// Scientific notation, or a decimal with five or more fraction digits, standing alone (not part of a version, ID or hex).
-const RAW_NUMBER = /(?<![\w.#-])-?(?:\d+(?:\.\d+)?[eE][+-]?\d+|\d+\.\d{5,})(?![\w.])/g;
+// Scientific notation, or a decimal with five or more fraction digits, standing alone: not part of a version, ID, hex
+// colour, file name or path, and not inside quotes, where it is source text the person typed or imported.
+const RAW_NUMBER = /(?<![\w.#/\\"'`-])-?(?:\d+(?:\.\d+)?[eE][+-]?\d+|\d+\.\d{5,})(?![\w."'`/\\-])/g;
 // Generated identifiers some domain checks prefix to a message, e.g. "3f2a…-…: The line and arc…".
 const ID_PREFIX = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z][\w-]*[-_]\d+(?:[-_][\w-]+)?):\s+(?=[A-Z])/;
 

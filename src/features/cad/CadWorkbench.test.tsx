@@ -1217,6 +1217,19 @@ describe('CAD sketch interaction', () => {
     await act(async () => name.blur());
     expect(currentSession.getSnapshot()).toEqual(before); expect(currentSession.getSnapshot().workflowOpen).toBe(false);
   });
+  it('keeps the part-name field editable while drafting and restores a rejected draft when Properties closes', async () => {
+    await mount(solidDocument()); const before = currentSession.getSnapshot();
+    const name = await partName();
+    await act(async () => name.focus()); await input(name, '   ');
+    expect(name.matches(':disabled')).toBe(false); expect(document.activeElement).toBe(name);
+    await act(async () => name.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+    expect(currentDocument).toBe(before.document); expect(name.matches(':disabled')).toBe(false);
+    await click('Close properties');
+    expect(container.querySelector('[aria-label="Part name"]')).toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('.cad-tree-document')?.disabled).toBe(false);
+    expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, workflowOpen: false });
+    expect((await partName()).value).toBe(before.document.name);
+  });
   it('leaves composing Enter and Escape to the part-name input method', async () => {
     await mount(solidDocument()); const before = currentSession.getSnapshot();
     const name = await partName();

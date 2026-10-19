@@ -274,8 +274,8 @@ describe('accepted sketch constraint inspection', () => {
 
   it('keeps native failure retryable and propagates cancellation instead of reporting unavailable', async () => {
     const document = source(), exact = JSON.stringify(document);
-    const failed = await inspectCadSketchConstraints(document, 'sketch', async () => { throw new Error('Worker initialization failed'); });
-    expect(failed.analysis).toMatchObject({ kind: 'unavailable', message: 'Worker initialization failed', diagnostics: {
+    const failed = await inspectCadSketchConstraints(document, 'sketch', async () => { throw new Error('slot-3: Worker initialization failed after 2e-13 s'); });
+    expect(failed.analysis).toMatchObject({ kind: 'unavailable', message: 'slot-3: Worker initialization failed after 2e-13 s', diagnostics: {
       status: null, degreesOfFreedom: null, conflictingIds: [], redundantIds: [] } });
     expect(pageCadSketchConstraints(failed, { limit: 1 })).toMatchObject({ items: [{ diagnostics: null }] });
     const abort = new AbortController();

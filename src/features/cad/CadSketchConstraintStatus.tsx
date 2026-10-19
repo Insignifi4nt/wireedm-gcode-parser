@@ -1,4 +1,4 @@
-import { userFacingMessage } from '@/lib/userMessage';
+import { readableMessage, userFacingMessage } from '@/lib/userMessage';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,7 @@ export function CadSketchConstraintStatus({ document, sketch, version, inspect, 
   }, [document, sketch.id, version, enabled, available, hasGraph, retry]);
   const current = result?.document === document && result.version === version && result.sketchId === sketch.id ? result.inspection : null;
   const analysis = current?.analysis, freedom = analysis?.diagnostics.degreesOfFreedom;
-  const message = failure?.document === document && failure.version === version && failure.sketchId === sketch.id ? failure.message : analysis && 'message' in analysis ? analysis.message : null;
+  const message = failure?.document === document && failure.version === version && failure.sketchId === sketch.id ? failure.message : analysis && 'message' in analysis ? readableMessage(analysis.message) : null;
   const unavailable = Boolean(message) && (!analysis || analysis.kind === 'unavailable');
   useLayoutEffect(() => {
     onFreedom?.(enabled && !unavailable && analysis?.kind === 'solved' ? analysis.diagnostics.degreesOfFreedom : null);

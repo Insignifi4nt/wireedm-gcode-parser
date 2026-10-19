@@ -17,7 +17,8 @@ describe('user-facing messages', () => {
     expect(readableMessage('3f2a9c1e-4b5d-4e6f-8a7b-9c0d1e2f3a4b: The line and arc do not form a smooth tangent joint.'))
       .toBe('The line and arc do not form a smooth tangent joint.');
     expect(readableMessage('slot-13: Sketch lines do not satisfy their parallel relation.')).toBe('Sketch lines do not satisfy their parallel relation.');
-    for (const kept of ['Release 0.0.724 needs post schema 1.2.3.', 'Curve edge 3 is too short.', 'Line 12: unknown G01 word.', 'Color #1e5e10 and id e1e5.'])
+    for (const kept of ['Release 0.0.724 needs post schema 1.2.3.', 'Curve edge 3 is too short.', 'Line 12: unknown G01 word.', 'Color #1e5e10 and id e1e5.',
+      'Program imported: 1e5-cut.nc.', 'Unexpected token "1.234567".', 'Opened parts/2e3/plate.dxf.'])
       expect(readableMessage(kept)).toBe(kept);
   });
 
