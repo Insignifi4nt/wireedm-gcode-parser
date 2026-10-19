@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { ExpandDownIcon, ExpandRightIcon } from '@wire-edm/icons-react';
 import { useEffect, useId, useRef, useState } from 'react';
@@ -62,7 +63,7 @@ export function CadTopologyInspector({ bodyId, buildId, documentVersion, pickMod
       if (abort.signal.aborted) return;
       if (result.bodyId !== bodyId || result.buildId !== buildId) throw new Error('The solid changed during inspection. Select topology again.');
       setInspection({ identity, kind: 'ready', result });
-    }).catch((cause: unknown) => { if (!abort.signal.aborted) setInspection({ identity, kind: 'error', message: cause instanceof Error ? cause.message : 'Unable to inspect this topology.' }); });
+    }).catch((cause: unknown) => { if (!abort.signal.aborted) setInspection({ identity, kind: 'error', message: userFacingMessage(cause, 'Unable to inspect this topology.') }); });
     return () => abort.abort();
   }, [identity]);
   const current = inspection?.identity === identity ? inspection : null;

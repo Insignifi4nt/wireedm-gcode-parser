@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { CadSketchSplitDependencyError, splitCadSketchEntity } from '@/domain/cad/cadSketchSplit';
 import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
@@ -36,7 +37,7 @@ export function prepareCadSketchSplitPreview(prepared: ReturnType<typeof prepare
       const omitted = cause.relationIds.length - labels.length;
       return { kind: 'unavailable', reason: `${cause.message} ${labels.join('; ')}${omitted ? `; ${omitted} more` : ''}` };
     }
-    return { kind: 'unavailable', reason: cause instanceof Error ? cause.message : 'This edge cannot be split here.' };
+    return { kind: 'unavailable', reason: userFacingMessage(cause, 'This edge cannot be split here.') };
   }
 }
 

@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
@@ -9,7 +10,7 @@ type Preview = { readonly kind: 'idle' | 'waiting' } | { readonly kind: 'ready';
   | { readonly kind: 'error'; readonly message: string; readonly feedback?: CadSketchConstraintFeedback };
 
 function previewError(error: unknown, fallback: string): Extract<Preview, { kind: 'error' }> {
-  return { kind: 'error', message: error instanceof Error ? error.message : fallback,
+  return { kind: 'error', message: userFacingMessage(error, fallback),
     ...(error instanceof CadSketchPreparationError ? { feedback: error.feedback } : {}) };
 }
 

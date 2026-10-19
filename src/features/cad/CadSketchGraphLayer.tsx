@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type MouseEvent } from 'react';
 import type { CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
@@ -161,7 +162,7 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
     : next.radius === next.circle.radius ? null : cadSketchGraphCircleRadiusEdit(sketch, controls.document.parameters, next.circle.entityId, next.radius), [sketch, controls.document.parameters]);
   const candidate = useMemo(() => {
     try { const edit = intent ? editFor(intent) : null; return { edits: edit ? [edit] : null, issue: null }; }
-    catch (cause) { return { edits: null, issue: cause instanceof Error ? cause.message : 'Invalid circle radius.' }; }
+    catch (cause) { return { edits: null, issue: userFacingMessage(cause, 'Invalid circle radius.') }; }
   }, [intent, editFor]);
   const edits = candidate.edits;
   // A drag solves continuously and draws its result here only; publishing every frame would re-render the whole workbench.
@@ -199,16 +200,16 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
         return;
       }
       try { if (additive) controls.onSelect(selection, true); else controls.onSelect(selection); }
-      catch (cause) { onError(cause instanceof Error ? cause.message : 'Unable to select this geometry.'); }
+      catch (cause) { onError(userFacingMessage(cause, 'Unable to select this geometry.')); }
     }
   };
   const commit = (next: Intent) => {
     let edit: CadEdit | null;
-    try { edit = editFor(next); } catch (cause) { cancel(); callbacks.current.onError(cause instanceof Error ? cause.message : 'Unable to resize this circle.'); return; }
+    try { edit = editFor(next); } catch (cause) { cancel(); callbacks.current.onError(userFacingMessage(cause, 'Unable to resize this circle.')); return; }
     if (!edit) { cancel(); return; }
     callbacks.current.onPendingChange(true); setIntent(next);
     submission.submit(signal => controls.onEditMany([edit], signal), cancel,
-      error => { cancel(); callbacks.current.onError(error instanceof Error ? error.message : 'Unable to edit this sketch geometry.'); });
+      error => { cancel(); callbacks.current.onError(userFacingMessage(error, 'Unable to edit this sketch geometry.')); });
   };
   const move = (event: PointerEvent<SVGGElement>, released = false) => {
     const owned = drag.current;

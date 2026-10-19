@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { MenuItem, MenuSeparator, MenuSurface } from '@/components/ui/menu';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
@@ -492,8 +493,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const sectionBodyId = selected && currentBodyIds.includes(selected.id) ? selected.id : currentBodyIds.at(-1);
   const run = (action: () => CadEditCompletion) => {
     setError(null); setFileMenu(false);
-    try { Promise.resolve(action()).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'The operation could not be completed.')); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'The operation could not be completed.'); }
+    try { Promise.resolve(action()).catch((cause: unknown) => setError(userFacingMessage(cause, 'The operation could not be completed.'))); }
+    catch (cause) { setError(userFacingMessage(cause, 'The operation could not be completed.')); }
   };
   const submitEdit = (apply: (signal: AbortSignal) => CadEditCompletion, accepted: () => void = () => undefined) => {
     props.onWorkflowChange(true);
@@ -501,7 +502,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     commandSubmission.submit(apply, accepted, cause => {
       // A synchronous rejection can batch applying true→false without a pending-effect change.
       props.onWorkflowChange(latestPending.current);
-      setError(cause instanceof Error ? cause.message : 'The edit could not be completed.');
+      setError(userFacingMessage(cause, 'The edit could not be completed.'));
     });
   };
   const deleteProfile = (source: CadSketchFeature, id: string) => submitEdit(signal => props.onEdit({ kind: 'update-feature', feature: {
@@ -701,7 +702,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const editSketch = (feature: CadSketchFeature, owned = true) => {
     if (interactionState.current.locked) return;
     try { if (owned) props.onBeginSketchEdit?.(feature.id); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to open this sketch edit.'); return; }
+    catch (cause) { setError(userFacingMessage(cause, 'Unable to open this sketch edit.')); return; }
     setGraphPick(null); setGraphRelationCommand(null); setPickedTopology(null); setCurveId(null); setSketchId(feature.id); setSelectedId(feature.id); setProfileId(null); setTool('select'); setProperties(null);
   };
   const beginProfileCopy = (source: CadSketchFeature, id: string) => {
@@ -833,7 +834,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       submitEdit(signal => props.onEditMany(edits, signal), () => {
         setPluginsOpen(false); setSketchId(target.id); setSelectedId(target.id); setProfileId(id); setTool('select');
       });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to add this plugin.'); }
+    } catch (cause) { setError(userFacingMessage(cause, 'Unable to add this plugin.')); }
   };
   const inspectParameterUsage = (usage: Pick<CadParameterUsage, 'featureId' | 'profileId' | 'inputName'>) => {
     const feature = document.features.find(feature => feature.id === usage.featureId);
@@ -876,7 +877,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       try {
         const inspection = props.sketchEdit.inspectAreaRepairs();
         if (inspection) { setAreaRepairReady(false); setAreaRepair({ document, inspection }); setTool('select'); setGraphPick(null); setProfileId(null); setInspectorCollapsed(false); return; }
-      } catch (cause) { setError(cause instanceof Error ? cause.message : 'Correct the sketch before choosing replacement areas.'); return; }
+      } catch (cause) { setError(userFacingMessage(cause, 'Correct the sketch before choosing replacement areas.')); return; }
       submitEdit(signal => props.sketchEdit!.finish(signal), closeSketchView);
     }
     else closeSketchView();

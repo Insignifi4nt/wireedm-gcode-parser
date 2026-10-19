@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
@@ -307,5 +308,5 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
 }
 
 function messageOf(cause: unknown) {
-  return cause instanceof Error ? cause.message : 'Could not load or download the saved revision.';
+  return userFacingMessage(cause, 'Could not load or download the saved revision.');
 }

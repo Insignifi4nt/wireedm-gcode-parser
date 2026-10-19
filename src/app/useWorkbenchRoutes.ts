@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useBlocker, useLocation, useNavigate } from 'react-router';
 import type { CadController } from '@/features/cad/useCadController';
@@ -84,7 +85,7 @@ export function useWorkbenchRoutes(app: AppController, cad: CadController, getEd
         }
       }
     })().catch(failure => {
-      if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : 'The requested project could not be opened.');
+      if (!controller.signal.aborted) setError(userFacingMessage(failure, 'The requested project could not be opened.'));
     }).finally(() => {
       if (!controller.signal.aborted) { pending.current = false; setLoading(false); }
     });

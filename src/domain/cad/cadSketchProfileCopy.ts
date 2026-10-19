@@ -26,7 +26,7 @@ export interface CadSketchProfileCopyPreparation {
 }
 
 const invalid = (message: string): never => { throw new CadError('invalid-sketch-profile-copy', message); };
-const precision = (): never => { throw new CadError('sketch-profile-copy-precision', 'The independent copy cannot preserve the analytic supports, joints and arc branches at these coordinates.'); };
+const precision = (): never => { throw new CadError('sketch-profile-copy-precision', 'The copy cannot keep this shape exact at these coordinates. Place it nearer the origin.'); };
 const position = (point: Point2): readonly [number, number] => [point.x, point.y];
 function pathSegment(segment: PathSegment): ResolvedCadPathSegment {
   return segment.kind === 'line' ? { kind: 'line', start: position(segment.start), end: position(segment.end) }

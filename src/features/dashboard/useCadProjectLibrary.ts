@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useEffect, useState } from 'react';
 import { listCadProjectLibrary } from '@/domain/cad/cadStorage';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
@@ -20,7 +21,7 @@ export function useCadProjectLibrary(adapter: WorkbenchStorageAdapter | null, ve
     void listCadProjectLibrary(adapter, controller.signal).then(library => {
       if (!controller.signal.aborted) setSnapshot({ adapter, kind: 'ready', library, refreshing: false });
     }, error => {
-      if (!controller.signal.aborted) setSnapshot({ adapter, kind: 'error', message: error instanceof Error ? error.message : 'Could not load CAD projects.' });
+      if (!controller.signal.aborted) setSnapshot({ adapter, kind: 'error', message: userFacingMessage(error, 'Could not load CAD projects.') });
     });
     return () => controller.abort();
   }, [adapter, version, refreshVersion]);

@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -73,7 +74,7 @@ export function MachineSetupPanel({ machine, placement, onMachineChange, onPlace
       }
     } catch (error) {
       if (importer.current === controller && !controller.signal.aborted) {
-        setImportError(error instanceof Error ? error.message : 'The machine model could not be imported.');
+        setImportError(userFacingMessage(error, 'The machine model could not be imported.'));
       }
     } finally {
       if (importer.current === controller) {

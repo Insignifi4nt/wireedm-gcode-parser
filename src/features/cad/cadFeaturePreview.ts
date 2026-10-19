@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import type { CadBuildResult, CadDocument, CadFeature } from '@/domain/cad/cadDocument';
 import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
@@ -92,7 +93,7 @@ export function createCadFeaturePreviewCoordinator(options: {
     }).catch((error: unknown) => {
       if (job.controller.signal.aborted) return;
       if (!current(candidate)) { if (owns(candidate)) clear(); return; }
-      publish({ ...identity(candidate), ...retained(candidate), kind: 'error', stage, message: error instanceof Error ? error.message : 'The candidate could not be prepared.', diagnostics: [] });
+      publish({ ...identity(candidate), ...retained(candidate), kind: 'error', stage, message: userFacingMessage(error, 'The candidate could not be prepared.'), diagnostics: [] });
     }).finally(() => {
       if (active === job) { active = null; run(); }
     });
@@ -122,7 +123,7 @@ export function createCadFeaturePreviewCoordinator(options: {
       // A short throttle, not a debounce: a dragged handle keeps changing, and restarting the wait would show nothing until the pointer stops.
       timer ??= setTimeout(() => { timer = null; run(); }, options.debounceMs ?? 50);
     } catch (error) {
-      publish({ ...request, ...retained(request), kind: 'error', stage: 'validation', message: error instanceof Error ? error.message : 'The candidate is not valid.', diagnostics: [] });
+      publish({ ...request, ...retained(request), kind: 'error', stage: 'validation', message: userFacingMessage(error, 'The candidate is not valid.'), diagnostics: [] });
     }
   }
   return { update, invalidate: clear, dispose() { if (disposed) return; disposed = true; clear(); } };

@@ -46,7 +46,7 @@ function checkCycleEncoding(path: readonly ResolvedCadPathSegment[]): void {
   for (let index = 0; index < encoded.length; index++) {
     const end = encoded[index].end, start = encoded[(index + 1) % encoded.length].start;
     if (Math.hypot(end.x - start.x, end.y - start.y) > cadPathClosureTolerance([end, start])) {
-      throw new CadError('sketch-graph-precision', 'The analytic cycle cannot reproduce its joints within saved path precision.');
+      throw new CadError('sketch-graph-precision', 'These edges no longer meet exactly at their joints. Move the geometry nearer the origin or redraw the joint.');
     }
   }
 }
@@ -82,7 +82,7 @@ export function compileCadSketchGraph(graph: CadSketchGraph, parameters: Readonl
       }
       const edge: Edge = { entity: item.entity, segment: item.segment }; edges.push(edge);
       const ids = jointEndpoints(edge.entity);
-      if (ids[0] === ids[1]) throw new CadError('sketch-graph-precision', 'An edge collapses to one declared joint.');
+      if (ids[0] === ids[1]) throw new CadError('sketch-graph-precision', 'An edge is too short: both of its ends meet at the same point. Delete or lengthen it.');
       for (const id of ids) {
         const list = adjacency.get(id) ?? []; list.push(edge); adjacency.set(id, list);
       }

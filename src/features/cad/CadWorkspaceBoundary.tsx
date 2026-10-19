@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -25,7 +26,7 @@ function CadWorkspaceRecovery({ documentName, busy, onSave, onDownloadDocument }
       await (action === 'save' ? onSave() : onDownloadDocument());
       if (mounted.current) setState({ kind: 'success', action });
     } catch (error) {
-      if (mounted.current) setState({ kind: 'error', message: error instanceof Error ? error.message : 'The document could not be preserved. Try again.' });
+      if (mounted.current) setState({ kind: 'error', message: userFacingMessage(error, 'The document could not be preserved. Try again.') });
     } finally { pending.current = false; }
   };
   const disabled = busy || state.kind === 'busy';

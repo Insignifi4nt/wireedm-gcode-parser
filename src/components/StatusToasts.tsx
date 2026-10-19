@@ -1,3 +1,4 @@
+import { readableMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -61,7 +62,7 @@ function StatusToastItem({
       type="button"
     >
       {toastIcon(toast.type)}
-      <span className="min-w-0 break-words">{toast.message}</span>
+      <span className="min-w-0 break-words">{readableMessage(toast.message)}</span>
       <X className="size-3 opacity-70" />
     </Button>
   );
@@ -167,7 +168,7 @@ export function StatusNotificationMenu({ notifications, agentContent }: { notifi
                     className="grid grid-cols-[16px_minmax(0,1fr)] gap-2 border border-border bg-background/50 p-2"
                     data-status-notification-item data-status-notification-type={notification.type} key={notification.id}>
                     {toastIcon(notification.type)}
-                    <span className="min-w-0 break-words text-foreground">{notification.message}</span>
+                    <span className="min-w-0 break-words text-foreground">{readableMessage(notification.message)}</span>
                   </div>)}
                 </div>}
             </div>

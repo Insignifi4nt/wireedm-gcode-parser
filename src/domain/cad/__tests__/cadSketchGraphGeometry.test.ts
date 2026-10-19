@@ -71,7 +71,7 @@ describe('identity-connected sketch graph geometry', () => {
     const collapsed = parseCadSketchGraph({ points: [{ id: 'a', position: [9e8, 0] }, { id: 'b', position: [9e8 + 5e-7, 0] }],
       entities: [{ id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [{ id: 'join', kind: 'coincident', pointIds: ['a', 'b'] }] });
     expect(checkCadSketchGraph(collapsed, {})).toEqual([]);
-    expect(() => compileCadSketchGraph(collapsed, {})).toThrow('collapses to one declared joint');
+    expect(() => compileCadSketchGraph(collapsed, {})).toThrow('both of its ends meet at the same point');
   });
   it('joins distinct line/arc and arc/arc endpoints without attaching a coincident circle center to its rim', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'o', position: [0, 0] }, { id: 'a', position: [5, 0] }, { id: 'b', position: [0, 5] },

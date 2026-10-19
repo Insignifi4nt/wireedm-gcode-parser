@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { cadSketchGraphSelectionSet, isCadSketchGraphSelected, type CadSketchGraphSelection, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import type { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
@@ -82,7 +83,7 @@ export function useCadSketchBoxSelection(options: Options) {
       const moved = next.active.moved || Math.hypot(event.clientX - next.active.clientX, event.clientY - next.active.clientY) > 4;
       try {
         if (event.button === 0 && moved) next.current.onSelectSet?.(query(next.active, next.current, next.point, event.clientX).selections);
-      } catch (cause) { next.current.onError(cause instanceof Error ? cause.message : 'Unable to select this geometry.'); }
+      } catch (cause) { next.current.onError(userFacingMessage(cause, 'Unable to select this geometry.')); }
       finally { cancel(false); }
       return moved;
     },

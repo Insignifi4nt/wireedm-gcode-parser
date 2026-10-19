@@ -41,6 +41,14 @@ describe('notification and agent panels', () => {
     expect(panel()!.textContent).toContain('Another notification.');
   });
 
+  it('shows domain failures without raw floats or generated identifiers', () => {
+    render([{ id: 'failed', type: 'error', createdAt: 0,
+      message: '3f2a9c1e-4b5d-4e6f-8a7b-9c0d1e2f3a4b: Offset 1.0000000001 mm leaves a 2e-13 mm gap.' }]);
+    click(trigger());
+    expect(panel()!.textContent).toContain('Offset 1 mm leaves a less than 0.0001 mm gap.');
+    expect(panel()!.textContent).not.toMatch(/3f2a9c1e|2e-13/);
+  });
+
   it('supports roving keyboard tabs, matching panel labels and Escape focus restoration', () => {
     render([]); click(trigger());
     expect(panel()!.textContent).toContain('No notifications');

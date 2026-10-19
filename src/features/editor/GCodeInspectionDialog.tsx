@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, X } from '@wire-edm/icons-react';
@@ -38,7 +39,7 @@ export function GCodeInspectionDialog({ text, fileName, options, provenance, onC
           {onDownload && <Button size="sm" variant="outline" onClick={async () => {
             setDownloadError(null);
             try { await onDownload(); }
-            catch (cause) { setDownloadError(cause instanceof Error ? cause.message : 'Download could not be requested. Retry this exact file.'); }
+            catch (cause) { setDownloadError(userFacingMessage(cause, 'Download could not be requested. Retry this exact file.')); }
           }}><Download />Download exact file</Button>}
           <Button ref={closeRef} aria-label="Close G-code inspection" size="icon" variant="ghost" onClick={onClose}><X /></Button>
         </div>

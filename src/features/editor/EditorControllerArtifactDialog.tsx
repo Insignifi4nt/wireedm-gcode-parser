@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { lazy, Suspense, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
@@ -149,7 +150,7 @@ export function EditorControllerArtifactDialog({
       if (selection.current.revision !== generationRevision) return;
       setFailure({
         code: 'CONTROLLER_ARTIFACT_POST_FAILED',
-        message: error instanceof Error ? error.message : String(error),
+        message: userFacingMessage(error, String(error)),
         diagnostics: []
       });
     } finally {
@@ -163,7 +164,7 @@ export function EditorControllerArtifactDialog({
     try {
       onDownload(artifact.fileName, artifact.text);
     } catch (error) {
-      setDownloadFailure(error instanceof Error ? error.message : String(error));
+      setDownloadFailure(userFacingMessage(error, String(error)));
     }
   }
 
@@ -178,7 +179,7 @@ export function EditorControllerArtifactDialog({
       const result = await createControllerArtifactInspection(reviewedArtifact, context);
       if (selection.current.revision === revision) setInspection(result);
     } catch (error) {
-      if (selection.current.revision === revision) setInspectionFailure(error instanceof Error ? error.message : String(error));
+      if (selection.current.revision === revision) setInspectionFailure(userFacingMessage(error, String(error)));
     } finally { setInspecting(false); }
   }
 

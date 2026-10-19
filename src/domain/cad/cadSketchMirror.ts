@@ -30,7 +30,7 @@ export interface CadSketchMirrorPreparation {
   readonly resultEntityIds: readonly string[];
 }
 
-const precision = () => new CadError('sketch-mirror-precision', 'The reflection cannot preserve exact geometry at these coordinates.');
+const precision = () => new CadError('sketch-mirror-precision', 'This mirror cannot keep the geometry exact at these coordinates. Mirror it nearer the origin.');
 function legacySegments(sketch: CadSketchFeature, parameters: Readonly<Record<string, number>>): PathSegment[] {
   return sketch.profiles.flatMap((profile, profileIndex) => cadProfileToEntities(resolveCadProfile(profile.geometry, parameters)).map((entity, index) => {
     const common = { id: `profile_${profileIndex}_${index}`, source: { sourceEntityIndex: index, sourceEntityType: entity.type, layer: null, exact: true } };

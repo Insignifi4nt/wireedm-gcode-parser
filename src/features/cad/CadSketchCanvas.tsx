@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { flushSync } from 'react-dom';
 import { cadSketchLinearPatternForSelection } from '@/domain/cad/cadSketchLinearPattern';
 import { Button } from '@/components/ui/button';
@@ -541,7 +542,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const selectOverlap = (atom: CadSketchGraphSelection) => {
     if (!currentOverlap || projectSelection(currentOverlap)?.frame !== currentOverlap.frame || baseInteractionLocked) return;
     try { selectGraphHit(atom, currentOverlap.toggle); }
-    catch (cause) { onError(cause instanceof Error ? cause.message : 'Unable to select this geometry.'); return; }
+    catch (cause) { onError(userFacingMessage(cause, 'Unable to select this geometry.')); return; }
     svg.current?.querySelector<SVGGElement>(`[data-cad-sketch-${atom.kind === 'point' ? 'point' : 'entity'}="${atom.id}"]`)?.focus({ preventScroll: true });
   };
   const overlapTarget = currentOverlap?.target;
@@ -647,7 +648,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     submission.submit(apply, accepted, error => {
       edgeSubmission.current = null; ownedHandleEdit.current = null; setDragPreview(null);
       pendingChange.current(points.length > 0 || pathPending);
-      onError(error instanceof Error ? error.message : fallback);
+      onError(userFacingMessage(error, fallback));
     });
   };
   const commitHandle = (profileId: string, handle: CadSketchHandle, translation: SketchPoint, signal?: AbortSignal) => {
@@ -673,13 +674,13 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         : translateCadSketchProfile({ profile: active.profile, translation, parameters: active.parameters });
       active.translation = translation;
       setDragPreview(current => current && current.translation[0] === translation[0] && current.translation[1] === translation[1] ? current : { profile, translation, handle: active.handle });
-    } catch (error) { finishProfileDrag(); onError(error instanceof Error ? error.message : 'Unable to move this contour.'); }
+    } catch (error) { finishProfileDrag(); onError(userFacingMessage(error, 'Unable to move this contour.')); }
   };
   const changePath = (action: CadPathDrawingAction, focus = false) => {
     if (interactionLocked && action.kind !== 'cancel') return;
     if (action.kind === 'cancel') submission.cancel();
     try { setPathDraft(updateCadPathDraft(pathDraft, action)); setCursorInput(current => ({ ...current, point: action.kind === 'point' ? action.point : cursor, mode: 'position' })); }
-    catch (error) { onError(error instanceof Error ? error.message : 'Unable to draw this path.'); }
+    catch (error) { onError(userFacingMessage(error, 'Unable to draw this path.')); }
     if (action.kind === 'cancel' && curveCreation) onCancelCurve?.();
     if (focus) svg.current?.focus();
   };
@@ -703,7 +704,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         submitEdit(signal => onAddProfile(profile, signal), () => setPathDraft(createCadPathDraft()), 'Unable to close this path.');
       }
     }
-    catch (error) { onError(error instanceof Error ? error.message : 'Unable to close this path.'); }
+    catch (error) { onError(userFacingMessage(error, 'Unable to close this path.')); }
     svg.current?.focus();
   };
   const add = (geometry: CadProfile, drawing?: CadFreshSketchDrawing) => {
@@ -712,11 +713,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       if (drawing && !onAddFreshSketch && picks.some(pick => pick.kind !== 'position')) throw new Error('The attached drawing cannot be saved by this editor. Cancel or release its pending relations.');
       submitEdit(signal => drawing && onAddFreshSketch ? onAddFreshSketch(drawing, signal) : onAddProfile(geometry, signal), () => setPicks([]), 'Unable to add this profile.');
     }
-    catch (error) { onError(error instanceof Error ? error.message : 'Unable to add this profile.'); }
+    catch (error) { onError(userFacingMessage(error, 'Unable to add this profile.')); }
   };
   const close = () => {
     try { add(closeSketchPolygon(points), { kind: 'polygon', vertices: picks }); }
-    catch (error) { onError(error instanceof Error ? error.message : 'Unable to close this profile.'); }
+    catch (error) { onError(userFacingMessage(error, 'Unable to close this profile.')); }
   };
   const fit = () => {
     const coordinates: SketchPoint[] = [];
@@ -819,7 +820,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           : tool === 'circle' && geometry.kind === 'circle' && typeof geometry.radius === 'number' ? { kind: 'circle', center: picks[0], radius: geometry.radius }
           : tool === 'slot' && geometry.kind === 'slot' && typeof geometry.width === 'number' ? { kind: 'slot', center: picks[0], end: point, width: geometry.width } : undefined);
       }
-      catch (error) { onError(error instanceof Error ? error.message : 'Unable to draw this profile.'); }
+      catch (error) { onError(userFacingMessage(error, 'Unable to draw this profile.')); }
     } else appendPick(authoredPick());
   };
   // CadContextMenu closes synchronously before invoking a chosen item. Use the

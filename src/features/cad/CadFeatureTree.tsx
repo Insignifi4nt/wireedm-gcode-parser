@@ -1,3 +1,4 @@
+import { readableMessage } from '@/lib/userMessage';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
@@ -196,11 +197,11 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
         {expandable ? <Button type="button" className="cad-feature-disclosure" disabled={locked || Boolean(renameCurrent)} aria-label={`${open ? 'Collapse' : 'Expand'} ${feature.name}`} aria-expanded={open} aria-controls={open ? detailsId : undefined} onClick={() => toggle(feature.id)}><ExpandRightIcon size={12} /></Button>
           : <span className="cad-feature-disclosure-placeholder" aria-hidden="true" />}
         {renameCurrent?.target.kind === 'feature' && renameCurrent.target.featureId === feature.id ? renameEditor(feature) : <Button type="button" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)}
-          aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${diagnostic.message}` : ''}`}
+          aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${readableMessage(diagnostic.message)}` : ''}`}
           onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)}
           onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); else onConfigure?.(feature); }}>
           <Icon size={14} /><span className="cad-feature-name">{feature.name}</span>
-          {diagnostic && <span className="cad-tree-error" aria-label={diagnostic.message}><WarningIcon size={12} /></span>}{feature.suppressed && <span className="cad-tree-muted">off</span>}
+          {diagnostic && <span className="cad-tree-error" aria-label={readableMessage(diagnostic.message)}><WarningIcon size={12} /></span>}{feature.suppressed && <span className="cad-tree-muted">off</span>}
         </Button>}
       </div>
       {expandable && open && <div id={detailsId} className="cad-feature-details">

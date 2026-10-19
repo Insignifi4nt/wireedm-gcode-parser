@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ContextType } from 'react';
@@ -209,7 +210,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
           setIssue('distance', null); setError(null);
           if (intent.kind === 'parameter') changeParameter(intent.name, intent.value);
           else if (intent.kind === 'scalar') { setValueDraft('distance', { source: intent.source, text }); setDraft({ ...candidate, distance: intent.source }); }
-        } catch (cause) { setIssue('distance', cause instanceof Error ? cause.message : 'Invalid numeric value.'); }
+        } catch (cause) { setIssue('distance', userFacingMessage(cause, 'Invalid numeric value.')); }
         return true;
       },
       release(token) { if (!owns(token)) return false; finish(); return true; },
@@ -341,7 +342,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
       }
     };
   }, [onReferencePick, documentVersion, staleDraft, preceding, depthGestureActive, previewOwner, document, draft]);
-  return <form hidden={pickCurrent?.kind === 'pick-topology'} className="cad-property-form" aria-busy={submission.applying || undefined} onKeyDown={event => { if (pickCurrent && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); endPick(); } }} onSubmit={(event) => { event.preventDefault(); if (pickCurrent || staleDraft || scalarPending || areasMissing || depthGestureActive || submission.applying) return; if (waitingForPreview) { setError('Wait for a valid preview of this edit.'); return; } submission.submit(signal => onApply(draft, parameterEdits, signal), () => setError(null), cause => setError(cause instanceof Error ? cause.message : 'Unable to apply this feature.')); }}>
+  return <form hidden={pickCurrent?.kind === 'pick-topology'} className="cad-property-form" aria-busy={submission.applying || undefined} onKeyDown={event => { if (pickCurrent && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); endPick(); } }} onSubmit={(event) => { event.preventDefault(); if (pickCurrent || staleDraft || scalarPending || areasMissing || depthGestureActive || submission.applying) return; if (waitingForPreview) { setError('Wait for a valid preview of this edit.'); return; } submission.submit(signal => onApply(draft, parameterEdits, signal), () => setError(null), cause => setError(userFacingMessage(cause, 'Unable to apply this feature.'))); }}>
     <CadInspectorTitle>{isNew ? 'Create' : 'Edit'} {featureLabels[draft.kind].toLowerCase()}<CadContextHelp label={featureLabels[draft.kind]}>{cadFeatureHelp[draft.kind]}</CadContextHelp></CadInspectorTitle>
     <fieldset className="cad-feature-fields" disabled={Boolean(pickCurrent) || staleDraft || depthGestureActive || submission.applying}>
     <CadFeatureReferencePickingContext.Provider value={pickingContext}>{fields}</CadFeatureReferencePickingContext.Provider></fieldset>
@@ -413,7 +414,7 @@ export function CadProfileEditor({ profile, document, onApply, onCancel, onPendi
     submission.submit(signal => onApply(next, parameterEdits, signal), () => { setChanged(false); setError(null); setParameterDrafts({}); }, cause => {
       setError(cause instanceof CadError && cause.code === 'open-profile'
         ? `${cause.message} Match adjacent endpoints, including the last and first segment, before applying.`
-        : cause instanceof Error ? cause.message : 'Unable to apply this profile.');
+        : userFacingMessage(cause, 'Unable to apply this profile.'));
     });
   }}>
     <CadInspectorTitle>{geometry.kind === 'plugin' ? geometry.package.name : `${geometry.kind[0].toUpperCase()}${geometry.kind.slice(1)} profile`}</CadInspectorTitle>

@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import type { CadDocument, CadScalar } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
 import { createCadSketchMeasurementReader } from '@/domain/cad/cadSketchMeasurements';
@@ -50,7 +51,7 @@ export async function inspectCadSketchConstraints(document: CadDocument, sketchI
         : { kind: 'rejected', reason: result.reason, message: result.message, diagnostics };
     } catch (error) {
       signal?.throwIfAborted();
-      analysis = { kind: 'unavailable', message: error instanceof Error ? error.message : 'Constraint analysis is unavailable. Retry to restart the solver.', diagnostics: unknownDiagnostics() };
+      analysis = { kind: 'unavailable', message: userFacingMessage(error, 'Constraint analysis is unavailable. Retry to restart the solver.'), diagnostics: unknownDiagnostics() };
     }
   }
   const result: CadSketchConstraintInspection = { sketchId, graph, parameters: accepted.parameters,
@@ -115,7 +116,7 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
       const row = { source, ...pattern('entity', source.id), diagnostics: diagnosticState(source.id), points: entityPoints(source).map(point),
         ...(source.kind === 'circle' ? { radius: scalar(source.radius, false, referenceComponents?.circleIds.has(source.id)) } : {}) };
       try { return { ...row, measurement: reader ? { coordinateSystem: 'sketch-local' as const, ...reader.entity(source.id) } : null }; }
-      catch (error) { return { ...row, measurement: null, measurementDiagnostic: summarizeMessage(error instanceof Error ? error.message : 'Unable to measure this edge.') }; }
+      catch (error) { return { ...row, measurement: null, measurementDiagnostic: summarizeMessage(userFacingMessage(error, 'Unable to measure this edge.')) }; }
     });
   }
   return page(graph?.relations ?? [], input, source => ({ source, meaning: relationMeanings[source.kind], diagnostics: diagnosticState(source.id),

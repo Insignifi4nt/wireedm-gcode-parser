@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useId, useLayoutEffect, useRef, useState } from 'react';
@@ -20,7 +21,7 @@ export function CadTreeRename({ kind, initialName, onAccept, onCancel }: {
     event.preventDefault(); event.stopPropagation();
     const name = draft === initialName ? initialName : draft.trim();
     if (!Value.Check(CadLabelSchema, name)) { setError('Enter a name of 1 to 160 characters.'); input.current?.focus(); return; }
-    submission.submit(signal => onAccept(name, signal), () => undefined, failure => setError(failure instanceof Error ? failure.message : 'Unable to rename this item.'));
+    submission.submit(signal => onAccept(name, signal), () => undefined, failure => setError(userFacingMessage(failure, 'Unable to rename this item.')));
   }} onKeyDown={event => {
     if (event.nativeEvent.isComposing) return;
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(); }

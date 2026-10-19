@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ToolError } from '@/features/webmcp/siteTools';
@@ -1226,5 +1227,5 @@ function artifactAppFailure(message: string): ControllerArtifactResult {
 }
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return userFacingMessage(error, String(error));
 }

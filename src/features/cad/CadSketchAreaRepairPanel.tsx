@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { CloseIcon, SelectIcon } from '@wire-edm/icons-react';
@@ -63,7 +64,7 @@ export function CadSketchAreaRepairPanel({ formId, document, documentVersion, in
           if (cadSketchRegionSelectionCount(selection)) cells.resolve(selection);
           setChoices(current => ({ ...current, [featureId]: selection }));
           setPicker(current => current ? { ...current, selection } : null);
-        } catch (cause) { setError(cause instanceof Error ? cause.message : 'Choose current closed areas.'); }
+        } catch (cause) { setError(userFacingMessage(cause, 'Choose current closed areas.')); }
       }, onFinish: () => end(false), onCancel: () => end(true) };
     setPicker(command);
   };
@@ -72,7 +73,7 @@ export function CadSketchAreaRepairPanel({ formId, document, documentVersion, in
     onSubmit={event => {
       event.preventDefault(); if (!ready) return; setError(null);
       const repairs = { localVersion: inspection.localVersion, selections: inspection.consumers.map(({ feature }) => ({ featureId: feature.id, selection: choices[feature.id] })) };
-      submission.submit(signal => onFinish(repairs, signal), () => undefined, cause => setError(cause instanceof Error ? cause.message : 'Unable to finish this sketch.'));
+      submission.submit(signal => onFinish(repairs, signal), () => undefined, cause => setError(userFacingMessage(cause, 'Unable to finish this sketch.')));
     }}>
     <div className="cad-property-title">Update areas <CadContextHelp label="Dependent sketch areas">The boundary changed. Choose the new closed areas for each dependent feature. Finish accepts the sketch and these explicit choices as one part edit. Back to sketch keeps your geometry editable.</CadContextHelp></div>
     <fieldset className="cad-feature-fields" disabled={interactionLocked || submission.applying || Boolean(picker)}>

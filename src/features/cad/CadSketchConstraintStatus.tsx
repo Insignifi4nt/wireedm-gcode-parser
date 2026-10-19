@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
 import { Button } from '@/components/ui/button';
@@ -22,7 +23,7 @@ export function CadSketchConstraintStatus({ document, sketch, version, inspect, 
     void callback.current?.(sketch.id, version, controller.signal).then(inspection => {
       if (!controller.signal.aborted) { setResult({ document, version, sketchId: sketch.id, inspection }); setFailure(null); }
     }, cause => {
-      if (!controller.signal.aborted) setFailure({ document, version, sketchId: sketch.id, message: cause instanceof Error ? cause.message : 'Constraint analysis is unavailable.' });
+      if (!controller.signal.aborted) setFailure({ document, version, sketchId: sketch.id, message: userFacingMessage(cause, 'Constraint analysis is unavailable.') });
     });
     return () => controller.abort();
   }, [document, sketch.id, version, enabled, available, hasGraph, retry]);

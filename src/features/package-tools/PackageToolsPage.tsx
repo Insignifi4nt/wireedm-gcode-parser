@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -40,7 +41,7 @@ export function PackageToolsPage() {
     const current = ++requestId.current;
     setBusy(true); invalidate();
     try { await action(); return true; }
-    catch (reason) { if (current === requestId.current) setError(reason instanceof Error ? reason.message : String(reason)); return false; }
+    catch (reason) { if (current === requestId.current) setError(userFacingMessage(reason, String(reason))); return false; }
     finally { operationActive.current = false; if (current === requestId.current) { setBusy(false); setCanCancel(false); cancel.current = null; } }
   }
   async function execute(request: PackageAuthoringRequest, signal?: AbortSignal) {
@@ -120,7 +121,7 @@ export function PackageToolsPage() {
       document.body.append(link); link.click(); link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       return true;
-    } catch (reason) { setError(`Download failed: ${reason instanceof Error ? reason.message : String(reason)}`); return false; }
+    } catch (reason) { setError(`Download failed: ${userFacingMessage(reason, String(reason))}`); return false; }
   }
 
   return <>

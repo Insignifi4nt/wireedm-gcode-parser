@@ -50,14 +50,14 @@ export function splitCadSketchEntity({ graph: input, parameters, split }: {
   const minimum = Math.max(1e-7, cadPathClosureTolerance([segment.start, point, segment.end]));
   if (Math.hypot(point.x - segment.start.x, point.y - segment.start.y) <= minimum
     || Math.hypot(segment.end.x - point.x, segment.end.y - point.y) <= minimum)
-    throw new CadError('sketch-split-precision', 'The cut must leave two representable nondegenerate pieces.');
+    throw new CadError('sketch-split-precision', 'The cut must leave two pieces long enough to keep. Cut farther from the ends.');
   const retained = { ...entity, endPointId: split.splitPointId }, second = { ...entity, id: split.newEntityId, startPointId: split.splitPointId };
   const candidate = parseCadSketchGraph({ points: [...graph.points, { id: split.splitPointId, position: [point.x, point.y] }],
     entities: graph.entities.flatMap(item => item.id === entity.id ? [retained, second] : [item]),
     relations: split.kind === 'line' ? [...graph.relations, { id: split.supportRelationId, kind: 'parallel', lineIds: [entity.id, split.newEntityId] }] : graph.relations });
   // Far from the origin a short piece's direction can miss the parallel accuracy contract.
   if (split.kind === 'line' && checkCadSketchGraph(candidate, parameters).some(issue => issue.source.id === split.supportRelationId))
-    throw new CadError('sketch-split-precision', 'The cut cannot keep both pieces exactly parallel at these coordinates.');
+    throw new CadError('sketch-split-precision', 'The cut cannot keep both pieces in line at these coordinates. Cut at a different point.');
   const compiled = compileCadSketchGraph(candidate, parameters);
   if (segment.kind === 'arc') {
     const first = compiled.segments.find(item => item.id === entity.id), second = compiled.segments.find(item => item.id === split.newEntityId);
@@ -68,7 +68,7 @@ export function splitCadSketchEntity({ graph: input, parameters, split }: {
     const deltas = [sweeps[0] - expected[0], sweeps[1] - expected[1], sweeps[0] + sweeps[1] - segment.sweepRadians];
     if (deltas.some(delta => Math.abs(delta) >= Math.PI || Math.abs(delta) * segment.radius > tolerance)
       || sweeps.some((sweep, index) => Math.sign(Math.abs(sweep) - Math.PI) !== Math.sign(Math.abs(expected[index]) - Math.PI)))
-      throw new CadError('sketch-split-precision', 'The cut cannot preserve the original signed arc coverage at these coordinates.');
+      throw new CadError('sketch-split-precision', 'The cut cannot keep the arc\'s shape at this point. Cut at a different point.');
   }
   return Object.freeze({ graph: candidate, retainedEntityId: entity.id, newEntityId: split.newEntityId, splitPointId: split.splitPointId });
 }

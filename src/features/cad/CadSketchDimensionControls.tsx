@@ -1,3 +1,4 @@
+import { userFacingMessage } from '@/lib/userMessage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -70,7 +71,7 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
   const commit = (edits: readonly CadEdit[]) => submission.submit(signal => {
     if (editorDocument.current !== cadDocument) throw new Error('The part changed. Cancel and reopen this dimension.');
     return edits.length ? onEditMany(edits, signal) : undefined;
-  }, close, error => setEditor(current => current ? { ...current, error: error instanceof Error ? error.message : 'Unable to change this dimension.' } : current));
+  }, close, error => setEditor(current => current ? { ...current, error: userFacingMessage(error, 'Unable to change this dimension.') } : current));
   const active = dimensions.find(dimension => dimension.name === editor?.name);
   const binding = active ? bindingFor(active.scalar, parameters) : null;
   const annotations = dimensions.map(dimension => ({ dimension, annotation: project && dimension.quantity ? cadSketchDimensionAnnotation(profile.geometry, parameters, dimension.quantity, project) : null }));
@@ -99,7 +100,7 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
       if (needsCadSketchPreparation(cadDocument, [edit])) reduceCadEditIntents(cadDocument, [edit]);
       else applyCadEdits(cadDocument, [edit]);
       return { edits: [edit], issue: null };
-    } catch (error) { return { edits: null, issue: error instanceof Error ? error.message : 'Invalid dimension.' }; }
+    } catch (error) { return { edits: null, issue: userFacingMessage(error, 'Invalid dimension.') }; }
   }, [editor?.value, editor?.name, active, binding, cadDocument, sketch, profile.id]);
   useLayoutEffect(() => {
     const place = () => {

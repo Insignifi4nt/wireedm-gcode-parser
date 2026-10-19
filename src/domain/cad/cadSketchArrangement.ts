@@ -189,7 +189,7 @@ export function deriveCadSketchArrangement(graph: CadSketchGraph, parameters: Re
     a = root(a); b = root(b);
     if (a === b) return;
     const related = () => [...a.events.values(), ...b.events.values()].flatMap(event => event.kind === 'intersection' ? [...event.entityIds] : event.kind === 'circle-seam' ? [event.entityId] : []);
-    if (distance(a.point, b.point) > cadPathClosureTolerance([a.point, b.point])) { issue('precision', related(), 'Intersection events cannot be represented as one roundoff-consistent node.'); return; }
+    if (distance(a.point, b.point) > cadPathClosureTolerance([a.point, b.point])) { issue('precision', related(), 'Shapes cross here at points too close together to resolve. Move the crossing apart or nearer the origin.'); return; }
     const small = a.branches.size <= b.branches.size ? a.branches : b.branches, large = small === a.branches ? b.branches : a.branches;
     for (const [pair, branch] of small) if (large.has(pair) && large.get(pair) !== branch) {
       issue('precision', related(), 'Distinct analytic intersection branches cannot be resolved as separate nodes.'); return;
@@ -220,7 +220,7 @@ export function deriveCadSketchArrangement(graph: CadSketchGraph, parameters: Re
     }
     if (unresolved) {
       const ids = new Set(members.map(member => member.id));
-      issue('precision', sources.filter(source => endpointIds(source).some(id => ids.has(id))).map(source => source.entity.id), 'A coincidence component spans more than one roundoff-consistent joint.');
+      issue('precision', sources.filter(source => endpointIds(source).some(id => ids.has(id))).map(source => source.entity.id), 'Points that should meet are too far apart to join. Move them together or remove the coincidence.');
     }
   }
   if (issues.length) return finish();
@@ -362,7 +362,7 @@ export function deriveCadSketchArrangement(graph: CadSketchGraph, parameters: Re
     const area = signedAreaOfPath(refs, byId), path = halves.map(encoded);
     const encodedPath = cadAnalyticSegments(path).segments;
     if (!Number.isFinite(area) || encodedPath.some((segment, index) => distance(segment.end, encodedPath[(index + 1) % encodedPath.length].start) > cadPathClosureTolerance([segment.end, encodedPath[(index + 1) % encodedPath.length].start]))) {
-      issue('precision', halves.map(item => item.edge.source.entity.id), 'A face boundary cannot reproduce its analytic joints within saved path precision.'); continue;
+      issue('precision', halves.map(item => item.edge.source.entity.id), 'This region\'s outline no longer meets exactly at its corners. Move the geometry nearer the origin or redraw the corner.'); continue;
     }
     const sourceRefs = halves.map((item): CadSketchArrangementSourceRef => ({ entityId: item.edge.source.entity.id,
       from: item.reversed ? item.edge.to.parameter : item.edge.from.parameter, to: item.reversed ? item.edge.from.parameter : item.edge.to.parameter,
