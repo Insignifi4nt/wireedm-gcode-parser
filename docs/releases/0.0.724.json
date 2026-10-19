@@ -10,7 +10,7 @@
     "capabilities": "No post or machine capability change.",
     "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
     "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
-    "verification": "Full Vitest suite 5846/5846 in 520 files; tsc, oxlint (zero findings), ui:check and production build pass. Playwright cad-sketch-constraints and cad-sketch-editing journeys 29/29. Independent Codex review findings fixed with regression tests: half-circle slot ends moving at any angle, the 64-item geometry move limit, reference dimensions no longer tying shapes together for placement, far-origin rotated slots, Escape clearing a datum-only selection, and off-screen datums leaving the keyboard order."
+    "verification": "Full Vitest suite 5846/5846 in 520 files; tsc, oxlint (zero findings), ui:check and production build pass. Playwright cad-sketch-constraints and cad-sketch-editing journeys 29/29. Independent Codex review findings fixed with regression tests: half-circle slot ends moving at any angle, the 64-item geometry move limit, reference dimensions no longer tying shapes together for placement, far-origin rotated slots, Escape clearing a datum-only selection, off-screen datums leaving the keyboard order, a capped far-origin tangent allowance so microscopic supports are never read as tangent, arc-branch checks that only reject a sign flip measurably off a half turn, and Escape from a focused datum. A final Codex pass found no further issues."
   },
   "testedPosts": [],
   "publicNotes": {
