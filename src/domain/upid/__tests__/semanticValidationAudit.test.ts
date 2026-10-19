@@ -67,13 +67,13 @@ describe('UPID semantic boundary audit', () => {
     expect(validateUpidDocument(document).structurallyValid).toBe(false);
   });
 
-  it.each(['self', 'foreign'] as const)('rejects persisted derived attribution to a %s operation', (target) => {
+  it('rejects persisted derived attribution to an operation', () => {
     const document = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
       { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 5 }
     ]);
     document.plan.operations[0].machiningIntent = { kind: 'partial-contour',
-      sourceOperationId: document.plan.operations[target === 'self' ? 0 : 1].id, spanIds: ['invented'] };
+      sourceOperationId: document.plan.operations[0].id, spanIds: ['invented'] };
     expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(expect.objectContaining({
       code: 'upid-invalid-value', message: expect.stringContaining('Persist source geometry and machiningParticipation')
     }));

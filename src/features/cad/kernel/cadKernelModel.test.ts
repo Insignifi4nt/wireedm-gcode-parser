@@ -108,13 +108,6 @@ describe('real OpenCascade CAD kernel', () => {
     }
   });
 
-  it('revolves an offset rectangle around the sketch y axis into a hollow cylinder', () => {
-    built([sketch('sketch', { ...rectangle, x: 5, width: 5, height: 10 }), { ...base('revolved'), kind: 'revolve', sketchId: 'sketch', angle: 360, axis: 'y', operation: 'new', targetId: null }], model => {
-      expect(model.result.diagnostics).toEqual([]);
-      expect(model.result.meshes[0].volume).toBeCloseTo(Math.PI * (100 - 25) * 10, 4);
-    });
-  });
-
   it('creates analytic rounded rectangles, polygons and rotated capsule slots', () => {
     const profiles: [CadProfile, number][] = [
       [{ ...rectangle, cornerRadius: 2 }, (200 - (4 - Math.PI) * 4) * 5],

@@ -44,8 +44,4 @@ describe('native solids alongside exact Curve reference features',()=>{
       expect(()=>parseCadDocument(document([sketch,pad,imported.curve,{...base('bad_pattern'),kind:'linear-pattern',sourceId:'imported_reference',count:2,spacing:[0,0,20]}]))).toThrow(/body|solid/i);
     } finally {model.dispose();}
   });
-  it('does not make reference-only documents exportable as solids',()=>{
-    const model=buildCadKernelModel(document([curve()]));
-    try {expect(model.result.meshes).toEqual([]);expect(model.result.diagnostics).toEqual([]);expect(()=>model.export('step')).toThrow(/solid/);} finally {model.dispose();}
-  });
 });

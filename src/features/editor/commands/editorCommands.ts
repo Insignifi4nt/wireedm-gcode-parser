@@ -101,6 +101,3 @@ export function evaluateEditorCommand(
   return { enabled: true };
 }
 
-export function canStartEditorToolSession(availability: EditorCommandAvailability): boolean {
-  return availability.enabled;
-}

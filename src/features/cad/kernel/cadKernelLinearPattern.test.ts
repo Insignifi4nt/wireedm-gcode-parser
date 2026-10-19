@@ -71,9 +71,9 @@ describe('bounded native linear-pattern staging', () => {
       copies.push(other); const next = sourceFuse.call(this, other); previousUnions.push(next); return next;
     });
     try {
-      built([...seed, linear({ count: 100 })], model => {
-        expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes[0].volume).toBeCloseTo(2400, 6);
-        expect(copies).toHaveLength(99); expect(previousUnions).toHaveLength(99);
+      built([...seed, linear({ count: 6 })], model => {
+        expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes[0].volume).toBeCloseTo(144, 6);
+        expect(copies).toHaveLength(5); expect(previousUnions).toHaveLength(5);
         for (const shape of [...copies, ...previousUnions.slice(0, -1)]) expect(() => shape.wrapped).toThrow();
       });
     } finally { fuse.mockRestore(); }

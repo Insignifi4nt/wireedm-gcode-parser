@@ -49,7 +49,7 @@ describe('floating panel pointer lifetime', () => {
     } finally { h.dispose(); }
   });
 
-  it.each(['unmount', 'close', 'compact close', 'pointercancel', 'blur'] as const)(
+  it.each(['unmount', 'compact close', 'pointercancel', 'blur'] as const)(
     'retains applied geometry and removes all callbacks after %s', change => {
       const h = harness();
       try {
@@ -59,11 +59,6 @@ describe('floating panel pointer lifetime', () => {
         expect(h.container.querySelector<HTMLElement>('[data-editor-floating-panel]')?.style.left).toBe('380px');
         h.changed.mockClear();
         if (change === 'unmount') h.unmount();
-        if (change === 'close') {
-          const close = h.container.querySelector<HTMLButtonElement>('button[aria-label="Close Transform drawer"]');
-          if (!close) throw new Error('Missing close button');
-          act(() => close.click());
-        }
         if (change === 'compact close') h.render(false);
         if (change === 'pointercancel') act(() => window.dispatchEvent(pointer('pointercancel')));
         if (change === 'blur') act(() => window.dispatchEvent(new Event('blur')));

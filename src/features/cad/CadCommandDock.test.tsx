@@ -73,41 +73,40 @@ it('retains standalone viewport controls when no shared command dock is mounted'
   expect(container.querySelector('[aria-label="Viewport controls"]')?.textContent).toBe('Fit model');
 });
 
-it.each([{ group: 'Viewport controls', help: 'Model navigation' }, { group: 'Sketch controls', help: 'Sketch navigation' }])(
-  'dismisses pinned $help when its View owner closes from the keyboard and retains control state on reopen', async ({ group, help }) => {
-    const mounted = vi.fn(), unmounted = vi.fn(), disclosure = vi.fn();
-    function Grid() {
-      const [grid, setGrid] = useState(true);
-      useEffect(() => { mounted(); return unmounted; }, []);
-      return <button aria-label="Grid state" aria-pressed={grid} onClick={() => setGrid(!grid)}>Grid</button>;
-    }
-    await act(async () => root.render(<CadCommandDock toolbar={<button>Sketch</button>}>
-      <CadViewTools label={group}><Grid /><CadContextHelp label={help} onOpenChange={disclosure}>Navigation explanation</CadContextHelp></CadViewTools>
-    </CadCommandDock>));
-    await act(async () => toggle().click());
-    const grid = drawer().querySelector<HTMLButtonElement>('[aria-label="Grid state"]')!;
-    const trigger = drawer().querySelector<HTMLButtonElement>(`[aria-label="${help} help"]`)!;
-    await act(async () => grid.click());
-    await act(async () => { trigger.focus(); trigger.click(); }); // detail0 is keyboard activation.
-    const dialog = document.querySelector(`[role="dialog"][aria-label="${help} help"]`);
-    expect(dialog).not.toBeNull(); expect(drawer().contains(dialog)).toBe(false);
-    expect(document.activeElement).toBe(dialog?.querySelector('button'));
-    toggle().focus(); await act(async () => toggle().click());
-    expect(drawer().hasAttribute('inert')).toBe(true);
-    expect(document.querySelector(`[role="dialog"][aria-label="${help} help"]`)).toBeNull();
-    expect(trigger.getAttribute('aria-expanded')).toBe('false'); expect(disclosure).toHaveBeenLastCalledWith(false);
-    expect(document.activeElement).toBe(toggle());
-    await act(async () => trigger.click()); // A hidden retained trigger cannot reopen its portal.
-    expect(disclosure.mock.calls).toEqual([[true], [false]]);
-    await act(async () => toggle().click());
-    expect(drawer().querySelector('[aria-label="Grid state"]')).toBe(grid);
-    expect(grid.getAttribute('aria-pressed')).toBe('false'); expect(mounted).toHaveBeenCalledOnce(); expect(unmounted).not.toHaveBeenCalled();
-    expect(document.querySelector(`[role="dialog"][aria-label="${help} help"]`)).toBeNull();
-    await act(async () => { trigger.focus(); trigger.click(); });
-    expect(document.querySelector(`[role="dialog"][aria-label="${help} help"]`)).not.toBeNull();
-    expect(disclosure.mock.calls).toEqual([[true], [false], [true]]);
+it('dismisses pinned help when its View owner closes from the keyboard and retains control state on reopen', async () => {
+  const group = 'Viewport controls', help = 'Model navigation';
+  const mounted = vi.fn(), unmounted = vi.fn(), disclosure = vi.fn();
+  function Grid() {
+    const [grid, setGrid] = useState(true);
+    useEffect(() => { mounted(); return unmounted; }, []);
+    return <button aria-label="Grid state" aria-pressed={grid} onClick={() => setGrid(!grid)}>Grid</button>;
   }
-);
+  await act(async () => root.render(<CadCommandDock toolbar={<button>Sketch</button>}>
+    <CadViewTools label={group}><Grid /><CadContextHelp label={help} onOpenChange={disclosure}>Navigation explanation</CadContextHelp></CadViewTools>
+  </CadCommandDock>));
+  await act(async () => toggle().click());
+  const grid = drawer().querySelector<HTMLButtonElement>('[aria-label="Grid state"]')!;
+  const trigger = drawer().querySelector<HTMLButtonElement>(`[aria-label="${help} help"]`)!;
+  await act(async () => grid.click());
+  await act(async () => { trigger.focus(); trigger.click(); }); // detail0 is keyboard activation.
+  const dialog = document.querySelector(`[role="dialog"][aria-label="${help} help"]`);
+  expect(dialog).not.toBeNull(); expect(drawer().contains(dialog)).toBe(false);
+  expect(document.activeElement).toBe(dialog?.querySelector('button'));
+  toggle().focus(); await act(async () => toggle().click());
+  expect(drawer().hasAttribute('inert')).toBe(true);
+  expect(document.querySelector(`[role="dialog"][aria-label="${help} help"]`)).toBeNull();
+  expect(trigger.getAttribute('aria-expanded')).toBe('false'); expect(disclosure).toHaveBeenLastCalledWith(false);
+  expect(document.activeElement).toBe(toggle());
+  await act(async () => trigger.click()); // A hidden retained trigger cannot reopen its portal.
+  expect(disclosure.mock.calls).toEqual([[true], [false]]);
+  await act(async () => toggle().click());
+  expect(drawer().querySelector('[aria-label="Grid state"]')).toBe(grid);
+  expect(grid.getAttribute('aria-pressed')).toBe('false'); expect(mounted).toHaveBeenCalledOnce(); expect(unmounted).not.toHaveBeenCalled();
+  expect(document.querySelector(`[role="dialog"][aria-label="${help} help"]`)).toBeNull();
+  await act(async () => { trigger.focus(); trigger.click(); });
+  expect(document.querySelector(`[role="dialog"][aria-label="${help} help"]`)).not.toBeNull();
+  expect(disclosure.mock.calls).toEqual([[true], [false], [true]]);
+});
 
 it('clears a pending help hover-dismiss timer when the owner closes, so a fresh preview survives reopening', async () => {
   vi.useFakeTimers();

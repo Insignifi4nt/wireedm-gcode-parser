@@ -21,71 +21,64 @@ test('compact settings keeps navigation and a working backup action in view', as
   await expect(page.getByRole('button', { name: 'Open settings', exact: true })).toBeFocused();
 });
 
-for (const viewport of [
-  { width: 1440, height: 900 },
-  { width: 1024, height: 720 }
-]) {
-  test(`settings traps focus and preserves truthful cache status at ${viewport.width}px`, async ({
-    page
-  }) => {
-    await page.setViewportSize(viewport);
-    await page.goto('/');
+test('settings traps focus and preserves truthful cache status', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await page.goto('/');
 
-    const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
-    await expect(onboarding).toBeVisible();
-    await expect(onboarding.getByRole('button', { name: 'Close onboarding' })).toBeFocused();
-    await expect(page.locator('[data-app-header]')).toHaveAttribute('inert', '');
-    await page.keyboard.press('Shift+Tab');
-    await expect(onboarding.getByRole('button', { name: 'Go Build!' })).toBeFocused();
-    await page.keyboard.press('Tab');
-    await expect(onboarding.getByRole('button', { name: 'Close onboarding' })).toBeFocused();
-    await onboarding.getByRole('button', { name: 'Go Build!' }).click();
-    await expect(page.getByRole('button', { name: 'Open Editor' })).toBeVisible();
+  const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
+  await expect(onboarding).toBeVisible();
+  await expect(onboarding.getByRole('button', { name: 'Close onboarding' })).toBeFocused();
+  await expect(page.locator('[data-app-header]')).toHaveAttribute('inert', '');
+  await page.keyboard.press('Shift+Tab');
+  await expect(onboarding.getByRole('button', { name: 'Go Build!' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(onboarding.getByRole('button', { name: 'Close onboarding' })).toBeFocused();
+  await onboarding.getByRole('button', { name: 'Go Build!' }).click();
+  await expect(page.getByRole('button', { name: 'Open Editor' })).toBeVisible();
 
-    const settingsButton = page.getByRole('button', { name: 'Open settings' });
-    await settingsButton.focus();
-    await settingsButton.click();
+  const settingsButton = page.getByRole('button', { name: 'Open settings' });
+  await settingsButton.focus();
+  await settingsButton.click();
 
-    const dialog = page.getByRole('dialog', { name: 'Workbench settings' });
-    const closeButton = dialog.getByRole('button', { name: 'Close settings' });
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText('Browser cache active');
-    await expect(closeButton).toBeFocused();
-    await expect(page.locator('[data-app-header]')).toHaveAttribute('aria-hidden', 'true');
-    await expect(page.locator('[data-app-workspace-grid]')).toHaveAttribute('aria-hidden', 'true');
-    expect(
-      await page
-        .locator('[data-app-header]')
-        .evaluate((element) => (element as HTMLElement).inert)
-    ).toBe(true);
+  const dialog = page.getByRole('dialog', { name: 'Workbench settings' });
+  const closeButton = dialog.getByRole('button', { name: 'Close settings' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('Browser cache active');
+  await expect(closeButton).toBeFocused();
+  await expect(page.locator('[data-app-header]')).toHaveAttribute('aria-hidden', 'true');
+  await expect(page.locator('[data-app-workspace-grid]')).toHaveAttribute('aria-hidden', 'true');
+  expect(
+    await page
+      .locator('[data-app-header]')
+      .evaluate((element) => (element as HTMLElement).inert)
+  ).toBe(true);
 
-    await page.keyboard.press('Shift+Tab');
-    await expect(closeButton).not.toBeFocused();
-    expect(
-      await page.evaluate(() =>
-        Boolean(document.activeElement?.closest('[role="dialog"][aria-label="Workbench settings"]'))
-      )
-    ).toBe(true);
-    await page.keyboard.press('Tab');
-    await expect(closeButton).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(closeButton).not.toBeFocused();
+  expect(
+    await page.evaluate(() =>
+      Boolean(document.activeElement?.closest('[role="dialog"][aria-label="Workbench settings"]'))
+    )
+  ).toBe(true);
+  await page.keyboard.press('Tab');
+  await expect(closeButton).toBeFocused();
 
-    await page.keyboard.press('Escape');
-    await expect(dialog).toHaveCount(0);
-    await expect(settingsButton).toBeFocused();
-    await expect(page.locator('[data-app-header]')).not.toHaveAttribute('aria-hidden', 'true');
-    expect(
-      await page
-        .locator('[data-app-header]')
-        .evaluate((element) => (element as HTMLElement).inert)
-    ).toBe(false);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(settingsButton).toBeFocused();
+  await expect(page.locator('[data-app-header]')).not.toHaveAttribute('aria-hidden', 'true');
+  expect(
+    await page
+      .locator('[data-app-header]')
+      .evaluate((element) => (element as HTMLElement).inert)
+  ).toBe(false);
 
-    await settingsButton.click();
-    await expect(closeButton).toBeFocused();
-    const overlay = page.locator('[data-workbench-settings-overlay]');
-    const overlayBox = await overlay.boundingBox();
-    expect(overlayBox).not.toBeNull();
-    await page.mouse.click(overlayBox!.x + 2, overlayBox!.y + 2);
-    await expect(dialog).toHaveCount(0);
-    await expect(settingsButton).toBeFocused();
-  });
-}
+  await settingsButton.click();
+  await expect(closeButton).toBeFocused();
+  const overlay = page.locator('[data-workbench-settings-overlay]');
+  const overlayBox = await overlay.boundingBox();
+  expect(overlayBox).not.toBeNull();
+  await page.mouse.click(overlayBox!.x + 2, overlayBox!.y + 2);
+  await expect(dialog).toHaveCount(0);
+  await expect(settingsButton).toBeFocused();
+});

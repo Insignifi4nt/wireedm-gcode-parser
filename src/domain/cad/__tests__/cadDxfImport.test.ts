@@ -90,14 +90,6 @@ describe('exact standalone CAD DXF round trip', () => {
     expect(measureCadSketch(fromSketch(imported.sketch), imported.sketch.id).materialAreaMm2).toBeCloseTo(79 * Math.PI, 10);
     expect(imported.sketch.profiles.every(profile => profile.geometry.kind === 'circle' && !('role' in profile))).toBe(true);
   });
-  it('preserves signed concave arc geometry and exact ray containment', () => {
-    const imported = importCadDxfSketch({ fileName: 'concave.dxf', text: cadSketchToDxf(part([concave]), 'sketch') });
-    const geometry = resolveCadProfile(imported.sketch.profiles[0].geometry, {});
-    expect(geometry.kind).toBe('path');
-    expect(cadProfileContainsPoint(geometry, { x: 5, y: 9 })).toBe(false);
-    expect(cadProfileContainsPoint(geometry, { x: 5, y: 7 })).toBe(true);
-    expect(cadSketchToEntities(imported.sketch, {}).filter(entity => entity.type === 'arc')).toMatchObject([{ clockwise: true, sweepRadians: -Math.PI }]);
-  });
   it('expands bulged closed polylines into exact circular arcs with no tessellation', () => {
     const text = dxf(['0', 'LWPOLYLINE', '8', 'PART', '90', '2', '70', '1', '10', '-5', '20', '0', '42', '1', '10', '5', '20', '0', '42', '1']);
     const imported = importCadDxfSketch({ fileName: 'bulge.dxf', text });

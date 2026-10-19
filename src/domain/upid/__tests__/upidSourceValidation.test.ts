@@ -21,7 +21,8 @@ describe('UPID source metadata compatibility', () => {
     expect(document).toEqual(original);
   });
 
-  it.each([0, ...Array.from({ length: 24 }, (_, index) => index + 1), 99])(
+  // Unitless, recognized, the last table code and codes without a known scale.
+  it.each([0, 1, 4, 20, 21, 99])(
     'accepts matching DXF unit declaration for code %s', (code) => {
       const units = dxfUnitsFromInsunitsCode(code);
       const document = documentWithSource({

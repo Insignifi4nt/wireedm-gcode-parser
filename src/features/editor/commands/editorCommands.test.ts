@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  canStartEditorToolSession,
   createEditorCommandRegistry,
   evaluateEditorCommand,
   type EditorCommandDefinition,
@@ -70,7 +69,6 @@ describe('editor command availability', () => {
     );
 
     expect(available).toEqual({ enabled: true });
-    expect(canStartEditorToolSession(available)).toBe(true);
   });
 
   it('requires mutating workflow commands to define one history label', () => {

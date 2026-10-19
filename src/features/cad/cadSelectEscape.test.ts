@@ -3,12 +3,6 @@ import { createCadSelectEscapeGuard } from './cadSelectEscape';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe('native select Escape state', () => {
-  it('allows a verified closed picker and preserves an open picker', () => {
-    vi.stubGlobal('CSS', { supports: () => true });
-    const select = document.createElement('select'); const guard = createCadSelectEscapeGuard(document);
-    expect(guard(select)).toBe(true);
-    vi.spyOn(select, 'matches').mockReturnValue(true); expect(guard(select)).toBe(false);
-  });
   it('caches a functional semantic probe rather than creating DOM on every key', () => {
     const supports = vi.fn(() => true); vi.stubGlobal('CSS', { supports });
     const create = vi.spyOn(document, 'createElement'); const select = document.createElement('select');

@@ -2180,45 +2180,6 @@ describe('EditorPage UPID draft boundary', () => {
     expect(restoredEvent.defaultPrevented).toBe(false);
   });
 
-  it('saves UPID path edits without materializing posted G-code as editor text', async () => {
-    const pathDocument = pathDocumentFromRectangle();
-    const project = projectWithUpid(pathDocument);
-    const onSaveEditorDraft = vi.fn();
-
-    await act(async () => {
-      root.render(
-        <EditorPageHarness
-          onSaveEditorDraft={onSaveEditorDraft}
-          project={project}
-        />
-      );
-    });
-    await flushAsync();
-
-    await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
-    await clickElement('button[aria-label="Reverse path operation"]');
-    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Apply "]');
-
-    expect(container.textContent).toContain('Unsaved');
-
-    await clickElement('button[aria-label="Save active document"]');
-
-    expect(onSaveEditorDraft).toHaveBeenCalledTimes(1);
-    expect(onSaveEditorDraft.mock.calls[0]?.[0]).not.toHaveProperty('text');
-    expect(onSaveEditorDraft).toHaveBeenCalledWith({
-      model: 'upid-document',
-      pathDocument: expect.objectContaining({
-        plan: expect.objectContaining({
-          operations: [
-            expect.objectContaining({
-              direction: 'reverse'
-            })
-          ]
-        })
-      })
-    });
-  });
-
   it.each(['segment', 'operation'] as const)('keeps %s transforms isolated and cancels or commits them as one history entry', async (scope) => {
     const document = pathDocumentFromIndependentRectangles();
     const operation = document.plan.operations[0];

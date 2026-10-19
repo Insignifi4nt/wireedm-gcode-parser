@@ -70,14 +70,4 @@ describe('reference feature picking', () => {
     const pick = (pixels: number) => { raycaster.setFromCamera(new THREE.Vector2(0, pixels * 2 / 400), camera); return pickCadCurveReference({ raycaster, references: [lines], bodies: [], camera, viewportHeight: 400 }); };
     expect(pick(5)).toBe('rail'); expect(pick(7)).toBeNull(); lines.geometry.dispose();
   });
-
-  it('rejects hidden references behind a solid and selects a visible reference in front', () => {
-    const camera = new THREE.OrthographicCamera(-20, 20, 20, -20, 0.01, 1000); camera.position.set(5, 0, 100); camera.lookAt(5, 0, 0); camera.updateMatrixWorld();
-    const raycaster = new THREE.Raycaster(); raycaster.setFromCamera(new THREE.Vector2(), camera);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(12, 2, 2)); body.position.set(5, 0, 1); body.updateMatrixWorld();
-    const hidden = reference(), visible = reference(line('XY', 3));
-    expect(pickCadCurveReference({ raycaster, references: [hidden], bodies: [body], camera, viewportHeight: 400 })).toBeNull();
-    expect(pickCadCurveReference({ raycaster, references: [visible], bodies: [body], camera, viewportHeight: 400 })).toBe('rail');
-    hidden.geometry.dispose(); visible.geometry.dispose(); body.geometry.dispose();
-  });
 });

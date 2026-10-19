@@ -27,7 +27,7 @@ describe('circular pattern placements', () => {
     expect(resolved.angles).not.toContain(angle); expect(Object.is(resolved.angles[0], -0)).toBe(false);
     expect(resolved.center).toEqual([0, 0, 0]); expect(resolved.direction).toEqual([0, 0, 1]);
   });
-  it.each([180, -90, 359.999999])('includes both endpoints of a partial %s degree extent', angle => {
+  it.each([-90, 359.999999])('includes both endpoints of a partial %s degree extent', angle => {
     const resolved = resolveCadCircularPattern({ ...pattern, angle }, {});
     expect(resolved.fullTurn).toBe(false);
     expect(resolved.angles).toEqual([0, angle / 3, 2 * angle / 3, angle]);

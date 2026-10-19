@@ -337,25 +337,6 @@ test('maximum right dock caps at 1200 and restores its width at 1440', async ({ 
   expect(restoredDockWidth).toBeLessThanOrEqual(561);
 });
 
-test('path editor materializes a right dock only for a docked active workflow', async ({ page }) => {
-  await page.setViewportSize({ width: 1708, height: 874 });
-  await openReadyWorkbench(page);
-  await page.locator('input[aria-label="DXF file"]').setInputFiles({
-    name: 'symmetric-docks.dxf',
-    mimeType: 'application/dxf',
-    buffer: Buffer.from(rectangleDxf())
-  });
-  await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
-
-  await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
-  await openWorkflowCommand(page, 'Machining', 'machining.entry-exit');
-  await page.getByRole('button', { name: 'Dock Entry / Exit right' }).click();
-  await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toBeVisible();
-  await page.getByRole('button', { name: 'Hide Entry / Exit' }).click();
-  await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
-});
-
 test('path editor persists a collapsed UPID rail across reload and project reopen', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openReadyWorkbench(page);

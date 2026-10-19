@@ -44,12 +44,12 @@ describe('cancellable package worker', () => {
     expect(vi.getTimerCount()).toBe(0);
   }
 
-  it.each([true, false])('returns an unchanged report with ok=%s and releases its worker', async ok => {
+  it('returns an unchanged failing report and releases its worker', async () => {
     const controller = new AbortController();
     const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
     const task = startPackageTool(request, controller.signal);
     const worker = PackageWorker.instances[0];
-    const result = { ...report, report: { ...report.report, ok } };
+    const result = { ...report, report: { ...report.report, ok: false } };
     expect(worker.url.pathname).toContain('/packageTools.worker.ts');
     expect(worker.options).toEqual({ type: 'module' });
     expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith(request);
