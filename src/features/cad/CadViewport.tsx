@@ -663,8 +663,9 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     };
     const cancelAllPointers = () => cancelPointerInteraction(false, data.current.busyInputLocked && preserveIdleHover.current);
     const pointerLeave = () => { if (depthPointer !== null && renderer.domElement.hasPointerCapture?.(depthPointer) || box && renderer.domElement.hasPointerCapture?.(box.pointerId)) return; cancelAllPointers(); depth.hover(null); };
-    const pointerCancel = (event: PointerEvent) => { if (activePointers.has(event.pointerId) || depthPointer === event.pointerId || box?.pointerId === event.pointerId) cancelPointerInteraction(); };
-    const lostPointerCapture = (event: PointerEvent) => { if (activePointers.has(event.pointerId) || depthPointer === event.pointerId || box?.pointerId === event.pointerId) cancelPointerInteraction(); };
+    const ownsPointer = (pointerId: number) => activePointers.has(pointerId) || depthPointer === pointerId || box?.pointerId === pointerId || facePress?.pointerId === pointerId;
+    const pointerCancel = (event: PointerEvent) => { if (ownsPointer(event.pointerId)) cancelPointerInteraction(); };
+    const lostPointerCapture = (event: PointerEvent) => { if (ownsPointer(event.pointerId)) cancelPointerInteraction(); };
     const pointerUp = (event: PointerEvent) => {
       if (data.current.busyInputLocked) return;
       const tracked = activePointers.delete(event.pointerId);

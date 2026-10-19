@@ -229,6 +229,14 @@ describe('direct end face drag', () => {
     await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toEqual(h.before.document);
   });
 
+  it.each(['lostpointercapture', 'pointercancel'])('forgets a pending face press on %s', async type => {
+    const h = await direct();
+    await h.pointer('pointerdown', h.at(10)); await h.pointer(type, h.at(10)); await h.pointer('pointermove', h.at(16));
+    expect(h.gesture).not.toHaveBeenCalled(); expect(h.captured.size).toBe(0);
+    await h.pointer('pointerdown', h.at(10)); await h.pointer('pointermove', h.at(16)); await h.pointer('pointerup', h.at(16));
+    expect(h.session.getSnapshot().document.parameters.depth).toBeCloseTo(16, 6);
+  });
+
   it('keeps a press and release on the face an ordinary pick', async () => {
     const h = await direct();
     await h.pointer('pointerdown', h.at(10)); await h.pointer('pointerup', h.at(10));
