@@ -72,11 +72,12 @@ import { cadPlacementLabel } from './cadPlacementUi';
 import { cadPropertySummary } from './cadPropertySummary';
 import { initialCadSweepSourceIds, inspectCadSweepCandidates } from './cadSweepUi';
 import { useCadNotifications, type CadNotificationState } from './useCadNotifications';
-import { cadFeatureCandidateEdits, type CadFeaturePreviewCommand, type CadFeaturePreviewState } from './cadFeaturePreview';
-import { useCadPreferences } from './cadPreferences';
+import { cadFeatureCandidateEdits, type CadFeatureCandidateEdits, type CadFeaturePreviewCommand, type CadFeaturePreviewState } from './cadFeaturePreview';
+import { cadDepthHandlesShown, useCadPreferences } from './cadPreferences';
 import type { CadFeatureReferencePickCommand } from './cadFeatureReferencePicking';
 import { useCadFeatureTopologyPick, type CadFeatureInputPicking } from './useCadFeatureTopologyPick';
 import type { CadExtrudeDepthControl } from './cadExtrudeDepthInteraction';
+import { cadDirectDepthTarget, createCadDirectDepthControl, type CadDirectDepthEnvironment } from './cadDirectDepthControl';
 import { cadUnobscuredFitArea, type CadFitAreaReader } from './cadFitArea';
 const NO_MESHES: readonly CadBuildResult['meshes'][number][] = Object.freeze([]);
 const NO_SKETCH_SELECTIONS: readonly CadSketchGraphSelection[] = Object.freeze([]);
@@ -240,6 +241,9 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const [canvasMenu, setCanvasMenu] = useState<CanvasMenu | null>(null);
   const [referencePick, setReferencePick] = useState<{ command: Exclude<CadFeatureReferencePickCommand, { kind: 'clear' }>; document: CadDocument; buildId: string | null } | null>(null);
   const [depthInteraction, setDepthInteraction] = useState<{ control: CadExtrudeDepthControl; document: CadDocument } | null>(null);
+  /** True while a direct (dialog-free) Pad drag has changed the Length and not yet been released. */
+  const [directDepthActive, setDirectDepthActive] = useState(false);
+  const directDepthOwner = useId();
   const depthDocument = useRef(document); depthDocument.current = document;
   const publishDepthInteraction = useCallback((control: CadExtrudeDepthControl | null, released?: CadExtrudeDepthControl) => {
     setDepthInteraction(previous => control ? previous?.control === control && previous.document === depthDocument.current ? previous
@@ -329,7 +333,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const canvasMenuBlocked = Boolean(currentDimensionPick) || drawingPending || pluginsOpen || editorPending || parameterPending || dimensionPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || treeMenuOpen || storageBusy || externalWorkflowOpen || Boolean(currentOwnedPick);
   const currentCanvasMenu = !canvasMenuBlocked && canvasMenu?.document === document && canvasMenu.version === props.documentVersion && canvasMenu.buildId === (build?.buildId ?? null) ? canvasMenu : null;
   useLayoutEffect(() => { if (canvasMenu && !currentCanvasMenu) setCanvasMenu(null); }, [canvasMenu, currentCanvasMenu]);
-  const pendingOtherCommands = commandSubmission.applying || pluginsOpen || parameterPending || dimensionPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || treeMenuOpen || Boolean(currentCanvasMenu) || Boolean(currentOwnedPick) || Boolean(currentSketchPlaneRequest) || Boolean(currentAreaRepair);
+  const pendingOtherCommands = commandSubmission.applying || directDepthActive || pluginsOpen || parameterPending || dimensionPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || treeMenuOpen || Boolean(currentCanvasMenu) || Boolean(currentOwnedPick) || Boolean(currentSketchPlaneRequest) || Boolean(currentAreaRepair);
   const pendingOutsideDrawing = editorPending || pendingOtherCommands || Boolean(currentDimensionPick);
   const pending = drawingPending || pendingOutsideDrawing;
   // Menu commands run after their menu closes, from a closure rendered while it was open.
@@ -420,13 +424,35 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const canvasReference = curveCreation ?? curve ?? sketch;
   const preparedSketchDocument = (editorPending || drawingPending) && sketchPreview?.source === document ? sketchPreview.document : null;
   const preparedSketch = preparedSketchDocument?.features.find((feature): feature is CadSketchFeature => feature.kind === 'sketch' && feature.id === sketch?.id);
+  const visibleBodyIds = cadVisibleBodyIds(document.features);
+  const currentBodyIds = buildState === 'ready' ? build?.meshes.map((mesh) => mesh.featureId).filter((id) => visibleBodyIds.includes(id)) ?? [] : [];
+  const topologyReady = buildState === 'ready' && props.buildVersion === props.documentVersion && Boolean(build);
+  const topologySelection = pickedTopology && !canvasReference && topologyReady && pickedTopology.documentVersion === props.documentVersion && pickedTopology.buildId === build?.buildId
+    && currentBodyIds.includes(pickedTopology.bodyId) ? pickedTopology : null;
   const depthVisualEligible = !pluginsOpen && !treeRenamePending && !externalWorkflowOpen && !treeMenuOpen && !currentCanvasMenu && !currentReferencePick;
-  const currentDepthControl = preferences.showDepthHandles === true && !canvasReference && !currentOwnedPick && !currentSketchPlaneRequest
-    && !referenceContextBlocked && depthVisualEligible && depthInteraction?.document === document
-    && depthInteraction.control.baseVersion === props.documentVersion && depthInteraction.control.featureId === (newFeature?.id ?? selectedId)
-    ? depthInteraction.control : null;
+  const depthHandlesShown = cadDepthHandlesShown(preferences);
+  // Onshape-style: with no dialog open, the selected Pad (or the Pad of a picked end face) drags its Length in place.
+  const directDepthFeatureId = depthHandlesShown && !newFeature && !canvasReference && !(selected && openFeatureId === selected.id) && !props.sketchEdit
+    ? cadDirectDepthTarget(document, topologyReady ? build?.meshes ?? [] : [], topologySelection, selectedId) : null;
+  const directDepthEnvironment = useRef<CadDirectDepthEnvironment>({ document, documentVersion: props.documentVersion, enabled: false });
+  directDepthEnvironment.current = { document, documentVersion: props.documentVersion, enabled: !locked };
+  const directDepthCallbacks = useRef({ preview: props.onFeaturePreview, commit: (_edits: CadFeatureCandidateEdits) => undefined as void });
+  const directDepth = useMemo(() => directDepthFeatureId ? createCadDirectDepthControl({
+    featureId: directDepthFeatureId, baseVersion: props.documentVersion, owner: `${directDepthOwner}:${directDepthFeatureId}`,
+    read: () => directDepthEnvironment.current,
+    preview: command => directDepthCallbacks.current.preview?.(command),
+    commit: edits => directDepthCallbacks.current.commit(edits),
+    onGestureChange: setDirectDepthActive
+  }) : null, [directDepthFeatureId, props.documentVersion, directDepthOwner]);
+  useEffect(() => () => directDepth?.dispose(), [directDepth]);
+  useLayoutEffect(() => { directDepth?.refresh(); }, [directDepth, document, locked]);
+  const editorDepthControl = depthInteraction?.document === document && depthInteraction.control.baseVersion === props.documentVersion
+    && depthInteraction.control.featureId === (newFeature?.id ?? selectedId) ? depthInteraction.control : null;
+  const currentDepthControl = depthHandlesShown && !canvasReference && !currentOwnedPick && !currentSketchPlaneRequest
+    && !referenceContextBlocked && depthVisualEligible ? editorDepthControl ?? directDepth : null;
   const ownedPreview = props.featurePreview && props.featurePreview.kind !== 'idle' && props.featurePreview.baseVersion === props.documentVersion
-    && (editorPending || newFeature !== null) && props.featurePreview.featureId === (newFeature?.id ?? selectedId) ? props.featurePreview : null;
+    && ((editorPending || newFeature !== null) && props.featurePreview.featureId === (newFeature?.id ?? selectedId)
+      || directDepth !== null && props.featurePreview.owner === directDepth.owner) ? props.featurePreview : null;
   const candidatePreview = currentReferencePick || currentTopologyPick ? null : ownedPreview?.kind === 'ready' ? ownedPreview : ownedPreview?.lastValid ?? null;
   const displayedDocument = candidatePreview?.document ?? document;
   const displayedBuild = candidatePreview?.result ?? build;
@@ -473,13 +499,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   useEffect(() => { setProfilePreview(null); setPreviewParameters(null); setSketchPreview(null); setInspectorCollapsed(false); }, [selectedId, sketchId, profileId]);
   const hasPadSketch = document.features.some(feature => feature.kind === 'sketch' && cadSketchSourceAvailability(feature, 'extrude', document.parameters).kind !== 'unavailable');
   const hasRevolveSketch = document.features.some(feature => feature.kind === 'sketch' && cadSketchSourceIssue(feature, 'revolve', document.parameters) === null);
-  const visibleBodyIds = cadVisibleBodyIds(document.features);
-  const currentBodyIds = buildState === 'ready' ? build?.meshes.map((mesh) => mesh.featureId).filter((id) => visibleBodyIds.includes(id)) ?? [] : [];
   const hasBody = currentBodyIds.length > 0;
   const hasSolid = hasActiveBodyFeatures && buildState === 'ready' && Boolean(displayedMeshes.length);
-  const topologyReady = buildState === 'ready' && props.buildVersion === props.documentVersion && Boolean(build);
-  const topologySelection = pickedTopology && !canvasReference && topologyReady && pickedTopology.documentVersion === props.documentVersion && pickedTopology.buildId === build?.buildId
-    && currentBodyIds.includes(pickedTopology.bodyId) ? pickedTopology : null;
   const propertiesFeature = properties?.kind === 'selection' ? selected : undefined;
   const currentProperties = properties?.kind === 'body' || propertiesFeature ? properties : null;
   const partPropertiesOpen = Boolean(currentProperties) && (currentProperties?.kind === 'body' || !propertiesFeature);
@@ -514,6 +535,15 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       setError(userFacingMessage(cause, 'The edit could not be completed.'));
     });
   };
+  directDepthCallbacks.current = { preview: props.onFeaturePreview, commit: edits => {
+    const owner = directDepth?.owner, featureId = edits[0].feature.id;
+    const clear = () => { if (owner) props.onFeaturePreview?.({ kind: 'clear', owner }); };
+    // One undoable edit; the dragged Pad stays selected so its handle remains under the pointer.
+    submitEdit(signal => {
+      try { return Promise.resolve(props.onEditMany(edits, signal)).finally(clear); }
+      catch (cause) { clear(); throw cause; }
+    }, () => { setPickedTopology(null); setSelectedId(featureId); });
+  } };
   const deleteProfile = (source: CadSketchFeature, id: string) => submitEdit(signal => props.onEdit({ kind: 'update-feature', feature: {
     ...source, profiles: source.profiles.filter(profile => profile.id !== id)
   } }, signal), () => setProfileId(current => current === id ? null : current));

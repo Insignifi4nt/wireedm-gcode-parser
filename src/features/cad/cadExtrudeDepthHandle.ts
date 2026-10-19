@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { cadFramePointToWorld } from '@/domain/cad/cadDatumPlanes';
 import type { CadNumericPoint2, CadNumericPoint3 } from '@/domain/cad/cadPlanes';
-import type { CadExtrudeDepthCapability, CadExtrudeDepthControl, CadExtrudeDepthState } from './cadExtrudeDepthInteraction';
+import { cadExtrudeEndFaceAt, type CadExtrudeDepthCapability, type CadExtrudeDepthControl, type CadExtrudeDepthState } from './cadExtrudeDepthInteraction';
 import { formatCadQuantity } from './cadDisplayQuantity';
 
 export interface CadDepthScreenPoint { readonly x: number; readonly y: number }
@@ -103,6 +103,22 @@ export function createCadExtrudeDepthHandle({ requestRender, onInteractionChange
     material.color.setHex(capability.kind === 'locked' ? 0x8ea5af : hovered || gesture ? 0xa6440e : 0xb84f18);
     group.updateMatrixWorld(true); if (publish) requestRender(); return true;
   };
+  const start = (pointerId: number, ray: THREE.Ray, origin: THREE.Vector3) => {
+    if (disposed || inputLocked || gesture || !control || state?.capability.kind !== 'editable') return false;
+    const current = control.getState(); if (!current) return false;
+    const normal = new THREE.Vector3(...current.model.normalWorld);
+    const station = axisStation(ray, origin, normal); if (station === null) return false;
+    const token = control.begin(current.definitionKey); if (!token) return false;
+    const bounds = current.model.materialBoundsMm;
+    gesture = { pointerId, token, control, frameKey: frameKey(current), anchor: [bounds.minX / 2 + bounds.maxX / 2, bounds.minY / 2 + bounds.maxY / 2],
+      point: origin.clone(), normal, station, quantity: current.model.quantityMm, factor: current.model.symmetric ? 2 : 1, latest: current.model.quantityMm };
+    onInteractionChange(true); refresh(); return true;
+  };
+  /** Whether a picked model point and its face normal lie on the end cap this handle drags. */
+  const faceAt = (point: CadNumericPoint3, faceNormal: CadNumericPoint3) => {
+    const current = !disposed && !inputLocked && state?.capability.kind === 'editable' ? control?.getState() : null;
+    return Boolean(current && cadExtrudeEndFaceAt(current.model, point, faceNormal));
+  };
   const hitTest = (point: CadDepthScreenPoint) => {
     if (!state?.visible || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
     // A generous constant-screen target remains independent of world zoom.
@@ -134,15 +150,13 @@ export function createCadExtrudeDepthHandle({ requestRender, onInteractionChange
       hovered = next; refresh(); return true;
     },
     begin(pointerId: number, ray: THREE.Ray, point: CadDepthScreenPoint) {
-      if (disposed || inputLocked || gesture || !control || !hitTest(point) || state?.capability.kind !== 'editable') return false;
-      const current = control.getState(); if (!current) return false;
-      const origin = new THREE.Vector3(...state.endpointMm), normal = new THREE.Vector3(...current.model.normalWorld);
-      const station = axisStation(ray, origin, normal); if (station === null) return false;
-      const token = control.begin(current.definitionKey); if (!token) return false;
-      const bounds = current.model.materialBoundsMm;
-      gesture = { pointerId, token, control, frameKey: frameKey(current), anchor: [bounds.minX / 2 + bounds.maxX / 2, bounds.minY / 2 + bounds.maxY / 2],
-        point: origin, normal, station, quantity: current.model.quantityMm, factor: current.model.symmetric ? 2 : 1, latest: current.model.quantityMm };
-      onInteractionChange(true); refresh(); return true;
+      if (!state || !hitTest(point)) return false;
+      return start(pointerId, ray, new THREE.Vector3(...state.endpointMm));
+    },
+    faceAt,
+    /** Drags the end cap from the pressed point, so the face follows the pointer. */
+    beginFace(pointerId: number, ray: THREE.Ray, point: CadNumericPoint3, faceNormal: CadNumericPoint3) {
+      return faceAt(point, faceNormal) && start(pointerId, ray, new THREE.Vector3(...point));
     },
     move(pointerId: number, ray: THREE.Ray) {
       const saved = gesture; if (disposed || inputLocked || !saved || saved.pointerId !== pointerId) return false;

@@ -80,7 +80,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
   // Auto picking still selects whole features (references, datums, sketches) and so owns the same body-level interactions.
   const bodyLevel = pickMode === 'body' || pickMode === 'auto';
   const ownedRegions = bodyLevel && !planePickingOnly ? regionSelection : null;
-  const ownedDepth = bodyLevel && !planePickingOnly && !ownedRegions ? depthControl : null;
+  // Face picking keeps depth drags too: a click without a drag still picks the face.
+  const ownedDepth = (bodyLevel || pickMode === 'face') && !planePickingOnly && !ownedRegions ? depthControl : null;
   const regionPlacementKey = ownedRegions ? JSON.stringify(ownedRegions.placement) : '';
   // Selection-only rerenders may replace wrapper arrays; prepared cells and the
   // resolved placement remain the authoritative region interaction identity.
@@ -519,24 +520,63 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     };
     // Capture runs before OrbitControls' bubble listeners. Only a successful,
     // editor-owned gesture takes navigation and pointer capture away from them.
-    const depthPointerDown = (event: PointerEvent) => {
-      if (depthPointer !== null) { event.preventDefault(); event.stopImmediatePropagation(); return; }
-      if (!data.current.depthControl || data.current.busyInputLocked || data.current.navigationLocked || renderer.getContext().isContextLost() || event.button !== 0 || event.isPrimary === false) return;
-      depth.setView(camera, container.clientWidth, container.clientHeight); setRay(event);
-      depthPointer = event.pointerId;
-      if (!depth.begin(event.pointerId, raycaster.ray, localPixel(event))) { depthPointer = null; return; }
+    // A press on the Pad's end face waits for a real drag; a plain click still picks that face.
+    let facePress: { pointerId: number; x: number; y: number; ray: THREE.Ray; point: [number, number, number]; normal: [number, number, number] } | null = null;
+    const endFaceHit = () => {
+      const hit = raycaster.intersectObjects(pickableBodies.filter(body => body.visible), false)[0];
+      if (!hit?.face) return null;
+      const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+      const point: [number, number, number] = [hit.point.x, hit.point.y, hit.point.z], direction: [number, number, number] = [normal.x, normal.y, normal.z];
+      return depth.faceAt(point, direction) ? { point, normal: direction } : null;
+    };
+    const captureDepth = (event: PointerEvent) => {
       pendingHover = null; down = null; setHover(null); setFeatureHover(null); setRegionHover(null);
       renderer.domElement.focus({ preventScroll: true });
       try { renderer.domElement.setPointerCapture(event.pointerId); }
       catch { depth.cancel(); }
+    };
+    const depthPointerDown = (event: PointerEvent) => {
+      if (depthPointer !== null || facePress) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+      if (!data.current.depthControl || data.current.busyInputLocked || data.current.navigationLocked || renderer.getContext().isContextLost() || event.button !== 0 || event.isPrimary === false || event.shiftKey) return;
+      depth.setView(camera, container.clientWidth, container.clientHeight); setRay(event);
+      depthPointer = event.pointerId;
+      if (!depth.begin(event.pointerId, raycaster.ray, localPixel(event))) {
+        depthPointer = null;
+        const face = data.current.interactionLocked ? null : endFaceHit();
+        if (!face) return;
+        facePress = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, ray: raycaster.ray.clone(), ...face };
+        try { renderer.domElement.setPointerCapture(event.pointerId); } catch { /* The press still ends on this canvas. */ }
+        event.preventDefault(); event.stopImmediatePropagation(); return;
+      }
+      captureDepth(event);
       event.preventDefault(); event.stopImmediatePropagation();
     };
     const depthPointerMove = (event: PointerEvent) => {
+      const press = facePress;
+      if (press && depthPointer === null) {
+        if (event.pointerId === press.pointerId && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 4) {
+          facePress = null; depthPointer = press.pointerId;
+          if (!depth.beginFace(press.pointerId, press.ray, press.point, press.normal)) { depthPointer = null; releaseFacePress(press.pointerId); }
+          else { captureDepth(event); setRay(event); depth.move(event.pointerId, raycaster.ray); }
+        }
+        event.preventDefault(); event.stopImmediatePropagation(); return;
+      }
       if (depthPointer === null) return;
       if (event.pointerId === depthPointer) { setRay(event); depth.move(event.pointerId, raycaster.ray); }
       event.preventDefault(); event.stopImmediatePropagation();
     };
+    const releaseFacePress = (pointerId: number) => {
+      try { if (renderer.domElement.hasPointerCapture?.(pointerId)) renderer.domElement.releasePointerCapture(pointerId); }
+      catch { /* Capture may already have been released. */ }
+    };
     const depthPointerUp = (event: PointerEvent) => {
+      const press = facePress;
+      if (press && event.pointerId === press.pointerId) {
+        // No drag happened: hand the release to the ordinary click pick, as if it had seen the press.
+        facePress = null; releaseFacePress(press.pointerId);
+        if (event.button === 0) { activePointers.add(press.pointerId); down = { pointerId: press.pointerId, button: 0, x: press.x, y: press.y, moved: false }; }
+        return;
+      }
       if (depthPointer === null) return;
       if (event.pointerId === depthPointer && event.button === 0) depth.release(event.pointerId);
       event.preventDefault(); event.stopImmediatePropagation();
@@ -558,7 +598,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       if (box) { event.preventDefault(); event.stopImmediatePropagation(); return; }
       const current = data.current;
       if (!event.shiftKey || event.button !== 0 || event.isPrimary === false || current.pickMode !== 'auto' || current.busyInputLocked || current.interactionLocked || current.navigationLocked || current.planePickingOnly
-        || current.regionSelection || current.depthControl || !current.pickingEnabled || renderer.getContext().isContextLost()) return;
+        || current.regionSelection || depthPointer !== null || facePress || !current.pickingEnabled || renderer.getContext().isContextLost()) return;
       const start = localPixel(event);
       box = { pointerId: event.pointerId, start, end: start };
       pendingHover = null; down = null; setHover(null); setFeatureHover(null);
@@ -604,6 +644,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     };
     const cancelPointerInteraction = (preserveDepth = false, preserveHover = false) => {
       if (!preserveDepth) depth.cancel();
+      if (facePress) { releaseFacePress(facePress.pointerId); facePress = null; }
       endBox();
       pendingHover = null; down = null;
       if (!preserveHover) { setHover(null); setFeatureHover(null); setRegionHover(null); }

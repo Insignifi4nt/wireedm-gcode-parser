@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useId, useState } from 'react';
 import { NavigationMouseIcon, NavigationTrackpadIcon } from '@wire-edm/icons-react';
-import { setCadPreferences, useCadPreferences, type CadPreferences } from '@/features/cad/cadPreferences';
+import { cadDepthHandlesShown, setCadPreferences, useCadPreferences, type CadPreferences } from '@/features/cad/cadPreferences';
 
 const sections = ['Navigation', 'Display'] as const;
 export function CadSettingsPanel() {
@@ -37,8 +37,8 @@ export function CadSettingsPanel() {
         <Input type="checkbox" className="mt-0.5" checked={preferences.showOnPartDimensions} onChange={event => update({ ...preferences, showOnPartDimensions: event.target.checked })} />
         <span><span className="block font-medium">On-part dimensions</span><span className="mt-1 block text-[11px] text-muted-foreground">Show editable dimension controls beside selected sketch geometry.</span></span>
       </label><label className="flex cursor-pointer items-start gap-3 rounded-sm border border-border p-3">
-        <Input type="checkbox" className="mt-0.5" checked={preferences.showDepthHandles === true} onChange={event => update({ ...preferences, showDepthHandles: event.target.checked })} />
-        <span><span className="block font-medium">Extrusion depth handles</span><span className="mt-1 block text-[11px] text-muted-foreground">Drag a Pad or Pocket's depth on the part. Apply keeps the edit; Cancel restores it.</span></span>
+        <Input type="checkbox" className="mt-0.5" checked={cadDepthHandlesShown(preferences)} onChange={event => update({ ...preferences, showDepthHandles: event.target.checked })} />
+        <span><span className="block font-medium">Extrusion depth handles</span><span className="mt-1 block text-[11px] text-muted-foreground">Drag a Pad or Pocket's depth on the part. A selected feature keeps the new depth on release and Esc restores it; in a feature dialog, Apply keeps it.</span></span>
       </label></div>}
     </div>
     {sessionOnly && <div role="status" className="text-[11px] text-amber-200">Applied for this session. Browser preferences could not be saved.</div>}
