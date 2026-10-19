@@ -1,0 +1,26 @@
+{
+  "version": "0.0.726",
+  "previousVersion": "0.0.725",
+  "postCompatibility": "preserved-output-cad-plane-hover-and-depth-drag",
+  "summary": "CAD planes and Pad depth work the CATIA and Onshape way. The XY, XZ and YZ planes stay visible in the design area next to solids, and pointing at a plane in the tree or the design area highlights it in both; pointing at a hidden datum's tree row shows it while the pointer is there. Picking a plane first or choosing Sketch first gives the same sketch, from either the tree or the design area. Extrusion depth handles are now on unless turned off in Settings: select a Pad or distance Pocket, or click its end face, then drag the arrow or the end face itself. The part previews while dragging, release keeps the new Length as one undo step through the usual cancellable edit, and Escape restores it. A Length bound to a parameter sets that parameter, while a formula or a Length that also drives the source placement stays locked. With the feature dialog open, dragging still previews and Apply keeps it.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Behavior change: Extrusion depth handles now default to on for devices that never chose a setting; an explicit off stays off and stored preferences are not rewritten. Outside a feature dialog, releasing a depth drag commits the Length directly as one undoable edit.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. The CAD device preference keeps its key and shape; a missing showDepthHandles now means on. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event or WebMCP tool change. A direct depth drag submits one update-feature edit, plus set-parameter for a parameter-bound Length, through the existing cancellable edit submission and feature preview ownership. Agent-visible reference planes now include the principal planes alongside solids and a hidden datum while a person points at its tree row.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Local full Vitest suite 5873/5875 in 522 files, including tests for plane hover in both directions, the plane and Sketch order matrix, direct depth edits, end face ownership, the direct control's preview, commit, cancel and stale-part handling, face drag and click fallback in the viewport, and one undoable workbench edit; the two failures were existing sketch-editing tests that ran just past the 5 s timeout under load and pass on their own. tsc, oxlint (zero findings), ui:check, the release check and the production build pass. Local Playwright CAD journeys were overloaded by parallel software rendering (cad-kernel passes on one worker); the full Playwright suite runs in pull request CI. Independent Codex review findings fixed with regression tests: a rejected drag value that broke the gesture, a coplanar face of another body editing the selected Pad, canvas plane hover clearing itself, a test depending on an earlier preference, and a pending face press surviving lost pointer capture. The second Codex pass confirmed the fixes."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Plane highlighting in the tree and design area, Sketch in either order, and dragging a Pad's depth on the part.",
+    "changes": [
+      "XY, XZ and YZ stay visible in the design area, and pointing at a plane highlights it in the tree and the design area.",
+      "Pick a plane then choose Sketch, or choose Sketch then pick a plane, from the tree or the design area.",
+      "Drag a selected Pad's arrow or its end face to change its Length; release keeps it as one undo step."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged. Depth handles are on unless turned off in Settings.",
+    "action": "No action needed. Turn off Extrusion depth handles in Settings → CAD → Display to hide them."
+  }
+}

@@ -3,6 +3,8 @@ import { useSyncExternalStore } from 'react';
 export type CadNavigationMode = 'mouse' | 'trackpad';
 export interface CadPreferences { readonly navigationMode: CadNavigationMode; readonly showOnPartDimensions: boolean; readonly showDepthHandles?: boolean }
 export const CAD_PREFERENCES_KEY = 'wire-edm:cad-preferences:v1';
+/** Depth handles are on unless the device explicitly turned them off; stored bytes are never rewritten. */
+export const cadDepthHandlesShown = (preferences: CadPreferences) => preferences.showDepthHandles !== false;
 const defaults: CadPreferences = Object.freeze({ navigationMode: 'mouse', showOnPartDimensions: true });
 let current = defaults;
 let lastRaw: string | null | undefined;

@@ -1,6 +1,6 @@
-import { act, useCallback, useState, useSyncExternalStore } from 'react';
+import { act, useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import type { CadDocument, CadMesh } from '@/domain/cad/cadDocument';
 import { createCadDocument } from '@/domain/cad/cadSchema';
@@ -12,6 +12,7 @@ import { cadFeatureCandidateEdits, cadFeatureCandidateKey, type CadFeaturePrevie
 import type { CadExtrudeDepthControl } from './cadExtrudeDepthInteraction';
 import type { CadRenderedViewControls } from './cadViewportControls';
 import { prepareCadViewportReferences } from './cadViewportReferences';
+import { createCadDirectDepthControl } from './cadDirectDepthControl';
 
 const rendered = vi.hoisted(() => ({ calls: vi.fn<(scene: THREE.Scene, camera: THREE.Camera) => void>(), canvases: [] as HTMLCanvasElement[], lost: false }));
 vi.mock('@/features/editor/captureEditorPreview', () => ({ captureCanvas: () => ({ dataUrl: 'data:image/png;base64,AA==', width: 800, height: 600, source: '3d' }) }));
@@ -179,4 +180,67 @@ it('keeps a settled visible idle depth handle stable across captures while retai
     expect(view!.getState()).toEqual(before);
   }
   expect(h.control().getState()?.gestureActive).toBe(false); expect(h.session.getSnapshot()).toEqual(h.before);
+});
+
+describe('direct end face drag', () => {
+  async function direct() {
+    const session = new CadSession(part()), before = session.getSnapshot();
+    const mesh: CadMesh = { featureId: 'pad', name: 'Pad', positions: [0, 0, 10, 20, 0, 10, 20, 10, 10, 0, 10, 10],
+      normals: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2, 0, 2, 3], edges: [], faceGroups: [{ key: 'face:top', start: 0, count: 6 }], edgeGroups: [], volume: 2000,
+      bounds: { min: [0, 0, 0], max: [20, 10, 10] } };
+    const select = vi.fn(), preview = vi.fn<(command: CadFeaturePreviewCommand) => void>(), gesture = vi.fn<(active: boolean) => void>();
+    function Direct() {
+      const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
+      const control = useMemo(() => createCadDirectDepthControl({ featureId: 'pad', baseVersion: snapshot.version, owner: 'direct',
+        read: () => ({ document: session.getSnapshot().document, documentVersion: session.getSnapshot().version, enabled: true }),
+        preview, commit: edits => { session.edit(edits); }, onGestureChange: gesture }), [snapshot.version]);
+      return <CadViewport meshes={[mesh]} references={[]} referenceVersion={snapshot.version} selectedId="pad" onSelect={select}
+        depthControl={control} interactionLocked={false} navigationLocked={false} onControlsReady={next => { view = next; }} />;
+    }
+    await act(async () => root.render(<Direct />)); await flushFrame();
+    const camera = rendered.calls.mock.calls.at(-1)![1];
+    if (!(camera instanceof THREE.OrthographicCamera)) throw new Error('Missing real camera');
+    const canvas = rendered.canvases[0], captured = new Set<number>();
+    canvas.setPointerCapture = vi.fn((id: number) => captured.add(id)); canvas.hasPointerCapture = vi.fn((id: number) => captured.has(id));
+    canvas.releasePointerCapture = vi.fn((id: number) => captured.delete(id));
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) });
+    // Off the arrow, on the end face: the drag must come from the face itself.
+    const at = (z: number) => { camera.updateMatrixWorld(); const position = new THREE.Vector3(3, 2, z).project(camera); return { x: (position.x + 1) * 400, y: (1 - position.y) * 300 }; };
+    const pointer = async (type: string, position: { x: number; y: number }) => {
+      await act(async () => {
+        const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: position.x, clientY: position.y });
+        Object.defineProperties(event, { pointerId: { value: 1 }, pointerType: { value: 'mouse' }, isPrimary: { value: true } }); canvas.dispatchEvent(event);
+      }); await flushFrame();
+    };
+    return { session, before, select, preview, gesture, captured, at, pointer, camera };
+  }
+
+  it('drags a pressed end face into one undoable Length edit without orbiting', async () => {
+    const h = await direct(), position = h.camera.position.toArray();
+    await h.pointer('pointerdown', h.at(10)); expect(h.gesture).not.toHaveBeenCalled();
+    await h.pointer('pointermove', h.at(16));
+    expect(h.gesture).toHaveBeenLastCalledWith(true);
+    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'candidate', owner: 'direct' }));
+    expect(h.session.getSnapshot().version).toBe(h.before.version);
+    await h.pointer('pointerup', h.at(16));
+    expect(h.session.getSnapshot().document.parameters.depth).toBeCloseTo(16, 6);
+    expect(h.session.getSnapshot().document.features).toEqual(h.before.document.features);
+    expect(h.camera.position.toArray()).toEqual(position); expect(h.select).not.toHaveBeenCalled(); expect(h.captured.size).toBe(0);
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toEqual(h.before.document);
+  });
+
+  it.each(['lostpointercapture', 'pointercancel'])('forgets a pending face press on %s', async type => {
+    const h = await direct();
+    await h.pointer('pointerdown', h.at(10)); await h.pointer(type, h.at(10)); await h.pointer('pointermove', h.at(16));
+    expect(h.gesture).not.toHaveBeenCalled(); expect(h.captured.size).toBe(0);
+    await h.pointer('pointerdown', h.at(10)); await h.pointer('pointermove', h.at(16)); await h.pointer('pointerup', h.at(16));
+    expect(h.session.getSnapshot().document.parameters.depth).toBeCloseTo(16, 6);
+  });
+
+  it('keeps a press and release on the face an ordinary pick', async () => {
+    const h = await direct();
+    await h.pointer('pointerdown', h.at(10)); await h.pointer('pointerup', h.at(10));
+    expect(h.select).toHaveBeenCalledWith('pad'); expect(h.gesture).not.toHaveBeenCalled();
+    expect(h.session.getSnapshot()).toEqual(h.before); expect(h.captured.size).toBe(0);
+  });
 });

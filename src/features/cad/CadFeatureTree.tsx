@@ -3,7 +3,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { AdjustIcon, BooleanIcon, ChamferIcon, CircleIcon, CircularPatternIcon, ClosedPathIcon, CurveIcon, DatumPlaneIcon, ExpandRightIcon, FileBodyIcon, FilletIcon, ImportedBodyIcon, LayersIcon, LinearPatternIcon, LinkIcon, LoftIcon, MirrorIcon, Move3dIcon, PadIcon, PluginIcon, PocketIcon, RectangleIcon, RevolveIcon, ShellIcon, SketchIcon, SlotIcon, SweepIcon, WarningIcon, type WorkbenchIconComponent } from '@wire-edm/icons-react';
-import type { CadBuildResult, CadCurveFeature, CadDocument, CadFeature, CadPlane, CadSketchFeature, CadSketchProfile } from '@/domain/cad/cadDocument';
+import type { CadBuildResult, CadCurveFeature, CadDocument, CadFeature, CadPlane, CadSketchFeature, CadSketchPlane, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { cadFeatureDependencies } from '@/domain/cad/cadFeatureInputs';
 import { featureLabels } from './CadFeatureEditor';
 import { CadContextMenu, type CadContextMenuAnchor, type CadContextMenuItem } from './CadContextMenu';
@@ -57,6 +57,10 @@ export interface CadFeatureTreeProps {
   onCreateSketch?(plane: CadPlane): void;
   selectedReferencePlane?: CadPlane | null;
   onSelectReferencePlane?(plane: CadPlane): void;
+  /** The plane under the pointer in the design area or this tree; its row shares the hover highlight. */
+  hoveredReferencePlane?: CadSketchPlane | null;
+  /** Pointer hover over a reference or datum plane row, and `null` when it leaves. */
+  onHoverReferencePlane?(plane: CadSketchPlane | null): void;
   /** Real parameter operations supplied by the workbench, mounted when expanded. */
   parameterContent?: ReactNode;
   /** Actions for the Parameters branch's context menu; choosing one reveals the branch first. */
@@ -65,7 +69,7 @@ export interface CadFeatureTreeProps {
 
 /** One ordered model history, with links taken from the same reference model as rebuild. */
 export function CadFeatureTree({ document, diagnostics = [], selectedId, selectedProfileId, locked, selectionOnly = false, highlightedFeatureIds = [], onSelect, onConfigure, onEditSketch, onEditCurve, onSelectProfile,
-  selectableFeatureIds, allowPrincipalPlaneSelection = false, onSuppress, onProperties, onChangeSketchPlane, onDelete, onUpdateProfile, onDeleteProfile, onCopyProfile, onContextMenuOpenChange, onRename, onRenamePendingChange, cancelSignal = 0, onCreateSketch, selectedReferencePlane, onSelectReferencePlane, parameterContent, parameterMenu }: CadFeatureTreeProps) {
+  selectableFeatureIds, allowPrincipalPlaneSelection = false, onSuppress, onProperties, onChangeSketchPlane, onDelete, onUpdateProfile, onDeleteProfile, onCopyProfile, onContextMenuOpenChange, onRename, onRenamePendingChange, cancelSignal = 0, onCreateSketch, selectedReferencePlane, onSelectReferencePlane, hoveredReferencePlane = null, onHoverReferencePlane, parameterContent, parameterMenu }: CadFeatureTreeProps) {
 
   const treeId = useId();
   const tree = useRef<HTMLOListElement>(null), returnFocus = useRef<{ documentId: string; target: TreeTarget } | null>(null);
@@ -192,11 +196,13 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
     const expandable = nested.length > 0 || shared.length > 0 || missing.length > 0 || profiles.length > 0;
     const open = expanded.has(feature.id), detailsId = `${treeId}-${position}`;
     const diagnostic = diagnostics.find(diagnostic => diagnostic.featureId === feature.id);
+    const datumPlane = feature.kind === 'datum-plane', planeHovered = datumPlane && typeof hoveredReferencePlane === 'object' && hoveredReferencePlane?.featureId === feature.id;
     return <li key={feature.id} className={`cad-feature-node${highlightedFeatureIds.includes(feature.id) ? ' is-parameter-related' : ''}`} data-cad-feature-id={feature.id} data-cad-history-position={position}>
       <div className="cad-feature-history-row">
         {expandable ? <Button type="button" className="cad-feature-disclosure" disabled={locked || Boolean(renameCurrent)} aria-label={`${open ? 'Collapse' : 'Expand'} ${feature.name}`} aria-expanded={open} aria-controls={open ? detailsId : undefined} onClick={() => toggle(feature.id)}><ExpandRightIcon size={12} /></Button>
           : <span className="cad-feature-disclosure-placeholder" aria-hidden="true" />}
-        {renameCurrent?.target.kind === 'feature' && renameCurrent.target.featureId === feature.id ? renameEditor(feature) : <Button type="button" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)}
+        {renameCurrent?.target.kind === 'feature' && renameCurrent.target.featureId === feature.id ? renameEditor(feature) : <Button type="button" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${planeHovered ? ' is-hovered' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)}
+          onPointerEnter={datumPlane && !feature.suppressed ? () => onHoverReferencePlane?.({ kind: 'datum-plane', featureId: feature.id }) : undefined} onPointerLeave={datumPlane ? () => onHoverReferencePlane?.(null) : undefined}
           aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${readableMessage(diagnostic.message)}` : ''}`}
           onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)}
           onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); else onConfigure?.(feature); }}>
@@ -237,7 +243,8 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
         <ExpandRightIcon size={12} className="cad-tree-hierarchy-toggle" /><DatumPlaneIcon size={13} /><span>Reference</span>
       </Button>
       {branches.has('reference') && <ul id={`${treeId}-reference`} className="cad-reference-plane-list" aria-label="Reference planes">
-        {(['XY', 'XZ', 'YZ'] satisfies CadPlane[]).map(plane => <li key={plane}><Button type="button" className={`cad-tree-row${selectedReferencePlane === plane ? ' is-selected' : ''}`} aria-label={`Select ${plane} plane`} aria-pressed={selectedReferencePlane === plane}
+        {(['XY', 'XZ', 'YZ'] satisfies CadPlane[]).map(plane => <li key={plane}><Button type="button" className={`cad-tree-row${selectedReferencePlane === plane ? ' is-selected' : ''}${hoveredReferencePlane === plane ? ' is-hovered' : ''}`} aria-label={`Select ${plane} plane`} aria-pressed={selectedReferencePlane === plane}
+          onPointerEnter={() => onHoverReferencePlane?.(plane)} onPointerLeave={() => onHoverReferencePlane?.(null)}
           disabled={locked || selectionOnly && !allowPrincipalPlaneSelection || Boolean(renameCurrent) || !onSelectReferencePlane} onClick={() => onSelectReferencePlane?.(plane)}><DatumPlaneIcon size={12} /><span>{plane} plane</span></Button>{onCreateSketch && <Button type="button" disabled={locked || selectionOnly || Boolean(renameCurrent)}
           aria-label={`Create sketch on ${plane} plane`} title={`Create sketch on ${plane} plane`} onClick={() => onCreateSketch(plane)}><SketchIcon size={12} /></Button>}</li>)}
       </ul>}

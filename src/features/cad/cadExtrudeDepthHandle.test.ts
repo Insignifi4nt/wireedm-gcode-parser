@@ -277,3 +277,24 @@ it('exposes a contextual end-on or formula lock without starting a gesture or am
     expect(interactions).not.toHaveBeenCalled();
   } finally { handle.dispose(); }
 });
+
+it('drags the end face from the pressed point and refuses side faces or points off the cap', () => {
+  const h = control(), camera = cameraAt(), interaction = vi.fn();
+  const handle = createCadExtrudeDepthHandle({ requestRender() {}, onInteractionChange: interaction });
+  try {
+    handle.setView(camera, 800, 600); handle.update(h.value);
+    const pressed = new THREE.Vector3(33, 12, 10);
+    expect(handle.faceAt([33, 12, 10], [0, 0, 1])).toBe(true);
+    expect(handle.faceAt([33, 12, 10], [1, 0, 0])).toBe(false);
+    expect(handle.faceAt([60, 12, 10], [0, 0, 1])).toBe(false);
+    expect(handle.faceAt([33, 12, 4], [0, 0, 1])).toBe(false);
+    expect(handle.beginFace(3, rayFor(camera, pressed), [33, 12, 4], [0, 0, 1])).toBe(false);
+    expect(handle.beginFace(3, rayFor(camera, pressed), [33, 12, 10], [0, 0, 1])).toBe(true);
+    expect(interaction).toHaveBeenLastCalledWith(true);
+    expect(handle.move(3, rayFor(camera, new THREE.Vector3(33, 12, 16)))).toBe(true);
+    expect(h.change).toHaveBeenLastCalledWith(expect.closeTo(16, 9));
+    expect(handle.release(3)).toBe(true); expect(interaction).toHaveBeenLastCalledWith(false);
+    handle.update(h.value, true);
+    expect(handle.faceAt([33, 12, 16], [0, 0, 1])).toBe(false);
+  } finally { handle.dispose(); }
+});

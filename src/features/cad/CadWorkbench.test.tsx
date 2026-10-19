@@ -790,19 +790,40 @@ describe('CAD sketch interaction', () => {
   });
 
   it('qualifies depth handles by device preference and selection ownership without changing the accepted part', async () => {
-    setCadPreferences({ navigationMode: 'trackpad', showOnPartDimensions: false });
+    setCadPreferences({ navigationMode: 'trackpad', showOnPartDimensions: false, showDepthHandles: false });
     const initial = solidDocument(); await mount(initial, { build: topologyBuild, buildState: 'ready' });
     await act(async () => viewport().apply({ kind: 'select-feature', featureId: 'pad' })); await act(async () => { container.querySelector('.cad-tree-row[aria-pressed="true"]')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); });
     expect(viewportDepth).toBeNull();
-    await act(async () => setCadPreferences({ navigationMode: 'trackpad', showOnPartDimensions: false, showDepthHandles: true }));
+    await act(async () => setCadPreferences({ navigationMode: 'trackpad', showOnPartDimensions: false }));
     const previous = viewportDepth;
-    if (!previous) throw new Error('Explicit preference must expose the current editor handle.');
+    if (!previous) throw new Error('Depth handles are shown unless the device turned them off.');
     await click('Pick closed areas from model'); expect(viewportDepth).toBeNull();
     await click('Cancel area selection'); expect(viewportDepth).toBe(previous);
     await act(async () => setCadPreferences({ navigationMode: 'trackpad', showOnPartDimensions: false, showDepthHandles: false }));
     expect(viewportDepth).toBeNull(); expect(currentDocument).toBe(initial);
     await act(async () => replaceDocument({ ...initial, name: 'Another accepted part' }));
     expect(previous.getState()).toBeNull(); expect(viewportDepth).toBeNull(); expect(currentDocument.name).toBe('Another accepted part');
+  });
+
+  it('drags a selected Pad or its picked end face into one undoable Length edit without a dialog', async () => {
+    setCadPreferences({ navigationMode: 'mouse', showOnPartDimensions: true });
+    const initial = solidDocument(), preview = vi.fn<NonNullable<CadWorkbenchProps['onFeaturePreview']>>();
+    await mount(initial, { build: topologyBuild, buildState: 'ready', onFeaturePreview: preview });
+    await selectTopology('edge'); expect(viewportDepth).toBeNull();
+    await selectTopology('face');
+    const control = viewportDepth; if (!control) throw new Error('A picked end face must expose its Pad depth.');
+    expect(control.featureId).toBe('pad'); expect(container.querySelector('[aria-label="Length"]')).toBeNull();
+    const token = control.begin(control.getState()?.definitionKey ?? ''); if (!token) throw new Error('Expected a drag.');
+    expect(currentSession.getSnapshot().workflowOpen).toBe(false);
+    await act(async () => { control.setQuantity(token, 25); });
+    expect(currentSession.getSnapshot().workflowOpen).toBe(true); expect(currentDocument).toBe(initial);
+    expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'candidate', owner: control.owner }));
+    await act(async () => { control.release(token); });
+    expect(currentDocument.features[1]).toEqual({ ...initial.features[1], distance: 25 });
+    expect(currentSession.getSnapshot()).toMatchObject({ canUndo: true, workflowOpen: false });
+    expect(preview).toHaveBeenLastCalledWith({ kind: 'clear', owner: control.owner });
+    expect(viewportDepth?.featureId).toBe('pad'); expect(viewportDepth).not.toBe(control);
+    await act(async () => currentSession.undo()); expect(currentDocument).toEqual(initial);
   });
 
   it('keeps the correlated quantity preview while choosing areas and cancels only that choice before one Apply/Undo', async () => {
