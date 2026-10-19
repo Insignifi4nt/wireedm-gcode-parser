@@ -79,6 +79,8 @@ describe('SimulationPanel saved-process integration', () => {
     expect(container.textContent).toContain('Saved UPID');
     const savedTime = container.querySelector<HTMLElement>(`[aria-description="${props.savedAt}"]`);
     expect(savedTime).not.toBeNull();
+    // The saved time lives in the information popover; a hidden element cannot take focus.
+    await act(async () => button('Simulation information').click());
     await act(async () => savedTime?.focus());
     expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(props.savedAt);
     expect(container.textContent).toContain('Unsaved editor changes are excluded.');

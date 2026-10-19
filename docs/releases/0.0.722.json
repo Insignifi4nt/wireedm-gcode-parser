@@ -1,0 +1,24 @@
+{
+  "version": "0.0.722",
+  "previousVersion": "0.0.721",
+  "postCompatibility": "preserved-tooling-only",
+  "summary": "Updates dependencies to their latest releases on Node 24: Playwright 1.64, Vite 8.3.4, Tailwind CSS 4.3.3, tailwind-merge 3, jsdom 30, marked 18.1, three 0.186.1, and TypeScript 7 for the icon package.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Development and rendering dependencies only. tailwind-merge 3 targets Tailwind CSS 4, which the app already uses. TypeScript 7 exports only its API, so the icon package scripts locate tsc through its declared bin. Maintainers need Node 24.15 or newer: jsdom 30 requires it, so the package engines now declare ^24.15.0 || >=26.0.0. @types/node stays on the 24 line to match the supported runtime.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. marked renders the public authoring documentation, whose generated pages are checked by post:docs:check.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change and no cleanup of user files.",
+    "verification": "Run on Node 24.20.0 with npm 11.19.0. Native tsc -b, npm run lint with zero findings, the shared UI gate, icon checks (build, packed consumers and TypeScript 7 declarations), post-authoring docs check, post conformance, machine-package validation and the production build with third-party source verification pass. Full unit suite: 521 files and 5,892 tests pass. One test focused the saved-time tooltip while its information popover was hidden; jsdom 30 now refuses focus there as browsers do, so the test opens the popover first. All 186 browser journeys pass against the production build with Playwright 1.64 (one journey is skipped as before)."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Updated libraries; no workbench behavior changes.",
+    "changes": [
+      "The workbench is built with the latest releases of its libraries."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

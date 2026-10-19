@@ -2,7 +2,7 @@
 
 The repository uses Node 24 LTS. `.node-version` is the shared major selection for local tooling and both GitHub workflows; `check-latest` selects its latest available patch. The package and lock-root engine declarations must agree. The application runs on the user's device in a browser and does not require Node to author or import parts.
 
-Use the current official Node 24 release for maintenance. On 14 October 2026, the local gate used Node 24.22.0 and npm 11.19.1. The portable Windows distribution was checked against the official release SHA-256 manifest before use; it did not replace the user's system installation. A fresh shell must select that runtime explicitly until the local installation is updated.
+Use the current official Node 24 release for maintenance. The engines require Node 24.15 or newer because jsdom 30 and its dependencies do. On 19 October 2026 the local gate used the installed Node 24.20.0 with npm 11.19.0; the separate Node 22 installation was removed so shells no longer pick it up first.
 
 GitHub jobs use `ubuntu-24.04` to keep runner image migrations separate from application changes. Checkout, setup-node, artifact and Pages actions use their current Node 24 runtime releases. Review action major upgrades and their permission/artifact contracts; do not add write permissions to the PR verification job.
 
