@@ -1,0 +1,25 @@
+{
+  "version": "0.0.727",
+  "previousVersion": "0.0.726",
+  "postCompatibility": "preserved-output-patched-node-runtime-floor",
+  "summary": "Repository maintenance and GitHub builds now use the exact patched Node 24.22.1 LTS release. The declared range and npm-managed command gate accept patched Node 24 and Node 26 releases only, so earlier vulnerable patches, Node 25 and unreviewed future major releases are rejected from normal npm workflows instead of being silently selected. The deployed application remains a static, client-only GitHub Pages build.",
+  "warning": "Potential maintainer compatibility change: npm-managed repository commands now require Node 24.22.1 or later on the Node 24 line, or Node 26.12.1 or later on the Node 26 line; Node 25 and future majors are not accepted. Direct node commands rely on the selected .node-version runtime. No breaking change for installed posts, machine packages, saved revisions, CAD files, browser-cache or folder storage, or controller output. Installed packages and saved revisions are not rewritten.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event or WebMCP tool change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, saved revision, browser-cache, folder storage, migration, backup or transaction-journal change. The repository development runtime floor changes only.",
+    "verification": "Verified locally with the official Node 24.22.1 Windows x64 archive (SHA-256 D2046D28C2C3DCD211AC5145C0BF30E2047EF9DFB306693C8C6E2ECCD8B95FA5 matched Node's SHASUMS256.txt) and npm 11.19.1. Node 24.19.0 is rejected with EBADDEVENGINES before root and standalone icon-package commands; 24.22.1 accepts both. Official Node 26.12.1 with npm 11.20.0 also accepts the retained compatibility range and release check. Clean npm ci reports zero vulnerabilities. Branch/title naming, release check against origin/main 0dd0bc58ae7e4a3cdbb34281cc69d7598b4aaaef, oxlint with zero findings, ui:check and complete icon checks pass. Full Vitest: 522 files and 5,875 tests pass. Native tsc, Vite 8.3.4 production build, 182 documentation checks and pinned third-party source packaging pass. The lock still resolves React/DOM 19.3.1 and development Undici 8.12.2. Public Pages deployment 7181046844 came from 0dd0bc58 through successful workflow 39298858354 on 19 October; that prior build log used Node 24.22.0, but the deployed result is static browser output and no Node server remains running. Pull request CI supplies the fresh hosted Node 24.22.1 and browser-journey evidence."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Maintenance builds now require the patched Node 24.22.1 LTS runtime.",
+    "changes": [
+      "Pin repository and GitHub workflow builds to Node 24.22.1.",
+      "Reject vulnerable Node 24 and Node 26 patches, Node 25, and unreviewed future Node major releases from npm-managed maintenance commands."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files, storage and controller output are unchanged. This maintenance requirement affects repository contributors, not the client-only hosted app.",
+    "action": "Maintainers must use Node 24.22.1 or later on Node 24, or Node 26.12.1 or later on Node 26, before running repository commands. Hosted-app users do not need to take action."
+  }
+}
