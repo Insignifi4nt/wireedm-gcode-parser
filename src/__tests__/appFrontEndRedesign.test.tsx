@@ -26,7 +26,7 @@ describe('App front-end redesign', () => {
     window.showDirectoryPicker = undefined;
     await renderApp(context);
 
-    expect(container.textContent).toContain('Workbench');
+    expect(container.querySelector('[data-app-header]')?.textContent).toContain('broCAD/M');
     expect(container.querySelector('button[aria-label="Import DXF as Path Project"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="Open Machine Program"]')).not.toBeNull();
     const programInput = container.querySelector<HTMLInputElement>('input[aria-label="Machine program file"]');
