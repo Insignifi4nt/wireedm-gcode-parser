@@ -1,4 +1,7 @@
 import { Tooltip } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
+import { AgentImportDialog } from './AgentImportDialog';
+import { AgentImportFile } from './agentImportFile';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Type, type Static, type TSchema } from '@sinclair/typebox';
 import type { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
@@ -23,7 +26,11 @@ type App = ReturnType<typeof useWorkbenchAppController>;
 const version = { expectedVersion: identifier };
 const draftVersion = { draftVersion: identifier };
 const controllerInput = object({ ...version, ...draftVersion, machineId: identifier, bindingId: identifier });
-const source = object({ fileName: Type.String({ minLength: 1, maxLength: 200, pattern: '^[^/\\\\]+$' }), text: Type.String({ minLength: 1, maxLength: 1024 * 1024 }) });
+const source = Type.Union([
+  object({ fileName: Type.String({ minLength: 1, maxLength: 200, pattern: '^[^/\\\\]+$' }), text: Type.String({ minLength: 1, maxLength: 1024 * 1024 }) }),
+  object({ fileToken: identifier })
+]);
+const packageInput = Type.Union([machinePackageSource, object({ fileToken: identifier })]);
 const activation = Type.Union([Type.Literal('package'), Type.Literal('keep-current')]);
 const resolution = Type.Union([
   object({ kind: Type.Literal('install-new') }),
@@ -33,6 +40,8 @@ const resolution = Type.Union([
 
 export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnapshot | null>, isExternalBusy: () => boolean = () => false) {
   const busy = useRef(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [inputFiles] = useState(() => new AgentImportFile());
   const preparedDxf = useRef<{ id: string; workbench: ConnectedWorkbenchCatalog; preparation: DxfImportPreparation } | null>(null);
   const preparedPackage = useRef<{ id: string; prepared: PreparedMachinePackageInstallation } | null>(null);
   const artifact = useRef<ControllerProgramArtifact | null>(null);
@@ -40,6 +49,8 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
   const workbenchVersion = useMemo(() => crypto.randomUUID(), [app.connectedWorkbench]);
   const latestVersion = useRef(workbenchVersion);
   useLayoutEffect(() => {
+    inputFiles.clear();
+    setImportOpen(false);
     latestVersion.current = workbenchVersion;
     if (preparedDxf.current?.workbench !== app.connectedWorkbench) preparedDxf.current = null;
     if (preparedPackage.current && !isPreparedMachinePackageInstallationCurrent(preparedPackage.current.prepared, app.connectedWorkbench)) preparedPackage.current = null;
@@ -48,7 +59,7 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     if (capture) window.setTimeout(() => URL.revokeObjectURL(capture.previewUrl), 60_000);
   }, [capture]);
 
-  const isBusy = () => busy.current || app.workbenchInteractionLocked || isExternalBusy();
+  const isBusy = () => importOpen || busy.current || app.workbenchInteractionLocked || isExternalBusy();
   function connected(expected?: string) {
     if (isBusy()) throw new ToolError('BUSY', 'Another workbench operation is running.');
     if (!app.connectedWorkbench) throw new ToolError('WORKBENCH_UNAVAILABLE', 'Wait for the workbench to open.');
@@ -74,9 +85,10 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
   function checkVersion(expected: string) {
     if (expected !== latestVersion.current) throw new ToolError('STALE_STATE', 'Read edm_workflow_context again.');
   }
-  function textInput(inline: Static<typeof source> | undefined, signal: AbortSignal) {
+  async function textInput(inline: Static<typeof source> | undefined, signal: AbortSignal) {
     signal.throwIfAborted();
-    if (!inline) throw new ToolError('FILE_REQUIRED', 'Provide source: { fileName, text }. For a larger file, use the ordinary Import control.');
+    if (!inline) throw new ToolError('FILE_REQUIRED', 'Provide source:{fileName,text} or use edm_request_import_file, attach the file, then pass source:{fileToken}.');
+    if ('fileToken' in inline) return inputFiles.text(inline.fileToken, signal);
     if (new TextEncoder().encode(inline.text).length > 1024 * 1024) throw new ToolError('INPUT_TOO_LARGE', 'Inline text is limited to 1 MiB UTF-8. Use the ordinary Import control for larger files.');
     return inline;
   }
@@ -97,11 +109,16 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     return result;
   }
   const tools = [
-    siteTool('edm_workflow_context', 'Read mutation version, direct-input limits, prepared imports and the most recent generated artifact. Import tools accept supplied text or package base64; browser storage belongs to this browser.', object({}), () => ({
+    mutation('edm_request_import_file', 'Open the browser-local attachment dialog. Attach a file with its native file input, then read edm_workflow_context.inputFile and pass source:{fileToken} to DXF preparation, UPID import or machine-package preparation. No file contents in tool-call text. Does not import, install or save. Tokens expire on replacement, reload or storage changes.', object(version), input => {
+      checkVersion(input.expectedVersion);
+      setImportOpen(true);
+      return { status: 'attachment-requested', inputLabel: 'Agent import file', nextStep: 'Attach the file through the visible file input, then read edm_workflow_context.inputFile.' };
+    }),
+    siteTool('edm_workflow_context', 'Read mutation version, input limits, the attached browser-local file token, prepared imports and the generated artifact. Imports accept source:{fileToken} or inline text/package base64. Browser storage belongs to this browser.', object({}), () => ({
       version: workbenchVersion, busy: isBusy(),
-      inputFile: null,
+      inputFile: inputFiles.summary(),
       recovery: app.recoveryControls ? { source: app.recoveryControls.source, receipt: app.recoveryControls.receipt } : null,
-      inputLimits: { textUtf8Bytes: 1024 * 1024, machinePackageBytes: 32 * 1024 * 1024, packageEncoding: 'base64' },
+      inputLimits: { textUtf8Bytes: 1024 * 1024, attachedFileBytes: 64 * 1024 * 1024, machinePackageBytes: 32 * 1024 * 1024, packageEncoding: 'base64', fileAttachmentTool: 'edm_request_import_file' },
       dxfPreparationId: preparedDxf.current?.id ?? null, packagePreparationId: preparedPackage.current?.id ?? null,
       artifact: artifact.current ? artifactSummary(artifact.current) : null,
       capture,
@@ -122,7 +139,7 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
         try { return await app.handleExportRecovery({ ...input, signal }); }
         finally { busy.current = false; }
       }, false),
-    mutation('edm_prepare_dxf', 'Preview supplied DXF source:{fileName,text}, at most 1 MiB UTF-8. Returns unit choices and millimeter bounds for explicit review before import. Does not save a project. Use ordinary Import for larger files.', object({ ...version, source: Type.Optional(source) }), async (input, signal) => {
+    mutation('edm_prepare_dxf', 'Preview DXF source:{fileToken} from edm_request_import_file, or source:{fileName,text} at most 1 MiB UTF-8 inline. Returns unit choices and millimeter bounds for explicit review. Does not save a project. Attached files use ordinary DXF limits.', object({ ...version, source: Type.Optional(source) }), async (input, signal) => {
       checkVersion(input.expectedVersion);
       preparedDxf.current = null;
       const workbench = app.connectedWorkbench!;
@@ -163,7 +180,7 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
         return openImported(result.workbench, result.project.id);
       });
     }),
-    mutation('edm_import_upid', 'Import and open supplied portable UPID JSON source:{fileName,text}, at most 1 MiB UTF-8. Creates a new project; never replaces an existing draft. Use ordinary Import for larger files.', object({ ...version, source: Type.Optional(source) }), async (input, signal) => {
+    mutation('edm_import_upid', 'Import and open portable UPID JSON via source:{fileToken} from edm_request_import_file, or source:{fileName,text} at most 1 MiB UTF-8 inline. Attached files use the ordinary 64 MiB limit. Creates a new project; preserves dirty-draft and workflow guards.', object({ ...version, source: Type.Optional(source) }), async (input, signal) => {
       checkVersion(input.expectedVersion);
       const value = await textInput(input.source, signal);
       checkVersion(input.expectedVersion);
@@ -219,10 +236,10 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
       return result.ok ? { executablePlan: true, version: current.version, dirty: current.dirty, requirements: result.plan.requirements, ...page(result.plan.events, input) }
         : { executablePlan: false, version: current.version, ...page(result.diagnostics, input, summarizeDiagnostic) };
     }),
-    mutation('edm_prepare_machine_package', 'Validate and preview a supplied complete .wireedm-package via source:{fileName,base64}. Use plain canonical padded base64 archive bytes, at most 32 MiB decoded; no paths, URLs or standalone posts. Returns machine identity, setup, post hashes and collision choices before installation. Does not install.', object({ ...version, source: machinePackageSource }), async (input, signal) => {
+    mutation('edm_prepare_machine_package', 'Validate and preview a complete .wireedm-package via source:{fileToken} from edm_request_import_file or source:{fileName,base64}. Canonical padded base64, at most 32 MiB decoded; no paths, URLs or standalone posts. Returns machine identity, setup, post hashes and collision choices before installation. Does not install.', object({ ...version, source: packageInput }), async (input, signal) => {
       checkVersion(input.expectedVersion);
       preparedPackage.current = null;
-      const packageFile = await machinePackageInputFile(input.source, signal);
+      const packageFile = 'fileToken' in input.source ? inputFiles.get(input.source.fileToken) : await machinePackageInputFile(input.source, signal);
       checkVersion(input.expectedVersion);
       const result = await app.handlePrepareMachinePackage(packageFile);
       signal.throwIfAborted();
@@ -330,7 +347,12 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     return current;
   }
   const previewControl = capture && <Tooltip content={`Download captured ${capture.source.toUpperCase()} preview (${capture.contentSource === 'saved-project' ? 'saved project' : capture.dirty ? 'unsaved draft' : 'saved draft'})`}><a className="px-2 text-xs text-muted-foreground underline" href={capture.previewUrl} download={capture.fileName} >Preview PNG</a></Tooltip>;
-  return { tools, previewControl, isBusy };
+  const importControl = importOpen && <AgentImportDialog onClose={() => setImportOpen(false)} onFile={file => {
+    if (busy.current || app.workbenchInteractionLocked || isExternalBusy() || !app.connectedWorkbench) throw new ToolError('BUSY', 'Wait for the current workbench operation before attaching a file.');
+    inputFiles.stage(file);
+  }} />;
+  const attachControl = <Button type="button" variant="outline" disabled={isBusy() || !app.connectedWorkbench} onClick={() => { if (!isBusy() && app.connectedWorkbench) setImportOpen(true); }}>Attach agent import file</Button>;
+  return { tools, previewControl, importControl, attachControl, isBusy };
 }
 
 function artifactSummary(artifact: ControllerProgramArtifact) {

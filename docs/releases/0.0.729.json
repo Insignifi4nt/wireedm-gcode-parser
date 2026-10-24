@@ -1,0 +1,22 @@
+{
+  "version": "0.0.729",
+  "previousVersion": "0.0.728",
+  "postCompatibility": "preserved-browser-local-agent-file-input",
+  "summary": "Agents can import large DXF, UPID and machine-package files through browser-local attachment tokens without embedding file contents in tool calls.",
+  "warning": "Attachment tokens expire on replacement, reload or a changed workbench. Attaching a file does not import or install it. Existing projects, packages and revisions are preserved; no post or controller output changes.",
+  "checklist": {
+    "schema": "Adds source:{fileToken} as an alternative to existing inline tool input. No project, UPID, saved revision, machine-package or post schema changes.",
+    "events": "No execution-event changes. New edm_request_import_file opens a native attachment dialog. DXF unit review and package preview/installation remain separate operations.",
+    "capabilities": "No machine or post capabilities change. Local immutable File tokens use ordinary import limits: DXF 16 MiB, UPID 64 MiB and packages 32 MiB. Inline limits remain supported.",
+    "auditAndOutput": "No export, compiler or audit changes. Attachment tokens do not permit arbitrary paths, remote URLs or another tab's files.",
+    "installationAndStorage": "Shared import/installation operations retain draft/version/cancellation checks and browser/folder transactions. No automatic changes to installed posts, original files or saved revisions.",
+    "verification": "117 WebMCP tests pass, including oversized input, replacement, cancellation, stale tokens, unit preview and package preparation without installation. Chromium imports a 4,363-segment multi-megabyte UPID and a DXF exceeding the agent script budget through token-only calls, verifies geometry, then reloads. Native TypeScript, lint and shared UI checks pass. Software checks do not establish physical machine verification."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Attach large files for agent imports without pasting their contents.",
+    "changes": ["Open an attachment dialog with edm_request_import_file or the Agent activity panel.", "Pass the returned file token to normal DXF, UPID or machine-package preparation and import tools."],
+    "compatibility": "Existing inline calls, installed packages and saved revisions remain supported. Attachment tokens are temporary and local to this tab.",
+    "action": "Attach the file, read edm_workflow_context.inputFile and pass source:{fileToken}. Review units or the package preview before committing."
+  }
+}
