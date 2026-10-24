@@ -270,6 +270,7 @@ function WorkbenchApp({ services }: AppProps) {
           submitting={app.dxfReimportStatus === 'importing'}
         />
       )}
+      {agentActions.importControl}
     </AppShell>
   );
 }

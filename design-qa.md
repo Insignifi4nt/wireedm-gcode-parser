@@ -33,3 +33,5 @@ No remaining blocking visual findings. The source assets are raster PNGs; a futu
 ## Behavior checks
 
 Seven focused app-entry tests and 27 Chromium journeys pass, including desktop/phone first-run import, dashboard-only branding through CAD/CAM navigation, failed artwork recovery, reduced motion and responsive editor layouts. Production build/native TypeScript, zero-finding lint, UI ownership checks and icon integration audit pass. No storage, post, revision or controller-output behavior changes.
+
+Combined release verification also passes 138 focused tests and 12 Chromium journeys. The app retains the agent attachment dialog alongside the new dashboard; removing the welcome popup must not remove other application dialogs. The large-file journey checks dialog visibility before attaching its DXF and multi-megabyte UPID.
