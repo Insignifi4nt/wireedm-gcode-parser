@@ -640,7 +640,9 @@ export function saveStoredWireEdmJobRevision(
   options: {
     /** Controller operations require the candidate's exact setup to remain active. */
     readonly requireCurrentActiveSetup?: boolean;
-    /** Runs under the mutation lock immediately before the first journal write. */
+    /** Repeated exports can reuse the latest exact validated snapshot without another write. */
+    readonly reuseMatchingRevision?: boolean;
+    /** Runs under the mutation lock immediately before the first durable write. */
     readonly beforeWrite?: () => void;
   } = {}
 ): Promise<SaveStoredWireEdmJobRevisionResult> {
@@ -676,6 +678,19 @@ export function saveStoredWireEdmJobRevision(
         message: `Saved revision ${candidate.revisionId} was created from stale project ${project.id}.`,
         projectId: project.id
       });
+    }
+    if (options.requireCurrentActiveSetup) {
+      const current = await verifyCurrentActiveSetup(workbench.adapter, candidate);
+      if (!current.ok) return current;
+    }
+    const latestId = project.savedRevisionIds.at(-1);
+    if (options.reuseMatchingRevision && latestId) {
+      const latest = await loadSavedWireEdmJobRevision(workbench.adapter, project.id, latestId);
+      if (latest.ok && latest.revision.engineVersion === candidate.engineVersion &&
+          canonicalJson(latest.revision.hashes) === canonicalJson(candidate.hashes) &&
+          canonicalJson({ ...latest.revision.project, updatedAt: project.updatedAt, savedRevisionIds: project.savedRevisionIds }) === canonicalJson(project)) {
+        return { ok: true, path: latest.path, revision: latest.revision, project, workbench };
+      }
     }
 
     const path = workbenchProjectRevisionPath(project.id, candidate.revisionId);
@@ -750,6 +765,34 @@ export function saveStoredWireEdmJobRevision(
     if (options.requireCurrentActiveSetup) {
       const current = await verifyCurrentActiveSetup(workbench.adapter, candidate);
       if (!current.ok) return current;
+    }
+    if (workbench.adapter.commitTextChanges) {
+      // Include setup and recovery-file expectations in the same database
+      // transaction as the revision/index commit. Equal images are read guards.
+      const guards = await Promise.all([
+        'posts/library.json', 'machines/library.json', 'transactions/saved-revision.json',
+        'transactions/workbench-files.json', 'transactions/project-trash.json', 'transactions/machine-package-install.json'
+      ].map(async guardPath => {
+        const text = await readExact(workbench.adapter, guardPath);
+        return { path: guardPath, previous: text, next: text };
+      }));
+      let boundaryRejected = false;
+      try {
+        await workbench.adapter.commitTextChanges([
+          ...transactionSnapshots.map(snapshot => ({ path: snapshot.path, previous: snapshot.contents, next: snapshot.writtenContents })),
+          ...guards
+        ], { beforeWrite: () => {
+          try { options.beforeWrite?.(); }
+          catch (error) { boundaryRejected = true; throw error; }
+        } });
+      } catch (error) {
+        if (boundaryRejected) throw error;
+        return catalogMutationFailure(catalogStorageAccessFailure('write', path, error));
+      }
+      return {
+        ok: true, path, revision: persistedSuccess(candidate), project: nextProject.project,
+        workbench: Object.freeze({ ...workbench, manifest: nextManifest })
+      };
     }
     const transactionValues = {
       projectId: project.id,

@@ -6,6 +6,7 @@ const useExistingBuild = process.env.PLAYWRIGHT_USE_EXISTING_BUILD === 'true';
 const previewCommand = 'npx vite preview --host 127.0.0.1 --port 3107 --strictPort';
 
 export default defineConfig({
+  tsconfig: './tsconfig.app.json',
   testDir: './e2e',
   fullyParallel: true,
   reporter: [['list'], ['html', { open: 'never' }]],

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { confirmPendingDxfImport } from './dxf-import';
-import { readWorkbenchCacheFile } from './fixtures/workbench-cache';
+import { readWorkbenchCacheFile, readWorkbenchCache } from './fixtures/workbench-cache';
 
 test('reviews skipped layout geometry and warnings before storing only the model-space path', async ({ page }) => {
   await openReadyWorkbench(page);
@@ -96,14 +96,7 @@ async function openReadyWorkbench(page: Page) {
 }
 
 async function workbenchStorageSnapshot(page: Page) {
-  return page.evaluate(() => {
-    const entries: Array<[string, string | null]> = [];
-    for (let index = 0; index < localStorage.length; index += 1) {
-      const key = localStorage.key(index);
-      if (key?.startsWith('wire-edm-workbench:')) entries.push([key, localStorage.getItem(key)]);
-    }
-    return entries.sort(([left], [right]) => left.localeCompare(right));
-  });
+  return readWorkbenchCache(page);
 }
 
 function lineDxf(unitsCode?: number) {

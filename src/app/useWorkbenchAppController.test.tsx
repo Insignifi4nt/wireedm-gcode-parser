@@ -27,6 +27,7 @@ const testDxfServices = createDxfImportServices(directDxfProcessor);
 import { useWorkbenchAppController } from './useWorkbenchAppController';
 import { MAX_PORTABLE_UPID_BYTES } from '@/domain/upid/portableUpidProject';
 import { DXF_RESOURCE_LIMITS } from '@/domain/dxf/dxfResourceLimits';
+import { waitForWorkbenchInitialization } from '@/__tests__/appServiceTestSupport';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -55,6 +56,10 @@ describe('workbench controller asynchronous operations', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => root?.render(<Harness />));
+    await waitForWorkbenchInitialization(() => {
+      if (!current) throw new Error('Controller has not mounted.');
+      return current;
+    });
     return () => {
       if (!current) throw new Error('Controller has not mounted.');
       return current;
@@ -112,6 +117,7 @@ describe('workbench controller asynchronous operations', () => {
     const result = await act(async () => read().handleGenerateControllerArtifact({ machineId: 'quota.machine' }));
     if (result.ok) throw new Error('Expected generation to fail');
     const diagnostic = result.error;
+    expect(diagnostic).toMatchObject({ code: 'CONTROLLER_ARTIFACT_REVISION_SAVE_FAILED', causeCode: 'SAVED_REVISION_CATALOG_ROLLBACK_FAILED' });
     expect(diagnostic.message).toContain('rollback operation(s) also failed');
     const journal = await exact(adapter, SAVED_REVISION_TRANSACTION_PATH);
     if (journal === null) throw new Error('Expected a retained recovery journal');

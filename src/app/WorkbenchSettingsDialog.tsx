@@ -110,7 +110,7 @@ export function WorkbenchSettingsDialog({
                   {(connectedWorkbench?.adapter.kind === 'directory' || !connectedWorkbench) && <Button size="md" className="mt-3 mr-2" disabled={storageSwitchDisabled || connecting} onClick={onUseBrowserCache} type="button" variant="outline">Use browser cache</Button>}
                   {canConnect && <Button size="md" className="mt-3" disabled={storageSwitchDisabled} onClick={onConnectWorkbench} type="button" variant="outline"><RefreshIcon />{storageActionLabel}</Button>}
                 </section>
-                {connectedWorkbench && <WorkbenchBackupPanel workbench={connectedWorkbench} disabled={storageSwitchDisabled || connecting} />}
+                {connectedWorkbench && <WorkbenchBackupPanel workbench={connectedWorkbench} disabled={interactionLocked || connecting} mutationsDisabled={storageSwitchDisabled || connecting} />}
                 <RecoveryExportPanel recovery={recovery ?? null} disabled={interactionLocked || connecting} />
                 {connectedWorkbench && <StorageReviewPanel workbench={connectedWorkbench} disabled={interactionLocked || connecting} />}
               </div>

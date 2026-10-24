@@ -3,6 +3,8 @@ import { recoveryStorageSource, type RecoveryStorageSource } from './workbenchRe
 import { MAX_STORAGE_INVENTORY_ENTRIES } from './workbenchStorageAdapter';
 
 import { createBrowserCacheAdapter } from './browserCacheAdapter';
+import { combinedBrowserStorageRecovery, openIndexedDbWorkbench, openReadOnlyIndexedDbWorkbench } from './indexedDbWorkbenchAdapter';
+import { withWorkbenchMutationLock } from './workbenchMutationLock';
 
 export const BROWSER_WORKBENCH_NAMESPACE = 'wire-edm-workbench';
 
@@ -12,6 +14,32 @@ interface ConnectCachedWorkbenchOptions {
 }
 
 export async function connectCachedWorkbench(options: ConnectCachedWorkbenchOptions = {}): Promise<WorkbenchConnectionResult> {
+  // An explicit Storage dependency remains the legacy adapter seam for migration
+  // fixtures. The production default always opens the larger browser database.
+  if (!options.storage && typeof navigator !== 'undefined' && navigator.locks) {
+    let legacy: Storage | null = null;
+    let legacyDiscoveryFailure: unknown;
+    try { legacy = window.localStorage; } catch (error) { legacyDiscoveryFailure = error; }
+    const lockIdentity = createBrowserCacheAdapter(createVolatileStorage());
+    try {
+      if (legacyDiscoveryFailure) throw new Error('Existing legacy browser storage could not be inspected. A new empty workbench was not created. Restore access to site storage or export readable recovery files from the existing browser database.');
+      if (typeof indexedDB === 'undefined') throw new Error('Browser database storage is unavailable. Existing workbench data has not been replaced. Open a browser with IndexedDB support or export readable recovery files.');
+      const adapter = await withWorkbenchMutationLock(lockIdentity, () => openIndexedDbWorkbench({ factory: indexedDB, legacyStorage: legacy, now: options.now }), { recoverFiles: false });
+      return initializeWorkbenchConnection(adapter, options.now);
+    } catch (failure) {
+      const error = { code: 'WORKBENCH_CONNECTION_FAILED' as const, message: failure instanceof Error ? failure.message : 'Browser database storage could not be opened. Existing data is preserved.' };
+      try {
+        if (typeof indexedDB !== 'undefined') {
+          const database = await openReadOnlyIndexedDbWorkbench(indexedDB);
+          if (database && (await database.listFiles?.())?.paths.length) return {ok:false,error,recoverySource:recoveryStorageSource(combinedBrowserStorageRecovery(database,legacy),error)};
+          database?.close();
+        }
+      } catch { /* A denied database remains preserved; rescue the readable legacy source below. */ }
+      let recovery: ReturnType<typeof createBrowserCacheAdapter> | null = null;
+      try { if (legacy && hasCachedWorkbenchFiles(legacy)) recovery = createBrowserCacheAdapter(legacy); } catch { /* No readable source can be claimed. */ }
+      return { ok: false, error, ...(recovery ? { recoverySource: recoveryStorageSource(recovery, error) } : {}) };
+    }
+  }
   const storageSource = options.storage && typeof navigator !== 'undefined' && navigator.locks
     ? { storage: options.storage, persistent: true }
     : getBrowserStorage(options.storage);
@@ -23,6 +51,14 @@ export async function connectCachedWorkbench(options: ConnectCachedWorkbenchOpti
   });
 
   const result = await initializeWorkbenchConnection(adapter, options.now);
+  if (!options.storage && typeof indexedDB !== 'undefined' && !navigator.locks) {
+    try {
+      const existing = await openReadOnlyIndexedDbWorkbench(indexedDB);
+      if (existing) return { ...result, recoverySource: recoveryStorageSource(existing, {
+        code: 'PERSISTENT_STORAGE_UNCOORDINATED', message: 'Persistent browser storage is readable, but this browser cannot coordinate edits. Export readable recovery files; temporary session changes are separate.'
+      }) };
+    } catch { /* The explicit temporary mode and retained legacy recovery remain. */ }
+  }
   return result.recoverySource || !('recoverySource' in storageSource) ? result : { ...result, recoverySource: storageSource.recoverySource };
 }
 

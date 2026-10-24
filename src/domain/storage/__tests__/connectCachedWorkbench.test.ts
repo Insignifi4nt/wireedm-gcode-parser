@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { connectCachedWorkbench } from '../connectCachedWorkbench';
 import { importExternalProgram } from '@/domain/editor/importExternalProgram';
 import { createWorkbenchBackup } from '../workbenchBackup';
+import { openIndexedDbWorkbench } from '../indexedDbWorkbenchAdapter';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -53,7 +54,7 @@ describe('connectCachedWorkbench', () => {
       const reopened = await connectCachedWorkbench();
       if (!reopened.ok) throw new Error(reopened.error.message);
       expect(reopened.workbench.adapter.kind).toBe('browser-cache');
-      expect(reopened.workbench.adapter.persistenceWarning).toContain('could not confirm writes');
+      expect(reopened.workbench.adapter.name).toBe('Browser storage');
       expect(reopened.workbench.manifest.projects).toEqual(imported.workbench.manifest.projects);
       expect(await reopened.workbench.adapter.readText(imported.editorProgram.filePath)).toBe(imported.editorProgram.text);
       const backup = await createWorkbenchBackup(reopened.workbench);
@@ -195,7 +196,7 @@ describe('connectCachedWorkbench', () => {
     expect(storage.getItem('wire-edm-workbench:file:posts/library.json')).toBeNull();
   });
 
-  it('uses an explicit temporary V2 catalog when persistent local storage is unavailable', async () => {
+  it('blocks an unreadable legacy source instead of silently creating an empty database', async () => {
     const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
@@ -209,16 +210,38 @@ describe('connectCachedWorkbench', () => {
         now: new Date('2026-08-28T14:00:00.000Z')
       });
 
-      expect(result).toMatchObject({
-        ok: true,
-        kind: 'created',
-        workbench: {
-          adapter: { kind: 'memory' },
-          manifest: { schemaVersion: 3, name: 'Temporary storage' }
-        }
-      });
+      expect(result).toMatchObject({ok:false,error:{code:'WORKBENCH_CONNECTION_FAILED'}});
+      if(result.ok)throw new Error('Unexpected empty replacement');
+      expect(result.error.message).toContain('new empty workbench was not created');
+      expect(await indexedDB.databases()).toEqual([]);
     } finally {
       if (descriptor) Object.defineProperty(window, 'localStorage', descriptor);
     }
+  });
+
+  it('does not replace an existing denied database with temporary or legacy storage',async()=>{
+    const adapter=await openIndexedDbWorkbench({factory:indexedDB,legacyStorage:localStorage});
+    await adapter.writeText('imports/newer.nc','newer data');adapter.close();
+    const fault=vi.spyOn(indexedDB,'open').mockImplementation(()=>{throw new DOMException('Denied','SecurityError');});
+    const result=await connectCachedWorkbench();expect(result).toMatchObject({ok:false});fault.mockRestore();
+    const reopened=await openIndexedDbWorkbench({factory:indexedDB,legacyStorage:localStorage});
+    expect(await reopened.readText('imports/newer.nc')).toBe('newer data');reopened.close();
+  });
+
+  it('makes newer database data and both exact legacy observations available when an older tab changed the source',async()=>{
+    const storage=new MemoryStorage();const legacy=await connectCachedWorkbench({storage});if(!legacy.ok)throw new Error(legacy.error.message);
+    vi.stubGlobal('localStorage',storage);
+    try{
+      const first=await connectCachedWorkbench();if(!first.ok)throw new Error(first.error.message);
+      await first.workbench.adapter.writeText('imports/newer.nc','newer data');
+      const sourceKey='wire-edm-workbench:file:workbench.json',original=storage.getItem(sourceKey);
+      storage.setItem(sourceKey,'changed by older app');
+      const result=await connectCachedWorkbench();expect(result.ok).toBe(false);
+      const rescue=result.recoverySource?.adapter;if(!rescue)throw new Error('Expected database rescue');
+      expect(await rescue.readBoundedExactText?.('indexeddb/files/imports/newer.nc',100)).toEqual({status:'read',text:'newer data'});
+      const key=encodeURIComponent(JSON.stringify(sourceKey))+'.txt';
+      expect(await rescue.readText('indexeddb/legacy-originals/'+key)).toBe(original);
+      expect(await rescue.readText('legacy-localstorage/'+key)).toBe('changed by older app');
+    }finally{vi.unstubAllGlobals();}
   });
 });

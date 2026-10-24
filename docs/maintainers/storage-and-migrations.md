@@ -6,14 +6,34 @@ App release numbers do not version persisted data. The current workbench catalog
 
 | Surface | Location | Contents |
 | --- | --- | --- |
-| Browser workbench | localStorage `wire-edm-workbench:file:<relative-path>` | Same logical files as a folder workbench; larger strings may use the versioned gzip envelope |
-| Browser directory metadata | `wire-edm-workbench:directories` | Rebuildable directory names; never authoritative for file existence |
+| Browser workbench | IndexedDB `wire-edm-workbench-files`, store `files`, key `<relative-path>` | Exact logical text; `sizes` stores its UTF-8 byte count for bounded recovery reads |
+| Browser migration | Same database, stores `metadata` and `legacy` | Staged/active receipt and exact physical legacy localStorage strings; retained independently of current logical files |
+| Legacy browser workbench | localStorage `wire-edm-workbench:file:<relative-path>` | Preserved migration source; larger strings may use the versioned gzip envelope; older app releases continue to read this earlier snapshot |
+| Legacy browser directory metadata | `wire-edm-workbench:directories` | Retained legacy directory names; never authoritative for file existence |
 | Folder workbench | Selected directory | Plain text logical files; File System Access permission is optional |
 | Remembered folder | IndexedDB `wire-edm-workbench-directory`, store `handles`, key `workbench-directory` | Directory handle, not a second project copy |
-| Temporary fallback | In-memory Storage adapter | Session-only files when persistent storage or Web Locks is unavailable; existing persistent cache stays untouched |
+| Temporary fallback | In-memory Storage adapter | Session-only files without Web Locks; persistent files remain available through read-only recovery. Denied or conflicting persistent storage never silently becomes an empty persistent workbench |
 | UI preferences | `wire-edm.editor-workspace-layout.v1`, `wireedm.onboarding.dismissed`, `wireedm.guideLanguage`, `gcodeDrawerMode`, `gcodeDrawer.folder.*`, `gcodeDrawer.contour.*` | Layout, language, onboarding and disclosure state; no machining geometry |
 
 Browser storage belongs to its origin. Production GitHub Pages, local preview and local development have separate workbenches. Switching to a folder does not migrate browser projects. The app has no active service-worker/CacheStorage persistence layer. Workers used for parsing, compression and post execution are not storage backups.
+
+## IndexedDB migration and atomic revision saves
+
+Release 0.0.727 moves the default browser workbench to IndexedDB database version 1. This is independent of app, UPID, catalog, post and saved-revision schema versions. Logical formats remain unchanged. The adapter adds no small per-file or database byte ceiling; browser-managed quota and existing domain resource limits still apply.
+
+Opening holds the same `browser-storage:wire-edm-workbench` mutation scope used by the legacy adapter. Discovery never writes or probes localStorage. The complete bounded source inventory, including physical compressed envelopes and directory metadata, is fingerprinted and retained in the database's `legacy` store. A disposable proposed logical copy undergoes normal catalog validation and pending-transaction recovery. Malformed or conflicting input blocks publication and leaves the source intact.
+
+The initial IndexedDB transaction stages exact logical files, sizes, raw originals and a receipt together. Readback verifies both copies before a separate transaction publishes the active receipt. An interrupted stage transaction aborts completely; an exact staged receipt can resume publication. A mismatching source or destination blocks instead of overwriting either copy. Original localStorage keys are never removed or rewritten. Recognized pending journals are copied exactly; recovery mutates only destination files after migration. Existing installed packages and historical revisions keep their exact strings.
+
+Old app builds do not read the database. They see the earlier preserved localStorage snapshot. A changed legacy fingerprint blocks new database writes/reconnect and exposes both observations for recovery instead of merging them. All cooperating app versions use the shared Web Lock; code outside that lock cannot be prevented from changing the source and is detected on the next guarded mutation. Downgrading does not migrate newer database edits back to localStorage.
+
+On a database/legacy conflict, readable recovery paths distinguish `indexeddb/files/`, `indexeddb/legacy-originals/`, and `legacy-localstorage/`. Original physical cache keys are JSON-string encoded and URI escaped in recovery filenames, preserving even malformed UTF-16 keys. This archive remains evidence, not a validated merge or restore backup. Standard backup from a healthy workbench contains its logical files; the separately preserved physical cache originals are not authorizations for cleanup.
+
+Saved controller revisions use `commitTextChanges` when supported. One native `readwrite` transaction compares exact expected revision/project/catalog, setup libraries and recovery-file guards, then commits the revision and both indexes. Equal images are read-only guards. The cancellation/input-version callback runs after all comparisons and immediately before writes, and success waits for transaction completion. An abort leaves no new revision or partial index. No application saved-revision journal is created for this path, which removes its large temporary before/after duplication. The folder and legacy test adapters retain the existing journal protocol and cleanup-pending receipts.
+
+Repeated export can reuse the latest validated revision only when engine version, all intent/plan/machine/binding/post/property hashes, and the project apart from indexing timestamps/IDs match. Current active setup and saved-project checks still apply. Reuse does not overwrite a revision and checks cancellation again before posting. Output is generated through the unchanged deterministic post runtime and audit.
+
+Read-only backup is available from an open editor. Restore, cleanup and switching storage retain draft/workflow guards. Unsaved drafts remain excluded. Quota/permission failures before posting are reported as `CONTROLLER_ARTIFACT_REVISION_SAVE_FAILED`, with the original save code and optional path, rather than suggesting that a machine package must be repaired.
 
 ## Logical files
 

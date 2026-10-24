@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { IDBFactory, IDBObjectStore as FakeObjectStore } from 'fake-indexeddb';
+import { openIndexedDbWorkbench, type IndexedDbWorkbenchAdapter } from '@/domain/storage/indexedDbWorkbenchAdapter';
+import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
 import { writeMachineLibraryStorage } from '@/domain/machine-definition/machineLibraryStorage';
 import { writePostLibraryStorage } from '@/domain/post-processor/postLibraryStorage';
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
@@ -27,8 +30,10 @@ import { workbenchProjectRevisionPath } from '@/domain/workbench-catalog/workben
 
 import {
   createSavedWireEdmJobRevision,
+  loadSavedWireEdmJobRevision,
   saveStoredWireEdmJobRevision
 } from '../savedWireEdmJobRevision';
+import { generateControllerArtifact } from '../controllerArtifact';
 import { deleteStoredWireEdmJobRevisions } from '../deleteSavedWireEdmJobRevisions';
 
 class MemoryAdapter implements WorkbenchStorageAdapter {
@@ -59,6 +64,139 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
 }
 
 describe('catalog-owned saved revision persistence', () => {
+  const databases: IndexedDbWorkbenchAdapter[] = [];
+  afterEach(() => { databases.splice(0).forEach(adapter => adapter.close()); localStorage.clear(); vi.restoreAllMocks(); });
+
+  async function nativeFixture(large = false) {
+    const fixture = await catalogRevisionFixture(large);
+    await writePostLibraryStorage(fixture.adapter, fixture.library);
+    await writeMachineLibraryStorage(fixture.adapter, { schemaVersion: 1, machines: [{...fixture.machine,activeBindingId:'production'}] });
+    const factory = new IDBFactory();
+    const adapter = await openIndexedDbWorkbench({ factory, legacyStorage: null });
+    databases.push(adapter);
+    for (const [path,text] of fixture.adapter.files) await adapter.writeText(path,text);
+    const opened = await initializeWorkbenchCatalog(adapter);
+    if (!opened.ok) throw new Error(opened.error.message);
+    return { ...fixture, adapter, factory, workbench: opened.workbench };
+  }
+
+  it.each([0,1,2,3])('migrates installed posts and an interrupted legacy revision at stage %s without changing source bytes', async stage => {
+    const fixture=await catalogRevisionFixture();
+    await writePostLibraryStorage(fixture.adapter,fixture.library);
+    await writeMachineLibraryStorage(fixture.adapter,{schemaVersion:1,machines:[fixture.machine]});
+    const previousProject=fixture.adapter.files.get('projects/fixture.part.json');
+    fixture.adapter.durableStates.length=0;
+    const saved=await saveStoredWireEdmJobRevision(fixture.workbench,fixture.candidate);
+    if(!saved.ok)throw new Error(saved.error.message);
+    const legacy=createBrowserCacheAdapter(localStorage);
+    for(const [path,text] of fixture.adapter.durableStates[stage])await legacy.writeText(path,text);
+    const before=Object.fromEntries(Object.keys(localStorage).map(key=>[key,localStorage.getItem(key)]));
+    const migrated=await openIndexedDbWorkbench({factory:new IDBFactory(),legacyStorage:localStorage});
+    databases.push(migrated);
+    const opened=await initializeWorkbenchCatalog(migrated);
+    if(!opened.ok)throw new Error(opened.error.message);
+    expect(Object.fromEntries(Object.keys(localStorage).map(key=>[key,localStorage.getItem(key)]))).toEqual(before);
+    expect(await migrated.readLegacyOriginals()).toEqual(new Map(Object.entries(before)));
+    expect(opened.workbench.posts).toEqual(fixture.library);
+    expect(await migrated.readText(SAVED_REVISION_TRANSACTION_PATH)).toBeNull();
+    if(stage<3){
+      expect(await migrated.readText('projects/fixture.part.json')).toBe(previousProject);
+      expect(await migrated.readText(saved.path)).toBeNull();
+    } else {
+      expect(await loadSavedWireEdmJobRevision(migrated,fixture.candidate.project.id,fixture.candidate.revisionId)).toMatchObject({ok:true});
+      expect(await migrated.readText(saved.path)).toBe(fixture.adapter.files.get(saved.path));
+    }
+  });
+
+  it.each(['revision','project','catalog'])('aborts an interrupted native %s write without partial indexes, then retries exactly', async stage => {
+    const fixture = await nativeFixture();
+    const before = new Map(await Promise.all((await fixture.adapter.listFiles!()).paths.map(async (path): Promise<[string,string|null]> => [path,await fixture.adapter.readExactText!(path)])));
+    const revisionPath = workbenchProjectRevisionPath(fixture.candidate.project.id,fixture.candidate.revisionId);
+    const failPath = stage === 'revision' ? revisionPath : stage === 'project' ? 'projects/fixture.part.json' : WORKBENCH_CATALOG_PATH;
+    const put = FakeObjectStore.prototype.put;
+    const fault = vi.spyOn(FakeObjectStore.prototype,'put').mockImplementation(function(this: IDBObjectStore,value:unknown,key?:IDBValidKey) {
+      if (this.name === 'files' && key === failPath) throw new DOMException('Injected disk quota at native commit','QuotaExceededError');
+      return put.call(this,value,key);
+    });
+    const failed = await saveStoredWireEdmJobRevision(fixture.workbench,fixture.candidate,{requireCurrentActiveSetup:true});
+    expect(failed).toMatchObject({ok:false,error:{code:'WORKBENCH_PROJECT_STORAGE_ACCESS_FAILED',message:expect.stringContaining('Browser storage for this site is full.')}});
+    expect(await fixture.adapter.readText(revisionPath)).toBeNull();
+    expect(await fixture.adapter.readText(SAVED_REVISION_TRANSACTION_PATH)).toBeNull();
+    for (const [path,text] of before) expect(await fixture.adapter.readExactText!(path)).toBe(text);
+    fault.mockRestore();
+    const reopened = await initializeWorkbenchCatalog(fixture.adapter);
+    if (!reopened.ok) throw new Error(reopened.error.message);
+    const retried = await saveStoredWireEdmJobRevision(reopened.workbench,fixture.candidate,{requireCurrentActiveSetup:true});
+    expect(retried).toMatchObject({ok:true,project:{savedRevisionIds:[fixture.candidate.revisionId]}});
+    expect(await fixture.adapter.readText(SAVED_REVISION_TRANSACTION_PATH)).toBeNull();
+    expect(await loadSavedWireEdmJobRevision(fixture.adapter,fixture.candidate.project.id,fixture.candidate.revisionId)).toMatchObject({ok:true});
+  });
+
+  it('compares setup originals inside the atomic commit and retains an external setup change', async () => {
+    const fixture = await nativeFixture();
+    const originalProject = await fixture.adapter.readExactText!('projects/fixture.part.json');
+    const commit = fixture.adapter.commitTextChanges!.bind(fixture.adapter);
+    const changed = JSON.stringify({schemaVersion:1,machines:[{...fixture.machine,activeBindingId:'production',name:'Changed outside the reviewed export'}]});
+    vi.spyOn(fixture.adapter,'commitTextChanges').mockImplementationOnce(async changes => {
+      await fixture.adapter.writeText('machines/library.json',changed);
+      await commit(changes);
+    });
+    expect(await saveStoredWireEdmJobRevision(fixture.workbench,fixture.candidate,{requireCurrentActiveSetup:true})).toMatchObject({ok:false});
+    expect(await fixture.adapter.readExactText!('machines/library.json')).toBe(changed);
+    expect(await fixture.adapter.readExactText!('projects/fixture.part.json')).toBe(originalProject);
+    expect(await fixture.adapter.readText(workbenchProjectRevisionPath(fixture.candidate.project.id,fixture.candidate.revisionId))).toBeNull();
+  });
+
+  it('saves, reopens and deterministically exports a complete large varied project without localStorage or a journal', async () => {
+    const fixture = await nativeFixture(true);
+    const projectText = await fixture.adapter.readText('projects/fixture.part.json');
+    expect(new TextEncoder().encode(projectText!).byteLength).toBeGreaterThan(5*1024*1024);
+    const individualWrite = vi.spyOn(fixture.adapter,'writeText');
+    const saved = await saveStoredWireEdmJobRevision(fixture.workbench,fixture.candidate,{requireCurrentActiveSetup:true,reuseMatchingRevision:true});
+    if (!saved.ok) throw new Error(saved.error.message);
+    expect(individualWrite).not.toHaveBeenCalled();
+    expect(await fixture.adapter.readText(SAVED_REVISION_TRANSACTION_PATH)).toBeNull();
+    fixture.adapter.close();
+    const reopenedAdapter = await openIndexedDbWorkbench({factory:fixture.factory,legacyStorage:null});
+    databases.push(reopenedAdapter);
+    const opened = await initializeWorkbenchCatalog(reopenedAdapter);
+    if (!opened.ok) throw new Error(opened.error.message);
+    const loaded = await loadSavedWireEdmJobRevision(reopenedAdapter,fixture.candidate.project.id,saved.revision.revisionId);
+    if (!loaded.ok) throw new Error(loaded.error.message);
+    const first = await generateControllerArtifact(loaded.revision);
+    const second = await generateControllerArtifact(loaded.revision);
+    if (!first.ok) throw new Error(JSON.stringify(first.error));
+    expect(second).toMatchObject({ok:true,artifact:{sha256:first.artifact.sha256,text:first.artifact.text}});
+    expect(opened.workbench.posts).toEqual(fixture.library);
+  },60_000);
+
+  it('reuses only an exact validated latest revision for repeated exports without writing', async () => {
+    const fixture = await catalogRevisionFixture();
+    const first = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    if (!first.ok) throw new Error(first.error.message);
+    const next = await createSavedWireEdmJobRevision({
+      revisionId: 'revision.0002', savedAt: '2026-08-28T13:00:00.000Z', project: first.project,
+      machine: fixture.machine, bindingId: 'production', postLibrary: fixture.library
+    });
+    if (!next.ok) throw new Error(next.error.message);
+    const before = new Map(fixture.adapter.files);
+    fixture.adapter.mutations.length = 0;
+    const beforeWrite = vi.fn();
+    const reused = await saveStoredWireEdmJobRevision(first.workbench, next.candidate, { reuseMatchingRevision: true, beforeWrite });
+    expect(reused).toMatchObject({ ok: true, revision: { revisionId: 'revision.0001' }, project: first.project });
+    expect(fixture.adapter.files).toEqual(before);
+    expect(fixture.adapter.mutations).toEqual([]);
+    expect(beforeWrite).not.toHaveBeenCalled();
+    // A changed physical setup must create another revision even if its output
+    // happens to have identical text for this particular geometry.
+    const changed = await createSavedWireEdmJobRevision({
+      revisionId:'revision.0003',savedAt:'2026-08-28T13:30:00.000Z',project:first.project,
+      machine:{...fixture.machine,name:'Changed physical machine'},bindingId:'production',postLibrary:fixture.library
+    });
+    if (!changed.ok) throw new Error(changed.error.message);
+    const saved = await saveStoredWireEdmJobRevision(first.workbench,changed.candidate,{reuseMatchingRevision:true});
+    expect(saved).toMatchObject({ok:true,revision:{revisionId:'revision.0003'},project:{savedRevisionIds:['revision.0001','revision.0003']}});
+  });
   it('retains a trashed project and exposes the saved-plan incompatibility diagnostic on restore', async () => {
     const fixture = await catalogRevisionFixture();
     const saved = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
@@ -544,13 +682,18 @@ describe('catalog-owned saved revision persistence', () => {
   });
 });
 
-async function catalogRevisionFixture() {
+async function catalogRevisionFixture(large = false) {
   const adapter = new MemoryAdapter();
   const initialized = await initializeWorkbenchCatalog(adapter, {
     now: new Date('2026-08-28T12:00:00.000Z')
   });
   if (!initialized.ok) throw new Error(initialized.error.message);
-  const imported = createUpidFromDxfEntities([
+  const count = 6_000;
+  const imported = createUpidFromDxfEntities(large ? Array.from({length:count},(_,index) => ({
+    type:'line',layer:'CUT',
+    start:{x:45+40*Math.cos(index/count*2*Math.PI),y:45+40*Math.sin(index/count*2*Math.PI)},
+    end:{x:45+40*Math.cos((index+1)%count/count*2*Math.PI),y:45+40*Math.sin((index+1)%count/count*2*Math.PI)}
+  })) : [
     { type: 'circle', layer: 'CUT', center: { x: 5, y: 5 }, radius: 2 }
   ]);
   const document = setManualCompensationIntent(imported, imported.plan.operations[0].id, 'centerline');

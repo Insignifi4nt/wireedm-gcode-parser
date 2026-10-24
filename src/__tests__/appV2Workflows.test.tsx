@@ -1,6 +1,5 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
 import { createBrowserDirectoryAdapter } from '@/domain/storage/browserDirectoryAdapter';
 import { initializeWorkbenchConnection } from '@/domain/storage/initializeWorkbenchConnection';
 import { WORKBENCH_FILE_TRANSACTION_PATH } from '@/domain/storage/workbenchFileTransaction';
@@ -9,6 +8,7 @@ import { saveEditorProgram } from '@/domain/editor/saveEditorProgram';
 import { loadEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { createDxfImportServices } from '@/app/dxfImportServices';
 import { directDxfProcessor } from '@/features/dxf-import/dxfProcessorTestSupport';
+import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
 
 import {
   cleanupAppTestContext,
@@ -17,6 +17,7 @@ import {
   flushAsync,
   prepareDxfImport,
   renderApp,
+  readBrowserWorkbenchText,
   setSelectValue,
   setInputValue,
   simpleLineDxf,
@@ -36,7 +37,9 @@ describe('V2 app workflows', () => {
   afterEach(() => cleanupAppTestContext(context));
 
   it.each(['browser-cache', 'directory'] as const)('saves the actual dirty draft in %s when header Save returns from Simulation to Editor', async kind => {
-    const adapter = kind === 'browser-cache' ? createBrowserCacheAdapter(window.localStorage)
+    const cached = kind === 'browser-cache' ? await connectCachedWorkbench() : null;
+    if (cached && !cached.ok) throw new Error(cached.error.message);
+    const adapter = cached?.ok ? cached.workbench.adapter
       : createBrowserDirectoryAdapter(new FakeDirectoryHandle('simulation-save') as unknown as FileSystemDirectoryHandle);
     // Observe the actual durable operation rather than assuming microtask flushes
     // finish streaming storage I/O. Both adapters execute their real transaction.
@@ -164,7 +167,7 @@ describe('V2 app workflows', () => {
     await renderApp(context);
 
     await vi.waitFor(() => expect(context.container.textContent).toContain('Legacy workbench manifest schema violation'));
-    expect((await storedJson('workbench.json')).schemaVersion).toBe(1);
+    expect(JSON.parse(window.localStorage.getItem(`${storagePrefix}workbench.json`)!)).toMatchObject({schemaVersion:1});
   });
 
   it('exposes exact machine and post libraries in settings without creating a selection', async () => {
@@ -213,7 +216,7 @@ describe('V2 app workflows', () => {
 });
 
 async function storedJson(path: string) {
-  const text = await createBrowserCacheAdapter(window.localStorage).readText(path);
+  const text = await readBrowserWorkbenchText(path);
   if (text === null) throw new Error(`Missing browser-cache file: ${path}.`);
   return JSON.parse(text);
 }

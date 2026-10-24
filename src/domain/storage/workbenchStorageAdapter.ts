@@ -12,6 +12,8 @@ export interface WorkbenchStorageAdapter {
   readBoundedExactText?(path: string, maxBytes: number, signal?: AbortSignal): Promise<BoundedExactTextResult>;
   deleteText(path: string): Promise<void>;
   writeText(path: string, contents: string): Promise<void>;
+  /** Atomically verify exact originals and apply all changes. Equal images are read-only guards. */
+  commitTextChanges?(changes: readonly { readonly path: string; readonly previous: string | null; readonly next: string | null }[], options?: { readonly beforeWrite?: () => void }): Promise<void>;
   /** Read-only inventory; truncated results must never be used to justify deleting files. */
   listFiles?(signal?: AbortSignal): Promise<{ paths: string[]; truncated: boolean }>;
 }
