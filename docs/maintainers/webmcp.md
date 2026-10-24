@@ -1,5 +1,7 @@
 # WebMCP integration
 
+`edm_inspect_approach` is a read-only adapter over `inspectContourApproach`, sharing exact `inferPathPoint` and `findLeadIntersections` with the editor. It pins draft/saved-project versions and computes all source contacts before paginating results. It neither approves intent nor claims a globally searched alternate route when the nearest point is blocked. Source-reference geometry is included; machine, fixture, material-access and wire-radius checks remain outside this geometric query.
+
 ## Shipped scope
 
 The app registers 29 workbench tools and eight temporary package-authoring tools. `siteTools.ts` owns the small browser adapter, runtime TypeBox argument validation, bounded issue paths, 32 KiB result limit, registration lifetime and execution cancellation. No server, relay, polyfill or separate editor state owner is added for WebMCP.

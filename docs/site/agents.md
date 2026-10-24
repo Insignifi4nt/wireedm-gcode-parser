@@ -1,5 +1,11 @@
 # Use the app with an agent
 
+## Inspect an entry before editing
+
+`edm_inspect_approach` takes a versioned draft or saved-project `target`, an `operationId` and a millimeter `from` point. It finds the exact nearest contour point using the editor's snap operation and checks the straight lead against every source segment. The reply includes the snapped point, source/operation IDs, lead length, checked segment count and paginated intersections. Read all intersection pages using the same target version. `status` reflects the complete check, even when the current page is empty.
+
+When the geometric nearest attachment is clear, `nearestReachablePoint` returns that point. `blocked` means that approach crosses or overlaps source geometry; it does not prove every alternative is blocked. Supply `hintPoint` to check a different snapped attachment. `zero-length` reports that the free point already coincides with the attachment. The query does not edit a start, approve a lead, search alternate routes, check fixtures, account for wire radius or certify material access. Inactive reference geometry participates in this conservative source check. After review, use the existing versioned `start-point` and `entry` edits, then review execution and exact machine output.
+
 ## CAD workspace
 
 CAD and CAM are separate documents with separate draft versions. Begin with `cad_get_context`. Open the retained workspace with `cad_open_workspace`, or create a blank document with `cad_create_document`, its current `expectedVersion` and a name. Unsaved CAD or CAM work blocks replacement. No repository, terminal, local path or browser file access is needed to author CAD.
