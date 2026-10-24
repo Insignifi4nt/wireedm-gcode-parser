@@ -2495,6 +2495,9 @@ describe('EditorPage UPID draft boundary', () => {
     const targetSegmentId = targetSegmentRow.getAttribute('data-upid-segment-id');
     expect(targetSegmentId).toBeTruthy();
 
+    // Local endpoint handles appear after focusing a source segment. Whole-
+    // contour selection deliberately omits the per-segment point overlay.
+    await clickElement(`svg[aria-label="UPID path preview"] path[data-preview-segment="${targetSegmentId}"]`);
     await clickElement('button[aria-label="Collapse Exterior 1"]');
     expect(container.querySelector('[data-upid-segment-stack]')).toBeNull();
 

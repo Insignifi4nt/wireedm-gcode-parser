@@ -1,0 +1,26 @@
+{
+  "version": "0.0.735",
+  "previousVersion": "0.0.734",
+  "postCompatibility": "preserved-contour-selection-presentation",
+  "summary": "Selecting a dense CAM contour highlights its outline without thousands of point labels, endpoint overlays or arc-center handles.",
+  "warning": "The canvas overview shows a spaced endpoint sample. Select an individual segment or point in Geometry for exact local inspection. Explicit contour-start endpoint tools retain every original endpoint target and operation guard. No project geometry or machining intent changes.",
+  "checklist": {
+    "schema": "No project, UPID, saved revision, machine-package or post schema changes. No WebMCP interface changes.",
+    "events": "No execution-event changes. Contour selection, segment picking, endpoint tools, overlap cycling and drag operations retain their identities and callbacks.",
+    "capabilities": "No machine or post capability changes. Local annotations belong to explicit segments; whole-contour selection retains its full outline. Circle and clipped-span display pieces share one source annotation.",
+    "auditAndOutput": "No compilation, compensation, audit, post runtime or controller output changes. Geometry and machining intent remain unchanged by inspection.",
+    "installationAndStorage": "No migration or storage writes. Browser/folder adapters, installed packages and immutable saved revisions are unchanged.",
+    "verification": "The original 1200-segment regression failed with 1200 labels and 2400 endpoint targets before the fix, then passed with zero of either. Local segment/endpoint inspection, individual arc centers and explicit endpoint-tool guards are tested. Chromium verifies 4363-segment contour selection, source/point inspection and unchanged draft versions at desktop/narrow widths; the same journey passes against the private original 8008870-byte rose without committing its data. Existing overlap, clipped-selection, zoom/resize, topology, contour and arc-center drag journeys pass. Native TypeScript, production build, lint and UI checks are recorded in the PR. Software tests do not establish physical machine verification."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Keep dense contour selection readable and responsive.",
+    "changes": [
+      "Selected contours keep a clean outline instead of displaying every segment label and point overlay.",
+      "Individual segment selection and hover reveal local detail; arc-center handles appear for an individual selected arc.",
+      "Ordinary overview rendering omits hidden endpoint targets, and box selection avoids repeatedly copying growing segment groups."
+    ],
+    "compatibility": "Existing geometry, machining intent, installed posts, saved revisions and controller output are unchanged.",
+    "action": "Select a contour to inspect its shape. Select a segment or endpoint in Geometry for exact local details. Contour Start still supports every original endpoint."
+  }
+}

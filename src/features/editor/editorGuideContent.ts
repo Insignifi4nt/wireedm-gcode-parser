@@ -134,7 +134,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '5. UPID Path Navigator Or Program Lines',
         steps: [
           {
-            text: 'Use the Program lens to inspect execution and open the matching workflow. The Geometry lens selects source contours and segments. Cut Sequence controls order; Contour Setup controls direction and kept material; Contour Start sets a closed contour’s start.',
+            text: 'Use the Program lens to inspect execution and open the matching workflow. The Geometry lens selects source contours and segments. Selecting a contour highlights its outline; select an individual segment to see its local points and label. Cut Sequence controls order; Contour Setup controls direction and kept material; Contour Start sets a closed contour’s start.',
             context: 'path'
           },
           {
@@ -304,7 +304,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '5. UPID Path Navigator sau Program Lines',
         steps: [
           {
-            text: 'Lentila Program arata executia si deschide workflow-ul potrivit. Geometry selecteaza contururi si segmente sursa. Cut Sequence controleaza ordinea; Contour Setup controleaza directia si materialul pastrat; Contour Start stabileste startul unui contur inchis.',
+            text: 'Lentila Program arata executia si deschide workflow-ul potrivit. Geometry selecteaza contururi si segmente sursa. Selectarea unui contur evidentiaza doar traseul; selecteaza un segment pentru punctele si eticheta lui. Cut Sequence controleaza ordinea; Contour Setup controleaza directia si materialul pastrat; Contour Start stabileste startul unui contur inchis.',
             context: 'path'
           },
           {
