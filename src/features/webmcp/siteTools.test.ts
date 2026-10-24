@@ -105,7 +105,7 @@ describe('site tool boundary', () => {
     registration.dispose();
     expect(signals[0].aborted).toBe(true);
     expect(await pending).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
-    expect(await registered[0].execute({})).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    expect(await registered[0].execute({})).toMatchObject({ ok: false, error: { code: 'TOOL_REGISTRATION_STALE' } });
   });
 
   it('cleans up partial registration failures without changing the ordinary application', async () => {

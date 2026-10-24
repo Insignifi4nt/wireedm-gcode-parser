@@ -1,5 +1,9 @@
 # WebMCP integration
 
+## Browser session recovery
+
+The app disposes registrations on `pagehide` and rebinds on `pageshow`. Focus/visibility changes rebind only if `document.modelContext` changed or registration is missing. Live callbacks always use the latest committed React state. Old tool handles return `TOOL_REGISTRATION_STALE` before running a command; data-version failures retain `STALE_STATE`. Running calls are cancelled independently of registration, preserving late-commit receipts. The notification panel's Refresh agent tools operation retries without reloading drafts and refuses to interrupt a running call. Tests exercise the production registration boundary, including StrictMode disposal, delayed acknowledgements and simulated page restore. External browser integrations can still cache discovery; they must rediscover after refresh. The original reported transport cause is not established.
+
 ## Shipped scope
 
 The app registers 29 workbench tools and eight temporary package-authoring tools. `siteTools.ts` owns the small browser adapter, runtime TypeBox argument validation, bounded issue paths, 32 KiB result limit, registration lifetime and execution cancellation. No server, relay, polyfill or separate editor state owner is added for WebMCP.

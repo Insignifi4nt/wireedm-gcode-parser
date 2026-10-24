@@ -1,5 +1,11 @@
 # Use the app with an agent
 
+## Resume an agent session
+
+After navigation or browser resume, rediscover tools for the current tab. The workbench re-registers on page restore and when the browser replaces its tool context. If discovery still points at old handles, open the notification panel and choose **Refresh agent tools**, then rediscover. This retries registration without reloading or discarding unsaved work and is disabled while an agent command runs.
+
+`TOOL_REGISTRATION_STALE` means a tool belongs to an earlier browser registration and did not run. `STALE_STATE` means the draft, saved project or setup version changed. For that error, read fresh `edm_get_context` or `edm_workflow_context`, inspect the changed data and retry with its current version. Reloading a page discards unsaved browser memory, so save the draft first. A successful registration refresh is not proof that an external integration refreshed its cached discovery.
+
 ## CAD workspace
 
 CAD and CAM are separate documents with separate draft versions. Begin with `cad_get_context`. Open the retained workspace with `cad_open_workspace`, or create a blank document with `cad_create_document`, its current `expectedVersion` and a name. Unsaved CAD or CAM work blocks replacement. No repository, terminal, local path or browser file access is needed to author CAD.
