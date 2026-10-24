@@ -1,5 +1,11 @@
 # Use the app with an agent
 
+## Inspect an entry before editing
+
+`edm_inspect_approach` takes a versioned draft or saved-project `target`, an `operationId` and a millimeter `from` point. It finds the exact nearest contour point using the editor's snap operation and checks the straight lead against every source segment. The reply includes the snapped point, source/operation IDs, lead length, checked segment count and paginated intersections. Read all intersection pages using the same target version. `status` reflects the complete check, even when the current page is empty.
+
+When the geometric nearest attachment is clear, `nearestReachablePoint` returns that point. `blocked` means that approach crosses or overlaps source geometry; it does not prove every alternative is blocked. Supply `hintPoint` to check a different snapped attachment. `zero-length` reports that the free point already coincides with the attachment. The query does not edit a start, approve a lead, search alternate routes, check fixtures, account for wire radius or certify material access. Inactive reference geometry participates in this conservative source check. After review, use the existing versioned `start-point` and `entry` edits, then review execution and exact machine output.
+
 ## Resume an agent session
 
 After navigation or browser resume, rediscover tools for the current tab. The workbench re-registers on page restore and when the browser replaces its tool context. If discovery still points at old handles, open the notification panel and choose **Refresh agent tools**, then rediscover. This retries registration without reloading or discarding unsaved work and is disabled while an agent command runs.

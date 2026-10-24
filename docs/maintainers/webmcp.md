@@ -1,5 +1,7 @@
 # WebMCP integration
 
+`edm_inspect_approach` is a read-only adapter over `inspectContourApproach`, sharing exact `inferPathPoint` and `findLeadIntersections` with the editor. It pins draft/saved-project versions and computes all source contacts before paginating results. It neither approves intent nor claims a globally searched alternate route when the nearest point is blocked. Source-reference geometry is included; machine, fixture, material-access and wire-radius checks remain outside this geometric query.
+
 ## Browser session recovery
 
 The app disposes registrations on `pagehide` and rebinds on `pageshow`. Focus/visibility changes rebind only if `document.modelContext` changed or registration is missing. Live callbacks always use the latest committed React state. Old tool handles return `TOOL_REGISTRATION_STALE` before running a command; data-version failures retain `STALE_STATE`. Running calls are cancelled independently of registration, preserving late-commit receipts. The notification panel's Refresh agent tools operation retries without reloading drafts and refuses to interrupt a running call. Tests exercise the production registration boundary, including StrictMode disposal, delayed acknowledgements and simulated page restore. External browser integrations can still cache discovery; they must rediscover after refresh. The original reported transport cause is not established.
