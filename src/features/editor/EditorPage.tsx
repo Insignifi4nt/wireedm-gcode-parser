@@ -48,6 +48,7 @@ import {
 import {
   derivePlannedRapidRoutes,
   mirrorPathDocument,
+  scalePathDocument,
   mirrorPathElement,
   mirrorPathOperation,
   mirrorPathSegment,
@@ -2163,6 +2164,12 @@ export function EditorPage({
     applyPathTransform(edited);
   }
 
+  function handleScalePathDocument(factor: number, origin: { x: number; y: number }) {
+    if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked) return;
+    if (Object.keys(activeWorkflowPendingReasons).some(key => key !== 'transform-scale')) return;
+    applyPathTransform(scalePathDocument(pathDocumentDraft, factor, origin), { completedPendingSources: ['transform-scale'] });
+  }
+
   function handleMovePathSelectionCenter(targetCenter: { x: number; y: number }) {
     if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked) return;
 
@@ -3037,6 +3044,8 @@ export function EditorPage({
         onMovePathOperation={handleMovePathOperation}
         onOpenWorkspacePanel={showWorkspacePanel}
         onRotatePathDocument={handleRotatePathDocument}
+        onScalePathDocument={handleScalePathDocument}
+        scaleBlocked={Object.keys(activeWorkflowPendingReasons).some(key => key !== 'transform-scale')}
         onRotatePathSelection={handleRotatePathSelection}
         onSelectPathElement={handleSelectPathElement}
         onPathTargetXDraftChange={setPathTargetXDraft}
@@ -3064,7 +3073,7 @@ export function EditorPage({
         onTransformDraftChange={(source) => {
           markActiveWorkflowPending(
             'geometry.transform',
-            source === 'target' ? 'transform-target' : 'transform-translate',
+            source === 'scale' ? 'transform-scale' : source === 'target' ? 'transform-target' : 'transform-translate',
             'Apply or correct the pending transform coordinates before finishing this workflow or changing the target.'
           );
         }}

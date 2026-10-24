@@ -1,7 +1,8 @@
 import type { SiteToolActivityState } from './siteTools';
+import { Button } from '@/components/ui/button';
 
 /** Inline panel content; arguments and document contents never enter its history. */
-export function AgentActivity({ activity }: { activity: SiteToolActivityState }) {
+export function AgentActivity({ activity, onRefresh }: { activity: SiteToolActivityState; onRefresh?: () => void }) {
   const running = activity.calls.filter(call => call.phase === 'running');
   const latest = running[0] ?? activity.calls[0];
   const preparing = activity.registration === 'pending' && running.length === 0;
@@ -15,7 +16,9 @@ export function AgentActivity({ activity }: { activity: SiteToolActivityState })
           : latest ? <>Agent: {status} · {label}</> : 'Agent tools ready'}
     </p>
     {activity.registration === 'unsupported' && <p className="mt-2 leading-5">This browser does not support WebMCP agent tools. The ordinary app controls remain available.</p>}
-    {activity.registration === 'failed' && <p className="mt-2 leading-5">Agent tools could not be registered. Reload the page to retry; the ordinary app controls remain available.</p>}
+    {activity.registration === 'failed' && <p className="mt-2 leading-5">Agent tools could not be registered. Refresh agent tools to retry without reloading your draft. The ordinary app controls remain available.</p>}
+    {onRefresh && <Button className="mt-2" type="button" variant="outline" disabled={running.length > 0} onClick={onRefresh}>Refresh agent tools</Button>}
+    {onRefresh && <p className="mt-2 leading-5">After a browser resume, refresh here and ask the agent to rediscover this tab's tools. TOOL_REGISTRATION_STALE concerns the browser connection; STALE_STATE means project or setup data changed and requires fresh context.</p>}
     {activity.registration === 'ready' && activity.calls.length === 0 && (
       <p className="mt-2 leading-5">No agent actions in this tab yet. Ask your browser agent to review the open project or import a drawing.</p>
     )}

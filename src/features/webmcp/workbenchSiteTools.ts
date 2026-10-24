@@ -12,6 +12,8 @@ import { editCatalogTool } from './editCatalog';
 import { summarizeDiagnostics } from './diagnosticSummaries';
 import { sourceIdentifier } from './projectEdits';
 import { inspectContourApproach } from '@/domain/path-editor/inspectContourApproach';
+
+import { pathGeometryBounds } from '@/domain/path-editor/pathScaling';
 import { capabilityVersion, machineCapabilityRow, machineSetupJson, setupCapabilityRow } from './capabilityQueries';
 
 export interface DraftReadSnapshot {
@@ -108,7 +110,7 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
     siteTool('edm_get_project', 'Read an explicit current draft or saved project summary. Draft reads require the current version from edm_get_context. Counts and recorded diagnostics are not executable certification.', object({ target }), async (input) => {
       const { document, ...snapshot } = await resolve(input.target);
       return { ...snapshot, model: document ? 'upid' : 'external-gcode', ...(document ? {
-        units: 'mm', schemaVersion: document.schemaVersion, geometryBasis: document.geometryBasis,
+        units: 'mm', schemaVersion: document.schemaVersion, geometryBasis: document.geometryBasis, bounds: pathGeometryBounds(document),
         setup: document.setup ?? {}, options: document.options,
         counts: { operations: document.plan.operations.length, contours: document.contours.length, segments: document.segments.length },
         ...summarizeDiagnostics(document.diagnostics)

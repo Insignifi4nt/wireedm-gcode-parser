@@ -101,6 +101,7 @@ export function registerSiteTools(context: ModelContext, tools: readonly SiteToo
     for (const tool of tools) {
       if (lifetime.signal.aborted) return;
       await context.registerTool({ ...tool, execute: async (input, options) => {
+        if (lifetime.signal.aborted) return staleRegistration();
         const call = new AbortController();
         const abort = () => call.abort();
         if (lifetime.signal.aborted || options?.signal?.aborted) call.abort();
@@ -128,35 +129,71 @@ export function registerSiteTools(context: ModelContext, tools: readonly SiteToo
 /** Stable registration; callbacks always see the most recently committed React state. */
 export function useSiteTools(tools: readonly SiteTool[]) {
   const latest = useRef(tools);
+  const [refreshEpoch, setRefreshEpoch] = useState(0);
+  const runningCalls = useRef(new Set<number>());
   const [activity, setActivity] = useState<SiteToolActivityState>({ registration: 'unsupported', calls: [] });
   useLayoutEffect(() => { latest.current = tools; });
   useEffect(() => {
-    const context = (document as Document & { modelContext?: ModelContext }).modelContext;
-    if (typeof context?.registerTool !== 'function') return;
     let mounted = true;
-    setActivity({ registration: 'pending', calls: [] });
-    const registration = registerSiteTools(context, latest.current.map((tool) => ({ ...tool,
-      execute: (input, options) => {
-        const current = latest.current.find(({ name }) => name === tool.name);
-        return current ? current.execute(input, options) : Promise.resolve({ ok: false, error: { code: 'UNAVAILABLE', message: 'Tool is no longer available.' } });
-      }
-    })), (call) => {
-      if (mounted) setActivity(current => {
-        const next = [call, ...current.calls.filter(previous => previous.id !== call.id)];
-        return { ...current, calls: [...next.filter(item => item.phase === 'running'), ...next.filter(item => item.phase !== 'running')].slice(0, 8) };
+    let suspended = false;
+    let generation = 0;
+    let context: ModelContext | undefined;
+    let registration: ReturnType<typeof registerSiteTools> | null = null;
+    const readContext = () => (document as Document & { modelContext?: ModelContext }).modelContext;
+    function start(force = false) {
+      if (!mounted || suspended) return;
+      const nextContext = readContext();
+      if (!force && context === nextContext && registration) return;
+      const currentGeneration = ++generation;
+      registration?.dispose(); registration = null; context = nextContext;
+      runningCalls.current.clear();
+      if (typeof nextContext?.registerTool !== 'function') { setActivity({ registration: 'unsupported', calls: [] }); return; }
+      setActivity({ registration: 'pending', calls: [] });
+      registration = registerSiteTools(nextContext, latest.current.map(tool => ({ ...tool,
+        execute: (input, options) => {
+          if (!mounted || generation !== currentGeneration || readContext() !== nextContext) return Promise.resolve(staleRegistration());
+          const current = latest.current.find(({ name }) => name === tool.name);
+          return current ? current.execute(input, options) : Promise.resolve({ ok: false, error: { code: 'UNAVAILABLE', message: 'Tool is no longer available.' } });
+        }
+      })), call => {
+        if (mounted && generation === currentGeneration) {
+          if (call.phase === 'running') runningCalls.current.add(call.id); else runningCalls.current.delete(call.id);
+        }
+        if (mounted && generation === currentGeneration) setActivity(current => {
+          const next = [call, ...current.calls.filter(previous => previous.id !== call.id)];
+          return { ...current, calls: [...next.filter(item => item.phase === 'running'), ...next.filter(item => item.phase !== 'running')].slice(0, 8) };
+        });
       });
-    });
-    void registration.ready.then(() => {
-      if (mounted) setActivity(current => ({ ...current, registration: 'ready' }));
-    }).catch(() => {
-      // StrictMode and navigation can dispose a pending registration normally.
-      if (!mounted) return;
-      setActivity(current => ({ ...current, registration: 'failed' }));
-      console.warn('Site tools could not be registered; the normal interface remains available.');
-    });
-    return () => { mounted = false; registration.dispose(); };
-  }, []);
-  return activity;
+      void registration.ready.then(() => {
+        if (mounted && generation === currentGeneration) setActivity(current => ({ ...current, registration: 'ready' }));
+      }).catch(() => {
+        if (mounted && generation === currentGeneration) {
+          setActivity(current => ({ ...current, registration: 'failed' }));
+          console.warn('Site tools could not be registered; the normal interface remains available.');
+        }
+      });
+    }
+    const hide = () => { suspended = true; ++generation; registration?.dispose(); registration = null; };
+    const show = (event: PageTransitionEvent) => {
+      const restoring = suspended || event.persisted;
+      suspended = false;
+      start(restoring);
+    };
+    const resume = () => { if (document.visibilityState === 'visible') start(); };
+    window.addEventListener('pagehide', hide); window.addEventListener('pageshow', show);
+    window.addEventListener('focus', resume); document.addEventListener('visibilitychange', resume);
+    start();
+    return () => {
+      mounted = false; ++generation; registration?.dispose();
+      window.removeEventListener('pagehide', hide); window.removeEventListener('pageshow', show);
+      window.removeEventListener('focus', resume); document.removeEventListener('visibilitychange', resume);
+    };
+  }, [refreshEpoch]);
+  return { ...activity, refresh: () => { if (runningCalls.current.size === 0) setRefreshEpoch(epoch => epoch + 1); } };
+}
+
+function staleRegistration() {
+  return { ok: false, error: { code: 'TOOL_REGISTRATION_STALE', message: 'This tool belongs to an earlier browser registration. Refresh agent tools in the notification panel, rediscover tools for this tab, then read fresh context. The project draft has not been changed.' } };
 }
 
 function activityOutcome(result: unknown): Pick<SiteToolActivity, 'phase' | 'errorCode' | 'message'> {
