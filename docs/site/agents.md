@@ -1,5 +1,11 @@
 # Use the app with an agent
 
+## Resume an agent session
+
+After navigation or browser resume, rediscover tools for the current tab. The workbench re-registers on page restore and when the browser replaces its tool context. If discovery still points at old handles, open the notification panel and choose **Refresh agent tools**, then rediscover. This retries registration without reloading or discarding unsaved work and is disabled while an agent command runs.
+
+`TOOL_REGISTRATION_STALE` means a tool belongs to an earlier browser registration and did not run. `STALE_STATE` means the draft, saved project or setup version changed. For that error, read fresh `edm_get_context` or `edm_workflow_context`, inspect the changed data and retry with its current version. Reloading a page discards unsaved browser memory, so save the draft first. A successful registration refresh is not proof that an external integration refreshed its cached discovery.
+
 ## Resize CAM geometry
 
 Use `edm_describe_edits` with `kind: "scale"` for the exact schema. `edm_edit_project` accepts a uniform `scale` edit with an explicit millimeter `origin` and either `scale: {kind: "factor", factor: 2}` or `scale: {kind: "longest-side", lengthMm: 140}`. Read the current draft version first. `edm_get_project` returns the resulting geometry bounds. The same operation is available in Geometry → Transform → Document → Uniform scale.

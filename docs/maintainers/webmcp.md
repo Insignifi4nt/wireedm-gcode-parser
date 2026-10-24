@@ -1,5 +1,9 @@
 # WebMCP integration
 
+## Browser session recovery
+
+The app disposes registrations on `pagehide` and rebinds on `pageshow`. Focus/visibility changes rebind only if `document.modelContext` changed or registration is missing. Live callbacks always use the latest committed React state. Old tool handles return `TOOL_REGISTRATION_STALE` before running a command; data-version failures retain `STALE_STATE`. Running calls are cancelled independently of registration, preserving late-commit receipts. The notification panel's Refresh agent tools operation retries without reloading drafts and refuses to interrupt a running call. Tests exercise the production registration boundary, including StrictMode disposal, delayed acknowledgements and simulated page restore. External browser integrations can still cache discovery; they must rediscover after refresh. The original reported transport cause is not established.
+
 Uniform CAM scaling is an additive edit in the shared `applyProjectEdits` batch and Transform workflow. `pathScaling.ts` owns bounds/factor previews; `scalePathDocument` preserves oriented topology and exact circular primitives, and validates retained millimeter stop distances. The UI displays the origin and resulting bounds. Manual wire/lead review rules match the domain operation. Installed posts, saved revisions and unedited output are unchanged.
 
 ## Shipped scope
