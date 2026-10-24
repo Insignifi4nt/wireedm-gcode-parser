@@ -1,6 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
 import * as paths from '@/domain/path-editor/pathDocumentOperations';
+import { previewPathScale } from '@/domain/path-editor/pathScaling';
 import * as participation from '@/domain/path-intel/machiningParticipation';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
@@ -24,6 +25,10 @@ export const projectEdit = Type.Union([
   object({ kind: Type.Literal('translate'), delta: point, operationId: Type.Optional(sourceIdentifier) }),
   object({ kind: Type.Literal('rotate'), degrees: number, origin: point }),
   object({ kind: Type.Literal('mirror'), axis: choices('x', 'y'), origin: point }),
+  object({ kind: Type.Literal('scale'), origin: point, scale: Type.Union([
+    object({ kind: Type.Literal('factor'), factor: Type.Number({ exclusiveMinimum: 0, maximum: 1e9 }) }),
+    object({ kind: Type.Literal('longest-side'), lengthMm: Type.Number({ exclusiveMinimum: 0, maximum: 1e9 }) })
+  ]) }),
   object({ kind: Type.Literal('order-strategy'), strategy: choices('inside-out-nearest', 'nearest', 'source-order') }),
   object({ kind: Type.Literal('move-operation'), operationId: sourceIdentifier, direction: Type.Union([Type.Literal(-1), Type.Literal(1)]) }),
   object({ kind: Type.Literal('reverse'), operationId: sourceIdentifier }),
@@ -63,6 +68,10 @@ function apply(doc: PathPlanningDocument, edit: ProjectEdit): PathPlanningDocume
     case 'translate': return edit.operationId ? paths.translatePathOperation(doc, edit.operationId, edit.delta) : paths.translatePathDocument(doc, edit.delta);
     case 'rotate': return paths.rotatePathDocument(doc, edit.degrees, edit.origin);
     case 'mirror': return paths.mirrorPathDocument(doc, edit.axis, edit.origin);
+    case 'scale': {
+      const preview = previewPathScale(doc, edit.scale, edit.origin);
+      return preview ? paths.scalePathDocument(doc, preview.factor, edit.origin) : null;
+    }
     case 'order-strategy': return paths.setPathOperationOrderStrategy(doc, edit.strategy) ?? doc;
     case 'move-operation': return paths.movePathOperation(doc, edit.operationId, edit.direction);
     case 'reverse': return paths.reversePathOperation(doc, edit.operationId);
