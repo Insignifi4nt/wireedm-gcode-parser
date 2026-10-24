@@ -4,7 +4,7 @@ import { confirmPendingDxfImport } from './dxf-import';
 test('resizes the project rail and workflow dock with keyboard without editing geometry', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
   const divider = page.getByRole('separator', { name: 'Resize project rail', exact: true });
@@ -37,7 +37,7 @@ test('resizes the project rail and workflow dock with keyboard without editing g
 test('geometry navigation uses the full rail height and follows viewport resizing', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file', { exact: true }).setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
   await page.getByRole('tab', { name: 'Geometry lens', exact: true }).click();

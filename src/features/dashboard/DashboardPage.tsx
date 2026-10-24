@@ -175,6 +175,8 @@ export function DashboardPage({
           cadProjects={cadLibrary.snapshot.kind === 'ready' ? cadLibrary.snapshot.library.entries : []}
           cadArchivedProjects={cadLibrary.snapshot.kind === 'ready' ? cadLibrary.snapshot.library.archivedEntries : []}
           cadLoading={cadLibrary.snapshot.kind === 'loading' || (cadLibrary.snapshot.kind === 'ready' && cadLibrary.snapshot.refreshing)}
+          cadUnavailable={cadLibrary.snapshot.kind === 'error' || (cadLibrary.snapshot.kind === 'ready' &&
+            (cadLibrary.snapshot.library.diagnostics.length > 0 || cadLibrary.snapshot.library.truncated))}
           onOpenCadProject={onOpenCadProject}
           onRenameCadProject={project => setProjectAction({ kind: 'rename', project })}
           onArchiveCadProject={project => setProjectAction({ kind: 'delete', project })}

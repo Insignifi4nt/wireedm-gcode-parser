@@ -5,7 +5,7 @@ test.use({ hasTouch: true });
 
 test('inspects either picked feature without replacing the measured pair', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles({
     name: 'two-circles.dxf', mimeType: 'application/dxf',
     buffer: Buffer.from('0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\nCUT\n10\n0\n20\n0\n40\n5\n0\nCIRCLE\n8\nCUT\n10\n20\n20\n0\n40\n3\n0\nENDSEC\n0\nEOF\n')
@@ -40,7 +40,7 @@ test('inspects either picked feature without replacing the measured pair', async
 
 async function openRectangle(page: Page) {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
 }

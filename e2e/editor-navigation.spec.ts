@@ -5,7 +5,7 @@ test.use({ hasTouch: true });
 
 async function openRectangle(page: Page) {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
 }
@@ -81,5 +81,3 @@ test('pinch follows its centroid and continues panning after one finger lifts', 
   await touch('touchEnd', 0);
   await expect(page.locator('[data-editor-document-state]')).toHaveText('Saved');
 });
-
-

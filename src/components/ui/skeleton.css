@@ -1,0 +1,3 @@
+.ui-skeleton { border-radius: var(--control-radius); background: var(--muted); animation: skeleton-pulse 1.8s ease-in-out infinite; }
+@keyframes skeleton-pulse { 0%, 100% { opacity: .45; } 50% { opacity: .85; } }
+@media (prefers-reduced-motion: reduce) { .ui-skeleton { animation: none; } }

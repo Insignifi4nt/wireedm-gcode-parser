@@ -20,11 +20,6 @@ import { StatusToastList } from '@/components/StatusToasts';
 import { RecoveryExportPanel } from '@/app/RecoveryExportPanel';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { DxfImportConfirmationDialog } from '@/features/dashboard/DxfImportConfirmationDialog';
-import { OnboardingDialog } from '@/features/onboarding/OnboardingDialog';
-import {
-  hasDismissedOnboarding,
-  rememberOnboardingDismissal
-} from '@/features/onboarding/onboardingPreference';
 
 interface AppProps {
   services?: Partial<AppServices>;
@@ -44,7 +39,6 @@ function StandaloneWorkbench(props: AppProps) {
   return <RouterProvider router={router} />;
 }
 function WorkbenchApp({ services }: AppProps) {
-  const [onboardingOpen, setOnboardingOpen] = useState(() => !hasDismissedOnboarding());
   const draftRead = useRef<DraftReadSnapshot | null>(null);
   const [cadSession] = useState(() => new CadSession());
   const [cadOpen, setCadOpen] = useState(false);
@@ -70,10 +64,6 @@ function WorkbenchApp({ services }: AppProps) {
     ({ id }) => id === planningMachineId
   ) ?? null;
 
-  function dismissOnboarding() {
-    setOnboardingOpen(false);
-    rememberOnboardingDismissal();
-  }
   function closeCadDxfExport() { setCadDxfExport(null); cadSession.setWorkflowOpen(false, 'dxf-export'); }
   function closeCadSection() { setCadSection(null); cadSession.setWorkflowOpen(false, 'section'); }
   function switchStorage(action: () => Promise<void>) {
@@ -276,10 +266,6 @@ function WorkbenchApp({ services }: AppProps) {
           submitting={app.dxfReimportStatus === 'importing'}
         />
       )}
-      <OnboardingDialog
-        onDismiss={dismissOnboarding}
-        open={onboardingOpen && app.workbenchStatus === 'ready'}
-      />
     </AppShell>
   );
 }

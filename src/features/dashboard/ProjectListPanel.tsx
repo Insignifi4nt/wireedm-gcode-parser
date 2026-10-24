@@ -1,5 +1,7 @@
 import { userFacingMessage } from '@/lib/userMessage';
 import { SearchField } from '@/components/ui/search-field';
+import { WorkbenchEmptyState } from '@/components/WorkbenchEmptyState';
+import { ProjectLibrarySkeleton } from './ProjectLibrarySkeleton';
 import { Tooltip } from '@/components/ui/tooltip';
 import { MenuSurface, MenuItem } from '@/components/ui/menu';
 import { useRef, useState } from 'react';
@@ -30,6 +32,7 @@ interface ProjectListPanelProps {
   archivedProjects?: NonNullable<WorkbenchCatalogManifest['deletedProjects']>;
   cadArchivedProjects?: readonly ArchivedCadLibraryEntry[];
   cadLoading?: boolean;
+  cadUnavailable?: boolean;
   onOpenCadProject?: (projectId: string) => void | Promise<void>;
   onRenameCadProject?: (project: CadDashboardProject) => void | Promise<void>;
   onArchiveCadProject?: (project: CadDashboardProject) => void | Promise<void>;
@@ -54,6 +57,7 @@ export function ProjectListPanel({
   archivedProjects,
   cadArchivedProjects,
   cadLoading,
+  cadUnavailable = false,
   onOpenCadProject,
   onRenameCadProject,
   onArchiveCadProject,
@@ -104,7 +108,7 @@ export function ProjectListPanel({
       <header className="dashboard-library-header">
         <div className="dashboard-library-title">
           <h2 id="project-library-title">Project library</h2>
-          {availability === 'ready' && <span className="dashboard-count">{projectCountLabel}</span>}
+          {availability === 'ready' && !cadLoading && !cadUnavailable && <span className="dashboard-count">{projectCountLabel}</span>}
         </div>
         {availability === 'ready' && rows.length > 0 && <div className="dashboard-library-controls" data-project-list-controls>
               <SearchField label="Search projects" value={searchText} onValueChange={setSearchText} />
@@ -113,8 +117,8 @@ export function ProjectListPanel({
         </div>}
       </header>
       <div className="dashboard-library-content">
-        {availability !== 'ready' ? <p role="status" className="text-muted-foreground">
-          {availability === 'loading' ? 'Loading projects…' : 'Project library unavailable. Open storage settings to reconnect.'}
+        {availability !== 'ready' ? availability === 'loading' ? <ProjectLibrarySkeleton /> : <p role="status" className="text-muted-foreground">
+          Project library unavailable. Open storage settings to reconnect.
         </p> : rows.length > 0 ? (
           <>
             {visibleProjects.length > 0 ? (
@@ -256,14 +260,10 @@ export function ProjectListPanel({
             )}
           </>
         ) : (
-          <div
-            aria-label="Project list"
-            className="dashboard-library-empty"
-            role="region"
-          >
-            <p>
-              {cadLoading ? 'Loading CAD projects…' : 'No projects yet. Save a CAD design, import a DXF or open a machine program to add a project.'}
-            </p>
+          <div aria-label="Project list" role="region">
+            {cadLoading ? <ProjectLibrarySkeleton label="Loading CAD projects…" />
+              : cadUnavailable ? <p role="status" className="dashboard-library-empty">The CAD library could not be read. Review notifications and storage before creating a replacement project.</p>
+                : <WorkbenchEmptyState context="library" />}
           </div>
         )}
       </div>

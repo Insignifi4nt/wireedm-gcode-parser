@@ -1,0 +1,21 @@
+{
+  "version": "0.0.729", "previousVersion": "0.0.728",
+  "postCompatibility": "preserved-illustrated-empty-workbench",
+  "summary": "The workbench opens directly without a welcome popup. A newly generated CAD-to-machined-part illustration and real loading skeletons support empty libraries and toolpath previews, alongside the actual design/import controls.",
+  "warning": "The old welcome-dismissal preference is no longer read or written. Existing preference data, saved projects, installed posts and revisions remain untouched. Loading, incomplete inventories, storage failures, archive views and filtered results keep their own messages.",
+  "checklist": {
+    "schema": "No project, UPID, saved revision, machine-package or post schemas change. No dismissal-state migration or deletion.",
+    "events": "No execution events or agent-tool contracts change. First-run import, settings focus handling and editor workflows remain directly usable.",
+    "capabilities": "No machine/post capability changes. Shared illustration is content, with no modal, focus trap, fake project or placeholder command.",
+    "auditAndOutput": "No execution compilation, controller generation, audit or output changes. Empty previews show the new illustration without modifying geometry or intent.",
+    "installationAndStorage": "Browser/folder adapters and project/post/revision files remain unchanged. Empty-library artwork is withheld until inventory is ready, complete and actually empty.",
+    "verification": "5929 tests across 526 files pass with two workers after an initial concurrent browser/unit run hit resource deadlines. The final art/skeleton update passes 54 focused dashboard/preview/routing tests and five Chromium journeys, including desktop/phone direct import, empty preview navigation, reduced-motion slow-image loading and failed-image recovery. The preceding popup removal also passed 97 affected Chromium journeys covering project save/reopen, settings focus, package installation and controller export. Native TypeScript, full production build, zero-finding lint and shared UI checks pass. Screenshots reviewed at 1440 and 393 pixels. Software verification does not establish physical machine verification."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Start working directly, with an illustrated empty project view.",
+    "changes": ["The welcome popup is replaced by a new CAD-to-machined-part illustration in empty libraries and toolpath previews.", "Project and image loading use skeleton shapes that respect reduced motion. An unavailable image leaves guidance and commands usable.", "Design/import controls stay directly available; populated projects and incomplete/error inventories keep their own views."],
+    "compatibility": "Existing projects, installed packages, saved revisions and controller output are unchanged. The old welcome-dismissal preference is simply ignored.",
+    "action": "Choose Design in CAD, Import DXF or Open machine program in Start work. There is no first-run dismissal step."
+  }
+}

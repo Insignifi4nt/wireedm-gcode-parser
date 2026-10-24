@@ -5,7 +5,7 @@ import { confirmPendingDxfImport } from './dxf-import';
 test('guide owns focus and Escape without discarding an active geometry edit', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
   await page.getByRole('button', { name: 'Geometry menu', exact: true }).click();

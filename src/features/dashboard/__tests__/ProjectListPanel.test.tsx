@@ -200,16 +200,30 @@ describe('ProjectListPanel', () => {
 
   it('distinguishes loading, unavailable and empty states and blocks project actions while busy', async () => {
     const action = vi.fn();
-    const render = (availability: 'loading' | 'unavailable' | 'ready', rows = projects, locked = false) =>
+    const render = (availability: 'loading' | 'unavailable' | 'ready', rows = projects, locked = false, cadLoading = false, cadUnavailable = false) =>
       root.render(<ProjectListPanel availability={availability} interactionLocked={locked} projects={rows}
+        cadLoading={cadLoading} cadUnavailable={cadUnavailable}
         onOpenProject={action} onDeleteProject={action} onRenameProject={action} onExportUpidProject={action} onSaveUpidProjectAs={action} onShowRevisions={action} />);
     await act(async () => render('loading', []));
     expect(container.querySelector('[role="status"]')?.textContent).toContain('Loading projects');
+    expect(container.querySelector('[data-project-library-skeleton]')).not.toBeNull();
+    expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(0);
+    expect(container.querySelector('.dashboard-count')).toBeNull();
     expect(container.querySelector('[data-project-library]')?.getAttribute('aria-busy')).toBe('true');
     await act(async () => render('unavailable', []));
     expect(container.querySelector('[role="status"]')?.textContent).toContain('Open storage settings to reconnect');
     await act(async () => render('ready', []));
-    expect(container.querySelector('[aria-label="Project list"]')?.textContent).toContain('No projects yet');
+    expect(container.querySelector('[aria-label="Project list"]')?.textContent).toContain('No saved projects yet');
+    expect(container.querySelector('[data-workbench-empty="library"] img')?.getAttribute('alt')).toBe('A CAD wireframe becoming a machined part');
+    await act(async () => render('ready', [], false, true));
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('Loading CAD projects');
+    expect(container.querySelector('[data-project-library-skeleton]')).not.toBeNull();
+    expect(container.querySelector('.dashboard-count')).toBeNull();
+    expect(container.querySelector('[data-workbench-empty]')).toBeNull();
+    await act(async () => render('ready', [], false, false, true));
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('CAD library could not be read');
+    expect(container.querySelector('[data-project-library-skeleton]')).toBeNull();
+    expect(container.querySelector('[data-workbench-empty]')).toBeNull();
     await act(async () => render('ready', projects, true));
     await act(async () => {
       button('Open project a in editor').click();

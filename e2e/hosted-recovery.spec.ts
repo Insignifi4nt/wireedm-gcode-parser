@@ -8,7 +8,7 @@ test('downloads original readable files from blocked startup through hosted Sett
   const originals = { 'workbench.json': '\uFEFF{"schemaVersion":3,', 'transactions/workbench-files.json': '{interrupted', 'imports/original.nc': '\uFEFFG90\r\nG1 X2 Y3\r\n' };
   await page.addInitScript(files => {
     for (const [path, text] of Object.entries(files)) localStorage.setItem(`wire-edm-workbench:file:${path}`, text);
-    localStorage.setItem('wireedm.onboarding.dismissed', 'true');
+
   }, originals);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Workbench could not be opened' })).toBeVisible();
@@ -33,7 +33,7 @@ test('downloads original readable files from blocked startup through hosted Sett
 
 test('copies retained historical files from connected storage when verified backup cannot validate them', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
   await page.getByRole('button', { name: 'Back to Dashboard' }).click();

@@ -1,5 +1,7 @@
 # Wire EDM Workbench guides
 
+Start work directly from the project library. An empty library and empty toolpath preview display a CAD-to-machined-part illustration alongside guidance; there is no first-run popup to dismiss. Choose **Design in CAD**, **Import DXF** or **Open machine program** to begin. Skeleton shapes indicate loading without blocking those controls. Storage failures keep their own diagnostics, and an empty search result keeps its filter controls.
+
 Use [CAD design](cad.md) to build parametric sketches and solid parts in the desktop workspace, then send an exact sketch directly to CAM. CAD uses the same local browser cache or optional workbench folder.
 
 Use the [saved-process simulation guide](simulation.md) to inspect a saved UPID job with rough stock, released pieces and optional STEP machine geometry. [Agent tools](agents.md) describe precise edits, exports and preview capture in a compatible browser.

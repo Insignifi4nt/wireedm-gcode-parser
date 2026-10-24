@@ -2,8 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' })
-    .getByRole('button', { name: 'Go Build!' }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
 });
 
 test('inspects original controller text without creating a project and links commands to lines', async ({ page }) => {

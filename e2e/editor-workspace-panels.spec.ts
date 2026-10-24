@@ -30,9 +30,7 @@ async function openReadyWorkbench(page: import('@playwright/test').Page) {
   await page.goto('/');
   await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
   await expect(page.locator('input[aria-label="Machine program file"]')).toBeEnabled();
-  const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
-  await expect(onboarding).toBeVisible();
-  await onboarding.getByRole('button', { name: 'Go Build!' }).click();
+
 }
 
 test('editor anchors a path project in the UPID rail and mounts only an active right workflow dock', async ({ page }) => {

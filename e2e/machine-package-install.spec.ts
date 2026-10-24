@@ -6,12 +6,8 @@ import { readWorkbenchCacheFile, readWorkbenchCache } from './fixtures/workbench
 
 test('installs one complete Robofil machine package through the normal settings flow', async ({ page }) => {
   await page.goto('/');
-  const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
-  await onboarding.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
-  if (await onboarding.isVisible()) {
-    await onboarding.getByRole('button', { name: 'Go Build!' }).click();
-    await expect(onboarding).toHaveCount(0);
-  }
+
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Open settings' })).toBeEnabled();
   await page.getByRole('button', { name: 'Open settings' }).click();
   await page.getByRole('button', { name: 'Machines & setups' }).click();
@@ -56,11 +52,7 @@ test('installs one complete Robofil machine package through the normal settings 
 
 test('explains missing compensation and exports after the decision is saved', async ({ page }) => {
   await page.goto('/');
-  const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
-  await onboarding.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
-  if (await onboarding.isVisible()) {
-    await onboarding.getByRole('button', { name: 'Go Build!' }).click();
-  }
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
 
   await page.getByRole('button', { name: 'Open settings' }).click();
   await page.getByRole('button', { name: 'Machines & setups' }).click();

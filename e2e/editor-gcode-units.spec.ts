@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('imports mixed unit motion at its physical scale and preserves it on reopen', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('Machine program file', { exact: true }).setInputFiles({
     name: 'mixed-units.nc', mimeType: 'text/plain',
     buffer: Buffer.from('G20 G90\nG0 X0 Y0\nG1 X1 Y0\nG21 G1 X25.4 Y10\nM30')

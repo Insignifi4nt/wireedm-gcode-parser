@@ -3,7 +3,7 @@ import { confirmPendingDxfImport } from './dxf-import';
 
 test('keeps threading defaults and overrides distinct through save and reopen', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles({
     name: 'two-cuts.dxf', mimeType: 'application/dxf',
     buffer: Buffer.from('0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\nCUT\n10\n0\n20\n0\n40\n5\n0\nCIRCLE\n8\nCUT\n10\n20\n20\n0\n40\n5\n0\nENDSEC\n0\nEOF\n')
