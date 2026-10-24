@@ -31,11 +31,18 @@ for (const width of [1440, 393]) {
 
 test('empty editor preview uses the illustration and keeps dashboard navigation immediately usable', async ({ page }) => {
   await openReadyWorkbench(page);
+  const header = page.locator('[data-app-header]');
+  await expect(header).toContainText('broCAD/M');
   await page.getByRole('button', { name: 'Open Editor', exact: true }).click();
   await expect(page.locator('[data-workbench-empty="preview"]')).toContainText('No drawable toolpath loaded');
+  await expect(header).not.toContainText('broCAD/M');
   await page.getByRole('button', { name: 'Back to Dashboard', exact: true }).click();
   await expect(page.locator('[data-workbench-empty="library"]')).toBeVisible();
+  await expect(header).toContainText('broCAD/M');
   await expect(page.getByLabel('Machine program file', { exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Design in CAD', exact: true }).click();
+  await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible();
+  await expect(header).not.toContainText('broCAD/M');
 });
 
 test('slow artwork uses a reduced-motion skeleton while real import controls stay ready', async ({ page }) => {

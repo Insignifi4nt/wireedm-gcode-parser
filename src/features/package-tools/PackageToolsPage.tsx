@@ -125,7 +125,7 @@ export function PackageToolsPage() {
   }
 
   return <>
-    <header><a href={base}>Wire EDM Workbench</a><span>Package workbench · {APP_VERSION}</span><a href={`${base}documentation/`}>Documentation</a></header>
+    <header><a href={base}>Back to projects</a><span>Package workbench · {APP_VERSION}</span><a href={`${base}documentation/`}>Documentation</a></header>
     <main>
       <h1>Build and check a machine package</h1>
       <p>Work with JSON and evidence files in this browser. Checks run locally; nothing is installed, saved to your project library, or sent to a server. Download your work before leaving this page.</p>

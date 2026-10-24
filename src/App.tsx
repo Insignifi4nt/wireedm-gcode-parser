@@ -77,6 +77,7 @@ function WorkbenchApp({ services }: AppProps) {
 
   return (
     <AppShell
+      showDashboardBrand={app.activeView === 'dashboard' && !cadOpen}
       routeSettingsSection={navigation.settingsSection} onRouteSettingsSection={navigation.openSettings} onCloseRouteSettings={navigation.closeSettings}
       recovery={app.recoveryControls}
       agentPanelContent={<><AgentActivity activity={agentActivity} />{agentActions.previewControl && <div className="mt-3 border-t border-border pt-2">{agentActions.previewControl}</div>}{cad.previewArtifact && <a className="mt-3 block text-xs text-primary underline" href={cad.previewArtifact.previewUrl} download={cad.previewArtifact.fileName}>CAD preview PNG</a>}</>}

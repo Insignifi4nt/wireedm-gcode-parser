@@ -1,6 +1,6 @@
-# Wire EDM Workbench
+# broCAD/M
 
-Plan wire EDM cuts in your browser. Bring in a drawing, set up the machining sequence, inspect the part in 3D and export a program for your machine.
+Design parts and plan wire EDM cuts in your browser. Build parametric sketches and solids, bring in a drawing, set up the machining sequence, inspect the part in 3D and export a program for your machine.
 
 [Open the app](https://insignifi4nt.github.io/wireedm-gcode-parser/) · [Read the guides](https://insignifi4nt.github.io/wireedm-gcode-parser/documentation/)
 

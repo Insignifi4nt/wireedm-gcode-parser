@@ -73,6 +73,8 @@ Portal context menus use `--layer-context-menu`; shared tooltip portals use the 
 
 ## Layout and responsive patterns
 
+The platform name is `broCAD/M`. Its in-app wordmark belongs to the dashboard header only. CAD and CAM workspaces keep their document/project headers, including while loading or empty. Settings shows the app version without another wordmark; standalone package tools link back to projects. Browser titles and public documentation use the platform name. Existing storage namespaces, package formats and integration identifiers retain their stable names.
+
 `WorkbenchEmptyState` shows the generated CAD-to-machined-part illustration in the truly empty saved-project library and empty toolpath preview. It owns no modal, focus trap, dismissal preference, fake row or command. Existing Start work/header actions remain the entry points. `ProjectLibrarySkeleton` represents pending inventory without fake project names or counts. Shared `Skeleton` shapes are decorative, respect reduced motion and leave status announcements to their owner. The image has its own loading skeleton; failure removes the art and keeps guidance and commands usable. Loading, failed inventory, archives and filtered empty results retain their own truthful states. The image fits without cropping and the composition uses shared theme tokens at desktop and phone widths.
 
 - Headers group a sentence-case title, optional `InfoTip`, and real commands. Give the main task one clear primary action; utilities and metadata use secondary emphasis.

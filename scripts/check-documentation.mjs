@@ -43,7 +43,7 @@ for (const file of ['dist/llms.txt', 'dist/documentation/llms.txt', ...files.fil
   for (const match of text.matchAll(/\]\((https?:[^\s)]+)\)/g)) await exists(match[1]);
 }
 const llms = await readFile('dist/llms.txt', 'utf8');
-assert.ok(llms.startsWith('# Wire EDM Workbench\n'));
+assert.ok(llms.startsWith('# broCAD/M\n'));
 assert.ok(llms.includes('/documentation/index.md'));
 const sitemap = await readFile('dist/sitemap.xml', 'utf8');
 for (const match of sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)) await exists(match[1]);

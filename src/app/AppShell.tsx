@@ -20,6 +20,7 @@ import type { RecoveryExportControls } from './RecoveryExportPanel';
 import { EditorCompactDrawerLaunchers } from '@/features/editor/EditorWorkspacePanels';
 
 interface AppShellProps extends MachinePostSettingsActions {
+  showDashboardBrand?: boolean;
   recovery?: RecoveryExportControls | null;
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
   connectedWorkbench: ConnectedWorkbenchCatalog | null;
@@ -41,6 +42,7 @@ interface AppShellProps extends MachinePostSettingsActions {
 }
 
 export function AppShell({
+  showDashboardBrand = true,
   recovery,
   workbenchStatus,
   connectedWorkbench,
@@ -186,12 +188,12 @@ export function AppShell({
         data-app-header
         inert={compactModalOpen ? true : undefined}
       >
-        {headerContent ?? (
+        {headerContent ?? (showDashboardBrand && (
           <div className="mr-4 flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground">
             <WireEdmMarkIcon className="size-4 text-primary" />
-            <span className="truncate">Wire EDM Workbench</span>
+            <span className="truncate">broCAD/M</span>
           </div>
-        )}
+        ))}
         <div className="ml-auto flex items-center gap-2" data-app-header-system-controls>
           <StatusNotificationMenu notifications={statusNotifications} agentContent={agentPanelContent} />
           <Button

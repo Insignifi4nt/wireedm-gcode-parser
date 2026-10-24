@@ -1,4 +1,4 @@
-# Wire EDM Workbench guides
+# broCAD/M guides
 
 Start work directly from the project library. An empty library and empty toolpath preview display a CAD-to-machined-part illustration alongside guidance; there is no first-run popup to dismiss. Choose **Design in CAD**, **Import DXF** or **Open machine program** to begin. Skeleton shapes indicate loading without blocking those controls. Storage failures keep their own diagnostics, and an empty search result keeps its filter controls.
 
@@ -6,7 +6,7 @@ Use [CAD design](cad.md) to build parametric sketches and solid parts in the des
 
 Use the [saved-process simulation guide](simulation.md) to inspect a saved UPID job with rough stock, released pieces and optional STEP machine geometry. [Agent tools](agents.md) describe precise edits, exports and preview capture in a compatible browser.
 
-Wire EDM Workbench turns a saved UPID project into a controller-neutral execution plan. A post translates that plan into an exact controller program. The user installs one **complete `.wireedm-package`** containing the machine, post, setup, evidence and tests.
+broCAD/M turns a saved UPID project into a controller-neutral execution plan. A post translates that plan into an exact controller program. The user installs one **complete `.wireedm-package`** containing the machine, post, setup, evidence and tests.
 
 Start with the [authoring workflow](authoring.md) and open the [Package workbench](tools.md) to check and build files in your browser. Use the [contract reference](reference.md) while implementing. For an existing package, start with [compatibility and repairs](compatibility.md).
 

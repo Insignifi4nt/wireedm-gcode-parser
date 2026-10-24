@@ -7,7 +7,7 @@ test('loads the workbench dashboard in a real browser', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openReadyWorkbench(page);
 
-  await expect(page).toHaveTitle(/Wire EDM Workbench/);
+  await expect(page).toHaveTitle('broCAD/M');
   await expect(page.locator('[data-app-shell]')).toBeVisible();
   await expect(page.locator('[data-workbench-page]')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project library', exact: true })).toBeVisible();

@@ -946,7 +946,7 @@ export const iconCatalog = {
     ]
   },
   "wire-edm-mark": {
-    "label": "Wire EDM Workbench",
+    "label": "broCAD/M",
     "category": "brand",
     "paths": [
       "M3 8h6v12H3ZM15 5h6v12h-6ZM12 2v20"

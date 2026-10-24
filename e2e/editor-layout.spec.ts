@@ -15,7 +15,7 @@ test('machine program editor keeps resizable code panels and full-height text ed
 
   const appHeader = page.locator('[data-app-header]');
   await expect(appHeader.getByRole('button', { name: /dashboard/i })).toBeVisible();
-  await expect(appHeader).not.toContainText('Wire EDM Workbench');
+  await expect(appHeader).not.toContainText('broCAD/M');
   await expect(appHeader.getByRole('heading', { name: /layout-program/i })).toBeVisible();
   await expect(appHeader.getByRole('button', { name: /import program/i })).toBeVisible();
   await expect(appHeader.getByRole('button', { name: /open usage guide/i })).toBeVisible();

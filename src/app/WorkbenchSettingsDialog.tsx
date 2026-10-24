@@ -85,7 +85,7 @@ export function WorkbenchSettingsDialog({
             <SectionButton active={activeSection === 'cad'} icon={<BodyIcon className="size-4" />} label="CAD" onClick={() => selectSection('cad')} />
           </nav>
           <div className="mt-4 grid gap-2 text-[11px] max-[720px]:col-span-2 max-[720px]:mt-0 max-[720px]:flex max-[720px]:flex-wrap max-[720px]:gap-x-4">
-            <p className="text-muted-foreground">Wire EDM Workbench {APP_VERSION}</p>
+            <p className="text-muted-foreground">App {APP_VERSION}</p>
             <a className="underline" href={`${import.meta.env.BASE_URL}documentation/releases/${APP_VERSION}/`} target="_blank" rel="noreferrer">Release notes & compatibility</a>
             <a className="underline" href={`${import.meta.env.BASE_URL}documentation/`} target="_blank" rel="noreferrer">Help & documentation</a>
           </div>

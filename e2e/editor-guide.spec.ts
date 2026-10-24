@@ -15,7 +15,7 @@ test('guide owns focus and Escape without discarding an active geometry edit', a
   const rotated = await cuts.evaluateAll(paths => paths.map(path => path.getAttribute('d')));
   const launcher = page.getByRole('button', { name: 'Open usage guide', exact: true });
   await launcher.click();
-  const guide = page.getByRole('dialog', { name: 'Wire EDM Workbench Manual', exact: true });
+  const guide = page.getByRole('dialog', { name: 'CAM guide', exact: true });
   const close = guide.getByRole('button', { name: 'Close guide', exact: true });
   await expect(close).toBeFocused();
   await expect(page.locator('[data-app-header]')).toHaveAttribute('inert', '');

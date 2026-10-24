@@ -2,7 +2,7 @@
   "name": "wire-edm-workbench",
   "homepage": "https://insignifi4nt.github.io/wireedm-gcode-parser",
   "version": "0.0.729",
-  "description": "A local-first Wire EDM workbench with controller-neutral CAM state and complete installable machine packages.",
+  "description": "broCAD/M: local-first CAD and CAM with parametric design, wire EDM planning and complete machine packages.",
   "type": "module",
   "scripts": {
     "icons:generate": "npm --prefix packages/icons-react run generate && node scripts/generate-icons.mjs",
