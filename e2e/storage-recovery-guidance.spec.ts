@@ -23,6 +23,6 @@ test('explains disabled folder and restore actions while saved-file backup works
   const requested = page.waitForEvent('download'); await backup.click();
   const downloaded = await requested;
   const archive = JSON.parse(await readFile((await downloaded.path())!, 'utf8'));
-  expect(archive.files).toEqual(expect.arrayContaining(before.map(([path, text]) => expect.objectContaining({ path, text }))));
+  expect(archive.files).toEqual(expect.arrayContaining(before.map(([key, text]) => expect.objectContaining({ path: key.slice('wire-edm-workbench:file:'.length), text }))));
   expect(await readWorkbenchCache(page)).toEqual(before);
 });
