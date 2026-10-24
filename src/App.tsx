@@ -283,6 +283,7 @@ function WorkbenchApp({ services }: AppProps) {
         onDismiss={dismissOnboarding}
         open={onboardingOpen && app.workbenchStatus === 'ready'}
       />
+      {agentActions.importControl}
     </AppShell>
   );
 }
