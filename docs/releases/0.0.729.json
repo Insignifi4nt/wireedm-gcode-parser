@@ -1,21 +1,22 @@
 {
-  "version": "0.0.729", "previousVersion": "0.0.728",
-  "postCompatibility": "preserved-agent-session-registration",
-  "summary": "Agent tools recover after page restore or browser-context replacement, with a draft-preserving manual refresh and distinct expired-registration diagnostics.",
-  "warning": "Refresh agent tools preserves the live draft. Reloading still requires saving unsaved work first. External integrations must rediscover the current tab's tools; their original reported stale-session cause is not established. Installed packages and saved revisions are unchanged.",
+  "version": "0.0.729",
+  "previousVersion": "0.0.728",
+  "postCompatibility": "preserved-uniform-cam-scaling",
+  "summary": "Uniformly scale CAM geometry by factor or longest-side millimeters in Transform and WebMCP, with an explicit origin and bounds.",
+  "warning": "Scaling changes the selected draft's physical geometry. Manual leads require review and manual initial wire stays fixed and requires review. Stops retain millimeter distances; invalid stops or tolerance-induced topology changes reject the edit. Existing saved revisions and installed posts are never rewritten.",
   "checklist": {
-    "schema": "No project, UPID, revision, package or post schema changes. Expired native registrations now return TOOL_REGISTRATION_STALE; data-version mismatches retain STALE_STATE.",
-    "events": "No execution events change. Registration lifecycle follows page hide/show, context replacement and manual retry. The initial non-restored pageshow preserves live registrations and active startup calls. Active command cancellation and durable late-commit receipts remain separate.",
-    "capabilities": "No machine/post capability changes. Manual registration refresh refuses to interrupt active agent calls.",
-    "auditAndOutput": "No execution, controller generation, motion audit or output formatting changes.",
-    "installationAndStorage": "No storage migration or installed package/revision writes. Registration refresh does not reload or discard drafts.",
-    "verification": "19 registration/activity tests pass, including context replacement, late context availability, resume, disposed handles, pending StrictMode acknowledgements, live callbacks, manual refresh during a mutation and an active startup mutation surviving initial pageshow. The startup regression failed before the lifecycle fix. Chromium journey preserves dirty geometry through settings navigation and simulated page restore, distinguishes stale registration/data versions, saves and reopens. Native TypeScript, full production build, lint and UI checks pass. Tests do not establish the cause of an external integration cache failure or physical machine verification."
+    "schema": "No UPID, project, saved revision, package or post schema changes. Adds scale to the typed agent edit union.",
+    "events": "No execution-event changes. Scaling uses the existing atomic undoable draft edit and explicit save workflow.",
+    "capabilities": "No machine or post capability changes. Positive uniform factors preserve exact circles/arcs, nesting and source ownership.",
+    "auditAndOutput": "Output and audit rules are unchanged for unchanged jobs. Scaled drafts require normal machining review and machine-fit validation before output.",
+    "installationAndStorage": "Browser and folder saves use existing shared project operations. No installed posts, packages, originals or saved revisions are migrated, deleted or rewritten.",
+    "verification": "151 focused geometry/edit/discovery/UI tests pass, including analytic circles/arcs, nesting, explicit origin, longest-side bounds, fixed wire and transformed lead review, preserved stop distances, invalid shrinkage, topology changes and batch atomicity. Native TypeScript typecheck, zero-finding lint and UI ownership check pass. Physical machine verification is not established."
   },
   "testedPosts": [],
   "publicNotes": {
-    "summary": "Recover agent tools without reloading your draft.",
-    "changes": ["Agent tools re-register after page restore or a changed browser context.", "Refresh agent tools in notifications, and distinguish an expired registration from stale project data."],
-    "compatibility": "Existing projects, installed posts, saved revisions and controller output are unchanged. Expired tool handles return a specific registration diagnostic.",
-    "action": "After resuming, rediscover the current tab's tools. If needed, use Refresh agent tools in notifications and rediscover again. Save before any full page reload."
+    "summary": "Resize CAM geometry inside the workbench.",
+    "changes": ["Scale uniformly by factor or fit the longest side, with explicit origin and resulting bounds.", "Use the same scale edit through WebMCP and undo it as one draft change."],
+    "compatibility": "Installed packages and saved revisions are preserved. Scaling a draft changes geometry and requires machining review.",
+    "action": "Open Geometry → Transform, target Document and use Uniform scale. Review starts, leads, wire position and machine fit before saving and exporting."
   }
 }

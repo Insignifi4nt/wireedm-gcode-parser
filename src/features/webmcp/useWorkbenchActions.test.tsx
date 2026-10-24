@@ -43,7 +43,7 @@ async function harness(overrides: Partial<AppServices> = {}, isExternalBusy: () 
     app = useWorkbenchAppController({ ...createDxfImportServices(directDxfProcessor), connectRememberedWorkbenchDirectory: async () => ({ status: 'missing' }), generateControllerArtifact: generate, downloadTextFile: download, ...overrides }, () => draft.current);
     const actions = useWorkbenchActions(agentWorkbench === undefined ? app : { ...app, connectedWorkbench: agentWorkbench }, draft, isExternalBusy);
     tools = [...workbenchSiteTools(() => ({ workbench: app.connectedWorkbench, draft: draft.current, busy: actions.isBusy() })), ...actions.tools];
-    return actions.previewControl;
+    return <>{actions.previewControl}{actions.importControl}</>;
   }
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
   await act(async () => root.render(<Harness />));
@@ -82,6 +82,40 @@ async function packageSource() {
   if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
   return { bytes: built.archive, source: { fileName: 'machine.wireedm-package', base64: Buffer.from(built.archive).toString('base64') } };
 }
+
+async function attachFile(h: Awaited<ReturnType<typeof harness>>, file: NodeFile) {
+  const workflow = await h.call('edm_workflow_context', {});
+  expect(await h.call('edm_request_import_file', { expectedVersion: workflow.data.version })).toMatchObject({ ok: true });
+  const input = container.querySelector<HTMLInputElement>('[aria-label="Agent import file"]');
+  if (!input) throw new Error('Missing attachment input');
+  Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+  await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+  const context = await h.call('edm_workflow_context', {});
+  return { fileToken: context.data.inputFile.fileToken, expectedVersion: context.data.version };
+}
+
+it('imports an attached UPID beyond the inline limit and invalidates its token after the workbench changes', async () => {
+  const h = await harness();
+  const document = createUpidFromDxfEntities([{ type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 10 }]);
+  const portable = JSON.stringify({ format: 'upid', schemaVersion: document.schemaVersion, document }) + ' '.repeat(2 * 1024 * 1024);
+  const attached = await attachFile(h, new NodeFile([portable], 'large.upid.json'));
+  const source = { fileToken: attached.fileToken };
+  expect(await h.call('edm_import_upid', { expectedVersion: attached.expectedVersion, source })).toMatchObject({ ok: true, data: { imported: true } });
+  const context = await h.call('edm_workflow_context', {});
+  expect(context.data.inputFile).toBeNull();
+  expect(await h.call('edm_import_upid', { expectedVersion: context.data.version, source })).toMatchObject({ ok: false, error: { code: 'FILE_TOKEN_STALE' } });
+});
+
+it('requires unit review for attached DXF and normal package preview before any installation', async () => {
+  const h = await harness();
+  const attached = await attachFile(h, new NodeFile([text], 'drawing.dxf'));
+  expect(await h.call('edm_prepare_dxf', { expectedVersion: attached.expectedVersion, source: { fileToken: attached.fileToken } })).toMatchObject({ ok: true, data: { preparationId: expect.any(String), choices: expect.any(Array) } });
+  expect(h.app().connectedWorkbench!.manifest.projects).toHaveLength(0);
+  const built = await packageSource();
+  const packageFile = await attachFile(h, new NodeFile([built.bytes], 'machine.wireedm-package'));
+  expect(await h.call('edm_prepare_machine_package', { expectedVersion: packageFile.expectedVersion, source: { fileToken: packageFile.fileToken } })).toMatchObject({ ok: true, data: { preparationId: expect.any(String) } });
+  expect(h.app().connectedWorkbench!.machines.machines).toHaveLength(0);
+});
 
 async function importCircle(h: Awaited<ReturnType<typeof harness>>, sourceText = text) {
   const context = await h.call('edm_workflow_context', {});

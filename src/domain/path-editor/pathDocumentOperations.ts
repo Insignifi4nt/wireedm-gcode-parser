@@ -1,4 +1,5 @@
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
+import { previewPathScale } from './pathScaling';
 import { analyzeContours } from '@/domain/path-intel/contours';
 import { deriveActiveMachiningOperations, deriveSourceMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { programStopValidationError } from '@/domain/path-intel/programStops';
@@ -390,6 +391,25 @@ export function rotatePathDocument(
     rotationPointTransform(angleDegrees, origin),
     1
   );
+}
+
+/** Uniform positive scaling preserves oriented ownership; tolerance-induced joins/splits are refused. */
+export function scalePathDocument(document: PathPlanningDocument, factor: number, origin: Point2) {
+  if (!Number.isFinite(factor) || factor <= 0 || !Number.isFinite(origin.x) || !Number.isFinite(origin.y)) return null;
+  if (!previewPathScale(document, { kind: 'factor', factor }, origin)) return null;
+  if (factor === 1) return cloneDocument(document);
+  const next = transformPathSegments(document, document.segments.map(segment => segment.id),
+    point => ({ x: origin.x + (point.x - origin.x) * factor, y: origin.y + (point.y - origin.y) * factor }), 1, factor);
+  if (!next) return null;
+  const topology = document.plan.operations.map(pathTopologyKey).sort();
+  if (JSON.stringify(topology) !== JSON.stringify(next.plan.operations.map(pathTopologyKey).sort())) return null;
+  const relationships = (doc: PathPlanningDocument) => doc.contours.map(contour =>
+    [contour.id, contour.parentId, contour.containmentDepth, contour.classification, [...contour.childIds].sort()]).sort();
+  if (JSON.stringify(relationships(document)) !== JSON.stringify(relationships(next))) return null;
+  // Stop distances are authored millimeters, never inferred proportions of the drawing.
+  if (next.plan.operations.some(operation => operation.programStops?.some(stop =>
+    programStopValidationError(next, operation, stop, operation.programStops ?? [])))) return null;
+  return next;
 }
 
 export function rotatePathElement(
@@ -1063,7 +1083,8 @@ function transformPathSegments(
   document: PathPlanningDocument,
   segmentIds: SegmentId[],
   transformPoint: (point: Point2) => Point2,
-  determinant: 1 | -1
+  determinant: 1 | -1,
+  radiusScale = 1
 ) {
   if (!Number.isFinite(determinant)) return null;
 
@@ -1075,7 +1096,7 @@ function transformPathSegments(
   next.segments = next.segments.map((segment) => {
     if (!transformedSegmentIds.has(segment.id)) return segment;
     changed = true;
-    return transformSegmentGeometry(segment, transformPoint, determinant);
+    return transformSegmentGeometry(segment, transformPoint, determinant, radiusScale);
   });
 
   // Edits keep geometry inside the range import accepts, so derived lengths, rapids and areas stay finite.
@@ -1096,7 +1117,8 @@ function transformPathSegments(
 function transformSegmentGeometry(
   segment: PathSegment,
   transformPoint: (point: Point2) => Point2,
-  determinant: 1 | -1
+  determinant: 1 | -1,
+  radiusScale = 1
 ): PathSegment {
   if (segment.kind === 'line') {
     return createLineSegment({
@@ -1113,7 +1135,7 @@ function transformSegmentGeometry(
       source: segment.source,
       center: transformPoint(segment.center),
       preferredStart: transformPoint(segment.preferredStart),
-      radius: segment.radius
+      radius: segment.radius * radiusScale
     });
   }
 
@@ -1123,7 +1145,7 @@ function transformSegmentGeometry(
     start: transformPoint(segment.start),
     end: transformPoint(segment.end),
     center: transformPoint(segment.center),
-    radius: segment.radius,
+    radius: segment.radius * radiusScale,
     clockwise: determinant < 0 ? !segment.clockwise : segment.clockwise,
     sweepRadians: segment.sweepRadians * determinant
   });
