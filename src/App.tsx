@@ -105,6 +105,9 @@ function WorkbenchApp({ services }: AppProps) {
       statusNotifications={app.statusNotifications}
       storageActionLabel={app.storageActionLabel}
       storageSwitchDisabled={cadOpen || app.activeView === 'editor' || app.workbenchInteractionLocked || cad.storageBusy || (hasUnsavedCadDraft(cad.snapshot))}
+      storageSwitchDisabledReason={app.workbenchInteractionLocked || cad.storageBusy ? 'Wait for the running workbench operation to finish.'
+        : cadOpen || app.activeView === 'editor' ? 'Save or discard pending edits, then return to the dashboard before switching storage or restoring files.'
+        : hasUnsavedCadDraft(cad.snapshot) ? 'Save or discard the retained CAD draft before switching storage or restoring files.' : undefined}
       storageWarningMessage={app.storageWarningMessage}
       workbenchStatus={app.workbenchStatus}
     >

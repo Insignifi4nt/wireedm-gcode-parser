@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { useId } from 'react';
 import type { recoverySourceSummary, RecoveryExportReceipt } from '@/domain/storage/workbenchRecovery';
 
 export interface RecoveryExportControls {
@@ -12,6 +13,7 @@ export interface RecoveryExportControls {
 }
 
 export function RecoveryExportPanel({ recovery, disabled = false }: { recovery: RecoveryExportControls | null; disabled?: boolean }) {
+  const disabledReasonId = useId();
   if (!recovery) return null;
   const { source, receipt } = recovery;
   const locked = disabled || recovery.busy;
@@ -21,9 +23,10 @@ export function RecoveryExportPanel({ recovery, disabled = false }: { recovery: 
     <p className="break-words text-muted-foreground">{source.diagnostic.message}{source.diagnostic.messageTruncated ? '… (diagnostic shortened)' : ''}</p>
     <p className="text-muted-foreground">Download the readable files and recovery diagnostics from this location. This does not repair storage or create a verified restore backup. Unreadable or oversized files are listed as omissions. Storage remains unchanged.</p>
     <div className="flex flex-wrap gap-2">
-      <Button size="md" disabled={locked} variant="outline" onClick={() => { void recovery.onExport().catch(() => undefined); }}>Capture and download recovery export</Button>
-      {receipt && <Button size="md" disabled={locked} variant="outline" onClick={() => { void recovery.onDownload().catch(() => undefined); }}>Download captured recovery export again</Button>}
+      <Button size="md" disabled={locked} aria-describedby={locked ? disabledReasonId : undefined} variant="outline" onClick={() => { void recovery.onExport().catch(() => undefined); }}>Capture and download recovery export</Button>
+      {receipt && <Button size="md" disabled={locked} aria-describedby={locked ? disabledReasonId : undefined} variant="outline" onClick={() => { void recovery.onDownload().catch(() => undefined); }}>Download captured recovery export again</Button>}
     </div>
+    {locked && <p id={disabledReasonId} className="text-muted-foreground">{recovery.busy ? 'Wait for the current recovery capture to finish.' : 'Wait for the running workbench operation to finish, then download the readable recovery files here. Folder access is not required.'}</p>}
     {recovery.busy && <p role="status">Reading recovery files…</p>}
     {recovery.error && <p className="break-words text-destructive" role="alert">{recovery.error}</p>}
     {recovery.message && <p role="status">{recovery.message}</p>}

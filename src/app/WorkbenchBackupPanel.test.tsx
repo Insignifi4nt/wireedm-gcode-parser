@@ -32,6 +32,8 @@ describe('saved-file backup while an editor is open', () => {
       await act(async () => root.render(<WorkbenchBackupPanel workbench={imported.workbench} disabled={false} mutationsDisabled />));
       expect(button('Create and download backup').disabled).toBe(false);
       expect(button('Choose backup to restore').disabled).toBe(true);
+      const reason = button('Choose backup to restore').getAttribute('aria-describedby');
+      expect(reason && document.getElementById(reason)?.textContent).toContain('Close the active editor');
       await act(async () => {
         button('Create and download backup').click();
         await vi.waitFor(() => expect(download).toHaveBeenCalledOnce());
@@ -46,6 +48,8 @@ describe('saved-file backup while an editor is open', () => {
       for (const [path,text] of originals) expect(await adapter.readExactText!(path)).toBe(text);
       await act(async () => root.render(<WorkbenchBackupPanel workbench={imported.workbench} disabled mutationsDisabled />));
       expect(button('Create and download backup').disabled).toBe(true);
+      const busyReason = button('Create and download backup').getAttribute('aria-describedby');
+      expect(busyReason && document.getElementById(busyReason)?.textContent).toContain('Wait for the running workbench operation');
     } finally { await act(async () => root.unmount()); container.remove(); }
   });
 });

@@ -1,5 +1,11 @@
 # Contract reference
 
+## Recover saved work
+
+Open **Settings → Storage** to download a verified backup of saved projects, source files, installed machines/posts and retained revisions. Unsaved edits are excluded. Backup remains available while an editor is open. Restore, cleanup and location switching require finishing the current operation and returning to the dashboard; disabled controls explain the exact reason.
+
+If a verified backup fails, choose **Capture and download recovery export** below. It captures readable originals with explicit omissions without requiring folder access. Keep the download. Do not clear site data or remove referenced/retained files to make an export work. Browsers without a directory picker can continue using browser storage and these download paths.
+
 Use these downloadable contracts when preparing JSON for the [Package workbench](tools.md). The files describe the exact structures and behavior accepted by the hosted app.
 
 ## Authoring
