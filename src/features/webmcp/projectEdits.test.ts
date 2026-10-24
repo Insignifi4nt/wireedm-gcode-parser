@@ -12,6 +12,17 @@ function circles() {
   ]);
 }
 describe('agent machining batches', () => {
+  it('scales by factor or longest side and rejects invalid scale batches without changing the input', () => {
+    const doc = circles();
+    const edit = { kind: 'scale', origin: { x: 0, y: 0 }, scale: { kind: 'longest-side', lengthMm: 140 } } as const;
+    expect(Value.Check(projectEdit, edit)).toBe(true);
+    const next = applyProjectEdits(doc, [edit]);
+    expect(next.segments[0]).toMatchObject({ radius: 70 });
+    expect(doc.segments[0]).toMatchObject({ radius: 10 });
+    expect(Value.Check(projectEdit, { ...edit, scale: { kind: 'factor', factor: 0 } })).toBe(false);
+    expect(Value.Check(projectEdit, { ...edit, scale: { kind: 'factor', factor: 2, lengthMm: 140 } })).toBe(false);
+    expect(() => applyProjectEdits(doc, [edit, { kind: 'reverse', operationId: 'missing' }])).toThrow('No edits were applied');
+  });
   it('accepts exact imported UPID identities beyond the workbench handle length', () => {
     const original = circles();
     const originalId = original.plan.operations[0].id;

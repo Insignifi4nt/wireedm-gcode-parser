@@ -8,6 +8,7 @@ const descriptions: Record<ProjectEdit['kind'], string> = {
   translate: 'Translate the entire document or one operation by a precise millimeter delta.',
   rotate: 'Rotate the document by signed degrees around an explicit millimeter origin.',
   mirror: 'Mirror the document about the horizontal x or vertical y axis through the supplied origin.',
+  scale: 'Uniformly scale the entire drawing by a positive factor or longest-side millimeters around an explicit origin. Source identities, nesting, normalized participation and compensation choices are retained. Geometry-linked starts and lead coordinates scale; manual leads require review. Manual initial wire stays fixed and requires review. Stop distances stay in millimeters; invalid stops or tolerance-induced topology changes reject the whole batch. Inspect resulting bounds with edm_get_project.',
   'order-strategy': 'Choose an ordering strategy and rebuild the operation order.',
   'move-operation': 'Move one operation a single position earlier (-1) or later (1). Boundary moves are rejected.',
   reverse: 'Reverse one operation cutting direction, using its current operation ID.',

@@ -1,5 +1,9 @@
 # Storage layout and migrations
 
+## Recovery availability in the interface
+
+Settings explains disabled folder, backup, restore and readable-export commands with visible accessible descriptions. Folder capability is checked independently of editor/workbench guards. Missing directory-picker support directs users to browser storage and download-based recovery. Saving a verified backup remains a read operation with an editor open; restoring, cleanup and switching locations keep their mutation guards. Verified-backup failures point to readable recovery capture, which retains exact logical originals and reports omissions without requiring folder access. Quota guidance prioritizes downloads in the current browser and never recommends clearing site data.
+
 App release numbers do not version persisted data. The current workbench catalog is schema 3; project documents are schema 2. UPID, saved revisions, post libraries, machine libraries and transaction records each validate their own formats. An app release must explicitly record any storage compatibility change.
 
 ## Where data lives

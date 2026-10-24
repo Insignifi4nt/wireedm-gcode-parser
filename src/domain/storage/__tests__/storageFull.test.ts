@@ -13,13 +13,13 @@ describe('full browser storage', () => {
     const { adapter, refuse } = cacheStorage();
     refuse(() => true);
     await expect(adapter.writeText('projects/part.json', 'NEXT')).rejects.toMatchObject({
-      message: expect.stringContaining('using a browser with folder access')
+      message: expect.stringContaining('folder access is not required')
     });
     await expect(adapter.writeText('projects/part.json', 'NEXT')).rejects.toMatchObject({
-      message: expect.stringContaining('save a backup. Restore it into an empty folder')
+      message: expect.stringContaining('If verified backup fails, use Export readable recovery files in the same browser')
     });
     await expect(adapter.writeText('projects/part.json', 'NEXT')).rejects.toMatchObject({
-      message: expect.stringContaining('Unreferenced file cleanup to remove only files you no longer need.')
+      message: expect.stringContaining('Unreferenced file cleanup only after saving a backup and reviewing the selected files.')
     });
   });
 

@@ -32,6 +32,7 @@ test('downloads original readable files from blocked startup through hosted Sett
 });
 
 test('copies retained historical files from connected storage when verified backup cannot validate them', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: undefined }));
   await page.goto('/');
   await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
@@ -56,6 +57,8 @@ test('copies retained historical files from connected storage when verified back
   await expect(dialog).toContainText('Browser cache active');
   await dialog.getByRole('button', { name: 'Create and download backup', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText(`Revision ${revisionId}`);
+  await expect(dialog.getByText('If a verified backup cannot be created, use Export readable recovery files below.', { exact: false })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Choose Workbench Folder', exact: true })).toHaveAccessibleDescription(/folder access is optional/);
   const request = page.waitForEvent('download');
   await dialog.getByRole('button', { name: 'Capture and download recovery export', exact: true }).click();
   const download = await request;

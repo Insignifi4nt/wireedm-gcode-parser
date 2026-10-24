@@ -80,7 +80,7 @@ function WorkbenchApp({ services }: AppProps) {
       showDashboardBrand={app.activeView === 'dashboard' && !cadOpen}
       routeSettingsSection={navigation.settingsSection} onRouteSettingsSection={navigation.openSettings} onCloseRouteSettings={navigation.closeSettings}
       recovery={app.recoveryControls}
-      agentPanelContent={<><AgentActivity activity={agentActivity} />{agentActions.previewControl && <div className="mt-3 border-t border-border pt-2">{agentActions.previewControl}</div>}{cad.previewArtifact && <a className="mt-3 block text-xs text-primary underline" href={cad.previewArtifact.previewUrl} download={cad.previewArtifact.fileName}>CAD preview PNG</a>}</>}
+      agentPanelContent={<><AgentActivity activity={agentActivity} onRefresh={agentActivity.refresh} /><div className="mt-3">{agentActions.attachControl}</div>{agentActions.previewControl && <div className="mt-3 border-t border-border pt-2">{agentActions.previewControl}</div>}{cad.previewArtifact && <a className="mt-3 block text-xs text-primary underline" href={cad.previewArtifact.previewUrl} download={cad.previewArtifact.fileName}>CAD preview PNG</a>}</>}
       connectedWorkbench={app.connectedWorkbench}
       errorMessage={app.errorMessage}
       interactionLocked={app.workbenchInteractionLocked || cad.storageBusy}
@@ -96,6 +96,9 @@ function WorkbenchApp({ services }: AppProps) {
       statusNotifications={app.statusNotifications}
       storageActionLabel={app.storageActionLabel}
       storageSwitchDisabled={cadOpen || app.activeView === 'editor' || app.workbenchInteractionLocked || cad.storageBusy || (hasUnsavedCadDraft(cad.snapshot))}
+      storageSwitchDisabledReason={app.workbenchInteractionLocked || cad.storageBusy ? 'Wait for the running workbench operation to finish.'
+        : cadOpen || app.activeView === 'editor' ? 'Save or discard pending edits, then return to the dashboard before switching storage or restoring files.'
+        : hasUnsavedCadDraft(cad.snapshot) ? 'Save or discard the retained CAD draft before switching storage or restoring files.' : undefined}
       storageWarningMessage={app.storageWarningMessage}
       workbenchStatus={app.workbenchStatus}
     >

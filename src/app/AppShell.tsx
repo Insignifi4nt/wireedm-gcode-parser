@@ -32,6 +32,7 @@ interface AppShellProps extends MachinePostSettingsActions {
   settingsErrorMessage: string | null;
   settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
   storageSwitchDisabled: boolean;
+  storageSwitchDisabledReason?: string;
   storageActionLabel: string | null;
   statusNotifications: StatusToast[];
   storageWarningMessage: string | null;
@@ -59,6 +60,7 @@ export function AppShell({
   settingsErrorMessage,
   settingsStatus,
   storageSwitchDisabled,
+  storageSwitchDisabledReason,
   storageActionLabel,
   statusNotifications,
   storageWarningMessage,
@@ -324,6 +326,7 @@ export function AppShell({
         settingsErrorMessage={settingsErrorMessage}
         settingsStatus={settingsStatus}
         storageSwitchDisabled={storageSwitchDisabled}
+        storageSwitchDisabledReason={storageSwitchDisabledReason}
         storageActionLabel={storageActionLabel}
         storageWarningMessage={storageWarningMessage}
         workbenchStatus={workbenchStatus}

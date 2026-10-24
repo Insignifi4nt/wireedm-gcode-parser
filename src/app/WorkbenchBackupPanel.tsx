@@ -1,13 +1,13 @@
 import { userFacingMessage } from '@/lib/userMessage';
 import { Input } from '@/components/ui/input';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { downloadProgramFile } from '@/domain/post/downloadProgramFile';
 import { createWorkbenchBackup, prepareWorkbenchBackup, restoreWorkbenchBackup, removeUnreferencedWorkbenchFiles, MAX_WORKBENCH_BACKUP_BYTES, type PreparedWorkbenchBackup } from '@/domain/storage/workbenchBackup';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
-export function WorkbenchBackupPanel({ workbench, disabled, mutationsDisabled = disabled }: {
-  workbench: ConnectedWorkbenchCatalog; disabled: boolean; mutationsDisabled?: boolean;
+export function WorkbenchBackupPanel({ workbench, disabled, mutationsDisabled = disabled, disabledReason, mutationsDisabledReason }: {
+  workbench: ConnectedWorkbenchCatalog; disabled: boolean; mutationsDisabled?: boolean; disabledReason?: string; mutationsDisabledReason?: string;
 }) {
   const [backup, setBackup] = useState<PreparedWorkbenchBackup | null>(null);
   const [incoming, setIncoming] = useState<PreparedWorkbenchBackup | null>(null);
@@ -18,6 +18,7 @@ export function WorkbenchBackupPanel({ workbench, disabled, mutationsDisabled = 
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const readReasonId = useId(), writeReasonId = useId();
   const upload = useRef<HTMLInputElement>(null);
   useEffect(() => {
     setBackup(null); setIncoming(null); setSelected(new Set()); setAcknowledged(false); setOffset(0);
@@ -37,17 +38,19 @@ export function WorkbenchBackupPanel({ workbench, disabled, mutationsDisabled = 
   }
   const locked = disabled || busy;
   const writesLocked = locked || mutationsDisabled;
+  const readReason = busy ? 'Wait for the current storage check to finish.' : disabled ? disabledReason ?? 'Wait for the running workbench operation to finish before downloading saved files.' : null;
+  const writeReason = readReason ?? (mutationsDisabled ? mutationsDisabledReason ?? 'Close the active editor before restoring or removing files. You can download a backup of saved files now; unsaved edits are excluded.' : null);
   return <section className="grid gap-3 border-t border-border pt-4">
     <h3 className="text-xs font-semibold">Backup & restore</h3>
     <p className="text-muted-foreground">Back up this storage location's saved projects, source files, trash, installed machines and posts, revisions, and retained files. Unsaved edits and browser preferences are not included. Keep the downloaded backup outside browser storage.</p>
     <div className="flex flex-wrap gap-2">
-      <Button size="md" disabled={locked} variant="outline" onClick={() => run('read', async (isCurrent) => {
+      <Button size="md" disabled={locked} aria-describedby={readReason ? readReasonId : undefined} variant="outline" onClick={() => run('read', async (isCurrent) => {
         const result = await createWorkbenchBackup(workbench);
         if (!isCurrent()) return;
         download(result); setBackup(result); setSelected(new Set()); setAcknowledged(false); setOffset(0);
         setMessage('Verified backup download requested. Check that the file was saved.');
       })}>Create and download backup</Button>
-      <Button size="md" disabled={writesLocked} variant="outline" onClick={() => upload.current?.click()}>Choose backup to restore</Button>
+      <Button size="md" disabled={writesLocked} aria-describedby={writeReason ? writeReasonId : undefined} variant="outline" onClick={() => upload.current?.click()}>Choose backup to restore</Button>
       <Input ref={upload} aria-label="Workbench backup file" type="file" accept=".json,.wireedm-backup" hidden disabled={writesLocked} onChange={(event) => {
         const file = event.target.files?.[0]; event.target.value = '';
         if (!file) return;
@@ -59,9 +62,11 @@ export function WorkbenchBackupPanel({ workbench, disabled, mutationsDisabled = 
         });
       }} />
     </div>
-    {mutationsDisabled && !disabled && <p className="text-muted-foreground">Close the active editor before restoring or removing files. You can download a backup of saved files now; unsaved edits are excluded.</p>}
+    {readReason && <p id={readReasonId} className="text-muted-foreground">{readReason}</p>}
+    {writeReason && <p id={writeReasonId} className="text-muted-foreground">{writeReason}</p>}
+    {mutationsDisabled && !disabled && <p className="text-muted-foreground">You can download a backup of saved files now; unsaved edits are excluded.</p>}
     {busy && <p role="status">Checking storage…</p>}
-    {error && <p className="break-words text-destructive" role="alert">{error}</p>}
+    {error && <><p className="break-words text-destructive" role="alert">{error}</p><p className="text-muted-foreground">If a verified backup cannot be created, use Export readable recovery files below. It downloads readable originals with explicit omissions and does not require folder access. Do not clear site data or remove files to make a backup work.</p></>}
     {message && <p role="status">{message}</p>}
     {incoming && <div className="grid gap-2 border border-border p-3">
       <h4 className="font-semibold">Restore preview: {incoming.summary.name}</h4>

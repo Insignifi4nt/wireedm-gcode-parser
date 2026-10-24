@@ -1,0 +1,25 @@
+{
+  "version": "0.0.732",
+  "previousVersion": "0.0.731",
+  "postCompatibility": "preserved-read-only-approach-inspection",
+  "summary": "Agents can query an exact nearest contour attachment and check its straight entry against all source segments without copying the drawing or editing machining intent.",
+  "warning": "A clear approach reports source-geometry intersections only. It does not account for wire radius, fixtures, material access or machine certification. A blocked nearest point does not rule out alternatives. Installed posts and saved revisions are unchanged.",
+  "checklist": {
+    "schema": "Adds read-only edm_inspect_approach. No UPID, project, revision, machine-package or post schema changes.",
+    "events": "No execution-event or mutation changes. The query shares existing exact snapping and source lead-intersection operations.",
+    "capabilities": "No machine or post capability changes. Results pin the target version and paginate complete source-contact checks.",
+    "auditAndOutput": "No controller generation, auditing or output changes. The query does not review or authorize machining intent.",
+    "installationAndStorage": "Read-only for browser and folder projects. No installation, migration or writes to originals/posts/revisions.",
+    "verification": "15 focused domain/public-query tests pass: exact circular nearest attachment, obstructing contours, hinted/zero-length cases, all 4,363 polygon segments, complete-contact pagination, missing IDs and stale-version rejection. Chromium checks clear and blocked approaches without modifying the draft. Native TypeScript, full production build, lint and UI checks pass. Software checks do not establish physical machine verification."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Inspect exact entry geometry through the agent tools.",
+    "changes": [
+      "Query the nearest contour attachment and all source intersections without exporting the geometry.",
+      "Inspect another attachment with hintPoint and paginate contact details under the same version."
+    ],
+    "compatibility": "Existing projects, packages, saved revisions and output remain unchanged. This is a read-only geometric check.",
+    "action": "Use edm_inspect_approach before choosing a start and entry. Review its scope and normal execution/machine diagnostics before export."
+  }
+}
