@@ -33,7 +33,6 @@ import {
   loadSavedWireEdmJobRevision,
   saveStoredWireEdmJobRevision
 } from '../savedWireEdmJobRevision';
-import { generateControllerArtifact } from '../controllerArtifact';
 import { deleteStoredWireEdmJobRevisions } from '../deleteSavedWireEdmJobRevisions';
 
 class MemoryAdapter implements WorkbenchStorageAdapter {
@@ -161,7 +160,7 @@ describe('catalog-owned saved revision persistence', () => {
     expect(await fixture.adapter.readText(SAVED_REVISION_TRANSACTION_PATH)).toBe('unrecognized pending journal');
   });
 
-  it('saves, reopens and deterministically exports a complete large varied project without localStorage or a journal', async () => {
+  it('saves and reopens an exact complete large varied revision without localStorage or a journal', async () => {
     const fixture = await nativeFixture(true);
     const projectText = await fixture.adapter.readText('projects/fixture.part.json');
     expect(new TextEncoder().encode(projectText!).byteLength).toBeGreaterThan(5*1024*1024);
@@ -177,10 +176,9 @@ describe('catalog-owned saved revision persistence', () => {
     if (!opened.ok) throw new Error(opened.error.message);
     const loaded = await loadSavedWireEdmJobRevision(reopenedAdapter,fixture.candidate.project.id,saved.revision.revisionId);
     if (!loaded.ok) throw new Error(loaded.error.message);
-    const first = await generateControllerArtifact(loaded.revision);
-    const second = await generateControllerArtifact(loaded.revision);
-    if (!first.ok) throw new Error(JSON.stringify(first.error));
-    expect(second).toMatchObject({ok:true,artifact:{sha256:first.artifact.sha256,text:first.artifact.text}});
+    // Exercise the storage boundary here. The browser journeys export this same
+    // large shape through the public APIs with the production post sandbox.
+    expect(loaded.revision).toEqual(saved.revision);
     expect(opened.workbench.posts).toEqual(fixture.library);
   },60_000);
 

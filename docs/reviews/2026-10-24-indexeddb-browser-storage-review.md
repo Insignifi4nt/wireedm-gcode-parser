@@ -29,3 +29,9 @@ Parent review additionally proved that a foreign pending journal appearing after
 The private source snapshot remains outside the repository. In isolated Chromium and Firefox profiles, migration preserved its files and original cache, and the public export tools produced ISO SHA-256 `2914868a95f85b73a536540c8b84d4956cb7c2594bda1c74fbddc824a95d39bf`, identical to the pre-fix folder-generated artifact. A synthetic complete 6,000-segment job also imported, exported, reopened, reused its exact revision and downloaded a verified backup without folder access. The real-engine test additionally aborts a native revision/index transaction and checks the unchanged project, absent partial revision and successful retry.
 
 The full release checklist records final verification totals. Browser-managed quota, user-cleared site data, noncooperating external writers and physical machine verification remain outside a promise of unlimited or infallible storage. No physical verification is inferred from deterministic software output.
+
+## Hosted CI follow-up
+
+The first hosted run passed all 12 Chromium shards but exposed two test scheduling assumptions. The large storage unit regression redundantly executed the production post twice and exceeded its one-second sandbox budget under shared-runner load. It now compares the entire validated reopened revision against the committed revision. Real Chromium and Firefox journeys retain the large-project public export, deterministic repeat and reload coverage, with production resource limits unchanged.
+
+The Firefox trace showed Settings navigated to Storage correctly, but rendering its modal over the 6,000-segment editor took longer than the default five-second assertion window. The journey now explicitly waits up to 20 seconds for the settings dialog before checking backup controls. It still requires backup to be enabled and restore to be disabled with the editor open.

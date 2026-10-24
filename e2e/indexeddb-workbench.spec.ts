@@ -85,6 +85,9 @@ test('imports, atomically exports, reopens and backs up a large job through the 
   expect(reopened.result.artifactId).toBe(first.result.artifactId);expect(reopened.bytes).toEqual(first.bytes);
   expect(await readWorkbenchCacheFile(page,'posts/library.json')).toBe(posts);
   await page.getByRole('button',{name:'Open settings',exact:true}).click();
+  // Firefox on software-rendered CI can take longer than the default five
+  // seconds to render the modal above the 6,000-segment editor DOM.
+  await expect(page.getByRole('dialog',{name:'Workbench settings',exact:true})).toBeVisible({timeout:20_000});
   await expect(page.getByRole('button',{name:'Create and download backup',exact:true})).toBeEnabled();
   await expect(page.getByRole('button',{name:'Choose backup to restore',exact:true})).toBeDisabled();
   const pending=page.waitForEvent('download');await page.getByRole('button',{name:'Create and download backup',exact:true}).click();
