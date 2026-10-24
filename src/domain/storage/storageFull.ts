@@ -1,7 +1,7 @@
 import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
 const STORAGE_FULL_GUIDANCE: Record<WorkbenchStorageAdapter['kind'], string> = {
-  'browser-cache': 'Browser storage for this site is full. In Settings → Storage → Backup & restore, save a backup. Restore it into an empty folder using a browser with folder access, or use Unreferenced file cleanup to remove only files you no longer need. If backup is blocked, export readable recovery files.',
+  'browser-cache': 'Browser storage for this site is full. In Settings → Storage → Backup & restore, download a backup of saved files. If verified backup fails, use Export readable recovery files in the same browser; folder access is not required. Keep the download and do not clear site data. Folder storage is optional in browsers that support it. Use Unreferenced file cleanup only after saving a backup and reviewing the selected files.',
   directory: 'The disk holding the workbench folder is full or over its quota. Free disk space, then try again.',
   memory: 'Temporary session storage is full. In Settings → Storage → Backup & restore, download a backup before closing this tab.'
 };

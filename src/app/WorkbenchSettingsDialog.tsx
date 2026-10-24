@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { supportsWorkbenchDirectoryAccess } from '@/domain/storage/fileSystemAccess';
 import { AdjustIcon, BodyIcon, BrowserCacheIcon, CloseIcon, RefreshIcon } from '@wire-edm/icons-react';
 import { CadSettingsPanel } from './CadSettingsPanel';
 
@@ -32,6 +33,7 @@ interface WorkbenchSettingsDialogProps extends MachinePostSettingsActions {
   readonly settingsErrorMessage: string | null;
   readonly settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
   readonly storageSwitchDisabled: boolean;
+  readonly storageSwitchDisabledReason?: string;
   readonly storageActionLabel: string | null;
   readonly storageWarningMessage: string | null;
   readonly workbenchStatus: WorkbenchStatus;
@@ -51,12 +53,14 @@ export function WorkbenchSettingsDialog({
   settingsErrorMessage,
   settingsStatus,
   storageSwitchDisabled,
+  storageSwitchDisabledReason,
   storageActionLabel,
   storageWarningMessage,
   workbenchStatus,
   ...machinePostActions
 }: WorkbenchSettingsDialogProps) {
   const [activeSection, setActiveSection] = useState<WorkbenchSettingsSection>(initialSection);
+  const switchReasonId = useId(), folderReasonId = useId();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -72,7 +76,11 @@ export function WorkbenchSettingsDialog({
     onSectionChange?.(section);
   }
   const connecting = workbenchStatus === 'initializing' || workbenchStatus === 'connecting-storage';
-  const canConnect = Boolean(storageActionLabel) && !connecting;
+  const canConnect = Boolean(storageActionLabel);
+  const switchReason = connecting ? 'Wait for the storage connection to finish.' : storageSwitchDisabled
+    ? storageSwitchDisabledReason ?? 'Finish the active workflow and return to the dashboard before changing storage or restoring files.' : null;
+  const folderReason = !supportsWorkbenchDirectoryAccess()
+    ? 'This browser cannot open workbench folders. Use browser storage and download a backup or readable recovery files here; folder access is optional.' : switchReason;
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" data-workbench-settings-overlay onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} ref={overlayRef}>
@@ -107,10 +115,13 @@ export function WorkbenchSettingsDialog({
                   {errorMessage && <Message tone="error">{errorMessage}</Message>}
                   {storageWarningMessage && <Message tone="warning">{storageWarningMessage}</Message>}
                   <p className="mt-3 text-muted-foreground">Each storage location has its own project library. Switching locations does not copy projects; browser-cache projects stay in this browser.</p>
-                  {(connectedWorkbench?.adapter.kind === 'directory' || !connectedWorkbench) && <Button size="md" className="mt-3 mr-2" disabled={storageSwitchDisabled || connecting} onClick={onUseBrowserCache} type="button" variant="outline">Use browser cache</Button>}
-                  {canConnect && <Button size="md" className="mt-3" disabled={storageSwitchDisabled} onClick={onConnectWorkbench} type="button" variant="outline"><RefreshIcon />{storageActionLabel}</Button>}
+                  {(connectedWorkbench?.adapter.kind === 'directory' || !connectedWorkbench) && <Button size="md" className="mt-3 mr-2" disabled={Boolean(switchReason)} aria-describedby={switchReason ? switchReasonId : undefined} onClick={onUseBrowserCache} type="button" variant="outline">Use browser cache</Button>}
+                  {canConnect && <Button size="md" className="mt-3" disabled={Boolean(folderReason)} aria-describedby={folderReason ? folderReasonId : undefined} onClick={onConnectWorkbench} type="button" variant="outline"><RefreshIcon />{storageActionLabel}</Button>}
+                  {switchReason && <p id={switchReasonId} className="mt-2 text-muted-foreground">{switchReason}</p>}
+                  {folderReason && <p id={folderReasonId} className="mt-2 text-muted-foreground">{folderReason}</p>}
                 </section>
-                {connectedWorkbench && <WorkbenchBackupPanel workbench={connectedWorkbench} disabled={interactionLocked || connecting} mutationsDisabled={storageSwitchDisabled || connecting} />}
+                {connectedWorkbench && <WorkbenchBackupPanel workbench={connectedWorkbench} disabled={interactionLocked || connecting} mutationsDisabled={storageSwitchDisabled || connecting}
+                  disabledReason={connecting ? 'Wait for the storage connection to finish.' : undefined} mutationsDisabledReason={switchReason ?? undefined} />}
                 <RecoveryExportPanel recovery={recovery ?? null} disabled={interactionLocked || connecting} />
                 {connectedWorkbench && <StorageReviewPanel workbench={connectedWorkbench} disabled={interactionLocked || connecting} />}
               </div>
