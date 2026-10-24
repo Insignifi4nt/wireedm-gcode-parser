@@ -23,6 +23,26 @@ describe('EditorControllerArtifactDialog', () => {
   let posts: PostLibrary;
   let machines: readonly MachineDefinition[];
 
+  it('identifies revision-save failures before post execution and offers storage recovery guidance', async () => {
+    await render({ onGenerateControllerArtifact: vi.fn().mockResolvedValue({
+      ok: false, error: {
+        code: 'CONTROLLER_ARTIFACT_REVISION_SAVE_FAILED', causeCode: 'SAVED_REVISION_STORAGE_WRITE_FAILED',
+        path: 'projects/part/revisions/revision.1.wireedm-job.json', message: 'Browser storage is full.'
+      }
+    } satisfies ControllerArtifactResult) });
+    await click('Generate controller artifact');
+    expect(container.textContent).toContain('post processor has not run');
+    expect(container.textContent).toContain('Export readable recovery files');
+    expect(container.textContent).toContain('SAVED_REVISION_STORAGE_WRITE_FAILED');
+    expect(container.textContent).toContain('projects/part/revisions/revision.1.wireedm-job.json');
+    await click('Copy agent repair prompt');
+    const prompt = container.querySelector<HTMLTextAreaElement>('textarea')?.value;
+    // Clipboard is unavailable here, so the visible manual-copy fallback holds
+    // the actual prompt that a user would give another agent.
+    expect(prompt).toContain('Recover a Wire EDM revision save');
+    expect(prompt).not.toContain('Build package');
+  });
+
   beforeEach(async () => {
     container = document.createElement('div');
     document.body.appendChild(container);

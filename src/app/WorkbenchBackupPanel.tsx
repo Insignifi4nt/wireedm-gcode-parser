@@ -6,7 +6,9 @@ import { downloadProgramFile } from '@/domain/post/downloadProgramFile';
 import { createWorkbenchBackup, prepareWorkbenchBackup, restoreWorkbenchBackup, removeUnreferencedWorkbenchFiles, MAX_WORKBENCH_BACKUP_BYTES, type PreparedWorkbenchBackup } from '@/domain/storage/workbenchBackup';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
-export function WorkbenchBackupPanel({ workbench, disabled }: { workbench: ConnectedWorkbenchCatalog; disabled: boolean }) {
+export function WorkbenchBackupPanel({ workbench, disabled, mutationsDisabled = disabled }: {
+  workbench: ConnectedWorkbenchCatalog; disabled: boolean; mutationsDisabled?: boolean;
+}) {
   const [backup, setBackup] = useState<PreparedWorkbenchBackup | null>(null);
   const [incoming, setIncoming] = useState<PreparedWorkbenchBackup | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -22,8 +24,8 @@ export function WorkbenchBackupPanel({ workbench, disabled }: { workbench: Conne
     setBusy(false); setMessage(null); setError(null);
     return () => { generation.current++; };
   }, [workbench]);
-  async function run(operation: (isCurrent: () => boolean) => Promise<void>) {
-    if (busy || disabled) return;
+  async function run(kind: 'read' | 'write', operation: (isCurrent: () => boolean) => Promise<void>) {
+    if (busy || disabled || (kind === 'write' && mutationsDisabled)) return;
     const current = ++generation.current;
     setBusy(true); setError(null); setMessage(null);
     try { await operation(() => current === generation.current); }
@@ -34,28 +36,30 @@ export function WorkbenchBackupPanel({ workbench, disabled }: { workbench: Conne
     downloadProgramFile({ fileName: `wire-edm-${new Date().toISOString().slice(0, 10)}.wireedm-backup.json`, text: value.text, mimeType: 'application/json' });
   }
   const locked = disabled || busy;
+  const writesLocked = locked || mutationsDisabled;
   return <section className="grid gap-3 border-t border-border pt-4">
     <h3 className="text-xs font-semibold">Backup & restore</h3>
     <p className="text-muted-foreground">Back up this storage location's saved projects, source files, trash, installed machines and posts, revisions, and retained files. Unsaved edits and browser preferences are not included. Keep the downloaded backup outside browser storage.</p>
     <div className="flex flex-wrap gap-2">
-      <Button size="md" disabled={locked} variant="outline" onClick={() => run(async (isCurrent) => {
+      <Button size="md" disabled={locked} variant="outline" onClick={() => run('read', async (isCurrent) => {
         const result = await createWorkbenchBackup(workbench);
         if (!isCurrent()) return;
         download(result); setBackup(result); setSelected(new Set()); setAcknowledged(false); setOffset(0);
         setMessage('Verified backup download requested. Check that the file was saved.');
       })}>Create and download backup</Button>
-      <Button size="md" disabled={locked} variant="outline" onClick={() => upload.current?.click()}>Choose backup to restore</Button>
-      <Input ref={upload} aria-label="Workbench backup file" type="file" accept=".json,.wireedm-backup" hidden disabled={locked} onChange={(event) => {
+      <Button size="md" disabled={writesLocked} variant="outline" onClick={() => upload.current?.click()}>Choose backup to restore</Button>
+      <Input ref={upload} aria-label="Workbench backup file" type="file" accept=".json,.wireedm-backup" hidden disabled={writesLocked} onChange={(event) => {
         const file = event.target.files?.[0]; event.target.value = '';
         if (!file) return;
         setIncoming(null);
-        void run(async (isCurrent) => {
+        void run('write', async (isCurrent) => {
           if (file.size > MAX_WORKBENCH_BACKUP_BYTES) throw new Error('Backup exceeds the 128 MiB limit.');
           const result = await prepareWorkbenchBackup(await file.text());
           if (isCurrent()) setIncoming(result);
         });
       }} />
     </div>
+    {mutationsDisabled && !disabled && <p className="text-muted-foreground">Close the active editor before restoring or removing files. You can download a backup of saved files now; unsaved edits are excluded.</p>}
     {busy && <p role="status">Checking storage…</p>}
     {error && <p className="break-words text-destructive" role="alert">{error}</p>}
     {message && <p role="status">{message}</p>}
@@ -63,7 +67,7 @@ export function WorkbenchBackupPanel({ workbench, disabled }: { workbench: Conne
       <h4 className="font-semibold">Restore preview: {incoming.summary.name}</h4>
       <p>{incoming.summary.projects} projects · {incoming.summary.trashedProjects} trashed · {incoming.summary.machines} machines · {incoming.summary.posts} posts · {incoming.summary.revisions} revisions · {incoming.summary.files} files</p>
       <p className="text-muted-foreground">Restore only into an empty workbench. Choose an empty folder or open the app in a fresh browser if this location contains data. Successful restoration reloads the app.</p>
-      <Button size="md" disabled={locked} variant="outline" onClick={() => run(async () => {
+      <Button size="md" disabled={writesLocked} variant="outline" onClick={() => run('write', async () => {
         await restoreWorkbenchBackup(workbench.adapter, incoming);
         window.location.reload();
       })}>Restore into this empty workbench</Button>
@@ -72,7 +76,7 @@ export function WorkbenchBackupPanel({ workbench, disabled }: { workbench: Conne
       <h4 className="font-semibold">Unreferenced file cleanup</h4>
       <p className="text-muted-foreground">{backup.unreferencedPaths.length} files available for review. Unreferenced does not mean unwanted. Migration backups, machine/post storage and saved revision files are protected.</p>
       {backup.unreferencedPaths.slice(offset, offset + 50).map((path) => <label className="flex items-start gap-2 break-all" key={path}>
-        <Input type="checkbox" disabled={locked} checked={selected.has(path)} onChange={(event) => {
+        <Input type="checkbox" disabled={writesLocked} checked={selected.has(path)} onChange={(event) => {
           const next = new Set(selected); if (event.target.checked) next.add(path); else next.delete(path);
           setSelected(next); setAcknowledged(false);
         }} />{path}
@@ -82,8 +86,8 @@ export function WorkbenchBackupPanel({ workbench, disabled }: { workbench: Conne
         <Button size="md" variant="outline" disabled={locked || offset + 50 >= backup.unreferencedPaths.length} onClick={() => setOffset(offset + 50)}>Next files</Button>
       </div>}
       {selected.size > 0 && <>
-        <label className="flex items-start gap-2"><Input type="checkbox" disabled={locked} checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />I saved the downloaded backup and want to remove the {selected.size} selected files from this workbench.</label>
-        <Button size="md" variant="outline" disabled={locked || !acknowledged} onClick={() => run(async (isCurrent) => {
+        <label className="flex items-start gap-2"><Input type="checkbox" disabled={writesLocked} checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />I saved the downloaded backup and want to remove the {selected.size} selected files from this workbench.</label>
+        <Button size="md" variant="outline" disabled={writesLocked || !acknowledged} onClick={() => run('write', async (isCurrent) => {
           await removeUnreferencedWorkbenchFiles(workbench, backup, [...selected]);
           if (isCurrent()) { setBackup(null); setSelected(new Set()); setAcknowledged(false); setMessage('Selected files removed. Their exact contents remain in your downloaded backup.'); }
         })}>Remove selected files</Button>

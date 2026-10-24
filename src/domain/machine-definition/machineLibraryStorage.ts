@@ -148,7 +148,7 @@ async function parseStoredMachineLibrary(
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(rawText);
+    parsed = JSON.parse(rawText.replace(/^\uFEFF/, ''));
   } catch {
     return {
       ok: false,

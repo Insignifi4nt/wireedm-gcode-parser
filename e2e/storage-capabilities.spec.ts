@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import { readWorkbenchCache } from './fixtures/workbench-cache';
 
-test('starts and edits temporary projects when the localStorage getter is denied', async ({ page }) => {
+test('reports inaccessible legacy discovery rather than hiding it behind a new empty database', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => {
@@ -10,18 +11,8 @@ test('starts and edits temporary projects when the localStorage getter is denied
     Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: undefined });
   });
   await page.goto('/');
-  const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench', exact: true });
-  await expect(onboarding).toBeVisible({ timeout: 5000 });
-  await onboarding.getByRole('button', { name: 'Go Build!', exact: true }).click();
-  await page.getByRole('button', { name: 'Open settings', exact: true }).click();
-  await expect(page.getByRole('dialog')).toContainText('Temporary storage');
-  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
-  await page.getByLabel('Machine program file', { exact: true }).setInputFiles(program('temporary-denied.nc', 12));
-  await expect(page.locator('[data-editor-context="machine-program"]')).toBeVisible();
-  await page.getByRole('tab', { name: 'Text', exact: true }).click();
-  await page.getByLabel('Program editor').fill('G21 G90\nG0 X0 Y0\nG1 X24 Y5');
-  await page.getByRole('button', { name: 'Save active document', exact: true }).click();
-  await expect(page.locator('[data-editor-document-state]')).toHaveText('Saved');
+  await expect(page.getByRole('heading', { name: 'Workbench could not be opened' })).toBeVisible();
+  expect((await page.evaluate(()=>indexedDB.databases())).some(database=>database.name==='wire-edm-workbench-files')).toBe(false);
   expect(errors).toEqual([]);
 });
 
@@ -124,5 +115,5 @@ function program(name: string, x: number) {
   return { name, mimeType: 'text/plain', buffer: Buffer.from(`G21 G90\nG0 X0 Y0\nG1 X${x} Y5`) };
 }
 function cache(page: Page) {
-  return page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith('wire-edm-workbench:')).sort(([a], [b]) => a.localeCompare(b)));
+  return readWorkbenchCache(page);
 }

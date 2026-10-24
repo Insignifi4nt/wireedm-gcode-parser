@@ -261,6 +261,7 @@ export function EditorControllerArtifactDialog({
           <div className="border border-destructive/60 bg-destructive/10 p-2 text-destructive" role="alert">
             <div className="font-mono font-semibold">{failure.code}</div>
             <p>{failure.message}</p>
+            {failure.code === 'CONTROLLER_ARTIFACT_REVISION_SAVE_FAILED' && <p className="font-mono">{failure.causeCode}{failure.path ? ` · ${failure.path}` : ''}</p>}
             <p className="mt-2">{postFailureGuidance(failure, activePost)}</p>
             {failure.code === 'CONTROLLER_ARTIFACT_POST_FAILED' && failure.diagnostics.length > 0 && (
               <ul className="mt-2 grid gap-1 border-t border-destructive/30 pt-2" data-controller-artifact-diagnostics>

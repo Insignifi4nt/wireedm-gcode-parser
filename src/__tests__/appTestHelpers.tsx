@@ -6,6 +6,8 @@ import type { AppServices } from '../app/appServices';
 import { createDxfImportServices } from '../app/dxfImportServices';
 import { directDxfProcessor } from '../features/dxf-import/dxfProcessorTestSupport';
 import { ONBOARDING_DISMISSED_STORAGE_KEY } from '../features/onboarding/onboardingPreference';
+import { settleDefaultAppServices, trackedDefaultAppServices } from './appServiceTestSupport';
+import { openReadOnlyIndexedDbWorkbench } from '@/domain/storage/indexedDbWorkbenchAdapter';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -108,12 +110,13 @@ export async function renderApp(
   // still loads the editor chunk only when that workspace is opened.
   await import('@/features/editor/EditorPage');
   await act(async () => {
-    context.root.render(<App services={{ ...createDxfImportServices(directDxfProcessor), ...services }} />);
+    context.root.render(<App services={trackedDefaultAppServices(services, createDxfImportServices(directDxfProcessor))} />);
   });
   await flushAsync();
 }
 
 export async function flushAsync() {
+  await settleDefaultAppServices();
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
@@ -126,6 +129,14 @@ export async function flushAsync() {
       await Promise.resolve();
     }
   });
+  await settleDefaultAppServices();
+}
+
+export async function readBrowserWorkbenchText(path: string) {
+  const adapter = await openReadOnlyIndexedDbWorkbench(indexedDB);
+  if (!adapter) throw new Error('Browser database is not initialized.');
+  try { return await adapter.readExactText?.(path) ?? null; }
+  finally { adapter.close(); }
 }
 
 export async function prepareDxfImport(container: HTMLElement, file: File) {

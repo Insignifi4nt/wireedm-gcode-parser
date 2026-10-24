@@ -13,6 +13,7 @@ import type { SiteTool } from '@/features/webmcp/siteTools';
 import { useWorkbenchAppController } from './useWorkbenchAppController';
 import { defaultAppServices, type AppServices } from './appServices';
 import { createWorkbenchBackup } from '@/domain/storage/workbenchBackup';
+import { waitForWorkbenchInitialization } from '@/__tests__/appServiceTestSupport';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root; let container: HTMLDivElement;
@@ -29,6 +30,7 @@ async function harness(overrides: Partial<AppServices> = {}, corrupt = true) {
   }
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
   await act(async () => { root.render(<Harness />); });
+  await waitForWorkbenchInitialization(() => app);
   async function call(name: string, input: unknown, signal?: AbortSignal) {
     let result: unknown; await act(async () => { result = await tools.find(tool => tool.name === name)!.execute(input, { signal }); });
     return result as { ok: boolean; data: Record<string, any>; error: { code: string } };

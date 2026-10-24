@@ -359,7 +359,7 @@ describe('Editor measurement points', () => {
 
   it('adds measurement points from preview touch taps like the old mobile canvas', async () => {
     window.showDirectoryPicker = undefined;
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
 
     try {
       await renderApp(context);

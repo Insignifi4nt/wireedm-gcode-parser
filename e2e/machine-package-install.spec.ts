@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
 import { confirmPendingDxfImport } from './dxf-import';
-import { readWorkbenchCacheFile } from './fixtures/workbench-cache';
+import { readWorkbenchCacheFile, readWorkbenchCache } from './fixtures/workbench-cache';
 
 test('installs one complete Robofil machine package through the normal settings flow', async ({ page }) => {
   await page.goto('/');
@@ -133,8 +133,7 @@ test('explains missing compensation and exports after the decision is saved', as
   expect(bytes.toString('ascii')).toMatch(/M02\r\n$/);
   expect(bytes.equals(Buffer.from(preview.replace(/\r?\n/g, '\r\n'), 'ascii'))).toBe(true);
 
-  const persistedBeforeInspection = await page.evaluate(() => Object.keys(localStorage)
-    .filter(key => key.startsWith('wire-edm-workbench:file:')).sort().map(key => [key, localStorage.getItem(key)]));
+  const persistedBeforeInspection = await readWorkbenchCache(page);
   await page.setViewportSize({ width: 360, height: 844 });
   expect(await artifactDialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await artifactDialog.locator('section').first().evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
@@ -158,8 +157,7 @@ test('explains missing compensation and exports after the decision is saved', as
   await inspector.getByRole('button', { name: 'Close G-code inspection', exact: true }).click();
   await expect(artifactDialog).toBeFocused();
   await expect(artifactDialog.locator('pre')).toHaveText(preview);
-  expect(await page.evaluate(() => Object.keys(localStorage)
-    .filter(key => key.startsWith('wire-edm-workbench:file:')).sort().map(key => [key, localStorage.getItem(key)])))
+  expect(await readWorkbenchCache(page))
     .toEqual(persistedBeforeInspection);
 
   await artifactDialog.getByRole('button', { name: 'Close controller artifact export' }).click();
@@ -178,7 +176,6 @@ test('explains missing compensation and exports after the decision is saved', as
   expect(await readFile((await revisionDownload.path())!)).toEqual(bytes);
   await inspector.getByRole('button', { name: 'Close G-code inspection', exact: true }).click();
   await expect(revisionsDialog.getByRole('button', { name: 'Close revisions', exact: true })).toBeFocused();
-  expect(await page.evaluate(() => Object.keys(localStorage)
-    .filter(key => key.startsWith('wire-edm-workbench:file:')).sort().map(key => [key, localStorage.getItem(key)])))
+  expect(await readWorkbenchCache(page))
     .toEqual(persistedBeforeInspection);
 });

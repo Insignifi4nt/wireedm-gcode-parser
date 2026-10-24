@@ -9,6 +9,7 @@ import {
   createAppTestContext,
   flushAsync,
   renderApp,
+  readBrowserWorkbenchText,
   setSelectValue,
   setTextAreaValue,
   type AppTestContext
@@ -59,8 +60,8 @@ describe('Editor import, export, and parse feedback', () => {
     expect(selectedPath).toBeTruthy();
     await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Save active document"]')?.click());
     await flushAsync();
-    const manifest = JSON.parse(window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}');
-    const project = JSON.parse(window.localStorage.getItem(`wire-edm-workbench:file:${manifest.projects[0].path}`) || '{}');
+    const manifest = JSON.parse(await readBrowserWorkbenchText('workbench.json') || '{}');
+    const project = JSON.parse(await readBrowserWorkbenchText(manifest.projects[0].path) || '{}');
     expect(project.content.interpreterProfile).toBe('legacy-robofil');
     expect(arcPath()?.getAttribute('d')).toBe(selectedPath);
   });
@@ -269,11 +270,11 @@ describe('Editor import, export, and parse feedback', () => {
     expect(container.textContent).toContain('Unsaved');
     expect(container.querySelector('svg[aria-label="G-code path preview"] path[data-line="2"]')).toBeNull();
 
-    const rawManifest = window.localStorage.getItem('wire-edm-workbench:file:workbench.json');
+    const rawManifest = await readBrowserWorkbenchText('workbench.json');
     const manifest = JSON.parse(rawManifest || '{}');
     const projectPath = manifest.projects[0].path;
     const project = JSON.parse(
-      window.localStorage.getItem(`wire-edm-workbench:file:${projectPath}`) || '{}'
+      await readBrowserWorkbenchText(projectPath) || '{}'
     );
 
     expect(project.source.kind).toBe('external-gcode');
@@ -322,12 +323,12 @@ describe('Editor import, export, and parse feedback', () => {
     expect(container.textContent).toContain('3 path items');
     expect(container.textContent).toContain('1');
     expect(
-      window.localStorage.getItem(`wire-edm-workbench:file:${project.content.activeFilePath}`)
+      await readBrowserWorkbenchText(project.content.activeFilePath)
     ).toBe(updatedProgramText);
   });
 
   it('auto-dismisses compact status toasts while keeping top-bar notification history', async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     window.showDirectoryPicker = undefined;
 
     try {
@@ -656,6 +657,7 @@ describe('Editor import, export, and parse feedback', () => {
     await act(async () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
+    await act(async () => { await importExternalProgram.mock.results[0].value; });
     await flushAsync();
 
     const programEditor = container.querySelector(
@@ -710,7 +712,7 @@ describe('Editor import, export, and parse feedback', () => {
 
     await act(async () => {
       saveGate.resolve();
-      await saveGate.promise;
+      await saveEditorProgram.mock.results[0].value;
     });
     await flushAsync();
 
@@ -748,6 +750,7 @@ describe('Editor import, export, and parse feedback', () => {
     await act(async () => {
       programInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
+    await act(async () => { await importExternalProgram.mock.results[0].value; });
     await flushAsync();
     await act(async () => {
       container
@@ -806,7 +809,7 @@ describe('Editor import, export, and parse feedback', () => {
 
     await act(async () => {
       secondImportGate.resolve();
-      await secondImportGate.promise;
+      await importExternalProgram.mock.results[1].value;
     });
     await flushAsync();
     await act(async () => {

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { confirmPendingDxfImport } from './dxf-import';
-import { readWorkbenchCacheFile } from './fixtures/workbench-cache';
+import { readWorkbenchCacheFile, writeWorkbenchCacheFiles } from './fixtures/workbench-cache';
 
 test('downloads original readable files from blocked startup through hosted Settings without rewriting storage', async ({ page }) => {
   const originals = { 'workbench.json': '\uFEFF{"schemaVersion":3,', 'transactions/workbench-files.json': '{interrupted', 'imports/original.nc': '\uFEFFG90\r\nG1 X2 Y3\r\n' };
@@ -48,9 +48,7 @@ test('copies retained historical files from connected storage when verified back
     [projectPath]: `\uFEFF${JSON.stringify(project)}\r\n`,
     [revisionPath]: '\uFEFF{"format":"wire-edm-job-revision","schemaVersion":1,"engineVersion":"2"}\r\n'
   };
-  await page.evaluate(files => {
-    for (const [path, text] of Object.entries(files)) localStorage.setItem(`wire-edm-workbench:file:${path}`, text);
-  }, originals);
+  await writeWorkbenchCacheFiles(page, originals);
   await page.reload();
   await expect(page.getByRole('button', { name: /^Open project / })).toHaveCount(1);
   await page.getByRole('button', { name: 'Open settings', exact: true }).click();

@@ -1,3 +1,12 @@
+import { IDBFactory } from 'fake-indexeddb';
+import { beforeEach } from 'vitest';
+
+// Each test receives a fresh browser profile. Adapter suites still inject their
+// own factories when they exercise reopen, migration and blocked-upgrade cases.
+beforeEach(() => {
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, writable: true, value: new IDBFactory() });
+});
+
 // React's act helper needs this flag before any root renders. A shared baseline
 // also survives tests that stub globals and restore them during cleanup.
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {

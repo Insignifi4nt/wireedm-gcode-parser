@@ -15,11 +15,13 @@ import { SAVED_REVISION_TRANSACTION_PATH } from '@/domain/storage/savedRevisionT
 import { WORKBENCH_FILE_TRANSACTION_PATH } from '@/domain/storage/workbenchFileTransaction';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
 import { workbenchSiteTools } from './workbenchSiteTools';
 import { applyProjectEdits } from './projectEdits';
 import { useWorkbenchActions } from './useWorkbenchActions';
 import type { DraftReadSnapshot } from './workbenchSiteTools';
 import type { SiteTool } from './siteTools';
+import { waitForWorkbenchInitialization } from '@/__tests__/appServiceTestSupport';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const text = ['0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', '4', '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES', '0', 'CIRCLE', '8', '0', '10', '0', '20', '0', '40', '10', '0', 'ENDSEC', '0', 'EOF'].join('\n');
@@ -45,6 +47,7 @@ async function harness(overrides: Partial<AppServices> = {}, isExternalBusy: () 
   }
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
   await act(async () => root.render(<Harness />));
+  await waitForWorkbenchInitialization(() => app);
   async function call(name: string, input: unknown, signal?: AbortSignal) {
     let result: unknown;
     await act(async () => { result = await tools.find(t => t.name === name)!.execute(input, { signal }); });
@@ -243,6 +246,60 @@ describe('workbench agent actions', () => {
     expect(h.download).toHaveBeenLastCalledWith(downloaded);
     expect(h.generate).toHaveBeenCalledOnce();
     expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([exported.data.artifactId]);
+    const current = await h.call('edm_workflow_context', {});
+    const repeated = await h.call('edm_export_controller', { ...input, expectedVersion: current.data.version });
+    expect(repeated).toMatchObject({ok:true,data:{generated:true,artifactId:exported.data.artifactId,sha256:exported.data.sha256}});
+    expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([exported.data.artifactId]);
+  });
+
+  it.each(['before-commit','after-commit'] as const)('preserves cancellation and truthful receipts at native %s', async boundary => {
+    const h=await harness(); const input=await prepareControllerJob(h);
+    const adapter=h.app().connectedWorkbench!.adapter, abort=new AbortController();
+    const commit=adapter.commitTextChanges!.bind(adapter);
+    vi.spyOn(adapter,'commitTextChanges').mockImplementationOnce(async (changes,options)=>{
+      if(boundary==='before-commit')abort.abort();
+      await commit(changes,options);
+      if(boundary==='after-commit')abort.abort();
+    });
+    const result=await h.call('edm_export_controller',input,abort.signal);
+    if(boundary==='before-commit'){
+      expect(result).toMatchObject({ok:false,error:{code:'CANCELLED'}});
+      expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([]);
+      expect(h.generate).not.toHaveBeenCalled();
+    } else {
+      expect(result).toMatchObject({ok:true,data:{generated:true,status:'generated-download-not-requested'}});
+      expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([result.data.artifactId]);
+      expect(h.generate).toHaveBeenCalledOnce();
+    }
+    expect(h.download).not.toHaveBeenCalled();
+    expect(await adapter.readText(SAVED_REVISION_TRANSACTION_PATH)).toBeNull();
+  });
+
+  it('returns a revision-save diagnostic before posting and permits retry after a native storage failure', async () => {
+    const h=await harness(); const input=await prepareControllerJob(h);
+    const adapter=h.app().connectedWorkbench!.adapter;
+    const original=await adapter.readExactText!('workbench.json');
+    const fault=vi.spyOn(adapter,'commitTextChanges').mockRejectedValueOnce(new DOMException('Injected storage exhaustion','QuotaExceededError'));
+    const failed=await h.call('edm_generate_controller',input);
+    expect(failed).toMatchObject({ok:true,data:{generated:false,error:{code:'CONTROLLER_ARTIFACT_REVISION_SAVE_FAILED',causeCode:'WORKBENCH_PROJECT_STORAGE_ACCESS_FAILED'}}});
+    expect(h.generate).not.toHaveBeenCalled();
+    expect(await adapter.readExactText!('workbench.json')).toBe(original);
+    expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([]);
+    fault.mockRestore();
+    expect(await h.call('edm_generate_controller',input)).toMatchObject({ok:true,data:{generated:true}});
+  });
+
+  it('classifies a rejected pre-write database read as storage failure rather than package repair', async () => {
+    const h=await harness();const input=await prepareControllerJob(h);
+    const adapter=h.app().connectedWorkbench!.adapter;
+    const read=vi.spyOn(adapter,'readExactText').mockRejectedValueOnce(new Error('Database connection changed in another tab. Reopen the workbench.'));
+    expect(await h.call('edm_generate_controller',input)).toMatchObject({ok:true,data:{generated:false,error:{
+      code:'CONTROLLER_ARTIFACT_REVISION_SAVE_FAILED',causeCode:'SAVED_REVISION_STORAGE_FAILED',message:expect.stringContaining('Database connection changed')
+    }}});
+    expect(h.generate).not.toHaveBeenCalled();
+    expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([]);
+    read.mockRestore();
+    expect(await h.call('edm_generate_controller',input)).toMatchObject({ok:true,data:{generated:true}});
   });
 
   it('checks cancellation and draft freshness after preparing a controller revision but before any write', async () => {
@@ -298,8 +355,8 @@ describe('workbench agent actions', () => {
     expect(h.download).not.toHaveBeenCalled();
   });
 
-  it.each(['before-journal', 'after-journal'] as const)('handles cancellation at %s with a truthful persistence receipt', async boundary => {
-    const h = await harness();
+  it.each(['before-journal', 'after-journal'] as const)('handles legacy cancellation at %s with a truthful persistence receipt', async boundary => {
+    const h = await harness({connectCachedWorkbench:()=>connectCachedWorkbench({storage:localStorage})});
     const input = await prepareControllerJob(h);
     const adapter = h.app().connectedWorkbench!.adapter;
     const abort = new AbortController();
@@ -356,7 +413,7 @@ describe('workbench agent actions', () => {
   });
 
   it('returns the committed revision and artifact when only recovery cleanup fails', async () => {
-    const h = await harness();
+    const h = await harness({connectCachedWorkbench:()=>connectCachedWorkbench({storage:localStorage})});
     const input = await prepareControllerJob(h);
     const adapter = h.app().connectedWorkbench!.adapter;
     const remove = adapter.deleteText.bind(adapter);

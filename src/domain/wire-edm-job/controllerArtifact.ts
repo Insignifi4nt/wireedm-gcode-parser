@@ -35,6 +35,12 @@ export interface ControllerProgramArtifact {
 
 export type ControllerArtifactError =
   | {
+      readonly code: 'CONTROLLER_ARTIFACT_REVISION_SAVE_FAILED';
+      readonly message: string;
+      readonly causeCode: string;
+      readonly path?: string;
+    }
+  | {
       readonly code: 'CONTROLLER_ARTIFACT_REVISION_UNVALIDATED';
       readonly message: string;
     }

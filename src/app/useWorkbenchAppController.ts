@@ -862,6 +862,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     activeMutation.current = 'controller-artifact';
     setControllerArtifactGenerating(true);
     let revisionWriteStarted = false;
+    let generationPhase: 'preparing' | 'saving' | 'posting' = 'preparing';
     let savedRevisionId: string | undefined;
     let cleanupPending: SavedRevisionTransactionError | undefined;
     try {
@@ -891,16 +892,23 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       // the completed generation receipt even if the caller has cancelled.
       input.signal?.throwIfAborted();
       input.beforeWrite?.();
+      generationPhase = 'saving';
       const saved = await services.saveStoredWireEdmJobRevision(workbench, candidate.candidate, {
         requireCurrentActiveSetup: true,
+        reuseMatchingRevision: true,
         beforeWrite: () => {
           input.signal?.throwIfAborted();
           input.beforeWrite?.();
           revisionWriteStarted = true;
         }
       });
-      if (!saved.ok) return artifactAppFailure(saved.error.message);
+      if (!saved.ok) return artifactRevisionSaveFailure(saved.error);
+      if (!revisionWriteStarted) {
+        input.signal?.throwIfAborted();
+        input.beforeWrite?.();
+      }
       savedRevisionId = saved.revision.revisionId;
+      generationPhase = 'posting';
       cleanupPending = saved.cleanupPending;
       setConnectedWorkbench(saved.workbench);
       setLoadedEditorProgram((current) => current === program
@@ -912,7 +920,10 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       return { ...artifact, savedRevisionId, ...(cleanupPending ? { cleanupPending } : {}) };
     } catch (error) {
       if (!revisionWriteStarted && (input.signal?.aborted || error instanceof ToolError)) throw error;
-      return { ...artifactAppFailure(errorText(error)), ...(savedRevisionId ? { savedRevisionId } : {}), ...(cleanupPending ? { cleanupPending } : {}) };
+      const failure = generationPhase === 'saving'
+        ? artifactRevisionSaveFailure({ code: 'SAVED_REVISION_STORAGE_FAILED', message: errorText(error) })
+        : artifactAppFailure(errorText(error));
+      return { ...failure, ...(savedRevisionId ? { savedRevisionId } : {}), ...(cleanupPending ? { cleanupPending } : {}) };
     } finally {
       activeMutation.current = null;
       setControllerArtifactGenerating(false);
@@ -1224,6 +1235,15 @@ function artifactAppFailure(message: string): ControllerArtifactResult {
       message
     }
   };
+}
+
+function artifactRevisionSaveFailure(error: { readonly code: string; readonly message: string; readonly path?: string }): ControllerArtifactResult {
+  return { ok: false, error: {
+    code: 'CONTROLLER_ARTIFACT_REVISION_SAVE_FAILED',
+    message: error.message,
+    causeCode: error.code,
+    ...(error.path ? { path: error.path } : {})
+  } };
 }
 
 // Results returned to callers, including WebMCP agent tools, keep the exact failure text.

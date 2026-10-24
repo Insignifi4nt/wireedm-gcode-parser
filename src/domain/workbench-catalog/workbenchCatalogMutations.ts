@@ -550,7 +550,7 @@ async function captureSnapshots(workbench: ConnectedWorkbenchCatalog, paths: rea
   const snapshots: StorageSnapshot[] = [];
   for (const path of new Set(paths)) {
     try {
-      snapshots.push({ path, contents: await workbench.adapter.readText(path) });
+      snapshots.push({ path, contents: await (workbench.adapter.readExactText?.(path) ?? workbench.adapter.readText(path)) });
     } catch (error) {
       return projectAccessFailure('read', path, error);
     }
@@ -577,7 +577,7 @@ async function verifyManifestCurrent(workbench: ConnectedWorkbenchCatalog) {
   }
   let stored: unknown;
   try {
-    stored = JSON.parse(rawText);
+    stored = JSON.parse(rawText.replace(/^\uFEFF/, ''));
   } catch {
     return manifestStateFailure(
       'WORKBENCH_CATALOG_MUTATION_MANIFEST_INVALID',
