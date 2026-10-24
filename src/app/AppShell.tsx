@@ -6,7 +6,8 @@ import {
   type CSSProperties,
   type ReactNode
 } from 'react';
-import { PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, WireEdmMarkIcon } from '@wire-edm/icons-react';
+import { PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon } from '@wire-edm/icons-react';
+import { BroCadLogo } from '@/components/BroCadLogo';
 
 import { StatusNotificationMenu, type StatusToast } from '@/components/StatusToasts';
 import { Button } from '@/components/ui/button';
@@ -190,8 +191,7 @@ export function AppShell({
       >
         {headerContent ?? (showDashboardBrand && (
           <div className="mr-4 flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground">
-            <WireEdmMarkIcon className="size-4 text-primary" />
-            <span className="truncate">broCAD/M</span>
+            <BroCadLogo />
           </div>
         ))}
         <div className="ml-auto flex items-center gap-2" data-app-header-system-controls>

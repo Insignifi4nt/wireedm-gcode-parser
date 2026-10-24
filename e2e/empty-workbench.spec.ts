@@ -13,8 +13,10 @@ for (const width of [1440, 393]) {
     await expect(image).toHaveCSS('object-fit', 'contain');
     await expect(page.getByRole('button', { name: 'Design in CAD', exact: true })).toBeEnabled();
     await expect(page.locator('[data-app-header]')).not.toHaveAttribute('inert');
+    await expect(page.getByRole('img', { name: 'broCAD/M', exact: true })).toHaveJSProperty('naturalWidth', 2172);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.screenshot({ path: `tmp/agent-feedback/empty-library-${width}.png`, fullPage: true });
+    await page.locator('[data-app-header]').screenshot({ path: `tmp/agent-feedback/brocadm-logo-header-${width}.png` });
     await page.getByLabel('DXF file', { exact: true }).setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
     await confirmPendingDxfImport(page);
     await page.getByRole('button', { name: 'Back to Dashboard', exact: true }).click();
@@ -32,17 +34,17 @@ for (const width of [1440, 393]) {
 test('empty editor preview uses the illustration and keeps dashboard navigation immediately usable', async ({ page }) => {
   await openReadyWorkbench(page);
   const header = page.locator('[data-app-header]');
-  await expect(header).toContainText('broCAD/M');
+  await expect(header.getByRole('img', { name: 'broCAD/M', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Open Editor', exact: true }).click();
   await expect(page.locator('[data-workbench-empty="preview"]')).toContainText('No drawable toolpath loaded');
-  await expect(header).not.toContainText('broCAD/M');
+  await expect(header.getByRole('img', { name: 'broCAD/M', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Back to Dashboard', exact: true }).click();
   await expect(page.locator('[data-workbench-empty="library"]')).toBeVisible();
-  await expect(header).toContainText('broCAD/M');
+  await expect(header.getByRole('img', { name: 'broCAD/M', exact: true })).toBeVisible();
   await expect(page.getByLabel('Machine program file', { exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Design in CAD', exact: true }).click();
   await expect(page.getByRole('main', { name: 'Parametric CAD workbench' })).toBeVisible();
-  await expect(header).not.toContainText('broCAD/M');
+  await expect(header.getByRole('img', { name: 'broCAD/M', exact: true })).toHaveCount(0);
 });
 
 test('slow artwork uses a reduced-motion skeleton while real import controls stay ready', async ({ page }) => {
@@ -72,6 +74,7 @@ test('slow artwork uses a reduced-motion skeleton while real import controls sta
 
 test('failed artwork leaves useful empty guidance and import controls without a permanent skeleton', async ({ page }) => {
   await page.route('**/cad-cam-design-to-part*.png', route => route.abort());
+  await page.route('**/brocadm-wordmark*.png', route => route.abort());
   await openReadyWorkbench(page);
   const empty = page.locator('[data-workbench-empty="library"]');
   await expect(empty.locator('[data-image-state="failed"]')).toBeHidden();
@@ -79,4 +82,6 @@ test('failed artwork leaves useful empty guidance and import controls without a 
   await expect(empty.getByRole('heading', { name: 'No saved projects yet' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Design in CAD', exact: true })).toBeEnabled();
   await expect(page.getByLabel('Machine program file', { exact: true })).toBeEnabled();
+  await expect(page.locator('[data-app-header]')).toContainText('broCAD/M');
+  await expect(page.getByRole('img', { name: 'broCAD/M', exact: true })).toHaveCount(0);
 });

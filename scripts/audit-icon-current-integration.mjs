@@ -19,6 +19,7 @@ const retiredSourceReferences = [
   {id:'use.34955e8e553d',reason:'The Parameters header with its Add parameter group button was removed; New group lives in the Parameters context menu.'},
   {id:'use.789ef07f7f97',reason:'The Parameters header with its Add parameter button was removed; New parameter lives in the Parameters context menu.'},
   {id:'use.1fb291d654a2',reason:'The welcome popup and its Close onboarding button were replaced by inline empty-project guidance at the user\'s request.'},
+  {id:'use.351faffd1991',reason:'The dashboard brand icon was replaced by the user-selected broCAD/M image wordmark. The published icon export remains available.'},
 ];
 const integration = JSON.parse(readFileSync(path.join(root, 'docs/design/icon-integration-map.json'), 'utf8'));
 const intendedByUse = new Map(integration.directUsages.map(row=>[row.usageId,row.replacements]));
