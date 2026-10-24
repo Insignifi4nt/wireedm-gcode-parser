@@ -3,7 +3,7 @@ import { reloadEditorAndReturnToLibrary } from './fixtures/navigation';
 
 import { clearWorkbenchCache } from './fixtures/workbench-cache';
 import { confirmPendingDxfImport } from './dxf-import';
-import { dismissOnboarding, openReadyWorkbench } from './fixtures/onboarding';
+import { openReadyWorkbench } from './fixtures/workbench';
 
 test('round-trips an exported UPID through a clean browser cache with execution order and provenance', async ({ page }) => {
   await importTwoContourDxf(page, 'tree-portable-round-trip.dxf');
@@ -72,7 +72,7 @@ test('keeps imported NC programs in the machine-program editor through edit, sav
     mimeType: 'text/plain',
     buffer: Buffer.from('%\nG90\nG0 X0 Y0\nG1 X12 Y0\nM02\n%')
   });
-  await dismissOnboarding(page);
+
   await expect(page.locator('[data-editor-context="machine-program"]')).toBeVisible();
   await expect(page.getByRole('complementary', { name: /UPID rail/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Machining menu' })).toHaveCount(0);
@@ -113,7 +113,7 @@ async function importTwoContourDxf(page: Page, name: string) {
     buffer: Buffer.from(twoContourDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
+
   await expect(page.getByRole('tree', { name: 'UPID execution plan' })).toBeVisible();
 }
 

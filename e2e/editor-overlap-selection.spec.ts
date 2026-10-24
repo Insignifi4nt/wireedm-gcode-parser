@@ -3,7 +3,7 @@ import { confirmPendingDxfImport } from './dxf-import';
 
 test('cycles overlapping source edges and applies exact marquee and type filters without editing', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles({
     name: 'overlap-selection.dxf', mimeType: 'application/dxf',
     buffer: Buffer.from('0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\nCUT\n10\n0\n20\n0\n40\n5\n0\nLINE\n8\nCUT\n10\n-10\n20\n0\n11\n10\n21\n0\n0\nLINE\n8\nCUT\n10\n20\n20\n-5\n11\n20\n21\n5\n0\nENDSEC\n0\nEOF\n')

@@ -20,11 +20,6 @@ import { StatusToastList } from '@/components/StatusToasts';
 import { RecoveryExportPanel } from '@/app/RecoveryExportPanel';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { DxfImportConfirmationDialog } from '@/features/dashboard/DxfImportConfirmationDialog';
-import { OnboardingDialog } from '@/features/onboarding/OnboardingDialog';
-import {
-  hasDismissedOnboarding,
-  rememberOnboardingDismissal
-} from '@/features/onboarding/onboardingPreference';
 
 interface AppProps {
   services?: Partial<AppServices>;
@@ -44,7 +39,6 @@ function StandaloneWorkbench(props: AppProps) {
   return <RouterProvider router={router} />;
 }
 function WorkbenchApp({ services }: AppProps) {
-  const [onboardingOpen, setOnboardingOpen] = useState(() => !hasDismissedOnboarding());
   const draftRead = useRef<DraftReadSnapshot | null>(null);
   const [cadSession] = useState(() => new CadSession());
   const [cadOpen, setCadOpen] = useState(false);
@@ -70,10 +64,6 @@ function WorkbenchApp({ services }: AppProps) {
     ({ id }) => id === planningMachineId
   ) ?? null;
 
-  function dismissOnboarding() {
-    setOnboardingOpen(false);
-    rememberOnboardingDismissal();
-  }
   function closeCadDxfExport() { setCadDxfExport(null); cadSession.setWorkflowOpen(false, 'dxf-export'); }
   function closeCadSection() { setCadSection(null); cadSession.setWorkflowOpen(false, 'section'); }
   function switchStorage(action: () => Promise<void>) {
@@ -87,6 +77,7 @@ function WorkbenchApp({ services }: AppProps) {
 
   return (
     <AppShell
+      showDashboardBrand={app.activeView === 'dashboard' && !cadOpen}
       routeSettingsSection={navigation.settingsSection} onRouteSettingsSection={navigation.openSettings} onCloseRouteSettings={navigation.closeSettings}
       recovery={app.recoveryControls}
       agentPanelContent={<><AgentActivity activity={agentActivity} onRefresh={agentActivity.refresh} /><div className="mt-3">{agentActions.attachControl}</div>{agentActions.previewControl && <div className="mt-3 border-t border-border pt-2">{agentActions.previewControl}</div>}{cad.previewArtifact && <a className="mt-3 block text-xs text-primary underline" href={cad.previewArtifact.previewUrl} download={cad.previewArtifact.fileName}>CAD preview PNG</a>}</>}
@@ -279,10 +270,6 @@ function WorkbenchApp({ services }: AppProps) {
           submitting={app.dxfReimportStatus === 'importing'}
         />
       )}
-      <OnboardingDialog
-        onDismiss={dismissOnboarding}
-        open={onboardingOpen && app.workbenchStatus === 'ready'}
-      />
       {agentActions.importControl}
     </AppShell>
   );

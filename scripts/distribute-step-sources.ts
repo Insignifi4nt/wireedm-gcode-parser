@@ -102,7 +102,7 @@ async function loadManifest(root: string) {
 function sourceIndex(manifest: SourceManifest) {
   return `<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>STEP importer source downloads</title>
-<body><h1>STEP importer source downloads</h1><p>Unmodified corresponding library source and build scripts distributed alongside Wire EDM Workbench. Both archives are needed: the importer archive does not embed its OCCT submodule.</p>
+<body><h1>STEP importer source downloads</h1><p>Unmodified corresponding library source and build scripts distributed alongside broCAD/M. Both archives are needed: the importer archive does not embed its OCCT submodule.</p>
 <ul>${manifest.archives.map(file => `<li><a download href="${file.fileName}">${file.fileName}</a> (${file.byteLength} bytes)<br>SHA-256: <code>${file.sha256}</code></li>`).join('\n')}</ul>
 <p><a href="REBUILD-occt-import-js.md">Rebuild and relink instructions</a> · <a href="occt-import-js-sources.json">Pinned source and binary manifest</a></p>
 <ul>${licenses.map(file => `<li><a href="${file}">${file}</a></li>`).join('\n')}</ul>

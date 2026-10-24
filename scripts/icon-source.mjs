@@ -144,7 +144,7 @@ add('link','Linked expression','cad','M9 15l6-6M8 13l-2 2a3 3 0 0 0 4 4l3-3M11 8
 add('search','Search','navigation',circle(10,10,7)+'M15 15l6 6',['Search']);
 add('plugin','Parametric plugin','cad','M3 5h6a3 3 0 1 1 6 0h6v6a3 3 0 1 0 0 6v4H3v-6a3 3 0 1 0 0-6Z',['Puzzle']);
 add('pattern','Pattern command','cad',box(3,3,6,6)+box(15,3,6,6)+box(3,15,6,6)+'M18 14v8M14 18h8');
-add('wire-edm-mark','Wire EDM Workbench','brand','M3 8h6v12H3ZM15 5h6v12h-6ZM12 2v20');
+add('wire-edm-mark','broCAD/M','brand','M3 8h6v12H3ZM15 5h6v12h-6ZM12 2v20');
 add('navigation-mouse','Mouse navigation','view','M6 9a6 6 0 0 1 12 0v6a6 6 0 0 1-12 0ZM6 10h12M12 3v7',['Mouse']);
 add('navigation-trackpad','Trackpad navigation','view',['M3 10h3M18 10h3v11H3V10','M7 13V5a2 2 0 0 1 4 0v6M11 11V4a2 2 0 0 1 4 0v9h3v4l-3 3H9l-4-5a1.5 1.5 0 0 1 2-2Z'],['Laptop']);
 

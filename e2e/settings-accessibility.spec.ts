@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 test('compact settings keeps navigation and a working backup action in view', async ({ page }) => {
   await page.setViewportSize({ width: 640, height: 800 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Open settings', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Workbench settings', exact: true });
   await expect(dialog.getByRole('button', { name: 'Storage', exact: true })).toBeInViewport();
@@ -25,15 +25,6 @@ test('settings traps focus and preserves truthful cache status', async ({ page }
   await page.setViewportSize({ width: 1024, height: 720 });
   await page.goto('/');
 
-  const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
-  await expect(onboarding).toBeVisible();
-  await expect(onboarding.getByRole('button', { name: 'Close onboarding' })).toBeFocused();
-  await expect(page.locator('[data-app-header]')).toHaveAttribute('inert', '');
-  await page.keyboard.press('Shift+Tab');
-  await expect(onboarding.getByRole('button', { name: 'Go Build!' })).toBeFocused();
-  await page.keyboard.press('Tab');
-  await expect(onboarding.getByRole('button', { name: 'Close onboarding' })).toBeFocused();
-  await onboarding.getByRole('button', { name: 'Go Build!' }).click();
   await expect(page.getByRole('button', { name: 'Open Editor' })).toBeVisible();
 
   const settingsButton = page.getByRole('button', { name: 'Open settings' });

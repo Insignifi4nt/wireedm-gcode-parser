@@ -5,7 +5,7 @@ import { confirmPendingDxfImport } from './dxf-import';
 test('guide owns focus and Escape without discarding an active geometry edit', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
   await page.getByRole('button', { name: 'Geometry menu', exact: true }).click();
@@ -15,7 +15,7 @@ test('guide owns focus and Escape without discarding an active geometry edit', a
   const rotated = await cuts.evaluateAll(paths => paths.map(path => path.getAttribute('d')));
   const launcher = page.getByRole('button', { name: 'Open usage guide', exact: true });
   await launcher.click();
-  const guide = page.getByRole('dialog', { name: 'Wire EDM Workbench Manual', exact: true });
+  const guide = page.getByRole('dialog', { name: 'CAM guide', exact: true });
   const close = guide.getByRole('button', { name: 'Close guide', exact: true });
   await expect(close).toBeFocused();
   await expect(page.locator('[data-app-header]')).toHaveAttribute('inert', '');

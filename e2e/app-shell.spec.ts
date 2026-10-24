@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test';
 
 import { confirmPendingDxfImport } from './dxf-import';
-import { dismissOnboarding, openReadyWorkbench } from './fixtures/onboarding';
+import { openReadyWorkbench } from './fixtures/workbench';
 
 test('loads the workbench dashboard in a real browser', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openReadyWorkbench(page);
 
-  await expect(page).toHaveTitle(/Wire EDM Workbench/);
+  await expect(page).toHaveTitle('broCAD/M');
   await expect(page.locator('[data-app-shell]')).toBeVisible();
   await expect(page.locator('[data-workbench-page]')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project library', exact: true })).toBeVisible();
@@ -47,7 +47,7 @@ test('keeps the 1024px workbench in one readable column without clipping', async
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
+
   await page.getByRole('button', { name: /dashboard/i }).click();
   const machineProgramInput = page.locator('input[aria-label="Machine program file"]');
   await expect(machineProgramInput).toBeEnabled();

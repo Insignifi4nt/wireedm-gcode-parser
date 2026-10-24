@@ -3,7 +3,7 @@ import { confirmPendingDxfImport } from './dxf-import';
 
 test('transforms preview, cancel, commit once and persist through reopening', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
   const geometry = () => page.locator('path[data-preview-source="path-document"][data-type="cut"]').evaluateAll(paths => paths.map(path => path.getAttribute('d')));

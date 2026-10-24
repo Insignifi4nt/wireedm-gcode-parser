@@ -1105,7 +1105,7 @@
   },
   {
     "id": "wire-edm-mark",
-    "label": "Wire EDM Workbench",
+    "label": "broCAD/M",
     "category": "brand",
     "aliases": [],
     "file": "wire-edm-mark.svg"

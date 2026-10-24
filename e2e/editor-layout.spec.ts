@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { reloadEditorAndReturnToLibrary } from './fixtures/navigation';
 
 import { confirmPendingDxfImport } from './dxf-import';
-import { dismissOnboarding, openReadyWorkbench } from './fixtures/onboarding';
+import { openReadyWorkbench } from './fixtures/workbench';
 
 test('machine program editor keeps resizable code panels and full-height text editing', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -12,11 +12,10 @@ test('machine program editor keeps resizable code panels and full-height text ed
     mimeType: 'text/plain',
     buffer: Buffer.from('%\nG90\nG0 X0 Y0\nG1 X20 Y0\nG1 X20 Y10\nM02\n%')
   });
-  await dismissOnboarding(page);
 
   const appHeader = page.locator('[data-app-header]');
   await expect(appHeader.getByRole('button', { name: /dashboard/i })).toBeVisible();
-  await expect(appHeader).not.toContainText('Wire EDM Workbench');
+  await expect(appHeader.getByRole('img', { name: 'broCAD/M', exact: true })).toHaveCount(0);
   await expect(appHeader.getByRole('heading', { name: /layout-program/i })).toBeVisible();
   await expect(appHeader.getByRole('button', { name: /import program/i })).toBeVisible();
   await expect(appHeader.getByRole('button', { name: /open usage guide/i })).toBeVisible();
@@ -68,7 +67,6 @@ test('machine program line commands stay fully visible at desktop and laptop wid
     mimeType: 'text/plain',
     buffer: Buffer.from('%\nG90\nG0 X0 Y0\nG1 X20 Y0\nG1 X20 Y10\nM02\n%')
   });
-  await dismissOnboarding(page);
 
   await expectLineCommandInsideToolbar(page, 1440);
   await page.setViewportSize({ width: 1024, height: 720 });
@@ -83,7 +81,6 @@ for (const width of [767, 320]) {
       name: `compact-machine-${width}.nc`, mimeType: 'text/plain',
       buffer: Buffer.from(['G21 G90', 'G0 X0 Y0', ...Array.from({ length: 100 }, (_, i) => `G1 X${i} Y10`), 'M02'].join('\n'))
     });
-    await dismissOnboarding(page);
 
     const canvas = page.locator('[data-editor-canvas-panel]');
     const inspector = page.locator('[data-editor-inspector-rail]');
@@ -128,7 +125,6 @@ test('path editor keeps the UPID rail and essential workflow controls at 1024', 
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   const appHeader = page.locator('[data-app-header]');
   const canvas = page.locator('[data-editor-canvas-panel]');
@@ -209,7 +205,6 @@ test('path editor keeps an active right dock and its controls inside the workben
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   await openWorkflowCommand(page, 'Machining', 'machining.entry-exit');
   await page.getByRole('button', { name: 'Dock Entry / Exit right' }).click();
@@ -269,7 +264,6 @@ test('restored 360px rails keep the active right dock inside the workbench at 12
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   await openWorkflowCommand(page, 'Machining', 'machining.entry-exit');
   await page.getByRole('button', { name: 'Dock Entry / Exit right' }).click();
@@ -316,7 +310,6 @@ test('maximum right dock caps at 1200 and restores its width at 1440', async ({ 
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   await openWorkflowCommand(page, 'Machining', 'machining.entry-exit');
   await page.getByRole('button', { name: 'Dock Entry / Exit right' }).click();
@@ -346,7 +339,6 @@ test('path editor persists a collapsed UPID rail across reload and project reope
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   await page.getByRole('button', { name: 'Collapse UPID rail' }).click();
   await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toBeVisible();
@@ -390,7 +382,6 @@ test('middle-width path editor defaults to a compact rail and floats remembered 
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toBeVisible();
   await expect(page.locator('[data-app-workspace-grid]')).toHaveCSS(
@@ -434,7 +425,6 @@ test('middle-width UPID strip opens its full tree as a focus-safe overlay', asyn
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   const workspaceGrid = page.locator('[data-app-workspace-grid]');
   const expandUpidRail = page.getByRole('button', { name: 'Expand UPID rail' });
@@ -473,7 +463,6 @@ test('fresh middle session restores the expanded desktop rail without persisting
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toBeVisible();
   await expect.poll(async () => page.evaluate(() => {
@@ -501,7 +490,6 @@ test('middle overlay Collapse closes the drawer and preserves the desktop rail p
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   const expandUpidRail = page.getByRole('button', { name: 'Expand UPID rail' });
   await expandUpidRail.click();
@@ -526,7 +514,6 @@ test('middle viewport temporarily collapses an expanded desktop UPID rail', asyn
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   const workspaceGrid = page.locator('[data-app-workspace-grid]');
   const expandedRail = page.getByRole('complementary', { name: 'UPID rail', exact: true });
@@ -575,7 +562,7 @@ test('persisted expanded rail uses the middle overlay and restores focus on desk
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
+
   await expect.poll(async () => page.evaluate(() => {
     const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
     return raw ? JSON.parse(raw).upidRailCollapsed : null;
@@ -622,7 +609,6 @@ test('compact path editor keeps an active workflow reachable after closing its d
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   await expect(page.getByRole('button', { name: 'Open active workflow' })).toHaveCount(0);
   await openCompactWorkflowCommand(page, 'Machining', 'machining.entry-exit');
@@ -654,7 +640,6 @@ for (const width of [767, 320]) {
       buffer: Buffer.from(rectangleDxf())
     });
     await confirmPendingDxfImport(page);
-    await dismissOnboarding(page);
 
     const launcher = page.getByRole('button', { name: 'Open Workflows' });
     await expect(launcher).toBeVisible();
@@ -690,7 +675,6 @@ test('compact Workflows launcher owns keyboard focus and popup state at 320px', 
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   const launcher = page.getByRole('button', { name: 'Open Workflows' });
   await launcher.focus();
@@ -728,7 +712,6 @@ test('compact modal host contains shell chrome and clears its owner when the edi
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
 
   await page.getByRole('button', { name: 'Open UPID rail' }).click();
   const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
@@ -768,7 +751,6 @@ for (const viewport of [
       buffer: Buffer.from(rectangleDxf())
     });
     await confirmPendingDxfImport(page);
-    await dismissOnboarding(page);
 
     const programTree = page.getByRole('tree', { name: 'UPID execution plan' });
     for (let cycle = 0; cycle < 2; cycle += 1) {

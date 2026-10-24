@@ -1,4 +1,5 @@
 import { Tooltip } from '@/components/ui/tooltip';
+import { WorkbenchEmptyState } from '@/components/WorkbenchEmptyState';
 import { Select } from '@/components/ui/select';
 import {
   useCallback,
@@ -412,7 +413,7 @@ export function EditorPreview({
         className="flex h-full min-h-0 items-center justify-center border border-border bg-background/70 font-mono text-[11px] text-muted-foreground"
         data-editor-empty-preview
       >
-        No drawable toolpath loaded.
+        <WorkbenchEmptyState context="preview" />
       </div>
     );
   }

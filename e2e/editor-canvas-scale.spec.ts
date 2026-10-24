@@ -7,7 +7,7 @@ test('keeps dense gear endpoints and grid labels readable across zoom and a narr
   await mkdir('tmp/cam-audit', { recursive: true });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.locator('input[aria-label="DXF file"]').setInputFiles({
     name: 'dense-gear-scale.dxf', mimeType: 'application/dxf', buffer: Buffer.from(denseGearDxf())
   });

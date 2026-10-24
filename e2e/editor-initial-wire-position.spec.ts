@@ -4,7 +4,7 @@ import { confirmPendingDxfImport } from './dxf-import';
 
 test('updates the starting marker and connection after review and preserves them on reopen', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
   const startLabel = await page.locator('[data-path-marker-label="start"]').boundingBox();
@@ -37,7 +37,7 @@ test('updates the starting marker and connection after review and preserves them
 
 test('preserves linked center setup through contour start splitting, undo and saved reopen', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles({
     name: 'linked-circle.dxf', mimeType: 'application/dxf',
     buffer: Buffer.from('0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\nCUT\n10\n0\n20\n0\n40\n5\n0\nENDSEC\n0\nEOF\n')

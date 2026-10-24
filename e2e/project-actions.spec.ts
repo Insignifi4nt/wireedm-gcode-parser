@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('keeps project action focus contained and returns it after rename or cancellation', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('Machine program file', { exact: true }).setInputFiles({
     name: 'plate.nc', mimeType: 'text/plain', buffer: Buffer.from('G21\nG0 X0 Y0\nG1 X10 Y0')
   });

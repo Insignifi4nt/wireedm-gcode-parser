@@ -4,7 +4,7 @@ import { confirmPendingDxfImport } from './dxf-import';
 
 test('keyboard activation of controller diagnostics opens and focuses parse issues', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('Machine program file', { exact: true }).setInputFiles({
     name: 'invalid-radius.nc',
     mimeType: 'text/plain',
@@ -24,7 +24,7 @@ test('keyboard activation of controller diagnostics opens and focuses parse issu
 
 test('repairs an execution issue through its owning tool and updates readiness', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
 
@@ -54,7 +54,7 @@ test('repairs an execution issue through its owning tool and updates readiness',
 
 test('repairs partial compensation through its diagnostic while preserving pending-form cancellation and Undo', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles({ name: 'partial-compensation-circle.dxf', mimeType: 'application/dxf',
     buffer: Buffer.from('0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\nCUT\n10\n0\n20\n0\n40\n10\n0\nENDSEC\n0\nEOF\n') });
   await confirmPendingDxfImport(page);

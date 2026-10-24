@@ -23,7 +23,7 @@ test('opens a phone browser cache with the former external-program layout and ke
   await page.addInitScript(({ entries }) => {
     if (localStorage.getItem('wire-edm-workbench:file:workbench.json') === null) {
       for (const [path, contents] of entries) localStorage.setItem(`wire-edm-workbench:file:${path}`, contents);
-      localStorage.setItem('wireedm.onboarding.dismissed', 'true');
+
     }
   }, { entries: [
     ['workbench.json', originalManifest], [oldProjectPath, originalProject],

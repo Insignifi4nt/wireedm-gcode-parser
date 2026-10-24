@@ -5,7 +5,6 @@ import App from '../App';
 import type { AppServices } from '../app/appServices';
 import { createDxfImportServices } from '../app/dxfImportServices';
 import { directDxfProcessor } from '../features/dxf-import/dxfProcessorTestSupport';
-import { ONBOARDING_DISMISSED_STORAGE_KEY } from '../features/onboarding/onboardingPreference';
 import { settleDefaultAppServices, trackedDefaultAppServices } from './appServiceTestSupport';
 import { openReadOnlyIndexedDbWorkbench } from '@/domain/storage/indexedDbWorkbenchAdapter';
 
@@ -83,7 +82,6 @@ export function enableAutoOpenEditorWorkspacePanels() {
 }
 
 export function createAppTestContext(): AppTestContext {
-  window.localStorage.setItem(ONBOARDING_DISMISSED_STORAGE_KEY, 'true');
   const container = document.createElement('div');
   document.body.appendChild(container);
 

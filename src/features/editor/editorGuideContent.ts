@@ -42,7 +42,7 @@ export const EDITOR_GUIDE_LANGUAGES: Record<EditorGuideLanguage, string> = {
 
 export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
   en: {
-    title: 'Wire EDM Workbench Manual',
+    title: 'CAM guide',
     overview:
       'A practical guide for local storage work, DXF path planning, editor inspection, measurement, pinning, cleanup, and final export.',
     closeLabel: 'Close guide',
@@ -212,7 +212,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
     ]
   },
   ro: {
-    title: 'Manual Wire EDM Workbench',
+    title: 'Ghid CAM',
     overview:
       'Ghid practic pentru lucru in local storage, planificare DXF, inspectie in editor, masurare, pinning, cleanup si export final.',
     closeLabel: 'Inchide ghidul',

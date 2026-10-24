@@ -363,7 +363,7 @@ describe('Editor preview controls and guide', () => {
     const dialog = container.querySelector('[role="dialog"][aria-modal="true"]');
     expect(dialog).not.toBeNull();
     expect(container.querySelector('[data-editor-guide-overlay]')).not.toBeNull();
-    expect(dialog?.textContent).toContain('Wire EDM Workbench Manual');
+    expect(dialog?.textContent).toContain('CAM guide');
     expect(dialog?.textContent).toContain('Import Program');
     expect(dialog?.textContent).not.toContain('drag in .gcode');
     expect(dialog?.textContent).toContain('Canvas Navigation');
@@ -384,7 +384,7 @@ describe('Editor preview controls and guide', () => {
 
     expect(window.localStorage.getItem('wireedm.guideLanguage')).toBe('ro');
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
-      'Manual Wire EDM Workbench'
+      'Ghid CAM'
     );
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain('Navigare canvas');
     expect(container.querySelector('[role="dialog"]')?.textContent).not.toContain('Navigare preview');

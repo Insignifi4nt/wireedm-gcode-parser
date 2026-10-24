@@ -19,8 +19,12 @@ test('saved CAD survives dashboard reopen, browser history, direct reload and ST
   await expect(page).toHaveURL(/wireedm-gcode-parser\/$/);
   await page.getByRole('button', { name: `Open project ${projectId} in CAD`, exact: true }).click();
   await expect(page).toHaveURL(projectUrl);
+  // The URL publishes before the guarded open finishes. Navigate history after the actual CAD view is ready.
+  await expect(page.getByRole('button', { name: 'Workbench', exact: true })).toBeVisible();
+  await expect(page.getByText('Opening project…', { exact: true })).toBeHidden();
   await page.goBack();
   await expect(page.getByRole('button', { name: `Open project ${projectId} in CAD`, exact: true })).toBeVisible();
+  await expect(page.getByText('Opening project…', { exact: true })).toBeHidden();
   await page.goForward();
   await expect(page).toHaveURL(projectUrl);
   await page.reload();

@@ -3,7 +3,7 @@ import { confirmPendingDxfImport } from './dxf-import';
 
 test('explains stop phases and saves an exact travel-distance stop with preview and undo', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   const text = ['0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', '4', '0', 'ENDSEC',
     '0', 'SECTION', '2', 'ENTITIES',
     '0', 'LINE', '8', 'CUT', '10', '0', '20', '0', '11', '10', '21', '0',

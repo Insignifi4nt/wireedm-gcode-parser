@@ -4,7 +4,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 // Native WebMCP interoperability is also checked in the Codex in-app browser.
 export async function prepareCadTools(page: Page) {
   await page.addInitScript(() => {
-    localStorage.setItem('wireedm.onboarding.dismissed', 'true');
+
     const tools = new Map<string, { execute(input: unknown): Promise<unknown> }>();
     Object.defineProperty(document, 'modelContext', { configurable: true, value: {
       registerTool(tool: { name: string; execute(input: unknown): Promise<unknown> }, options: { signal: AbortSignal }) {

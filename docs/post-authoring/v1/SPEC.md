@@ -2,7 +2,7 @@
 
 ## 1. Scope and authority
 
-This specification defines the complete portable machine package accepted by Wire EDM Workbench and the post processors contained by it. It is written for coding agents and humans producing a package from machine and controller evidence. It does not define a universal G-code dialect.
+This specification defines the complete portable machine package accepted by broCAD/M and the post processors contained by it. It is written for coding agents and humans producing a package from machine and controller evidence. It does not define a universal G-code dialect.
 
 The key words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative only when capitalized, as described by RFC 2119 and RFC 8174.
 

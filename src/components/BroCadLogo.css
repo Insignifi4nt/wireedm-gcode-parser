@@ -1,0 +1,4 @@
+.brocad-logo { display: block; position: relative; flex: none; width: 133px; height: 24px; overflow: hidden; }
+/* Measured ink bounds in the unchanged 2172×724 source: x95–2079, y175–535. */
+.brocad-logo img { position: absolute; max-width: none; width: 144.8px; height: 48.2667px; left: -6.3333px; top: -11.6667px; filter: grayscale(1) invert(1) contrast(1.15); mix-blend-mode: screen; }
+.brocad-logo-fallback { font-family: var(--font-sans); font-size: var(--text-body); font-weight: 600; }

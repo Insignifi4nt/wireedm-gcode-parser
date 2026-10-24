@@ -3,7 +3,7 @@ import { confirmPendingDxfImport } from './dxf-import';
 
 test('dashboard menus support keyboard entry and resume the native tab order', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   const importTrigger = page.getByRole('button', { name: 'More path project import options', exact: true });
   const importItem = page.getByRole('menuitem', { name: 'Import UPID Path Project', exact: true });
   await importTrigger.press('ArrowDown');
@@ -44,7 +44,7 @@ test('dashboard menus support keyboard entry and resume the native tab order', a
 
 test('blocked controller export opens machine settings and restores the saved editor', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file', { exact: true }).setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
   await page.getByRole('button', { name: 'Export menu', exact: true }).click();

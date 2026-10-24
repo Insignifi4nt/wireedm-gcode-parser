@@ -6,7 +6,7 @@ test.use({ hasTouch: true });
 async function openTouchProject(page: Page, geometry: 'line' | 'circle' = 'line') {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file').setInputFiles({
     name: `touch-${geometry}.dxf`, mimeType: 'application/dxf',
     buffer: Buffer.from(geometry === 'circle'

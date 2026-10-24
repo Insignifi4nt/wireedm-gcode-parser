@@ -31,7 +31,7 @@ async function instrumentWorkers(page: Page) {
 test('real DXF workers preserve reviewed units, source bytes and saved geometry', async ({ page }) => {
   await instrumentWorkers(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   const text = lines(3).replaceAll('\n', '\r\n');
   await page.getByLabel('DXF file', { exact: true }).setInputFiles({ name: 'worker-original.dxf', mimeType: 'application/dxf', buffer: Buffer.from(text) });
   const review = page.getByRole('dialog', { name: 'Review DXF import', exact: true });
@@ -54,7 +54,7 @@ test('real DXF workers preserve reviewed units, source bytes and saved geometry'
 test('cancel remains responsive during real large DXF planning and writes no project', async ({ page }) => {
   await instrumentWorkers(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await expect(page.getByLabel('DXF file', { exact: true })).toBeEnabled();
   await page.getByLabel('DXF file', { exact: true }).setInputFiles({ name: 'bounded-large.dxf', mimeType: 'application/dxf', buffer: Buffer.from(lines(5000)) });
   const review = page.getByRole('dialog', { name: 'Review DXF import', exact: true });
   await expect(review).toBeVisible();
