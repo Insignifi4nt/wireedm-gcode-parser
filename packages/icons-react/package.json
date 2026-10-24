@@ -24,6 +24,13 @@
     "check:package": "npm run build && node scripts/check-package.mjs",
     "prepack": "npm run build"
   },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=24.22.1 <25 || >=26.12.1 <27",
+      "onFail": "error"
+    }
+  },
   "peerDependencies": { "react": "^18.2.0 || ^19.0.0" },
   "devDependencies": {
     "@types/react": "^19.3.0",
