@@ -10,6 +10,91 @@ let container: HTMLDivElement | undefined;
 afterEach(() => { act(() => root?.unmount()); container?.remove(); Reflect.deleteProperty(document, 'modelContext'); vi.restoreAllMocks(); });
 
 describe('visible agent activity', () => {
+  it('rebinds resumed/replaced browser contexts and rejects old registrations without changing the live draft', async () => {
+    const first = new Map<string, SiteTool>(), second = new Map<string, SiteTool>();
+    const context = (tools: Map<string, SiteTool>): ModelContext => ({ registerTool(tool, { signal }) {
+      tools.set(tool.name, tool);
+      signal.addEventListener('abort', () => { if (tools.get(tool.name) === tool) tools.delete(tool.name); });
+    } });
+    const draft = { version: 'draft-one', dirty: true };
+    let state!: ReturnType<typeof useSiteTools>;
+    function Harness() {
+      state = useSiteTools([siteTool('edm_get_context', 'Read live draft', object({}), () => ({ ...draft }))]);
+      return <AgentActivity activity={state} onRefresh={state.refresh} />;
+    }
+    container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+    await act(async () => root!.render(<Harness />));
+    expect(state.registration).toBe('unsupported');
+    Object.defineProperty(document, 'modelContext', { configurable: true, value: context(first) });
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    const original = first.get('edm_get_context')!;
+    expect(await original.execute({})).toMatchObject({ ok: true, data: draft });
+    Object.defineProperty(document, 'modelContext', { configurable: true, value: context(second) });
+    await act(async () => { expect(await original.execute({})).toMatchObject({ ok: false, error: { code: 'TOOL_REGISTRATION_STALE' } }); });
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    expect(first.size).toBe(0); expect(second.size).toBe(1);
+    const resumed = second.get('edm_get_context')!;
+    await act(async () => window.dispatchEvent(new Event('pagehide')));
+    expect(second.size).toBe(0);
+    expect(await resumed.execute({})).toMatchObject({ ok: false, error: { code: 'TOOL_REGISTRATION_STALE' } });
+    await act(async () => window.dispatchEvent(new Event('pageshow')));
+    expect(second.size).toBe(1);
+    draft.version = 'draft-two';
+    await act(async () => root!.render(<Harness />));
+    await act(async () => { expect(await second.get('edm_get_context')!.execute({})).toMatchObject({ ok: true, data: draft }); });
+    const previous = second.get('edm_get_context');
+    await act(async () => container!.querySelector('button')!.click());
+    expect(second.get('edm_get_context')).not.toBe(previous);
+    expect(draft).toEqual({ version: 'draft-two', dirty: true });
+  });
+
+  it('refuses a manual registration refresh during a live mutation', async () => {
+    const tools = new Map<string, SiteTool>();
+    Object.defineProperty(document, 'modelContext', { configurable: true, value: { registerTool(tool: SiteTool) { tools.set(tool.name, tool); } } });
+    const execution = deferred<void>();
+    let state!: ReturnType<typeof useSiteTools>;
+    function Harness() { state = useSiteTools([siteTool('edm_save_project', 'Save', object({}), async () => { await execution.promise; return { saved: true }; }, false)]); return <AgentActivity activity={state} onRefresh={state.refresh} />; }
+    container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+    await act(async () => root!.render(<Harness />));
+    const current = tools.get('edm_save_project')!;
+    let pending!: Promise<unknown>;
+    await act(async () => { pending = current.execute({}); state.refresh(); });
+    expect(container.querySelector('button')?.disabled).toBe(true);
+    expect(tools.get('edm_save_project')).toBe(current);
+    await act(async () => { execution.resolve(); expect(await pending).toMatchObject({ ok: true, data: { saved: true } }); });
+    expect(container.querySelector('button')?.disabled).toBe(false);
+  });
+
+  it('keeps an active startup mutation registered through the initial pageshow event', async () => {
+    const tools = new Map<string, SiteTool>();
+    Object.defineProperty(document, 'modelContext', { configurable: true, value: {
+      registerTool(tool: SiteTool) { tools.set(tool.name, tool); }
+    } satisfies ModelContext });
+    const execution = deferred<void>();
+    let callSignal: AbortSignal | undefined;
+    function Harness() {
+      return <AgentActivity activity={useSiteTools([
+        siteTool('edm_save_project', 'Save', object({}), async (_input, signal) => {
+          callSignal = signal;
+          await execution.promise;
+          signal.throwIfAborted();
+          return { saved: true };
+        }, false)
+      ])} />;
+    }
+    container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+    await act(async () => root!.render(<Harness />));
+    const current = tools.get('edm_save_project')!;
+    let pending!: Promise<unknown>;
+    await act(async () => { pending = current.execute({}); });
+    await act(async () => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false })));
+    expect(tools.get('edm_save_project')).toBe(current);
+    expect(callSignal?.aborted).toBe(false);
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('running · save project');
+    await act(async () => { execution.resolve(); expect(await pending).toMatchObject({ ok: true, data: { saved: true } }); });
+    expect(container.textContent).toContain('save project · succeeded');
+  });
+
   it('reports preparation until every sequential native registration finishes', async () => {
     const acknowledgements = [deferred<void>(), deferred<void>()];
     let nextAcknowledgement = 0;

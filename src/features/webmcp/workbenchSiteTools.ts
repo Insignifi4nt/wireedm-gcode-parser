@@ -11,6 +11,9 @@ import { object, page, pageFields, siteTool, ToolError } from './siteTools';
 import { editCatalogTool } from './editCatalog';
 import { summarizeDiagnostics } from './diagnosticSummaries';
 import { sourceIdentifier } from './projectEdits';
+import { inspectContourApproach } from '@/domain/path-editor/inspectContourApproach';
+
+import { pathGeometryBounds } from '@/domain/path-editor/pathScaling';
 import { capabilityVersion, machineCapabilityRow, machineSetupJson, setupCapabilityRow } from './capabilityQueries';
 
 export interface DraftReadSnapshot {
@@ -31,6 +34,7 @@ export interface WorkbenchToolState {
   recovery?: ReturnType<typeof recoverySourceSummary> | null;
 }
 const id = Type.String({ minLength: 1, maxLength: 160 });
+const point = object({ x: Type.Number({ minimum: -1e9, maximum: 1e9 }), y: Type.Number({ minimum: -1e9, maximum: 1e9 }) });
 const target = Type.Union([
   object({ kind: Type.Literal('current-draft'), version: id }),
   object({ kind: Type.Literal('saved-project'), projectId: id, version: Type.Optional(id) })
@@ -76,6 +80,16 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
       document: project.content.kind === 'upid-document' ? project.content.document as PathPlanningDocument : null };
   }
   return [
+    siteTool('edm_inspect_approach', 'Find the exact nearest point on an operation from a millimeter coordinate and check its straight entry against every source segment, excluding only the intended attachment. Optional hintPoint chooses a different contour attachment by nearest snap. Read-only; does not set a start or approve a lead. A clear geometric nearest point is the nearest reachable straight attachment. Blocked does not rule out alternatives; no alternate-route search, wire-radius, fixture or machine certification. Paginate intersection rows with the same target version.', object({ target, operationId: sourceIdentifier, from: point, hintPoint: Type.Optional(point), ...pageFields }), async input => {
+      const snapshot = await resolve(input.target);
+      if (!snapshot.document) throw new ToolError('WRONG_MODEL', 'Approach inspection requires a UPID project.');
+      const result = inspectContourApproach(snapshot.document, input);
+      if (!result) throw new ToolError('NOT_FOUND', 'The operation has no inspectable contour point. Read current operation IDs.');
+      const { intersections, ...summary } = result;
+      return { version: snapshot.version, units: 'mm', ...summary,
+        scope: 'Straight source-geometry intersections only; includes inactive reference geometry. Does not check wire radius, fixtures, material access, machine setup or certify a cut.',
+        intersections: page(intersections, input) };
+    }),
     editCatalogTool(),
     siteTool('edm_get_context', 'Read app version, storage kind and the current editor draft identity/version. Does not open or change a project.', object({}), () => {
       const current = getState();
@@ -96,7 +110,7 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
     siteTool('edm_get_project', 'Read an explicit current draft or saved project summary. Draft reads require the current version from edm_get_context. Counts and recorded diagnostics are not executable certification.', object({ target }), async (input) => {
       const { document, ...snapshot } = await resolve(input.target);
       return { ...snapshot, model: document ? 'upid' : 'external-gcode', ...(document ? {
-        units: 'mm', schemaVersion: document.schemaVersion, geometryBasis: document.geometryBasis,
+        units: 'mm', schemaVersion: document.schemaVersion, geometryBasis: document.geometryBasis, bounds: pathGeometryBounds(document),
         setup: document.setup ?? {}, options: document.options,
         counts: { operations: document.plan.operations.length, contours: document.contours.length, segments: document.segments.length },
         ...summarizeDiagnostics(document.diagnostics)

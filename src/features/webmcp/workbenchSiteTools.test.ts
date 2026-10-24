@@ -1,8 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { portableUpidIntentFixture } from '@/domain/upid/__tests__/portableUpidIntentFixture';
+import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { workbenchSiteTools, type WorkbenchToolState } from './workbenchSiteTools';
 
 describe('workbench site queries', () => {
+  it('checks the complete approach before paginating its intersections and pins the exact draft', async () => {
+    const document = createUpidFromDxfEntities(Array.from({ length: 24 }, (_, x) => ({ type: 'line', layer: 'CUT', start: { x, y: -2 }, end: { x, y: 2 } })));
+    const state: WorkbenchToolState = { workbench: null, busy: false, draft: { projectId: 'test', version: 'v1', document, dirty: true, workflowOpen: false } };
+    const tool = workbenchSiteTools(() => state).find(tool => tool.name === 'edm_inspect_approach')!;
+    const input = { target: { kind: 'current-draft', version: 'v1' }, operationId: document.plan.operations[0].id, from: { x: 25, y: 0 }, limit: 5 };
+    expect(await tool.execute(input)).toMatchObject({ ok: true, data: { version: 'v1', status: 'blocked', checkedSegmentCount: 24,
+      intersections: { total: 23, nextOffset: 5, items: expect.any(Array) }, searchedAlternatives: false } });
+    expect(await tool.execute({ ...input, offset: 20 })).toMatchObject({ ok: true, data: { status: 'blocked', intersections: { total: 23, nextOffset: null } } });
+    state.draft!.version = 'v2';
+    expect(await tool.execute(input)).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    expect(await tool.execute({ ...input, target: { kind: 'current-draft', version: 'v2' }, operationId: 'missing' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    expect(await tool.execute({ ...input, from: { x: Infinity, y: 0 } })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+  });
   it('identifies the workflow blocking edits in context', async () => {
     const state: WorkbenchToolState = { workbench: null, busy: false, draft: { projectId: 'test', version: 'v1', document: portableUpidIntentFixture(), dirty: true, workflowOpen: true, workflowCommand: 'start-point' } };
     const context = workbenchSiteTools(() => state).find(tool => tool.name === 'edm_get_context')!;

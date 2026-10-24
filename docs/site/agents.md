@@ -1,5 +1,23 @@
 # Use the app with an agent
 
+## Inspect an entry before editing
+
+`edm_inspect_approach` takes a versioned draft or saved-project `target`, an `operationId` and a millimeter `from` point. It finds the exact nearest contour point using the editor's snap operation and checks the straight lead against every source segment. The reply includes the snapped point, source/operation IDs, lead length, checked segment count and paginated intersections. Read all intersection pages using the same target version. `status` reflects the complete check, even when the current page is empty.
+
+When the geometric nearest attachment is clear, `nearestReachablePoint` returns that point. `blocked` means that approach crosses or overlaps source geometry; it does not prove every alternative is blocked. Supply `hintPoint` to check a different snapped attachment. `zero-length` reports that the free point already coincides with the attachment. The query does not edit a start, approve a lead, search alternate routes, check fixtures, account for wire radius or certify material access. Inactive reference geometry participates in this conservative source check. After review, use the existing versioned `start-point` and `entry` edits, then review execution and exact machine output.
+
+## Resume an agent session
+
+After navigation or browser resume, rediscover tools for the current tab. The workbench re-registers on page restore and when the browser replaces its tool context. If discovery still points at old handles, open the notification panel and choose **Refresh agent tools**, then rediscover. This retries registration without reloading or discarding unsaved work and is disabled while an agent command runs.
+
+`TOOL_REGISTRATION_STALE` means a tool belongs to an earlier browser registration and did not run. `STALE_STATE` means the draft, saved project or setup version changed. For that error, read fresh `edm_get_context` or `edm_workflow_context`, inspect the changed data and retry with its current version. Reloading a page discards unsaved browser memory, so save the draft first. A successful registration refresh is not proof that an external integration refreshed its cached discovery.
+
+## Resize CAM geometry
+
+Use `edm_describe_edits` with `kind: "scale"` for the exact schema. `edm_edit_project` accepts a uniform `scale` edit with an explicit millimeter `origin` and either `scale: {kind: "factor", factor: 2}` or `scale: {kind: "longest-side", lengthMm: 140}`. Read the current draft version first. `edm_get_project` returns the resulting geometry bounds. The same operation is available in Geometry → Transform → Document → Uniform scale.
+
+Scaling preserves source identities, contour nesting, direction, normalized participation and compensation choices. Geometry-linked starts and lead coordinates scale. Manual leads need review, and a manual initial wire position stays fixed and needs review. Program-stop distances retain their authored millimeters. Invalid stops or tolerance-induced changes to contour ownership reject the complete edit. Undo restores the previous draft; save remains explicit. Review the resulting machining plan and exact machine fit before export.
+
 ## CAD workspace
 
 CAD and CAM are separate documents with separate draft versions. Begin with `cad_get_context`. Open the retained workspace with `cad_open_workspace`, or create a blank document with `cad_create_document`, its current `expectedVersion` and a name. Unsaved CAD or CAM work blocks replacement. No repository, terminal, local path or browser file access is needed to author CAD.
@@ -479,7 +497,9 @@ Once a save or setup journal starts, check the returned `saved` or `activated` f
 
 For saved-library export, first call `edm_get_project` with `{ "target": { "kind": "saved-project", "projectId": "<listed ID>" } }`. Pass its returned `version` as `savedProjectVersion` to `edm_export_saved_upid`, together with that `projectId` and the current `expectedVersion`. A changed saved record returns `PORTABLE_UPID_PROJECT_CHANGED`; read it again before retrying.
 
-Import inputs now travel directly in tool arguments. The permanent **Agent input file** control and selected-file fallback have been removed: older callers must supply `source`. Existing DXF/UPID `{fileName,text}` arguments are unchanged. `edm_workflow_context` reports `inputLimits`; its legacy `inputFile` field is always null.
+Import tools accept either direct contents or a file token. For larger files, call `edm_request_import_file` with the current `expectedVersion`. Attach the file through the dialog's native **Agent import file** input, then read `edm_workflow_context.inputFile`. Pass `source: {fileToken: "<returned token>"}` to `edm_prepare_dxf`, `edm_import_upid` or `edm_prepare_machine_package`. The call stays small even for a multi-megabyte file. The notification panel also has **Attach agent import file**. Attaching does not import or install; review DXF units or the package preview before committing.
+
+Tokens refer only to the one file attached in this tab. Replacement, reload or a changed workbench expires them with `FILE_TOKEN_STALE`. Reattach and read fresh context. Files remain local; tokens cannot resolve arbitrary file paths, browser handles from another tab, remote URLs or external artifact IDs. Existing DXF/UPID `{fileName,text}` and package `{fileName,base64}` arguments remain supported. Cancellation and dirty-draft guards still apply. Attached DXF, UPID and package files retain their ordinary 16, 64 and 32 MiB import limits respectively; these are separate from controller export and browser storage capacity.
 
 DXF/UPID import text is limited to 1 MiB of UTF-8. Machine package input is limited to 32 MiB of decoded archive bytes and uses standard padded base64 with no whitespace or `data:` prefix. Supply a filename ending in `.wireedm-package` and the complete original archive bytes, including its evidence. A standalone post JSON is not an installable package. Malformed encoding returns `INVALID_ENCODING`; decoded input over the limit returns `INPUT_TOO_LARGE`; arguments exceeding schema limits return `INVALID_ARGUMENT`.
 

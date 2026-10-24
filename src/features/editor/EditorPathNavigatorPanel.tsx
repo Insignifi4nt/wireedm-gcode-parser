@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { EditorScalePanel } from './EditorScalePanel';
 import { MenuSurface, MenuItem, MenuCheckboxItem } from '@/components/ui/menu';
 import { Input } from '@/components/ui/input';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -136,6 +137,8 @@ interface EditorPathNavigatorPanelProps {
   onMirrorPathSelection: (axis: PathMirrorAxis) => void;
   onRotatePathDocument: (angleDegrees: number) => void;
   onRotatePathSelection: (angleDegrees: number) => void;
+  onScalePathDocument?: (factor: number, origin: Point2) => void;
+  scaleBlocked?: boolean;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onPathTargetXDraftChange: (value: string) => void;
   onPathTargetYDraftChange: (value: string) => void;
@@ -148,7 +151,7 @@ interface EditorPathNavigatorPanelProps {
     completedSource?: 'transform-target' | 'transform-translate'
   ) => void;
   onToggleHoverAssist: () => void;
-  onTransformDraftChange?: (source: 'target' | 'translate') => void;
+  onTransformDraftChange?: (source: 'target' | 'translate' | 'scale') => void;
   targetDraftPending?: boolean;
   transformTargetChangeBlocked?: boolean;
 }
@@ -179,6 +182,8 @@ export function EditorPathNavigatorPanel({
   onMirrorPathSelection,
   onRotatePathDocument,
   onRotatePathSelection,
+  onScalePathDocument,
+  scaleBlocked = false,
   onSelectPathElement,
   onPathTargetXDraftChange,
   onPathTargetYDraftChange,
@@ -641,6 +646,8 @@ export function EditorPathNavigatorPanel({
           'path-transform',
           'Transform',
         <section data-upid-path-transform>
+          {onScalePathDocument && activePathTransformTarget === 'document' && <EditorScalePanel document={pathDocument} disabled={isSaving || scaleBlocked}
+            onDraftChange={() => onTransformDraftChange?.('scale')} onApply={onScalePathDocument} />}
           <div className="mb-2 flex items-center justify-between gap-2">
             <span className="text-[10px] text-muted-foreground">Placement</span>
             <span className="truncate text-[10px] text-muted-foreground" data-upid-transform-target>
