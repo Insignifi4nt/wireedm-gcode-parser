@@ -174,7 +174,11 @@ export function useSiteTools(tools: readonly SiteTool[]) {
       });
     }
     const hide = () => { suspended = true; ++generation; registration?.dispose(); registration = null; };
-    const show = () => { suspended = false; start(true); };
+    const show = (event: PageTransitionEvent) => {
+      const restoring = suspended || event.persisted;
+      suspended = false;
+      start(restoring);
+    };
     const resume = () => { if (document.visibilityState === 'visible') start(); };
     window.addEventListener('pagehide', hide); window.addEventListener('pageshow', show);
     window.addEventListener('focus', resume); document.addEventListener('visibilitychange', resume);

@@ -64,6 +64,37 @@ describe('visible agent activity', () => {
     await act(async () => { execution.resolve(); expect(await pending).toMatchObject({ ok: true, data: { saved: true } }); });
     expect(container.querySelector('button')?.disabled).toBe(false);
   });
+
+  it('keeps an active startup mutation registered through the initial pageshow event', async () => {
+    const tools = new Map<string, SiteTool>();
+    Object.defineProperty(document, 'modelContext', { configurable: true, value: {
+      registerTool(tool: SiteTool) { tools.set(tool.name, tool); }
+    } satisfies ModelContext });
+    const execution = deferred<void>();
+    let callSignal: AbortSignal | undefined;
+    function Harness() {
+      return <AgentActivity activity={useSiteTools([
+        siteTool('edm_save_project', 'Save', object({}), async (_input, signal) => {
+          callSignal = signal;
+          await execution.promise;
+          signal.throwIfAborted();
+          return { saved: true };
+        }, false)
+      ])} />;
+    }
+    container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+    await act(async () => root!.render(<Harness />));
+    const current = tools.get('edm_save_project')!;
+    let pending!: Promise<unknown>;
+    await act(async () => { pending = current.execute({}); });
+    await act(async () => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false })));
+    expect(tools.get('edm_save_project')).toBe(current);
+    expect(callSignal?.aborted).toBe(false);
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('running · save project');
+    await act(async () => { execution.resolve(); expect(await pending).toMatchObject({ ok: true, data: { saved: true } }); });
+    expect(container.textContent).toContain('save project · succeeded');
+  });
+
   it('reports preparation until every sequential native registration finishes', async () => {
     const acknowledgements = [deferred<void>(), deferred<void>()];
     let nextAcknowledgement = 0;
