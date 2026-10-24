@@ -19,7 +19,7 @@ Browser storage belongs to its origin. Production GitHub Pages, local preview an
 
 ## IndexedDB migration and atomic revision saves
 
-Release 0.0.727 moves the default browser workbench to IndexedDB database version 1. This is independent of app, UPID, catalog, post and saved-revision schema versions. Logical formats remain unchanged. The adapter adds no small per-file or database byte ceiling; browser-managed quota and existing domain resource limits still apply.
+Release 0.0.728 moves the default browser workbench to IndexedDB database version 1. This is independent of app, UPID, catalog, post and saved-revision schema versions. Logical formats remain unchanged. The adapter adds no small per-file or database byte ceiling; browser-managed quota and existing domain resource limits still apply.
 
 Opening holds the same `browser-storage:wire-edm-workbench` mutation scope used by the legacy adapter. Discovery never writes or probes localStorage. The complete bounded source inventory, including physical compressed envelopes and directory metadata, is fingerprinted and retained in the database's `legacy` store. A disposable proposed logical copy undergoes normal catalog validation and pending-transaction recovery. Malformed or conflicting input blocks publication and leaves the source intact.
 

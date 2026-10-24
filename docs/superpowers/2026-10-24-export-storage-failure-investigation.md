@@ -1,6 +1,6 @@
 # Export storage failure investigation
 
-Date: 24 October 2026. The measurements and proposal below record the original investigation. The resulting implementation ships in app 0.0.727; see the storage maintenance map and release compatibility record. The investigation did not modify project geometry or installed packages.
+Date: 24 October 2026. The measurements and proposal below record the original investigation. The resulting implementation ships in app 0.0.728; see the storage maintenance map and release compatibility record. The investigation did not modify project geometry or installed packages.
 
 ## Cause and scope
 
