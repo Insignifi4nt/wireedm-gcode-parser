@@ -1,5 +1,7 @@
 # WebMCP integration
 
+Uniform CAM scaling is an additive edit in the shared `applyProjectEdits` batch and Transform workflow. `pathScaling.ts` owns bounds/factor previews; `scalePathDocument` preserves oriented topology and exact circular primitives, and validates retained millimeter stop distances. The UI displays the origin and resulting bounds. Manual wire/lead review rules match the domain operation. Installed posts, saved revisions and unedited output are unchanged.
+
 ## Shipped scope
 
 The app registers workbench tools and eight temporary package-authoring tools. `siteTools.ts` owns the small browser adapter, runtime TypeBox argument validation, bounded issue paths, 32 KiB result limit, registration lifetime and execution cancellation. No server, relay, polyfill or separate editor state owner is added for WebMCP.

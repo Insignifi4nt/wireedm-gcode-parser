@@ -1,5 +1,11 @@
 # Use the app with an agent
 
+## Resize CAM geometry
+
+Use `edm_describe_edits` with `kind: "scale"` for the exact schema. `edm_edit_project` accepts a uniform `scale` edit with an explicit millimeter `origin` and either `scale: {kind: "factor", factor: 2}` or `scale: {kind: "longest-side", lengthMm: 140}`. Read the current draft version first. `edm_get_project` returns the resulting geometry bounds. The same operation is available in Geometry → Transform → Document → Uniform scale.
+
+Scaling preserves source identities, contour nesting, direction, normalized participation and compensation choices. Geometry-linked starts and lead coordinates scale. Manual leads need review, and a manual initial wire position stays fixed and needs review. Program-stop distances retain their authored millimeters. Invalid stops or tolerance-induced changes to contour ownership reject the complete edit. Undo restores the previous draft; save remains explicit. Review the resulting machining plan and exact machine fit before export.
+
 ## CAD workspace
 
 CAD and CAM are separate documents with separate draft versions. Begin with `cad_get_context`. Open the retained workspace with `cad_open_workspace`, or create a blank document with `cad_create_document`, its current `expectedVersion` and a name. Unsaved CAD or CAM work blocks replacement. No repository, terminal, local path or browser file access is needed to author CAD.

@@ -1,22 +1,22 @@
 {
   "version": "0.0.729",
   "previousVersion": "0.0.728",
-  "postCompatibility": "preserved-browser-local-agent-file-input",
-  "summary": "Agents can import large DXF, UPID and machine-package files through browser-local attachment tokens without embedding file contents in tool calls.",
-  "warning": "Attachment tokens expire on replacement, reload or a changed workbench. Attaching a file does not import or install it. Existing projects, packages and revisions are preserved; no post or controller output changes.",
+  "postCompatibility": "preserved-uniform-cam-scaling",
+  "summary": "Uniformly scale CAM geometry by factor or longest-side millimeters in Transform and WebMCP, with an explicit origin and bounds.",
+  "warning": "Scaling changes the selected draft's physical geometry. Manual leads require review and manual initial wire stays fixed and requires review. Stops retain millimeter distances; invalid stops or tolerance-induced topology changes reject the edit. Existing saved revisions and installed posts are never rewritten.",
   "checklist": {
-    "schema": "Adds source:{fileToken} as an alternative to existing inline tool input. No project, UPID, saved revision, machine-package or post schema changes.",
-    "events": "No execution-event changes. New edm_request_import_file opens a native attachment dialog. DXF unit review and package preview/installation remain separate operations.",
-    "capabilities": "No machine or post capabilities change. Local immutable File tokens use ordinary import limits: DXF 16 MiB, UPID 64 MiB and packages 32 MiB. Inline limits remain supported.",
-    "auditAndOutput": "No export, compiler or audit changes. Attachment tokens do not permit arbitrary paths, remote URLs or another tab's files.",
-    "installationAndStorage": "Shared import/installation operations retain draft/version/cancellation checks and browser/folder transactions. No automatic changes to installed posts, original files or saved revisions.",
-    "verification": "117 WebMCP tests pass, including oversized input, replacement, cancellation, stale tokens, unit preview and package preparation without installation. Chromium imports a 4,363-segment multi-megabyte UPID and a DXF exceeding the agent script budget through token-only calls, verifies geometry, then reloads. Native TypeScript, lint and shared UI checks pass. Software checks do not establish physical machine verification."
+    "schema": "No UPID, project, saved revision, package or post schema changes. Adds scale to the typed agent edit union.",
+    "events": "No execution-event changes. Scaling uses the existing atomic undoable draft edit and explicit save workflow.",
+    "capabilities": "No machine or post capability changes. Positive uniform factors preserve exact circles/arcs, nesting and source ownership.",
+    "auditAndOutput": "Output and audit rules are unchanged for unchanged jobs. Scaled drafts require normal machining review and machine-fit validation before output.",
+    "installationAndStorage": "Browser and folder saves use existing shared project operations. No installed posts, packages, originals or saved revisions are migrated, deleted or rewritten.",
+    "verification": "151 focused geometry/edit/discovery/UI tests pass, including analytic circles/arcs, nesting, explicit origin, longest-side bounds, fixed wire and transformed lead review, preserved stop distances, invalid shrinkage, topology changes and batch atomicity. Native TypeScript typecheck, zero-finding lint and UI ownership check pass. Physical machine verification is not established."
   },
   "testedPosts": [],
   "publicNotes": {
-    "summary": "Attach large files for agent imports without pasting their contents.",
-    "changes": ["Open an attachment dialog with edm_request_import_file or the Agent activity panel.", "Pass the returned file token to normal DXF, UPID or machine-package preparation and import tools."],
-    "compatibility": "Existing inline calls, installed packages and saved revisions remain supported. Attachment tokens are temporary and local to this tab.",
-    "action": "Attach the file, read edm_workflow_context.inputFile and pass source:{fileToken}. Review units or the package preview before committing."
+    "summary": "Resize CAM geometry inside the workbench.",
+    "changes": ["Scale uniformly by factor or fit the longest side, with explicit origin and resulting bounds.", "Use the same scale edit through WebMCP and undo it as one draft change."],
+    "compatibility": "Installed packages and saved revisions are preserved. Scaling a draft changes geometry and requires machining review.",
+    "action": "Open Geometry → Transform, target Document and use Uniform scale. Review starts, leads, wire position and machine fit before saving and exporting."
   }
 }
