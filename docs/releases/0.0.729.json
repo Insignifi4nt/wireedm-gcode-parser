@@ -1,0 +1,22 @@
+{
+  "version": "0.0.729",
+  "previousVersion": "0.0.728",
+  "postCompatibility": "preserved-uniform-cam-scaling",
+  "summary": "Uniformly scale CAM geometry by factor or longest-side millimeters in Transform and WebMCP, with an explicit origin and bounds.",
+  "warning": "Scaling changes the selected draft's physical geometry. Manual leads require review and manual initial wire stays fixed and requires review. Stops retain millimeter distances; invalid stops or tolerance-induced topology changes reject the edit. Existing saved revisions and installed posts are never rewritten.",
+  "checklist": {
+    "schema": "No UPID, project, saved revision, package or post schema changes. Adds scale to the typed agent edit union.",
+    "events": "No execution-event changes. Scaling uses the existing atomic undoable draft edit and explicit save workflow.",
+    "capabilities": "No machine or post capability changes. Positive uniform factors preserve exact circles/arcs, nesting and source ownership.",
+    "auditAndOutput": "Output and audit rules are unchanged for unchanged jobs. Scaled drafts require normal machining review and machine-fit validation before output.",
+    "installationAndStorage": "Browser and folder saves use existing shared project operations. No installed posts, packages, originals or saved revisions are migrated, deleted or rewritten.",
+    "verification": "151 focused geometry/edit/discovery/UI tests pass, including analytic circles/arcs, nesting, explicit origin, longest-side bounds, fixed wire and transformed lead review, preserved stop distances, invalid shrinkage, topology changes and batch atomicity. Native TypeScript typecheck, zero-finding lint and UI ownership check pass. Physical machine verification is not established."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Resize CAM geometry inside the workbench.",
+    "changes": ["Scale uniformly by factor or fit the longest side, with explicit origin and resulting bounds.", "Use the same scale edit through WebMCP and undo it as one draft change."],
+    "compatibility": "Installed packages and saved revisions are preserved. Scaling a draft changes geometry and requires machining review.",
+    "action": "Open Geometry → Transform, target Document and use Uniform scale. Review starts, leads, wire position and machine fit before saving and exporting."
+  }
+}
