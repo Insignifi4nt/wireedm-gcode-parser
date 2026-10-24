@@ -8,6 +8,7 @@ test('attaches DXF beyond script limits and a multi-megabyte UPID through small 
   await prepareCadTools(page);
   let workflow = await rawCadToolCall(page, 'edm_workflow_context');
   expect(await rawCadToolCall(page, 'edm_request_import_file', { expectedVersion: workflow.data.version })).toMatchObject({ ok: true });
+  await expect(page.getByRole('dialog', { name: 'Attach an agent import file', exact: true })).toBeVisible();
   const dxf = await readFile('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf', 'utf8');
   const padded = dxf.replace(/0\s+EOF\s*$/, `${'999\nlarge drawing annotation\n'.repeat(10_000)}0\nEOF\n`);
   expect(Buffer.byteLength(padded)).toBeGreaterThan(235_000);
