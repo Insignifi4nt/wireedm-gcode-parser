@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserCacheAdapter } from '../browserCacheAdapter';
 import { connectCachedWorkbench } from '../connectCachedWorkbench';
 import { initializeWorkbenchConnection } from '../initializeWorkbenchConnection';
-import { INDEXED_DB_WORKBENCH_DATABASE, openIndexedDbWorkbench, openReadOnlyIndexedDbWorkbench, readLegacyCacheSnapshot } from '../indexedDbWorkbenchAdapter';
+import { combinedBrowserStorageRecovery, INDEXED_DB_WORKBENCH_DATABASE, openIndexedDbWorkbench, openReadOnlyIndexedDbWorkbench, readLegacyCacheSnapshot } from '../indexedDbWorkbenchAdapter';
+import { captureWorkbenchRecovery, recoveryStorageSource } from '../workbenchRecovery';
 
 class MemoryStorage implements Storage {
   readonly values = new Map<string, string>();
@@ -48,7 +49,7 @@ describe('IndexedDB browser workbench', () => {
     adapter.close();
     const reopened = await openIndexedDbWorkbench({factory,legacyStorage:null});
     expect(await reopened.readExactText?.('imports/large-source.nc')).toBe(source);
-    expect(await reopened.readText('imports/large-source.nc')).toBe(source.slice(1));
+    expect(await reopened.readText('imports/large-source.nc')).toBe(source);
     expect((await reopened.listFiles?.())?.paths).toContain('imports/large-source.nc');
     reopened.close();
   });
@@ -207,6 +208,59 @@ describe('IndexedDB browser workbench', () => {
     expect(await adapter.readBoundedExactText?.('imports/a.nc',10000)).toEqual({status:'read',text:'\uFEFF⚙'.repeat(1000)});adapter.close();
   });
 
+  it('holds one read snapshot when a writer tries to enlarge a file after size preflight',async()=>{
+    const factory=new IDBFactory(),adapter=await openIndexedDbWorkbench({factory,legacyStorage:null}),path='imports/racing.txt';
+    await adapter.writeText(path,'a');
+    const db=await new Promise<IDBDatabase>((resolve,reject)=>{const request=factory.open(INDEXED_DB_WORKBENCH_DATABASE);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+    const get=IDBObjectStore.prototype.get;
+    let writer:Promise<void>|undefined;
+    const cloned:number[]=[];
+    const reads=vi.spyOn(IDBObjectStore.prototype,'get').mockImplementation(function(this:IDBObjectStore,key:IDBValidKey|IDBKeyRange){
+      const request=get.call(this,key);
+      if(this.name==='sizes'&&key===path&&!writer)request.addEventListener('success',()=>{
+        writer=new Promise<void>((resolve,reject)=>{
+          const tx=db.transaction(['files','sizes'],'readwrite');tx.oncomplete=()=>resolve();tx.onabort=()=>reject(tx.error);
+          tx.objectStore('files').put('x'.repeat(1_000_000),path);tx.objectStore('sizes').put(1_000_000,path);
+        });
+      });
+      if(this.name==='files'&&key===path)request.addEventListener('success',()=>{cloned.push(typeof request.result==='string'?request.result.length:0);});
+      return request;
+    });
+    try{
+      expect(await adapter.readBoundedExactText?.(path,5)).toEqual({status:'read',text:'a'});
+      expect(cloned).toEqual([1]);
+      if(!writer)throw new Error('Expected the concurrent writer to be queued');
+      await writer;
+      expect(await adapter.readBoundedExactText?.(path,5)).toEqual({status:'too-large'});
+      expect(cloned).toEqual([1]);
+    }finally{reads.mockRestore();adapter.close();db.close();}
+  });
+
+  it.each([undefined,null,-1,'not a size'])('refuses a bounded value clone when its size metadata is %s',async size=>{
+    const factory=new IDBFactory(),adapter=await openIndexedDbWorkbench({factory,legacyStorage:null}),path='imports/large.txt';
+    await adapter.writeText(path,'x'.repeat(1_000_000));
+    await mutateDatabase(factory,tx=>{if(size===undefined)tx.objectStore('sizes').delete(path);else tx.objectStore('sizes').put(size,path);});
+    const reads=vi.spyOn(IDBObjectStore.prototype,'get');
+    try{
+      await expect(adapter.readBoundedExactText?.(path,5)).rejects.toThrow('browser storage file size');
+      expect(reads.mock.contexts.every(store=>store instanceof IDBObjectStore&&store.name!=='files')).toBe(true);
+    }finally{reads.mockRestore();adapter.close();}
+  });
+
+  it('retains cancellation that arrives as a bounded read transaction completes',async()=>{
+    const adapter=await openIndexedDbWorkbench({factory:new IDBFactory(),legacyStorage:null});
+    await adapter.writeText('imports/cancelled.txt','source');
+    const abort=new AbortController(),transaction=IDBDatabase.prototype.transaction;
+    const transactions=vi.spyOn(IDBDatabase.prototype,'transaction').mockImplementation(function(this:IDBDatabase,names:string|Iterable<string>,mode?:IDBTransactionMode,options?:IDBTransactionOptions){
+      const stores=typeof names==='string'?[names]:[...names];
+      const tx=transaction.call(this,stores,mode,options);
+      if(mode==='readonly'&&stores.includes('files')&&stores.includes('sizes'))tx.addEventListener('complete',()=>abort.abort());
+      return tx;
+    });
+    try{await expect(adapter.readBoundedExactText?.('imports/cancelled.txt',100,abort.signal)).rejects.toMatchObject({name:'AbortError'});}
+    finally{transactions.mockRestore();adapter.close();}
+  });
+
   it('closes on version changes and refuses edits from the invalidated adapter',async()=>{
     const factory=new IDBFactory(),adapter=await openIndexedDbWorkbench({factory,legacyStorage:null});
     const upgraded=await new Promise<IDBDatabase>((resolve,reject)=>{const request=factory.open(INDEXED_DB_WORKBENCH_DATABASE,2);request.onerror=()=>reject(request.error);request.onsuccess=()=>resolve(request.result);});
@@ -230,5 +284,19 @@ describe('IndexedDB browser workbench', () => {
     });
     await expect(mode==='normal'?openIndexedDbWorkbench({factory,legacyStorage:null}):openReadOnlyIndexedDbWorkbench(factory)).rejects.toThrow('blocked');
     await vi.waitFor(()=>expect(close).toHaveBeenCalledTimes(1));
+  });
+
+  it('rescues readable legacy observations if the database becomes inaccessible during combined recovery',async()=>{
+    const storage=await legacyFixture(),adapter=await openIndexedDbWorkbench({factory:new IDBFactory(),legacyStorage:storage});
+    const originals=new Map(storage.values);
+    adapter.close();
+    const combined=combinedBrowserStorageRecovery(adapter,storage);
+    const captured=await captureWorkbenchRecovery(recoveryStorageSource(combined,{code:'DATABASE_CLOSED',message:'Database unavailable'}));
+    const archive=JSON.parse(captured.text);
+    const key='wire-edm-workbench:file:workbench.json';
+    expect(archive.files).toContainEqual(expect.objectContaining({path:'legacy-localstorage/'+encodeURIComponent(JSON.stringify(key))+'.txt',status:'captured',text:originals.get(key)}));
+    expect(archive.inventory).toMatchObject({complete:false,truncatedBefore:true,truncatedAfter:true});
+    expect(captured.receipt.contentComplete).toBe(false);
+    expect(storage.values).toEqual(originals);
   });
 });

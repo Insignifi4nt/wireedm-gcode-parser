@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
+import { IDBObjectStore } from 'fake-indexeddb';
 
 import { connectCachedWorkbench } from '../connectCachedWorkbench';
 import { importExternalProgram } from '@/domain/editor/importExternalProgram';
 import { createWorkbenchBackup } from '../workbenchBackup';
+import { captureWorkbenchRecovery } from '../workbenchRecovery';
 import { openIndexedDbWorkbench } from '../indexedDbWorkbenchAdapter';
 
 class MemoryStorage implements Storage {
@@ -243,5 +245,49 @@ describe('connectCachedWorkbench', () => {
       expect(await rescue.readText('indexeddb/legacy-originals/'+key)).toBe(original);
       expect(await rescue.readText('legacy-localstorage/'+key)).toBe('changed by older app');
     }finally{vi.unstubAllGlobals();}
+  });
+
+  it.each(['length','key','getItem'] as const)('rescues newer database files when the legacy Storage object is readable but %s is denied',async method=>{
+    const storage=new MemoryStorage();
+    const legacy=await connectCachedWorkbench({storage});
+    if(!legacy.ok)throw new Error(legacy.error.message);
+    const originals=Object.fromEntries(Array.from({length:storage.length},(_,index)=>{
+      const key=storage.key(index);
+      if(key===null)throw new Error('Expected a complete legacy fixture');
+      return[key,storage.getItem(key)];
+    }));
+    vi.stubGlobal('localStorage',storage);
+    try{
+      const first=await connectCachedWorkbench();
+      if(!first.ok)throw new Error(first.error.message);
+      const newer='\uFEFFnewer saved data\r\n';
+      await first.workbench.adapter.writeText('imports/newer.nc',newer);
+      const writes=vi.spyOn(storage,'setItem'),removals=vi.spyOn(storage,'removeItem');
+      const databaseWrites=vi.spyOn(IDBObjectStore.prototype,'put'),databaseAdds=vi.spyOn(IDBObjectStore.prototype,'add'),databaseRemovals=vi.spyOn(IDBObjectStore.prototype,'delete');
+      const deny=()=>{throw new DOMException('Legacy access denied','SecurityError');};
+      const fault=method==='length'?vi.spyOn(storage,'length','get').mockImplementation(deny)
+        :method==='key'?vi.spyOn(storage,'key').mockImplementation(deny)
+        :vi.spyOn(storage,'getItem').mockImplementation(deny);
+      const result=await connectCachedWorkbench();
+      expect(result).toMatchObject({ok:false,error:{code:'WORKBENCH_CONNECTION_FAILED'}});
+      const source=result.recoverySource;
+      if(!source)throw new Error('Expected readable database recovery');
+      const recovery=await captureWorkbenchRecovery(source);
+      const archive=JSON.parse(recovery.text);
+      expect(archive.files).toContainEqual(expect.objectContaining({path:'indexeddb/files/imports/newer.nc',status:'captured',text:newer}));
+      const key='wire-edm-workbench:file:workbench.json';
+      expect(archive.files).toContainEqual(expect.objectContaining({path:'indexeddb/legacy-originals/'+encodeURIComponent(JSON.stringify(key))+'.txt',status:'captured',text:originals[key]}));
+      expect(recovery.receipt.contentComplete).toBe(false);
+      if(method==='getItem')expect(archive.files).toContainEqual(expect.objectContaining({status:'unreadable',message:expect.stringContaining('Legacy access denied')}));
+      else expect(archive.inventory).toMatchObject({complete:false,truncatedBefore:true,truncatedAfter:true});
+      expect(writes).not.toHaveBeenCalled();expect(removals).not.toHaveBeenCalled();
+      expect(databaseWrites).not.toHaveBeenCalled();expect(databaseAdds).not.toHaveBeenCalled();expect(databaseRemovals).not.toHaveBeenCalled();
+      fault.mockRestore();
+      expect(Object.fromEntries(Array.from({length:storage.length},(_,index)=>{
+        const key=storage.key(index);
+        if(key===null)throw new Error('Expected original cache key');
+        return[key,storage.getItem(key)];
+      }))).toEqual(originals);
+    }finally{vi.restoreAllMocks();vi.unstubAllGlobals();}
   });
 });

@@ -862,6 +862,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     activeMutation.current = 'controller-artifact';
     setControllerArtifactGenerating(true);
     let revisionWriteStarted = false;
+    let generationPhase: 'preparing' | 'saving' | 'posting' = 'preparing';
     let savedRevisionId: string | undefined;
     let cleanupPending: SavedRevisionTransactionError | undefined;
     try {
@@ -891,6 +892,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       // the completed generation receipt even if the caller has cancelled.
       input.signal?.throwIfAborted();
       input.beforeWrite?.();
+      generationPhase = 'saving';
       const saved = await services.saveStoredWireEdmJobRevision(workbench, candidate.candidate, {
         requireCurrentActiveSetup: true,
         reuseMatchingRevision: true,
@@ -906,6 +908,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
         input.beforeWrite?.();
       }
       savedRevisionId = saved.revision.revisionId;
+      generationPhase = 'posting';
       cleanupPending = saved.cleanupPending;
       setConnectedWorkbench(saved.workbench);
       setLoadedEditorProgram((current) => current === program
@@ -917,8 +920,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       return { ...artifact, savedRevisionId, ...(cleanupPending ? { cleanupPending } : {}) };
     } catch (error) {
       if (!revisionWriteStarted && (input.signal?.aborted || error instanceof ToolError)) throw error;
-      const failure = revisionWriteStarted && !savedRevisionId
-        ? artifactRevisionSaveFailure({ code: 'SAVED_REVISION_STORAGE_WRITE_FAILED', message: errorText(error) })
+      const failure = generationPhase === 'saving'
+        ? artifactRevisionSaveFailure({ code: 'SAVED_REVISION_STORAGE_FAILED', message: errorText(error) })
         : artifactAppFailure(errorText(error));
       return { ...failure, ...(savedRevisionId ? { savedRevisionId } : {}), ...(cleanupPending ? { cleanupPending } : {}) };
     } finally {

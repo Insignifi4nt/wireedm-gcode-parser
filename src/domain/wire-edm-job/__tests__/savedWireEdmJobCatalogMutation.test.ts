@@ -147,6 +147,20 @@ describe('catalog-owned saved revision persistence', () => {
     expect(await fixture.adapter.readText(workbenchProjectRevisionPath(fixture.candidate.project.id,fixture.candidate.revisionId))).toBeNull();
   });
 
+  it('rejects a pending journal that appears after recovery rather than committing beside it', async () => {
+    const fixture=await nativeFixture();
+    const original=await fixture.adapter.readExactText!('projects/fixture.part.json');
+    const ensure=fixture.adapter.ensureDirectory.bind(fixture.adapter);
+    vi.spyOn(fixture.adapter,'ensureDirectory').mockImplementationOnce(async path=>{
+      await ensure(path);
+      await fixture.adapter.writeText(SAVED_REVISION_TRANSACTION_PATH,'unrecognized pending journal');
+    });
+    expect(await saveStoredWireEdmJobRevision(fixture.workbench,fixture.candidate,{requireCurrentActiveSetup:true})).toMatchObject({ok:false});
+    expect(await fixture.adapter.readExactText!('projects/fixture.part.json')).toBe(original);
+    expect(await fixture.adapter.readText(workbenchProjectRevisionPath(fixture.candidate.project.id,fixture.candidate.revisionId))).toBeNull();
+    expect(await fixture.adapter.readText(SAVED_REVISION_TRANSACTION_PATH)).toBe('unrecognized pending journal');
+  });
+
   it('saves, reopens and deterministically exports a complete large varied project without localStorage or a journal', async () => {
     const fixture = await nativeFixture(true);
     const projectText = await fixture.adapter.readText('projects/fixture.part.json');

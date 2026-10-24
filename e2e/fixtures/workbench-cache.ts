@@ -26,8 +26,12 @@ export async function writeWorkbenchCacheFiles(page: Page, files: Record<string,
 }
 
 export async function readWorkbenchCacheFile(page: Page, path: string) {
+  const database = await page.evaluate(async () => (await indexedDB.databases()).some(database=>database.name==='wire-edm-workbench-files'));
   const stored = (await readWorkbenchCache(page)).find(([key])=>key === `wire-edm-workbench:file:${path}`)?.[1];
   if (stored === undefined) throw new Error(`Missing workbench file: ${path}`);
+  // Database strings are already logical text. A literal legacy-envelope prefix
+  // in that text must not be decoded for a second time.
+  if (database) return stored;
   const prefix = '\u0000wire-edm-cache-gzip-v1:';
   return stored.startsWith(prefix)
     ? gunzipSync(Buffer.from(stored.slice(prefix.length), 'base64')).toString('utf8')

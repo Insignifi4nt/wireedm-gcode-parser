@@ -469,7 +469,7 @@ export async function parseSavedWireEdmJobRevision(
   }
   let value: unknown;
   try {
-    value = JSON.parse(rawText);
+    value = JSON.parse(rawText.replace(/^\uFEFF/, ''));
   } catch {
     return failure({
       code: 'SAVED_REVISION_JSON_INVALID',
@@ -773,7 +773,9 @@ export function saveStoredWireEdmJobRevision(
         'posts/library.json', 'machines/library.json', 'transactions/saved-revision.json',
         'transactions/workbench-files.json', 'transactions/project-trash.json', 'transactions/machine-package-install.json'
       ].map(async guardPath => {
-        const text = await readExact(workbench.adapter, guardPath);
+        // Recovery proved these journals absent. A newly appearing journal
+        // must block the commit, not become an accepted guard image.
+        const text = guardPath.startsWith('transactions/') ? null : await readExact(workbench.adapter, guardPath);
         return { path: guardPath, previous: text, next: text };
       }));
       let boundaryRejected = false;

@@ -102,8 +102,40 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  storage-firefox:
+    name: Browser storage and export APIs (Firefox)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          check-latest: true
+          cache: npm
+      - run: npm ci
+      - name: Cache pinned third-party source archives
+        uses: actions/cache@v4
+        with:
+          path: .cache/third-party-sources
+          key: third-party-sources-${{ hashFiles('docs/thirdparty/*-sources.json', 'vendor/sketch-solver/planegcs-sources.json') }}
+      - run: npm run build
+      - run: npx playwright install --with-deps firefox
+      - run: npx playwright test --config=playwright.storage.config.ts --workers=1 --max-failures=3
+        env:
+          PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
+      - name: Preserve storage browser failure reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: storage-firefox-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
   verify:
-    needs: [naming, contracts, unit, build-and-browser]
+    needs: [naming, contracts, unit, build-and-browser, storage-firefox]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -113,8 +145,10 @@ jobs:
           CONTRACTS_RESULT: ${{ needs.contracts.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           BROWSER_RESULT: ${{ needs.build-and-browser.result }}
+          FIREFOX_RESULT: ${{ needs.storage-firefox.result }}
         run: |
           test "$NAMING_RESULT" = success
           test "$CONTRACTS_RESULT" = success
           test "$UNIT_RESULT" = success
           test "$BROWSER_RESULT" = success
+          test "$FIREFOX_RESULT" = success

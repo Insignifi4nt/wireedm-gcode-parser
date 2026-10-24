@@ -35,6 +35,10 @@ Repeated export can reuse the latest validated revision only when engine version
 
 Read-only backup is available from an open editor. Restore, cleanup and switching storage retain draft/workflow guards. Unsaved drafts remain excluded. Quota/permission failures before posting are reported as `CONTROLLER_ARTIFACT_REVISION_SAVE_FAILED`, with the original save code and optional path, rather than suggesting that a machine package must be repaired.
 
+External programs prefer exact reads so BOM-only outside edits remain visible to save conflicts. If exact decoding fails, the ordinary reader still supports the legacy display pipeline. Saving nevertheless requires exact snapshots and fails before writes when the original cannot be represented exactly; replacement-decoded display text never authorizes overwriting that original.
+
+Persistence and public export journeys run in the default Chromium suite and in `playwright.storage.config.ts` for Firefox. CI gates both engines. Private cache acceptance is opt-in through environment variables and never commits a user's geometry or snapshot.
+
 ## Logical files
 
 | Path | Owner / retention |

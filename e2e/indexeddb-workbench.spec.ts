@@ -1,12 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { createUpidFromDxfEntities } from '../src/domain/upid/upidDocument';
 import { setManualCompensationIntent } from '../src/domain/compensation/intent';
 import { buildMachinePackageArchive } from '../src/domain/machine-package';
 import { machinePackageFixture } from '../src/domain/machine-package/__tests__/machinePackageFixture';
 import { prepareCadTools, rawCadToolCall } from './cad-tool-helpers';
-import { readWorkbenchCacheFile } from './fixtures/workbench-cache';
+import { readWorkbenchCacheFile, readWorkbenchCache } from './fixtures/workbench-cache';
 
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
@@ -53,6 +54,26 @@ test('imports, atomically exports, reopens and backs up a large job through the 
   const current=await rawCadToolCall(page,'edm_get_context');
   const projectId=current.data.draft.projectId;
   const posts=await readWorkbenchCacheFile(page,'posts/library.json');
+  // Abort a real engine transaction after its revision request was queued but
+  // before the project/index replacements can complete. The public operation
+  // must report failure with no partial revision, then permit an ordinary retry.
+  const projectBefore=await readWorkbenchCacheFile(page,`projects/${projectId}.json`);
+  await page.evaluate(projectId=>{
+    const put=IDBObjectStore.prototype.put;
+    Reflect.set(window,'restoreAtomicStorageTest',()=>{IDBObjectStore.prototype.put=put;});
+    IDBObjectStore.prototype.put=function(this:IDBObjectStore,value:unknown,key?:IDBValidKey){
+      if(this.name==='files'&&key===`projects/${projectId}.json`)throw new DOMException('Injected interrupted native save','QuotaExceededError');
+      return put.call(this,value,key);
+    };
+  },projectId);
+  try {
+    const draft=await rawCadToolCall(page,'edm_get_context'),workflow=await rawCadToolCall(page,'edm_workflow_context');
+    const failed=await rawCadToolCall(page,'edm_generate_controller',{expectedVersion:workflow.data.version,draftVersion:draft.data.draft.version,machineId:'native.large.machine',bindingId:'production'});
+    expect(failed).toMatchObject({ok:true,data:{generated:false,error:{code:'CONTROLLER_ARTIFACT_REVISION_SAVE_FAILED'}}});
+    expect(await readWorkbenchCacheFile(page,`projects/${projectId}.json`)).toBe(projectBefore);
+    expect((await readWorkbenchCache(page)).some(([path])=>path.endsWith('.wireedm-job.json'))).toBe(false);
+    expect(await readWorkbenchCacheFile(page,'posts/library.json')).toBe(posts);
+  } finally {await page.evaluate(()=>Reflect.get(window,'restoreAtomicStorageTest')());}
   const first=await exportThroughPublicTools(page,'native.large.machine','production');
   const second=await exportThroughPublicTools(page,'native.large.machine','production');
   expect(second.result.artifactId).toBe(first.result.artifactId);expect(second.bytes).toEqual(first.bytes);
@@ -81,6 +102,12 @@ test('preserves a private legacy cache and reproduces its exact reviewed control
   await page.addInitScript(entries=>{for(const[key,value]of Object.entries(entries))localStorage.setItem(key,value);},entries);
   await prepareCadTools(page);
   const before=await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('wire-edm-workbench:'))));
+  const migrated=new Map(await readWorkbenchCache(page));
+  const gzipPrefix='\u0000wire-edm-cache-gzip-v1:';
+  for(const [key,text] of Object.entries(entries).filter(([key])=>key.startsWith('wire-edm-workbench:file:'))){
+    const exact=text.startsWith(gzipPrefix)?gunzipSync(Buffer.from(text.slice(gzipPrefix.length),'base64')).toString('utf8'):text;
+    expect(migrated.get(key),`Exact migrated original: ${key}`).toBe(exact);
+  }
   const workflow=await rawCadToolCall(page,'edm_workflow_context');
   expect(await rawCadToolCall(page,'edm_open_project',{expectedVersion:workflow.data.version,projectId})).toMatchObject({ok:true});
   await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible();

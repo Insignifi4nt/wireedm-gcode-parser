@@ -5,7 +5,7 @@ import { assertReadLimit, exceedsUtf8Limit, isWellFormedText } from './boundedEx
 import { createBrowserCacheAdapter } from './browserCacheAdapter';
 import { isPortableStoragePath } from './workbenchFileTransaction';
 import { withStorageFullGuidance } from './storageFull';
-import { MAX_STORAGE_INVENTORY_ENTRIES, type WorkbenchStorageAdapter } from './workbenchStorageAdapter';
+import { MAX_STORAGE_INVENTORY_ENTRIES, type BoundedExactTextResult, type WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
 export const INDEXED_DB_WORKBENCH_DATABASE = 'wire-edm-workbench-files';
 const namespace = 'wire-edm-workbench';
@@ -118,14 +118,47 @@ function listPaths(db: IDBDatabase, signal?: AbortSignal): Promise<{ paths: stri
   });
 }
 
-async function boundedRead(db: IDBDatabase, path: string, maxBytes: number, read: () => Promise<string | null>, signal?: AbortSignal) {
+async function boundedRead(db: IDBDatabase, path: string, maxBytes: number, signal?: AbortSignal): Promise<BoundedExactTextResult> {
   assertReadLimit(maxBytes); signal?.throwIfAborted();
-  const size = await readValue(db, 'sizes', path);
+  const captured=await transaction<BoundedExactTextResult>(db, ['sizes', 'files'], 'readonly', (tx, result, fail) => {
+    const sizes=tx.objectStore('sizes'),files=tx.objectStore('files');
+    const sizeRequest=sizes.get(path);
+    sizeRequest.onsuccess=()=>{
+      try {
+        signal?.throwIfAborted();
+        const size:unknown=sizeRequest.result;
+        if(size===undefined){
+          // Count keys without cloning an unbounded value. Missing metadata
+          // cannot authorize reading an existing file as though it were empty.
+          const count=files.count(path);
+          count.onsuccess=()=>{
+            try {
+              signal?.throwIfAborted();
+              if(count.result)throw new Error('Missing browser storage file size. Preserve this file for recovery.');
+              result({status:'missing'});
+            }catch(error){fail(error);}
+          };
+          return;
+        }
+        if(typeof size!=='number'||!Number.isSafeInteger(size)||size<0)throw new Error('Invalid browser storage file size. Preserve this file for recovery.');
+        if(size>maxBytes){result({status:'too-large'});return;}
+        // The metadata and conditional value read share one snapshot, so a
+        // writer cannot enlarge the file between preflight and value cloning.
+        const textRequest=files.get(path);
+        textRequest.onsuccess=()=>{
+          try {
+            signal?.throwIfAborted();
+            const text:unknown=textRequest.result;
+            if(text===undefined){result({status:'missing'});return;}
+            if(typeof text!=='string')throw new Error('Invalid browser storage file text. Preserve this file for recovery.');
+            result(exceedsUtf8Limit(text,maxBytes)?{status:'too-large'}:{status:'read',text});
+          }catch(error){fail(error);}
+        };
+      }catch(error){fail(error);}
+    };
+  });
   signal?.throwIfAborted();
-  if (size !== undefined && (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 0)) throw new Error('Invalid browser storage file size. Preserve this file for recovery.');
-  if (typeof size === 'number' && size > maxBytes) return { status: 'too-large' as const };
-  const text = await read(); signal?.throwIfAborted();
-  return text === null ? { status: 'missing' as const } : exceedsUtf8Limit(text, maxBytes) ? { status: 'too-large' as const } : { status: 'read' as const, text };
+  return captured;
 }
 
 function openDatabase(factory: IDBFactory, name: string): Promise<IDBDatabase> {
@@ -186,7 +219,7 @@ export async function openIndexedDbWorkbench(options: {
       // Only the destination is allowed to perform durable recovery after publication.
       const proposed = new Map(logical);
       const validation: WorkbenchStorageAdapter = { kind: 'memory', name: 'Browser storage', ensureDirectory: async () => {},
-        readText: async path => proposed.get(path)?.replace(/^\uFEFF/, '') ?? null,
+        readText: async path => proposed.get(path) ?? null,
         readExactText: async path => proposed.get(path) ?? null,
         writeText: async (path, text) => { proposed.set(path, text); }, deleteText: async path => { proposed.delete(path); },
         listFiles: async () => ({ paths: [...proposed.keys()].sort(), truncated: false }) };
@@ -253,9 +286,9 @@ export async function openIndexedDbWorkbench(options: {
     };
     return { kind: 'browser-cache', name: 'Browser storage', mutationScope: `browser-storage:${namespace}`,
       ensureDirectory: async path => { if (!isPortableStoragePath(path)) throw new Error('Invalid browser storage directory.'); await checkSource(); },
-      readText: async path => (await read(path))?.replace(/^\uFEFF/, '') ?? null,
+      readText: read,
       readExactText: async (path, signal) => { signal?.throwIfAborted(); const text = await read(path); signal?.throwIfAborted(); if (text !== null && !isWellFormedText(text)) throw new Error('Cached text cannot round-trip as exact UTF-8: malformed Unicode. Preserve the original for recovery.'); return text; },
-      readBoundedExactText: (path, maxBytes, signal) => boundedRead(db, path, maxBytes, () => read(path), signal),
+      readBoundedExactText: async (path, maxBytes, signal) => { ensureOpen(); return boundedRead(db, path, maxBytes, signal); },
       writeText: async (path, text) => { await commitTextChanges([{path, previous: await read(path), next: text}]); },
       deleteText: async path => { await commitTextChanges([{path, previous: await read(path), next: null}]); }, commitTextChanges,
       listFiles: signal => { ensureOpen(); signal?.throwIfAborted(); return listPaths(db, signal); },
@@ -286,9 +319,9 @@ export async function openReadOnlyIndexedDbWorkbench(factory: IDBFactory): Promi
   const deny = async () => { throw new Error('Browser storage is read-only without cross-tab coordination.'); };
   return {kind:'browser-cache',name:'Browser storage',mutationScope:`browser-storage:${namespace}`,
     ensureDirectory:deny,writeText:deny,deleteText:deny,
-    readText:async path => (await read(path))?.replace(/^\uFEFF/,'') ?? null,
+    readText:read,
     readExactText:async (path,signal) => { signal?.throwIfAborted(); const text=await read(path); signal?.throwIfAborted(); if(text!==null&&!isWellFormedText(text))throw new Error('Cached text cannot round-trip as exact UTF-8.'); return text; },
-    readBoundedExactText:(path,maxBytes,signal)=>boundedRead(db,path,maxBytes,()=>read(path),signal),
+    readBoundedExactText:(path,maxBytes,signal)=>boundedRead(db,path,maxBytes,signal),
     listFiles:signal=>listPaths(db,signal), close:()=>db.close(), readLegacyOriginals:()=>readEntries(db,'legacy')};
 }
 
@@ -317,11 +350,32 @@ export function combinedBrowserStorageRecovery(database: IndexedDbWorkbenchAdapt
       const text=await read(path);signal?.throwIfAborted();return text===null?{status:'missing'}:exceedsUtf8Limit(text,maxBytes)?{status:'too-large'}:{status:'read',text};
     },
     listFiles:async signal=>{
-      const indexed=await database.listFiles?.(signal);const originals=await database.readLegacyOriginals();
-      const paths=[...(indexed?.paths??[]).map(path=>currentPrefix+path),...[...originals.keys()].map(key=>originalsPrefix+rawName(key))];
-      let truncated=indexed?.truncated??true;
-      if(legacy){const count=Math.min(legacy.length,MAX_STORAGE_INVENTORY_ENTRIES);truncated||=legacy.length>count;
-        for(let index=0;index<count;index++){signal?.throwIfAborted();const key=legacy.key(index);if(key?.startsWith(`${namespace}:`))paths.push(livePrefix+rawName(key));}}
-      return{paths:paths.sort().slice(0,MAX_STORAGE_INVENTORY_ENTRIES),truncated:truncated||paths.length>MAX_STORAGE_INVENTORY_ENTRIES};
+      signal?.throwIfAborted();
+      const paths:string[]=[];
+      let truncated=false;
+      // An inaccessible observation must not hide the other readable copies.
+      // Mark its inventory incomplete; never invent an empty successful source.
+      try {
+        const indexed=await database.listFiles?.(signal);
+        paths.push(...(indexed?.paths??[]).map(path=>currentPrefix+path));
+        truncated||=indexed?.truncated??true;
+      } catch {signal?.throwIfAborted();truncated=true;}
+      try {
+        signal?.throwIfAborted();
+        const originals=await database.readLegacyOriginals();
+        paths.push(...[...originals.keys()].map(key=>originalsPrefix+rawName(key)));
+      } catch {signal?.throwIfAborted();truncated=true;}
+      if(legacy)try {
+        const length=legacy.length,count=Math.min(length,MAX_STORAGE_INVENTORY_ENTRIES);
+        truncated||=length>count;
+        for(let index=0;index<count;index++){
+          signal?.throwIfAborted();const key=legacy.key(index);
+          if(key===null)truncated=true;
+          else if(key.startsWith(`${namespace}:`))paths.push(livePrefix+rawName(key));
+        }
+        truncated||=legacy.length!==length;
+      } catch {signal?.throwIfAborted();truncated=true;}
+      const uniquePaths=[...new Set(paths)];
+      return{paths:uniquePaths.sort().slice(0,MAX_STORAGE_INVENTORY_ENTRIES),truncated:truncated||uniquePaths.length!==paths.length||uniquePaths.length>MAX_STORAGE_INVENTORY_ENTRIES};
     }};
 }

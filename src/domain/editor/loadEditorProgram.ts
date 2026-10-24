@@ -73,7 +73,13 @@ export async function loadEditorProgram(
   const path = project.content.activeFilePath;
   let text: string | null;
   try {
-    text = await workbench.adapter.readText(path);
+    if (workbench.adapter.readExactText) {
+      try { text = await workbench.adapter.readExactText(path); }
+      // Preserve the old display reader for legacy encodings. Save snapshots
+      // still require exact originals and cannot write replacement-decoded text
+      // over a file that cannot be represented as exact UTF-8.
+      catch { text = await workbench.adapter.readText(path); }
+    } else text = await workbench.adapter.readText(path);
   } catch (error) {
     return {
       ok: false,

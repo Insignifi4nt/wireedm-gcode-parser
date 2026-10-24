@@ -289,6 +289,19 @@ describe('workbench agent actions', () => {
     expect(await h.call('edm_generate_controller',input)).toMatchObject({ok:true,data:{generated:true}});
   });
 
+  it('classifies a rejected pre-write database read as storage failure rather than package repair', async () => {
+    const h=await harness();const input=await prepareControllerJob(h);
+    const adapter=h.app().connectedWorkbench!.adapter;
+    const read=vi.spyOn(adapter,'readExactText').mockRejectedValueOnce(new Error('Database connection changed in another tab. Reopen the workbench.'));
+    expect(await h.call('edm_generate_controller',input)).toMatchObject({ok:true,data:{generated:false,error:{
+      code:'CONTROLLER_ARTIFACT_REVISION_SAVE_FAILED',causeCode:'SAVED_REVISION_STORAGE_FAILED',message:expect.stringContaining('Database connection changed')
+    }}});
+    expect(h.generate).not.toHaveBeenCalled();
+    expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([]);
+    read.mockRestore();
+    expect(await h.call('edm_generate_controller',input)).toMatchObject({ok:true,data:{generated:true}});
+  });
+
   it('checks cancellation and draft freshness after preparing a controller revision but before any write', async () => {
     let stop: (() => void) | undefined;
     const save = vi.fn(defaultAppServices.saveStoredWireEdmJobRevision);
