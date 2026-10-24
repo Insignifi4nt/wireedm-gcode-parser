@@ -401,11 +401,35 @@ export function EditorPreview({
   const pathEndpointHandles = useMemo(() => preview
     ? readPathEndpointHandles(preview.paths, pathDocument) : [], [preview, pathDocument]);
   const visibleEndpoints = useMemo(() => visibleEndpointIndices(pathEndpointHandles, worldPerPixel,
-    (handle) => pathEndpointMatches(handle, handle.role, selectedPathElement) ||
-      pathEndpointMatches(handle, handle.role, hoveredPathElement)),
+    (handle) => pathSegmentMatches(handle, selectedPathElement) ||
+      pathSegmentMatches(handle, hoveredPathElement)),
     [pathEndpointHandles, worldPerPixel, selectedPathElement, hoveredPathElement]);
+  const displayedEndpointIndices = useMemo(() => pathEndpointHandles.flatMap((handle, index) => {
+    // Explicit endpoint tools retain every original hit target. Ordinary selection
+    // needs only the focused segment, or the overview's spaced visible sample.
+    const focused = pathSegmentMatches(handle, selectedPathElement) || pathSegmentMatches(handle, hoveredPathElement);
+    const overview = !selectedPathElement?.operationId && !hoveredPathElement?.operationId;
+    return onPathEndpointClick || focused || (overview && visibleEndpoints.has(index)) ? [index] : [];
+  }), [pathEndpointHandles, selectedPathElement, hoveredPathElement, onPathEndpointClick, visibleEndpoints]);
   const endpointHitRadii = useMemo(() => endpointHitRadiiPixels(pathEndpointHandles, worldPerPixel),
     [pathEndpointHandles, worldPerPixel]);
+  const selectedArcCenterHandles = useMemo(() => readSelectedArcCenterHandles(preview?.paths ?? [], selectedPathElement),
+    [preview, selectedPathElement]);
+  const annotatedPaths = useMemo(() => {
+    const seenSources = new Set<string>();
+    return (preview?.paths ?? []).flatMap((path) => {
+      const highlight: ReturnType<typeof highlightForLine> = pathDetailMatches(path, hoveredPathElement) ? 'hover'
+        : pathDetailMatches(path, selectedPathElement) ? 'selected'
+        : highlightForLine(path.line, { hoveredLine, pinned, selected });
+      if (!highlight) return [];
+      if (path.source === 'path-document') {
+        const key = `${path.operationId}:${path.pathElementId}:${path.segmentId}:${path.travelRole}`;
+        if (seenSources.has(key)) return [];
+        seenSources.add(key);
+      }
+      return [{ path, highlight } satisfies { path: EditorPreviewPath; highlight: Parameters<typeof highlightColor>[0] }];
+    });
+  }, [preview, hoveredPathElement, selectedPathElement, hoveredLine, pinned, selected]);
 
   if (!preview || !previewViewBox || preview.paths.length === 0) {
     return (
@@ -433,7 +457,6 @@ export function EditorPreview({
   const gridLabelInset = worldPerPixel * 9;
   const zoomPercent = Math.round(zoom * 100);
   const selectedSpatialAction = spatialActions.find((action) => action.key === selectedSpatialActionKey);
-  const selectedArcCenterHandles = readSelectedArcCenterHandles(activePreview.paths, selectedPathElement);
   const measurementFirst = measurement?.picks[0];
   const measurementSecond = measurement?.picks[1] ?? measurement?.hover;
   const measurementResult = measurementFirst && measurementSecond
@@ -1261,7 +1284,8 @@ export function EditorPreview({
           })}
         </g>
         <g>
-          {pathEndpointHandles.map((handle, handleIndex) => {
+          {displayedEndpointIndices.map((handleIndex) => {
+            const handle = pathEndpointHandles[handleIndex];
             const highlight = pathEndpointMatches(handle, handle.role, selectedPathElement)
               ? 'selected'
               : pathEndpointMatches(handle, handle.role, hoveredPathElement)
@@ -1429,23 +1453,12 @@ export function EditorPreview({
               </g>
             );
           })}
-          {activePreview.paths.map((path) => {
-            const highlight = pathElementMatches(path, hoveredPathElement)
-              ? 'hover'
-              : pathElementMatches(path, selectedPathElement)
-                ? 'selected'
-                : highlightForLine(path.line, {
-                    hoveredLine,
-                    pinned,
-                    selected
-                  });
-            if (!highlight) return null;
-
+          {annotatedPaths.map(({ path, highlight }) => {
             const svgY = flipY - path.end.y;
             const color = highlightColor(highlight);
 
             return (
-              <g data-preview-path-point={path.line} key={`point-${path.line}-${highlight}`}>
+              <g data-preview-path-point={path.line} key={`point-${path.line}-${highlight}`} pointerEvents="none">
                 <circle
                   cx={path.end.x}
                   cy={svgY}
@@ -1856,6 +1869,20 @@ function pathEndpointMatches(
   );
 }
 
+function pathSegmentMatches(
+  path: { operationId?: string; pathElementId?: string; segmentId?: string },
+  element: EditorPathElementRef | null | undefined
+) {
+  return Boolean(element?.segmentId && !element.travelRole &&
+    path.operationId === element.operationId && path.segmentId === element.segmentId &&
+    (!element.pathElementId || path.pathElementId === element.pathElementId));
+}
+
+function pathDetailMatches(path: EditorPreviewPath, element: EditorPathElementRef | null | undefined) {
+  // Whole-contour highlighting must not expand into one annotation per source.
+  return Boolean((element?.segmentId || element?.travelRole) && pathElementMatches(path, element));
+}
+
 function readSelectedArcCenterHandles(
   paths: Array<{
     center?: { x: number; y: number };
@@ -1904,7 +1931,7 @@ function pathArcCenterMatches(
   path: { operationId?: string; pathElementId?: string; segmentId?: string },
   element: EditorPathElementRef | null | undefined
 ) {
-  if (!element?.operationId || path.operationId !== element.operationId) return false;
+  if (!element?.operationId || !element.segmentId || path.operationId !== element.operationId) return false;
   if (element.pathElementId && path.pathElementId !== element.pathElementId) return false;
   if (element.travelRole || (element.pointRole && element.pointRole !== 'center')) return false;
   if (!path.segmentId) return false;
@@ -1947,11 +1974,15 @@ function selectPathElementInMarquee(
   const selectableGroups = new Map<string, EditorPreviewPath[]>();
   for (const path of selectablePaths) {
     const key = pathSelectionGroupKey(path);
-    selectableGroups.set(key, [...(selectableGroups.get(key) ?? []), path]);
+    const group = selectableGroups.get(key);
+    if (group) group.push(path);
+    else selectableGroups.set(key, [path]);
   }
   for (const path of hitPaths) {
     const key = pathSelectionGroupKey(path);
-    hitGroups.set(key, [...(hitGroups.get(key) ?? []), path]);
+    const group = hitGroups.get(key);
+    if (group) group.push(path);
+    else hitGroups.set(key, [path]);
   }
 
   for (const [key, hitGroup] of hitGroups) {

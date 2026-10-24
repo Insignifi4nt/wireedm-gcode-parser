@@ -14,7 +14,10 @@ test('keeps dense gear endpoints and grid labels readable across zoom and a narr
   await confirmPendingDxfImport(page);
   const allEndpoints = page.locator('[data-preview-path-endpoint]');
   const visibleEndpoints = page.locator('[data-preview-visible-endpoint]');
-  await expect(allEndpoints).toHaveCount(1296);
+  // The overview mounts only its spaced sample, rather than thousands of
+  // invisible hit targets. Exact point selection remains in Geometry.
+  expect(await allEndpoints.count()).toBeGreaterThan(0);
+  expect(await allEndpoints.count()).toBeLessThan(500);
   expect(await visibleEndpoints.count()).toBeLessThan(500);
   await expect(page.locator('[data-preview-grid-label="x"]').first()).toBeVisible();
   const endpoint = visibleEndpoints.first();
@@ -25,24 +28,27 @@ test('keeps dense gear endpoints and grid labels readable across zoom and a narr
   expect(labelHeight).toBeGreaterThan(8);
   expect(labelHeight).toBeLessThan(20);
   await page.screenshot({ path: 'tmp/cam-audit/dense-gear-overview-after.png' });
-  await allEndpoints.nth(100).click({ force: true });
+  await allEndpoints.first().click({ force: true });
   await expect(page.locator('[data-editor-status-selected-point]')).toContainText('Selected X');
   await expect(page.locator('[data-preview-visible-endpoint]')).not.toHaveCount(0);
+  const selectedEndpoint = page.locator('[data-preview-path-endpoint][data-preview-selected="true"]')
+    .locator('..').locator('[data-preview-visible-endpoint]');
+  const selectedEndpointWidth = (await selectedEndpoint.boundingBox())!.width;
 
   for (let index = 0; index < 8; index += 1) {
     await page.getByRole('button', { name: 'Zoom preview in' }).click();
   }
-  expect((await visibleEndpoints.first().boundingBox())!.width).toBeCloseTo(endpointWidth, 1);
+  expect((await selectedEndpoint.boundingBox())!.width).toBeCloseTo(selectedEndpointWidth, 1);
   await page.screenshot({ path: 'tmp/cam-audit/dense-gear-interior-after.png' });
 
   for (let index = 0; index < 2; index += 1) {
     await page.getByRole('button', { name: 'Zoom preview in' }).click();
   }
-  expect((await visibleEndpoints.first().boundingBox())!.width).toBeCloseTo(endpointWidth, 1);
+  expect((await selectedEndpoint.boundingBox())!.width).toBeCloseTo(selectedEndpointWidth, 1);
   await page.screenshot({ path: 'tmp/cam-audit/dense-gear-tooth-after.png' });
 
   await page.setViewportSize({ width: 800, height: 720 });
-  expect((await visibleEndpoints.first().boundingBox())!.width).toBeCloseTo(endpointWidth, 1);
+  expect((await selectedEndpoint.boundingBox())!.width).toBeCloseTo(selectedEndpointWidth, 1);
   await page.screenshot({ path: 'tmp/cam-audit/dense-gear-narrow-after.png' });
 });
 
