@@ -62,7 +62,8 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - run: npm test -- --run --shard=${{ matrix.shard }}/2
+      # Keep simultaneous jsdom/native-kernel suites within the hosted runner's CPU budget.
+      - run: npm test -- --run --maxWorkers=2 --shard=${{ matrix.shard }}/2
 
   build-and-browser:
     name: Production build and browser journeys (${{ matrix.shard }}/12)
