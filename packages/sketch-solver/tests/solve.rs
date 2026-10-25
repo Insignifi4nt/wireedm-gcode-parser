@@ -244,6 +244,37 @@ fn corrects_tiny_geometry_below_the_unit_roundoff() {
 }
 
 #[test]
+fn rotations_survive_entries_whose_squares_underflow() {
+    let mut builder = Builder::new();
+    let a = builder.point(0.0, 0.0, true);
+    let b = builder.point(1e-200, 1.0, false);
+    builder.equation(Kind::Distance, 2.0, &[a[0], a[1], b[0], b[1]]);
+    assert_eq!(builder.solve().0, 0.0);
+    // Fill-in along a curved chain reaches the same underflow.
+    let mut builder = Builder::new();
+    let points: Vec<[usize; 2]> = (0..30).map(|i| {
+        let angle = 0.17 * i as f64;
+        builder.point(500000.0 + 10.0 * angle.sin(), 500000.0 + 10.0 * angle.cos(), false)
+    }).collect();
+    for pair in points.windows(2) { builder.equation(Kind::Distance, 2.0, &[pair[0][0], pair[0][1], pair[1][0], pair[1][1]]); }
+    assert_eq!(builder.solve().0, 0.0);
+}
+
+#[test]
+fn polishes_a_direction_far_from_the_origin_to_an_exact_correction() {
+    let mut builder = Builder::new();
+    let a = builder.point(500000.0, 500000.0, true);
+    let b = builder.point(500001.0, 500000.0, true);
+    let c = builder.point(500003.0, 500000.0, true);
+    let d = builder.point(500004.0, 500000.0 + 3.0 * 2f64.powi(-34), true);
+    builder.fixed[d[1]] = false;
+    builder.equation(Kind::Parallel, 0.0, &[a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]);
+    let (status, _, values) = builder.solve();
+    assert_eq!(status, 0.0);
+    assert_eq!(values[d[1]], 500000.0);
+}
+
+#[test]
 fn accepts_angles_of_short_lines_far_from_the_origin_to_their_roundoff() {
     for index in 0..60 {
         let mut builder = Builder::new();

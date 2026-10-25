@@ -134,7 +134,9 @@ fn rotate(r: &mut [f64], c: &mut [f64], v: &mut [f64], mut beta: f64, first: usi
     for k in first..n {
         if v[k] == 0.0 { continue; }
         let pivot = r[k * n + k];
-        let radius = (pivot * pivot + v[k] * v[k]).sqrt();
+        // Scaled, so entries whose squares underflow still rotate.
+        let big = pivot.abs().max(v[k].abs());
+        let radius = big * ((pivot / big).powi(2) + (v[k] / big).powi(2)).sqrt();
         let (cos, sin) = (pivot / radius, v[k] / radius);
         r[k * n + k] = radius;
         v[k] = 0.0;
@@ -183,7 +185,9 @@ fn assess(rows: &[Row]) -> Progress {
         Progress {
             near: progress.near && row.residual.abs() <= NEAR * row.scale,
             accepted: progress.accepted && accepted,
-            polished: progress.polished && accepted && row.millimetres <= POLISH * row.scale,
+            // Directions polish toward the graph checks' strict angular bound even where roundoff
+            // allows acceptance, since a representable correction often exists.
+            polished: progress.polished && accepted && row.millimetres <= POLISH * row.scale && row.radians <= POLISH,
         }
     })
 }
