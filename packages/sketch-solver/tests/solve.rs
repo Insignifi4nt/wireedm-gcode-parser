@@ -219,6 +219,52 @@ fn a_short_fixed_guide_neither_hides_nor_excuses_an_angle() {
 }
 
 #[test]
+fn a_point_moved_onto_a_line_far_from_the_origin_does_not_slide_along_it() {
+    let mut builder = Builder::new();
+    let a = builder.point(0.0, 0.0, true);
+    let b = builder.point(1.0, 1.0, true);
+    let p = builder.point(500000.0, 500000.00001, false);
+    builder.equation(Kind::PointOnLine, 0.0, &[p[0], p[1], a[0], a[1], b[0], b[1]]);
+    let (status, _, values) = builder.solve();
+    assert_eq!(status, 0.0);
+    assert!((values[p[0]] - 500000.000005).abs() <= 1e-9 && (values[p[1]] - 500000.000005).abs() <= 1e-9, "{values:?}");
+}
+
+#[test]
+fn corrects_tiny_geometry_below_the_unit_roundoff() {
+    let mut builder = Builder::new();
+    let a = builder.point(0.0, 0.0, true);
+    let b = builder.point(1.0, 0.0, true);
+    let end = builder.point(1e-5, 1e-16, true);
+    builder.fixed[end[1]] = false;
+    builder.equation(Kind::Parallel, 0.0, &[a[0], a[1], b[0], b[1], a[0], a[1], end[0], end[1]]);
+    let (status, _, values) = builder.solve();
+    assert_eq!(status, 0.0);
+    assert!(values[end[1]].abs() <= 1e-20, "{values:?}");
+}
+
+#[test]
+fn accepts_angles_of_short_lines_far_from_the_origin_to_their_roundoff() {
+    for index in 0..60 {
+        let mut builder = Builder::new();
+        let a = builder.point(500000.0, 500000.0, true);
+        let b = builder.point(500001.0, 500000.0, true);
+        let origin = builder.point(500003.0, 500000.0, true);
+        let target = (3.0 + index as f64 * 2.9).to_radians();
+        let end = builder.point(500003.0 + (target + 0.01).cos(), 500000.0 + (target + 0.01).sin(), false);
+        builder.equation(Kind::Angle, target, &[a[0], a[1], b[0], b[1], origin[0], origin[1], end[0], end[1]]);
+        assert_eq!(builder.solve().0, 0.0, "{} degrees", target.to_degrees());
+    }
+    let mut builder = Builder::new();
+    let a = builder.point(500000.0, 500000.0, true);
+    let b = builder.point(500001.0, 500000.0, true);
+    let origin = builder.point(500003.0, 500000.0, true);
+    let end = builder.point(500003.5475710479, 500000.8374232256, false);
+    builder.equation(Kind::Angle, 60.16056848758241f64.to_radians(), &[a[0], a[1], b[0], b[1], origin[0], origin[1], end[0], end[1]]);
+    assert_eq!(builder.solve().0, 0.0);
+}
+
+#[test]
 fn polishes_an_input_that_starts_within_acceptance() {
     let mut builder = Builder::new();
     let center = builder.point(-100.0, 0.0, true);

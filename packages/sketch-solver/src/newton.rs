@@ -1,10 +1,11 @@
 //! Damped Gauss-Newton (Levenberg-Marquardt with Nielsen's damping update), run separately on
-//! each connected group of unknowns. Each step solves `(J^T J + mu I) h = -J^T r`; `h` stays in the row
-//! space of `J`, so free directions of an under-constrained sketch do not move.
+//! each connected group of unknowns. Each step minimizes `|J h + r|^2 + mu |h|^2` through a Givens QR
+//! of `J` rather than the normal equations, whose squared condition number would let roundoff move
+//! free directions of an under-constrained sketch once damping is small.
 //!
 //! Every equation is divided by its gradient norm over the unknowns at the start of each step,
-//! so each residual reads as the distance its unknowns must move. Acceptance is judged apart from
-//! that weighting, in millimetres against the sketch driver tolerance of the graph checks.
+//! so each residual reads as the distance its unknowns must move. Convergence is judged apart from
+//! that weighting, in millimetres; the sketch graph checks remain the authority on every result.
 
 use crate::dual::{Dual, WIDTH};
 use crate::equations::{is_direction, reach, residual};
@@ -12,8 +13,8 @@ use crate::problem::{Problem, Status};
 
 pub const MAX_ITERATIONS: usize = 100;
 /// A solution is accepted when each residual is within `max(ACCEPT_MM, 8 epsilon x scale)`
-/// millimetres and each direction error within `ACCEPT_RADIANS`, as `cadSketchDriverTolerance`
-/// and the line and angle relation checks require.
+/// millimetres, the driver tolerance, and each direction error within `ACCEPT_RADIANS` or the
+/// roundoff its coordinates allow at the far end of its longer line.
 pub const ACCEPT_MM: f64 = 1e-10;
 pub const ACCEPT_RADIANS: f64 = 1e-12;
 /// Damping drops to near roundoff once each weighted residual is within this times its scale.
@@ -40,6 +41,8 @@ struct Row {
     millimetres: f64,
     /// Unweighted direction error, zero for length equations.
     radians: f64,
+    /// Millimetres per unit of residual.
+    reach: f64,
     /// Largest operand magnitude, at least one.
     scale: f64,
     weight: f64,
@@ -62,8 +65,9 @@ impl System<'_> {
             let operands: Vec<Dual> = equation.operands.iter().enumerate().map(|(slot, &p)| Dual::variable(values[p], slot)).collect();
             let result = residual(equation.kind, &operands, equation.value);
             let raw: Vec<f64> = equation.operands.iter().map(|&p| values[p]).collect();
+            let reach = reach(equation.kind, &raw);
             let mut row = Row { columns: [0; WIDTH], derivatives: [0.0; WIDTH], len: 0, residual: result.value,
-                millimetres: (result.value * reach(equation.kind, &raw)).abs(),
+                millimetres: (result.value * reach).abs(), reach,
                 radians: if is_direction(equation.kind) { result.value.abs() } else { 0.0 },
                 scale: raw.iter().fold(1.0, |scale: f64, value| scale.max(value.abs())), weight: 1.0 };
             for (slot, &p) in equation.operands.iter().enumerate() {
@@ -94,22 +98,71 @@ impl System<'_> {
         }).collect()
     }
 
-    /// Lower triangle of `J^T J` and `J^T r`.
-    fn normal(&self, rows: &[Row]) -> (Vec<f64>, Vec<f64>) {
+    fn factor(&self, rows: &[Row]) -> Factor {
         let n = self.unknowns.len();
-        let (mut a, mut g) = (vec![0.0; n * n], vec![0.0; n]);
+        let mut factor = Factor { r: vec![0.0; n * n], c: vec![0.0; n], gradient: vec![0.0; n], diagonal: 0.0 };
+        let (mut squares, mut v) = (vec![0.0; n], vec![0.0; n]);
         for row in rows {
+            let mut first = n;
             for i in 0..row.len {
-                g[row.columns[i]] += row.derivatives[i] * row.residual;
-                for j in 0..row.len {
-                    if row.columns[i] >= row.columns[j] {
-                        a[row.columns[i] * n + row.columns[j]] += row.derivatives[i] * row.derivatives[j];
-                    }
-                }
+                let (column, derivative) = (row.columns[i], row.derivatives[i]);
+                v[column] = derivative;
+                first = first.min(column);
+                factor.gradient[column] += derivative * row.residual;
+                squares[column] += derivative * derivative;
             }
+            rotate(&mut factor.r, &mut factor.c, &mut v, -row.residual, first);
         }
-        (a, g)
+        factor.diagonal = squares.iter().fold(0.0, |max: f64, &square| max.max(square));
+        factor
     }
+}
+
+/// The weighted Jacobian of one step as `Q R`, with `c = Q^T (-r)`, `J^T r` and the largest
+/// diagonal entry of `J^T J`. `r` is upper triangular, row-major.
+struct Factor {
+    r: Vec<f64>,
+    c: Vec<f64>,
+    gradient: Vec<f64>,
+    diagonal: f64,
+}
+
+/// Rotates row `v`, zero before column `first`, with right-hand side `beta` into `r` and `c`.
+/// Every entry of `v` is zero afterwards.
+fn rotate(r: &mut [f64], c: &mut [f64], v: &mut [f64], mut beta: f64, first: usize) {
+    let n = c.len();
+    for k in first..n {
+        if v[k] == 0.0 { continue; }
+        let pivot = r[k * n + k];
+        let radius = (pivot * pivot + v[k] * v[k]).sqrt();
+        let (cos, sin) = (pivot / radius, v[k] / radius);
+        r[k * n + k] = radius;
+        v[k] = 0.0;
+        for j in k + 1..n {
+            let (a, b) = (r[k * n + j], v[j]);
+            r[k * n + j] = cos * a + sin * b;
+            v[j] = cos * b - sin * a;
+        }
+        let a = c[k];
+        c[k] = cos * a + sin * beta;
+        beta = cos * beta - sin * a;
+    }
+}
+
+/// The step minimizing `|J h + r|^2 + mu |h|^2`: rows `sqrt(mu) e_i` rotated into a copy of `R`,
+/// then back substitution. `None` when it is not finite.
+fn damped_step(factor: &Factor, mu: f64) -> Option<Vec<f64>> {
+    let n = factor.c.len();
+    let (mut r, mut h, mut v) = (factor.r.clone(), factor.c.clone(), vec![0.0; n]);
+    for i in 0..n {
+        v[i] = mu.sqrt();
+        rotate(&mut r, &mut h, &mut v, 0.0, i);
+    }
+    for i in (0..n).rev() {
+        for j in i + 1..n { h[i] -= r[i * n + j] * h[j]; }
+        h[i] /= r[i * n + i];
+    }
+    h.iter().all(|value| value.is_finite()).then_some(h)
 }
 
 /// How close a group is to a solution; a residual that is not finite is none of these.
@@ -124,11 +177,13 @@ struct Progress {
 
 fn assess(rows: &[Row]) -> Progress {
     rows.iter().fold(Progress { near: true, accepted: true, polished: true }, |progress, row| {
-        let accepted = row.millimetres <= ACCEPT_MM.max(8.0 * f64::EPSILON * row.scale) && row.radians <= ACCEPT_RADIANS;
+        let roundoff = 8.0 * f64::EPSILON * row.scale;
+        let angle = if row.reach > 0.0 { ACCEPT_RADIANS.max(roundoff / row.reach) } else { ACCEPT_RADIANS };
+        let accepted = row.millimetres <= ACCEPT_MM.max(roundoff) && row.radians <= angle;
         Progress {
             near: progress.near && row.residual.abs() <= NEAR * row.scale,
             accepted: progress.accepted && accepted,
-            polished: progress.polished && accepted && row.millimetres <= POLISH * row.scale && row.radians <= POLISH,
+            polished: progress.polished && accepted && row.millimetres <= POLISH * row.scale,
         }
     })
 }
@@ -139,34 +194,6 @@ fn worst(rows: &[Row]) -> f64 {
 }
 
 fn cost(rows: &[Row]) -> f64 { 0.5 * rows.iter().map(|row| row.residual * row.residual).sum::<f64>() }
-
-/// Solves `(a + mu I) x = b` with `a` symmetric (lower triangle used); `None` unless positive definite.
-fn cholesky_solve(a: &[f64], mu: f64, b: &[f64]) -> Option<Vec<f64>> {
-    let n = b.len();
-    let mut l = vec![0.0; n * n];
-    for i in 0..n {
-        for j in 0..=i {
-            let mut sum = a[i * n + j] + if i == j { mu } else { 0.0 };
-            for k in 0..j { sum -= l[i * n + k] * l[j * n + k]; }
-            if i == j {
-                if !(sum > 0.0) { return None; }
-                l[i * n + i] = sum.sqrt();
-            } else {
-                l[i * n + j] = sum / l[j * n + j];
-            }
-        }
-    }
-    let mut x = b.to_vec();
-    for i in 0..n {
-        for k in 0..i { x[i] -= l[i * n + k] * x[k]; }
-        x[i] /= l[i * n + i];
-    }
-    for i in (0..n).rev() {
-        for k in i + 1..n { x[i] -= l[k * n + i] * x[k]; }
-        x[i] /= l[i * n + i];
-    }
-    x.iter().all(|value| value.is_finite()).then_some(x)
-}
 
 /// Equations and unknowns of each group joined by shared unknowns, in first-equation order,
 /// and each unknown's column within its group. Equations without unknowns form one group.
@@ -219,8 +246,8 @@ fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
     let finish = |rows: &[Row], progress: Progress, iterations| Outcome {
         status: if progress.accepted { Status::Converged } else { Status::NotConverged }, iterations, residual: worst(rows) };
     if progress.polished || n == 0 { return finish(&rows, progress, 0); }
-    let (mut a, mut g) = system.normal(&rows);
-    let diagonal = (0..n).fold(0.0_f64, |max, i| max.max(a[i * n + i]));
+    let mut factor = system.factor(&rows);
+    let diagonal = factor.diagonal;
     // Damping well below the smallest useful curvature during the search, and near roundoff
     // once near: a near-tangent intersection has tiny singular values that a larger floor would
     // swamp, turning Newton's quadratic convergence linear. A start that is already near polishes.
@@ -229,14 +256,13 @@ fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
     let mut iterations = 0;
     while iterations < MAX_ITERATIONS {
         iterations += 1;
-        let negative: Vec<f64> = g.iter().map(|value| -value).collect();
         let (mut stepped, mut rejected) = (false, false);
-        if let Some(h) = cholesky_solve(&a, mu, &negative) {
-            if system.unknowns.iter().zip(&h).all(|(&p, step)| step.abs() <= f64::EPSILON * values[p].abs().max(1.0)) { break; }
+        if let Some(h) = damped_step(&factor, mu) {
+            if system.unknowns.iter().zip(&h).all(|(&p, step)| values[p] + step == values[p]) { break; }
             let saved: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
             for (column, &p) in system.unknowns.iter().enumerate() { values[p] += h[column]; }
             let next = system.rows(values, Some(&rows));
-            let predicted = 0.5 * h.iter().zip(&g).map(|(step, gradient)| step * (mu * step - gradient)).sum::<f64>();
+            let predicted = 0.5 * h.iter().zip(&factor.gradient).map(|(step, gradient)| step * (mu * step - gradient)).sum::<f64>();
             let reduction = cost(&rows) - cost(&next);
             if reduction > 0.0 && predicted > 0.0 {
                 stepped = true;
@@ -247,15 +273,15 @@ fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
                 mu = if searching && progress.near { polish_floor }
                     else { (mu * (1.0 / 3.0_f64).max(1.0 - (2.0 * rho - 1.0).powi(3))).max(if progress.near { polish_floor } else { floor }) };
                 nu = 2.0;
-                (a, g) = system.normal(&rows);
+                factor = system.factor(&rows);
             } else {
                 for (&p, &value) in system.unknowns.iter().zip(&saved) { values[p] = value; }
                 rejected = true;
             }
         }
         if !stepped {
-            // Past acceptance, a computed step without gain is roundoff; a factorization that
-            // failed only needs more damping.
+            // Past acceptance, a computed step without gain is roundoff; a step that is not
+            // finite only needs more damping.
             if rejected && progress.accepted { break; }
             mu *= nu;
             nu *= 2.0;
