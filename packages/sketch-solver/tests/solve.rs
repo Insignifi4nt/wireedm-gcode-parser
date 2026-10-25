@@ -189,3 +189,35 @@ fn polishes_an_ill_conditioned_intersection_to_roundoff() {
     let radius = |x: f64, y: f64| (x + 1.0).hypot(y);
     assert!((radius(values[end[0]], values[end[1]]) - radius(0.0, -1e-6)).abs() <= 1e-12, "{values:?}");
 }
+
+#[test]
+fn a_cancelled_angle_far_from_the_origin_is_not_accepted() {
+    let mut builder = Builder::new();
+    let a = builder.point(1e6, 0.0, true);
+    let b = builder.point(1e6 + 1.0, 0.0, false);
+    builder.equation(Kind::Angle, 0.001f64.to_radians(), &[a[0], a[1], b[0], b[1], a[0], a[1], b[0], b[1]]);
+    assert_eq!(builder.solve().0, 1.0);
+}
+
+#[test]
+fn polishes_a_near_tangent_intersection_quickly_beside_other_unknowns() {
+    let mut builder = Builder::new();
+    let center = builder.point(-100.0, 0.0, true);
+    let start = builder.point(0.0, -1e-5, true);
+    let end = builder.point(1.0, 1.0, false);
+    let other = builder.point(100.0, 0.0, true);
+    builder.equation(Kind::EqualLength, 0.0, &[center[0], center[1], start[0], start[1], center[0], center[1], end[0], end[1]]);
+    builder.equation(Kind::Distance, 100f64.hypot(1e-5), &[other[0], other[1], end[0], end[1]]);
+    let mut previous = end;
+    for index in 0..10 {
+        let next = builder.point(index as f64 * 0.7, 3.0, false);
+        builder.equation(Kind::Difference, 1.0, &[previous[0], next[0]]);
+        builder.equation(Kind::Difference, 0.0, &[previous[1], next[1]]);
+        previous = next;
+    }
+    let (status, iterations, values) = builder.solve();
+    assert_eq!(status, 0.0);
+    assert!(iterations <= 30.0, "{iterations} iterations");
+    let radius = |x: f64, y: f64| (x + 100.0).hypot(y);
+    assert!((radius(values[end[0]], values[end[1]]) - radius(0.0, -1e-5)).abs() <= 1e-12, "{values:?}");
+}

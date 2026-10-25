@@ -69,8 +69,16 @@ impl System<'_> {
             row.weight = match weights {
                 Some(rows) => rows[index].weight,
                 None => {
-                    let norm = row.derivatives[..row.len].iter().map(|d| d * d).sum::<f64>().sqrt();
-                    if norm > 0.0 && norm.is_finite() { (1.0 / norm).min(1e12) } else { 1.0 }
+                    // The norm covers fixed operands too, so a row without unknowns also reads as a
+                    // distance. A gradient that cancels exactly leaves the residual in its own units
+                    // (radians for an angle), which must not be divided by a coordinate scale.
+                    let mut merged = [(usize::MAX, 0.0); WIDTH];
+                    for (slot, &p) in equation.operands.iter().enumerate() {
+                        let entry = merged.iter_mut().find(|(q, _)| *q == p || *q == usize::MAX).unwrap();
+                        *entry = (p, entry.1 + result.gradient[slot]);
+                    }
+                    let norm = merged.iter().map(|(_, d)| d * d).sum::<f64>().sqrt();
+                    if norm > 0.0 && norm.is_finite() { (1.0 / norm).min(1e12) } else { row.scale = 1.0; 1.0 }
                 }
             };
             row.residual *= row.weight;
@@ -184,13 +192,16 @@ fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
     if !(error > POLISH) || n == 0 { return finish(error, 0); }
     let (mut a, mut g) = system.normal(&rows);
     let diagonal = (0..n).fold(0.0_f64, |max, i| max.max(a[i * n + i]));
-    let floor = 1e-12 * diagonal.max(1.0);
+    // Damping well below the smallest useful curvature during the search, and near roundoff
+    // once accepted: a near-tangent intersection has tiny singular values that a larger floor
+    // would swamp, turning Newton's quadratic convergence linear.
+    let (floor, polish_floor) = (1e-12 * diagonal.max(1.0), f64::EPSILON * diagonal.max(1.0));
     let (mut mu, mut nu) = ((1e-6 * diagonal).max(floor), 2.0);
     let mut iterations = 0;
     while iterations < MAX_ITERATIONS {
         iterations += 1;
         let negative: Vec<f64> = g.iter().map(|value| -value).collect();
-        let mut accepted = false;
+        let (mut accepted, mut rejected) = (false, false);
         if let Some(h) = cholesky_solve(&a, mu, &negative) {
             if system.unknowns.iter().zip(&h).all(|(&p, step)| step.abs() <= f64::EPSILON * values[p].abs().max(1.0)) { break; }
             let saved: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
@@ -200,20 +211,23 @@ fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
             let reduction = cost(&rows) - cost(&next);
             if reduction > 0.0 && predicted > 0.0 {
                 accepted = true;
-                let rho = reduction / predicted;
-                mu = (mu * (1.0 / 3.0_f64).max(1.0 - (2.0 * rho - 1.0).powi(3))).max(floor);
-                nu = 2.0;
+                let (rho, searching) = (reduction / predicted, error > ACCEPT);
                 rows = system.rows(values, None);
                 error = worst(&rows);
                 if !(error > POLISH) { break; }
+                mu = if searching && error <= ACCEPT { polish_floor }
+                    else { (mu * (1.0 / 3.0_f64).max(1.0 - (2.0 * rho - 1.0).powi(3))).max(if error <= ACCEPT { polish_floor } else { floor }) };
+                nu = 2.0;
                 (a, g) = system.normal(&rows);
             } else {
                 for (&p, &value) in system.unknowns.iter().zip(&saved) { values[p] = value; }
+                rejected = true;
             }
         }
         if !accepted {
-            // Past acceptance, the first step without gain is roundoff.
-            if error <= ACCEPT { break; }
+            // Past acceptance, a computed step without gain is roundoff; a factorization that
+            // failed only needs more damping.
+            if rejected && error <= ACCEPT { break; }
             mu *= nu;
             nu *= 2.0;
             if !mu.is_finite() { break; }
