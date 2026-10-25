@@ -207,14 +207,17 @@ fn witness(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], independ
         let rest: Vec<usize> = support.iter().map(|c| c.0).filter(|&i| i != row).collect();
         if let Some(refit) = refit(r.len(), v, rows, norms, &rest, distance, work)? { support = refit; }
     }
-    reproduces(r.len(), v, rows, norms, &support, distance, work)?.then_some(support)
+    reproduces(r.len(), v, rows, norms, &support, distance, false, work)?.then_some(support)
 }
 
-/// The combination `support` of unit rows is within `2 distance` of `v` in every column, plus
-/// the roundoff of the terms in that column; `None` when the work runs out.
-fn reproduces(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], support: &[(usize, f64)], distance: f64, work: &mut Work) -> Option<bool> {
+/// The combination `support` of unit rows is within `2 distance` of `v` in every column, give or
+/// take the roundoff of the terms in that column: `certain` when it is within even with that
+/// roundoff added, as removing a row requires, since terms that cancel can hide a real miss; and
+/// otherwise when it may be; `None` when the work runs out.
+fn reproduces(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], support: &[(usize, f64)], distance: f64, certain: bool, work: &mut Work) -> Option<bool> {
     let (miss, size) = rebuild(n, v, rows, norms, support, work)?;
-    Some(miss.iter().zip(&size).all(|(x, size)| x.abs() <= 2.0 * distance + 8.0 * f64::EPSILON * size))
+    let sign = if certain { -1.0 } else { 1.0 };
+    Some(miss.iter().zip(&size).all(|(x, size)| x.abs() <= 2.0 * distance + sign * 8.0 * f64::EPSILON * size))
 }
 
 /// Per column, what the combination `support` of unit rows misses of `v`, and the sum of the
@@ -277,7 +280,7 @@ fn refit(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize],
     match insert(&mut r, v.clone(), distance, work) {
         Some(Insertion::Dependent) => {
             let refit = coefficients(&r, v, rows, norms, subset, work)?;
-            Some(reproduces(n, v, rows, norms, &refit, distance, work)?.then_some(refit))
+            Some(reproduces(n, v, rows, norms, &refit, distance, true, work)?.then_some(refit))
         }
         _ if work.done > work.budget => None,
         _ => Some(None),

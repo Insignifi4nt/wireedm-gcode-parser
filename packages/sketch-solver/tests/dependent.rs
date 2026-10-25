@@ -97,3 +97,20 @@ fn a_witness_keeps_every_row_its_contradiction_needs() {
     assert_eq!(diagnosis.rank, 2);
     assert_eq!(diagnosis.witnesses.iter().map(|w| (w.rows.clone(), w.agrees)).collect::<Vec<_>>(), vec![(vec![0, 1, 2], false)]);
 }
+
+#[test]
+fn a_witness_keeps_a_row_whose_removal_cancellation_hides() {
+    // x + z = 0, x + 1e-6 y + z = 0, z = 0 and y + 1e-9 z = 1 contradict only together: without
+    // z = 0 the others hold at (-1e9, 0, 1e9). The rest miss the last row by 1e-9 in z, where
+    // their terms of about 1e6 cancel and roundoff could hide it, so z = 0 stays.
+    let row = |entries: Vec<(usize, f64)>, residual: f64| diagnose::Row { entries, residual, tolerance: 1e-10 };
+    let rows = [
+        row(vec![(0, 1.0), (2, 1.0)], 0.0),
+        row(vec![(0, 1.0), (1, 1e-6), (2, 1.0)], 0.0),
+        row(vec![(2, 1.0)], 0.0),
+        row(vec![(1, 1.0), (2, 1e-9)], -1.0),
+    ];
+    let diagnosis = diagnose::diagnose(3, &rows, diagnose::TAU, usize::MAX).0.unwrap();
+    assert_eq!(diagnosis.rank, 3);
+    assert_eq!(diagnosis.witnesses.iter().map(|w| (w.rows.clone(), w.agrees)).collect::<Vec<_>>(), vec![(vec![0, 1, 2, 3], false)]);
+}
