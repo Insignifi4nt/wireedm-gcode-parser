@@ -4,7 +4,7 @@ use common::Builder;
 use sketch_solver::diagnose::{CONFLICTING, REDUNDANT};
 use sketch_solver::equations::Kind;
 use sketch_solver::newton::Limits;
-use sketch_solver::problem::Diagnosis;
+use sketch_solver::problem::{Diagnosis, Status};
 
 /// `(diagnosis, degrees of freedom, labels)`
 fn diagnose(builder: &Builder) -> (Diagnosis, Option<usize>, Vec<u8>) {
@@ -171,4 +171,38 @@ fn each_repeated_relation_is_set_aside_rather_than_a_shared_earlier_one() {
         expected[horizontals..horizontals + 2].fill(REDUNDANT);
         assert_eq!(diagnose(&builder), (Diagnosis::Diagnosed, Some(0), expected), "midpoint first: {midpoint_first}");
     }
+}
+
+#[test]
+fn a_nearly_parallel_guide_is_not_blamed_for_its_neighbour() {
+    // A far point on a guide, a guide turned by about 4e-7 rad, the first again and a parallel
+    // guide 5 along. The turned guide's coefficient in either witness is roundoff (about 2e-10
+    // here, epsilon times the pair's condition), above the pruning level, and the first guide
+    // reproduces both repeats without it.
+    let mut builder = Builder::new();
+    let p = builder.point(2222223.888889, -1666666.666667, false);
+    for (a, b) in [((0.0, 0.0), (0.8, -0.6)), ((0.0, 0.0), (0.8000006, -0.6)), ((0.0, 0.0), (0.8, -0.6)), ((5.0, 0.0), (5.8, -0.6))] {
+        let a = builder.point(a.0, a.1, true);
+        let b = builder.point(b.0, b.1, true);
+        builder.equation(Kind::PointOnLine, 0.0, &[p[0], p[1], a[0], a[1], b[0], b[1]]);
+    }
+    assert_eq!(diagnose(&builder), (Diagnosis::Diagnosed, None, vec![CONFLICTING, 0, REDUNDANT, CONFLICTING]));
+}
+
+#[test]
+fn diagnosis_shares_the_work_limit_of_its_group() {
+    // The smallest limits that converge and that diagnose, from a solved start and after a solve:
+    // diagnosing after a solve needs the solve's work and its own.
+    let least = |start: f64| {
+        let mut builder = Builder::new();
+        let x = builder.parameter(start, false);
+        builder.equation(Kind::Value, 0.0, &[x]);
+        let outcomes: Vec<_> = (0..1000).map(|work| builder.outcome_within(Limits { fill: usize::MAX, work }).0).collect();
+        let converged = outcomes.iter().position(|outcome| outcome.status == Status::Converged).unwrap();
+        let diagnosed = outcomes.iter().position(|outcome| outcome.diagnosis == Diagnosis::Diagnosed).unwrap();
+        assert!(outcomes[diagnosed..].iter().all(|outcome| outcome.diagnosis == Diagnosis::Diagnosed));
+        (converged, diagnosed)
+    };
+    let ((_, alone), (solved, diagnosed)) = (least(0.0), least(1.0));
+    assert!(solved > 0 && diagnosed >= solved + alone, "solve {solved}, diagnosis alone {alone}, both {diagnosed}");
 }

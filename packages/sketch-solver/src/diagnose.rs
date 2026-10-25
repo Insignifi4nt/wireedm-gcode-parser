@@ -60,10 +60,15 @@ pub struct Witness {
 }
 
 /// The diagnosis of `rows` over `n` columns, with a row dependent within `distance` (`TAU` or
-/// `STALLED`) of the span of earlier ones, or `None` when rank cannot be decided reliably or the
-/// work would pass `budget` entries.
-pub fn diagnose(n: usize, rows: &[Row], distance: f64, budget: usize) -> Option<Diagnosis> {
+/// `STALLED`) of the span of earlier ones, and the work spent; `None` when rank cannot be decided
+/// reliably or the work would pass `budget` entries.
+pub fn diagnose(n: usize, rows: &[Row], distance: f64, budget: usize) -> (Option<Diagnosis>, usize) {
     let mut work = Work { done: 0, budget };
+    let found = diagnose_within(n, rows, distance, &mut work);
+    (found, work.done)
+}
+
+fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Option<Diagnosis> {
     let mut r: Vec<SparseRow> = vec![Vec::new(); n];
     let mut rank = 0;
     // Each dependent row with the earlier rows of its witness.
@@ -73,13 +78,13 @@ pub fn diagnose(n: usize, rows: &[Row], distance: f64, budget: usize) -> Option<
     for (index, row) in rows.iter().enumerate() {
         if !row.residual.is_finite() || !norms[index].is_finite() { return None; }
         if norms[index] == 0.0 { witnesses.push((index, Vec::new())); continue; }
-        let unit: SparseRow = row.entries.iter().map(|&(k, x)| (k, x / norms[index])).collect();
-        match insert(&mut r, unit.clone(), distance, &mut work)? {
+        let unit = unit(row, norms[index]);
+        match insert(&mut r, unit.clone(), distance, work)? {
             Insertion::Independent => { rank += 1; independent.push(index); }
-            Insertion::Dependent => witnesses.push((index, witness(&r, &unit, rows, &norms, &independent, distance, &mut work)?)),
+            Insertion::Dependent => witnesses.push((index, witness(&r, &unit, rows, &norms, &independent, distance, work)?)),
         }
     }
-    if rank > 0 && smallest_singular_value(&r, &mut work)? < CERTAIN { return None; }
+    if rank > 0 && smallest_singular_value(&r, work)? < CERTAIN { return None; }
     // A unit row's residual, or the residual itself for a row without unknowns.
     let scaled = |i: usize, value: f64| if norms[i] > 0.0 { value / norms[i] } else { value };
     let witnesses = witnesses.into_iter().map(|(j, support)| {
@@ -110,6 +115,8 @@ pub fn dependent(n: usize, rows: &[SparseRow], budget: usize) -> (Option<Vec<usi
     })();
     (found, work.done)
 }
+
+fn unit(row: &Row, norm: f64) -> SparseRow { row.entries.iter().map(|&(k, x)| (k, x / norm)).collect() }
 
 struct Work { done: usize, budget: usize }
 
@@ -180,27 +187,63 @@ fn seminormal(r: &[SparseRow], mut a: Vec<f64>, work: &mut Work) -> Option<Vec<f
 }
 
 /// Coefficients over the earlier independent unit rows that reproduce `v`, which lies in their
-/// span: with those rows `J = Q R`, `v = J^T a` for `a = J z` and `R^T R z = v`. Coefficients
-/// too small to move the combination by `distance` together, as much as a dependent row may
-/// differ from it, relative to the largest coefficient or one, are left out. `None` when the rows left
-/// do not reproduce it to a thousand times the dependence `distance`.
+/// span. Coefficients too small to move the combination by `distance` together, as much as a
+/// dependent row may differ from it, relative to the largest coefficient or one, are left out.
+/// The rows are independent, so the coefficients are unique, but over nearly dependent rows they
+/// carry roundoff of up to about `epsilon / CERTAIN^2` relatively; a row whose coefficient is
+/// that small stays only when the others do not reproduce `v` within `distance` without it.
+/// `None` when the rows left do not reproduce it to a thousand times the dependence `distance`.
 fn witness(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], independent: &[usize], distance: f64, work: &mut Work) -> Option<Vec<(usize, f64)>> {
-    let mut a = vec![0.0; r.len()];
-    for &(k, x) in v { a[k] = x; }
-    let z = seminormal(r, a, work)?;
-    let coefficients: Vec<(usize, f64)> = independent.iter()
-        .map(|&i| (i, rows[i].entries.iter().map(|&(k, x)| x * z[k]).sum::<f64>() / norms[i])).collect();
+    let coefficients = coefficients(r, v, rows, norms, independent, work)?;
     let scale = coefficients.iter().fold(1.0, |m: f64, c| m.max(c.1.abs()));
     let least = distance * scale / coefficients.len().max(1) as f64;
-    let support: Vec<(usize, f64)> = coefficients.into_iter().filter(|c| c.1.abs() > least).collect();
+    let mut support: Vec<(usize, f64)> = coefficients.into_iter().filter(|c| c.1.abs() > least).collect();
+    let mut unsure: Vec<(usize, f64)> = support.iter().copied().filter(|c| c.1.abs() <= f64::EPSILON / (CERTAIN * CERTAIN) * scale).collect();
+    // Smallest first; there are rarely more than a few.
+    while let Some(next) = (0..unsure.len()).reduce(|a, b| if unsure[b].1.abs() < unsure[a].1.abs() { b } else { a }) {
+        let row = unsure.swap_remove(next).0;
+        let rest: Vec<usize> = support.iter().map(|c| c.0).filter(|&i| i != row).collect();
+        if let Some(refit) = refit(r.len(), v, rows, norms, &rest, distance, work)? { support = refit; }
+    }
     let mut rebuilt = vec![0.0; r.len()];
     for &(i, c) in &support {
         for &(k, x) in &rows[i].entries { rebuilt[k] += c * x / norms[i]; }
     }
-    work.spend(independent.iter().map(|&i| 2 * rows[i].entries.len()).sum())?;
+    work.spend(support.iter().map(|&(i, _)| rows[i].entries.len()).sum())?;
     for &(k, x) in v { rebuilt[k] -= x; }
     if rebuilt.iter().fold(0.0, |m: f64, x| m.max(x.abs())) > 1e3 * distance * scale { return None; }
     Some(support)
+}
+
+/// Coefficients over the independent unit rows of `r`, by row index in `independent`, of the
+/// combination nearest `v`: with those rows `J = Q R`, `v = J^T a` for `a = J z` and `R^T R z = v`.
+fn coefficients(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], independent: &[usize], work: &mut Work) -> Option<Vec<(usize, f64)>> {
+    let mut a = vec![0.0; r.len()];
+    for &(k, x) in v { a[k] = x; }
+    let z = seminormal(r, a, work)?;
+    work.spend(independent.iter().map(|&i| rows[i].entries.len()).sum())?;
+    Some(independent.iter().map(|&i| (i, rows[i].entries.iter().map(|&(k, x)| x * z[k]).sum::<f64>() / norms[i])).collect())
+}
+
+/// Coefficients over `subset`, independent rows, when `v` is clearly within `distance` of their
+/// span, in a fresh factor over `n` columns; `Some(None)` when it is not or that is unclear,
+/// `None` when the work runs out.
+fn refit(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize], distance: f64, work: &mut Work) -> Option<Option<Vec<(usize, f64)>>> {
+    work.spend(n)?;
+    let mut r: Vec<SparseRow> = vec![Vec::new(); n];
+    // Fewer earlier rows only leave each further from their span, so each stays independent.
+    for &i in subset.iter() {
+        match insert(&mut r, unit(&rows[i], norms[i]), distance, work) {
+            Some(Insertion::Independent) => {}
+            _ if work.done > work.budget => return None,
+            _ => return Some(None),
+        }
+    }
+    match insert(&mut r, v.clone(), distance, work) {
+        Some(Insertion::Dependent) => coefficients(&r, v, rows, norms, subset, work).map(Some),
+        _ if work.done > work.budget => None,
+        _ => Some(None),
+    }
 }
 
 /// Estimate of the smallest singular value of `R` over the columns with pivots, by four inverse

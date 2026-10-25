@@ -1,6 +1,6 @@
 {
   "file": "sketch_solver.wasm",
-  "bytes": 80917,
-  "sha256": "03e580921a3d6c712f8291683510403c8fddf88e194979d0bc0329ec803fb527",
+  "bytes": 83112,
+  "sha256": "cece27e9210ee8c3cc65577ee90f7d65c3a769453f9a8a7fc7d2207ede39bfb8",
   "toolchain": "1.99.1"
 }

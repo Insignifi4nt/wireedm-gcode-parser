@@ -104,6 +104,20 @@ describe('native sketch solver module', () => {
     expect(cadSketchEquationDiagnostics(model, solution.diagnosis.labels)).toEqual({ conflictingIds: [], redundantIds: [], partiallyRedundantIds: ['meet'] });
   });
 
+  it('does not blame a nearly parallel guide for the guide beside it', () => {
+    // A far point on a guide, a guide turned by about 4e-7 rad, the first again and a parallel
+    // guide 5 along: the repeat is redundant and the parallel guide conflicts with the first.
+    const guides = [[[0, 0], [0.8, -0.6]], [[0, 0], [0.8000006, -0.6]], [[0, 0], [0.8, -0.6]], [[5, 0], [5.8, -0.6]]] as const;
+    const model = compileCadSketchEquations({ graph: parseCadSketchGraph({
+      points: [{ id: 'p', position: [2222223.888889, -1666666.666667] }, ...guides.flatMap(([a, b], index) => [
+        { id: `a${index}`, position: a.map(String) }, { id: `b${index}`, position: b.map(String) }])],
+      entities: guides.map((_, index) => ({ id: `g${index}`, kind: 'line', construction: true, startPointId: `a${index}`, endPointId: `b${index}` })),
+      relations: guides.map((_, index) => ({ id: `on${index}`, kind: 'point-on-line', pointId: 'p', lineId: `g${index}` })) }), parameters: {} });
+    const solution = solver.solve(model);
+    if (solution.diagnosis.kind !== 'diagnosed') throw new Error(solution.diagnosis.kind);
+    expect(cadSketchEquationDiagnostics(model, solution.diagnosis.labels)).toEqual({ conflictingIds: ['on0', 'on3'], redundantIds: ['on2'], partiallyRedundantIds: [] });
+  });
+
   it('reports conflicting relations as not converged and keeps every value finite', () => {
     const graph = rectangles(), model = compileCadSketchEquations({ graph: parseCadSketchGraph({ ...graph,
       relations: [...graph.relations, { id: 'clash', kind: 'distance', pointIds: ['t0', 't1'], value: 2e-5 }] }), parameters: {} });

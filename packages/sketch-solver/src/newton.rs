@@ -20,7 +20,8 @@ pub const MAX_ITERATIONS: usize = 100;
 pub struct Limits {
     /// Entries of the factor `R`, known from structure before any numeric work.
     pub fill: usize,
-    /// Entries written by the ordering and every factor, checked at each rotation.
+    /// Entries written by a group's ordering, factors and diagnosis together, checked at each
+    /// rotation. Labelling, across groups, has its own allowance of the same size.
     pub work: usize,
 }
 /// About 32 MiB of factor and a second or two of rotations.
@@ -54,6 +55,8 @@ struct GroupOutcome {
     iterations: usize,
     residual: f64,
     position: Option<Vec<usize>>,
+    /// Work spent, which diagnosis continues from.
+    work: usize,
 }
 
 /// One normalized Jacobian row over distinct unknown columns; fixed operands have no column.
@@ -275,8 +278,14 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
         let Some(position) = group.position else { outcome.diagnosis = Diagnosis::Unavailable; continue; };
         // A group that stalled short of a collapsed nearest point is diagnosed again only when its
         // rank was unclear, so a clear diagnosis is never lost to the looser distance.
-        let diagnosed = diagnose_group(&system, values, &position, TAU, limits.work).map(|found| (found, false)).or_else(||
-            (group.status == Status::NotConverged).then(|| diagnose_group(&system, values, &position, STALLED, limits.work)).flatten().map(|found| (found, true)));
+        let mut work = group.work;
+        let mut diagnose_at = |distance| {
+            let (found, spent) = diagnose_group(&system, values, &position, distance, limits.work.saturating_sub(work));
+            work = work.saturating_add(spent);
+            found
+        };
+        let diagnosed = diagnose_at(TAU).map(|found| (found, false)).or_else(||
+            (group.status == Status::NotConverged).then(|| diagnose_at(STALLED)).flatten().map(|found| (found, true)));
         match diagnosed {
             Some(((group_rank, group_witnesses), suspected)) => {
                 rank += group_rank;
@@ -309,16 +318,16 @@ fn unmet(system: &System, values: &[f64]) -> Vec<Witness> {
 }
 
 /// The rank of a group's lasting equations at `values`, dependent within `distance`, and their
-/// witnesses by equation index.
-fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance: f64, budget: usize) -> Option<(usize, Vec<Witness>)> {
+/// witnesses by equation index, with the work spent.
+fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance: f64, budget: usize) -> (Option<(usize, Vec<Witness>)>, usize) {
     let rows = system.rows(values, None);
     let jacobian = system.jacobian(&rows, position);
     let lasting: Vec<usize> = (0..rows.len()).filter(|&i| !system.problem.equations[system.equations[i]].temporary).collect();
     let diagnosed: Vec<diagnose::Row> = lasting.iter()
         .map(|&i| diagnose::Row { entries: jacobian.rows[i].0.clone(), residual: rows[i].residual, tolerance: rows[i].tolerance }).collect();
-    let diagnosis = diagnose(position.len(), &diagnosed, distance, budget)?;
-    Some((diagnosis.rank, diagnosis.witnesses.into_iter().map(|witness| Witness {
-        rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect()))
+    let (diagnosis, spent) = diagnose(position.len(), &diagnosed, distance, budget);
+    (diagnosis.map(|diagnosis| (diagnosis.rank, diagnosis.witnesses.into_iter().map(|witness| Witness {
+        rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect())), spent)
 }
 
 /// Rows that depend on earlier lasting rows at the start stay out of a first solve, as their
@@ -329,12 +338,12 @@ fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> GroupOutc
     let n = system.unknowns.len();
     let rows = system.rows(values, None);
     let progress = assess(&rows);
-    let finish = |rows: &[Row], progress: Progress, iterations, exhausted: bool, position| GroupOutcome {
+    let finish = |rows: &[Row], progress: Progress, iterations, exhausted: bool, position, work| GroupOutcome {
         status: if progress.accepted { Status::Converged } else if exhausted { Status::TooLarge } else { Status::NotConverged },
-        iterations, residual: worst(rows), position: if exhausted { None } else { position } };
+        iterations, residual: worst(rows), position: if exhausted { None } else { position }, work };
     let Some(ordering) = minimum_degree(n, &rows.iter().map(|row| &row.columns[..row.len]).collect::<Vec<_>>(), limits.fill, limits.work)
-        else { return finish(&rows, progress, 0, true, None); };
-    if progress.polished || n == 0 { return finish(&rows, progress, 0, false, Some(ordering.position)); }
+        else { return finish(&rows, progress, 0, true, None, limits.work); };
+    if progress.polished || n == 0 { return finish(&rows, progress, 0, false, Some(ordering.position), ordering.work); }
     let (position, mut work, mut iterations) = (ordering.position, ordering.work, 0);
     let left_out = dependent_at_start(system, &rows, &position, limits.work, &mut work);
     if !left_out.is_empty() {
@@ -347,12 +356,12 @@ fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> GroupOutc
         let exhausted = levenberg(&reduced, values, &position, limits, &mut work, &mut iterations);
         let rows = system.rows(values, None);
         let progress = assess(&rows);
-        if progress.accepted || exhausted { return finish(&rows, progress, iterations, exhausted, Some(position)); }
+        if progress.accepted || exhausted { return finish(&rows, progress, iterations, exhausted, Some(position), work); }
         for (&p, &value) in system.unknowns.iter().zip(&start) { values[p] = value; }
     }
     let exhausted = levenberg(system, values, &position, limits, &mut work, &mut iterations);
     let rows = system.rows(values, None);
-    finish(&rows, assess(&rows), iterations, exhausted, Some(position))
+    finish(&rows, assess(&rows), iterations, exhausted, Some(position), work)
 }
 
 /// Lasting rows of `rows` that depend on earlier ones, by index within the group, with the work
