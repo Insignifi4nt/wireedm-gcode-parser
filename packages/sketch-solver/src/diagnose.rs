@@ -210,27 +210,54 @@ fn witness(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], independ
     reproduces(r.len(), v, rows, norms, &support, distance, work)?.then_some(support)
 }
 
-/// The combination `support` of unit rows is within `2 distance` of `v`, plus its own
-/// roundoff, in every column; `None` when the work runs out.
+/// The combination `support` of unit rows is within `2 distance` of `v` in every column, plus
+/// the roundoff of the terms in that column; `None` when the work runs out.
 fn reproduces(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], support: &[(usize, f64)], distance: f64, work: &mut Work) -> Option<bool> {
+    let (miss, size) = rebuild(n, v, rows, norms, support, work)?;
+    Some(miss.iter().zip(&size).all(|(x, size)| x.abs() <= 2.0 * distance + 8.0 * f64::EPSILON * size))
+}
+
+/// Per column, what the combination `support` of unit rows misses of `v`, and the sum of the
+/// sizes of its terms there.
+fn rebuild(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], support: &[(usize, f64)], work: &mut Work) -> Option<(Vec<f64>, Vec<f64>)> {
     work.spend(n + support.iter().map(|&(i, _)| rows[i].entries.len()).sum::<usize>())?;
-    let mut rebuilt = vec![0.0; n];
+    let (mut miss, mut size) = (vec![0.0; n], vec![0.0; n]);
+    for &(k, x) in v { miss[k] = x; size[k] = x.abs(); }
     for &(i, c) in support {
-        for &(k, x) in &rows[i].entries { rebuilt[k] += c * x / norms[i]; }
+        for &(k, x) in &rows[i].entries {
+            let term = c * x / norms[i];
+            miss[k] -= term;
+            size[k] += term.abs();
+        }
     }
-    for &(k, x) in v { rebuilt[k] -= x; }
-    let roundoff = 8.0 * f64::EPSILON * (1.0 + support.iter().map(|c| c.1.abs()).sum::<f64>());
-    Some(rebuilt.iter().all(|x| x.abs() <= 2.0 * distance + roundoff))
+    Some((miss, size))
 }
 
 /// Coefficients over the independent unit rows of `r`, by row index in `independent`, of the
 /// combination nearest `v`: with those rows `J = Q R`, `v = J^T a` for `a = J z` and `R^T R z = v`.
+/// Seminormal equations lose about `epsilon` times the squared condition of the rows, so each
+/// solve is followed by corrections from what the combination still misses of `v`, while
+/// they shrink it.
 fn coefficients(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], independent: &[usize], work: &mut Work) -> Option<Vec<(usize, f64)>> {
-    let mut a = vec![0.0; r.len()];
-    for &(k, x) in v { a[k] = x; }
-    let z = seminormal(r, a, work)?;
-    work.spend(independent.iter().map(|&i| rows[i].entries.len()).sum())?;
-    Some(independent.iter().map(|&i| (i, rows[i].entries.iter().map(|&(k, x)| x * z[k]).sum::<f64>() / norms[i])).collect())
+    let n = r.len();
+    let mut coefficients: Vec<(usize, f64)> = independent.iter().map(|&i| (i, 0.0)).collect();
+    let mut missing: SparseRow = v.clone();
+    let mut previous = f64::INFINITY;
+    for _ in 0..4 {
+        let mut a = vec![0.0; n];
+        for &(k, x) in &missing { a[k] = x; }
+        let z = seminormal(r, a, work)?;
+        work.spend(independent.iter().map(|&i| rows[i].entries.len()).sum())?;
+        let step: Vec<f64> = independent.iter().map(|&i| rows[i].entries.iter().map(|&(k, x)| x * z[k]).sum::<f64>() / norms[i]).collect();
+        let trial: Vec<(usize, f64)> = coefficients.iter().zip(&step).map(|(&(i, c), d)| (i, c + d)).collect();
+        let (miss, _) = rebuild(n, v, rows, norms, &trial, work)?;
+        let worst = miss.iter().fold(0.0, |m: f64, x| m.max(x.abs()));
+        if worst >= previous { break; }
+        (coefficients, previous) = (trial, worst);
+        if worst == 0.0 { break; }
+        missing = miss.into_iter().enumerate().filter(|e| e.1 != 0.0).collect();
+    }
+    Some(coefficients)
 }
 
 /// Coefficients over `subset`, independent rows, when `v` is clearly within `distance` of their
