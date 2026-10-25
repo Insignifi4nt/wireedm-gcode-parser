@@ -262,3 +262,22 @@ fn a_relation_repeating_two_nearly_parallel_ones_is_redundant() {
     builder.equation(Kind::Value, 0.0, &[p[1]]);
     assert_eq!(diagnose(&builder), (Diagnosis::Diagnosed, Some(0), vec![0, 0, REDUNDANT]));
 }
+
+#[test]
+fn a_spurious_guide_is_not_kept_where_its_neighbours_terms_cancel() {
+    // p on a vertical guide and on a guide tilted 5e-6 beside it, q on the tilted one directly
+    // above p: only the last four conflict. The vertical guide's coefficient is roundoff, and the
+    // terms of the others cancel, so the rest must be judged to far below that roundoff.
+    let mut builder = Builder::new();
+    let p = builder.point(0.0, 0.0, false);
+    let q = builder.point(0.0, 1.0, false);
+    let o = builder.point(0.0, 0.0, true);
+    let vertical = builder.point(0.0, -2.0, true);
+    let tilted = builder.point(1e-5, -2.0, true);
+    builder.equation(Kind::PointOnLine, 0.0, &[p[0], p[1], o[0], o[1], vertical[0], vertical[1]]);
+    builder.equation(Kind::PointOnLine, 0.0, &[p[0], p[1], o[0], o[1], tilted[0], tilted[1]]);
+    builder.equation(Kind::PointOnLine, 0.0, &[q[0], q[1], o[0], o[1], tilted[0], tilted[1]]);
+    builder.equation(Kind::Difference, 0.0, &[p[0], q[0]]);
+    builder.equation(Kind::Difference, 1.0, &[p[1], q[1]]);
+    assert_eq!(diagnose(&builder), (Diagnosis::Diagnosed, None, vec![0, CONFLICTING, CONFLICTING, CONFLICTING, CONFLICTING]));
+}
