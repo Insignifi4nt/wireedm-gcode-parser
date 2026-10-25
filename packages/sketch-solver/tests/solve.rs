@@ -387,3 +387,35 @@ fn polishes_a_near_tangent_intersection_quickly_beside_other_unknowns() {
     assert!((radius(values[end[0]], values[end[1]]) - radius(0.0, -1e-5)).abs() <= 1e-12, "{values:?}");
 }
 
+
+#[test]
+fn an_accepted_point_between_nearly_parallel_guides_still_polishes_to_roundoff() {
+    // Guides through the origin leaning 5e-9 either way meet at a tiny angle, so past acceptance
+    // each step removes only a fifth of the cost, but that gain is real and polishing goes on.
+    let mut builder = Builder::new();
+    let p = builder.point(0.0, 1e-3, false);
+    let o = builder.point(0.0, 0.0, true);
+    for lean in [5e-9, -5e-9] {
+        let b = builder.point(lean, 1.0, true);
+        builder.equation(Kind::PointOnLine, 0.0, &[p[0], p[1], o[0], o[1], b[0], b[1]]);
+    }
+    let (outcome, _) = builder.outcome();
+    assert_eq!(outcome.status, Status::Converged);
+    assert!(outcome.residual <= 2.0 * f64::EPSILON, "residual {}", outcome.residual);
+}
+
+#[test]
+fn an_accepted_point_near_a_tangency_still_polishes_to_roundoff() {
+    // Circles of radius just over 1 around (-1, 0) and (1, 0) meet at (0, ±1e-5), nearly tangent.
+    // The first accepted step gains a real 8% of the cost while gaining less than a quarter of its
+    // prediction, so polishing must not stop there.
+    let mut builder = Builder::new();
+    let p = builder.point(0.0, 1e-5 / 2.2, false);
+    for x in [-1.0, 1.0] {
+        let c = builder.point(x, 0.0, true);
+        builder.equation(Kind::Distance, (1.0 + 1e-10f64).sqrt(), &[c[0], c[1], p[0], p[1]]);
+    }
+    let (outcome, _) = builder.outcome();
+    assert_eq!(outcome.status, Status::Converged);
+    assert!(outcome.residual <= 2.0 * f64::EPSILON, "residual {}", outcome.residual);
+}

@@ -35,6 +35,12 @@ pub const ACCEPT_RADIANS: f64 = 1e-12;
 const NEAR: f64 = 1e-10;
 /// Steps continue past acceptance while they improve, down to roundoff at this level.
 const POLISH: f64 = 2.0 * f64::EPSILON;
+/// Past acceptance, a step gaining less than this part of its predicted gain, and less than
+/// `NEGLIGIBLE` of the cost, is taken as roundoff. Steps that move only roundoff gain about 1e-14
+/// of their prediction and a few epsilon of the cost; Newton's step at a double root gains at least
+/// 15/16 of its prediction, and a step near a tangency can gain a real part of the cost with less.
+const STAGNANT: f64 = 0.25;
+const NEGLIGIBLE: f64 = 1024.0 * f64::EPSILON;
 
 #[derive(Clone, Debug)]
 pub struct Outcome {
@@ -399,13 +405,19 @@ fn levenberg(system: &System, values: &mut [f64], position: &[usize], limits: Li
             for (column, &p) in system.unknowns.iter().enumerate() { values[p] += h[column]; }
             let next = system.rows(values, Some(&rows));
             let predicted = 0.5 * h.iter().zip(&jacobian.gradient).map(|(step, gradient)| step * (mu * step - gradient)).sum::<f64>();
-            let reduction = cost(&rows) - cost(&next);
+            let before = cost(&rows);
+            let reduction = before - cost(&next);
             if reduction > 0.0 && predicted > 0.0 {
                 stepped = true;
                 let (rho, searching) = (reduction / predicted, !progress.near);
+                // A stopping heuristic: past acceptance, a step that gains a small part of its
+                // prediction and a negligible part of the cost moved only roundoff. Without it, a
+                // row whose roundoff floor sits above `POLISH` keeps the loop taking such steps
+                // until they vanish.
+                let stagnant = progress.accepted && rho < STAGNANT && reduction <= NEGLIGIBLE * before;
                 rows = system.rows(values, None);
                 progress = assess(&rows);
-                if progress.polished { break; }
+                if progress.polished || (stagnant && progress.accepted) { break; }
                 mu = if searching && progress.near { polish_floor }
                     else { (mu * (1.0 / 3.0_f64).max(1.0 - (2.0 * rho - 1.0).powi(3))).max(if progress.near { polish_floor } else { floor }) };
                 nu = 2.0;
