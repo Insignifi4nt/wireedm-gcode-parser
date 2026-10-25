@@ -1,6 +1,6 @@
 # CAD performance baseline
 
-`npm run cad:benchmark` measures the CAD kernel and sketch solver on fixed workloads and writes a JSON report to `tmp/cad-benchmark/<timestamp>.json`. Add `-- --quick` for a shorter run or `-- --runs N` to change the sample count (a positive whole number, default 7). It runs in Node with the same OpenCascade and PlaneGCS WASM files the app ships. Use it before and after a change that claims a speed or memory improvement, and record both reports in the pull request.
+`npm run cad:benchmark` measures the CAD kernel and sketch solver on fixed workloads and writes JSON reports to `tmp/cad-benchmark/`. Add `-- --quick` for a shorter run or `-- --runs N` to change the sample count (a positive whole number, default 7). `-- --group legacy` selects the original kernel, solver-scaling and drag-preview groups; `-- --group solver-workloads` selects the public-boundary PlaneGCS/native comparison below. The default, `-- --group all`, runs both. No browser or dev server is needed. Use it before and after a change that claims a speed or memory improvement, and record both reports in the pull request.
 
 ## Workloads and correctness
 
@@ -108,5 +108,54 @@ After 0.0.737, most of a drag preview with several sketches is the final `parseC
   | 1000-rectangle connected chain | 8,000 | rejected as too large | not run | 34.0 ms |
   | 2500-rectangle connected chain | 20,000 | rejected as too large | not run | 92.7 ms |
 
+<<<<<<< HEAD
   The dense column comes from earlier runs, and differences below a millisecond are within noise. These numbers are not a fair comparison yet. PlaneGCS diagnoses redundant and conflicting relations and degrees of freedom on every solve, and the native solver does not do so until diagnosis is built.
+=======
+  These historical probes timed native equation solving alone, without the TypeScript boundary or diagnosis. They are not equivalent jobs. Use the calibrated public-boundary suite below for new measurements. One large connected group still needs a sparse or banded factorization before the runtime switches.
+>>>>>>> 2dcebdcc (Add calibrated solver benchmark command and resource probes)
 - A start far outside the linear range of an equation can take one long step. For example, a perpendicular line that starts nearly antiparallel can be stretched to a valid but very long solution. A step bound comes with drag targets, where the solution must stay near the start.
+
+## Sketch-solver workloads, step 2c
+
+Run `npm run cad:benchmark -- --group solver-workloads`. A full run takes about a minute on the development laptop. It uses seven latency samples, seven 60-frame trajectories, 1000 repeated solves per solver and an adaptive capacity search. `--quick` uses three latency samples and 100 repeated solves; `--runs N` changes latency samples and trajectory count but leaves the full-run memory count at 1000. Capacity always uses three samples per size and searches at most 256 connected rectangles. Keep the host idle during the run. Reports include Node version, CPU, sample order, all calibration brackets, outcomes, source diagnostics, stage statistics, resource observations and correctness failures. A Markdown summary is written beside the JSON.
+
+`cadSolverWorkloadCases.ts` defines 29 fixtures. `cadSolverWorkloadCases.test.ts` runs each through real PlaneGCS and pins the result kind, rejection reason, DOF, status and diagnostic lists in reviewed snapshots. Accepted graphs must preserve source intent and pass independent graph checks. The die's fully constrained result, free variant and shuffled hub also have explicit geometry/intent tests. Do not update snapshots merely to make a changed fixture pass; explain changed acceptance or diagnosis in the review.
+
+| Fixtures | Job |
+| --- | --- |
+| `rectangles-10/60/200` | Independent fully constrained rectangles, using the existing perturbed generator. |
+| `connected-60/88` | The existing fully constrained connected chain, including the largest size below PlaneGCS's group limit. |
+| `topology-open/loop/branch` | A long 99-segment open profile with collinear and equal-length relations, a 64-edge closed loop, and a 63-edge branching tree. |
+| `topology-hub`, `topology-hub-shuffled` | A gear-like alternating-radius outline with 63 spokes tied to one center; the identical graph with seeded permutations of points, entities and relations. |
+| `die-constrained` | A 30-segment stepped die with fillet and chamfer corners, a tangent capsule slot, equal radii, a shoulder angle, symmetry axis, midpoint and six patterned holes. Perturbed numeric start, DOF 0. |
+| `die-free` | Same die with 30% of its axis dimensions removed, plus free geometry, exact expression-owned coordinate text and an external line snapshot. Perturbed start, DOF 21. |
+| `redundant-distances`, `partial-coincident-horizontal`, `partial-symmetry-midpoint` | Duplicate scalar equations and partly overlapping multi-equation relations, with mapped source ids. |
+| `conflicting-distances/triangle`, `fixed-point-vs-dimension`, `overlapping-conflicts`, `impossible-triangle` | Conflicting dimensions, over-dimensioning, overlapping conflict sets and geometrically impossible distances. First-call totals are time to rejection, including diagnosis where available. |
+| `fully-fixed-satisfied/conflict`, each also `-with-free` | Relations on expression-owned coordinates, with and without a separate unknown. |
+| `numeric-tiny/far-origin/mixed-scales` | A 0.01 mm height, an offset of 500,000 mm, and tiny/ordinary geometry in one connected group. |
+| `tangency-exact/near` | The die at exact tangency and with one slot endpoint displaced 0.00001 mm. |
+
+### Timing and comparison rules
+
+Both adapters implement the existing `CadSketchSolver` interface. Every timer encloses its public `solve(input)`, including boundary parsing, compilation, solving, mapping and the same `cadSketchSolutionMatchesInput` / `checkCadSketchGraph` acceptance. The PlaneGCS adapter uses the current runtime, including connected components, the group-size guard, temporary drag constraints and **always-on diagnosis**. The native adapter uses `compileCadSketchEquations`, `loadCadSketchNativeSolver` and `applyCadSketchEquationSolution`. Neither adapter changes the application's solver selection.
+
+Native rows are labelled **solve only, no diagnosis**. Native DOF is null and diagnostic ids are unavailable. Empty ids do not mean the sketch is clean: native currently accepts redundant equations that PlaneGCS rejects. Native conflicts are generic convergence failures without conflict sets. Its compiler refuses drag, so drag is explicitly unsupported, without a fabricated latency. These totals are not full-job speedups and cannot decide the runtime switch. When step 2b supplies diagnosis, update the adapter, tests and labels before claiming equal work.
+
+Each workload has an untimed warmup per solver, followed by paired repetitions in a CPU calibration bracket. The solver order reverses every repetition and the starting order reverses across workloads. Fixtures, edits, cloning, correctness checks and statistics are outside timing. Each workload starts with fresh WASM instances; initialization is outside warm timings. Reusing one PlaneGCS instance across many unrelated workloads caused heap exhaustion before the 88-rectangle chain in an initial probe, even though it solves in a fresh instance. This suite avoids carrying that allocation history between workloads; repeated-instance memory gets its own measurement.
+
+Each fixture measures the first solve and a re-solve of each solver's own accepted graph. Re-solving an already-solved graph approximates diagnosis cost but still includes parse/compile, convergence detection, mapping and validation. It is not an isolated diagnosis timer. Rejected first solves have no already-solved input, so their re-solve rows are skipped. Two edit sequences start from the same accepted PlaneGCS graph for both adapters: slot radius 3 to 3.5 mm, then to 4.2 mm, and adding then removing one released die dimension. Every accepted result feeds the next edit. Failed edits never become the next input.
+
+The connected-die drag releases only the slot radius, then moves its upper-left endpoint through 60 frames with a reversal. Frame 45 targets an unreachable x coordinate; PlaneGCS projects it onto the remaining freedom. Every accepted graph feeds the next frame, including that projection. The report records every target, outcome and target error, frame p50/p95/p99, accepted/projected counts and raw counts over 8 ms. Percentiles use `cadBenchmarkStats` nearest ranks, with the same rule for p99. Seven trajectories give 420 samples; they are measured back-to-back without frame pacing or a rendering budget.
+
+`totalMs` is the public-call total. `stagesMs` partitions it into `parseCompile` (including component preparation), `nativeCall` (wrapper/buffer work, native solve and PlaneGCS diagnosis), `mapping` (diagnostic source ids and geometry), and `validation`. Observer and promise overhead remain in totals; stage medians need not sum to the total median. The bundled PlaneGCS module logs some rejection paths directly to the console, and those paths retain that cost. The suite checks every accepted graph again outside timing and detects input mutation. Zero correctness failures means those geometry/integrity checks passed, not that native supplies missing diagnosis.
+
+Use the existing 1.5-times calibration drift rule. Each workload/edit sequence and drag trajectory group records before/after calibration; capacity pairs also have brackets. Cold resource probes have a separate bracket. A `THROTTLED` group is unsuitable for a latency comparison even if its geometry is correct. Cross-group comparisons also need similar calibration, and cross-host comparisons remain invalid.
+
+### Resource measurements and limits
+
+- Cold probes run in a separate Node process per solver to avoid V8 WASM compilation-cache reuse. They record local file read, explicit `WebAssembly.compile`, instantiation/glue and their sum, plus raw/gzip WASM bytes. OS disk caches are not flushed. Browser/network fetch time, download caching and browser cold startup are unavailable here; a local file read is not a network benchmark.
+- Each workload's memory probe uses a fresh instance and records `WebAssembly.Memory.buffer.byteLength` before and after the solve. This is retained linear-memory capacity, a high-water allocation, not live allocator usage. It remains useful when C++ or Rust allocations are freed. Node RSS, JS heap, external-memory and ArrayBuffer deltas are sampled at the call boundaries. GC is uncontrolled and deltas can be negative; they are not attributable peaks. Temporary process-allocation peaks are unavailable while the synchronous WASM call runs.
+- The repeat probe seeds an accepted die and re-solves it 1000 times in the same instance. Memory is recorded after 1, 10, 100 and 1000 calls. Independent checks happen outside solving, so process deltas also include checker allocations. This does not measure dragging or a succession of different large workloads.
+- Capacity uses connected rectangle chains, three public solves per candidate in fresh initialized instances, and the median total below 1000 ms. Both solvers receive the same candidate, in alternating order within each bracket. It brackets then binary-searches the integer boundary, up to 256 rectangles. The report retains every acceptance, rejection, calibration and sample. A result at the search cap is a lower bound. Timing noise near one second can move the measured boundary; it is not a product limit. PlaneGCS's 500,000 parameter/equation product guard remains authoritative even when a larger solve might be fast enough. Native capacity is still solve-only capacity.
+
+The historical baseline above is unchanged. There is no committed solver baseline JSON to regenerate. New full-run measurements belong in the release-specific table below; retain their JSON/Markdown reports with review evidence.

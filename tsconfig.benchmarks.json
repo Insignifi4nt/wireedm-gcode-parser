@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.benchmarks.tsbuildinfo",
+    "allowImportingTsExtensions": true,
+    "types": ["node", "vite/client"]
+  },
+  "include": [
+    "scripts/benchmark-cad*.ts",
+    "src/vite-env.d.ts",
+    "src/types/*.d.ts",
+    "src/features/cad/sketch-solver/planegcs-native.d.ts"
+  ]
+}
