@@ -27,27 +27,27 @@ Solver workloads are independent, fully constrained rectangles (4 lines and 7 re
 
 ## Baseline
 
-App 0.0.736, Node 24.22, Intel Core i9-14900HX laptop on the Balanced power plan, 7 runs. Idle calibration was 60 to 69 ms. Every row below comes from a measurement group calibrated at 60 to 75 ms, apart from the plate width edit (calibration 163 ms, throttled), which is left out.
+App 0.0.736, Node 24.22, Intel Core i9-14900HX laptop on the Balanced power plan, 7 runs. Every measurement group was bracketed at 57 to 84 ms of calibration, so none was throttled.
 
 | Measurement | Result |
 | --- | --- |
-| OpenCascade WASM | 23.0 MB, 7.2 MB gzip, 88 ms initialization |
-| PlaneGCS WASM | 0.5 MB, 0.2 MB gzip, 21 MiB fixed linear memory |
+| OpenCascade WASM | 23.0 MB, 7.2 MB gzip, 86 ms initialization |
+| PlaneGCS WASM | 0.5 MB, 0.2 MB gzip, 21 MiB fixed linear memory, 5 ms initialization |
 | occt-import-js WASM (machine STEP import, lazily loaded) | 7.6 MB, 3.1 MB gzip |
-| Gear and plate, plate width edit (shipped) | 458 ms p50; the plate alone builds in 67 ms (6.8 times headroom) |
-| Gear and plate build result | 5792 triangles, 1.1 MiB JSON; main-thread clone, validation and display preparation 2.3, 0.7 and 2.2 ms |
-| Holed plate build | 70 ms p50 |
+| Gear and plate, plate width edit (shipped) | 456 ms p50; the plate alone builds in 65 ms (7.0 times headroom) |
+| Gear and plate build result | 5792 triangles, 1.1 MiB JSON; main-thread clone, validation and display preparation 2.4, 0.6 and 2.2 ms |
+| Holed plate, width edit (shipped) | 63 ms p50 |
 | Box fillet, all edges, radius edit (shipped) | 37 ms p50 |
-| OpenCascade memory, 1 then 50 edits | holed plate 100 to 127 MiB; gear and plate 239 to 287 MiB |
-| Solver warm solve | 1 rectangle 0.5 ms, 10 rectangles 3.2 ms, 40 rectangles 10 ms, 60 rectangles 18 ms |
-| Drag preview, one corner move | 1 sketch: 1 solve, 4.1 ms; 4 sketches: 4 solves, 14 ms; 8 sketches: 8 solves, 29 ms |
+| OpenCascade memory after 1, 10 and 50 edits, fresh module per case | holed plate 100, 100 and 127 MiB; gear and plate 199 MiB throughout; box fillet 100 MiB throughout |
+| Solver warm solve | 1 rectangle 0.5 ms, 10 rectangles 2.7 ms, 40 rectangles 9.3 ms, 60 rectangles 17 ms |
+| Drag preview, one corner move | 1 sketch: 1 solve, 4.1 ms; 4 sketches: 4 solves, 16 ms; 8 sketches: 8 solves, 30 ms |
 | Solver capacity, fresh module | 80 rectangles solved; 100 rectangles aborted with OOM |
 
 ## Findings that set the order of work
 
 1. Drag previews re-solve every graph sketch in the document, so preview cost grows with unrelated sketches.
 2. PlaneGCS aborts on a few hundred constrained entities because its memory cannot grow; the worker reports the raw abort text and restarts.
-3. Every edit rebuilds every feature. Unchanged expensive bodies dominate edits of cheap ones. OpenCascade memory already grows by about a fifth over 50 edits of one document, so a feature cache must show bounded growth over the same 50 edits.
+3. Every edit rebuilds every feature. Unchanged expensive bodies dominate edits of cheap ones. OpenCascade memory already grows from 100 to 127 MiB between the 10th and 50th edit of the holed plate, so a feature cache must show no more growth than that over the same 50 edits.
 4. Build results cross the worker as plain arrays (1.1 MiB JSON for 5.8k triangles) and are validated and prepared for display again on the main thread. That costs about 5 ms a build here, so it is a payload and memory cleanup, not the main latency.
 
 Proposed order: solve only edited sketches and their reference dependents, then solve independent sketch components separately with a clear limit message; incremental feature rebuilds keyed by a chain hash with bounded memory after 50 rebuilds as a gate; typed-array transfer with display preparation in the worker. Rust or kernel replacements are considered only where this benchmark shows the remaining time is inside the native kernel or solver.
