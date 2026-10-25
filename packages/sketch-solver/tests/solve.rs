@@ -419,3 +419,18 @@ fn an_accepted_point_near_a_tangency_still_polishes_to_roundoff() {
     assert_eq!(outcome.status, Status::Converged);
     assert!(outcome.residual <= 2.0 * f64::EPSILON, "residual {}", outcome.residual);
 }
+
+#[test]
+fn an_accepted_point_keeps_polishing_after_one_small_real_gain() {
+    // `t` is both the point's x and the guide's rise, so the line moves with the point. From this
+    // start the first accepted step gains a real 5e-14 of the cost, small enough to look like
+    // roundoff; the steps after it gain much more.
+    let mut builder = Builder::new();
+    let t = builder.parameter(4.47213058808479e-6, false);
+    let (h, one) = (builder.parameter(1e-10, true), builder.parameter(1.0, true));
+    let o = builder.point(0.0, 0.0, true);
+    builder.equation(Kind::PointOnLine, 0.0, &[t, h, o[0], o[1], one, t]);
+    let (outcome, _) = builder.outcome();
+    assert_eq!(outcome.status, Status::Converged);
+    assert!(outcome.residual <= 1e-15, "residual {}", outcome.residual);
+}
