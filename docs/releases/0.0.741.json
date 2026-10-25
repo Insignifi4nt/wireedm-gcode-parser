@@ -1,0 +1,24 @@
+{
+  "version": "0.0.741",
+  "previousVersion": "0.0.740",
+  "postCompatibility": "preserved-output-sketch-solver-workloads",
+  "summary": "Adds a selectable sketch-solver workload group to the CAD benchmark. PlaneGCS and the native Rust solver receive the same sketch inputs through their public solve boundary, with stage timings, alternating sample order and CPU calibration brackets. Tested fixtures cover independent and connected sketches, a parametric die with a tangent slot and patterned holes, under-constrained geometry, source ownership, redundant and conflicting relations, and numerical edge cases. Operations cover first solves, already-solved inputs, dimension and constraint edits, continuous dragging and rejection. Resource probes measure cold local loading, WASM sizes, memory and connected capacity. Native measurements remain explicitly solve only, without diagnosis, and native dragging is unsupported. The application continues to use PlaneGCS.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. This release adds benchmark infrastructure only. Optional timing and memory observers do not change solver results, and the native module remains outside the application runtime.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal or solver protocol schema change. Native buffer protocol remains 1, post engine API remains 1 and saved-job engine remains 3. Benchmark reports carry separate measurement metadata.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change. No new application controls or runtime solver selection.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Benchmark reports are local maintainer artifacts.",
+    "verification": "PlaneGCS fixture tests pin result kinds, degrees of freedom and all source diagnostic lists. Real-solver tests cover stage observation, unavailable native diagnosis, dimension and constraint edits, alternating order, accepted-solution feedback and all 60 drag frames including projection of an unreachable target. The existing CAD benchmark tests, native-differential project, TypeScript project build, lint with zero findings, UI ownership check, release check and a full solver-workloads benchmark run pass. No local Playwright suite or dev server is required. Resource reporting distinguishes retained WASM capacity from process memory deltas and unavailable process peaks or browser network fetch timing."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Adds performance checks for future sketch-solver work.",
+    "changes": [
+      "Adds maintainer benchmarks for sketch solving, edits, dragging, diagnostics and memory. Sketches continue to solve with the current solver."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

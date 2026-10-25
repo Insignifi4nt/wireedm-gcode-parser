@@ -110,7 +110,7 @@ export async function probeCadSolverWorkloadCapacity() {
   const limits = [];
   for (const id of ['planegcs', 'native'] as const) {
     let low = 0, high: number | null = null;
-    for (const size of [60, 88, 89, 128, 192, 256]) {
+    for (const size of [60, 88, 89, 128, 256, 512, 1024, 2048, 4096]) {
       const result = (await probe(size)).solvers.find(row => row.solver === id)!;
       if (!result.under1s) { high = size; break; } low = size;
     }
@@ -119,7 +119,7 @@ export async function probeCadSolverWorkloadCapacity() {
       if (result.under1s) low = mid; else high = mid;
     }
     limits.push({ solver: id, largestConnectedRectanglesUnder1s: low || null, firstRejectedOrAtLeast1s: high,
-      bound: high === null ? 'at least largest probed; search capped at 256 rectangles' : 'integer boundary, median of 3 fresh-instance public solves' });
+      bound: high === null ? 'at least largest probed; search capped at 4096 rectangles' : 'integer boundary, median of 3 fresh-instance public solves' });
   }
   const probes = [...outcomes.values()].sort((a, b) => a.rectangles - b.rectangles);
   return { limits: limits.map(limit => ({ ...limit,

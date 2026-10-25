@@ -46,6 +46,7 @@ export function createCadBenchmarkNative(initialize: () => Promise<CadSketchNati
         catch (error) { return { kind: 'rejected', reason: 'invalid-input', message: String(error), diagnostics: unavailable }; }
         next('nativeCall');
         const solution = (await initialize()).solve(model);
+        if (solution.status === 'too-large') return { kind: 'rejected', reason: 'too-large', message: 'A connected group is too large for the native solver; diagnosis is unavailable.', diagnostics: unavailable };
         if (solution.status !== 'converged') return { kind: 'rejected', reason: 'failed', message: 'Native equations did not converge; diagnosis is unavailable.', diagnostics: { ...unavailable, status: 'failed' } };
         next('mapping');
         const graph = applyCadSketchEquationSolution(input.graph, model, solution.values);
