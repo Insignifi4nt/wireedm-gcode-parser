@@ -93,7 +93,7 @@ fn a_witness_keeps_every_row_its_contradiction_needs() {
     // than the dependence tolerance, so it stays in the witness.
     let row = |entries: Vec<(usize, f64)>, residual: f64| diagnose::Row { entries, residual, tolerance: 1e-10 };
     let rows = [row(vec![(0, 1.0)], 0.0), row(vec![(1, 1.0)], 0.0), row(vec![(0, 1.0), (1, 5e-10)], -1.0)];
-    let diagnosis = diagnose::diagnose(2, &rows, usize::MAX).unwrap();
+    let diagnosis = diagnose::diagnose(2, &rows, diagnose::TAU, usize::MAX).unwrap();
     assert_eq!(diagnosis.rank, 2);
     assert_eq!(diagnosis.witnesses.iter().map(|w| (w.rows.clone(), w.agrees)).collect::<Vec<_>>(), vec![(vec![0, 1, 2], false)]);
 }

@@ -11,12 +11,16 @@ export interface CadSketchNativeSolution {
 }
 
 /**
- * Rank diagnosis at the returned values. `unavailable`: some group was too large, or its rank was too
- * close to call. `no-unknowns`: nothing can move, so nothing is diagnosed.
+ * Rank diagnosis at the returned values. `suspected`: a group that did not converge stalled short of
+ * a collapsed nearest point and was diagnosed with a looser dependence distance, so its conflicts
+ * are suspected rather than certain and freedom is unknown. `no-unknowns`: nothing can move, so only
+ * relations that are not met are labelled, as conflicting. `unavailable`: some group was too large,
+ * or its rank was too close to call.
  */
 export type CadSketchNativeDiagnosis =
   | { readonly kind: 'diagnosed'; readonly degreesOfFreedom: number | null; readonly labels: readonly number[] }
-  | { readonly kind: 'unavailable' | 'no-unknowns' };
+  | { readonly kind: 'suspected' | 'no-unknowns'; readonly labels: readonly number[] }
+  | { readonly kind: 'unavailable' };
 
 export interface CadSketchNativeSolver {
   solve(model: CadSketchEquationModel): CadSketchNativeSolution;
@@ -34,7 +38,7 @@ function isExports(value: WebAssembly.Exports): value is WebAssembly.Exports & E
 }
 
 const STATUSES: Readonly<Record<number, CadSketchNativeSolution['status']>> = { 0: 'converged', 1: 'not-converged', 3: 'too-large' };
-const DIAGNOSES = ['diagnosed', 'unavailable', 'no-unknowns'] as const;
+const DIAGNOSES = ['diagnosed', 'unavailable', 'no-unknowns', 'suspected'] as const;
 const HEADER = 7;
 
 /** Loads the Rust solver from bytes, or from a URL (by default the bundled module asset). */
@@ -66,7 +70,8 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
         || !(Number.isNaN(degreesOfFreedom) || diagnosis === 'diagnosed' && Number.isSafeInteger(degreesOfFreedom) && degreesOfFreedom >= 0))
         throw new Error('The native sketch solver returned an invalid result.');
       return { status: kind, iterations, residual, values, diagnosis: diagnosis === 'diagnosed'
-        ? { kind: diagnosis, degreesOfFreedom: Number.isNaN(degreesOfFreedom) ? null : degreesOfFreedom, labels } : { kind: diagnosis } };
+        ? { kind: diagnosis, degreesOfFreedom: Number.isNaN(degreesOfFreedom) ? null : degreesOfFreedom, labels }
+        : diagnosis === 'unavailable' ? { kind: diagnosis } : { kind: diagnosis, labels } };
     } finally {
       exports.buffer_free(pointer, input.length);
       if (output !== undefined) exports.buffer_free(output, new Float64Array(exports.memory.buffer, output, 1)[0]);

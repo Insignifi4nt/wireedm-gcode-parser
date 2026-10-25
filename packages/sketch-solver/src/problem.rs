@@ -9,7 +9,7 @@
 //! A tag names the source constraint an equation belongs to; tags never decrease, and the
 //! equations of one constraint share it. Flag 1 marks a temporary equation, such as a drag
 //! target, that is solved but left out of diagnosis. Degrees of freedom are NaN unless the
-//! sketch was diagnosed without conflicts.
+//! sketch was diagnosed exactly (code 0) without conflicts.
 
 use crate::equations::Kind;
 
@@ -30,8 +30,12 @@ pub enum Diagnosis {
     Diagnosed = 0,
     /// Some group's rank could not be decided reliably, or it was too large.
     Unavailable = 1,
-    /// Nothing can move, so there is no freedom to diagnose against.
+    /// Nothing can move, so there is no freedom to diagnose against; relations that are not met
+    /// conflict.
     NoUnknowns = 2,
+    /// A group that did not converge was diagnosed with a looser dependence distance
+    /// (`diagnose::STALLED`), so its conflicts are suspected rather than certain.
+    Suspected = 3,
 }
 
 #[derive(Clone, Debug)]

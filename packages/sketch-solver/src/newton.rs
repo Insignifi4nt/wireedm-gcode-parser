@@ -10,7 +10,7 @@
 
 use crate::dual::{Dual, WIDTH};
 use crate::equations::{is_direction, reach, residual};
-use crate::diagnose::{self, CONFLICTING, Witness, diagnose};
+use crate::diagnose::{self, CONFLICTING, STALLED, TAU, Witness, diagnose};
 use crate::problem::{Diagnosis, Problem, Status};
 use crate::sparse::{Factor, SparseRow, minimum_degree};
 
@@ -42,7 +42,7 @@ pub struct Outcome {
     /// Largest residual in millimetres; NaN when any residual is not finite.
     pub residual: f64,
     pub diagnosis: Diagnosis,
-    /// Unknowns less the rank of the lasting equations, when diagnosed without conflicts.
+    /// Unknowns less the rank of the lasting equations, when diagnosed exactly without conflicts.
     pub degrees_of_freedom: Option<usize>,
     /// `diagnose` label bits of each equation, zero unless diagnosed.
     pub labels: Vec<u8>,
@@ -196,8 +196,7 @@ struct Progress {
 
 fn assess(rows: &[Row]) -> Progress {
     rows.iter().fold(Progress { near: true, accepted: true, polished: true }, |progress, row| {
-        let (millimetres, angle) = row.tolerances();
-        let accepted = row.millimetres <= millimetres && row.radians <= angle;
+        let accepted = accepted(row);
         Progress {
             near: progress.near && row.residual.abs() <= NEAR * row.scale,
             accepted: progress.accepted && accepted,
@@ -206,6 +205,11 @@ fn assess(rows: &[Row]) -> Progress {
             polished: progress.polished && accepted && row.millimetres <= POLISH * row.scale && row.radians <= POLISH,
         }
     })
+}
+
+fn accepted(row: &Row) -> bool {
+    let (millimetres, angle) = row.tolerances();
+    row.millimetres <= millimetres && row.radians <= angle
 }
 
 /// Largest residual in millimetres; NaN when any residual is not finite.
@@ -266,17 +270,28 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
         outcome.iterations = outcome.iterations.max(group.iterations);
         outcome.residual = if outcome.residual.is_nan() || group.residual.is_nan() { f64::NAN } else { outcome.residual.max(group.residual) };
         if outcome.status != Status::TooLarge && group.status != Status::Converged { outcome.status = group.status; }
-        if outcome.diagnosis != Diagnosis::Diagnosed { continue; }
-        match group.position.and_then(|position| diagnose_group(&system, values, &position, limits.work)) {
-            Some((group_rank, group_witnesses)) => { rank += group_rank; witnesses.extend(group_witnesses); }
+        if outcome.diagnosis == Diagnosis::NoUnknowns { witnesses.extend(unmet(&system, values)); continue; }
+        if outcome.diagnosis == Diagnosis::Unavailable { continue; }
+        let Some(position) = group.position else { outcome.diagnosis = Diagnosis::Unavailable; continue; };
+        // A group that stalled short of a collapsed nearest point is diagnosed again only when its
+        // rank was unclear, so a clear diagnosis is never lost to the looser distance.
+        let diagnosed = diagnose_group(&system, values, &position, TAU, limits.work).map(|found| (found, false)).or_else(||
+            (group.status == Status::NotConverged).then(|| diagnose_group(&system, values, &position, STALLED, limits.work)).flatten().map(|found| (found, true)));
+        match diagnosed {
+            Some(((group_rank, group_witnesses), suspected)) => {
+                rank += group_rank;
+                witnesses.extend(group_witnesses);
+                if suspected { outcome.diagnosis = Diagnosis::Suspected; }
+            }
             None => outcome.diagnosis = Diagnosis::Unavailable,
         }
     }
-    if outcome.diagnosis == Diagnosis::Diagnosed {
+    if outcome.diagnosis != Diagnosis::Unavailable {
         let tags: Vec<usize> = problem.equations.iter().map(|equation| equation.tag).collect();
         match diagnose::labels(&tags, &witnesses, limits.work) {
             Some(labels) => {
-                outcome.degrees_of_freedom = (!labels.iter().any(|&label| label & CONFLICTING != 0)).then_some(unknowns - rank);
+                let exact = outcome.diagnosis == Diagnosis::Diagnosed;
+                outcome.degrees_of_freedom = (exact && !labels.iter().any(|&label| label & CONFLICTING != 0)).then_some(unknowns - rank);
                 outcome.labels = labels;
             }
             None => outcome.diagnosis = Diagnosis::Unavailable,
@@ -285,14 +300,23 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
     outcome
 }
 
-/// The rank of a group's lasting equations at `values` and their witnesses by equation index.
-fn diagnose_group(system: &System, values: &[f64], position: &[usize], budget: usize) -> Option<(usize, Vec<Witness>)> {
+/// Witnesses of the lasting rows of a group without unknowns that are finite and not met: each
+/// conflicts by itself. A met one is left unlabelled, as there is no freedom to be redundant to.
+fn unmet(system: &System, values: &[f64]) -> Vec<Witness> {
+    system.rows(values, None).iter().zip(&system.equations)
+        .filter(|&(row, &e)| !system.problem.equations[e].temporary && row.millimetres.is_finite() && row.radians.is_finite() && !accepted(row))
+        .map(|(_, &e)| Witness { rows: vec![e], agrees: false }).collect()
+}
+
+/// The rank of a group's lasting equations at `values`, dependent within `distance`, and their
+/// witnesses by equation index.
+fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance: f64, budget: usize) -> Option<(usize, Vec<Witness>)> {
     let rows = system.rows(values, None);
     let jacobian = system.jacobian(&rows, position);
     let lasting: Vec<usize> = (0..rows.len()).filter(|&i| !system.problem.equations[system.equations[i]].temporary).collect();
     let diagnosed: Vec<diagnose::Row> = lasting.iter()
         .map(|&i| diagnose::Row { entries: jacobian.rows[i].0.clone(), residual: rows[i].residual, tolerance: rows[i].tolerance }).collect();
-    let diagnosis = diagnose(position.len(), &diagnosed, budget)?;
+    let diagnosis = diagnose(position.len(), &diagnosed, distance, budget)?;
     Some((diagnosis.rank, diagnosis.witnesses.into_iter().map(|witness| Witness {
         rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect()))
 }

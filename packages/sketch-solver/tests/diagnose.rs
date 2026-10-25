@@ -94,13 +94,14 @@ fn a_redundant_equation_clears_its_witness_though_its_constraint_conflicts_elsew
 }
 
 #[test]
-fn relations_without_unknowns_are_redundant_when_satisfied_and_conflict_otherwise() {
+fn relations_without_unknowns_conflict_when_not_met_and_are_redundant_beside_unknowns_when_met() {
     for (value, label, dof) in [(5.0, REDUNDANT, Some(2)), (4.0, CONFLICTING, None)] {
         let mut builder = Builder::new();
         let a = builder.point(0.0, 0.0, true);
         let b = builder.point(3.0, 4.0, true);
         builder.equation(Kind::Distance, value, &[a[0], a[1], b[0], b[1]]);
-        assert_eq!(diagnose(&builder), (Diagnosis::NoUnknowns, None, vec![0]));
+        // With nothing free, a met relation has nothing to be redundant to.
+        assert_eq!(diagnose(&builder), (Diagnosis::NoUnknowns, None, vec![if label == CONFLICTING { label } else { 0 }]));
         builder.point(1.0, 1.0, false);
         assert_eq!(diagnose(&builder), (Diagnosis::Diagnosed, dof, vec![label]), "value {value}");
     }

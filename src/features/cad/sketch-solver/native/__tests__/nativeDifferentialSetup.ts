@@ -13,7 +13,7 @@ import { loadCadSketchNativeSolver, type CadSketchNativeSolution, type CadSketch
 import { planeGcsEquations, planeGcsValues } from './planeGcsEquations';
 
 const wasm = readFileSync(new URL('../../../../../../packages/sketch-solver/wasm/sketch_solver.wasm', import.meta.url));
-const tally = { compared: 0, diagnosed: 0, reviewedDifferences: 0, diagnosisUnavailable: 0, wellConstrained: 0, skippedDrag: 0 }, mismatches: string[] = [];
+const tally = { compared: 0, diagnosed: 0, reviewedDifferences: 0, diagnosisUnavailable: 0, diagnosisSuspected: 0, unmetWithoutUnknowns: 0, wellConstrained: 0, skippedDrag: 0 }, mismatches: string[] = [];
 
 /**
  * Reviewed diagnosis differences: the native result each test must keep. PlaneGCS writes
@@ -21,7 +21,9 @@ const tally = { compared: 0, diagnosed: 0, reviewedDifferences: 0, diagnosisUnav
  * direction relation, their gradients run along the line, so PlaneGCS also blames the line's length
  * dimension; the native normalized forms blame only the direction relations. PlaneGCS also sets
  * aside the equation shared by most dependencies, which for a repeated collinear relation is the
- * earlier one; native sets aside the relation that repeats.
+ * earlier one; native sets aside the relation that repeats. With nothing free, PlaneGCS reports success
+ * with no freedom for relations that are not met, and the graph checks reject them; native names
+ * them as conflicting.
  */
 const directionConflict = (...conflictingIds: string[]) => JSON.stringify({ degreesOfFreedom: null, conflictingIds, redundantIds: [], partiallyRedundantIds: [] });
 const reviewedDiagnoses = new Map([
@@ -33,11 +35,11 @@ const reviewedDiagnoses = new Map([
 ]);
 let solver: Promise<CadSketchNativeSolver> | undefined;
 
-/** Native diagnosis in the runtime's terms; a sketch without unknowns has no freedom and nothing diagnosed. */
+/** Exact native diagnosis in the runtime's terms; a sketch without unknowns has no freedom. */
 function nativeDiagnostics(model: CadSketchEquationModel, native: CadSketchNativeSolution) {
-  if (native.diagnosis.kind === 'unavailable') return undefined;
-  if (native.diagnosis.kind === 'no-unknowns') return { degreesOfFreedom: 0, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] };
-  return { degreesOfFreedom: native.diagnosis.degreesOfFreedom, ...cadSketchEquationDiagnostics(model, native.diagnosis.labels) };
+  if (native.diagnosis.kind === 'unavailable' || native.diagnosis.kind === 'suspected') return undefined;
+  const ids = cadSketchEquationDiagnostics(model, native.diagnosis.labels);
+  return { degreesOfFreedom: native.diagnosis.kind === 'diagnosed' ? native.diagnosis.degreesOfFreedom : ids.conflictingIds.length ? null : 0, ...ids };
 }
 
 async function compare(input: CadSketchSolveInput, result: CadSketchSolveResult | undefined, runtime: typeof import('../../cadSketchSolverRuntime')) {
@@ -62,8 +64,11 @@ async function compare(input: CadSketchSolveInput, result: CadSketchSolveResult 
     tally.diagnosed += 1;
     const { degreesOfFreedom, conflictingIds, redundantIds, partiallyRedundantIds } = result.diagnostics, expected = { degreesOfFreedom, conflictingIds, redundantIds, partiallyRedundantIds };
     if (JSON.stringify(diagnosed) === reviewedDiagnoses.get(expect.getState().currentTestName ?? '')) tally.reviewedDifferences += 1;
+    else if (native.diagnosis.kind === 'no-unknowns' && diagnosed.conflictingIds.length && result.kind === 'rejected' && result.reason === 'invalid-solution'
+      && JSON.stringify(expected) === JSON.stringify({ degreesOfFreedom: 0, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] })) tally.unmetWithoutUnknowns += 1;
     else if (JSON.stringify(diagnosed) !== JSON.stringify(expected)) mismatches.push(label(`diagnosis differs: native ${JSON.stringify(diagnosed)}, PlaneGCS ${JSON.stringify(expected)}`));
-  } else tally.diagnosisUnavailable += 1;
+  } else if (native.diagnosis.kind === 'suspected') tally.diagnosisSuspected += 1;
+  else tally.diagnosisUnavailable += 1;
   if (result.kind !== 'solved') return;
   if (native.status !== 'converged') { mismatches.push(label(`native solve did not converge (residual ${native.residual})`)); return; }
   const graph = applyCadSketchEquationSolution(parsed.graph, model, native.values);

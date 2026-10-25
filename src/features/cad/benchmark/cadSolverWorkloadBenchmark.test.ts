@@ -5,12 +5,13 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { createCadSketchSolverRuntime } from '../sketch-solver/cadSketchSolverRuntime';
+import type { CadSketchSolveResult } from '../sketch-solver/cadSketchSolverTypes';
 import { initializeCadSketchSolverModule } from '../sketch-solver/cadSketchSolverModule';
 import { loadCadSketchNativeSolver } from '../sketch-solver/native/cadSketchNativeSolver';
 import { createCadBenchmarkRectangleGraph } from './cadBenchmarkCases';
 import { createCadBenchmarkNative, createCadBenchmarkPlaneGcs, type CadBenchmarkSolver } from './cadSolverBenchmarkAdapters';
 import { createCadSolverDieInput, createCadSolverWorkloadCases } from './cadSolverWorkloadCases';
-import { cadSolverBoundaryThrottled, cadSolverCalibrationDrifted, cadSolverFrameStats, checkCadSolverBenchmarkResult, measureCadSolverDrag, measureCadSolverEdits, measureCadSolverOperations, measureCadSolverWorkload } from './cadSolverWorkloadBenchmark';
+import { cadSolverBoundaryThrottled, cadSolverCalibrationDrifted, cadSolverFrameStats, cadSolverOutcome, checkCadSolverBenchmarkResult, measureCadSolverDrag, measureCadSolverEdits, measureCadSolverOperations, measureCadSolverWorkload } from './cadSolverWorkloadBenchmark';
 
 const require = createRequire(import.meta.url);
 const initialize = () => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href);
@@ -30,15 +31,26 @@ describe('public-boundary solver benchmarks', () => {
     expect(solver.takeStages().nativeCall).toBe(0);
   });
 
-  it('reports missing native diagnosis honestly, including redundant equations it accepts', async () => {
-    const solver = createCadBenchmarkNative(() => native), input = createCadSolverDieInput(), result = await solver.solve(input);
-    expect(solver.diagnosis).toBe('unavailable'); expect(solver.drag).toBe('unsupported');
-    expect(result).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] } });
-    expect(checkCadSolverBenchmarkResult(input, result)).toEqual([]);
-    const redundant = createCadSolverWorkloadCases().find(testCase => testCase.id === 'redundant-distances')!;
-    expect(await solver.solve(redundant.input)).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: null } });
+  it('diagnoses every workload natively as PlaneGCS does and refuses drag', async () => {
+    const [plane, solver] = pair(), summary = (result: CadSketchSolveResult) => ({ outcome: cadSolverOutcome(result), degreesOfFreedom: result.diagnostics.degreesOfFreedom,
+      conflictingIds: result.diagnostics.conflictingIds, redundantIds: result.diagnostics.redundantIds, partiallyRedundantIds: result.diagnostics.partiallyRedundantIds });
+    // Reviewed differences, where the native result is the better one. PlaneGCS stops short of
+    // tangency and fails the graph check. It diagnoses at the start, where the vertical offset is
+    // independent of the three distances and the impossible triangle is not yet flat; native finds
+    // the conflict at the nearest point and reports it as suspected. With nothing free, PlaneGCS
+    // reports success for a relation that is not met.
+    const conflicting = (...conflictingIds: string[]) => ({ outcome: 'rejected:conflicting', degreesOfFreedom: null, conflictingIds });
+    const reviewed: Record<string, object> = { 'tangency-near': { outcome: 'solved' }, 'overlapping-conflicts': conflicting('length', 'other', 'third', 'vertical'),
+      'impossible-triangle': conflicting('ab', 'bc', 'ac'), 'fully-fixed-conflict': conflicting('fixedSize') };
+    expect(solver.diagnosis).toBe('available'); expect(solver.drag).toBe('unsupported');
+    for (const testCase of createCadSolverWorkloadCases()) {
+      const expected = summary(await plane.solve(testCase.input)), result = await solver.solve(testCase.input);
+      expect(summary(result), testCase.id).toEqual({ ...expected, ...reviewed[testCase.id] });
+      if (result.kind === 'solved') expect(checkCadSolverBenchmarkResult(testCase.input, result), testCase.id).toEqual([]);
+    }
+    const input = createCadSolverDieInput();
     expect(await solver.solve({ ...input, drag: { pointId: 'slotA', position: [-12, 4] } })).toMatchObject({ kind: 'rejected', reason: 'invalid-input', message: expect.stringContaining('does not support drag') });
-  });
+  }, 30_000);
 
   it('alternates solver order and feeds accepted geometry into the next edit, outside timing', async () => {
     const input = { graph: createCadBenchmarkRectangleGraph(1), parameters: {} }, order: string[] = [], previousWidths: number[] = [];
@@ -62,8 +74,7 @@ describe('public-boundary solver benchmarks', () => {
     for (const group of groups) for (const row of group.measurements) {
       expect(group.failures).toEqual([]); expect(row.kind).toBe('measured');
       if (row.kind === 'measured') expect(row.outcomes).toEqual({ solved: 1 });
-      if (row.kind === 'measured') expect(row.diagnostics.degreesOfFreedom).toBe(row.solver === 'native' ? null
-        : row.operation === 'constraint-addition' ? 20 : row.operation === 'constraint-removal' ? 21 : 0);
+      if (row.kind === 'measured') expect(row.diagnostics.degreesOfFreedom).toBe(row.operation === 'constraint-addition' ? 20 : row.operation === 'constraint-removal' ? 21 : 0);
     }
   });
 
@@ -74,7 +85,7 @@ describe('public-boundary solver benchmarks', () => {
     expect(result.measurements.filter(row => row.operation === 're-solve').map(row => row.kind)).toEqual(['skipped', 'skipped']);
     for (const row of result.measurements.filter(row => row.operation === 'first-solve')) {
       expect(row.kind).toBe('measured');
-      if (row.kind === 'measured') expect(row.outcomes).toEqual({ [row.solver === 'planegcs' ? 'rejected:conflicting' : 'rejected:failed']: 1 });
+      if (row.kind === 'measured') expect(row.outcomes).toEqual({ 'rejected:conflicting': 1 });
     }
   });
 

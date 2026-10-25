@@ -13,6 +13,14 @@
 //! witnesses all agree are redundant, and every constraint of a witness without a redundant
 //! equation conflicts. The combination of residuals is first-order constant in the unknowns, so the
 //! test holds at any point near a solution, including the nearest one of a conflicting sketch.
+//!
+//! The nearest point of a conflicting sketch often collapses geometry, as a triangle too long
+//! for its sides flattens onto a line. Gauss-Newton converges onto such a point only linearly and
+//! stops about `sqrt(epsilon)` short of it relatively, where rank at `TAU` is unclear. A group
+//! that did not converge is then diagnosed again with rows within `STALLED` dependent; the
+//! sketch is rejected either way, but this blame is a suspicion: a row near a conflict without
+//! being in it can be blamed too, and a satisfiable sketch stuck at a stationary point is blamed
+//! as conflicting.
 
 use crate::sparse::SparseRow;
 
@@ -20,6 +28,10 @@ use crate::sparse::SparseRow;
 pub const TAU: f64 = 1e-10;
 /// Smallest singular value estimate of the independent rows below which rank is not certain.
 const CERTAIN: f64 = 1e3 * TAU;
+/// Dependence distance for a group that stalled short of the nearest point of a conflict: about
+/// seven times the largest distance seen there, so that independent pairs held near-singular
+/// beside a conflict still pass the unchanged `CERTAIN` gate.
+pub const STALLED: f64 = 1e-6;
 
 /// Label bits of an equation: its constraint is redundant through it, or conflicts.
 pub const REDUNDANT: u8 = 1;
@@ -47,9 +59,10 @@ pub struct Witness {
     pub agrees: bool,
 }
 
-/// The diagnosis of `rows` over `n` columns, or `None` when rank cannot be decided reliably or
-/// the work would pass `budget` entries.
-pub fn diagnose(n: usize, rows: &[Row], budget: usize) -> Option<Diagnosis> {
+/// The diagnosis of `rows` over `n` columns, with a row dependent within `distance` (`TAU` or
+/// `STALLED`) of the span of earlier ones, or `None` when rank cannot be decided reliably or the
+/// work would pass `budget` entries.
+pub fn diagnose(n: usize, rows: &[Row], distance: f64, budget: usize) -> Option<Diagnosis> {
     let mut work = Work { done: 0, budget };
     let mut r: Vec<SparseRow> = vec![Vec::new(); n];
     let mut rank = 0;
@@ -61,9 +74,9 @@ pub fn diagnose(n: usize, rows: &[Row], budget: usize) -> Option<Diagnosis> {
         if !row.residual.is_finite() || !norms[index].is_finite() { return None; }
         if norms[index] == 0.0 { witnesses.push((index, Vec::new())); continue; }
         let unit: SparseRow = row.entries.iter().map(|&(k, x)| (k, x / norms[index])).collect();
-        match insert(&mut r, unit.clone(), &mut work)? {
+        match insert(&mut r, unit.clone(), distance, &mut work)? {
             Insertion::Independent => { rank += 1; independent.push(index); }
-            Insertion::Dependent => witnesses.push((index, witness(&r, &unit, rows, &norms, &independent, &mut work)?)),
+            Insertion::Dependent => witnesses.push((index, witness(&r, &unit, rows, &norms, &independent, distance, &mut work)?)),
         }
     }
     if rank > 0 && smallest_singular_value(&r, &mut work)? < CERTAIN { return None; }
@@ -87,7 +100,7 @@ pub fn dependent(n: usize, rows: &[SparseRow], budget: usize) -> (Option<Vec<usi
             let norm = row.iter().map(|e| e.1 * e.1).sum::<f64>().sqrt();
             if !norm.is_finite() { return None; }
             if norm == 0.0 { continue; }
-            match insert(&mut r, row.iter().map(|&(k, x)| (k, x / norm)).collect(), &mut work)? {
+            match insert(&mut r, row.iter().map(|&(k, x)| (k, x / norm)).collect(), TAU, &mut work)? {
                 Insertion::Independent => rank += 1,
                 Insertion::Dependent => dependent.push(index),
             }
@@ -110,13 +123,14 @@ impl Work {
 enum Insertion { Independent, Dependent }
 
 /// Rotates `v` into `r`. A remainder reaching an empty pivot claims it when its lead exceeds
-/// `TAU`, and otherwise drops that lead and goes on. A row whose dropped leads stay within `TAU`
-/// is dependent and leaves `r` as it was; `None` when they do not, since rank is then unclear.
-fn insert(r: &mut [SparseRow], mut v: SparseRow, work: &mut Work) -> Option<Insertion> {
+/// `distance`, and otherwise drops that lead and goes on. A row whose dropped leads stay within
+/// `distance` is dependent and leaves `r` as it was; `None` when they do not, since rank is then
+/// unclear.
+fn insert(r: &mut [SparseRow], mut v: SparseRow, distance: f64, work: &mut Work) -> Option<Insertion> {
     let (mut undo, mut dropped) = (Vec::new(), 0.0);
     while let Some(&(k, lead)) = v.first() {
         if r[k].is_empty() {
-            if lead.abs() > TAU {
+            if lead.abs() > distance {
                 r[k] = v;
                 return Some(Insertion::Independent);
             }
@@ -144,7 +158,7 @@ fn insert(r: &mut [SparseRow], mut v: SparseRow, work: &mut Work) -> Option<Inse
         v = rest;
     }
     for (k, row) in undo.into_iter().rev() { r[k] = row; }
-    (dropped.sqrt() <= TAU).then_some(Insertion::Dependent)
+    (dropped.sqrt() <= distance).then_some(Insertion::Dependent)
 }
 
 /// `R^T y = a`, then `R z = y`, over the columns with pivots; the others take zero.
@@ -167,17 +181,17 @@ fn seminormal(r: &[SparseRow], mut a: Vec<f64>, work: &mut Work) -> Option<Vec<f
 
 /// Coefficients over the earlier independent unit rows that reproduce `v`, which lies in their
 /// span: with those rows `J = Q R`, `v = J^T a` for `a = J z` and `R^T R z = v`. Coefficients
-/// too small to move the combination by `TAU` together, as much as a dependent row may differ
-/// from it, relative to the largest coefficient or one, are left out. `None` when the rows left
-/// do not reproduce it.
-fn witness(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], independent: &[usize], work: &mut Work) -> Option<Vec<(usize, f64)>> {
+/// too small to move the combination by `distance` together, as much as a dependent row may
+/// differ from it, relative to the largest coefficient or one, are left out. `None` when the rows left
+/// do not reproduce it to a thousand times the dependence `distance`.
+fn witness(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], independent: &[usize], distance: f64, work: &mut Work) -> Option<Vec<(usize, f64)>> {
     let mut a = vec![0.0; r.len()];
     for &(k, x) in v { a[k] = x; }
     let z = seminormal(r, a, work)?;
     let coefficients: Vec<(usize, f64)> = independent.iter()
         .map(|&i| (i, rows[i].entries.iter().map(|&(k, x)| x * z[k]).sum::<f64>() / norms[i])).collect();
     let scale = coefficients.iter().fold(1.0, |m: f64, c| m.max(c.1.abs()));
-    let least = TAU * scale / coefficients.len().max(1) as f64;
+    let least = distance * scale / coefficients.len().max(1) as f64;
     let support: Vec<(usize, f64)> = coefficients.into_iter().filter(|c| c.1.abs() > least).collect();
     let mut rebuilt = vec![0.0; r.len()];
     for &(i, c) in &support {
@@ -185,7 +199,7 @@ fn witness(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], independ
     }
     work.spend(independent.iter().map(|&i| 2 * rows[i].entries.len()).sum())?;
     for &(k, x) in v { rebuilt[k] -= x; }
-    if rebuilt.iter().fold(0.0, |m: f64, x| m.max(x.abs())) > 1e3 * TAU * scale { return None; }
+    if rebuilt.iter().fold(0.0, |m: f64, x| m.max(x.abs())) > 1e3 * distance * scale { return None; }
     Some(support)
 }
 
