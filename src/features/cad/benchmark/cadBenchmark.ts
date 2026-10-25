@@ -68,8 +68,8 @@ async function shippedBuild(runtime: ReturnType<typeof createCadKernelRuntime>, 
 export interface CadKernelStepMeasurement {
   readonly label: string;
   readonly failures: readonly string[];
-  /** cadBenchmarkCpuCalibrationMs immediately before each measurement group of this step. */
-  readonly cpuCalibrationMs: { readonly build: number; readonly edit: number; readonly mainThread: number };
+  /** cadBenchmarkCpuCalibrationMs between this step's measurement groups, so each group is bracketed. */
+  readonly cpuCalibrationMs: { readonly beforeBuild: number; readonly beforeEdit: number; readonly beforeMainThread: number; readonly after: number };
   /** First build of this document after WASM initialization; only the first step has one. */
   readonly coldMs?: number;
   /** Uncached native builds of the complete document. */
@@ -111,14 +111,14 @@ export async function measureCadKernelCase(testCase: CadKernelBenchmarkCase, opt
     for (const [index, step] of testCase.steps.entries()) {
       let coldMs: number | undefined;
       const failures: string[] = [];
-      const buildCalibration = cadBenchmarkCpuCalibrationMs();
+      const beforeBuild = cadBenchmarkCpuCalibrationMs();
       const builds: number[] = [];
       for (let run = 0; run <= options.runs; run++) {
         const elapsed = timedBuild(step.document);
         if (run === 0) { if (index === 0) coldMs = elapsed; } else builds.push(elapsed);
         await yieldTurn();
       }
-      const editCalibration = cadBenchmarkCpuCalibrationMs();
+      const beforeEdit = cadBenchmarkCpuCalibrationMs();
       const shipped: number[] = [], affected: number[] = [];
       let reply: Extract<CadKernelReply, { kind: 'built' }> | undefined;
       for (let run = 0; run < options.runs; run++) {
@@ -135,23 +135,25 @@ export async function measureCadKernelCase(testCase: CadKernelBenchmarkCase, opt
       }
       if (!reply) throw new Error('A benchmark step needs at least one run.');
       failures.unshift(...checkCadBenchmarkStep(reply.result, step));
-      const mainThreadCalibration = cadBenchmarkCpuCalibrationMs();
+      const beforeMainThread = cadBenchmarkCpuCalibrationMs();
       const clone: number[] = [], validate: number[] = [], display: number[] = [];
       for (let run = 0; run < options.runs; run++) {
         clone.push(time(() => structuredClone(reply)));
         validate.push(time(() => { if (!isCadKernelReply(reply)) throw new Error('The benchmark reply failed protocol validation.'); }));
         display.push(time(() => { for (const mesh of reply!.result.meshes) prepareCadMeshDisplay(mesh); }));
       }
-      steps.push({ label: step.label, failures, cpuCalibrationMs: { build: buildCalibration, edit: editCalibration, mainThread: mainThreadCalibration },
+      steps.push({ label: step.label, failures, cpuCalibrationMs: { beforeBuild, beforeEdit, beforeMainThread, after: cadBenchmarkCpuCalibrationMs() },
         ...(coldMs === undefined ? {} : { coldMs: Math.round(coldMs * 100) / 100 }),
         buildMs: cadBenchmarkStats(builds), ...(shipped.length ? { shippedEditMs: cadBenchmarkStats(shipped) } : {}),
         ...(affected.length ? { affectedBodiesMs: cadBenchmarkStats(affected) } : {}), payload: payload(reply.result),
         mainThread: { cloneMs: cadBenchmarkStats(clone), validateMs: cadBenchmarkStats(validate), displayMs: cadBenchmarkStats(display) } });
     }
-    // Alternating documents defeats the whole-document cache, so every cycle replaces the cached model.
+    // The last step is cached now. Cycling from the first step defeats the whole-document cache,
+    // so every counted cycle replaces the cached model.
     const last = Math.max(0, ...options.memoryMarks);
+    if (last && testCase.steps.length < 2) throw new Error(`Memory checkpoints need at least two steps in ${testCase.id}.`);
     for (let cycle = 1; cycle <= last; cycle++) {
-      await shippedBuild(runtime, testCase.steps[cycle % testCase.steps.length].document, ++id);
+      await shippedBuild(runtime, testCase.steps[(cycle - 1) % testCase.steps.length].document, ++id);
       await yieldTurn();
       if (options.memoryMarks.includes(cycle)) memoryBytesAfterRebuilds[cycle] = options.memoryBytes();
     }
@@ -168,17 +170,19 @@ export async function measureCadSolverScaling(solver: CadSketchSolver, options: 
   for (const size of options.sizes) {
     const graph = createCadBenchmarkRectangleGraph(size), samples: number[] = [];
     let result: CadSketchSolveResult | undefined;
+    const before = cadBenchmarkCpuCalibrationMs();
     for (let run = 0; run <= options.runs; run++) {
       const elapsed = await timeAsync(async () => { result = await solver.solve({ graph, parameters: {} }); });
       if (run > 0) samples.push(elapsed);
     }
-    sizes.push({ ...rectangleCost(size), outcome: result?.kind ?? 'none', degreesOfFreedom: result?.diagnostics.degreesOfFreedom ?? null, solveMs: cadBenchmarkStats(samples) });
+    sizes.push({ ...rectangleCost(size), cpuCalibrationMs: [before, cadBenchmarkCpuCalibrationMs()] as const, outcome: result?.kind ?? 'none', degreesOfFreedom: result?.diagnostics.degreesOfFreedom ?? null, solveMs: cadBenchmarkStats(samples) });
   }
   // Releasing a fixed corner gives the drag freedom to move, as an interactive drag would.
   const free = createCadBenchmarkRectangleGraph(options.dragSize);
   const graph = { ...free, relations: free.relations.filter(relation => relation.id !== 'r0_fixed') };
   const drag: number[] = [];
   let dragOutcome = 'none';
+  const beforeDrag = cadBenchmarkCpuCalibrationMs();
   for (let run = 0; run <= options.runs; run++) {
     const position: [number, number] = [1 + run * .1, 2 + run * .1];
     let result: CadSketchSolveResult | undefined;
@@ -186,7 +190,7 @@ export async function measureCadSolverScaling(solver: CadSketchSolver, options: 
     dragOutcome = result?.kind ?? 'none';
     if (run > 0) drag.push(elapsed);
   }
-  return { sizes, drag: { ...rectangleCost(options.dragSize), outcome: dragOutcome, solveMs: cadBenchmarkStats(drag) } };
+  return { sizes, drag: { ...rectangleCost(options.dragSize), cpuCalibrationMs: [beforeDrag, cadBenchmarkCpuCalibrationMs()] as const, outcome: dragOutcome, solveMs: cadBenchmarkStats(drag) } };
 }
 
 /**
@@ -216,13 +220,14 @@ export async function measureCadDragPreview(solver: CadSketchSolver, options: { 
     const { document, edit } = createCadBenchmarkDragPreview(sketchCount, options.rectanglesPerSketch);
     let solves = 0;
     const counted: CadSketchSolver = { solve: (input, signal) => { solves++; return solver.solve(input, signal); } };
-    const cpuCalibrationMs = cadBenchmarkCpuCalibrationMs();
+    const before = cadBenchmarkCpuCalibrationMs();
     const samples: number[] = [];
     for (let run = 0; run <= options.runs; run++) {
       solves = 0;
       const elapsed = await timeAsync(() => prepareCadEdits(document, [edit], counted));
       if (run > 0) samples.push(elapsed);
     }
+    const cpuCalibrationMs = [before, cadBenchmarkCpuCalibrationMs()] as const;
     results.push({ sketchCount, rectanglesPerSketch: options.rectanglesPerSketch, cpuCalibrationMs, solvesPerPreview: solves, prepareMs: cadBenchmarkStats(samples) });
   }
   return results;

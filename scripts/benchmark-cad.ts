@@ -12,7 +12,11 @@ import { createCadSketchSolverRuntime } from '../src/features/cad/sketch-solver/
 // Usage: npm run cad:benchmark [-- --runs 7 --quick]
 const args = process.argv.slice(2);
 const quick = args.includes('--quick');
-const runs = Number(args[args.indexOf('--runs') + 1]) > 0 && args.includes('--runs') ? Number(args[args.indexOf('--runs') + 1]) : quick ? 3 : 7;
+const runs = args.includes('--runs') ? Number(args[args.indexOf('--runs') + 1]) : quick ? 3 : 7;
+if (!Number.isSafeInteger(runs) || runs < 1) {
+  console.error('--runs needs a positive whole number of samples.');
+  process.exit(1);
+}
 // Package export maps hide the WASM files, so resolve them as plain installed files.
 const installed = (path: string) => new URL(`../node_modules/${path}`, import.meta.url);
 
@@ -28,19 +32,23 @@ const assets = await Promise.all([
 
 const idleCpuCalibrationMs = cadBenchmarkCpuCalibrationMs();
 const wasmBinary = await readFile(installed('replicad-opencascadejs/dist/replicad_single.wasm'));
+// Each case gets a fresh module: WASM memory never shrinks, so a shared module would carry one
+// case's high-water mark into the next and make memory and cold builds depend on case order.
+const initKernel = async () => setOC(await initOpenCascade({ wasmBinary, print: () => undefined, printErr: () => undefined }));
 let started = performance.now();
-setOC(await initOpenCascade({ wasmBinary, print: () => undefined, printErr: () => undefined }));
+await initKernel();
 const kernelInitMs = performance.now() - started;
 const memoryBytes = () => getOC().wasmMemory.buffer.byteLength;
 
 // Calibration that moves by more than 1.5 times means the host changed clock speed mid-measurement.
 const drifted = (calibrations: readonly number[]) => Math.max(...calibrations) > 1.5 * Math.min(...calibrations);
 const kernel = [];
-for (const testCase of createCadKernelBenchmarkCases()) {
+for (const [index, testCase] of createCadKernelBenchmarkCases().entries()) {
+  if (index) await initKernel();
   const measured = await measureCadKernelCase(testCase, { runs, memoryMarks: quick ? [1, 10] : [1, 10, 50], memoryBytes });
   kernel.push(measured);
   for (const step of measured.steps) {
-    console.log(`${testCase.id} / ${step.label} [cpu ${step.cpuCalibrationMs.build}/${step.cpuCalibrationMs.edit}/${step.cpuCalibrationMs.mainThread} ms]: build p50 ${step.buildMs.p50} ms`
+    console.log(`${testCase.id} / ${step.label} [cpu ${Object.values(step.cpuCalibrationMs).join('/')} ms]: build p50 ${step.buildMs.p50} ms`
       + (step.shippedEditMs ? `, shipped edit p50 ${step.shippedEditMs.p50} ms` : '')
       + (step.affectedBodiesMs ? `, affected bodies alone p50 ${step.affectedBodiesMs.p50} ms` : '')
       + `, ${step.payload.triangles} triangles, ${Math.round(step.payload.jsonBytes / 1024)} KiB, main thread clone/validate/display p50 `
@@ -61,9 +69,9 @@ const dragPreview = await measureCadDragPreview(solver, { sketchCounts: [1, 4, 8
 // Each attempt instantiates its own module: an OOM abort leaves a module unusable.
 const capacity = await probeCadSolverCapacity(() => createCadSketchSolverRuntime(() => initPlaneGcs({ locateFile: () => planeGcsWasm, print: () => undefined, printErr: () => undefined })),
   quick ? [60, 100] : [60, 80, 100, 125, 150, 200]);
-for (const size of solverScaling.sizes) console.log(`solver ${size.rectangles} rectangles (${size.entities} lines): ${size.outcome}, p50 ${size.solveMs.p50} ms`);
+for (const size of solverScaling.sizes) console.log(`solver ${size.rectangles} rectangles (${size.entities} lines) [cpu ${size.cpuCalibrationMs.join('/')} ms]: ${size.outcome}, p50 ${size.solveMs.p50} ms${drifted(size.cpuCalibrationMs) ? ' THROTTLED' : ''}`);
 console.log(`solver drag on ${solverScaling.drag.rectangles} rectangles: ${solverScaling.drag.outcome}, p50 ${solverScaling.drag.solveMs.p50} ms`);
-for (const preview of dragPreview) console.log(`drag preview with ${preview.sketchCount} sketches [cpu ${preview.cpuCalibrationMs} ms]: ${preview.solvesPerPreview} solves, p50 ${preview.prepareMs.p50} ms`);
+for (const preview of dragPreview) console.log(`drag preview with ${preview.sketchCount} sketches [cpu ${preview.cpuCalibrationMs.join('/')} ms]: ${preview.solvesPerPreview} solves, p50 ${preview.prepareMs.p50} ms${drifted(preview.cpuCalibrationMs) ? ' THROTTLED' : ''}`);
 console.log(`solver capacity in a fresh module: largest solved ${capacity.largestSolved ?? 'none'}, first failed ${capacity.firstFailed ?? 'none'} rectangles`);
 
 const report = {
@@ -73,7 +81,7 @@ const report = {
   cpuCalibrationMs: { idle: idleCpuCalibrationMs, solver: solverCpuCalibrationMs },
   solver: { initMs: Math.round(solverInitMs), scaling: solverScaling, dragPreview, capacity }
 };
-const calibrations = [idleCpuCalibrationMs, solverCpuCalibrationMs, ...kernel.flatMap(testCase => testCase.steps.flatMap(step => Object.values(step.cpuCalibrationMs))), ...dragPreview.map(preview => preview.cpuCalibrationMs)];
+const calibrations = [idleCpuCalibrationMs, solverCpuCalibrationMs, ...kernel.flatMap(testCase => testCase.steps.flatMap(step => Object.values(step.cpuCalibrationMs))), ...solverScaling.sizes.flatMap(size => size.cpuCalibrationMs), ...solverScaling.drag.cpuCalibrationMs, ...dragPreview.flatMap(preview => preview.cpuCalibrationMs)];
 if (drifted(calibrations)) {
   console.warn(`CPU calibration varied from ${Math.min(...calibrations)} to ${Math.max(...calibrations)} ms: the host throttled, so compare only steps with similar calibration.`);
 }
