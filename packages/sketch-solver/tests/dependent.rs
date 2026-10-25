@@ -114,3 +114,20 @@ fn a_witness_keeps_a_row_whose_removal_cancellation_hides() {
     assert_eq!(diagnosis.rank, 3);
     assert_eq!(diagnosis.witnesses.iter().map(|w| (w.rows.clone(), w.agrees)).collect::<Vec<_>>(), vec![(vec![0, 1, 2, 3], false)]);
 }
+
+#[test]
+fn a_witness_drops_a_row_the_others_reproduce_without() {
+    // 2.7 r1 + 0.9 r2 reproduces the last row exactly, so r0 is not needed. The first two columns
+    // of r1 and r2 are nearly parallel although the rows are not, so coefficients from the
+    // factor's pivot columns cannot show that; a fit on the rows themselves does.
+    let row = |entries: Vec<(usize, f64)>, residual: f64| diagnose::Row { entries, residual, tolerance: 1e-10 };
+    let rows = [
+        row(vec![(0, 1.0), (1, 1.0000005), (2, 1.0)], 0.0),
+        row(vec![(0, 1.0), (1, 1.0), (2, 1.0)], 0.0),
+        row(vec![(0, 1.0), (1, 1.0000001), (2, -1.0)], 0.0),
+        row(vec![(0, 3.6), (1, 3.60000009), (2, 1.8000000000000003)], -1.0),
+    ];
+    let diagnosis = diagnose::diagnose(3, &rows, diagnose::TAU, usize::MAX).0.unwrap();
+    assert_eq!(diagnosis.rank, 3);
+    assert_eq!(diagnosis.witnesses.iter().map(|w| (w.rows.clone(), w.agrees)).collect::<Vec<_>>(), vec![(vec![1, 2, 3], false)]);
+}

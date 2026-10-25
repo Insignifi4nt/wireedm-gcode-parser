@@ -145,27 +145,33 @@ fn insert(r: &mut [SparseRow], mut v: SparseRow, distance: f64, work: &mut Work)
             v.remove(0);
             continue;
         }
-        let row = &r[k];
-        let pivot = row[0].1;
-        let big = pivot.abs().max(lead.abs());
-        let radius = big * ((pivot / big).powi(2) + (lead / big).powi(2)).sqrt();
-        let (cos, sin) = (pivot / radius, lead / radius);
-        let (mut kept, mut rest) = (vec![(k, radius)], Vec::new());
-        let (mut i, mut j) = (1, 1);
-        while i < row.len() || j < v.len() {
-            let column = row.get(i).map_or(usize::MAX, |e| e.0).min(v.get(j).map_or(usize::MAX, |e| e.0));
-            let x = if row.get(i).is_some_and(|e| e.0 == column) { i += 1; row[i - 1].1 } else { 0.0 };
-            let y = if v.get(j).is_some_and(|e| e.0 == column) { j += 1; v[j - 1].1 } else { 0.0 };
-            let (a, b) = (cos * x + sin * y, cos * y - sin * x);
-            if a != 0.0 { kept.push((column, a)); }
-            if b != 0.0 { rest.push((column, b)); }
-        }
-        work.spend(kept.len() + rest.len())?;
+        let (kept, rest) = rotate(&r[k], &v, work)?;
         undo.push((k, std::mem::replace(&mut r[k], kept)));
         v = rest;
     }
     for (k, row) in undo.into_iter().rev() { r[k] = row; }
     (dropped.sqrt() <= distance).then_some(Insertion::Dependent)
+}
+
+/// The Givens rotation of `v` against `row`, whose lead is in the column of the lead of `v`:
+/// the rotated row and what is left of `v`; `None` when the work runs out.
+fn rotate(row: &SparseRow, v: &SparseRow, work: &mut Work) -> Option<(SparseRow, SparseRow)> {
+    let (k, pivot, lead) = (row[0].0, row[0].1, v[0].1);
+    let big = pivot.abs().max(lead.abs());
+    let radius = big * ((pivot / big).powi(2) + (lead / big).powi(2)).sqrt();
+    let (cos, sin) = (pivot / radius, lead / radius);
+    let (mut kept, mut rest) = (vec![(k, radius)], Vec::new());
+    let (mut i, mut j) = (1, 1);
+    while i < row.len() || j < v.len() {
+        let column = row.get(i).map_or(usize::MAX, |e| e.0).min(v.get(j).map_or(usize::MAX, |e| e.0));
+        let x = if row.get(i).is_some_and(|e| e.0 == column) { i += 1; row[i - 1].1 } else { 0.0 };
+        let y = if v.get(j).is_some_and(|e| e.0 == column) { j += 1; v[j - 1].1 } else { 0.0 };
+        let (a, b) = (cos * x + sin * y, cos * y - sin * x);
+        if a != 0.0 { kept.push((column, a)); }
+        if b != 0.0 { rest.push((column, b)); }
+    }
+    work.spend(kept.len() + rest.len())?;
+    Some((kept, rest))
 }
 
 /// `R^T y = a`, then `R z = y`, over the columns with pivots; the others take zero.
@@ -186,41 +192,110 @@ fn seminormal(r: &[SparseRow], mut a: Vec<f64>, work: &mut Work) -> Option<Vec<f
     Some(z)
 }
 
-/// Coefficients over the earlier independent unit rows that reproduce `v`, which lies in their
-/// span. Coefficients too small to move the combination by `distance` together, as much as a
-/// dependent row may differ from it, are left out.
-/// The rows are independent, so the coefficients are unique, but a row within `distance` of the
-/// span can lean on a nearly parallel one by up to about `epsilon / CERTAIN^2` relatively; a row
-/// whose coefficient is that small stays only when the others do not reproduce `v` within twice
-/// `distance` without it. `None` when the rows left do not reproduce it within twice
-/// `distance`, its own and what was left out: an insertion's remainder shrinks with the earlier
-/// pivots, so a row far from the span of rows with small pivots can look dependent, and rank is
-/// then unclear.
+/// The earlier independent unit rows that reproduce `v`, which lies within `distance` of their
+/// span, with their coefficients. The coefficients from the factor come from its pivot columns,
+/// which can be far worse conditioned than the rows, so they only pick the rows that matter;
+/// those rows are then fitted on their own, and coefficients too small to move the combination
+/// by `distance` together are left out. A row within `distance` of the span can lean on a nearly
+/// parallel one by up to about `epsilon / CERTAIN^2` relatively; a row whose coefficient is that
+/// small stays only when the others do not reproduce `v` without it. `None` when the rows left do
+/// not reproduce it within twice `distance`, its own and what was left out (an insertion's
+/// remainder shrinks with the earlier pivots, so a row far from the span of rows with small
+/// pivots can look dependent, and rank is then unclear), or when a removal cannot be decided.
 fn witness(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], independent: &[usize], distance: f64, work: &mut Work) -> Option<Vec<(usize, f64)>> {
-    let coefficients = coefficients(r, v, rows, norms, independent, work)?;
-    let scale = coefficients.iter().fold(1.0, |m: f64, c| m.max(c.1.abs()));
-    let least = distance / coefficients.len().max(1) as f64;
-    let mut support: Vec<Coefficient> = coefficients.into_iter().filter(|c| c.1.abs() > least).collect();
+    let n = r.len();
+    let mut a = vec![0.0; n];
+    for &(k, x) in v { a[k] = x; }
+    let z = seminormal(r, a, work)?;
+    work.spend(independent.iter().map(|&i| rows[i].entries.len()).sum())?;
+    let least = distance / independent.len().max(1) as f64;
+    let chosen: Vec<usize> = independent.iter().copied()
+        .filter(|&i| (rows[i].entries.iter().map(|&(k, x)| x * z[k]).sum::<f64>() / norms[i]).abs() > least).collect();
+    let fitted = fit(n, v, rows, norms, &chosen, distance, work)??;
+    if !fitted.within { return None; }
+    let mut support = fitted.coefficients;
+    let scale = support.iter().fold(1.0, |m: f64, c| m.max(c.1.abs()));
     let mut unsure: Vec<Coefficient> = support.iter().copied().filter(|c| c.1.abs() <= f64::EPSILON / (CERTAIN * CERTAIN) * scale).collect();
     // Smallest first; there are rarely more than a few.
     while let Some(next) = (0..unsure.len()).reduce(|a, b| if unsure[b].1.abs() < unsure[a].1.abs() { b } else { a }) {
         let row = unsure.swap_remove(next).0;
+        if !support.iter().any(|c| c.0 == row) { continue; }
         let rest: Vec<usize> = support.iter().map(|c| c.0).filter(|&i| i != row).collect();
-        if let Some(refit) = refit(r.len(), v, rows, norms, &rest, distance, work)? { support = refit; }
+        let refit = fit(n, v, rows, norms, &rest, distance, work)??;
+        if refit.within { support = refit.coefficients; }
+        // Only a settled fit shows that the others cannot reproduce `v`.
+        else if !refit.settled { return None; }
     }
-    reproduces(r.len(), v, rows, norms, &support, distance, work)?.then(|| support.iter().map(|&(i, high, low)| (i, high + low)).collect())
+    Some(support.iter().map(|&(i, high, low)| (i, high + low)).collect())
 }
 
 /// A row index and its coefficient in twice the working precision, as a rounded part and the
 /// rest, so that combinations of rows with large coefficients that cancel are still exact.
 type Coefficient = (usize, f64, f64);
 
-/// Whether the combination `support` of unit rows is within `2 distance` of `v` in every column;
-/// `None` when the work runs out. Coefficients and miss are both in twice the working precision,
-/// so terms that cancel neither hide a real miss nor make one up.
-fn reproduces(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], support: &[Coefficient], distance: f64, work: &mut Work) -> Option<bool> {
-    let (miss, size) = rebuild(n, v, rows, norms, support, work)?;
-    Some(miss.iter().zip(&size).all(|(x, size)| x.abs() <= 2.0 * distance + 16.0 * f64::EPSILON * f64::EPSILON * size))
+struct Fitted {
+    /// Without those too small to move the combination by `distance` together.
+    coefficients: Vec<Coefficient>,
+    /// The combination is within twice `distance` of `v`, its own and what was left out.
+    within: bool,
+    /// The fit stopped changing, so a combination beyond that is the nearest there is.
+    settled: bool,
+}
+
+/// The combination of the unit rows `subset` nearest `v`, by least squares on the rows
+/// themselves: their transpose is factored by rotations, `J^T = Q S`, and `S^T S a = J v` is
+/// solved with corrections from what the combination still misses of `v`. Coefficients and
+/// misses are kept in twice the working precision, so a combination found within the distance
+/// is, and terms that cancel cannot make up or hide a miss. Each correction shrinks the error
+/// by about `epsilon` times the squared condition of the rows; the fit is settled when its last
+/// correction, kept or not, moves the combination by under a hundredth of `distance`. `Some(None)` when the
+/// rows are dependent; `None` when the work runs out.
+fn fit(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize], distance: f64, work: &mut Work) -> Option<Option<Fitted>> {
+    let m = subset.len();
+    let mut columns: Vec<SparseRow> = vec![Vec::new(); n];
+    for (j, &i) in subset.iter().enumerate() {
+        for &(k, x) in &rows[i].entries { columns[k].push((j, x / norms[i])); }
+    }
+    work.spend(n + subset.iter().map(|&i| rows[i].entries.len()).sum::<usize>())?;
+    let mut s: Vec<SparseRow> = vec![Vec::new(); m];
+    for column in columns.iter().filter(|c| !c.is_empty()) {
+        let mut rest = column.clone();
+        while let Some(&(k, _)) = rest.first() {
+            if s[k].is_empty() { s[k] = rest; break; }
+            let kept;
+            (kept, rest) = rotate(&s[k], &rest, work)?;
+            s[k] = kept;
+        }
+    }
+    if s.iter().any(|row| row.is_empty()) { return Some(None); }
+    let mut coefficients: Vec<Coefficient> = subset.iter().map(|&i| (i, 0.0, 0.0)).collect();
+    let mut missing = vec![0.0; n];
+    for &(k, x) in v { missing[k] = x; }
+    let (mut previous, mut change, mut size) = (f64::INFINITY, f64::INFINITY, 0.0);
+    for _ in 0..12 {
+        let b: Vec<f64> = subset.iter().map(|&i| rows[i].entries.iter().map(|&(k, x)| x / norms[i] * missing[k]).sum()).collect();
+        let step = seminormal(&s, b, work)?;
+        let trial: Vec<Coefficient> = coefficients.iter().zip(&step).map(|(&(i, high, low), &d)| {
+            let (sum, error) = two_sum(high, d);
+            let (high, low) = two_sum(sum, error + low);
+            (i, high, low)
+        }).collect();
+        let (miss, sizes) = rebuild(n, v, rows, norms, &trial, work)?;
+        let norm = miss.iter().map(|x| x * x).sum::<f64>().sqrt();
+        // How far this correction moves the combination, whether it is kept or not.
+        change = miss.iter().zip(&missing).map(|(a, b)| (a - b) * (a - b)).sum::<f64>().sqrt();
+        if norm >= previous { break; }
+        size = sizes.iter().map(|x| x * x).sum::<f64>().sqrt();
+        (coefficients, missing, previous) = (trial, miss, norm);
+        if norm == 0.0 { change = 0.0; break; }
+    }
+    // What is left out moves the combination by at most `distance`, so twice that is allowed.
+    let least = distance / m.max(1) as f64;
+    let kept: Vec<Coefficient> = coefficients.into_iter().filter(|c| (c.1 + c.2).abs() > least).collect();
+    let (miss, _) = rebuild(n, v, rows, norms, &kept, work)?;
+    let norm = miss.iter().map(|x| x * x).sum::<f64>().sqrt();
+    let within = norm <= 2.0 * distance + 16.0 * f64::EPSILON * f64::EPSILON * size;
+    Some(Some(Fitted { coefficients: kept, within, settled: change <= distance / 100.0 }))
 }
 
 /// Per column, what the combination `support` of unit rows misses of `v`, in twice the working
@@ -254,62 +329,6 @@ fn two_product(a: f64, b: f64) -> (f64, f64) {
     let split = |x: f64| { let c = 134217729.0 * x; let high = c - (c - x); (high, x - high) };
     let (product, (ah, al), (bh, bl)) = (a * b, split(a), split(b));
     (product, ((ah * bh - product) + ah * bl + al * bh) + al * bl)
-}
-
-/// Coefficients over the independent unit rows of `r`, by row index in `independent`, of the
-/// combination nearest `v`: with those rows `J = Q R`, `v = J^T a` for `a = J z` and `R^T R z = v`.
-/// Seminormal equations lose about `epsilon` times the squared condition of the rows, at most
-/// 0.02 past the singular value gate, so each solve is followed by corrections from what the
-/// combination still misses of `v`, accumulated in twice the working precision, while they
-/// shrink it.
-fn coefficients(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], independent: &[usize], work: &mut Work) -> Option<Vec<Coefficient>> {
-    let n = r.len();
-    let mut coefficients: Vec<Coefficient> = independent.iter().map(|&i| (i, 0.0, 0.0)).collect();
-    let mut missing: SparseRow = v.clone();
-    let mut previous = f64::INFINITY;
-    for _ in 0..12 {
-        let mut a = vec![0.0; n];
-        for &(k, x) in &missing { a[k] = x; }
-        let z = seminormal(r, a, work)?;
-        work.spend(independent.iter().map(|&i| rows[i].entries.len()).sum())?;
-        let step: Vec<f64> = independent.iter().map(|&i| rows[i].entries.iter().map(|&(k, x)| x * z[k]).sum::<f64>() / norms[i]).collect();
-        let trial: Vec<Coefficient> = coefficients.iter().zip(&step).map(|(&(i, high, low), &d)| {
-            let (sum, error) = two_sum(high, d);
-            let (high, low) = two_sum(sum, error + low);
-            (i, high, low)
-        }).collect();
-        let (miss, _) = rebuild(n, v, rows, norms, &trial, work)?;
-        let worst = miss.iter().fold(0.0, |m: f64, x| m.max(x.abs()));
-        if worst >= previous { break; }
-        (coefficients, previous) = (trial, worst);
-        if worst == 0.0 { break; }
-        missing = miss.into_iter().enumerate().filter(|e| e.1 != 0.0).collect();
-    }
-    Some(coefficients)
-}
-
-/// Coefficients over `subset`, independent rows, when `v` is clearly within `distance` of their
-/// span and they reproduce it, in a fresh factor over `n` columns; `Some(None)` when it is not or
-/// that is unclear; `None` when the work runs out.
-fn refit(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize], distance: f64, work: &mut Work) -> Option<Option<Vec<Coefficient>>> {
-    work.spend(n)?;
-    let mut r: Vec<SparseRow> = vec![Vec::new(); n];
-    // Fewer earlier rows only leave each further from their span, so each stays independent.
-    for &i in subset.iter() {
-        match insert(&mut r, unit(&rows[i], norms[i]), distance, work) {
-            Some(Insertion::Independent) => {}
-            _ if work.done > work.budget => return None,
-            _ => return Some(None),
-        }
-    }
-    match insert(&mut r, v.clone(), distance, work) {
-        Some(Insertion::Dependent) => {
-            let refit = coefficients(&r, v, rows, norms, subset, work)?;
-            Some(reproduces(n, v, rows, norms, &refit, distance, work)?.then_some(refit))
-        }
-        _ if work.done > work.budget => None,
-        _ => Some(None),
-    }
 }
 
 /// Estimate of the smallest singular value of `R` over the columns with pivots, by four inverse
