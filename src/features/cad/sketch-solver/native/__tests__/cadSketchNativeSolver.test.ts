@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { checkCadSketchGraph, parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { createCadBenchmarkRectangleGraph } from '../../../benchmark/cadBenchmarkCases';
 import { compileCadSketchEquations } from '../compileCadSketchEquations';
 import { applyCadSketchEquationSolution, encodeCadSketchEquationModel } from '../cadSketchEquationModel';
 import { loadCadSketchNativeSolver } from '../cadSketchNativeSolver';
@@ -59,6 +60,14 @@ describe('native sketch solver module', () => {
     expect(checkCadSketchGraph(solved, {})).toEqual([]);
     expect(solved.points.find(point => point.id === 't2')?.position).toEqual([expect.closeTo(1e-5, 14), expect.closeTo(5e-6, 14)]);
     expect(solved.points.find(point => point.id === 'h2')?.position).toEqual([expect.closeTo(9e5, 6), expect.closeTo(7e5, 6)]);
+  });
+
+  it('solves a connected chain beyond the PlaneGCS group limit to the graph checks', () => {
+    // 1000 linked rectangles, 8000 unknowns in one group; PlaneGCS rejects this as too large.
+    const graph = createCadBenchmarkRectangleGraph(1000, 'r', false, true), model = compileCadSketchEquations({ graph, parameters: {} });
+    const solution = solver.solve(model);
+    expect(solution.status).toBe('converged');
+    expect(checkCadSketchGraph(applyCadSketchEquationSolution(graph, model, solution.values), {})).toEqual([]);
   });
 
   it('reports conflicting relations as not converged and keeps every value finite', () => {

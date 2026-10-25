@@ -6,6 +6,7 @@ pub mod dual;
 pub mod equations;
 pub mod newton;
 pub mod problem;
+pub mod sparse;
 
 use problem::{Status, decode, encode_output};
 

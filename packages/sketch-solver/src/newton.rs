@@ -1,7 +1,8 @@
 //! Damped Gauss-Newton (Levenberg-Marquardt with Nielsen's damping update), run separately on
-//! each connected group of unknowns. Each step minimizes `|J h + r|^2 + mu |h|^2` through a Givens QR
-//! of `J` rather than the normal equations, whose squared condition number would let roundoff move
-//! free directions of an under-constrained sketch once damping is small.
+//! each connected group of unknowns. Each step minimizes `|J h + r|^2 + mu |h|^2` through a sparse
+//! Givens QR of `J` (see `sparse`) rather than the normal equations, whose squared condition
+//! number would let roundoff move free directions of an under-constrained sketch once damping is
+//! small.
 //!
 //! Every equation is divided by its gradient norm over the unknowns at the start of each step,
 //! so each residual reads as the distance its unknowns must move. Convergence is judged apart from
@@ -10,8 +11,19 @@
 use crate::dual::{Dual, WIDTH};
 use crate::equations::{is_direction, reach, residual};
 use crate::problem::{Problem, Status};
+use crate::sparse::{Factor, SparseRow, minimum_degree};
 
 pub const MAX_ITERATIONS: usize = 100;
+/// Resource bounds on one group. Native code cannot be interrupted, so these bound one solve.
+#[derive(Clone, Copy, Debug)]
+pub struct Limits {
+    /// Entries of the factor `R`, known from structure before any numeric work.
+    pub fill: usize,
+    /// Entries updated by rotations over all damping trials.
+    pub work: usize,
+}
+/// About 32 MiB of factor and a second or two of rotations.
+pub const LIMITS: Limits = Limits { fill: 2_000_000, work: 400_000_000 };
 /// A solution is accepted when each residual is within `max(ACCEPT_MM, 8 epsilon x scale)`
 /// millimetres, the driver tolerance, and each direction error within `ACCEPT_RADIANS` or the
 /// roundoff its coordinates allow at the far end of its longer line.
@@ -98,73 +110,48 @@ impl System<'_> {
         }).collect()
     }
 
-    fn factor(&self, rows: &[Row]) -> Factor {
+    /// The weighted Jacobian in column `position` order, with `J^T r` and the largest diagonal
+    /// entry of `J^T J`.
+    fn jacobian(&self, rows: &[Row], position: &[usize]) -> Jacobian {
         let n = self.unknowns.len();
-        let mut factor = Factor { r: vec![0.0; n * n], c: vec![0.0; n], gradient: vec![0.0; n], diagonal: 0.0 };
-        let (mut squares, mut v) = (vec![0.0; n], vec![0.0; n]);
+        let mut jacobian = Jacobian { rows: Vec::with_capacity(rows.len()), gradient: vec![0.0; n], diagonal: 0.0 };
+        let mut squares = vec![0.0; n];
         for row in rows {
-            let mut first = n;
+            let mut sparse: SparseRow = Vec::with_capacity(row.len);
             for i in 0..row.len {
                 let (column, derivative) = (row.columns[i], row.derivatives[i]);
-                v[column] = derivative;
-                first = first.min(column);
-                factor.gradient[column] += derivative * row.residual;
+                jacobian.gradient[column] += derivative * row.residual;
                 squares[column] += derivative * derivative;
+                if derivative != 0.0 { sparse.push((position[column], derivative)); }
             }
-            rotate(&mut factor.r, &mut factor.c, &mut v, -row.residual, first);
+            // At most `WIDTH` entries, so insertion sort.
+            for i in 1..sparse.len() {
+                let mut j = i;
+                while j > 0 && sparse[j - 1].0 > sparse[j].0 { sparse.swap(j - 1, j); j -= 1; }
+            }
+            jacobian.rows.push((sparse, -row.residual));
         }
-        factor.diagonal = squares.iter().fold(0.0, |max: f64, &square| max.max(square));
-        factor
+        jacobian.diagonal = squares.iter().fold(0.0, |max: f64, &square| max.max(square));
+        jacobian
     }
 }
 
-/// The weighted Jacobian of one step as `Q R`, with `c = Q^T (-r)`, `J^T r` and the largest
-/// diagonal entry of `J^T J`. `r` is upper triangular, row-major.
-struct Factor {
-    r: Vec<f64>,
-    c: Vec<f64>,
+/// One step's weighted Jacobian rows with right-hand sides `-r`, by column position.
+struct Jacobian {
+    rows: Vec<(SparseRow, f64)>,
     gradient: Vec<f64>,
     diagonal: f64,
 }
 
-/// Rotates row `v`, zero before column `first`, with right-hand side `beta` into `r` and `c`.
-/// Every entry of `v` is zero afterwards.
-fn rotate(r: &mut [f64], c: &mut [f64], v: &mut [f64], mut beta: f64, first: usize) {
-    let n = c.len();
-    for k in first..n {
-        if v[k] == 0.0 { continue; }
-        let pivot = r[k * n + k];
-        // Scaled, so entries whose squares underflow still rotate.
-        let big = pivot.abs().max(v[k].abs());
-        let radius = big * ((pivot / big).powi(2) + (v[k] / big).powi(2)).sqrt();
-        let (cos, sin) = (pivot / radius, v[k] / radius);
-        r[k * n + k] = radius;
-        v[k] = 0.0;
-        for j in k + 1..n {
-            let (a, b) = (r[k * n + j], v[j]);
-            r[k * n + j] = cos * a + sin * b;
-            v[j] = cos * b - sin * a;
-        }
-        let a = c[k];
-        c[k] = cos * a + sin * beta;
-        beta = cos * beta - sin * a;
-    }
-}
-
-/// The step minimizing `|J h + r|^2 + mu |h|^2`: rows `sqrt(mu) e_i` rotated into a copy of `R`,
-/// then back substitution. `None` when it is not finite.
-fn damped_step(factor: &Factor, mu: f64) -> Option<Vec<f64>> {
-    let n = factor.c.len();
-    let (mut r, mut h, mut v) = (factor.r.clone(), factor.c.clone(), vec![0.0; n]);
-    for i in 0..n {
-        v[i] = mu.sqrt();
-        rotate(&mut r, &mut h, &mut v, 0.0, i);
-    }
-    for i in (0..n).rev() {
-        for j in i + 1..n { h[i] -= r[i * n + j] * h[j]; }
-        h[i] /= r[i * n + i];
-    }
-    h.iter().all(|value| value.is_finite()).then_some(h)
+/// The step minimizing `|J h + r|^2 + mu |h|^2` in column order, refactored for each damping
+/// value since a factor seeded with `sqrt(mu) I` costs no more than one of `J` alone. `None`
+/// when it is not finite.
+fn damped_step(jacobian: &Jacobian, position: &[usize], mu: f64, work: &mut usize) -> Option<Vec<f64>> {
+    let mut factor = Factor::damped(position.len(), mu);
+    for (row, rhs) in &jacobian.rows { factor.rotate(row.clone(), *rhs); }
+    *work += factor.work;
+    let x = factor.solve()?;
+    Some(position.iter().map(|&k| x[k]).collect())
 }
 
 /// How close a group is to a solution; a residual that is not finite is none of these.
@@ -231,42 +218,49 @@ fn groups(problem: &Problem) -> (Vec<(Vec<usize>, Vec<usize>)>, Vec<usize>) {
 
 /// Moves the unknowns of `values` onto a solution, or as close as the iterations allow. The
 /// status is the worst group's; iterations are the most any group took.
-pub fn solve(problem: &Problem, values: &mut [f64]) -> Outcome {
+pub fn solve(problem: &Problem, values: &mut [f64]) -> Outcome { solve_within(problem, values, LIMITS) }
+
+/// `solve` with other limits. A group whose factor would exceed `limits.fill` is left where it
+/// is; one that spends `limits.work` stops where it got to. Either reports `TooLarge`.
+pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Outcome {
     let (members, column) = groups(problem);
     let mut outcome = Outcome { status: Status::Converged, iterations: 0, residual: 0.0 };
     for (equations, unknowns) in members {
-        let group = solve_group(&System { problem, column: &column, equations, unknowns }, values);
+        let group = solve_group(&System { problem, column: &column, equations, unknowns }, values, limits);
         outcome.iterations = outcome.iterations.max(group.iterations);
         outcome.residual = if outcome.residual.is_nan() || group.residual.is_nan() { f64::NAN } else { outcome.residual.max(group.residual) };
-        if group.status != Status::Converged { outcome.status = Status::NotConverged; }
+        if outcome.status != Status::TooLarge && group.status != Status::Converged { outcome.status = group.status; }
     }
     outcome
 }
 
-fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
+fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> Outcome {
     let n = system.unknowns.len();
     let mut rows = system.rows(values, None);
     let mut progress = assess(&rows);
-    let finish = |rows: &[Row], progress: Progress, iterations| Outcome {
-        status: if progress.accepted { Status::Converged } else { Status::NotConverged }, iterations, residual: worst(rows) };
-    if progress.polished || n == 0 { return finish(&rows, progress, 0); }
-    let mut factor = system.factor(&rows);
-    let diagonal = factor.diagonal;
+    let finish = |rows: &[Row], progress: Progress, iterations, exhausted| Outcome {
+        status: if progress.accepted { Status::Converged } else if exhausted { Status::TooLarge } else { Status::NotConverged },
+        iterations, residual: worst(rows) };
+    if progress.polished || n == 0 { return finish(&rows, progress, 0, false); }
+    let (position, fill) = minimum_degree(n, rows.iter().map(|row| &row.columns[..row.len]));
+    if fill > limits.fill { return finish(&rows, progress, 0, true); }
+    let mut jacobian = system.jacobian(&rows, &position);
+    let (diagonal, mut work) = (jacobian.diagonal, 0);
     // Damping well below the smallest useful curvature during the search, and near roundoff
     // once near: a near-tangent intersection has tiny singular values that a larger floor would
     // swamp, turning Newton's quadratic convergence linear. A start that is already near polishes.
     let (floor, polish_floor) = (1e-12 * diagonal.max(1.0), f64::EPSILON * diagonal.max(1.0));
     let (mut mu, mut nu) = (if progress.near { polish_floor } else { (1e-6 * diagonal).max(floor) }, 2.0);
     let mut iterations = 0;
-    while iterations < MAX_ITERATIONS {
+    while iterations < MAX_ITERATIONS && work <= limits.work {
         iterations += 1;
         let (mut stepped, mut rejected) = (false, false);
-        if let Some(h) = damped_step(&factor, mu) {
+        if let Some(h) = damped_step(&jacobian, &position, mu, &mut work) {
             if system.unknowns.iter().zip(&h).all(|(&p, step)| values[p] + step == values[p]) { break; }
             let saved: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
             for (column, &p) in system.unknowns.iter().enumerate() { values[p] += h[column]; }
             let next = system.rows(values, Some(&rows));
-            let predicted = 0.5 * h.iter().zip(&factor.gradient).map(|(step, gradient)| step * (mu * step - gradient)).sum::<f64>();
+            let predicted = 0.5 * h.iter().zip(&jacobian.gradient).map(|(step, gradient)| step * (mu * step - gradient)).sum::<f64>();
             let reduction = cost(&rows) - cost(&next);
             if reduction > 0.0 && predicted > 0.0 {
                 stepped = true;
@@ -277,7 +271,7 @@ fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
                 mu = if searching && progress.near { polish_floor }
                     else { (mu * (1.0 / 3.0_f64).max(1.0 - (2.0 * rho - 1.0).powi(3))).max(if progress.near { polish_floor } else { floor }) };
                 nu = 2.0;
-                factor = system.factor(&rows);
+                jacobian = system.jacobian(&rows, &position);
             } else {
                 for (&p, &value) in system.unknowns.iter().zip(&saved) { values[p] = value; }
                 rejected = true;
@@ -292,5 +286,5 @@ fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
             if !mu.is_finite() { break; }
         }
     }
-    finish(&rows, progress, iterations)
+    finish(&rows, progress, iterations, work > limits.work)
 }

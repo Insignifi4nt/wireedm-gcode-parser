@@ -1,4 +1,6 @@
 use sketch_solver::equations::Kind;
+use sketch_solver::newton::{Limits, solve_within};
+use sketch_solver::problem::{Status, decode};
 use sketch_solver::solve_buffer;
 
 struct Builder { values: Vec<f64>, fixed: Vec<bool>, equations: Vec<(Kind, f64, Vec<usize>)> }
@@ -28,6 +30,13 @@ impl Builder {
         assert_eq!(output[0] as usize, output.len());
         assert_eq!(output[1], 1.0);
         (output[2], output[3], output[5..].to_vec())
+    }
+    /// `(status, iterations, values)` within `limits`.
+    fn solve_within(&self, limits: Limits) -> (Status, usize, Vec<f64>) {
+        let problem = decode(&self.encode()).unwrap();
+        let mut values = problem.values.clone();
+        let outcome = solve_within(&problem, &mut values, limits);
+        (outcome.status, outcome.iterations, values)
     }
 }
 
@@ -116,6 +125,49 @@ fn solves_each_group_on_its_own_beside_a_conflicting_group() {
     assert_eq!(status, 1.0);
     let expected = [0.0, 0.0, 10.0, 0.0, 10.0, 6.0, 0.0, 6.0];
     assert!(corners.iter().flatten().zip(expected).all(|(&p, e)| close(values[p], e)), "{values:?}");
+}
+
+#[test]
+fn a_group_beyond_the_fill_limit_stays_in_place_and_others_still_solve() {
+    let mut builder = Builder::new();
+    let start = builder.point(0.0, 3.0, false);
+    builder.equation(Kind::Value, 1.0, &[start[1]]);
+    // Fixed operands join no groups: `d.x` is a group of one, `b`, `c` and `d.y` another.
+    let [_, b, c, d] = rectangle(&mut builder);
+    let original = builder.values.clone();
+    let (status, _, values) = builder.solve_within(Limits { fill: 1, work: usize::MAX });
+    assert_eq!(status, Status::TooLarge);
+    assert_eq!((values[start[1]], values[d[0]]), (1.0, 0.0));
+    assert!([b, c].iter().flatten().chain([&d[1]]).all(|&p| values[p] == original[p]));
+    assert_eq!(builder.solve_within(Limits { fill: usize::MAX, work: usize::MAX }).0, Status::Converged);
+}
+
+#[test]
+fn a_solve_that_spends_its_work_limit_stops_as_too_large() {
+    let mut builder = Builder::new();
+    rectangle(&mut builder);
+    let (status, iterations, values) = builder.solve_within(Limits { fill: usize::MAX, work: 0 });
+    assert_eq!((status, iterations), (Status::TooLarge, 1));
+    assert!(values.iter().all(|v| v.is_finite()));
+}
+
+#[test]
+fn solves_a_long_connected_chain_in_few_iterations() {
+    // 5000 unit links along x from a skewed start, so every unknown is in one group.
+    let mut builder = Builder::new();
+    let mut previous = builder.point(0.0, 0.0, true);
+    let mut points = Vec::new();
+    for k in 1..=5000 {
+        let point = builder.point(1.1 * k as f64, 0.05 * ((k % 7) as f64 - 3.0), false);
+        builder.equation(Kind::Distance, 1.0, &[previous[0], previous[1], point[0], point[1]]);
+        builder.equation(Kind::Difference, 0.0, &[previous[1], point[1]]);
+        points.push(point);
+        previous = point;
+    }
+    let (status, iterations, values) = builder.solve();
+    assert_eq!(status, 0.0);
+    assert!(iterations <= 20.0, "{iterations}");
+    assert!(points.iter().enumerate().all(|(k, p)| close(values[p[0]], (k + 1) as f64) && values[p[1]].abs() < 1e-9));
 }
 
 #[test]

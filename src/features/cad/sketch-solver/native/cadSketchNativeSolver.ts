@@ -2,7 +2,8 @@ import wasmUrl from '../../../../../packages/sketch-solver/wasm/sketch_solver.wa
 import { CAD_SKETCH_NATIVE_PROTOCOL_VERSION, encodeCadSketchEquationModel, type CadSketchEquationModel } from './cadSketchEquationModel';
 
 export interface CadSketchNativeSolution {
-  readonly status: 'converged' | 'not-converged';
+  /** `too-large`: a connected group needs more factor memory or work than the solver allows. */
+  readonly status: 'converged' | 'not-converged' | 'too-large';
   readonly iterations: number;
   /** Largest equation residual at `values` in millimetres; a direction error moves its longer line's far end. */
   readonly residual: number;
@@ -24,6 +25,8 @@ function isExports(value: WebAssembly.Exports): value is WebAssembly.Exports & E
   return value.memory instanceof WebAssembly.Memory && ['buffer_alloc', 'buffer_free', 'solve'].every(name => typeof value[name] === 'function');
 }
 
+const STATUSES: Readonly<Record<number, CadSketchNativeSolution['status']>> = { 0: 'converged', 1: 'not-converged', 3: 'too-large' };
+
 /** Loads the Rust solver from bytes, or from a URL (by default the bundled module asset). */
 export async function loadCadSketchNativeSolver(source: BufferSource | string | URL = wasmUrl): Promise<CadSketchNativeSolver> {
   const bytes = typeof source === 'string' || source instanceof URL ? await (await fetch(source)).arrayBuffer() : source;
@@ -43,9 +46,10 @@ export async function loadCadSketchNativeSolver(source: BufferSource | string | 
       const [, version, status, iterations, residual] = result, values = Array.from(result.subarray(5));
       if (version !== CAD_SKETCH_NATIVE_PROTOCOL_VERSION) throw new Error('The native sketch solver replied with another protocol version.');
       if (status === 2) throw new Error('The native sketch solver rejected its input.');
-      if ((status !== 0 && status !== 1) || values.length !== model.values.length || values.some(value => !Number.isFinite(value)))
+      const kind = STATUSES[status];
+      if (kind === undefined || values.length !== model.values.length || values.some(value => !Number.isFinite(value)))
         throw new Error('The native sketch solver returned an invalid result.');
-      return { status: status === 0 ? 'converged' : 'not-converged', iterations, residual, values };
+      return { status: kind, iterations, residual, values };
     } finally {
       exports.buffer_free(pointer, input.length);
       if (output !== undefined) exports.buffer_free(output, new Float64Array(exports.memory.buffer, output, 1)[0]);
