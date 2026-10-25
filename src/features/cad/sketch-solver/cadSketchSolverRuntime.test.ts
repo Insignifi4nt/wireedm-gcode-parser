@@ -198,7 +198,7 @@ describe('independent solver groups', () => {
   });
 
   it('diagnoses relations on fully fixed geometry as one sketch-wide system did', async () => {
-    // PlaneGCS skips diagnosis without unknowns, so the fixed group joins the free point's group.
+    // PlaneGCS skips diagnosis without unknowns, so fixed relations are diagnosed in an auxiliary system.
     const runtime = createCadSketchSolverRuntime(initialize), fixed = (value: number, ...more: Part[]) => runtime.solve({ parameters: {}, graph: merge(
       { points: [{ id: 'p', position: ['0', '0'] }], entities: [], relations: [{ id: 'p-x', kind: 'fixed-axis', pointId: 'p', axis: 'x', value }] }, ...more) });
     const spare: Part = { points: [{ id: 'q', position: [5, 5] }], entities: [], relations: [] };
@@ -220,6 +220,18 @@ describe('independent solver groups', () => {
     const duplicates = merge({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [9, 0] }], entities: [], relations: ['b', 'a'].flatMap(id => [
       { id: `${id}-x`, kind: 'fixed-axis', pointId: id, axis: 'x', value: id === 'a' ? 0 : 9 }, { id: `${id}-again`, kind: 'fixed-axis', pointId: id, axis: 'x', value: id === 'a' ? 0 : 9 }]) });
     expect(await runtime.solve({ graph: duplicates, parameters: {} })).toMatchObject({ reason: 'redundant', diagnostics: { redundantIds: ['b-again', 'a-again'] } });
+  });
+
+  it('diagnoses fixed relations independently of a group that fails to converge', async () => {
+    // A 3 mm distance between fixed o and a point on y = 5 cannot be met; f.x = 0 stays merely redundant.
+    const runtime = createCadSketchSolverRuntime(initialize), positions: Record<string, unknown[]> = { f: ['0', '0'], o: ['0', '0'], q: [10, '5'], r: [7, '8'] };
+    for (const order of [['f', 'o', 'q', 'r'], ['f', 'r', 'o', 'q']]) expect(await runtime.solve({ parameters: {}, graph: merge({ entities: [],
+      points: order.map(id => ({ id, position: positions[id] })),
+      relations: [{ id: 'f-x', kind: 'fixed-axis', pointId: 'f', axis: 'x', value: 0 }, { id: 'reach', kind: 'distance', pointIds: ['o', 'q'], value: 3 }] }) }))
+      .toMatchObject({ reason: 'redundant', diagnostics: { status: 'failed', degreesOfFreedom: 1, conflictingIds: [], redundantIds: ['f-x'] } });
+    // Without any unknown in the sketch nothing is diagnosed, as before; the graph check still applies.
+    expect(await runtime.solve({ parameters: {}, graph: merge({ points: [{ id: 'f', position: ['0', '0'] }], entities: [],
+      relations: [{ id: 'f-x', kind: 'fixed-axis', pointId: 'f', axis: 'x', value: 0 }] }) })).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 0 } });
   });
 
   it('keeps geometry without relations as authored without loading the native module', async () => {

@@ -197,6 +197,8 @@ function components(objects: readonly SketchPrimitive[]): SketchPrimitive[][] {
  * success at 760 x 760; the limit stays about a fifth below that.
  */
 export const MAX_CAD_SKETCH_SOLVER_GROUP_SIZE = 500_000;
+/** Compiled ids from the graph never start with '$'. */
+const auxiliaryPointId = '$fixed-diagnosis';
 /** Native constraints that add two scalar equations; every other compiled constraint adds one. */
 const twoEquationConstraints = new Set<SketchPrimitive['type']>(['p2p_coincident', 'p2p_symmetric_ppp', 'p2p_symmetric_ppl']);
 
@@ -228,16 +230,16 @@ export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketch
       ? Number(!fixedX(object.id)) + Number(!fixedY(object.id)) : object.type === 'circle' ? Number(!fixedRadius(object.id)) : 0), 0);
     const equations = (group: readonly SketchPrimitive[]) => group.reduce((total, object) => total
       + (!compiled.sourceIds.has(object.id) ? 0 : twoEquationConstraints.has(object.type) ? 2 : 1), 0);
-    const order = new Map(compiled.objects.map((object, index) => [object, index])), split = components(compiled.objects);
-    // PlaneGCS skips diagnosis in a system without unknowns. Relations on fully fixed geometry
-    // therefore join the smallest group that has unknowns, where they are diagnosed as they
-    // were in one sketch-wide system: satisfied ones as redundant and others as conflicting.
-    const fixed = split.filter(group => equations(group) && !unfixed(group)), others = split.filter(group => !fixed.includes(group));
-    const host = others.filter(group => unfixed(group)).reduce<SketchPrimitive[] | undefined>((best, group) => !best || unfixed(group) < unfixed(best) ? group : best, undefined);
-    const groups = fixed.length ? [...others.filter(group => group !== host), [...host ?? [], ...fixed.flat()].sort((a, b) => order.get(a)! - order.get(b)!)] : split;
-    groups.sort((a, b) => order.get(a[0])! - order.get(b[0])!);
-    const constrained = groups.filter(group => equations(group) > 0);
-    if (constrained.some(group => unfixed(group) * equations(group) > MAX_CAD_SKETCH_SOLVER_GROUP_SIZE)) return { kind: 'rejected', reason: 'too-large',
+    const split = components(compiled.objects), fixed = split.filter(group => equations(group) && !unfixed(group)).flat();
+    const groups = split.filter(group => !equations(group) || unfixed(group)), constrained = groups.filter(group => equations(group) > 0);
+    // PlaneGCS diagnoses nothing in a system without unknowns, and in a shared system a fixed
+    // relation's diagnosis would follow that system's convergence. Relations on fully fixed
+    // geometry are therefore diagnosed together beside one unconstrained auxiliary point:
+    // satisfied ones as redundant and others as conflicting. Its freedom is not counted. As in
+    // one sketch-wide system, a sketch without any unknowns is not diagnosed; the graph check
+    // below still rejects an unsatisfied relation.
+    const auxiliary: SketchPrimitive[] = fixed.length && groups.some(group => unfixed(group)) ? [{ id: auxiliaryPointId, type: 'point', x: 0, y: 0, fixed: false }, ...fixed] : [];
+    if (constrained.some(group => unfixed(group) * equations(group) > MAX_CAD_SKETCH_SOLVER_GROUP_SIZE) || 2 * equations(auxiliary) > MAX_CAD_SKETCH_SOLVER_GROUP_SIZE) return { kind: 'rejected', reason: 'too-large',
       message: 'A connected group of sketch relations is too large to solve. Split it into separate groups or remove relations.', diagnostics: noDiagnostics() };
     // Diagnostics keep the sketch-wide compiled order a single native system reported.
     const position = new Map(compiled.objects.map((object, index) => [object.id, index]));
@@ -250,19 +252,19 @@ export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketch
     let degreesOfFreedom = groups.filter(group => !equations(group)).reduce((total, group) => total + unfixed(group), 0), status: NativeStatus = 'success';
     const conflicting: string[] = [], redundant: string[] = [], partiallyRedundant: string[] = [];
     const solvedPoints = new Map<string, Point2>(), solvedRadii = new Map<string, number>();
-    if (constrained.length) await exclusive(async () => {
+    if (constrained.length || auxiliary.length) await exclusive(async () => {
       if (aborted) {
         if (!options.discard) throw new Error('The sketch solver stopped after a native failure and cannot restart.');
         options.discard(); aborted = false;
       }
       const module = await initialize();
-      for (const group of constrained) {
+      for (const group of auxiliary.length ? [...constrained, auxiliary] : constrained) {
         let wrapper: GcsWrapper | undefined;
         try {
           wrapper = new GcsWrapper(new module.GcsSystem(), module);
           wrapper.push_primitives_and_params(group);
           for (const object of group) {
-            if (object.type !== 'point' && object.type !== 'circle') continue;
+            if (object.type !== 'point' && object.type !== 'circle' || object.id === auxiliaryPointId) continue;
             const start = wrapper.p_param_index.get(object.id);
             if (start === undefined) throw new Error(`A compiled sketch ${object.type} has no native parameters.`);
             if (object.type === 'point') {
@@ -273,11 +275,12 @@ export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketch
           }
           const groupStatus = nativeStatus(wrapper.solve())!;
           if (statusRank[groupStatus] > statusRank[status]) status = groupStatus;
-          degreesOfFreedom += wrapper.gcs.dof();
+          if (group !== auxiliary) degreesOfFreedom += wrapper.gcs.dof();
           conflicting.push(...wrapper.get_gcs_conflicting_constraints()); redundant.push(...wrapper.get_gcs_redundant_constraints());
           partiallyRedundant.push(...wrapper.get_gcs_partially_redundant_constraints());
           wrapper.apply_solution();
           for (const object of group) {
+            if (object.id === auxiliaryPointId) continue;
             if (object.type === 'point') { const solved = wrapper.sketch_index.get_sketch_point(object.id); solvedPoints.set(object.id, { x: solved.x, y: solved.y }); }
             else if (object.type === 'circle') solvedRadii.set(object.id, wrapper.sketch_index.get_sketch_circle(object.id).radius);
           }
