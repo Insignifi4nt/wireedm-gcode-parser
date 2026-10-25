@@ -54,10 +54,10 @@ Proposed order: solve only edited sketches and their reference dependents, then 
 
 ## Measured changes
 
-Each row compares runs on the same host with similar calibration (60 to 75 ms).
+Each row compares runs on the same host whose compared groups were bracketed at 57 to 67 ms of calibration.
 
 | Version | Change | Before | After |
 | --- | --- | --- | --- |
-| 0.0.737 | Preparation re-solves only edited sketches and the reference dependents whose refreshed references changed | Drag preview with 8 sketches: 8 solves, 34.7 ms (18.2 ms native); dependent workload, unreferenced drag: 2 solves, 8.6 ms | 8 sketches: 1 solve, 16.5 ms (2.1 ms native); unreferenced drag: 1 solve, 6.2 ms; referenced drag still 2 solves |
+| 0.0.737 | Preparation re-solves only edited sketches and the reference dependents whose refreshed references changed | Drag preview with 8 sketches: 8 solver calls, 28.6 ms (14.8 ms in solver calls); dependent workload, unreferenced drag: 2 calls, 8.1 ms | 8 sketches: 1 call, 16.6 ms (2.1 ms in solver calls); unreferenced drag: 1 call, 6.2 ms; referenced drag still 2 calls, 8.5 ms |
 
 After 0.0.737, most of a drag preview with several sketches is the final `parseCadDocument` of the prepared document: about 13.5 ms for the 8-sketch workload, because the boundary parser clones and validates every feature again even when only one sketch changed.
