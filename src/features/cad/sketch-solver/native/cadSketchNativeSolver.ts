@@ -1,4 +1,3 @@
-import wasmUrl from '../../../../../packages/sketch-solver/wasm/sketch_solver.wasm?url';
 import { CAD_SKETCH_NATIVE_PROTOCOL_VERSION, encodeCadSketchEquationModel, type CadSketchEquationModel } from './cadSketchEquationModel';
 
 export interface CadSketchNativeSolution {
@@ -28,11 +27,14 @@ function isExports(value: WebAssembly.Exports): value is WebAssembly.Exports & E
 const STATUSES: Readonly<Record<number, CadSketchNativeSolution['status']>> = { 0: 'converged', 1: 'not-converged', 3: 'too-large' };
 
 /** Loads the Rust solver from bytes, or from a URL (by default the bundled module asset). */
-export async function loadCadSketchNativeSolver(source: BufferSource | string | URL = wasmUrl): Promise<CadSketchNativeSolver> {
+export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssembly.Module | string | URL, observeMemory?: (memory: WebAssembly.Memory) => void): Promise<CadSketchNativeSolver> {
+  // Explicit byte callers, including the Node benchmark, do not need a bundler asset loader.
+  source ??= (await import('../../../../../packages/sketch-solver/wasm/sketch_solver.wasm?url')).default;
   const bytes = typeof source === 'string' || source instanceof URL ? await (await fetch(source)).arrayBuffer() : source;
-  const { instance } = await WebAssembly.instantiate(bytes, {});
+  const instance = bytes instanceof WebAssembly.Module ? await WebAssembly.instantiate(bytes, {}) : (await WebAssembly.instantiate(bytes, {})).instance;
   const exports = instance.exports;
   if (!isExports(exports)) throw new Error('The native sketch solver module has unexpected exports.');
+  observeMemory?.(exports.memory);
   return { solve(model) {
     const input = encodeCadSketchEquationModel(model);
     const pointer = exports.buffer_alloc(input.length);

@@ -9,14 +9,17 @@ import { cadBenchmarkCpuCalibrationMs, measureCadDragPreview, measureCadKernelCa
 import { createCadSketchSolverRuntime } from '../src/features/cad/sketch-solver/cadSketchSolverRuntime.ts';
 
 // Node-only CAD baseline. Compare runs from the same idle machine; never compare across hosts.
-// Usage: npm run cad:benchmark [-- --runs 7 --quick]
+// Usage: npm run cad:benchmark [-- --group solver-workloads|legacy|all --runs 7 --quick]
 const args = process.argv.slice(2);
 const quick = args.includes('--quick');
 const runs = args.includes('--runs') ? Number(args[args.indexOf('--runs') + 1]) : quick ? 3 : 7;
+const group = args.includes('--group') ? args[args.indexOf('--group') + 1] : 'all';
+if (!['all', 'legacy', 'solver-workloads'].includes(group)) throw new Error('--group needs all, legacy or solver-workloads.');
 if (!Number.isSafeInteger(runs) || runs < 1) {
   console.error('--runs needs a positive whole number of samples.');
   process.exit(1);
 }
+if (group !== 'solver-workloads') {
 // Package export maps hide the WASM files, so resolve them as plain installed files.
 const installed = (path: string) => new URL(`../node_modules/${path}`, import.meta.url);
 
@@ -103,4 +106,9 @@ console.log(`Report: ${file}`);
 if (kernel.some(testCase => testCase.steps.some(step => step.failures.length))) {
   console.error('A benchmark case produced incorrect geometry; its timings are not comparable.');
   process.exitCode = 1;
+}
+}
+if (group !== 'legacy') {
+  const { runCadSolverWorkloads } = await import('./benchmark-cad-solver-workloads');
+  await runCadSolverWorkloads({ runs, quick });
 }
