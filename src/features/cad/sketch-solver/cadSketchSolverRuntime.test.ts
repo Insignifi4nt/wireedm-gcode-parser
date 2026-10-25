@@ -1,12 +1,13 @@
 // @vitest-environment node
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseCadSketchGraph } from '../../../domain/cad/cadSketchGraph';
-import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './cadSketchSolverModule';
+import { createCadSketchSolverRuntime, MAX_CAD_SKETCH_SOLVER_GROUP_SIZE } from './cadSketchSolverRuntime';
+import { initializeCadSketchSolverModule, type CadSketchSolverModule } from './cadSketchSolverModule';
 import { resolveCadSketchRegions } from '@/domain/cad/cadSketchGeometry';
 import { measureCadResolvedProfile } from '@/domain/cad/cadMeasurements';
+import { createCadBenchmarkRectangleGraph } from '../benchmark/cadBenchmarkCases';
 
 const require = createRequire(import.meta.url);
 const initialize = () => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href);
@@ -169,5 +170,65 @@ describe('real PlaneGCS sketch solving', () => {
       source: { kind: 'entity', id: 'arc' }, code: 'arc-radius-mismatch', residualMm: expect.any(Number)
     }] } });
     expect('graph' in result).toBe(false);
+  });
+});
+
+describe('independent solver groups', () => {
+  type Part = { points: unknown[]; entities: unknown[]; relations: unknown[] };
+  const merge = (...parts: Part[]) => parseCadSketchGraph({ points: parts.flatMap(part => part.points), entities: parts.flatMap(part => part.entities), relations: parts.flatMap(part => part.relations) });
+  const line: Part = { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [18, 4] }], entities: [{ id: 'line', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+    relations: [{ id: 'origin', kind: 'fixed-point', pointId: 'a', position: [0, 0] }, { id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }] };
+  const conflict: Part = { points: [{ id: 'c', position: [50, 0] }, { id: 'd', position: [60, 1] }], entities: [{ id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' }],
+    relations: [{ id: 'c-x', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 50 }, { id: 'c-x-again', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 51 }] };
+  const redundant: Part = { points: [{ id: 'e', position: [80, 0] }], entities: [],
+    relations: [{ id: 'e-y', kind: 'fixed-axis', pointId: 'e', axis: 'y', value: 0 }, { id: 'e-y-again', kind: 'fixed-axis', pointId: 'e', axis: 'y', value: 0 }] };
+  // Each unfixed parameter is free: f contributes x, y and its radius; g only its numeric y.
+  const free: Part = { points: [{ id: 'f', position: [90, 0] }, { id: 'g', position: ['w', 3] }], relations: [], entities: [
+    { id: 'circle', kind: 'circle', construction: false, centerPointId: 'f', radius: 4 }, { id: 'fixed-circle', kind: 'circle', construction: false, centerPointId: 'g', radius: 'w' }] };
+
+  it('diagnoses each group as it would be alone and sums their freedom', async () => {
+    const runtime = createCadSketchSolverRuntime(initialize), solve = (...parts: Part[]) => runtime.solve({ graph: merge(...parts), parameters: { w: 2 } });
+    expect((await solve(line)).diagnostics.degreesOfFreedom).toBe(1);
+    expect(await solve(line, redundant, conflict, free)).toEqual({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics: {
+      status: 'failed', degreesOfFreedom: 9, conflictingIds: ['c-x', 'c-x-again'], redundantIds: ['e-y-again'], partiallyRedundantIds: [], issues: [] } });
+    expect(await solve(line, redundant)).toMatchObject({ kind: 'rejected', reason: 'redundant', diagnostics: { status: 'success', degreesOfFreedom: 2, redundantIds: ['e-y-again'] } });
+    const solved = await solve(line, free);
+    expect(solved).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: 5 } });
+    if (solved.kind === 'solved') expect(solved.graph.entities.slice(1)).toEqual(merge(free).entities);
+  });
+
+  it('keeps geometry without relations as authored without loading the native module', async () => {
+    const load = vi.fn(initialize), graph = merge(free);
+    expect(await createCadSketchSolverRuntime(load).solve({ graph, parameters: { w: 2 } })).toEqual({ kind: 'solved', graph,
+      diagnostics: { status: 'success', degreesOfFreedom: 4, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } });
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it('refuses one connected group above the native memory limit and solves many small groups beyond it', async () => {
+    // 89 chained rectangles: 712 parameters times 712 constraints.
+    const load = vi.fn(initialize), runtime = createCadSketchSolverRuntime(load);
+    expect(712 * 712).toBeGreaterThan(MAX_CAD_SKETCH_SOLVER_GROUP_SIZE);
+    expect(await runtime.solve({ graph: createCadBenchmarkRectangleGraph(89, 'r', false, true), parameters: {} })).toMatchObject({ kind: 'rejected', reason: 'too-large', diagnostics: { status: null } });
+    expect(load).not.toHaveBeenCalled();
+    expect(await runtime.solve({ graph: createCadBenchmarkRectangleGraph(88, 'r', false, true), parameters: {} })).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 0 } });
+    // As one native system, 100 independent rectangles aborted with OOM.
+    expect(await runtime.solve({ graph: createCadBenchmarkRectangleGraph(150), parameters: {} })).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 0 } });
+  }, 30_000);
+
+  it('discards an aborted native module before the next solve', async () => {
+    const real = await initialize();
+    let aborting = true;
+    const aborted = { ...real, GcsSystem: class { constructor() { throw new WebAssembly.RuntimeError('Aborted(OOM)'); } } } as unknown as CadSketchSolverModule;
+    const load = vi.fn(async () => aborting ? aborted : real), discard = vi.fn(() => { aborting = false; });
+    const runtime = createCadSketchSolverRuntime(load, { discard }), input = { graph: merge(line), parameters: {} };
+    await expect(runtime.solve(input)).rejects.toThrow('ran out of native memory');
+    expect(discard).not.toHaveBeenCalled();
+    expect(await runtime.solve(input)).toMatchObject({ kind: 'solved' });
+    expect(discard).toHaveBeenCalledTimes(1); expect(discard.mock.invocationCallOrder[0]).toBeLessThan(load.mock.invocationCallOrder[1]);
+    // Without a way to discard the module, later solves fail clearly instead of calling into it.
+    aborting = true;
+    const stuck = createCadSketchSolverRuntime(load);
+    await expect(stuck.solve(input)).rejects.toThrow('ran out of native memory');
+    await expect(stuck.solve(input)).rejects.toThrow('cannot restart');
   });
 });

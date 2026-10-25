@@ -196,22 +196,27 @@ export async function measureCadSolverScaling(solver: CadSketchSolver, options: 
 
 /**
  * PlaneGCS has fixed linear memory and aborts with OOM, leaving its module unusable, so each
- * size gets a fresh solver. Reports the largest size that solved and the first that did not.
+ * size gets a fresh solver. Connected rectangles form one native group; independent ones form
+ * a group each. Records each size's native parameters and constraints, and reports the largest
+ * size that solved and the first that did not.
  */
-export async function probeCadSolverCapacity(createFreshSolver: () => CadSketchSolver, sizes: readonly number[]) {
-  const outcomes: { rectangles: number; outcome: string; message?: string }[] = [];
+export async function probeCadSolverCapacity(createFreshSolver: () => CadSketchSolver, sizes: readonly number[], options: { connected: boolean }) {
+  const outcomes: { rectangles: number; parameters: number; constraints: number; outcome: string; reason?: string; message?: string }[] = [];
   let largestSolved: number | null = null, firstFailed: number | null = null;
   for (const size of sizes) {
+    const graph = createCadBenchmarkRectangleGraph(size, 'r', false, options.connected);
+    // Every point is numeric and unowned; a fixed point compiles to two native constraints.
+    const cost = { rectangles: size, parameters: graph.points.length * 2, constraints: graph.relations.reduce((total, relation) => total + (relation.kind === 'fixed-point' ? 2 : 1), 0) };
     try {
-      const result = await createFreshSolver().solve({ graph: createCadBenchmarkRectangleGraph(size), parameters: {} });
-      outcomes.push({ rectangles: size, outcome: result.kind, ...(result.kind === 'rejected' ? { message: result.message } : {}) });
+      const result = await createFreshSolver().solve({ graph, parameters: {} });
+      outcomes.push({ ...cost, outcome: result.kind, ...(result.kind === 'rejected' ? { reason: result.reason, message: result.message } : {}) });
       if (result.kind === 'solved') largestSolved = size; else firstFailed ??= size;
     } catch (error) {
-      outcomes.push({ rectangles: size, outcome: 'aborted', message: error instanceof Error ? error.message.slice(0, 200) : String(error) });
+      outcomes.push({ ...cost, outcome: 'aborted', message: error instanceof Error ? error.message.slice(0, 200) : String(error) });
       firstFailed ??= size;
     }
   }
-  return { largestSolved, firstFailed, outcomes };
+  return { connected: options.connected, largestSolved, firstFailed, outcomes };
 }
 
 /**

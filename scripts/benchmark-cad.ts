@@ -67,8 +67,11 @@ const solver = createCadSketchSolverRuntime(async () => module);
 const solverScaling = await measureCadSolverScaling(solver, { sizes: quick ? [1, 10, 40] : [1, 10, 40, 60], dragSize: 40, runs });
 const dragPreview = await measureCadDragPreview(solver, { sketchCounts: [1, 4, 8], rectanglesPerSketch: 10, runs });
 // Each attempt instantiates its own module: an OOM abort leaves a module unusable.
-const capacity = await probeCadSolverCapacity(() => createCadSketchSolverRuntime(() => initPlaneGcs({ locateFile: () => planeGcsWasm, print: () => undefined, printErr: () => undefined })),
-  quick ? [60, 100] : [60, 80, 100, 125, 150, 200]);
+const freshSolver = () => createCadSketchSolverRuntime(() => initPlaneGcs({ locateFile: () => planeGcsWasm, print: () => undefined, printErr: () => undefined }));
+const capacity = {
+  independent: await probeCadSolverCapacity(freshSolver, quick ? [100] : [80, 100, 200, 400], { connected: false }),
+  connected: await probeCadSolverCapacity(freshSolver, quick ? [80, 100] : [60, 80, 88, 89, 100, 125], { connected: true })
+};
 for (const size of solverScaling.sizes) console.log(`solver ${size.rectangles} rectangles (${size.entities} lines) [cpu ${size.cpuCalibrationMs.join('/')} ms]: ${size.outcome}, p50 ${size.solveMs.p50} ms${drifted(size.cpuCalibrationMs) ? ' THROTTLED' : ''}`);
 console.log(`solver drag on ${solverScaling.drag.rectangles} rectangles [cpu ${solverScaling.drag.cpuCalibrationMs.join('/')} ms]: ${solverScaling.drag.outcome}, p50 ${solverScaling.drag.solveMs.p50} ms${drifted(solverScaling.drag.cpuCalibrationMs) ? ' THROTTLED' : ''}`);
 const previewLine = (preview: { cpuCalibrationMs: readonly number[]; solvesPerPreview: number; prepareMs: { p50: number }; solverCallMs: { p50: number } }) =>
@@ -76,7 +79,11 @@ const previewLine = (preview: { cpuCalibrationMs: readonly number[]; solvesPerPr
 for (const preview of dragPreview.independent) console.log(`drag preview with ${preview.sketchCount} sketches ${previewLine(preview)}`);
 console.log(`dependent drag preview, referenced edge ${previewLine(dragPreview.dependent.referenced)}`);
 console.log(`dependent drag preview, unreferenced point ${previewLine(dragPreview.dependent.unreferenced)}`);
-console.log(`solver capacity in a fresh module: largest solved ${capacity.largestSolved ?? 'none'}, first failed ${capacity.firstFailed ?? 'none'} rectangles`);
+for (const probe of [capacity.independent, capacity.connected]) {
+  const failed = probe.outcomes.find(outcome => outcome.rectangles === probe.firstFailed);
+  console.log(`solver capacity, ${probe.connected ? 'one connected group' : 'independent rectangles'}, fresh module: largest solved ${probe.largestSolved ?? 'none'}, first failed ${probe.firstFailed ?? 'none'} rectangles`
+    + (failed ? ` (${failed.parameters} parameters x ${failed.constraints} constraints: ${failed.reason ?? failed.outcome})` : ''));
+}
 
 const report = {
   createdAt: new Date().toISOString(), quick, runs,
