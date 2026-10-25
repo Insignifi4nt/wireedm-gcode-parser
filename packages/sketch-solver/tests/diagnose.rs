@@ -206,3 +206,37 @@ fn diagnosis_shares_the_work_limit_of_its_group() {
     let ((_, alone), (solved, diagnosed)) = (least(0.0), least(1.0));
     assert!(solved > 0 && diagnosed >= solved + alone, "solve {solved}, diagnosis alone {alone}, both {diagnosed}");
 }
+
+/// Unknowns x, y, z from `start`, and in order `x = 0`, `x + 1e-6 y = 0`, `z = 0` when `pinned`,
+/// `y + 5e-5 z = 1` and `x = z` when `pinned`.
+fn weak(start: [f64; 3], pinned: bool) -> (Diagnosis, Option<usize>, Vec<u8>) {
+    let mut builder = Builder::new();
+    let [x, y, z] = start.map(|value| builder.parameter(value, false));
+    let o = builder.point(0.0, 0.0, true);
+    let d = builder.point(1e-6, -1.0, true);
+    let a = builder.point(1.0, 0.0, true);
+    let e = builder.point(1.0 + 5e-5, -1.0, true);
+    builder.equation(Kind::Value, 0.0, &[x]);
+    builder.equation(Kind::PointOnLine, 0.0, &[x, y, o[0], o[1], d[0], d[1]]);
+    if pinned { builder.equation(Kind::Value, 0.0, &[z]); }
+    builder.equation(Kind::PointOnLine, 0.0, &[y, z, a[0], a[1], e[0], e[1]]);
+    if pinned { builder.equation(Kind::Difference, 0.0, &[x, z]); }
+    diagnose(&builder)
+}
+
+#[test]
+fn a_weakly_held_direction_is_not_blamed_on_a_relation() {
+    // These hold z = 2e4, but moving z by 1 mm breaks `x = 0` by only 5e-11 mm, so the rows are
+    // dependent within TAU relative to their coefficients of about 1e6. That combination
+    // reproduces the last row only to 5e-5, so its residuals are not constant and cannot tell
+    // redundant from conflicting: rank is unclear.
+    assert_eq!(weak([0.0, 0.0, 2e4], false), (Diagnosis::Unavailable, None, vec![0; 3]));
+}
+
+#[test]
+fn a_relation_needed_by_a_conflict_is_not_dropped_from_its_witness() {
+    // With `z = 0` the first four conflict, and `x = z` repeats `x = 0` and `z = 0`. Its
+    // coefficient in the fourth row's witness is small beside the others, about 1e6, but without
+    // it they reproduce that row only to 5e-5, so it stays.
+    assert_eq!(weak([0.3, 0.7, 0.1], true), (Diagnosis::Diagnosed, None, vec![CONFLICTING, CONFLICTING, CONFLICTING, CONFLICTING, REDUNDANT]));
+}

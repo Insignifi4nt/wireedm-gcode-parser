@@ -188,15 +188,17 @@ fn seminormal(r: &[SparseRow], mut a: Vec<f64>, work: &mut Work) -> Option<Vec<f
 
 /// Coefficients over the earlier independent unit rows that reproduce `v`, which lies in their
 /// span. Coefficients too small to move the combination by `distance` together, as much as a
-/// dependent row may differ from it, relative to the largest coefficient or one, are left out.
+/// dependent row may differ from it, are left out.
 /// The rows are independent, so the coefficients are unique, but over nearly dependent rows they
 /// carry roundoff of up to about `epsilon / CERTAIN^2` relatively; a row whose coefficient is
 /// that small stays only when the others do not reproduce `v` within `distance` without it.
-/// `None` when the rows left do not reproduce it to a thousand times the dependence `distance`.
+/// `None` when the rows left do not reproduce it within twice `distance`, its own and what was
+/// left out, and the roundoff of the combination: an insertion's remainder shrinks with the earlier pivots, so a row far from the
+/// span of rows with small pivots can look dependent, and rank is then unclear.
 fn witness(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], independent: &[usize], distance: f64, work: &mut Work) -> Option<Vec<(usize, f64)>> {
     let coefficients = coefficients(r, v, rows, norms, independent, work)?;
     let scale = coefficients.iter().fold(1.0, |m: f64, c| m.max(c.1.abs()));
-    let least = distance * scale / coefficients.len().max(1) as f64;
+    let least = distance / coefficients.len().max(1) as f64;
     let mut support: Vec<(usize, f64)> = coefficients.into_iter().filter(|c| c.1.abs() > least).collect();
     let mut unsure: Vec<(usize, f64)> = support.iter().copied().filter(|c| c.1.abs() <= f64::EPSILON / (CERTAIN * CERTAIN) * scale).collect();
     // Smallest first; there are rarely more than a few.
@@ -205,14 +207,20 @@ fn witness(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], independ
         let rest: Vec<usize> = support.iter().map(|c| c.0).filter(|&i| i != row).collect();
         if let Some(refit) = refit(r.len(), v, rows, norms, &rest, distance, work)? { support = refit; }
     }
-    let mut rebuilt = vec![0.0; r.len()];
-    for &(i, c) in &support {
+    reproduces(r.len(), v, rows, norms, &support, distance, work)?.then_some(support)
+}
+
+/// The combination `support` of unit rows is within `2 distance` of `v`, plus its own
+/// roundoff, in every column; `None` when the work runs out.
+fn reproduces(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], support: &[(usize, f64)], distance: f64, work: &mut Work) -> Option<bool> {
+    work.spend(n + support.iter().map(|&(i, _)| rows[i].entries.len()).sum::<usize>())?;
+    let mut rebuilt = vec![0.0; n];
+    for &(i, c) in support {
         for &(k, x) in &rows[i].entries { rebuilt[k] += c * x / norms[i]; }
     }
-    work.spend(support.iter().map(|&(i, _)| rows[i].entries.len()).sum())?;
     for &(k, x) in v { rebuilt[k] -= x; }
-    if rebuilt.iter().fold(0.0, |m: f64, x| m.max(x.abs())) > 1e3 * distance * scale { return None; }
-    Some(support)
+    let roundoff = 8.0 * f64::EPSILON * (1.0 + support.iter().map(|c| c.1.abs()).sum::<f64>());
+    Some(rebuilt.iter().all(|x| x.abs() <= 2.0 * distance + roundoff))
 }
 
 /// Coefficients over the independent unit rows of `r`, by row index in `independent`, of the
@@ -226,7 +234,7 @@ fn coefficients(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], ind
 }
 
 /// Coefficients over `subset`, independent rows, when `v` is clearly within `distance` of their
-/// span, in a fresh factor over `n` columns; `Some(None)` when it is not or that is unclear,
+/// span and they reproduce it, in a fresh factor over `n` columns; `Some(None)` when it is not or that is unclear,
 /// `None` when the work runs out.
 fn refit(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize], distance: f64, work: &mut Work) -> Option<Option<Vec<(usize, f64)>>> {
     work.spend(n)?;
@@ -240,7 +248,10 @@ fn refit(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize],
         }
     }
     match insert(&mut r, v.clone(), distance, work) {
-        Some(Insertion::Dependent) => coefficients(&r, v, rows, norms, subset, work).map(Some),
+        Some(Insertion::Dependent) => {
+            let refit = coefficients(&r, v, rows, norms, subset, work)?;
+            Some(reproduces(n, v, rows, norms, &refit, distance, work)?.then_some(refit))
+        }
         _ if work.done > work.budget => None,
         _ => Some(None),
     }
