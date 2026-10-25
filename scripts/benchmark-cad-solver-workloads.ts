@@ -36,7 +36,8 @@ export async function runCadSolverWorkloads(options: { readonly runs: number; re
   const memory = await measureCadSolverMemory(cases, options.quick ? 100 : 1000);
   console.log('Probing the largest connected rectangle group with median solve under 1 s.');
   const capacity = await probeCadSolverWorkloadCapacity();
-  for (const row of capacity.limits) console.log(`${row.solver}: ${row.largestConnectedRectanglesUnder1s} connected rectangles under 1 s; next ${row.firstRejectedOrAtLeast1s ?? 'not reached'}`);
+  for (const row of capacity.limits) console.log(`${row.solver}: ${row.largestConnectedRectanglesUnder1s} connected rectangles under 1 s; next ${row.firstRejectedOrAtLeast1s ?? 'not reached'}`
+    + (row.boundaryThrottled ? ` THROTTLED boundary; largest unthrottled solved probe ${row.largestUnthrottledSolvedUnder1s}` : ''));
   const failures = [...groups, ...edits].flatMap(group => group.failures).concat(drag.flatMap(row => row.kind === 'measured' ? row.failures : []), memory.workloads.flatMap(row => row.failures), capacity.probes.flatMap(probe => probe.measurements.flatMap(row => row.failures)));
   const calibrations = [...coldCpuCalibrationMs, ...[...groups, ...edits, ...capacity.probes, ...drag.filter(row => row.kind === 'measured')].flatMap(group => group.cpuCalibrationMs ?? [])];
   const report = { createdAt: new Date().toISOString(), appVersion: packageInfo.version, group: 'solver-workloads', ...options,

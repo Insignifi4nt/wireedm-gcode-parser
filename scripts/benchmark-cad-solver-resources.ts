@@ -121,7 +121,11 @@ export async function probeCadSolverWorkloadCapacity() {
     limits.push({ solver: id, largestConnectedRectanglesUnder1s: low || null, firstRejectedOrAtLeast1s: high,
       bound: high === null ? 'at least largest probed; search capped at 256 rectangles' : 'integer boundary, median of 3 fresh-instance public solves' });
   }
-  return { limits, probes: [...outcomes.values()].sort((a, b) => a.rectangles - b.rectangles) };
+  const probes = [...outcomes.values()].sort((a, b) => a.rectangles - b.rectangles);
+  return { limits: limits.map(limit => ({ ...limit,
+    boundaryThrottled: probes.some(probe => (probe.rectangles === limit.largestConnectedRectanglesUnder1s || probe.rectangles === limit.firstRejectedOrAtLeast1s) && probe.throttled),
+    largestUnthrottledSolvedUnder1s: Math.max(0, ...probes.filter(probe => !probe.throttled && probe.solvers.some(row => row.solver === limit.solver && row.under1s)).map(probe => probe.rectangles)) || null
+  })), probes };
 }
 
 if (process.argv.includes('--cold-probe')) {
