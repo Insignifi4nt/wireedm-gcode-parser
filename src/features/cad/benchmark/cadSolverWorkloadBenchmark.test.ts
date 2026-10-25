@@ -10,7 +10,7 @@ import { loadCadSketchNativeSolver } from '../sketch-solver/native/cadSketchNati
 import { createCadBenchmarkRectangleGraph } from './cadBenchmarkCases';
 import { createCadBenchmarkNative, createCadBenchmarkPlaneGcs, type CadBenchmarkSolver } from './cadSolverBenchmarkAdapters';
 import { createCadSolverDieInput, createCadSolverWorkloadCases } from './cadSolverWorkloadCases';
-import { cadSolverCalibrationDrifted, cadSolverFrameStats, checkCadSolverBenchmarkResult, measureCadSolverDrag, measureCadSolverEdits, measureCadSolverOperations, measureCadSolverWorkload } from './cadSolverWorkloadBenchmark';
+import { cadSolverBoundaryThrottled, cadSolverCalibrationDrifted, cadSolverFrameStats, checkCadSolverBenchmarkResult, measureCadSolverDrag, measureCadSolverEdits, measureCadSolverOperations, measureCadSolverWorkload } from './cadSolverWorkloadBenchmark';
 
 const require = createRequire(import.meta.url);
 const initialize = () => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href);
@@ -95,5 +95,8 @@ describe('public-boundary solver benchmarks', () => {
     expect(checkCadSolverBenchmarkResult(input, invalid).length).toBeGreaterThan(0);
     expect(cadSolverFrameStats(Array.from({ length: 100 }, (_, index) => index + 1))).toEqual({ runs: 100, p50: 50, p95: 95, p99: 99, min: 1, max: 100, framesOver8Ms: 92 });
     expect(cadSolverCalibrationDrifted([60, 91])).toBe(true); expect(cadSolverCalibrationDrifted([60, 80])).toBe(false);
+    // Each probe of the recorded 0.0.741 native boundary was steady, but they ran at different host speeds.
+    expect(cadSolverBoundaryThrottled([{ cpuCalibrationMs: [141.64, 183.1] }, { cpuCalibrationMs: [237.56, 236.26] }])).toBe(true);
+    expect(cadSolverBoundaryThrottled([{ cpuCalibrationMs: [60, 70] }, { cpuCalibrationMs: [75, 80] }, undefined])).toBe(false);
   });
 });

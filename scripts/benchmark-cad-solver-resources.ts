@@ -7,7 +7,7 @@ import { loadCadSketchNativeSolver } from '../src/features/cad/sketch-solver/nat
 import { createCadBenchmarkNative, createCadBenchmarkPlaneGcs, type CadBenchmarkSolver } from '../src/features/cad/benchmark/cadSolverBenchmarkAdapters';
 import { createCadBenchmarkRectangleGraph } from '../src/features/cad/benchmark/cadBenchmarkCases';
 import { cadBenchmarkCpuCalibrationMs, cadBenchmarkStats } from '../src/features/cad/benchmark/cadBenchmark';
-import { cadSolverCalibrationDrifted, cadSolverOutcome, checkCadSolverBenchmarkResult } from '../src/features/cad/benchmark/cadSolverWorkloadBenchmark';
+import { cadSolverBoundaryThrottled, cadSolverCalibrationDrifted, cadSolverOutcome, checkCadSolverBenchmarkResult } from '../src/features/cad/benchmark/cadSolverWorkloadBenchmark';
 import { createCadSolverDieInput, type CadSolverWorkloadCase } from '../src/features/cad/benchmark/cadSolverWorkloadCases';
 
 export type SolverId = CadBenchmarkSolver['id'];
@@ -123,7 +123,7 @@ export async function probeCadSolverWorkloadCapacity() {
   }
   const probes = [...outcomes.values()].sort((a, b) => a.rectangles - b.rectangles);
   return { limits: limits.map(limit => ({ ...limit,
-    boundaryThrottled: probes.some(probe => (probe.rectangles === limit.largestConnectedRectanglesUnder1s || probe.rectangles === limit.firstRejectedOrAtLeast1s) && probe.throttled),
+    boundaryThrottled: cadSolverBoundaryThrottled([limit.largestConnectedRectanglesUnder1s, limit.firstRejectedOrAtLeast1s].map(size => probes.find(probe => probe.rectangles === size))),
     largestUnthrottledSolvedUnder1s: Math.max(0, ...probes.filter(probe => !probe.throttled && probe.solvers.some(row => row.solver === limit.solver && row.under1s)).map(probe => probe.rectangles)) || null
   })), probes };
 }

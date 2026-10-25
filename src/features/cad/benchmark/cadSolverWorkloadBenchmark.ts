@@ -6,6 +6,9 @@ import type { CadBenchmarkSolver, CadSolverBenchmarkStages } from './cadSolverBe
 import { createCadSolverDieInput, createCadSolverFreeDieInput, type CadSolverWorkloadCase } from './cadSolverWorkloadCases';
 
 export const cadSolverCalibrationDrifted = (values: readonly number[]) => Math.max(...values) > 1.5 * Math.min(...values);
+/** A boundary compares its two probes, so their brackets must agree with each other as well as within themselves. */
+export const cadSolverBoundaryThrottled = (probes: readonly ({ cpuCalibrationMs: readonly number[] } | undefined)[]) =>
+  cadSolverCalibrationDrifted(probes.flatMap(probe => probe?.cpuCalibrationMs ?? []));
 export function cadSolverFrameStats(samples: readonly number[]) {
   const sorted = [...samples].sort((a, b) => a - b);
   return { ...cadBenchmarkStats(samples), p99: Math.round(sorted[Math.ceil(sorted.length * .99) - 1] * 100) / 100,
