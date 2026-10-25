@@ -186,11 +186,11 @@ describe('independent solver groups', () => {
   const free: Part = { points: [{ id: 'f', position: [90, 0] }, { id: 'g', position: ['w', 3] }], relations: [], entities: [
     { id: 'circle', kind: 'circle', construction: false, centerPointId: 'f', radius: 4 }, { id: 'fixed-circle', kind: 'circle', construction: false, centerPointId: 'g', radius: 'w' }] };
 
-  it('diagnoses each group as it would be alone and sums their freedom', async () => {
+  it('diagnoses each group as it would be alone and sums freedom unless relations conflict', async () => {
     const runtime = createCadSketchSolverRuntime(initialize), solve = (...parts: Part[]) => runtime.solve({ graph: merge(...parts), parameters: { w: 2 } });
     expect((await solve(line)).diagnostics.degreesOfFreedom).toBe(1);
     expect(await solve(line, redundant, conflict, free)).toEqual({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics: {
-      status: 'failed', degreesOfFreedom: 9, conflictingIds: ['c-x', 'c-x-again'], redundantIds: ['e-y-again'], partiallyRedundantIds: [], issues: [] } });
+      status: 'failed', degreesOfFreedom: null, conflictingIds: ['c-x', 'c-x-again'], redundantIds: ['e-y-again'], partiallyRedundantIds: [], issues: [] } });
     expect(await solve(line, redundant)).toMatchObject({ kind: 'rejected', reason: 'redundant', diagnostics: { status: 'success', degreesOfFreedom: 2, redundantIds: ['e-y-again'] } });
     const solved = await solve(line, free);
     expect(solved).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: 5 } });
@@ -205,6 +205,21 @@ describe('independent solver groups', () => {
     expect(await fixed(0, spare)).toMatchObject({ kind: 'rejected', reason: 'redundant', diagnostics: { redundantIds: ['p-x'], degreesOfFreedom: 2 } });
     expect(await fixed(1, spare)).toMatchObject({ kind: 'rejected', reason: 'conflicting', diagnostics: { conflictingIds: ['p-x'] } });
     expect(await fixed(0, spare, line)).toMatchObject({ kind: 'rejected', reason: 'redundant', diagnostics: { redundantIds: ['p-x'], degreesOfFreedom: 3 } });
+  });
+
+  it('reports the same freedom and relation order whichever group hosts fixed relations', async () => {
+    const runtime = createCadSketchSolverRuntime(initialize);
+    const solve = (value: number, order: string[]) => runtime.solve({ parameters: {}, graph: merge({ entities: [],
+      points: order.map(id => ({ id, position: id === 'p' ? ['0', '0'] : id === 'q' ? [5, '5'] : [10, '10'] })),
+      relations: [{ id: 'p-x', kind: 'fixed-axis', pointId: 'p', axis: 'x', value }, { id: 'q-x', kind: 'fixed-axis', pointId: 'q', axis: 'x', value: 5 }] }) });
+    for (const order of [['p', 'q', 'r'], ['p', 'r', 'q']]) {
+      expect(await solve(0, order)).toMatchObject({ reason: 'redundant', diagnostics: { degreesOfFreedom: 1, redundantIds: ['p-x'] } });
+      expect(await solve(1, order)).toMatchObject({ reason: 'conflicting', diagnostics: { degreesOfFreedom: null, conflictingIds: ['p-x'] } });
+    }
+    // Relations authored for b before a stay in that order across separate groups.
+    const duplicates = merge({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [9, 0] }], entities: [], relations: ['b', 'a'].flatMap(id => [
+      { id: `${id}-x`, kind: 'fixed-axis', pointId: id, axis: 'x', value: id === 'a' ? 0 : 9 }, { id: `${id}-again`, kind: 'fixed-axis', pointId: id, axis: 'x', value: id === 'a' ? 0 : 9 }]) });
+    expect(await runtime.solve({ graph: duplicates, parameters: {} })).toMatchObject({ reason: 'redundant', diagnostics: { redundantIds: ['b-again', 'a-again'] } });
   });
 
   it('keeps geometry without relations as authored without loading the native module', async () => {

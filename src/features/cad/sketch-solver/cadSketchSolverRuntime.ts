@@ -239,11 +239,13 @@ export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketch
     const constrained = groups.filter(group => equations(group) > 0);
     if (constrained.some(group => unfixed(group) * equations(group) > MAX_CAD_SKETCH_SOLVER_GROUP_SIZE)) return { kind: 'rejected', reason: 'too-large',
       message: 'A connected group of sketch relations is too large to solve. Split it into separate groups or remove relations.', diagnostics: noDiagnostics() };
-    const mapped = (ids: readonly string[]) => ids.map(id => {
+    // Diagnostics keep the sketch-wide compiled order a single native system reported.
+    const position = new Map(compiled.objects.map((object, index) => [object.id, index]));
+    const mapped = (ids: readonly string[]) => [...new Set([...ids].sort((a, b) => position.get(a)! - position.get(b)!).map(id => {
       const source = compiled.sourceIds.get(id);
       if (!source) throw new Error('A native sketch diagnostic has no source identity.');
       return source;
-    });
+    }))];
     // A group without relations keeps its values and each unfixed parameter stays free.
     let degreesOfFreedom = groups.filter(group => !equations(group)).reduce((total, group) => total + unfixed(group), 0), status: NativeStatus = 'success';
     const conflicting: string[] = [], redundant: string[] = [], partiallyRedundant: string[] = [];
@@ -272,9 +274,8 @@ export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketch
           const groupStatus = nativeStatus(wrapper.solve())!;
           if (statusRank[groupStatus] > statusRank[status]) status = groupStatus;
           degreesOfFreedom += wrapper.gcs.dof();
-          conflicting.push(...mapped(wrapper.get_gcs_conflicting_constraints()));
-          redundant.push(...mapped(wrapper.get_gcs_redundant_constraints()));
-          partiallyRedundant.push(...mapped(wrapper.get_gcs_partially_redundant_constraints()));
+          conflicting.push(...wrapper.get_gcs_conflicting_constraints()); redundant.push(...wrapper.get_gcs_redundant_constraints());
+          partiallyRedundant.push(...wrapper.get_gcs_partially_redundant_constraints());
           wrapper.apply_solution();
           for (const object of group) {
             if (object.type === 'point') { const solved = wrapper.sketch_index.get_sketch_point(object.id); solvedPoints.set(object.id, { x: solved.x, y: solved.y }); }
@@ -288,8 +289,11 @@ export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketch
         } finally { if (!aborted) wrapper?.destroy_gcs_module(); }
       }
     });
-    const diagnostics: CadSketchSolveDiagnostics = { status, degreesOfFreedom, conflictingIds: [...new Set(conflicting)],
-      redundantIds: [...new Set(redundant)], partiallyRedundantIds: [...new Set(partiallyRedundant)], issues: [] };
+    // Without conflicts PlaneGCS counts unknowns minus Jacobian rank, which adds up across groups.
+    // A conflicting system can count unknowns minus equations instead, so the sum would depend on
+    // grouping; freedom is then reported as unknown.
+    const diagnostics: CadSketchSolveDiagnostics = { status, degreesOfFreedom: conflicting.length ? null : degreesOfFreedom, conflictingIds: mapped(conflicting),
+      redundantIds: mapped(redundant), partiallyRedundantIds: mapped(partiallyRedundant), issues: [] };
     if (diagnostics.conflictingIds.length) return { kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics };
     if (diagnostics.redundantIds.length || diagnostics.partiallyRedundantIds.length) return { kind: 'rejected', reason: 'redundant', message: 'Sketch constraints are redundant.', diagnostics };
     if (status !== 'success' && status !== 'converged') return { kind: 'rejected', reason: 'failed', message: 'The sketch solver did not produce a valid solution.', diagnostics };
