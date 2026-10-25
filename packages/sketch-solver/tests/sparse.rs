@@ -22,8 +22,8 @@ fn normal_equations(rows: &[(SparseRow, f64)], n: usize, mu: f64) -> Vec<f64> {
 }
 
 fn factor(rows: &[(SparseRow, f64)], n: usize, mu: f64) -> Factor {
-    let mut factor = Factor::damped(n, mu);
-    for (row, b) in rows { factor.rotate(row.clone(), *b); }
+    let mut factor = Factor::damped(n, mu, usize::MAX);
+    for (row, b) in rows { assert!(factor.rotate(row.clone(), *b)); }
     factor
 }
 
@@ -44,6 +44,44 @@ fn the_sparse_factor_solves_damped_least_squares() {
 }
 
 #[test]
+fn equal_rows_that_agree_leave_the_free_direction_alone_at_roundoff_damping() {
+    // Two equal rows leave (1, -2) free. When they agree, the damped minimizer has no component
+    // along it even with sqrt(mu) far below the rows' roundoff.
+    for b in [1.0, -3.0] {
+        let rows: Vec<(SparseRow, f64)> = (0..2).map(|_| (vec![(0, 1.0), (1, 0.5)], b)).collect();
+        let h = factor(&rows, 2, f64::EPSILON).solve().unwrap();
+        assert!((h[0] - 0.8 * b).abs() < 1e-6 && (h[1] - 0.4 * b).abs() < 1e-6, "{h:?}");
+    }
+}
+
+#[test]
+fn a_factor_stops_within_one_rotation_of_its_budget() {
+    // Dense rows of 300 columns: each rotation step writes about 600 entries.
+    let n = 300;
+    let mut factor = Factor::new(n, 10_000);
+    let finished = (0..n).all(|i| factor.rotate((0..n).map(|j| (j, 1.0 + ((i * 7 + j * 3) % 11) as f64)).collect(), 1.0));
+    assert!(!finished);
+    assert!(factor.work <= 10_000 + 2 * n, "{}", factor.work);
+}
+
+#[test]
+fn the_fill_bound_rejects_exactly_the_orderings_above_it() {
+    // A 30 x 30 grid of columns, whose fill grows faster than its edges.
+    let side = 30;
+    let structure: Vec<Vec<usize>> = (0..side * side).flat_map(|k| {
+        let (x, y) = (k % side, k / side);
+        [(x + 1 < side).then(|| vec![k, k + 1]), (y + 1 < side).then(|| vec![k, k + side])]
+    }).flatten().collect();
+    let n = side * side;
+    let ordering = minimum_degree(n, structure.iter(), usize::MAX, usize::MAX).unwrap();
+    assert!(ordering.fill > 4 * n, "{}", ordering.fill);
+    assert!(minimum_degree(n, structure.iter(), ordering.fill, usize::MAX).is_some());
+    assert!(minimum_degree(n, structure.iter(), ordering.fill - 1, usize::MAX).is_none());
+    assert!(minimum_degree(n, structure.iter(), usize::MAX, ordering.work).is_some());
+    assert!(minimum_degree(n, structure.iter(), usize::MAX, ordering.work - 1).is_none());
+}
+
+#[test]
 fn an_undamped_factor_without_a_pivot_has_no_step() {
     let rows: Vec<(SparseRow, f64)> = vec![(vec![(0, 1.0), (1, 1.0)], 1.0)];
     assert!(factor(&rows, 2, 0.0).solve().is_none());
@@ -56,7 +94,8 @@ fn a_scrambled_chain_is_ordered_to_a_band_and_its_fill_bounds_the_factor() {
     let n = 200;
     let label = |k: usize| (k * 73) % n;
     let structure: Vec<Vec<usize>> = (1..n).map(|k| vec![label(k - 1), label(k)]).collect();
-    let (position, fill) = minimum_degree(n, structure.iter());
+    let ordering = minimum_degree(n, structure.iter(), usize::MAX, usize::MAX).unwrap();
+    let (position, fill) = (ordering.position, ordering.fill);
     assert!(fill <= 2 * n, "{fill}");
     let mut sorted = position.clone();
     sorted.sort_unstable();

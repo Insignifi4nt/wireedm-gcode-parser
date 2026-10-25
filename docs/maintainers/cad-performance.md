@@ -76,11 +76,13 @@ After 0.0.737, most of a drag preview with several sketches is the final `parseC
   - Each step comes from a Givens QR of the weighted Jacobian, not the normal equations, so roundoff does not move the free directions of an under-constrained sketch.
   - From 0.0.740 the QR is sparse:
     - Rows keep their authoring order. Columns take a minimum-degree order fixed by the structure, so a chain of profiles fills like a band.
-    - Each damping trial refactors from `sqrt(mu) I`, which costs no more than factoring the Jacobian alone.
-    - Time and memory grow about linearly with the size of a group, instead of with the square and cube of its unknowns.
+    - Each damping trial refactors from `sqrt(mu) I` and then rotates in the Jacobian rows. A row meeting a diagonal-only row carries on with only its own entries, so most rows stop near their own length. Rotating the damping in after the Jacobian, as MINPACK does, would run each damping row down the whole elimination tree: about 300 million updates per trial for a 5,000-link chain.
+    - In that order, the motion along directions the Jacobian leaves free depends on roundoff when rows cannot all be satisfied, as with conflicting relations. Those sketches are rejected. Satisfiable duplicates, such as one parallel relation entered twice far from the origin, do not slide. Diagnosis will set aside dependent rows before the damped step.
+    - For sketch-like structure, where profiles join in chains and trees and shared parameters such as a radius are eliminated last, time and memory grow about linearly with the size of a group. A group whose columns are all coupled at random fills almost completely, as in a dense factorization.
   - Native code cannot be interrupted, so each group has limits:
-    - The ordering gives the exact fill of the factor before any numeric work. A group above 2,000,000 entries (about 32 MiB) is left in place.
-    - A group that spends 400,000,000 rotation updates stops where it got to.
+    - The ordering gives the exact fill of the factor before any numeric work. A group above 2,000,000 entries (about 32 MiB) is left in place. The ordering stops as soon as the fill so far, plus the edges still present and the diagonals still to come, passes that limit, so its own memory stays within about twice the limit.
+    - The ordering, and every rotation after it, count the entries they write against 400,000,000. Rotations check the count before every step, so a group stops within one step of the limit, where it got to.
+    - In a native probe, random groups of 2,000 to 4,200 unknowns whose factors would be dense are refused in under half a second.
     - Either reports `too-large`. This replaces the PlaneGCS limit of 500,000 unfixed parameters times equations, which a chain of 89 rectangles already exceeds.
   - Convergence is judged apart from that weighting:
     - each residual must be within the driver tolerance in millimetres;
@@ -95,8 +97,6 @@ After 0.0.737, most of a drag preview with several sketches is the final `parseC
   4. switching the runtime over.
 - A direct probe of warm solves with this module, on the same host and not bracketed by calibration, against the PlaneGCS runtime with its diagnosis:
 
-  | Workload | PlaneGCS | Native |
-  | --- | --- | --- |
   | Workload | Unknowns | PlaneGCS | Native, dense QR (0.0.739) | Native, sparse QR (0.0.740) |
   | --- | --- | --- | --- | --- |
   | 10 independent rectangles | 80 | 4.2 ms | 0.4 ms | 0.6 ms |

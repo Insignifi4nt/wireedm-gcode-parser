@@ -19,7 +19,7 @@ pub const MAX_ITERATIONS: usize = 100;
 pub struct Limits {
     /// Entries of the factor `R`, known from structure before any numeric work.
     pub fill: usize,
-    /// Entries updated by rotations over all damping trials.
+    /// Entries written by the ordering and every factor, checked at each rotation.
     pub work: usize,
 }
 /// About 32 MiB of factor and a second or two of rotations.
@@ -143,16 +143,18 @@ struct Jacobian {
     diagonal: f64,
 }
 
-/// The step minimizing `|J h + r|^2 + mu |h|^2` in column order, refactored for each damping
-/// value since a factor seeded with `sqrt(mu) I` costs no more than one of `J` alone. `None`
-/// when it is not finite.
-fn damped_step(jacobian: &Jacobian, position: &[usize], mu: f64, work: &mut usize) -> Option<Vec<f64>> {
-    let mut factor = Factor::damped(position.len(), mu);
-    for (row, rhs) in &jacobian.rows { factor.rotate(row.clone(), *rhs); }
-    *work += factor.work;
-    let x = factor.solve()?;
-    Some(position.iter().map(|&k| x[k]).collect())
+/// The step minimizing `|J h + r|^2 + mu |h|^2` in column order, or `None` when it is not finite.
+/// `Err` when the work would pass `limit`.
+fn damped_step(jacobian: &Jacobian, position: &[usize], mu: f64, work: &mut usize, limit: usize) -> Result<Option<Vec<f64>>, Exhausted> {
+    let mut factor = Factor::damped(position.len(), mu, limit.saturating_sub(*work));
+    let finished = jacobian.rows.iter().all(|(row, rhs)| factor.rotate(row.clone(), *rhs));
+    *work = work.saturating_add(factor.work);
+    if !finished { return Err(Exhausted); }
+    Ok(factor.solve().map(|x| position.iter().map(|&k| x[k]).collect()))
 }
+
+/// The work limit ran out.
+struct Exhausted;
 
 /// How close a group is to a solution; a residual that is not finite is none of these.
 #[derive(Clone, Copy)]
@@ -242,20 +244,22 @@ fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> Outcome {
         status: if progress.accepted { Status::Converged } else if exhausted { Status::TooLarge } else { Status::NotConverged },
         iterations, residual: worst(rows) };
     if progress.polished || n == 0 { return finish(&rows, progress, 0, false); }
-    let (position, fill) = minimum_degree(n, rows.iter().map(|row| &row.columns[..row.len]));
-    if fill > limits.fill { return finish(&rows, progress, 0, true); }
+    let Some(ordering) = minimum_degree(n, rows.iter().map(|row| &row.columns[..row.len]), limits.fill, limits.work)
+        else { return finish(&rows, progress, 0, true); };
+    let (position, mut work) = (ordering.position, ordering.work);
     let mut jacobian = system.jacobian(&rows, &position);
-    let (diagonal, mut work) = (jacobian.diagonal, 0);
+    let (diagonal, mut exhausted) = (jacobian.diagonal, false);
     // Damping well below the smallest useful curvature during the search, and near roundoff
     // once near: a near-tangent intersection has tiny singular values that a larger floor would
     // swamp, turning Newton's quadratic convergence linear. A start that is already near polishes.
     let (floor, polish_floor) = (1e-12 * diagonal.max(1.0), f64::EPSILON * diagonal.max(1.0));
     let (mut mu, mut nu) = (if progress.near { polish_floor } else { (1e-6 * diagonal).max(floor) }, 2.0);
     let mut iterations = 0;
-    while iterations < MAX_ITERATIONS && work <= limits.work {
+    while iterations < MAX_ITERATIONS {
         iterations += 1;
         let (mut stepped, mut rejected) = (false, false);
-        if let Some(h) = damped_step(&jacobian, &position, mu, &mut work) {
+        let Ok(step) = damped_step(&jacobian, &position, mu, &mut work, limits.work) else { exhausted = true; break; };
+        if let Some(h) = step {
             if system.unknowns.iter().zip(&h).all(|(&p, step)| values[p] + step == values[p]) { break; }
             let saved: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
             for (column, &p) in system.unknowns.iter().enumerate() { values[p] += h[column]; }
@@ -286,5 +290,5 @@ fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> Outcome {
             if !mu.is_finite() { break; }
         }
     }
-    finish(&rows, progress, iterations, work > limits.work)
+    finish(&rows, progress, iterations, exhausted)
 }

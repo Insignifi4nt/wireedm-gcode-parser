@@ -1,5 +1,6 @@
 //! Sparse least squares by row Givens rotations. Rows keep their given order; columns take a
-//! minimum-degree order fixed by structure, so fill stays near that of a band or a tree.
+//! minimum-degree order fixed by structure, so fill stays near that of a band or a tree. Work is
+//! counted in entries written and stops at a budget, since native code cannot be interrupted.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -7,71 +8,99 @@ use std::collections::BinaryHeap;
 /// One sparse row: `(position, value)` pairs sorted by position, without zeros.
 pub type SparseRow = Vec<(usize, f64)>;
 
-/// Position of each column in a minimum-degree elimination of the column graph, where columns
-/// sharing a row are adjacent, and the number of entries this leaves room for in `R`: each column
-/// fills its own row and one entry for each neighbor left when it is eliminated. Ties take the
-/// lowest column, so the order is deterministic.
-pub fn minimum_degree(n: usize, rows: impl Iterator<Item = impl AsRef<[usize]>>) -> (Vec<usize>, usize) {
+/// A minimum-degree elimination of the column graph, where columns sharing a row are adjacent.
+pub struct Ordering {
+    /// Position of each column. Ties take the lowest column, so the order is deterministic.
+    pub position: Vec<usize>,
+    /// Entries `R` can hold: each column fills its own row and one entry for each neighbor left
+    /// when it is eliminated.
+    pub fill: usize,
+    /// Adjacency entries written.
+    pub work: usize,
+}
+
+/// The ordering, or `None` as soon as its fill must exceed `fill_limit` or its work `work_limit`.
+/// Edges never disappear before one of their columns is eliminated, so the fill so far, the edges
+/// still present and the diagonals still to come bound the final fill from below, and adjacency
+/// memory stays within about twice the fill limit.
+pub fn minimum_degree(n: usize, rows: impl Iterator<Item = impl AsRef<[usize]>>, fill_limit: usize, work_limit: usize) -> Option<Ordering> {
     let mut adjacent: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for row in rows {
-        let row = row.as_ref();
-        for &a in row { for &b in row { if a != b { adjacent[a].push(b); } } }
-    }
     // `seen[b] == stamp` marks `b` as already in the list being built, so lists need no sorting.
     let (mut seen, mut stamp) = (vec![0; n], 0);
     let mut distinct = |list: &mut Vec<usize>| {
         stamp += 1;
         list.retain(|&b| seen[b] != stamp && { seen[b] = stamp; true });
     };
-    for list in &mut adjacent { distinct(list); }
+    let (mut live, mut fill, mut work) = (0usize, 0usize, 0usize);
+    let exceeded = |fill: usize, live: usize, left: usize, work: usize|
+        fill.saturating_add(live / 2).saturating_add(left) > fill_limit || work > work_limit;
+    for row in rows {
+        let row = row.as_ref();
+        for &a in row {
+            for &b in row { if a != b { adjacent[a].push(b); } }
+        }
+        work = work.saturating_add(row.len() * row.len());
+        if work > work_limit { return None; }
+    }
+    for list in &mut adjacent { distinct(list); live += list.len(); }
+    if exceeded(fill, live, n, work) { return None; }
     let mut position = vec![usize::MAX; n];
     // Stale entries, whose degree has changed since they were pushed, are skipped when popped.
     let mut queue: BinaryHeap<Reverse<(usize, usize)>> = (0..n).map(|k| Reverse((adjacent[k].len(), k))).collect();
-    let (mut step, mut fill) = (0, 0);
+    let mut step = 0;
     while let Some(Reverse((degree, next))) = queue.pop() {
         if position[next] != usize::MAX || degree != adjacent[next].len() { continue; }
         position[next] = step;
         step += 1;
         let neighbors = std::mem::take(&mut adjacent[next]);
         fill += 1 + neighbors.len();
+        live -= neighbors.len();
         for &a in &neighbors {
             // Eliminating `next` joins its remaining neighbors into a clique.
             let list = &mut adjacent[a];
+            live -= list.len();
+            work = work.saturating_add(list.len() + neighbors.len());
             list.retain(|&b| b != next);
             list.extend(neighbors.iter().copied().filter(|&b| b != a));
             distinct(list);
-            queue.push(Reverse((adjacent[a].len(), a)));
+            live += list.len();
+            queue.push(Reverse((list.len(), a)));
+            if work > work_limit { return None; }
         }
+        // Lists are symmetric again only once every neighbor has been rewritten.
+        if exceeded(fill, live, n - step, work) { return None; }
     }
-    (position, fill)
+    Some(Ordering { position, fill, work })
 }
 
 /// Upper-triangular `R` by rows (row `k` starts at position `k`) and `c = Q^T b`.
+#[derive(Clone)]
 pub struct Factor {
     pub rows: Vec<SparseRow>,
     pub c: Vec<f64>,
-    /// Entries updated by rotations, a measure of the work done.
+    /// Entries written, at most one rotation step past `budget`.
     pub work: usize,
+    budget: usize,
     scratch: (SparseRow, SparseRow),
 }
 
 impl Factor {
-    /// `sqrt(mu) I` with a zero right-hand side, so rotating in `[J | b]` factors
-    /// `[J; sqrt(mu) I]` at the cost of factoring `J` alone; `mu = 0` starts empty.
-    pub fn damped(n: usize, mu: f64) -> Factor {
-        let rows = (0..n).map(|k| if mu > 0.0 { vec![(k, mu.sqrt())] } else { Vec::new() }).collect();
-        Factor { rows, c: vec![0.0; n], work: 0, scratch: (Vec::new(), Vec::new()) }
+    /// An empty factor of `n` columns that may write about `budget` entries.
+    pub fn new(n: usize, budget: usize) -> Factor {
+        Factor { rows: vec![Vec::new(); n], c: vec![0.0; n], work: 0, budget, scratch: (Vec::new(), Vec::new()) }
     }
 
-    /// Rotates row `v` with right-hand side `beta` into the factor. A row reaching an empty pivot,
-    /// possible only when `mu = 0`, fills it.
-    pub fn rotate(&mut self, mut v: SparseRow, mut beta: f64) {
+    /// Rotates row `v` with right-hand side `beta` into the factor. A row reaching an empty pivot
+    /// fills it. `false` when the budget ran out first, which leaves the factor unusable.
+    pub fn rotate(&mut self, mut v: SparseRow, mut beta: f64) -> bool {
         while let Some(&(k, lead)) = v.first() {
+            if self.work > self.budget { return false; }
             let row = &mut self.rows[k];
             if row.is_empty() {
+                self.work = self.work.saturating_add(v.len());
                 *row = v;
                 self.c[k] = beta;
-                return;
+                return true;
             }
             let pivot = row[0].1;
             // Scaled, so entries whose squares underflow still rotate.
@@ -91,13 +120,27 @@ impl Factor {
                 if a != 0.0 { r.push((column, a)); }
                 if b != 0.0 { w.push((column, b)); }
             }
-            self.work += r.len() + w.len();
+            self.work = self.work.saturating_add(r.len() + w.len());
             std::mem::swap(row, r);
             std::mem::swap(&mut v, w);
             let a = self.c[k];
             self.c[k] = cos * a + sin * beta;
             beta = cos * beta - sin * a;
         }
+        true
+    }
+
+    /// `sqrt(mu) I` with a zero right-hand side, so rotating in `[J | b]` factors `[J; sqrt(mu) I]`.
+    /// Damping goes in first because a row meeting a diagonal-only row carries on with only its
+    /// own later entries, so most rows stop near their own length. Rotated in after `J`, as in
+    /// MINPACK, each damping row would run the depth of the elimination tree, the whole group
+    /// for a chain. Rows that `J` cannot fit together, as in conflicting equations, make
+    /// the step's motion along directions `J` leaves free depend on roundoff in that order.
+    pub fn damped(n: usize, mu: f64, budget: usize) -> Factor {
+        let mut factor = Factor::new(n, budget);
+        if mu > 0.0 { for (k, row) in factor.rows.iter_mut().enumerate() { *row = vec![(k, mu.sqrt())]; } }
+        factor.work = n;
+        factor
     }
 
     /// `x` with `R x = c` by positions; `None` when a pivot is missing or the result not finite.

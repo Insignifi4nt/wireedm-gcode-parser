@@ -146,9 +146,33 @@ fn a_group_beyond_the_fill_limit_stays_in_place_and_others_still_solve() {
 fn a_solve_that_spends_its_work_limit_stops_as_too_large() {
     let mut builder = Builder::new();
     rectangle(&mut builder);
-    let (status, iterations, values) = builder.solve_within(Limits { fill: usize::MAX, work: 0 });
-    assert_eq!((status, iterations), (Status::TooLarge, 1));
-    assert!(values.iter().all(|v| v.is_finite()));
+    let limits = |work| Limits { fill: usize::MAX, work };
+    let original = builder.values.clone();
+    let (status, _, values) = builder.solve_within(limits(0));
+    assert_eq!((status, &values), (Status::TooLarge, &original));
+    // Some limit stops after a step has been taken, and more work then converges.
+    let stopped = (1..10_000).map(|work| builder.solve_within(limits(work)))
+        .find(|(status, iterations, _)| *status == Status::TooLarge && *iterations > 1).unwrap();
+    assert!(stopped.2.iter().all(|v| v.is_finite()) && stopped.2 != original);
+    assert_eq!(builder.solve_within(limits(usize::MAX)).0, Status::Converged);
+}
+
+#[test]
+fn a_satisfiable_duplicate_far_from_the_origin_does_not_slide_a_free_line() {
+    // A free line made parallel to a fixed guide twice; it should only turn about its middle.
+    let o = 5e5;
+    let mut builder = Builder::new();
+    let a = builder.point(o, o, true);
+    let b = builder.point(o + 10.0, o, true);
+    let c = builder.point(o + 2.0, o + 5.0, false);
+    let d = builder.point(o + 12.0, o + 5.0001, false);
+    for _ in 0..2 { builder.equation(Kind::Parallel, 0.0, &[a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]); }
+    let start = builder.values.clone();
+    let (status, _, values) = builder.solve();
+    let moved = |p: usize| values[p] - start[p];
+    assert_eq!(status, 0.0);
+    assert!(moved(c[0]).abs() < 1e-8 && moved(d[0]).abs() < 1e-8, "{values:?}");
+    assert!((moved(c[1]) + moved(d[1])).abs() < 1e-9, "{values:?}");
 }
 
 #[test]
@@ -384,3 +408,4 @@ fn polishes_a_near_tangent_intersection_quickly_beside_other_unknowns() {
     let radius = |x: f64, y: f64| (x + 100.0).hypot(y);
     assert!((radius(values[end[0]], values[end[1]]) - radius(0.0, -1e-5)).abs() <= 1e-12, "{values:?}");
 }
+
