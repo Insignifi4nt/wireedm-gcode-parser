@@ -1,7 +1,7 @@
 {
   "name": "wire-edm-workbench",
   "homepage": "https://insignifi4nt.github.io/wireedm-gcode-parser",
-  "version": "0.0.738",
+  "version": "0.0.739",
   "description": "A local-first Wire EDM workbench with controller-neutral CAM state and complete installable machine packages.",
   "type": "module",
   "scripts": {
@@ -22,6 +22,8 @@
     "test:e2e:workbench": "playwright test e2e/editor-existing-project.spec.ts",
     "upid:validate": "tsx --tsconfig tsconfig.app.json scripts/upid.ts",
     "upid:benchmark": "tsx --tsconfig tsconfig.app.json scripts/benchmark-upid.ts",
+    "solver:build": "node scripts/build-sketch-solver.mjs",
+    "solver:check": "node scripts/build-sketch-solver.mjs --check",
     "cad:benchmark": "tsx --tsconfig tsconfig.app.json scripts/benchmark-cad.ts",
     "upid:conformance": "tsx --tsconfig tsconfig.app.json scripts/upid.ts docs/upid/v1/examples/mixed-primitives.upid.json docs/upid/v1/examples/partial-circle-stop.upid.json docs/upid/v1/examples/compensated-circle.upid.json --require-executable",
     "post:docs:generate": "tsx scripts/generate-post-authoring-docs.ts",

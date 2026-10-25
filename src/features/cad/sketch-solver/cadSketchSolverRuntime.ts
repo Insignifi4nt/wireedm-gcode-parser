@@ -30,8 +30,8 @@ function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] 
   }
 }
 
-/** Input already parsed by the solve boundary. */
-function compile(input: CadSketchSolveInput) {
+/** Input already parsed by the solve boundary. Exported as the oracle for the native equation compiler. */
+export function compileCadSketchPlaneGcs(input: CadSketchSolveInput) {
   const graph = input.graph, objects: SketchPrimitive[] = [];
   const sourceIds = new Map<string, string>();
   const numericPoints = new Map<string, Point2>();
@@ -216,8 +216,8 @@ export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketch
   // Native work runs one solve at a time, so an abort is always discarded before the next native call.
   const exclusive = <T>(work: () => Promise<T>): Promise<T> => { const run = queue.then(work); queue = run.catch(() => undefined); return run; };
   return { async solve(input: CadSketchSolveInput): Promise<CadSketchSolveResult> {
-    let compiled: ReturnType<typeof compile>;
-    try { input = parseCadSketchSolveInput(input); compiled = compile(input); }
+    let compiled: ReturnType<typeof compileCadSketchPlaneGcs>;
+    try { input = parseCadSketchSolveInput(input); compiled = compileCadSketchPlaneGcs(input); }
     catch (error) { return { kind: 'rejected', reason: 'invalid-input', message: error instanceof Error ? error.message : 'Invalid sketch input.', diagnostics: noDiagnostics() }; }
     const owned = cadSketchExternalReferenceComponents(compiled.graph), points = new Map(compiled.graph.points.map(point => [point.id, point]));
     const circles = new Map(compiled.graph.entities.flatMap(entity => entity.kind === 'circle' ? [[entity.id, entity] as const] : []));

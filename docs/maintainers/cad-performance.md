@@ -65,3 +65,35 @@ Each row compares runs on the same host whose compared groups were bracketed at 
 The limit stays about a fifth below the smallest measured abort, so a connected group of 89 to about 100 fully constrained rectangles, which solved before, is now refused with a message instead of risking an abort.
 
 After 0.0.737, most of a drag preview with several sketches is the final `parseCadDocument` of the prepared document: about 13.5 ms for the 8-sketch workload, because the boundary parser clones and validates every feature again even when only one sketch changed.
+
+## Native sketch solver (in progress)
+
+`packages/sketch-solver` is our own Rust constraint solver, compiled to a 44 kB WebAssembly module with no dependencies. From 0.0.739 it is built, tested and compared with PlaneGCS, but the app does not load it yet.
+
+- `compileCadSketchEquations` turns a sketch into scalar parameters and twelve kinds of scalar equation, and the module solves them.
+  - Each connected group of unknowns gets its own damped Gauss-Newton solve, with exact gradients from dual numbers.
+  - Each equation is divided by its gradient norm over the unknowns, so every residual reads as the distance they must move.
+  - Each step comes from a Givens QR of the weighted Jacobian, not the normal equations, so roundoff does not move the free directions of an under-constrained sketch.
+  - Convergence is judged apart from that weighting:
+    - each residual must be within the driver tolerance in millimetres;
+    - each direction error must be within 1e-12 radians, or the roundoff of its coordinates at the far end of the longer line.
+  - The solver status only reports convergence of its own equations. As with PlaneGCS, the graph checks decide whether a result is accepted, including degenerate lines, angle sectors and the distance between collinear segments.
+  - Iteration continues to roundoff, because the graph checks require coincident points to agree within 8 ulp of their coordinates.
+- The `native-differential` test project runs the real PlaneGCS sketch suites through both solvers. Every compiled input must give the same equations. Every solved sketch must also solve natively and pass the graph checks, and well-constrained sketches must match PlaneGCS within 1e-8.
+- Not built yet, in order:
+  1. diagnosis of redundant and conflicting relations and degrees of freedom;
+  2. exact elimination of simple equalities;
+  3. drag targets;
+  4. switching the runtime over.
+- A direct probe of warm solves with this module, on the same host and not bracketed by calibration, against the PlaneGCS runtime with its diagnosis:
+
+  | Workload | PlaneGCS | Native |
+  | --- | --- | --- |
+  | 10 independent rectangles | 4.6 ms | 0.4 ms |
+  | 60 independent rectangles | 14.2 ms | 1.3 ms |
+  | 200 independent rectangles | 91.6 ms | 6.0 ms |
+  | 60-rectangle connected chain | 42.8 ms | 55.9 ms |
+  | 88-rectangle connected chain | 114.6 ms | 171.7 ms |
+
+  One large connected group is still slower because the step uses a dense factorization. A sparse or banded factorization is due before the runtime switches.
+- A start far outside the linear range of an equation can take one long step. For example, a perpendicular line that starts nearly antiparallel can be stretched to a valid but very long solution. A step bound comes with drag targets, where the solution must stay near the start.

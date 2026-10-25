@@ -1,0 +1,19 @@
+[package]
+name = "sketch-solver"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+publish = false
+description = "Wire EDM sketch constraint solver core"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1
+lto = true
+panic = "abort"
+strip = true
+debug = false

@@ -135,8 +135,23 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  native-solver:
+    name: Native sketch solver
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install the pinned Rust toolchain and WebAssembly target
+        working-directory: packages/sketch-solver
+        run: rustup toolchain install
+      # Runs the Rust tests and requires the committed module to match a fresh build byte for byte.
+      - run: npm run solver:check
+
   verify:
-    needs: [naming, contracts, unit, build-and-browser, storage-firefox]
+    needs: [naming, contracts, unit, native-solver, build-and-browser, storage-firefox]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -145,11 +160,13 @@ jobs:
           NAMING_RESULT: ${{ needs.naming.result }}
           CONTRACTS_RESULT: ${{ needs.contracts.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
+          NATIVE_SOLVER_RESULT: ${{ needs.native-solver.result }}
           BROWSER_RESULT: ${{ needs.build-and-browser.result }}
           FIREFOX_RESULT: ${{ needs.storage-firefox.result }}
         run: |
           test "$NAMING_RESULT" = success
           test "$CONTRACTS_RESULT" = success
           test "$UNIT_RESULT" = success
+          test "$NATIVE_SOLVER_RESULT" = success
           test "$BROWSER_RESULT" = success
           test "$FIREFOX_RESULT" = success
