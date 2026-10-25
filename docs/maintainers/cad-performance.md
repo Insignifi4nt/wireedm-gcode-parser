@@ -113,7 +113,7 @@ After 0.0.737, most of a drag preview with several sketches is the final `parseC
 
 ## Sketch-solver workloads, step 2c
 
-Run `npm run cad:benchmark -- --group solver-workloads`. A full run takes about one to two minutes on the development laptop; the recorded run below took 82.4 seconds. It uses seven latency samples, seven 60-frame trajectories, 1000 repeated solves per solver and an adaptive capacity search. `--quick` uses three latency samples and 100 repeated solves; `--runs N` changes latency samples and trajectory count but leaves the full-run memory count at 1000. Capacity always uses three samples per size and searches at most 4096 connected rectangles. Keep the host idle during the run. Reports include Node version, CPU, sample order, all calibration brackets, outcomes, source diagnostics, stage statistics, resource observations and correctness failures. A Markdown summary is written beside the JSON.
+Run `npm run cad:benchmark -- --group solver-workloads`. A full run takes about two minutes on the development laptop; the recorded run below took 121.7 seconds. It uses seven latency samples, seven 60-frame trajectories, 1000 repeated solves per solver and an adaptive capacity search. `--quick` uses three latency samples and 100 repeated solves; `--runs N` changes latency samples and trajectory count but leaves the full-run memory count at 1000. Capacity always uses three samples per size and searches at most 4096 connected rectangles. Keep the host idle during the run. Reports include Node version, CPU, sample order, all calibration brackets, outcomes, source diagnostics, stage statistics, resource observations and correctness failures. A Markdown summary is written beside the JSON.
 
 `cadSolverWorkloadCases.ts` defines 29 fixtures. `cadSolverWorkloadCases.test.ts` runs each through real PlaneGCS and pins the result kind, rejection reason, DOF, status and diagnostic lists in reviewed snapshots. Accepted graphs must preserve source intent and pass independent graph checks. The die's fully constrained result, free variant and shuffled hub also have explicit geometry/intent tests. Do not update snapshots merely to make a changed fixture pass; explain changed acceptance or diagnosis in the review.
 
@@ -156,77 +156,79 @@ Use the existing 1.5-times calibration drift rule. Each workload/edit sequence a
 
 The historical baseline above is unchanged. There is no committed solver baseline JSON to regenerate. New full-run measurements belong in the release-specific table below; retain their JSON/Markdown reports with review evidence.
 
-### Recorded 0.0.740 run
+### Recorded 0.0.741 run
 
-Node v24.22.1, Windows x64, Intel(R) Core(TM) i9-14900HX, seven samples, 82.4 seconds. Full report: `tmp/cad-benchmark/2026-10-25T18-26-20-841Z-solver-workloads.json`, with its adjacent Markdown summary. This is a new release-specific record; the historical baseline was not regenerated.
+Node v24.22.1, Windows x64, Intel(R) Core(TM) i9-14900HX, seven samples, 121.7 seconds. Full report: `tmp/cad-benchmark/2026-10-25T19-53-10-892Z-solver-workloads.json`, with its adjacent Markdown summary. This is a release-specific record; the historical baseline was not regenerated.
 
-CPU calibration ranged from 64.75 to 303.84 ms. The host changed speed substantially. An asterisk marks a bracket that drifted more than 1.5 times; exclude those timings from performance comparisons. Even other rows are comparable only to their paired solver under similar calibration, not to other rows or the old baseline. The five flagged fixture groups and the drag group remain in the record so slow or unstable measurements cannot disappear.
+CPU calibration ranged from 62.51 to 258.1 ms, so the host changed speed during the run. An asterisk marks a bracket that drifted more than 1.5 times; exclude those timings from performance comparisons. Other rows are comparable only to their paired solver under similar calibration, not to other rows or the old baseline. The flagged group stays in the record so slow or unstable measurements cannot disappear.
 
 All timings below are public-call p50 milliseconds. Each pair is first solve / re-solve. Native is **solve only, no diagnosis** throughout. S = geometry accepted; R = redundant rejection; C = conflicting rejection; F = convergence failure; I = independent graph-check rejection. An S in the native column does not imply clean diagnosis.
 
 | Workload | PlaneGCS full job | Native solve only, no diagnosis | Outcome Plane/native | CPU before/after ms |
 | --- | ---: | ---: | --- | --- |
-| rectangles-10 | 2.87 / 2.5 | 2.32 / 1.78 | S/S | 73.01/71.07 |
-| rectangles-60 | 13.35 / 12.31 | 10.33 / 9.54 | S/S | 72.93/64.75 |
-| rectangles-200 * | 90.46 / 109.27 | 61.07 / 59.55 | S/S | 68.64/166.25 |
-| connected-60 | 98.65 / 48.53 | 166.52 / 18.23 | S/S | 145.41/126.03 |
-| connected-88 * | 254.21 / 134.75 | 408.65 / 26.86 | S/S | 116.14/181.49 |
-| topology-open | 42.18 / 16.25 | 29.86 / 12.47 | S/S | 188.88/190.19 |
-| topology-loop | 9.27 / 9.23 | 7.57 / 6.43 | S/S | 175.2/200.36 |
-| topology-branch | 8.83 / 10.78 | 10.17 / 7.85 | S/S | 223.13/170.85 |
-| topology-hub | 9.82 / 9.74 | 10.12 / 10.44 | S/S | 205.03/160.46 |
-| topology-hub-shuffled | 12.85 / 8.34 | 15.25 / 9.57 | S/S | 189.5/215.22 |
-| die-constrained | 12.82 / 11.01 | 9.32 / 4.6 | S/S | 184.58/176.41 |
-| die-free | 10.8 / 9.99 | 8.5 / 5.88 | S/S | 201.36/174.09 |
-| numeric-tiny * | 0.91 / 0.71 | 0.7 / 0.57 | S/S | 164.54/269.78 |
-| numeric-far-origin | 1.05 / 1.14 | 0.95 / 0.8 | S/S | 223.94/249.21 |
-| numeric-mixed-scales | 2.75 / 2.31 | 2.44 / 1.55 | S/S | 274.9/189.04 |
-| tangency-exact | 9.48 / 8.96 | 7.85 / 5.46 | S/S | 147.33/179.08 |
-| tangency-near | 11.47 / skipped | 10.54 / 10.46 | I/S | 195.92/218.15 |
-| redundant-distances | 0.34 / skipped | 0.34 / 0.24 | R/S | 200.01/250.57 |
-| partial-coincident-horizontal | 0.57 / skipped | 0.27 / 0.19 | R/S | 219.37/206.13 |
-| partial-symmetry-midpoint | 0.73 / skipped | 0.41 / 0.41 | R/S | 147.44/159.04 |
-| conflicting-distances | 0.54 / skipped | 0.22 / skipped | C/F | 129.82/191.25 |
-| conflicting-triangle | 0.98 / skipped | 0.52 / skipped | C/F | 142.93/147.64 |
-| fixed-point-vs-dimension | 0.86 / skipped | 0.68 / skipped | C/F | 152.56/162.83 |
-| overlapping-conflicts | 0.73 / skipped | 0.48 / skipped | C/F | 139.25/133.62 |
-| impossible-triangle | 0.32 / skipped | 0.32 / skipped | F/F | 118.3/139.82 |
-| fully-fixed-conflict | 0.43 / skipped | 0.26 / skipped | I/F | 126.57/151.94 |
-| fully-fixed-satisfied * | 0.4 / 0.41 | 0.42 / 0.39 | S/S | 197.71/303.84 |
-| fully-fixed-conflict-with-free | 0.17 / skipped | 0.09 / skipped | C/F | 199.48/184.84 |
-| fully-fixed-satisfied-with-free * | 1.04 / skipped | 0.54 / 0.45 | R/S | 144.57/265.16 |
+| rectangles-10 | 2.67 / 2.54 | 2.23 / 1.8 | S/S | 67.6/65.93 |
+| rectangles-60 | 12.46 / 11.95 | 10.11 / 8.55 | S/S | 65.78/62.51 |
+| rectangles-200 * | 82.44 / 82.04 | 84.55 / 73.77 | S/S | 66.95/144.29 |
+| connected-60 | 121.67 / 70.79 | 24.83 / 26.08 | S/S | 146.53/161.49 |
+| connected-88 | 297.61 / 162.7 | 39.54 / 36.75 | S/S | 172.78/200.46 |
+| topology-open | 40.25 / 19.45 | 16.79 / 11.29 | S/S | 196.74/180.58 |
+| topology-loop | 15.73 / 16.24 | 10.58 / 10.16 | S/S | 221.54/175.41 |
+| topology-branch | 15.07 / 10.23 | 8.01 / 6.32 | S/S | 170.2/188.53 |
+| topology-hub | 9.25 / 9.86 | 7.67 / 8.07 | S/S | 124.35/134.41 |
+| topology-hub-shuffled | 15.34 / 13.75 | 13.83 / 11.39 | S/S | 224.71/166.94 |
+| die-constrained | 13.45 / 11.25 | 9.89 / 8.91 | S/S | 171.76/244.65 |
+| die-free | 9.5 / 8.63 | 8.1 / 6.28 | S/S | 169.12/212.53 |
+| numeric-tiny | 1.16 / 0.9 | 0.75 / 0.63 | S/S | 175.21/179.14 |
+| numeric-far-origin | 0.67 / 0.51 | 0.42 / 0.35 | S/S | 196.87/150.96 |
+| numeric-mixed-scales | 1.79 / 1.87 | 1.68 / 1.07 | S/S | 183.98/161.73 |
+| tangency-exact | 9.3 / 8.42 | 7.43 / 6.9 | S/S | 183.27/196.28 |
+| tangency-near | 11.3 / skipped | 7.87 / 6.71 | I/S | 179.57/147.37 |
+| redundant-distances | 0.5 / skipped | 0.38 / 0.38 | R/S | 191.58/186.28 |
+| partial-coincident-horizontal | 0.4 / skipped | 0.36 / 0.29 | R/S | 173.52/202.79 |
+| partial-symmetry-midpoint | 0.66 / skipped | 0.45 / 0.39 | R/S | 191.27/200.59 |
+| conflicting-distances | 0.47 / skipped | 0.24 / skipped | C/F | 165.41/178.74 |
+| conflicting-triangle | 0.59 / skipped | 0.5 / skipped | C/F | 246.1/202.41 |
+| fixed-point-vs-dimension | 0.47 / skipped | 0.61 / skipped | C/F | 216.18/176.05 |
+| overlapping-conflicts | 0.52 / skipped | 0.46 / skipped | C/F | 194.67/219.77 |
+| impossible-triangle | 0.3 / skipped | 0.4 / skipped | F/F | 135.96/128.19 |
+| fully-fixed-conflict | 0.17 / skipped | 0.1 / skipped | I/F | 153.11/153.95 |
+| fully-fixed-satisfied | 0.22 / 0.23 | 0.29 / 0.25 | S/S | 128.25/151.84 |
+| fully-fixed-conflict-with-free | 0.53 / skipped | 0.32 / skipped | C/F | 137.02/159.07 |
+| fully-fixed-satisfied-with-free | 0.27 / skipped | 0.22 / 0.24 | R/S | 140.8/167.62 |
 
 | Edit from previous accepted solution | PlaneGCS full job p50 ms | Native solve only, no diagnosis p50 ms | CPU before/after ms |
 | --- | ---: | ---: | --- |
-| dimension-plus-0.5-mm | 11.16 | 28.05 | 155.89/158.93 |
-| dimension-plus-20-percent | 10.51 | 8.13 | 155.89/158.93 |
-| constraint-addition | 6.16 | 7.36 | 178.63/164.77 |
-| constraint-removal | 7.52 | 5.45 | 178.63/164.77 |
+| dimension-plus-0.5-mm | 8.63 | 10.66 | 146.49/178.73 |
+| dimension-plus-20-percent | 10.37 | 5.41 | 146.49/178.73 |
+| constraint-addition | 5.54 | 3.99 | 133.05/165.96 |
+| constraint-removal | 5.11 | 4.09 | 133.05/165.96 |
 
 Selected p50 stage timings, also in milliseconds. Each stage has its own distribution, so its median need not add to the total median.
 
 | Workload / solver | Parse/compile | Native call | Mapping | Validation | Total |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| connected-60 / PlaneGCS | 12.5 | 74.95 | 6.7 | 0.98 | 98.65 |
-| connected-60 / native, no diagnosis | 10.08 | 148.37 | 5.58 | 0.92 | 166.52 |
-| die-constrained / PlaneGCS | 4.67 | 4.66 | 2.08 | 0.85 | 12.82 |
-| die-constrained / native, no diagnosis | 4.31 | 2.46 | 1.73 | 0.99 | 9.32 |
-| dimension-plus-0.5-mm / PlaneGCS | 2.79 | 5.06 | 2.02 | 0.8 | 11.16 |
-| dimension-plus-0.5-mm / native, no diagnosis | 3.28 | 21.97 | 1.81 | 0.76 | 28.05 |
+| rectangles-200 / PlaneGCS | 41.64 | 16.45 | 18.88 | 3.62 | 82.44 |
+| rectangles-200 / native | 48.97 | 5.7 | 18.01 | 2.96 | 84.55 |
+| connected-88 / PlaneGCS | 27.38 | 257.14 | 13.43 | 2.11 | 297.61 |
+| connected-88 / native | 20.17 | 5.1 | 9.76 | 1.28 | 39.54 |
+| die-constrained / PlaneGCS | 4.92 | 4.53 | 2.54 | 0.91 | 13.45 |
+| die-constrained / native | 4.8 | 1.39 | 2.52 | 0.91 | 9.89 |
+| dimension-plus-0.5-mm / PlaneGCS | 2.62 | 4.07 | 1.25 | 0.51 | 8.63 |
+| dimension-plus-0.5-mm / native | 2.69 | 5.69 | 1.23 | 0.5 | 10.66 |
 
 | Resource / operation | PlaneGCS full job | Native solve only, no diagnosis |
 | --- | --- | --- |
-| WASM raw / gzip bytes | 484003 / 174403 | 43999 / 16730 |
-| Cold local read / compile / instantiate+glue ms | 1.87 / 0.97 / 4.15 | 1.60 / 0.18 / 0.16 |
-| Cold sum ms, calibration 73.87/67.58 ms | 6.99 | 1.94 |
-| Largest retained WASM capacity across fixture probes, MiB | 21.06 | 12.75, connected-88 |
+| WASM raw / gzip bytes | 484003 / 174403 | 52368 / 19540 |
+| Cold local read / compile / instantiate+glue ms | 1.59 / 0.85 / 3.88 | 1.38 / 0.19 / 0.14 |
+| Cold sum ms, calibration 70.88/65.25 ms | 6.32 | 1.70 |
+| Largest retained WASM capacity across fixture probes, MiB | 21.06 | 1.81, connected-88 |
 | Seeded die WASM capacity before / after 1000 solves, MiB | 21.063 / 21.063 | 1.125 / 1.125 |
-| RSS / JS heap deltas after 1000 solves, MiB, uncontrolled GC | 0.67 / 31.58 | 1.45 / 26.61 |
-| Connected capacity, median under 1 s | 88 rectangles, 211.20 ms; 89 rejected too-large | 104 rectangles, 939.50 ms; 105 solved in 1118.20 ms |
-| 60-frame drag, seven trajectories * | 10.67 / 22.65 / 26.94 ms p50/p95/p99; 409/420 over 8 ms | Unsupported |
+| RSS / JS heap deltas after 1000 solves, MiB, uncontrolled GC | -0.46 / 32.61 | -1.59 / 25.89 |
+| Connected capacity, median under 1 s | 88 rectangles, 292.71 ms; 89 rejected too-large (throttled boundary; largest unthrottled 60) | 1867 rectangles, 977.95 ms; 1868 solved in 1029.93 ms |
+| 60-frame drag, seven trajectories | 16.65 / 20.7 / 28.74 ms p50/p95/p99; 419/420 over 8 ms | Unsupported |
 
-Capacity boundary brackets were unthrottled, though the exact native timing boundary remains host-dependent. All 420 drag frames were accepted and the seven unreachable targets were projected. Its latency bracket was 205.37/111.44 ms and is unsuitable for performance comparison. The JSON retains raw frame samples and every capacity probe. Process deltas do not establish a leak or allocator live usage. Browser/network cold fetch, temporary process-memory peaks, native diagnosis and native drag could not be measured.
+The PlaneGCS capacity boundary bracket was throttled; its largest unthrottled solved probe was 60 rectangles, and 89 is refused by its group-size guard. The native boundary bracket was unthrottled, though the exact timing boundary remains host-dependent. All 420 drag frames were accepted and the seven unreachable targets were projected; the drag bracket was 201.56/136.18 ms. The JSON retains raw frame samples and every capacity probe. Process deltas do not establish a leak or allocator live usage. Browser/network cold fetch, temporary process-memory peaks, native diagnosis and native drag could not be measured.
 
-The run produced zero geometry or input-integrity failures. The native solver remains incomplete for the full job: it accepts the redundant fixtures without diagnosis and lacks drag. The unthrottled connected-60 solve and +0.5 mm die edit are slower natively even with diagnosis absent; the latter spends 21.97 ms inside the native call versus PlaneGCS's 5.06 ms including diagnosis. Independent rectangles, the open profile, closed loop, constrained/free dies and far-origin/mixed-scale fixtures show lower native medians, but these are partial-job measurements. Branch and hub results provide no general native advantage. Shuffled authoring preserves geometry, but timings on this unstable host cannot establish an ordering effect.
+The run produced zero geometry or input-integrity failures. The native solver remains incomplete for the full job here: it accepts the redundant fixtures without diagnosis, reports conflicts as convergence failures and lacks drag. With the sparse solve, the connected chains are much faster at the public boundary: connected-60 takes 24.83 ms against 121.67 ms, and connected-88 39.54 ms against 297.61 ms, where the native call takes 5.1 ms against 257.14 ms for PlaneGCS with its diagnosis. The +0.5 mm die edit is still slower natively, 10.66 ms against 8.63 ms. Where the native call is short, the shared TypeScript stages dominate: rectangles-200 spends 48.97 ms in parse/compile and 18.01 ms in mapping around a 5.7 ms native call, and PlaneGCS pays the same stages.
 
 PlaneGCS reports success and DOF 0 on near tangency before the independent checks reject its arc/tangent residual. Fully fixed satisfied relations are accepted without unknowns, but diagnosed as redundant when free geometry is present. Fully fixed conflicting relations similarly move from graph-check rejection to a mapped conflict when a free unknown is present. Symmetry plus midpoint produces a partially redundant source id; coincident plus horizontal reports the horizontal as entirely redundant. These are pinned observations, not solver changes.
