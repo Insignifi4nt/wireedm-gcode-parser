@@ -11,7 +11,7 @@ import { prepareCadEdits } from '../cadEditPreparation';
 import { createCadSketchSolverRuntime } from '../sketch-solver/cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from '../sketch-solver/cadSketchSolverModule';
 import { cadBenchmarkStats, checkCadBenchmarkStep } from './cadBenchmark';
-import { createCadBenchmarkDragPreview, createCadBenchmarkRectangleGraph, createCadKernelBenchmarkCases } from './cadBenchmarkCases';
+import { createCadBenchmarkDependentDragPreview, createCadBenchmarkDragPreview, createCadBenchmarkRectangleGraph, createCadKernelBenchmarkCases } from './cadBenchmarkCases';
 
 const require = createRequire(import.meta.url);
 const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
@@ -57,6 +57,19 @@ describe('CAD benchmark cases', () => {
       expect(Number(point.position[1]) - Number(original[index].position[1])).toBeCloseTo(.25, 6);
     }
     expect(prepared.document.features.slice(1)).toEqual(document.features.slice(1));
+  });
+
+  it('re-solves a reference dependent only when the drag moves what it references', async () => {
+    const { document, referencedEdit, unreferencedEdit } = createCadBenchmarkDependentDragPreview(2);
+    let solves = 0;
+    const counted = { solve: (...args: Parameters<typeof solver.solve>) => { solves++; return solver.solve(...args); } };
+    const dependent = (source: typeof document) => (source.features[1] as CadSketchFeature).graph!.points.filter(point => point.id.startsWith('ref_'));
+    const referenced = await prepareCadEdits(document, [referencedEdit], counted);
+    expect(solves).toBe(2);
+    expect(Number(dependent(referenced.document)[0].position[1]) - Number(dependent(document)[0].position[1])).toBeCloseTo(.25, 6);
+    solves = 0;
+    const unreferenced = await prepareCadEdits(document, [unreferencedEdit], counted);
+    expect(solves).toBe(1); expect(unreferenced.document.features[1]).toEqual(document.features[1]);
   });
 
   it('summarizes samples with nearest-rank percentiles', () => {

@@ -1,5 +1,5 @@
 import type { CadDocument, CadFeature, CadSketchFeature } from '@/domain/cad/cadDocument';
-import type { CadEdit } from '@/domain/cad/cadOperations';
+import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { CAD_GEAR_V3_PLUGIN, createCadPluginProfile } from '@/domain/cad/plugins/cadPlugins';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
@@ -118,4 +118,23 @@ export function createCadBenchmarkDragPreview(sketchCount: number, rectanglesPer
   });
   return { document: parseCadDocument({ format: 'wireedm-cad', schemaVersion: 2, id: 'drag_preview', name: 'drag_preview', units: 'mm', parameters: {}, features }),
     edit: { kind: 'move-sketch-point', sketchId: 'sketch_0', pointId: 's0r0_p2', translation: [0.5, 0.25] } };
+}
+
+/**
+ * Two sketches where the second uses the first rectangle's bottom edge from the first sketch.
+ * The first two rectangles of the source sketch are released. Dragging the first moves the
+ * referenced edge, so its dependent must re-solve; dragging the second leaves every referenced
+ * value equal, so only the source sketch needs a solve. Each sketch has at least two rectangles.
+ */
+export function createCadBenchmarkDependentDragPreview(rectanglesPerSketch: number): { document: CadDocument; referencedEdit: CadEdit; unreferencedEdit: CadEdit } {
+  const count = Math.max(2, rectanglesPerSketch), sourceGraph = createCadBenchmarkRectangleGraph(count, 's0r', true);
+  const sketches: CadSketchFeature[] = [
+    { ...base('sketch_0'), kind: 'sketch', plane: 'XY', offset: 0, profiles: [],
+      graph: { ...sourceGraph, relations: sourceGraph.relations.filter(relation => relation.id !== 's0r0_fixed' && relation.id !== 's0r1_fixed') } },
+    { ...base('sketch_1'), kind: 'sketch', plane: 'XY', offset: 5, profiles: [], graph: createCadBenchmarkRectangleGraph(count, 's1r', true) }
+  ];
+  const unlinked = parseCadDocument({ format: 'wireedm-cad', schemaVersion: 2, id: 'dependent_drag', name: 'dependent_drag', units: 'mm', parameters: {}, features: sketches });
+  return { document: applyCadEdits(unlinked, [{ kind: 'use-sketch-entity', sketchId: 'sketch_1', sourceSketchId: 'sketch_0', sourceEntityId: 's0r0_l0', idPrefix: 'ref' }]),
+    referencedEdit: { kind: 'move-sketch-point', sketchId: 'sketch_0', pointId: 's0r0_p2', translation: [0.5, 0.25] },
+    unreferencedEdit: { kind: 'move-sketch-point', sketchId: 'sketch_0', pointId: 's0r1_p2', translation: [0.5, 0.25] } };
 }

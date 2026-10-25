@@ -10,6 +10,7 @@ import { cadFeatureInputs } from '@/domain/cad/cadFeatureInputs';
 import { assertCadSketchExternalReferences, refreshCadSketchExternalReferences } from '@/domain/cad/cadSketchExternalReferences';
 import { cadSketchSolutionMatchesInput } from './sketch-solver/cadSketchSolverProtocol';
 import { cadSketchPatternSnapshotNeedsExact, cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
+import { checkCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 
 /** Exact geometry edits whose re-solved prefix must stay unchanged, with the error shown when constraints move it. */
 const geometryIntentErrors = {
@@ -53,16 +54,28 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
   validateCadEditBatch(edits);
   const captured = structuredClone(edits);
   let candidate = parseCadDocument(document);
+  // The last document whose sketches all hold a solution: the parsed original, then each completed solve.
+  let accepted = candidate;
   const diagnostics = new Map<string, CadSketchSolveDiagnostics>();
   async function solve(drag?: { sketchId: string; pointId: string; position: readonly [number, number] }, exact?: { sketchId: string; error: () => CadError }) {
     const target = candidate, features: CadFeature[] = [], previous = new Map<string, CadFeature>();
     const end = exact ? target.features.findIndex(feature => feature.id === exact.sketchId) : -1;
     const dependents = new Set(exact ? [exact.sketchId] : []);
+    const acceptedSketches = new Map(accepted.features.map(feature => [feature.id, feature]));
+    const sameParameters = Value.Equal(target.parameters, accepted.parameters);
     for (const [index, feature] of target.features.entries()) {
       signal?.throwIfAborted();
       if (feature.kind !== 'sketch' || !feature.graph) { features.push(feature); previous.set(feature.id, feature); continue; }
       const refreshed = refreshCadSketchExternalReferences({ sketch: feature, parameters: target.parameters, previous });
       if (!refreshed.graph) throw new CadError('missing-sketch-graph', 'The prepared sketch graph is unavailable.');
+      // An unedited sketch whose refreshed references still match its accepted solution keeps it:
+      // the same graph and parameters with every relation still satisfied. Redundancy and freedom are
+      // only diagnosed for sketches that are solved. The dragged sketch and every sketch of an
+      // exact-prefix certificate always solve.
+      if (!exact && drag?.sketchId !== feature.id && sameParameters && Value.Equal(refreshed, acceptedSketches.get(feature.id))
+        && !checkCadSketchGraph(refreshed.graph, target.parameters).length) {
+        features.push(refreshed); previous.set(feature.id, refreshed); continue;
+      }
       const input = { graph: refreshed.graph, parameters: target.parameters,
         ...(drag?.sketchId === feature.id ? { drag: { pointId: drag.pointId, position: drag.position } } : {}) };
       const result = await solver.solve(input, signal);
@@ -91,6 +104,7 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
       previous.set(feature.id, solved);
     }
     candidate = { ...candidate, features };
+    accepted = candidate;
   }
   let pending: CadEdit[] = [];
   async function flush() {

@@ -1,11 +1,12 @@
 import type { CadBuildResult, CadDocument } from '@/domain/cad/cadDocument';
+import type { CadEdit } from '@/domain/cad/cadOperations';
 import { prepareCadEdits } from '../cadEditPreparation';
 import { prepareCadMeshDisplay } from '../cadMeshDisplay';
 import { buildCadKernelModel } from '../kernel/cadKernelModel';
 import { createCadKernelRuntime } from '../kernel/cadKernelRuntime';
 import { isCadKernelReply, type CadKernelReply } from '../kernel/cadKernelProtocol';
 import type { CadSketchSolveInput, CadSketchSolveResult } from '../sketch-solver/cadSketchSolverTypes';
-import { cadBenchmarkVolumeMatches, createCadBenchmarkDragPreview, createCadBenchmarkRectangleGraph, type CadBenchmarkStep, type CadKernelBenchmarkCase } from './cadBenchmarkCases';
+import { cadBenchmarkVolumeMatches, createCadBenchmarkDependentDragPreview, createCadBenchmarkDragPreview, createCadBenchmarkRectangleGraph, type CadBenchmarkStep, type CadKernelBenchmarkCase } from './cadBenchmarkCases';
 
 export interface CadBenchmarkStats { readonly runs: number; readonly p50: number; readonly p95: number; readonly min: number; readonly max: number }
 /** Nearest-rank percentiles; a handful of runs makes p95 the slowest-but-one or the maximum. */
@@ -213,22 +214,38 @@ export async function probeCadSolverCapacity(createFreshSolver: () => CadSketchS
   return { largestSolved, firstFailed, outcomes };
 }
 
+/**
+ * Solver calls (input parsing, constraint compilation, the native solve and reply validation)
+ * and their share of one preview preparation; the rest is document parsing, refresh and checks.
+ */
+async function measurePreview(solver: CadSketchSolver, document: CadDocument, edit: CadEdit, runs: number) {
+  let solves = 0, solverMs = 0;
+  const counted: CadSketchSolver = { solve: async (input, signal) => {
+    solves++; const started = performance.now();
+    try { return await solver.solve(input, signal); } finally { solverMs += performance.now() - started; }
+  } };
+  const before = cadBenchmarkCpuCalibrationMs();
+  const prepare: number[] = [], solverCalls: number[] = [];
+  for (let run = 0; run <= runs; run++) {
+    solves = 0; solverMs = 0;
+    const elapsed = await timeAsync(() => prepareCadEdits(document, [edit], counted));
+    if (run > 0) { prepare.push(elapsed); solverCalls.push(solverMs); }
+  }
+  return { cpuCalibrationMs: [before, cadBenchmarkCpuCalibrationMs()] as const, solvesPerPreview: solves,
+    prepareMs: cadBenchmarkStats(prepare), solverCallMs: cadBenchmarkStats(solverCalls) };
+}
+
 /** One drag-preview preparation of a single point move, across documents with more independent sketches. */
 export async function measureCadDragPreview(solver: CadSketchSolver, options: { sketchCounts: readonly number[]; rectanglesPerSketch: number; runs: number }) {
-  const results = [];
+  const independent = [];
   for (const sketchCount of options.sketchCounts) {
     const { document, edit } = createCadBenchmarkDragPreview(sketchCount, options.rectanglesPerSketch);
-    let solves = 0;
-    const counted: CadSketchSolver = { solve: (input, signal) => { solves++; return solver.solve(input, signal); } };
-    const before = cadBenchmarkCpuCalibrationMs();
-    const samples: number[] = [];
-    for (let run = 0; run <= options.runs; run++) {
-      solves = 0;
-      const elapsed = await timeAsync(() => prepareCadEdits(document, [edit], counted));
-      if (run > 0) samples.push(elapsed);
-    }
-    const cpuCalibrationMs = [before, cadBenchmarkCpuCalibrationMs()] as const;
-    results.push({ sketchCount, rectanglesPerSketch: options.rectanglesPerSketch, cpuCalibrationMs, solvesPerPreview: solves, prepareMs: cadBenchmarkStats(samples) });
+    independent.push({ sketchCount, rectanglesPerSketch: options.rectanglesPerSketch, ...await measurePreview(solver, document, edit, options.runs) });
   }
-  return results;
+  const { document, referencedEdit, unreferencedEdit } = createCadBenchmarkDependentDragPreview(options.rectanglesPerSketch);
+  const dependent = {
+    referenced: await measurePreview(solver, document, referencedEdit, options.runs),
+    unreferenced: await measurePreview(solver, document, unreferencedEdit, options.runs)
+  };
+  return { independent, dependent };
 }

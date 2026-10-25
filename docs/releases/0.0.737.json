@@ -1,0 +1,24 @@
+{
+  "version": "0.0.737",
+  "previousVersion": "0.0.736",
+  "postCompatibility": "preserved-output-edited-sketch-only-solving",
+  "summary": "Sketch edit preparation, including every drag preview, now solves only the edited sketch and the sketches whose referenced geometry actually changed. Any other sketch keeps its accepted solution, provided its refreshed graph and the parameters are unchanged and its relations still hold. A drag always solves its own sketch. Exact geometry edits (move, place, split, trim, extend, offset, mirror, copy, pattern and reference-dimension edits) still certify their complete prefix by solving every sketch, as before. Redundant or conflicting relations are diagnosed only in sketches that are solved: a saved sketch whose relations hold is kept on unrelated edits and diagnosed again once a change reaches it or any parameter changes. On the benchmark, a drag preview in a part with 8 sketches dropped from 8 solver calls and 28.6 ms to 1 call and 16.6 ms. The benchmark now separates solver-call time from the rest of preparation and adds a workload where one sketch references another.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Saved documents keep their schema and contents. Unedited sketches are no longer passed through the solver again on every edit, so their saved coordinates now stay exactly as stored instead of being re-solved, and solver-only rejections (redundant or conflicting relations) are reported only for sketches that are solved. Sketch diagnostics returned by edit preparation therefore cover only the solved sketches; no workbench view reads them.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change. Preparation still checks cancellation before and after each solve.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "New preparation tests show that a drag solves only its own sketch, that a drag of unreferenced source geometry leaves its dependent unsolved and unchanged, that a drag of referenced geometry re-solves the dependent and moves it, that a batch flushing twice does not re-solve the first sketch, and that a parameter edit solves every sketch; that test fails on the previous preparation. Another test fixes the redundancy policy: an unrelated edit keeps a satisfied redundant sketch exactly, and a parameter change still rejects it as redundant. The benchmark suite checks the dependent workload's solve counts. All CAD unit suites, native tsc -b and npm run lint with zero findings pass; the PR records the full unit suite and production build."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Faster sketch dragging in parts with several sketches.",
+    "changes": [
+      "Dragging or editing a sketch no longer re-solves unrelated sketches; sketches that reference the edited geometry still follow it."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

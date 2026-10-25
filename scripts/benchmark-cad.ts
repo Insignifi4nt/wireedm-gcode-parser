@@ -71,7 +71,11 @@ const capacity = await probeCadSolverCapacity(() => createCadSketchSolverRuntime
   quick ? [60, 100] : [60, 80, 100, 125, 150, 200]);
 for (const size of solverScaling.sizes) console.log(`solver ${size.rectangles} rectangles (${size.entities} lines) [cpu ${size.cpuCalibrationMs.join('/')} ms]: ${size.outcome}, p50 ${size.solveMs.p50} ms${drifted(size.cpuCalibrationMs) ? ' THROTTLED' : ''}`);
 console.log(`solver drag on ${solverScaling.drag.rectangles} rectangles [cpu ${solverScaling.drag.cpuCalibrationMs.join('/')} ms]: ${solverScaling.drag.outcome}, p50 ${solverScaling.drag.solveMs.p50} ms${drifted(solverScaling.drag.cpuCalibrationMs) ? ' THROTTLED' : ''}`);
-for (const preview of dragPreview) console.log(`drag preview with ${preview.sketchCount} sketches [cpu ${preview.cpuCalibrationMs.join('/')} ms]: ${preview.solvesPerPreview} solves, p50 ${preview.prepareMs.p50} ms${drifted(preview.cpuCalibrationMs) ? ' THROTTLED' : ''}`);
+const previewLine = (preview: { cpuCalibrationMs: readonly number[]; solvesPerPreview: number; prepareMs: { p50: number }; solverCallMs: { p50: number } }) =>
+  `[cpu ${preview.cpuCalibrationMs.join('/')} ms]: ${preview.solvesPerPreview} solves, p50 ${preview.prepareMs.p50} ms of which solver calls ${preview.solverCallMs.p50} ms${drifted(preview.cpuCalibrationMs) ? ' THROTTLED' : ''}`;
+for (const preview of dragPreview.independent) console.log(`drag preview with ${preview.sketchCount} sketches ${previewLine(preview)}`);
+console.log(`dependent drag preview, referenced edge ${previewLine(dragPreview.dependent.referenced)}`);
+console.log(`dependent drag preview, unreferenced point ${previewLine(dragPreview.dependent.unreferenced)}`);
 console.log(`solver capacity in a fresh module: largest solved ${capacity.largestSolved ?? 'none'}, first failed ${capacity.firstFailed ?? 'none'} rectangles`);
 
 const report = {
@@ -81,7 +85,7 @@ const report = {
   cpuCalibrationMs: { idle: idleCpuCalibrationMs, solver: solverCpuCalibrationMs },
   solver: { initMs: Math.round(solverInitMs), scaling: solverScaling, dragPreview, capacity }
 };
-const calibrations = [idleCpuCalibrationMs, solverCpuCalibrationMs, ...kernel.flatMap(testCase => testCase.steps.flatMap(step => Object.values(step.cpuCalibrationMs))), ...solverScaling.sizes.flatMap(size => size.cpuCalibrationMs), ...solverScaling.drag.cpuCalibrationMs, ...dragPreview.flatMap(preview => preview.cpuCalibrationMs)];
+const calibrations = [idleCpuCalibrationMs, solverCpuCalibrationMs, ...kernel.flatMap(testCase => testCase.steps.flatMap(step => Object.values(step.cpuCalibrationMs))), ...solverScaling.sizes.flatMap(size => size.cpuCalibrationMs), ...solverScaling.drag.cpuCalibrationMs, ...[...dragPreview.independent, dragPreview.dependent.referenced, dragPreview.dependent.unreferenced].flatMap(preview => preview.cpuCalibrationMs)];
 if (drifted(calibrations)) {
   console.warn(`CPU calibration varied from ${Math.min(...calibrations)} to ${Math.max(...calibrations)} ms: the host throttled, so compare only steps with similar calibration.`);
 }
