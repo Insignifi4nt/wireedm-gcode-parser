@@ -379,4 +379,18 @@ describe('shared CAD edit preparation with the real sketch solver', () => {
     release();
     expect((await prepared).document.name).toBe('Captured');
   });
+
+  it('keeps an unedited sketch with satisfied but redundant relations until a change makes it solve', async () => {
+    const line = source(), sketch = line.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing fixture graph.');
+    const redundant = { ...sketch, graph: { ...sketch.graph, relations: [...sketch.graph.relations, { id: 'distance-again', kind: 'distance', pointIds: ['a', 'b'], value: ' length ' }] } };
+    const free = { ...sketch, id: 'free', name: 'Free', graph: { points: [{ id: 'spot', position: [50, 50] }],
+      entities: [{ id: 'spot-circle', kind: 'circle', construction: true, centerPointId: 'spot', radius: 2 }], relations: [] } };
+    const document = parseCadDocument({ ...line, features: [redundant, free] });
+    // Only solved sketches are diagnosed for redundancy: an edit elsewhere keeps the saved sketch exactly.
+    const moved = await prepareCadEdits(document, [{ kind: 'move-sketch-point', sketchId: 'free', pointId: 'spot', translation: [1, 0] }], solver);
+    expect(moved.document.features[0]).toEqual(document.features[0]);
+    await expect(prepareCadEdits(document, [{ kind: 'set-parameter', name: 'unrelated', value: 1 }], solver)).rejects
+      .toMatchObject({ diagnostics: { redundantIds: expect.arrayContaining(['distance-again']) } });
+  });
 });

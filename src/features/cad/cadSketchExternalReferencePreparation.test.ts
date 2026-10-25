@@ -143,4 +143,29 @@ describe('ordered native preparation of preceding-sketch references', () => {
     expect(graphOf(main.getSnapshot().document).points.find(point => point.id === 'hole-center')?.position).toEqual([20, 12]);
     main.undo(); expect(main.getSnapshot().document).toBe(source); expect(main.getSnapshot().canUndo).toBe(false);
   });
+
+  it('solves only the edited sketch and the reference dependents its edit actually changes', async () => {
+    const linked = await prepare(lineReferencePart(), [lineUseReference, lineMidpoint]), layout = linked.features[0];
+    if (layout.kind !== 'sketch' || !layout.graph) throw new Error('Layout graph missing.');
+    // A numeric end lets a drag move the referenced line; the construction circle the plate does not
+    // reference can move while every referenced value stays equal.
+    const points = [...layout.graph.points.map(point => point.id === 'b' ? { ...point, position: [40, 10] as const } : point), { id: 'spare', position: [5, 30] as const }];
+    const document = parseCadDocument({ ...linked, features: [{ ...layout, graph: { ...layout.graph, points,
+      entities: [...layout.graph.entities, { id: 'spare-circle', kind: 'circle', centerPointId: 'spare', radius: 2, construction: true }] } }, ...linked.features.slice(1)] });
+    const visited: string[] = [];
+    const run = (edits: readonly CadEdit[]) => { visited.length = 0; return prepareCadEdits(document, edits, { solve: input => {
+      visited.push(input.graph.relations.some(relation => relation.kind === 'external-reference') ? 'plate' : 'layout'); return solver.solve(input);
+    } }).then(prepared => prepared.document); };
+    const dragged = await run([{ kind: 'move-sketch-point', sketchId: 'plate', pointId: 'c', translation: [1, 0] }]);
+    expect(visited).toEqual(['plate']); expect(graphOf(dragged, 'layout')).toEqual(graphOf(document, 'layout'));
+    const spare = await run([{ kind: 'move-sketch-point', sketchId: 'layout', pointId: 'spare', translation: [1, 0] }]);
+    expect(visited).toEqual(['layout']); expect(graphOf(spare)).toEqual(graphOf(document));
+    const source = await run([{ kind: 'move-sketch-point', sketchId: 'layout', pointId: 'b', translation: [10, 0] }]);
+    expect(visited).toEqual(['layout', 'plate']); expect(graphOf(source).points.find(point => point.id === 'hole-center')?.position).toEqual([25, 10]);
+    // Each flush solves against the previous flush's result, so a later drag does not re-solve the earlier sketch.
+    await run([{ kind: 'move-sketch-point', sketchId: 'plate', pointId: 'c', translation: [1, 0] }, { kind: 'move-sketch-point', sketchId: 'layout', pointId: 'spare', translation: [1, 0] }]);
+    expect(visited).toEqual(['plate', 'layout']);
+    await run([{ kind: 'set-parameter', name: 'targetOffset', value: 6 }]);
+    expect(visited).toEqual(['layout', 'plate']);
+  });
 });
