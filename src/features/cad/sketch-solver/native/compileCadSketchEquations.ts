@@ -41,7 +41,9 @@ export function compileCadSketchEquations(input: CadSketchSolveInput): CadSketch
   const point = (pointId: string) => [x(pointId), y(pointId)];
   const radius = (circleId: string) => radiusParameters.get(circleId)!;
   const line = (subject: Segment) => [...point(subject.startPointId), ...point(subject.endPointId)];
-  const add = (kind: CadSketchEquationKind, operands: readonly number[], value: number, sourceId: string) => equations.push({ kind, operands, value, sourceId });
+  // Each equation is its own PlaneGCS constraint, except where a two-equation constraint passes its tag.
+  let tags = 0;
+  const add = (kind: CadSketchEquationKind, operands: readonly number[], value: number, sourceId: string, tag = tags++) => equations.push({ kind, operands, value, sourceId, tag });
   const directed = (subject: Parameters<typeof cadSketchLineDirection>[0], message: string) => {
     if (!cadSketchLineDirection(subject, numericPoints)) throw new Error(message);
   };
@@ -61,21 +63,25 @@ export function compileCadSketchEquations(input: CadSketchSolveInput): CadSketch
         break;
       }
       case 'reference-dimension': case 'external-reference': break;
-      case 'coincident':
-        for (const coordinate of [0, 1]) add('difference', [point(relation.pointIds[0])[coordinate], point(relation.pointIds[1])[coordinate]], 0, id);
+      case 'coincident': {
+        const tag = tags++;
+        for (const coordinate of [0, 1]) add('difference', [point(relation.pointIds[0])[coordinate], point(relation.pointIds[1])[coordinate]], 0, id, tag);
         break;
+      }
       case 'horizontal': add('difference', [y(relation.pointIds[0]), y(relation.pointIds[1])], 0, id); break;
       case 'vertical': add('difference', [x(relation.pointIds[0]), x(relation.pointIds[1])], 0, id); break;
       case 'midpoint': {
         const { line: segment } = resolveCadSketchMidpointOperands(graph, relation);
-        for (const coordinate of [0, 1]) add('midpoint', [point(segment.startPointId)[coordinate], point(segment.endPointId)[coordinate], point(relation.pointId)[coordinate]], 0, id);
+        const tag = tags++;
+        for (const coordinate of [0, 1]) add('midpoint', [point(segment.startPointId)[coordinate], point(segment.endPointId)[coordinate], point(relation.pointId)[coordinate]], 0, id, tag);
         break;
       }
       case 'symmetric': {
         const { line: axis } = resolveCadSketchSymmetryOperands(graph, relation);
         directed(axis, 'A symmetry axis has no numeric endpoints.');
         const operands = [...point(relation.pointIds[0]), ...point(relation.pointIds[1]), ...line(axis)];
-        add('symmetric-midpoint', operands, 0, id); add('symmetric-perpendicular', operands, 0, id); break;
+        const tag = tags++;
+        add('symmetric-midpoint', operands, 0, id, tag); add('symmetric-perpendicular', operands, 0, id, tag); break;
       }
       case 'point-on-line': {
         const { line: guide } = resolveCadSketchPointOnLineOperands(graph, relation);

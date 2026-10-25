@@ -10,7 +10,8 @@
 
 use crate::dual::{Dual, WIDTH};
 use crate::equations::{is_direction, reach, residual};
-use crate::problem::{Problem, Status};
+use crate::diagnose::{self, CONFLICTING, Witness, diagnose};
+use crate::problem::{Diagnosis, Problem, Status};
 use crate::sparse::{Factor, SparseRow, minimum_degree};
 
 pub const MAX_ITERATIONS: usize = 100;
@@ -34,12 +35,25 @@ const NEAR: f64 = 1e-10;
 /// Steps continue past acceptance while they improve, down to roundoff at this level.
 const POLISH: f64 = 2.0 * f64::EPSILON;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Outcome {
     pub status: Status,
     pub iterations: usize,
     /// Largest residual in millimetres; NaN when any residual is not finite.
     pub residual: f64,
+    pub diagnosis: Diagnosis,
+    /// Unknowns less the rank of the lasting equations, when diagnosed without conflicts.
+    pub degrees_of_freedom: Option<usize>,
+    /// `diagnose` label bits of each equation, zero unless diagnosed.
+    pub labels: Vec<u8>,
+}
+
+/// One group's result and the column order its factor used.
+struct GroupOutcome {
+    status: Status,
+    iterations: usize,
+    residual: f64,
+    position: Option<Vec<usize>>,
 }
 
 /// One normalized Jacobian row over distinct unknown columns; fixed operands have no column.
@@ -58,6 +72,8 @@ struct Row {
     /// Largest operand magnitude, at least one.
     scale: f64,
     weight: f64,
+    /// Largest weighted residual that is accepted.
+    tolerance: f64,
 }
 
 /// One connected group: its equations and unknown parameters.
@@ -81,7 +97,7 @@ impl System<'_> {
             let mut row = Row { columns: [0; WIDTH], derivatives: [0.0; WIDTH], len: 0, residual: result.value,
                 millimetres: (result.value * reach).abs(), reach,
                 radians: if is_direction(equation.kind) { result.value.abs() } else { 0.0 },
-                scale: raw.iter().fold(1.0, |scale: f64, value| scale.max(value.abs())), weight: 1.0 };
+                scale: raw.iter().fold(1.0, |scale: f64, value| scale.max(value.abs())), weight: 1.0, tolerance: 0.0 };
             for (slot, &p) in equation.operands.iter().enumerate() {
                 let column = self.column[p];
                 if column == usize::MAX { continue; }
@@ -104,6 +120,9 @@ impl System<'_> {
                     if norm > 0.0 && norm.is_finite() { (1.0 / norm).min(1e12) } else { 1.0 }
                 }
             };
+            let (millimetres, radians) = row.tolerances();
+            let length = if row.reach > 0.0 { millimetres / row.reach } else { millimetres };
+            row.tolerance = row.weight * if is_direction(equation.kind) { length.min(radians) } else { length };
             row.residual *= row.weight;
             for derivative in &mut row.derivatives[..row.len] { *derivative *= row.weight; }
             row
@@ -133,6 +152,15 @@ impl System<'_> {
         }
         jacobian.diagonal = squares.iter().fold(0.0, |max: f64, &square| max.max(square));
         jacobian
+    }
+}
+
+impl Row {
+    /// Accepted millimetres and direction radians: the driver tolerance, or the roundoff the
+    /// coordinates allow, at the far end of the longer line for a direction.
+    fn tolerances(&self) -> (f64, f64) {
+        let roundoff = 8.0 * f64::EPSILON * self.scale;
+        (ACCEPT_MM.max(roundoff), if self.reach > 0.0 { ACCEPT_RADIANS.max(roundoff / self.reach) } else { ACCEPT_RADIANS })
     }
 }
 
@@ -168,9 +196,8 @@ struct Progress {
 
 fn assess(rows: &[Row]) -> Progress {
     rows.iter().fold(Progress { near: true, accepted: true, polished: true }, |progress, row| {
-        let roundoff = 8.0 * f64::EPSILON * row.scale;
-        let angle = if row.reach > 0.0 { ACCEPT_RADIANS.max(roundoff / row.reach) } else { ACCEPT_RADIANS };
-        let accepted = row.millimetres <= ACCEPT_MM.max(roundoff) && row.radians <= angle;
+        let (millimetres, angle) = row.tolerances();
+        let accepted = row.millimetres <= millimetres && row.radians <= angle;
         Progress {
             near: progress.near && row.residual.abs() <= NEAR * row.scale,
             accepted: progress.accepted && accepted,
@@ -218,47 +245,121 @@ fn groups(problem: &Problem) -> (Vec<(Vec<usize>, Vec<usize>)>, Vec<usize>) {
     (members, column)
 }
 
-/// Moves the unknowns of `values` onto a solution, or as close as the iterations allow. The
-/// status is the worst group's; iterations are the most any group took.
+/// Moves the unknowns of `values` onto a solution, or as close as the iterations allow, and
+/// diagnoses the equations there. The status is the worst group's; iterations are the most any
+/// group took.
 pub fn solve(problem: &Problem, values: &mut [f64]) -> Outcome { solve_within(problem, values, LIMITS) }
 
 /// `solve` with other limits. A group whose factor would exceed `limits.fill` is left where it
-/// is; one that spends `limits.work` stops where it got to. Either reports `TooLarge`.
+/// is; one that spends `limits.work` stops where it got to. Either reports `TooLarge`, and
+/// diagnosis is then unavailable.
 pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Outcome {
     let (members, column) = groups(problem);
-    let mut outcome = Outcome { status: Status::Converged, iterations: 0, residual: 0.0 };
+    let mut outcome = Outcome { status: Status::Converged, iterations: 0, residual: 0.0, diagnosis: Diagnosis::Diagnosed,
+        degrees_of_freedom: None, labels: vec![0; problem.equations.len()] };
+    let unknowns = problem.fixed.iter().filter(|&&fixed| !fixed).count();
+    if unknowns == 0 { outcome.diagnosis = Diagnosis::NoUnknowns; }
+    let (mut rank, mut witnesses) = (0, Vec::new());
     for (equations, unknowns) in members {
-        let group = solve_group(&System { problem, column: &column, equations, unknowns }, values, limits);
+        let system = System { problem, column: &column, equations, unknowns };
+        let group = solve_group(&system, values, limits);
         outcome.iterations = outcome.iterations.max(group.iterations);
         outcome.residual = if outcome.residual.is_nan() || group.residual.is_nan() { f64::NAN } else { outcome.residual.max(group.residual) };
         if outcome.status != Status::TooLarge && group.status != Status::Converged { outcome.status = group.status; }
+        if outcome.diagnosis != Diagnosis::Diagnosed { continue; }
+        match group.position.and_then(|position| diagnose_group(&system, values, &position, limits.work)) {
+            Some((group_rank, group_witnesses)) => { rank += group_rank; witnesses.extend(group_witnesses); }
+            None => outcome.diagnosis = Diagnosis::Unavailable,
+        }
+    }
+    if outcome.diagnosis == Diagnosis::Diagnosed {
+        let tags: Vec<usize> = problem.equations.iter().map(|equation| equation.tag).collect();
+        match diagnose::labels(&tags, &witnesses, limits.work) {
+            Some(labels) => {
+                outcome.degrees_of_freedom = (!labels.iter().any(|&label| label & CONFLICTING != 0)).then_some(unknowns - rank);
+                outcome.labels = labels;
+            }
+            None => outcome.diagnosis = Diagnosis::Unavailable,
+        }
     }
     outcome
 }
 
-fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> Outcome {
+/// The rank of a group's lasting equations at `values` and their witnesses by equation index.
+fn diagnose_group(system: &System, values: &[f64], position: &[usize], budget: usize) -> Option<(usize, Vec<Witness>)> {
+    let rows = system.rows(values, None);
+    let jacobian = system.jacobian(&rows, position);
+    let lasting: Vec<usize> = (0..rows.len()).filter(|&i| !system.problem.equations[system.equations[i]].temporary).collect();
+    let diagnosed: Vec<diagnose::Row> = lasting.iter()
+        .map(|&i| diagnose::Row { entries: jacobian.rows[i].0.clone(), residual: rows[i].residual, tolerance: rows[i].tolerance }).collect();
+    let diagnosis = diagnose(position.len(), &diagnosed, budget)?;
+    Some((diagnosis.rank, diagnosis.witnesses.into_iter().map(|witness| Witness {
+        rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect()))
+}
+
+/// Rows that depend on earlier lasting rows at the start stay out of a first solve, as their
+/// linearizations can disagree before convergence and the seeded damped factor would then move
+/// free directions by roundoff. Its result stands when every row is accepted there; otherwise
+/// the group is solved again from the start with every row, sharing the iterations and work.
+fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> GroupOutcome {
     let n = system.unknowns.len();
+    let rows = system.rows(values, None);
+    let progress = assess(&rows);
+    let finish = |rows: &[Row], progress: Progress, iterations, exhausted: bool, position| GroupOutcome {
+        status: if progress.accepted { Status::Converged } else if exhausted { Status::TooLarge } else { Status::NotConverged },
+        iterations, residual: worst(rows), position: if exhausted { None } else { position } };
+    let Some(ordering) = minimum_degree(n, &rows.iter().map(|row| &row.columns[..row.len]).collect::<Vec<_>>(), limits.fill, limits.work)
+        else { return finish(&rows, progress, 0, true, None); };
+    if progress.polished || n == 0 { return finish(&rows, progress, 0, false, Some(ordering.position)); }
+    let (position, mut work, mut iterations) = (ordering.position, ordering.work, 0);
+    let left_out = dependent_at_start(system, &rows, &position, limits.work, &mut work);
+    if !left_out.is_empty() {
+        let start: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
+        // A dependent row has no column of its own, so the ordering still fits.
+        let mut out = left_out.iter().peekable();
+        let equations = system.equations.iter().enumerate()
+            .filter(|&(i, _)| if out.peek() == Some(&&i) { out.next(); false } else { true }).map(|(_, &e)| e).collect();
+        let reduced = System { problem: system.problem, column: system.column, equations, unknowns: system.unknowns.clone() };
+        let exhausted = levenberg(&reduced, values, &position, limits, &mut work, &mut iterations);
+        let rows = system.rows(values, None);
+        let progress = assess(&rows);
+        if progress.accepted || exhausted { return finish(&rows, progress, iterations, exhausted, Some(position)); }
+        for (&p, &value) in system.unknowns.iter().zip(&start) { values[p] = value; }
+    }
+    let exhausted = levenberg(system, values, &position, limits, &mut work, &mut iterations);
+    let rows = system.rows(values, None);
+    finish(&rows, assess(&rows), iterations, exhausted, Some(position))
+}
+
+/// Lasting rows of `rows` that depend on earlier ones, by index within the group, with the work
+/// added to `work`. None when rank is unclear or the work would pass `limit`, so every row is
+/// solved. Temporary targets always stay in the solve.
+fn dependent_at_start(system: &System, rows: &[Row], position: &[usize], limit: usize, work: &mut usize) -> Vec<usize> {
+    let jacobian = system.jacobian(rows, position);
+    let lasting: Vec<usize> = (0..rows.len()).filter(|&i| !system.problem.equations[system.equations[i]].temporary).collect();
+    let entries: Vec<SparseRow> = lasting.iter().map(|&i| jacobian.rows[i].0.clone()).collect();
+    let (dependent, spent) = diagnose::dependent(position.len(), &entries, limit.saturating_sub(*work));
+    *work = work.saturating_add(spent);
+    dependent.map_or_else(Vec::new, |dependent| dependent.into_iter().map(|i| lasting[i]).collect())
+}
+
+/// Levenberg-Marquardt from `values` until accepted at roundoff, stalled, or out of iterations;
+/// `true` when the work passed `limits.work`.
+fn levenberg(system: &System, values: &mut [f64], position: &[usize], limits: Limits, work: &mut usize, iterations: &mut usize) -> bool {
     let mut rows = system.rows(values, None);
     let mut progress = assess(&rows);
-    let finish = |rows: &[Row], progress: Progress, iterations, exhausted| Outcome {
-        status: if progress.accepted { Status::Converged } else if exhausted { Status::TooLarge } else { Status::NotConverged },
-        iterations, residual: worst(rows) };
-    if progress.polished || n == 0 { return finish(&rows, progress, 0, false); }
-    let Some(ordering) = minimum_degree(n, &rows.iter().map(|row| &row.columns[..row.len]).collect::<Vec<_>>(), limits.fill, limits.work)
-        else { return finish(&rows, progress, 0, true); };
-    let (position, mut work) = (ordering.position, ordering.work);
-    let mut jacobian = system.jacobian(&rows, &position);
-    let (diagonal, mut exhausted) = (jacobian.diagonal, false);
+    if progress.polished { return false; }
+    let mut jacobian = system.jacobian(&rows, position);
+    let diagonal = jacobian.diagonal;
     // Damping well below the smallest useful curvature during the search, and near roundoff
     // once near: a near-tangent intersection has tiny singular values that a larger floor would
     // swamp, turning Newton's quadratic convergence linear. A start that is already near polishes.
     let (floor, polish_floor) = (1e-12 * diagonal.max(1.0), f64::EPSILON * diagonal.max(1.0));
     let (mut mu, mut nu) = (if progress.near { polish_floor } else { (1e-6 * diagonal).max(floor) }, 2.0);
-    let mut iterations = 0;
-    while iterations < MAX_ITERATIONS {
-        iterations += 1;
+    while *iterations < MAX_ITERATIONS {
+        *iterations += 1;
         let (mut stepped, mut rejected) = (false, false);
-        let Ok(step) = damped_step(&jacobian, &position, mu, &mut work, limits.work) else { exhausted = true; break; };
+        let Ok(step) = damped_step(&jacobian, position, mu, work, limits.work) else { return true; };
         if let Some(h) = step {
             if system.unknowns.iter().zip(&h).all(|(&p, step)| values[p] + step == values[p]) { break; }
             let saved: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
@@ -275,7 +376,7 @@ fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> Outcome {
                 mu = if searching && progress.near { polish_floor }
                     else { (mu * (1.0 / 3.0_f64).max(1.0 - (2.0 * rho - 1.0).powi(3))).max(if progress.near { polish_floor } else { floor }) };
                 nu = 2.0;
-                jacobian = system.jacobian(&rows, &position);
+                jacobian = system.jacobian(&rows, position);
             } else {
                 for (&p, &value) in system.unknowns.iter().zip(&saved) { values[p] = value; }
                 rejected = true;
@@ -290,5 +391,5 @@ fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> Outcome {
             if !mu.is_finite() { break; }
         }
     }
-    finish(&rows, progress, iterations, exhausted)
+    false
 }

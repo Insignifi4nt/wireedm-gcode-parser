@@ -31,6 +31,11 @@ export interface CadSketchEquation {
   readonly value: number;
   /** Graph identity reported for this equation; an entity ID for an arc's structural equation. */
   readonly sourceId: string;
+  /** The compiled constraint this equation belongs to, one per PlaneGCS constraint. Equations of one
+   * constraint share it, and tags never decrease. */
+  readonly tag: number;
+  /** Solved but left out of diagnosis, as a drag target is. */
+  readonly temporary?: boolean;
 }
 
 /** A sketch as scalar parameters and the scalar equations between them. */
@@ -44,10 +49,10 @@ export interface CadSketchEquationModel {
   readonly equations: readonly CadSketchEquation[];
 }
 
-export const CAD_SKETCH_NATIVE_PROTOCOL_VERSION = 1;
+export const CAD_SKETCH_NATIVE_PROTOCOL_VERSION = 2;
 
 export function encodeCadSketchEquationModel(model: CadSketchEquationModel): Float64Array {
-  const length = 3 + 2 * model.values.length + model.equations.reduce((total, equation) => total + 2 + equation.operands.length, 0);
+  const length = 3 + 2 * model.values.length + model.equations.reduce((total, equation) => total + 4 + equation.operands.length, 0);
   const buffer = new Float64Array(length);
   buffer.set([CAD_SKETCH_NATIVE_PROTOCOL_VERSION, model.values.length, model.equations.length]);
   buffer.set(model.values, 3);
@@ -55,8 +60,8 @@ export function encodeCadSketchEquationModel(model: CadSketchEquationModel): Flo
   let cursor = 3 + 2 * model.values.length;
   for (const equation of model.equations) {
     if (equation.operands.length !== cadSketchEquationArity[equation.kind]) throw new Error(`A ${equation.kind} equation needs ${cadSketchEquationArity[equation.kind]} operands.`);
-    buffer.set([cadSketchEquationKinds.indexOf(equation.kind), equation.value, ...equation.operands], cursor);
-    cursor += 2 + equation.operands.length;
+    buffer.set([cadSketchEquationKinds.indexOf(equation.kind), equation.value, equation.tag, Number(equation.temporary ?? false), ...equation.operands], cursor);
+    cursor += 4 + equation.operands.length;
   }
   return buffer;
 }
@@ -68,4 +73,26 @@ export function applyCadSketchEquationSolution(graph: CadSketchGraph, model: Cad
     const x = model.pointParameters.get(point.id);
     return { ...point, position: [solved(x, point.position[0]), solved(x === undefined ? undefined : x + 1, point.position[1])] };
   }), entities: graph.entities.map(entity => entity.kind === 'circle' ? { ...entity, radius: solved(model.radiusParameters.get(entity.id), entity.radius) } : entity) });
+}
+
+/** Label bits of one diagnosed equation, as the Rust `diagnose` module sets them. */
+export const CAD_SKETCH_EQUATION_REDUNDANT = 1, CAD_SKETCH_EQUATION_CONFLICTING = 2;
+
+/**
+ * Source identities of the constraints that equation `labels` make conflicting, redundant or
+ * partially redundant (redundant through some but not all of its equations), each in compiled
+ * order and listed once, as the PlaneGCS runtime reports them.
+ */
+export function cadSketchEquationDiagnostics(model: CadSketchEquationModel, labels: readonly number[]) {
+  const conflicting = new Set<string>(), redundant = new Set<string>(), partiallyRedundant = new Set<string>();
+  for (let start = 0; start < model.equations.length;) {
+    let end = start + 1;
+    while (end < model.equations.length && model.equations[end].tag === model.equations[start].tag) end++;
+    const bits = labels.slice(start, end), sourceId = model.equations[start].sourceId;
+    if (bits.some(bit => bit & CAD_SKETCH_EQUATION_CONFLICTING)) conflicting.add(sourceId);
+    else if (bits.every(bit => bit & CAD_SKETCH_EQUATION_REDUNDANT)) redundant.add(sourceId);
+    else if (bits.some(bit => bit & CAD_SKETCH_EQUATION_REDUNDANT)) partiallyRedundant.add(sourceId);
+    start = end;
+  }
+  return { conflictingIds: [...conflicting], redundantIds: [...redundant], partiallyRedundantIds: [...partiallyRedundant] };
 }
