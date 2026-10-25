@@ -2,7 +2,8 @@
 //!
 //! input  `[version, parameter count n, equation count m, values × n, fixed flags × n,
 //!          m × [kind code, value, operand parameter indices × arity]]`
-//! output `[output length, version, status, iterations, largest residual, values × n]`
+//! output `[output length, version, status, iterations, largest residual, values × n]`, with
+//!        status codes from `Status`
 
 use crate::equations::Kind;
 
@@ -13,6 +14,8 @@ pub enum Status {
     Converged = 0,
     NotConverged = 1,
     InvalidInput = 2,
+    /// A group needs more memory or work than `newton::Limits` allow.
+    TooLarge = 3,
 }
 
 #[derive(Clone, Debug)]

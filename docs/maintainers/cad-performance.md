@@ -68,12 +68,22 @@ After 0.0.737, most of a drag preview with several sketches is the final `parseC
 
 ## Native sketch solver (in progress)
 
-`packages/sketch-solver` is our own Rust constraint solver, compiled to a 44 kB WebAssembly module with no dependencies. From 0.0.739 it is built, tested and compared with PlaneGCS, but the app does not load it yet.
+`packages/sketch-solver` is our own Rust constraint solver, compiled to a 52 kB WebAssembly module with no dependencies. From 0.0.739 it is built, tested and compared with PlaneGCS, but the app does not load it yet.
 
 - `compileCadSketchEquations` turns a sketch into scalar parameters and twelve kinds of scalar equation, and the module solves them.
   - Each connected group of unknowns gets its own damped Gauss-Newton solve, with exact gradients from dual numbers.
   - Each equation is divided by its gradient norm over the unknowns, so every residual reads as the distance they must move.
   - Each step comes from a Givens QR of the weighted Jacobian, not the normal equations, so roundoff does not move the free directions of an under-constrained sketch.
+  - From 0.0.740 the QR is sparse:
+    - Rows keep their authoring order. Columns take a minimum-degree order fixed by the structure, so a chain of profiles fills like a band.
+    - Each damping trial refactors from `sqrt(mu) I` and then rotates in the Jacobian rows. A row meeting a diagonal-only row carries on with only its own entries, so most rows stop near their own length. Rotating the damping in after the Jacobian, as MINPACK does, would run each damping row down the whole elimination tree: about 300 million updates per trial for a 5,000-link chain.
+    - In that order, the motion along directions the Jacobian leaves free depends on roundoff whenever dependent rows disagree within a step. Conflicting relations always do. Redundant ones also do before the solve converges, when their linearizations are different functions of the same motion: an angle of 90° plus a perpendicular relation on the same lines, far from the origin, moves a free midpoint by about 0.4 µm. The same relation entered twice does not, because its rows agree exactly. Both kinds of sketch are rejected by diagnosis. Diagnosis will also find the dependent rows at the start and leave them out of the damped step.
+    - For sketch-like structure, where profiles join in chains and trees and shared parameters such as a radius are eliminated last, time and memory grow about linearly with the size of a group. A group whose columns are all coupled at random fills almost completely, as in a dense factorization.
+  - Native code cannot be interrupted, so each group has limits:
+    - The ordering gives the exact fill of the factor before any numeric work. A group above 2,000,000 entries (about 32 MiB) is left in place. The ordering stops as soon as the fill so far, plus the edges still present and the diagonals still to come, passes that limit, so its own memory stays within about twice the limit.
+    - The ordering, and every rotation after it, count the entries they write against 400,000,000. Rotations check the count before every step, so a group stops within one step of the limit, where it got to.
+    - In a native probe, random groups of 2,000 to 4,200 unknowns whose factors would be dense are refused in under half a second.
+    - Either reports `too-large`. This replaces the PlaneGCS limit of 500,000 unfixed parameters times equations, which a chain of 89 rectangles already exceeds.
   - Convergence is judged apart from that weighting:
     - each residual must be within the driver tolerance in millimetres;
     - each direction error must be within 1e-12 radians, or the roundoff of its coordinates at the far end of the longer line.
@@ -87,13 +97,16 @@ After 0.0.737, most of a drag preview with several sketches is the final `parseC
   4. switching the runtime over.
 - A direct probe of warm solves with this module, on the same host and not bracketed by calibration, against the PlaneGCS runtime with its diagnosis:
 
-  | Workload | PlaneGCS | Native |
-  | --- | --- | --- |
-  | 10 independent rectangles | 4.6 ms | 0.4 ms |
-  | 60 independent rectangles | 14.2 ms | 1.3 ms |
-  | 200 independent rectangles | 91.6 ms | 6.0 ms |
-  | 60-rectangle connected chain | 42.8 ms | 55.9 ms |
-  | 88-rectangle connected chain | 114.6 ms | 171.7 ms |
+  | Workload | Unknowns | PlaneGCS | Native, dense QR (0.0.739) | Native, sparse QR (0.0.740) |
+  | --- | --- | --- | --- | --- |
+  | 10 independent rectangles | 80 | 4.2 ms | 0.4 ms | 0.6 ms |
+  | 60 independent rectangles | 480 | 12.6 ms | 1.3 ms | 1.6 ms |
+  | 200 independent rectangles | 1,600 | 38.0 ms | 6.0 ms | 4.1 ms |
+  | 60-rectangle connected chain | 480 | 42.2 ms | 55.9 ms | 1.4 ms |
+  | 88-rectangle connected chain | 704 | 109.2 ms | 171.7 ms | 1.8 ms |
+  | 400-rectangle connected chain | 3,200 | rejected as too large | not run | 11.1 ms |
+  | 1000-rectangle connected chain | 8,000 | rejected as too large | not run | 34.0 ms |
+  | 2500-rectangle connected chain | 20,000 | rejected as too large | not run | 92.7 ms |
 
-  One large connected group is still slower because the step uses a dense factorization. A sparse or banded factorization is due before the runtime switches.
+  The dense column comes from earlier runs, and differences below a millisecond are within noise. These numbers are not a fair comparison yet. PlaneGCS diagnoses redundant and conflicting relations and degrees of freedom on every solve, and the native solver does not do so until diagnosis is built.
 - A start far outside the linear range of an equation can take one long step. For example, a perpendicular line that starts nearly antiparallel can be stretched to a valid but very long solution. A step bound comes with drag targets, where the solution must stay near the start.
