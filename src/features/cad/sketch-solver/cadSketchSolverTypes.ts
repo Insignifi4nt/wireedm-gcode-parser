@@ -17,7 +17,7 @@ export interface CadSketchSolveDiagnostics {
 export type CadSketchSolveResult = {
   readonly kind: 'solved'; readonly graph: CadSketchGraph; readonly diagnostics: CadSketchSolveDiagnostics;
 } | {
-  readonly kind: 'rejected'; readonly reason: 'invalid-input' | 'conflicting' | 'redundant' | 'failed' | 'invalid-solution';
+  readonly kind: 'rejected'; readonly reason: 'invalid-input' | 'too-large' | 'conflicting' | 'redundant' | 'failed' | 'invalid-solution';
   readonly message: string; readonly diagnostics: CadSketchSolveDiagnostics;
 };
 export interface CadSketchSolverClient {

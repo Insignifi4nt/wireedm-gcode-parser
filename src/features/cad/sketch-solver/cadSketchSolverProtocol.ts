@@ -18,7 +18,7 @@ const diagnosticsSchema = Type.Object({
 }, { additionalProperties: false });
 const resultSchema = Type.Union([
   Type.Object({ kind: Type.Literal('solved'), graph: CadSketchGraphSchema, diagnostics: diagnosticsSchema }, { additionalProperties: false }),
-  Type.Object({ kind: Type.Literal('rejected'), reason: Type.Union([Type.Literal('invalid-input'), Type.Literal('conflicting'), Type.Literal('redundant'), Type.Literal('failed'), Type.Literal('invalid-solution')]),
+  Type.Object({ kind: Type.Literal('rejected'), reason: Type.Union([Type.Literal('invalid-input'), Type.Literal('too-large'), Type.Literal('conflicting'), Type.Literal('redundant'), Type.Literal('failed'), Type.Literal('invalid-solution')]),
     message: Type.String({ maxLength: 8192 }), diagnostics: diagnosticsSchema }, { additionalProperties: false })
 ]);
 export interface CadSketchSolverRequest { readonly id: number; readonly kind: 'solve'; readonly input: CadSketchSolveInput }

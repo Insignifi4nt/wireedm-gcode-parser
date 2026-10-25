@@ -29,7 +29,7 @@ const relationNames: Record<CadSketchGraphRelation['kind'], string> = {
 };
 const rejectionMessages: Record<Rejection['reason'], string> = {
   conflicting: 'Sketch constraints conflict.', redundant: 'Sketch constraints are redundant.', failed: 'The sketch solver could not solve this edit.',
-  'invalid-input': 'Sketch input is invalid.', 'invalid-solution': 'The sketch solution does not satisfy its geometry and relations.'
+  'invalid-input': 'Sketch input is invalid.', 'too-large': 'A connected group of sketch relations is too large to solve.', 'invalid-solution': 'The sketch solution does not satisfy its geometry and relations.'
 };
 const issueDetails: Record<CadSketchGraphIssue['code'], string> = {
   'invalid-expression': 'The expression could not be evaluated.', 'invalid-coordinate': 'The coordinate is outside the supported range.',

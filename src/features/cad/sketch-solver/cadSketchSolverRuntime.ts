@@ -158,53 +158,158 @@ function compile(input: CadSketchSolveInput) {
   return { graph, objects, sourceIds };
 }
 
-/** Each call owns and deletes its C++ system; caller objects are never handed to the package. */
-export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketchSolverModule>) {
+
+/**
+ * Solver objects grouped into independent components. Geometry joins the points it is built
+ * from and a constraint joins every object it references, so the native Jacobian is
+ * block-diagonal across groups and each group solves and is diagnosed on its own.
+ * Groups keep the compiled order.
+ */
+function components(objects: readonly SketchPrimitive[]): SketchPrimitive[][] {
+  const parent = new Map(objects.map(object => [object.id, object.id]));
+  const find = (id: string): string => {
+    let root = id;
+    for (let next = parent.get(root); next !== root; next = parent.get(root)) {
+      if (next === undefined) throw new Error('A compiled sketch object references a missing object.');
+      root = next;
+    }
+    for (let node = id; node !== root;) { const next = parent.get(node)!; parent.set(node, root); node = next; }
+    return root;
+  };
+  // The same references PlaneGCS follows: `*_id` keys and `{ o_id }` parameter operands.
+  for (const object of objects) for (const [key, value] of Object.entries(object)) {
+    const reference = key !== 'id' && key.endsWith('_id') && typeof value === 'string' ? value
+      : typeof value === 'object' && value !== null && 'o_id' in value && typeof value.o_id === 'string' ? value.o_id : undefined;
+    if (reference !== undefined) parent.set(find(object.id), find(reference));
+  }
+  const groups = new Map<string, SketchPrimitive[]>();
+  for (const object of objects) {
+    const root = find(object.id), group = groups.get(root);
+    if (group) group.push(object); else groups.set(root, [object]);
+  }
+  return [...groups.values()];
+}
+
+/**
+ * Largest group sent to native code, as unfixed parameters times scalar equations. PlaneGCS
+ * diagnoses each system with dense matrices in a fixed 21 MiB heap and aborts the whole
+ * module when they do not fit. The benchmark saw the smallest abort at 800 x 800 and
+ * success at 760 x 760; the limit stays about a fifth below that.
+ */
+export const MAX_CAD_SKETCH_SOLVER_GROUP_SIZE = 500_000;
+/** Compiled ids from the graph never start with '$'. */
+const auxiliaryPointId = '$fixed-diagnosis';
+/** Native constraints that add two scalar equations; every other compiled constraint adds one. */
+const twoEquationConstraints = new Set<SketchPrimitive['type']>(['p2p_coincident', 'p2p_symmetric_ppp', 'p2p_symmetric_ppl']);
+
+type NativeStatus = NonNullable<CadSketchSolveDiagnostics['status']>;
+const statusRank: Record<NativeStatus, number> = { success: 0, converged: 1, invalid: 2, failed: 3 };
+const noDiagnostics = (): CadSketchSolveDiagnostics => ({ status: null, degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] });
+
+/**
+ * Each call owns and deletes its C++ systems; caller objects are never handed to the package.
+ * A native abort leaves the module unusable, so the next solve first discards it through
+ * `discard`, which must make `initialize` create a fresh module.
+ */
+export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketchSolverModule>, options: { readonly discard?: () => void } = {}) {
+  let aborted = false, queue: Promise<unknown> = Promise.resolve();
+  // Native work runs one solve at a time, so an abort is always discarded before the next native call.
+  const exclusive = <T>(work: () => Promise<T>): Promise<T> => { const run = queue.then(work); queue = run.catch(() => undefined); return run; };
   return { async solve(input: CadSketchSolveInput): Promise<CadSketchSolveResult> {
     let compiled: ReturnType<typeof compile>;
     try { input = parseCadSketchSolveInput(input); compiled = compile(input); }
-    catch (error) { return { kind: 'rejected', reason: 'invalid-input', message: error instanceof Error ? error.message : 'Invalid sketch input.',
-      diagnostics: { status: null, degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } }; }
-    const module = await initialize(), wrapper = new GcsWrapper(new module.GcsSystem(), module);
-    try {
-      wrapper.push_primitives_and_params(compiled.objects);
-      const owned = cadSketchExternalReferenceComponents(compiled.graph);
-      // Strings and evaluated external snapshots keep their exact source type.
-      for (const point of compiled.graph.points) {
-        const start = wrapper.p_param_index.get(point.id);
-        if (start === undefined) throw new Error('A compiled sketch point has no native parameters.');
-        if (typeof point.position[0] === 'string' || owned.pointIds.has(point.id)) wrapper.gcs.set_p_param(start + property_offsets.point.x, evaluateCadScalar(point.position[0], input.parameters), true);
-        if (typeof point.position[1] === 'string' || owned.pointIds.has(point.id)) wrapper.gcs.set_p_param(start + property_offsets.point.y, evaluateCadScalar(point.position[1], input.parameters), true);
+    catch (error) { return { kind: 'rejected', reason: 'invalid-input', message: error instanceof Error ? error.message : 'Invalid sketch input.', diagnostics: noDiagnostics() }; }
+    const owned = cadSketchExternalReferenceComponents(compiled.graph), points = new Map(compiled.graph.points.map(point => [point.id, point]));
+    const circles = new Map(compiled.graph.entities.flatMap(entity => entity.kind === 'circle' ? [[entity.id, entity] as const] : []));
+    // Strings and evaluated external snapshots keep their exact source type.
+    const fixedX = (id: string) => typeof points.get(id)!.position[0] === 'string' || owned.pointIds.has(id);
+    const fixedY = (id: string) => typeof points.get(id)!.position[1] === 'string' || owned.pointIds.has(id);
+    const fixedRadius = (id: string) => typeof circles.get(id)!.radius === 'string' || owned.circleIds.has(id);
+    // Lines own no parameters; arcs compile to two lines and a constraint.
+    const unfixed = (group: readonly SketchPrimitive[]) => group.reduce((total, object) => total + (object.type === 'point'
+      ? Number(!fixedX(object.id)) + Number(!fixedY(object.id)) : object.type === 'circle' ? Number(!fixedRadius(object.id)) : 0), 0);
+    const equations = (group: readonly SketchPrimitive[]) => group.reduce((total, object) => total
+      + (!compiled.sourceIds.has(object.id) ? 0 : twoEquationConstraints.has(object.type) ? 2 : 1), 0);
+    const split = components(compiled.objects), fixed = split.filter(group => equations(group) && !unfixed(group)).flat();
+    const groups = split.filter(group => !equations(group) || unfixed(group)), constrained = groups.filter(group => equations(group) > 0);
+    // PlaneGCS diagnoses nothing in a system without unknowns, and in a shared system a fixed
+    // relation's diagnosis would follow that system's convergence. Relations on fully fixed
+    // geometry are therefore diagnosed together beside one unconstrained auxiliary point:
+    // satisfied ones as redundant and others as conflicting. Its freedom is not counted. As in
+    // one sketch-wide system, a sketch without any unknowns is not diagnosed; the graph check
+    // below still rejects an unsatisfied relation.
+    const auxiliary: SketchPrimitive[] = fixed.length && groups.some(group => unfixed(group)) ? [{ id: auxiliaryPointId, type: 'point', x: 0, y: 0, fixed: false }, ...fixed] : [];
+    if (constrained.some(group => unfixed(group) * equations(group) > MAX_CAD_SKETCH_SOLVER_GROUP_SIZE) || 2 * equations(auxiliary) > MAX_CAD_SKETCH_SOLVER_GROUP_SIZE) return { kind: 'rejected', reason: 'too-large',
+      message: 'A connected group of sketch relations is too large to solve. Split it into separate groups or remove relations.', diagnostics: noDiagnostics() };
+    // Diagnostics keep the sketch-wide compiled order a single native system reported.
+    const position = new Map(compiled.objects.map((object, index) => [object.id, index]));
+    const mapped = (ids: readonly string[]) => [...new Set([...ids].sort((a, b) => position.get(a)! - position.get(b)!).map(id => {
+      const source = compiled.sourceIds.get(id);
+      if (!source) throw new Error('A native sketch diagnostic has no source identity.');
+      return source;
+    }))];
+    // A group without relations keeps its values and each unfixed parameter stays free.
+    let degreesOfFreedom = groups.filter(group => !equations(group)).reduce((total, group) => total + unfixed(group), 0), status: NativeStatus = 'success';
+    const conflicting: string[] = [], redundant: string[] = [], partiallyRedundant: string[] = [];
+    const solvedPoints = new Map<string, Point2>(), solvedRadii = new Map<string, number>();
+    if (constrained.length || auxiliary.length) await exclusive(async () => {
+      if (aborted) {
+        if (!options.discard) throw new Error('The sketch solver stopped after a native failure and cannot restart.');
+        options.discard(); aborted = false;
       }
-      for (const entity of compiled.graph.entities) if (entity.kind === 'circle' && (typeof entity.radius === 'string' || owned.circleIds.has(entity.id))) {
-        const start = wrapper.p_param_index.get(entity.id);
-        if (start === undefined) throw new Error('A compiled circle has no native parameters.');
-        wrapper.gcs.set_p_param(start + property_offsets.circle.radius, evaluateCadScalar(entity.radius, input.parameters), true);
+      const module = await initialize();
+      for (const group of auxiliary.length ? [...constrained, auxiliary] : constrained) {
+        let wrapper: GcsWrapper | undefined;
+        try {
+          wrapper = new GcsWrapper(new module.GcsSystem(), module);
+          wrapper.push_primitives_and_params(group);
+          for (const object of group) {
+            if (object.type !== 'point' && object.type !== 'circle' || object.id === auxiliaryPointId) continue;
+            const start = wrapper.p_param_index.get(object.id);
+            if (start === undefined) throw new Error(`A compiled sketch ${object.type} has no native parameters.`);
+            if (object.type === 'point') {
+              const point = points.get(object.id)!;
+              if (fixedX(object.id)) wrapper.gcs.set_p_param(start + property_offsets.point.x, evaluateCadScalar(point.position[0], input.parameters), true);
+              if (fixedY(object.id)) wrapper.gcs.set_p_param(start + property_offsets.point.y, evaluateCadScalar(point.position[1], input.parameters), true);
+            } else if (fixedRadius(object.id)) wrapper.gcs.set_p_param(start + property_offsets.circle.radius, evaluateCadScalar(circles.get(object.id)!.radius, input.parameters), true);
+          }
+          const groupStatus = nativeStatus(wrapper.solve())!;
+          if (statusRank[groupStatus] > statusRank[status]) status = groupStatus;
+          if (group !== auxiliary) degreesOfFreedom += wrapper.gcs.dof();
+          conflicting.push(...wrapper.get_gcs_conflicting_constraints()); redundant.push(...wrapper.get_gcs_redundant_constraints());
+          partiallyRedundant.push(...wrapper.get_gcs_partially_redundant_constraints());
+          wrapper.apply_solution();
+          for (const object of group) {
+            if (object.id === auxiliaryPointId) continue;
+            if (object.type === 'point') { const solved = wrapper.sketch_index.get_sketch_point(object.id); solvedPoints.set(object.id, { x: solved.x, y: solved.y }); }
+            else if (object.type === 'circle') solvedRadii.set(object.id, wrapper.sketch_index.get_sketch_circle(object.id).radius);
+          }
+        } catch (error) {
+          // An Emscripten abort (for example out of memory) is a RuntimeError; anything else is an ordinary check.
+          if (!(error instanceof WebAssembly.RuntimeError)) throw error;
+          aborted = true;
+          throw new Error('The sketch solver ran out of native memory and will restart on the next solve.', { cause: error });
+        } finally { if (!aborted) wrapper?.destroy_gcs_module(); }
       }
-      const status = wrapper.solve();
-      const mapped = (ids: readonly string[]) => [...new Set(ids.map(id => {
-        const source = compiled.sourceIds.get(id);
-        if (!source) throw new Error('A native sketch diagnostic has no source identity.');
-        return source;
-      }))];
-      const diagnostics: CadSketchSolveDiagnostics = {
-        status: nativeStatus(status), degreesOfFreedom: wrapper.gcs.dof(),
-        conflictingIds: mapped(wrapper.get_gcs_conflicting_constraints()), redundantIds: mapped(wrapper.get_gcs_redundant_constraints()),
-        partiallyRedundantIds: mapped(wrapper.get_gcs_partially_redundant_constraints()), issues: []
-      };
-      if (diagnostics.conflictingIds.length) return { kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics };
-      if (diagnostics.redundantIds.length || diagnostics.partiallyRedundantIds.length) return { kind: 'rejected', reason: 'redundant', message: 'Sketch constraints are redundant.', diagnostics };
-      if (status !== SolveStatus.Success && status !== SolveStatus.Converged) return { kind: 'rejected', reason: 'failed', message: 'The sketch solver did not produce a valid solution.', diagnostics };
-      wrapper.apply_solution();
-      const graph: CadSketchGraph = parseCadSketchGraph({ ...compiled.graph, points: compiled.graph.points.map(point => {
-        const solved = wrapper.sketch_index.get_sketch_point(point.id);
-        return { ...point, position: [typeof point.position[0] === 'number' ? solved.x : point.position[0], typeof point.position[1] === 'number' ? solved.y : point.position[1]] };
-      }), entities: compiled.graph.entities.map(entity => entity.kind === 'circle' && typeof entity.radius === 'number'
-        ? { ...entity, radius: wrapper.sketch_index.get_sketch_circle(entity.id).radius } : entity) });
-      if (!cadSketchSolutionMatchesInput(input, graph)) return { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution changed fixed source geometry.', diagnostics };
-      const issues = checkCadSketchGraph(graph, input.parameters);
-      if (issues.length) return { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution does not satisfy its geometry and relations.', diagnostics: { ...diagnostics, issues } };
-      return { kind: 'solved', graph, diagnostics };
-    } finally { wrapper.destroy_gcs_module(); }
+    });
+    // Without conflicts PlaneGCS counts unknowns minus Jacobian rank, which adds up across groups.
+    // A conflicting system can count unknowns minus equations instead, so the sum would depend on
+    // grouping; freedom is then reported as unknown.
+    const diagnostics: CadSketchSolveDiagnostics = { status, degreesOfFreedom: conflicting.length ? null : degreesOfFreedom, conflictingIds: mapped(conflicting),
+      redundantIds: mapped(redundant), partiallyRedundantIds: mapped(partiallyRedundant), issues: [] };
+    if (diagnostics.conflictingIds.length) return { kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics };
+    if (diagnostics.redundantIds.length || diagnostics.partiallyRedundantIds.length) return { kind: 'rejected', reason: 'redundant', message: 'Sketch constraints are redundant.', diagnostics };
+    if (status !== 'success' && status !== 'converged') return { kind: 'rejected', reason: 'failed', message: 'The sketch solver did not produce a valid solution.', diagnostics };
+    const graph: CadSketchGraph = parseCadSketchGraph({ ...compiled.graph, points: compiled.graph.points.map(point => {
+      const solved = solvedPoints.get(point.id);
+      return solved ? { ...point, position: [typeof point.position[0] === 'number' ? solved.x : point.position[0], typeof point.position[1] === 'number' ? solved.y : point.position[1]] } : point;
+    }), entities: compiled.graph.entities.map(entity => {
+      const radius = entity.kind === 'circle' && typeof entity.radius === 'number' ? solvedRadii.get(entity.id) : undefined;
+      return radius === undefined ? entity : { ...entity, radius };
+    }) });
+    if (!cadSketchSolutionMatchesInput(input, graph)) return { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution changed fixed source geometry.', diagnostics };
+    const issues = checkCadSketchGraph(graph, input.parameters);
+    if (issues.length) return { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution does not satisfy its geometry and relations.', diagnostics: { ...diagnostics, issues } };
+    return { kind: 'solved', graph, diagnostics };
   } };
 }

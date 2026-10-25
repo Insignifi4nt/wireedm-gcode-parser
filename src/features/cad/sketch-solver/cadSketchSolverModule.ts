@@ -13,3 +13,6 @@ export function initializeCadSketchSolverModule(wasmLocation = wasmUrl): Promise
   });
   return initialized;
 }
+
+/** Drops an aborted module so the next initialization loads a fresh one. */
+export function resetCadSketchSolverModule(): void { initialized = undefined; }

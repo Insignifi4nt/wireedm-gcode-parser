@@ -1,9 +1,9 @@
 import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './cadSketchSolverModule';
+import { initializeCadSketchSolverModule, resetCadSketchSolverModule } from './cadSketchSolverModule';
 import type { CadSketchSolveInput } from './cadSketchSolverTypes';
 import { isCadSketchSolverEnvelope, type CadSketchSolverReply } from './cadSketchSolverProtocol';
 
-const runtime = createCadSketchSolverRuntime(initializeCadSketchSolverModule);
+const runtime = createCadSketchSolverRuntime(initializeCadSketchSolverModule, { discard: resetCadSketchSolverModule });
 let queue = Promise.resolve();
 self.addEventListener('message', (event: MessageEvent<unknown>) => {
   const value = event.data;

@@ -83,11 +83,13 @@ export function createCadKernelBenchmarkCases(): CadKernelBenchmarkCase[] {
 }
 
 /**
- * Independent fully constrained rectangles: fixed corner, horizontal/vertical sides and two
- * distances each, so every rectangle is its own zero-freedom component. Unsolved corners start
- * deliberately off so the solver has work to do; saved documents need the solved positions.
+ * Fully constrained rectangles: horizontal/vertical sides and two distances each. Independent
+ * rectangles each fix a corner, so every rectangle is its own zero-freedom component. Connected
+ * rectangles fix only the first corner and place every later one by axis distances from the
+ * previous rectangle, so the whole graph is one component. Unsolved corners start deliberately
+ * off so the solver has work to do; saved documents need the solved positions.
  */
-export function createCadBenchmarkRectangleGraph(count: number, prefix = 'r', solved = false): CadSketchGraph {
+export function createCadBenchmarkRectangleGraph(count: number, prefix = 'r', solved = false, connected = false): CadSketchGraph {
   const points: { id: string; position: [number, number] }[] = [], entities: unknown[] = [], relations: unknown[] = [];
   for (let index = 0; index < count; index++) {
     const ox = (index % 10) * 30, oy = Math.floor(index / 10) * 30, id = `${prefix}${index}`;
@@ -95,8 +97,12 @@ export function createCadBenchmarkRectangleGraph(count: number, prefix = 'r', so
       points.push({ id: `${id}_p${corner}`, position: [ox + x, oy + y] }); return `${id}_p${corner}`;
     });
     corners.forEach((start, side) => entities.push({ id: `${id}_l${side}`, kind: 'line', construction: false, startPointId: start, endPointId: corners[(side + 1) % 4] }));
+    const previous = `${prefix}${index - 1}_p0`, [px, py] = [((index - 1) % 10) * 30, Math.floor((index - 1) / 10) * 30];
+    relations.push(...connected && index ? [
+      { id: `${id}_dx`, kind: 'axis-distance', axis: 'x', pointIds: [previous, corners[0]], value: ox - px },
+      { id: `${id}_dy`, kind: 'axis-distance', axis: 'y', pointIds: [previous, corners[0]], value: oy - py }
+    ] : [{ id: `${id}_fixed`, kind: 'fixed-point', pointId: corners[0], position: [ox, oy] }]);
     relations.push(
-      { id: `${id}_fixed`, kind: 'fixed-point', pointId: corners[0], position: [ox, oy] },
       { id: `${id}_bottom`, kind: 'horizontal', pointIds: [corners[0], corners[1]] }, { id: `${id}_top`, kind: 'horizontal', pointIds: [corners[3], corners[2]] },
       { id: `${id}_right`, kind: 'vertical', pointIds: [corners[1], corners[2]] }, { id: `${id}_left`, kind: 'vertical', pointIds: [corners[0], corners[3]] },
       { id: `${id}_width`, kind: 'distance', pointIds: [corners[0], corners[1]], value: 20 }, { id: `${id}_height`, kind: 'distance', pointIds: [corners[1], corners[2]], value: 10 });
