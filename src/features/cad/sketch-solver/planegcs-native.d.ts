@@ -4,5 +4,8 @@ declare module '@salusoft89/planegcs/dist/planegcs_dist/planegcs.js' {
   import type { ModuleStatic } from '@salusoft89/planegcs/planegcs_dist/planegcs';
   export default function initialize(config: {
     locateFile: (fileName: string, prefix: string) => string;
+    print?: (message: string) => void;
+    printErr?: (message: string) => void;
+    instantiateWasm?: (imports: WebAssembly.Imports, receive: (instance: WebAssembly.Instance) => void) => WebAssembly.Exports;
   }): Promise<ModuleStatic>;
 }

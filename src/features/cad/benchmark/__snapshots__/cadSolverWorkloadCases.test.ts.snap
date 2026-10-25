@@ -1,0 +1,489 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`solver workload fixtures against real PlaneGCS > conflicting-distances pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [
+      "length",
+      "other",
+    ],
+    "degreesOfFreedom": null,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "failed",
+  },
+  "kind": "rejected",
+  "reason": "conflicting",
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > conflicting-triangle pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [
+      "ac",
+      "diagonal",
+    ],
+    "degreesOfFreedom": null,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "failed",
+  },
+  "kind": "rejected",
+  "reason": "conflicting",
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > connected-60 pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > connected-88 pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > die-constrained pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > die-free pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 21,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > fixed-point-vs-dimension pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [
+      "fixA",
+      "fixB",
+      "size",
+    ],
+    "degreesOfFreedom": null,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "failed",
+  },
+  "kind": "rejected",
+  "reason": "conflicting",
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > fully-fixed-conflict pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [
+      {
+        "code": "relation-residual",
+        "message": "Sketch geometry does not satisfy its driving relation.",
+        "residualMm": 2,
+        "source": {
+          "id": "fixedSize",
+          "kind": "relation",
+        },
+      },
+    ],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "rejected",
+  "reason": "invalid-solution",
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > fully-fixed-conflict-with-free pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [
+      "fixedSize",
+    ],
+    "degreesOfFreedom": null,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "rejected",
+  "reason": "conflicting",
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > fully-fixed-satisfied pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > fully-fixed-satisfied-with-free pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 2,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [
+      "fixedSize",
+    ],
+    "status": "success",
+  },
+  "kind": "rejected",
+  "reason": "redundant",
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > impossible-triangle pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 3,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "failed",
+  },
+  "kind": "rejected",
+  "reason": "failed",
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > numeric-far-origin pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > numeric-mixed-scales pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > numeric-tiny pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > overlapping-conflicts pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [
+      "length",
+      "other",
+      "third",
+    ],
+    "degreesOfFreedom": null,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "failed",
+  },
+  "kind": "rejected",
+  "reason": "conflicting",
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > partial-coincident-horizontal pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 4,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [
+      "level",
+    ],
+    "status": "success",
+  },
+  "kind": "rejected",
+  "reason": "redundant",
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > partial-symmetry-midpoint pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 7,
+    "issues": [],
+    "partiallyRedundantIds": [
+      "mid",
+    ],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "rejected",
+  "reason": "redundant",
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > rectangles-10 pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > rectangles-60 pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > rectangles-200 pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > redundant-distances pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 5,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [
+      "duplicate",
+    ],
+    "status": "success",
+  },
+  "kind": "rejected",
+  "reason": "redundant",
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > tangency-exact pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > tangency-near pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [
+      {
+        "code": "arc-radius-mismatch",
+        "message": "Arc endpoints must share their declared center and radius.",
+        "residualMm": 1.666666804567285e-11,
+        "source": {
+          "id": "slotRight",
+          "kind": "entity",
+        },
+      },
+      {
+        "code": "relation-residual",
+        "message": "The line and arc do not form a smooth tangent joint.",
+        "residualMm": 3.333600062651509e-11,
+        "source": {
+          "id": "tangentslotB",
+          "kind": "relation",
+        },
+      },
+    ],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "rejected",
+  "reason": "invalid-solution",
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > topology-branch pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > topology-hub pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > topology-hub-shuffled pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > topology-loop pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
+
+exports[`solver workload fixtures against real PlaneGCS > topology-open pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [],
+    "degreesOfFreedom": 0,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "success",
+  },
+  "kind": "solved",
+  "reason": null,
+}
+`;
