@@ -79,6 +79,18 @@ describe('native sketch solver module', () => {
     }
   });
 
+  it('answers counts larger than the buffer with invalid input instead of trapping', async () => {
+    const { instance } = await WebAssembly.instantiate(wasm, {});
+    const exports = instance.exports as { memory: WebAssembly.Memory; buffer_alloc(length: number): number; buffer_free(pointer: number, length: number): void; solve(pointer: number, length: number): number };
+    for (const buffer of [[1, 2 ** 31, 0], [1, 0, 2 ** 32 - 1], [1, 2 ** 32 - 1, 2 ** 32 - 1, 0, 0]]) {
+      const pointer = exports.buffer_alloc(buffer.length);
+      new Float64Array(exports.memory.buffer, pointer, buffer.length).set(buffer);
+      const output = exports.solve(pointer, buffer.length), reply = new Float64Array(exports.memory.buffer, output, 5).slice();
+      expect([...reply.subarray(0, 4)]).toEqual([5, 1, 2, 0]);
+      exports.buffer_free(pointer, buffer.length); exports.buffer_free(output, 5);
+    }
+  });
+
   it('rejects a module without the solver exports', async () => {
     const empty = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]);
     await expect(loadCadSketchNativeSolver(empty)).rejects.toThrow(/unexpected exports/);

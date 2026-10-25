@@ -4,7 +4,7 @@ Wire EDM's own 2D sketch constraint solver: a Rust crate with no dependencies, c
 
 - `src/equations.rs` holds the twelve scalar equation kinds. Their gradients come from the dual numbers in `src/dual.rs`.
 - `src/newton.rs` solves each connected group of unknowns with damped Gauss-Newton.
-- `src/problem.rs` defines the `f64` wire format. `src/lib.rs` exports `alloc`, `free` and `solve`.
+- `src/problem.rs` defines the `f64` wire format. `src/lib.rs` exports `buffer_alloc`, `buffer_free` and `solve`.
 - The TypeScript side is in `src/features/cad/sketch-solver/native/`:
   - the equation model and its encoder;
   - the compiler from sketch graphs;

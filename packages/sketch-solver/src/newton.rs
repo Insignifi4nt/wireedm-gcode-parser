@@ -12,9 +12,8 @@ use crate::problem::{Problem, Status};
 pub const MAX_ITERATIONS: usize = 100;
 /// A solution is accepted when each normalized residual is at most this times its local scale.
 pub const ACCEPT: f64 = 1e-10;
-/// Steps continue past acceptance while they improve, up to roundoff at this level.
+/// Steps continue past acceptance while they improve, down to roundoff at this level.
 const POLISH: f64 = 2.0 * f64::EPSILON;
-const POLISH_STEPS: usize = 3;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Outcome {
@@ -24,7 +23,7 @@ pub struct Outcome {
     pub residual: f64,
 }
 
-/// One normalized Jacobian row with its unknown columns; fixed operands have no column.
+/// One normalized Jacobian row over distinct unknown columns; fixed operands have no column.
 #[derive(Clone)]
 struct Row {
     columns: [usize; WIDTH],
@@ -55,10 +54,16 @@ impl System<'_> {
             let mut row = Row { columns: [0; WIDTH], derivatives: [0.0; WIDTH], len: 0, residual: result.value, scale: 1.0, weight: 1.0 };
             for (slot, &p) in equation.operands.iter().enumerate() {
                 row.scale = row.scale.max(values[p].abs());
-                if self.column[p] != usize::MAX {
-                    row.columns[row.len] = self.column[p];
-                    row.derivatives[row.len] = result.gradient[slot];
-                    row.len += 1;
+                let column = self.column[p];
+                if column == usize::MAX { continue; }
+                // An operand repeated in one equation has one derivative, the sum of its slots.
+                match row.columns[..row.len].iter().position(|&c| c == column) {
+                    Some(existing) => row.derivatives[existing] += result.gradient[slot],
+                    None => {
+                        row.columns[row.len] = column;
+                        row.derivatives[row.len] = result.gradient[slot];
+                        row.len += 1;
+                    }
                 }
             }
             row.weight = match weights {
@@ -74,7 +79,7 @@ impl System<'_> {
         }).collect()
     }
 
-    /// Lower triangle of `J^T J` and `J^T r`. Repeated columns in one row add up.
+    /// Lower triangle of `J^T J` and `J^T r`.
     fn normal(&self, rows: &[Row]) -> (Vec<f64>, Vec<f64>) {
         let n = self.unknowns.len();
         let (mut a, mut g) = (vec![0.0; n * n], vec![0.0; n]);
@@ -94,7 +99,7 @@ impl System<'_> {
 
 /// Largest residual relative to its scale; NaN when any residual is not finite.
 fn worst(rows: &[Row]) -> f64 {
-    rows.iter().fold(0.0, |max: f64, row| if row.residual.is_finite() { max.max(row.residual.abs() / row.scale) } else { f64::NAN })
+    rows.iter().fold(0.0, |max: f64, row| if max.is_nan() || !row.residual.is_finite() { f64::NAN } else { max.max(row.residual.abs() / row.scale) })
 }
 
 fn cost(rows: &[Row]) -> f64 { 0.5 * rows.iter().map(|row| row.residual * row.residual).sum::<f64>() }
@@ -181,7 +186,7 @@ fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
     let diagonal = (0..n).fold(0.0_f64, |max, i| max.max(a[i * n + i]));
     let floor = 1e-12 * diagonal.max(1.0);
     let (mut mu, mut nu) = ((1e-6 * diagonal).max(floor), 2.0);
-    let (mut iterations, mut polished) = (0, 0);
+    let mut iterations = 0;
     while iterations < MAX_ITERATIONS {
         iterations += 1;
         let negative: Vec<f64> = g.iter().map(|value| -value).collect();
@@ -201,7 +206,6 @@ fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
                 rows = system.rows(values, None);
                 error = worst(&rows);
                 if !(error > POLISH) { break; }
-                if error <= ACCEPT { polished += 1; if polished >= POLISH_STEPS { break; } }
                 (a, g) = system.normal(&rows);
             } else {
                 for (&p, &value) in system.unknowns.iter().zip(&saved) { values[p] = value; }

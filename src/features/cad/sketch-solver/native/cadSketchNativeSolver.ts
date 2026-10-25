@@ -15,13 +15,13 @@ export interface CadSketchNativeSolver {
 
 interface Exports {
   readonly memory: WebAssembly.Memory;
-  alloc(length: number): number;
-  free(pointer: number, length: number): void;
+  buffer_alloc(length: number): number;
+  buffer_free(pointer: number, length: number): void;
   solve(pointer: number, length: number): number;
 }
 
 function isExports(value: WebAssembly.Exports): value is WebAssembly.Exports & Exports {
-  return value.memory instanceof WebAssembly.Memory && ['alloc', 'free', 'solve'].every(name => typeof value[name] === 'function');
+  return value.memory instanceof WebAssembly.Memory && ['buffer_alloc', 'buffer_free', 'solve'].every(name => typeof value[name] === 'function');
 }
 
 /** Loads the Rust solver from bytes, or from a URL (by default the bundled module asset). */
@@ -32,7 +32,7 @@ export async function loadCadSketchNativeSolver(source: BufferSource | string | 
   if (!isExports(exports)) throw new Error('The native sketch solver module has unexpected exports.');
   return { solve(model) {
     const input = encodeCadSketchEquationModel(model);
-    const pointer = exports.alloc(input.length);
+    const pointer = exports.buffer_alloc(input.length);
     let output: number | undefined;
     try {
       new Float64Array(exports.memory.buffer, pointer, input.length).set(input);
@@ -47,8 +47,8 @@ export async function loadCadSketchNativeSolver(source: BufferSource | string | 
         throw new Error('The native sketch solver returned an invalid result.');
       return { status: status === 0 ? 'converged' : 'not-converged', iterations, residual, values };
     } finally {
-      exports.free(pointer, input.length);
-      if (output !== undefined) exports.free(output, new Float64Array(exports.memory.buffer, output, 1)[0]);
+      exports.buffer_free(pointer, input.length);
+      if (output !== undefined) exports.buffer_free(output, new Float64Array(exports.memory.buffer, output, 1)[0]);
     }
   } };
 }

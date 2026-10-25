@@ -38,7 +38,9 @@ pub fn decode(input: &[f64]) -> Option<Problem> {
     if version != VERSION || rest.len() < 2 { return None; }
     let (n, m) = (count(rest[0])?, count(rest[1])?);
     let body = &rest[2..];
-    if body.len() < 2 * n { return None; }
+    // Counts are checked against the data before any slice or allocation; each equation takes
+    // at least three values.
+    if body.len() / 2 < n || (body.len() - 2 * n) / 3 < m { return None; }
     let values = body[..n].to_vec();
     if values.iter().any(|value| !value.is_finite()) { return None; }
     let fixed = body[n..2 * n].iter().map(|&flag| match flag { 0.0 => Some(false), 1.0 => Some(true), _ => None })

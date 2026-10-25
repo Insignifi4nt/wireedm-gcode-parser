@@ -149,3 +149,43 @@ fn rejects_malformed_buffers() {
     assert_eq!(&empty[..4], &[5.0, 1.0, 2.0, 0.0]);
     assert!(empty.len() == 5 && empty[4].is_nan());
 }
+
+#[test]
+fn a_non_finite_residual_fails_whatever_follows_it() {
+    for reversed in [false, true] {
+        let mut builder = Builder::new();
+        let a = builder.point(0.0, 0.0, true);
+        let p = builder.point(1.0, 1.0, true);
+        // A guide line of zero length has no direction; both equations have only fixed operands.
+        let undefined = (Kind::PointOnLine, 0.0, vec![p[0], p[1], a[0], a[1], a[0], a[1]]);
+        let satisfied = (Kind::Value, 1.0, vec![p[0]]);
+        builder.equations = if reversed { vec![satisfied, undefined] } else { vec![undefined, satisfied] };
+        assert_eq!(builder.solve().0, 1.0, "reversed: {reversed}");
+    }
+}
+
+#[test]
+fn an_operand_repeated_in_one_equation_has_one_combined_derivative() {
+    // Two lines sharing both endpoints: their angle is identically zero and cannot reach 0.001 degrees.
+    let mut builder = Builder::new();
+    let a = builder.point(0.0, 0.0, true);
+    let b = builder.point(1e-6, 0.0, false);
+    builder.equation(Kind::Angle, 0.001f64.to_radians(), &[a[0], a[1], b[0], b[1], a[0], a[1], b[0], b[1]]);
+    assert_eq!(builder.solve().0, 1.0);
+}
+
+#[test]
+fn polishes_an_ill_conditioned_intersection_to_roundoff() {
+    // An arc's end on a circle that nearly touches the arc's own circle.
+    let mut builder = Builder::new();
+    let center = builder.point(-1.0, 0.0, true);
+    let start = builder.point(0.0, -1e-6, true);
+    let end = builder.point(0.01, 1.1e-5, false);
+    let other = builder.point(1.0, 0.0, true);
+    builder.equation(Kind::EqualLength, 0.0, &[center[0], center[1], start[0], start[1], center[0], center[1], end[0], end[1]]);
+    builder.equation(Kind::Distance, 1f64.hypot(1e-6), &[other[0], other[1], end[0], end[1]]);
+    let (status, _, values) = builder.solve();
+    assert_eq!(status, 0.0);
+    let radius = |x: f64, y: f64| (x + 1.0).hypot(y);
+    assert!((radius(values[end[0]], values[end[1]]) - radius(0.0, -1e-6)).abs() <= 1e-12, "{values:?}");
+}
