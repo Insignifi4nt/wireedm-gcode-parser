@@ -10,6 +10,8 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 - `npm test -- --run` - run tests once
 - `npm test -- --run --project pure-domain` - run pure geometry/planning suites in Node
 - `npm test -- --run --project browser` - run browser storage, DOM and app suites
+- `npm test -- --run --project native-differential` - repeat the PlaneGCS sketch suites through the native Rust solver
+- `npm run solver:build` / `npm run solver:check` - rebuild the Rust sketch solver module, or test it and verify the committed module matches its source (needs `rustup`)
 - `npm run build` - type-check (TypeScript 7 native `tsc`) and build
 - `npm run lint` - oxlint correctness rules; must stay at zero findings
 - `npm run ui:check` - enforce shared controls, menus and tooltip ownership
@@ -30,12 +32,14 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 - Tailwind CSS
 - shadcn/ui-compatible component structure
 - Vitest 5, oxlint, Playwright
+- Rust (toolchain pinned in `packages/sketch-solver/rust-toolchain.toml`) for the WebAssembly sketch solver
 
 ## Structure
 
 - `src/app/` - shell and app-level composition
 - `src/components/ui/` - shadcn-compatible UI primitives
 - `src/domain/` - workbench, storage, and G-code output models
+- `packages/sketch-solver/` - Rust sketch constraint solver and its committed WebAssembly module
 - `src/features/` - dashboard, editor tools, and their UI tests
 - `docs/superpowers/` - design and implementation planning notes
 

@@ -1,0 +1,24 @@
+{
+  "version": "0.0.739",
+  "previousVersion": "0.0.738",
+  "postCompatibility": "preserved-output-native-sketch-solver-core",
+  "summary": "Adds the core of Wire EDM's own sketch constraint solver: a Rust crate without dependencies in packages/sketch-solver, compiled to a 43 kB WebAssembly module that is committed with its hash. A sketch compiles to scalar parameters and twelve kinds of scalar equation, with the same relations, operand order, source identities and fixed values as the PlaneGCS compilation. The module solves each connected group of unknowns with damped Gauss-Newton, using exact gradients from dual numbers and equations normalized to distances, and iterates to roundoff. The app does not load the module yet; PlaneGCS still solves every sketch. Diagnosis of redundant and conflicting relations, degrees of freedom, exact elimination and drag targets come in later steps. A new native-differential test project repeats the real PlaneGCS sketch suites through both solvers, and a new CI job runs the Rust tests and requires the committed module to match a fresh build.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. The app does not load or bundle the new module, and sketch solving, diagnostics and the solver protocol are unchanged. The PlaneGCS sketch compiler is now exported under a descriptive name so the tests can compare it with the native compiler; its behavior is unchanged.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal or solver protocol schema change. The native module has its own versioned f64 buffer format, used only by tests. Post engine API remains 1; saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Rust tests check every equation kind's gradient against central differences, the angle wrap, zero lengths, exact rectangle, angle and symmetry solutions, an under-constrained point that moves only along its constraint, conflicting equations reported as not converged, a group solved beside a conflicting group, and rejection of malformed buffers. The native-differential project runs 24 PlaneGCS sketch suites through both solvers. 411 compiled inputs give identical equations and parameter values, every PlaneGCS-solved sketch also solves natively and passes the graph checks, and 162 well-constrained sketches match PlaneGCS positions and radii within 1e-8. Unit tests cover fixed expression and external-reference values, the drag refusal, arity checks, tiny and large geometry in one sketch, conflicts, 2000 repeated solves in one instance and a module without solver exports. The full unit suite, native tsc -b and npm run lint with zero findings pass, and npm run solver:check matches the committed module."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Groundwork for a faster sketch solver.",
+    "changes": [
+      "Adds the core of a new sketch constraint solver that will replace the current one in a later release. Sketches still solve exactly as before."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
