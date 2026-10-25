@@ -57,6 +57,17 @@ impl Kind {
     }
 }
 
+/// Whether the residual is a direction error (a sine, cosine offset or angle) rather than a length.
+pub fn is_direction(kind: Kind) -> bool { matches!(kind, Kind::Parallel | Kind::Perpendicular | Kind::Angle) }
+
+/// Millimetres per unit of residual at operand values `o`. A direction error of `r` moves the far
+/// end of the longer line `r` times its length, as the sketch graph checks measure it.
+pub fn reach(kind: Kind, o: &[f64]) -> f64 {
+    if !is_direction(kind) { return 1.0; }
+    let length = |x: f64, y: f64| (x * x + y * y).sqrt();
+    length(o[2] - o[0], o[3] - o[1]).max(length(o[6] - o[4], o[7] - o[5]))
+}
+
 fn length(x: Dual, y: Dual) -> Dual { (x * x + y * y).sqrt() }
 fn cross(ax: Dual, ay: Dual, bx: Dual, by: Dual) -> Dual { ax * by - ay * bx }
 fn dot(ax: Dual, ay: Dual, bx: Dual, by: Dual) -> Dual { ax * bx + ay * by }

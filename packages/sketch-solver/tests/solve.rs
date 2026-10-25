@@ -200,6 +200,40 @@ fn a_cancelled_angle_far_from_the_origin_is_not_accepted() {
 }
 
 #[test]
+fn a_short_fixed_guide_neither_hides_nor_excuses_an_angle() {
+    for movable in [true, false] {
+        let mut builder = Builder::new();
+        let origin = builder.point(0.0, 0.0, true);
+        let guide = builder.point(1e-6, 0.0, true);
+        let end = builder.point(10000.0, 10000.0, !movable);
+        builder.equation(Kind::Angle, 30f64.to_radians(), &[origin[0], origin[1], guide[0], guide[1], origin[0], origin[1], end[0], end[1]]);
+        let (status, iterations, values) = builder.solve();
+        if movable {
+            assert_eq!(status, 0.0);
+            assert!(iterations <= 10.0, "{iterations} iterations");
+            assert!((values[end[1]].atan2(values[end[0]]) - 30f64.to_radians()).abs() <= 1e-12, "{values:?}");
+        } else {
+            assert_eq!(status, 1.0);
+        }
+    }
+}
+
+#[test]
+fn polishes_an_input_that_starts_within_acceptance() {
+    let mut builder = Builder::new();
+    let center = builder.point(-100.0, 0.0, true);
+    let start = builder.point(0.0, -1e-5, true);
+    let end = builder.point(0.0, 4e-5, false);
+    let other = builder.point(100.0, 0.0, true);
+    builder.equation(Kind::EqualLength, 0.0, &[center[0], center[1], start[0], start[1], center[0], center[1], end[0], end[1]]);
+    builder.equation(Kind::Distance, 100f64.hypot(1e-5), &[other[0], other[1], end[0], end[1]]);
+    let (status, _, values) = builder.solve();
+    assert_eq!(status, 0.0);
+    let radius = |x: f64, y: f64| (x + 100.0).hypot(y);
+    assert!((radius(values[end[0]], values[end[1]]) - radius(0.0, -1e-5)).abs() <= 1e-12, "{values:?}");
+}
+
+#[test]
 fn polishes_a_near_tangent_intersection_quickly_beside_other_unknowns() {
     let mut builder = Builder::new();
     let center = builder.point(-100.0, 0.0, true);
@@ -209,7 +243,7 @@ fn polishes_a_near_tangent_intersection_quickly_beside_other_unknowns() {
     builder.equation(Kind::EqualLength, 0.0, &[center[0], center[1], start[0], start[1], center[0], center[1], end[0], end[1]]);
     builder.equation(Kind::Distance, 100f64.hypot(1e-5), &[other[0], other[1], end[0], end[1]]);
     let mut previous = end;
-    for index in 0..10 {
+    for index in 0..100 {
         let next = builder.point(index as f64 * 0.7, 3.0, false);
         builder.equation(Kind::Difference, 1.0, &[previous[0], next[0]]);
         builder.equation(Kind::Difference, 0.0, &[previous[1], next[1]]);
@@ -217,7 +251,7 @@ fn polishes_a_near_tangent_intersection_quickly_beside_other_unknowns() {
     }
     let (status, iterations, values) = builder.solve();
     assert_eq!(status, 0.0);
-    assert!(iterations <= 30.0, "{iterations} iterations");
+    assert!(iterations <= 40.0, "{iterations} iterations");
     let radius = |x: f64, y: f64| (x + 100.0).hypot(y);
     assert!((radius(values[end[0]], values[end[1]]) - radius(0.0, -1e-5)).abs() <= 1e-12, "{values:?}");
 }

@@ -4,7 +4,7 @@ import { CAD_SKETCH_NATIVE_PROTOCOL_VERSION, encodeCadSketchEquationModel, type 
 export interface CadSketchNativeSolution {
   readonly status: 'converged' | 'not-converged';
   readonly iterations: number;
-  /** Largest absolute equation residual at `values`. */
+  /** Largest equation residual at `values` in millimetres; a direction error moves its longer line's far end. */
   readonly residual: number;
   readonly values: readonly number[];
 }

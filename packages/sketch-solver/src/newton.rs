@@ -2,16 +2,22 @@
 //! each connected group of unknowns. Each step solves `(J^T J + mu I) h = -J^T r`; `h` stays in the row
 //! space of `J`, so free directions of an under-constrained sketch do not move.
 //!
-//! Every equation is divided by its gradient norm at the start of each step, so each residual
-//! reads as a distance in sketch units whatever the equation kind or the size of its geometry.
+//! Every equation is divided by its gradient norm over the unknowns at the start of each step,
+//! so each residual reads as the distance its unknowns must move. Acceptance is judged apart from
+//! that weighting, in millimetres against the sketch driver tolerance of the graph checks.
 
 use crate::dual::{Dual, WIDTH};
-use crate::equations::residual;
+use crate::equations::{is_direction, reach, residual};
 use crate::problem::{Problem, Status};
 
 pub const MAX_ITERATIONS: usize = 100;
-/// A solution is accepted when each normalized residual is at most this times its local scale.
-pub const ACCEPT: f64 = 1e-10;
+/// A solution is accepted when each residual is within `max(ACCEPT_MM, 8 epsilon x scale)`
+/// millimetres and each direction error within `ACCEPT_RADIANS`, as `cadSketchDriverTolerance`
+/// and the line and angle relation checks require.
+pub const ACCEPT_MM: f64 = 1e-10;
+pub const ACCEPT_RADIANS: f64 = 1e-12;
+/// Damping drops to near roundoff once each weighted residual is within this times its scale.
+const NEAR: f64 = 1e-10;
 /// Steps continue past acceptance while they improve, down to roundoff at this level.
 const POLISH: f64 = 2.0 * f64::EPSILON;
 
@@ -19,7 +25,7 @@ const POLISH: f64 = 2.0 * f64::EPSILON;
 pub struct Outcome {
     pub status: Status,
     pub iterations: usize,
-    /// Largest normalized residual divided by its local scale.
+    /// Largest residual in millimetres; NaN when any residual is not finite.
     pub residual: f64,
 }
 
@@ -30,6 +36,10 @@ struct Row {
     derivatives: [f64; WIDTH],
     len: usize,
     residual: f64,
+    /// Unweighted residual in millimetres; a direction error moves the longer line's far end.
+    millimetres: f64,
+    /// Unweighted direction error, zero for length equations.
+    radians: f64,
     /// Largest operand magnitude, at least one.
     scale: f64,
     weight: f64,
@@ -51,9 +61,12 @@ impl System<'_> {
             let equation = &self.problem.equations[equation];
             let operands: Vec<Dual> = equation.operands.iter().enumerate().map(|(slot, &p)| Dual::variable(values[p], slot)).collect();
             let result = residual(equation.kind, &operands, equation.value);
-            let mut row = Row { columns: [0; WIDTH], derivatives: [0.0; WIDTH], len: 0, residual: result.value, scale: 1.0, weight: 1.0 };
+            let raw: Vec<f64> = equation.operands.iter().map(|&p| values[p]).collect();
+            let mut row = Row { columns: [0; WIDTH], derivatives: [0.0; WIDTH], len: 0, residual: result.value,
+                millimetres: (result.value * reach(equation.kind, &raw)).abs(),
+                radians: if is_direction(equation.kind) { result.value.abs() } else { 0.0 },
+                scale: raw.iter().fold(1.0, |scale: f64, value| scale.max(value.abs())), weight: 1.0 };
             for (slot, &p) in equation.operands.iter().enumerate() {
-                row.scale = row.scale.max(values[p].abs());
                 let column = self.column[p];
                 if column == usize::MAX { continue; }
                 // An operand repeated in one equation has one derivative, the sum of its slots.
@@ -69,16 +82,10 @@ impl System<'_> {
             row.weight = match weights {
                 Some(rows) => rows[index].weight,
                 None => {
-                    // The norm covers fixed operands too, so a row without unknowns also reads as a
-                    // distance. A gradient that cancels exactly leaves the residual in its own units
-                    // (radians for an angle), which must not be divided by a coordinate scale.
-                    let mut merged = [(usize::MAX, 0.0); WIDTH];
-                    for (slot, &p) in equation.operands.iter().enumerate() {
-                        let entry = merged.iter_mut().find(|(q, _)| *q == p || *q == usize::MAX).unwrap();
-                        *entry = (p, entry.1 + result.gradient[slot]);
-                    }
-                    let norm = merged.iter().map(|(_, d)| d * d).sum::<f64>().sqrt();
-                    if norm > 0.0 && norm.is_finite() { (1.0 / norm).min(1e12) } else { row.scale = 1.0; 1.0 }
+                    // Fixed operands stay out of the norm: a short fixed guide must not shrink the
+                    // row its movable operands have to satisfy.
+                    let norm = row.derivatives[..row.len].iter().map(|d| d * d).sum::<f64>().sqrt();
+                    if norm > 0.0 && norm.is_finite() { (1.0 / norm).min(1e12) } else { 1.0 }
                 }
             };
             row.residual *= row.weight;
@@ -105,9 +112,30 @@ impl System<'_> {
     }
 }
 
-/// Largest residual relative to its scale; NaN when any residual is not finite.
+/// How close a group is to a solution; a residual that is not finite is none of these.
+#[derive(Clone, Copy)]
+struct Progress {
+    /// Inside Newton's quadratic region, measured in the distances the unknowns must move.
+    near: bool,
+    accepted: bool,
+    /// Accepted and at roundoff, so further steps cannot help.
+    polished: bool,
+}
+
+fn assess(rows: &[Row]) -> Progress {
+    rows.iter().fold(Progress { near: true, accepted: true, polished: true }, |progress, row| {
+        let accepted = row.millimetres <= ACCEPT_MM.max(8.0 * f64::EPSILON * row.scale) && row.radians <= ACCEPT_RADIANS;
+        Progress {
+            near: progress.near && row.residual.abs() <= NEAR * row.scale,
+            accepted: progress.accepted && accepted,
+            polished: progress.polished && accepted && row.millimetres <= POLISH * row.scale && row.radians <= POLISH,
+        }
+    })
+}
+
+/// Largest residual in millimetres; NaN when any residual is not finite.
 fn worst(rows: &[Row]) -> f64 {
-    rows.iter().fold(0.0, |max: f64, row| if max.is_nan() || !row.residual.is_finite() { f64::NAN } else { max.max(row.residual.abs() / row.scale) })
+    rows.iter().fold(0.0, |max: f64, row| if max.is_nan() || !row.millimetres.is_finite() { f64::NAN } else { max.max(row.millimetres) })
 }
 
 fn cost(rows: &[Row]) -> f64 { 0.5 * rows.iter().map(|row| row.residual * row.residual).sum::<f64>() }
@@ -187,21 +215,22 @@ pub fn solve(problem: &Problem, values: &mut [f64]) -> Outcome {
 fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
     let n = system.unknowns.len();
     let mut rows = system.rows(values, None);
-    let mut error = worst(&rows);
-    let finish = |error: f64, iterations| Outcome { status: if error <= ACCEPT { Status::Converged } else { Status::NotConverged }, iterations, residual: error };
-    if !(error > POLISH) || n == 0 { return finish(error, 0); }
+    let mut progress = assess(&rows);
+    let finish = |rows: &[Row], progress: Progress, iterations| Outcome {
+        status: if progress.accepted { Status::Converged } else { Status::NotConverged }, iterations, residual: worst(rows) };
+    if progress.polished || n == 0 { return finish(&rows, progress, 0); }
     let (mut a, mut g) = system.normal(&rows);
     let diagonal = (0..n).fold(0.0_f64, |max, i| max.max(a[i * n + i]));
     // Damping well below the smallest useful curvature during the search, and near roundoff
-    // once accepted: a near-tangent intersection has tiny singular values that a larger floor
-    // would swamp, turning Newton's quadratic convergence linear.
+    // once near: a near-tangent intersection has tiny singular values that a larger floor would
+    // swamp, turning Newton's quadratic convergence linear. A start that is already near polishes.
     let (floor, polish_floor) = (1e-12 * diagonal.max(1.0), f64::EPSILON * diagonal.max(1.0));
-    let (mut mu, mut nu) = ((1e-6 * diagonal).max(floor), 2.0);
+    let (mut mu, mut nu) = (if progress.near { polish_floor } else { (1e-6 * diagonal).max(floor) }, 2.0);
     let mut iterations = 0;
     while iterations < MAX_ITERATIONS {
         iterations += 1;
         let negative: Vec<f64> = g.iter().map(|value| -value).collect();
-        let (mut accepted, mut rejected) = (false, false);
+        let (mut stepped, mut rejected) = (false, false);
         if let Some(h) = cholesky_solve(&a, mu, &negative) {
             if system.unknowns.iter().zip(&h).all(|(&p, step)| step.abs() <= f64::EPSILON * values[p].abs().max(1.0)) { break; }
             let saved: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
@@ -210,13 +239,13 @@ fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
             let predicted = 0.5 * h.iter().zip(&g).map(|(step, gradient)| step * (mu * step - gradient)).sum::<f64>();
             let reduction = cost(&rows) - cost(&next);
             if reduction > 0.0 && predicted > 0.0 {
-                accepted = true;
-                let (rho, searching) = (reduction / predicted, error > ACCEPT);
+                stepped = true;
+                let (rho, searching) = (reduction / predicted, !progress.near);
                 rows = system.rows(values, None);
-                error = worst(&rows);
-                if !(error > POLISH) { break; }
-                mu = if searching && error <= ACCEPT { polish_floor }
-                    else { (mu * (1.0 / 3.0_f64).max(1.0 - (2.0 * rho - 1.0).powi(3))).max(if error <= ACCEPT { polish_floor } else { floor }) };
+                progress = assess(&rows);
+                if progress.polished { break; }
+                mu = if searching && progress.near { polish_floor }
+                    else { (mu * (1.0 / 3.0_f64).max(1.0 - (2.0 * rho - 1.0).powi(3))).max(if progress.near { polish_floor } else { floor }) };
                 nu = 2.0;
                 (a, g) = system.normal(&rows);
             } else {
@@ -224,14 +253,14 @@ fn solve_group(system: &System, values: &mut [f64]) -> Outcome {
                 rejected = true;
             }
         }
-        if !accepted {
+        if !stepped {
             // Past acceptance, a computed step without gain is roundoff; a factorization that
             // failed only needs more damping.
-            if rejected && error <= ACCEPT { break; }
+            if rejected && progress.accepted { break; }
             mu *= nu;
             nu *= 2.0;
             if !mu.is_finite() { break; }
         }
     }
-    finish(error, iterations)
+    finish(&rows, progress, iterations)
 }

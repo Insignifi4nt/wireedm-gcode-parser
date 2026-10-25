@@ -68,11 +68,12 @@ After 0.0.737, most of a drag preview with several sketches is the final `parseC
 
 ## Native sketch solver (in progress)
 
-`packages/sketch-solver` is our own Rust constraint solver, compiled to a 43 kB WebAssembly module with no dependencies. From 0.0.739 it is built, tested and compared with PlaneGCS, but the app does not load it yet.
+`packages/sketch-solver` is our own Rust constraint solver, compiled to a 44 kB WebAssembly module with no dependencies. From 0.0.739 it is built, tested and compared with PlaneGCS, but the app does not load it yet.
 
 - `compileCadSketchEquations` turns a sketch into scalar parameters and twelve kinds of scalar equation, and the module solves them.
   - Each connected group of unknowns gets its own damped Gauss-Newton solve, with exact gradients from dual numbers.
-  - Each equation is divided by its gradient norm, so every residual reads as a distance whatever the size of the geometry.
+  - Each equation is divided by its gradient norm over the unknowns, so every residual reads as the distance they must move.
+  - A solve is accepted against the graph checks' own tolerances, apart from that weighting. Each residual must be within the driver tolerance in millimetres, and each direction error within 1e-12 radians, with the error measured at the far end of the longer line.
   - Iteration continues to roundoff, because the graph checks require coincident points to agree within 8 ulp of their coordinates.
 - The `native-differential` test project runs the real PlaneGCS sketch suites through both solvers. Every compiled input must give the same equations. Every solved sketch must also solve natively and pass the graph checks, and well-constrained sketches must match PlaneGCS within 1e-8.
 - Not built yet, in order:
