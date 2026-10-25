@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import initOpenCascade from 'replicad-opencascadejs';
 import { setOC } from 'replicad';
+import type { CadSketchFeature } from '@/domain/cad/cadDocument';
 import { buildCadKernelModel } from '../kernel/cadKernelModel';
 import { prepareCadEdits } from '../cadEditPreparation';
 import { createCadSketchSolverRuntime } from '../sketch-solver/cadSketchSolverRuntime';
@@ -24,12 +25,9 @@ beforeAll(async () => {
 describe('CAD benchmark cases', () => {
   it.each(createCadKernelBenchmarkCases().map(testCase => [testCase.id, testCase] as const))('%s builds its analytic expectations at every step', (_id, testCase) => {
     for (const step of testCase.steps) {
-      for (const document of step.dirtySubset ? [step.document, step.dirtySubset] : [step.document]) {
-        const model = buildCadKernelModel(document);
-        try {
-          if (document === step.document) expect(checkCadBenchmarkStep(model.result, step)).toEqual([]);
-          else expect(model.result.diagnostics).toEqual([]);
-        } finally { model.dispose(); }
+      for (const expected of step.affectedBodies ? [step, { label: `${step.label} affected bodies`, ...step.affectedBodies }] : [step]) {
+        const model = buildCadKernelModel(expected.document);
+        try { expect(checkCadBenchmarkStep(model.result, expected)).toEqual([]); } finally { model.dispose(); }
       }
     }
   }, 60_000);
@@ -50,8 +48,15 @@ describe('CAD benchmark cases', () => {
     expect(solved).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 0 } });
     const { document, edit } = createCadBenchmarkDragPreview(3, 2);
     const prepared = await prepareCadEdits(document, [edit], solver);
-    // The fully constrained corner returns to its corner; every other sketch stays exact.
-    expect(prepared.document).toEqual(document);
+    const graph = (source: typeof document, index: number) => (source.features[index] as CadSketchFeature).graph!;
+    const moved = graph(prepared.document, 0).points, original = graph(document, 0).points;
+    // The released rectangle follows the drag; its neighbours and every other sketch stay exact.
+    for (const [index, point] of moved.entries()) {
+      if (!point.id.startsWith('s0r0_')) { expect(point).toEqual(original[index]); continue; }
+      expect(Number(point.position[0]) - Number(original[index].position[0])).toBeCloseTo(.5, 6);
+      expect(Number(point.position[1]) - Number(original[index].position[1])).toBeCloseTo(.25, 6);
+    }
+    expect(prepared.document.features.slice(1)).toEqual(document.features.slice(1));
   });
 
   it('summarizes samples with nearest-rank percentiles', () => {

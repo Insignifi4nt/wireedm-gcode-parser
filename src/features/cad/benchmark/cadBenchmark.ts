@@ -36,7 +36,7 @@ export function cadBenchmarkCpuCalibrationMs(): number {
 const yieldTurn = () => new Promise(resolve => setTimeout(resolve, 0));
 
 /** Returns every mismatch between a build and its analytic expectations; empty means correct. */
-export function checkCadBenchmarkStep(result: CadBuildResult, step: CadBenchmarkStep): string[] {
+export function checkCadBenchmarkStep(result: CadBuildResult, step: Pick<CadBenchmarkStep, 'label' | 'bodies'>): string[] {
   const failures = result.diagnostics.map(diagnostic => `${step.label}: diagnostic ${diagnostic.code} ${diagnostic.message}`);
   const meshes = new Map(result.meshes.map(mesh => [mesh.featureId, mesh]));
   if (meshes.size !== step.bodies.length) failures.push(`${step.label}: expected ${step.bodies.length} bodies, built ${meshes.size}`);
@@ -68,44 +68,58 @@ async function shippedBuild(runtime: ReturnType<typeof createCadKernelRuntime>, 
 export interface CadKernelStepMeasurement {
   readonly label: string;
   readonly failures: readonly string[];
-  /** cadBenchmarkCpuCalibrationMs immediately before this step's samples. */
-  readonly cpuCalibrationMs: number;
+  /** cadBenchmarkCpuCalibrationMs immediately before each measurement group of this step. */
+  readonly cpuCalibrationMs: { readonly build: number; readonly edit: number; readonly mainThread: number };
   /** First build of this document after WASM initialization; only the first step has one. */
   readonly coldMs?: number;
   /** Uncached native builds of the complete document. */
   readonly buildMs: CadBenchmarkStats;
   /** Edit from the previous step through the shipped worker runtime and its whole-document cache. */
   readonly shippedEditMs?: CadBenchmarkStats;
-  /** Build of only the invalidated features: what an incremental rebuild could approach. */
-  readonly dirtySubsetMs?: CadBenchmarkStats;
+  /**
+   * Uncached build of only the bodies the edit changes, sampled alternately with shippedEditMs so
+   * both see the same clock speed. A rebuild that reuses unaffected bodies should not exceed it.
+   */
+  readonly affectedBodiesMs?: CadBenchmarkStats;
   readonly payload: ReturnType<typeof payload>;
   /** Main-thread work per reply: structured-clone transfer, reply validation and display preparation. */
   readonly mainThread: { readonly cloneMs: CadBenchmarkStats; readonly validateMs: CadBenchmarkStats; readonly displayMs: CadBenchmarkStats };
 }
 export interface CadKernelCaseMeasurement {
   readonly id: string; readonly description: string; readonly steps: readonly CadKernelStepMeasurement[];
-  /** WASM linear-memory capacity after repeated build/dispose cycles of the first step. */
+  /** WASM linear-memory capacity after repeated edits through one shipped runtime, alternating the steps. */
   readonly memoryBytesAfterRebuilds: Readonly<Record<string, number>>;
+}
+
+/** Times one uncached build; the first run's geometry is checked outside the timer. */
+function timedBuild(document: CadDocument, check?: (result: CadBuildResult) => void): number {
+  let model: ReturnType<typeof buildCadKernelModel> | undefined;
+  try {
+    const elapsed = time(() => { model = buildCadKernelModel(document); });
+    check?.(model!.result);
+    return elapsed;
+  } finally { model?.dispose(); }
 }
 
 /** The native kernel must already be initialized; memoryBytes reads its linear-memory capacity. */
 export async function measureCadKernelCase(testCase: CadKernelBenchmarkCase, options: { runs: number; memoryMarks: readonly number[]; memoryBytes: () => number }): Promise<CadKernelCaseMeasurement> {
   const runtime = createCadKernelRuntime(async () => undefined);
   const steps: CadKernelStepMeasurement[] = [];
+  const memoryBytesAfterRebuilds: Record<string, number> = {};
   let id = 0;
   try {
     for (const [index, step] of testCase.steps.entries()) {
       let coldMs: number | undefined;
-      const cpuCalibrationMs = cadBenchmarkCpuCalibrationMs();
+      const failures: string[] = [];
+      const buildCalibration = cadBenchmarkCpuCalibrationMs();
       const builds: number[] = [];
       for (let run = 0; run <= options.runs; run++) {
-        let model: ReturnType<typeof buildCadKernelModel> | undefined;
-        const elapsed = time(() => { model = buildCadKernelModel(step.document); });
-        model?.dispose();
+        const elapsed = timedBuild(step.document);
         if (run === 0) { if (index === 0) coldMs = elapsed; } else builds.push(elapsed);
         await yieldTurn();
       }
-      const shipped: number[] = [];
+      const editCalibration = cadBenchmarkCpuCalibrationMs();
+      const shipped: number[] = [], affected: number[] = [];
       let reply: Extract<CadKernelReply, { kind: 'built' }> | undefined;
       for (let run = 0; run < options.runs; run++) {
         if (index > 0) await shippedBuild(runtime, testCase.steps[index - 1].document, ++id);
@@ -113,33 +127,35 @@ export async function measureCadKernelCase(testCase: CadKernelBenchmarkCase, opt
         reply = await shippedBuild(runtime, step.document, ++id);
         if (index > 0) shipped.push(performance.now() - started);
         await yieldTurn();
+        const expected = step.affectedBodies;
+        if (expected) {
+          affected.push(timedBuild(expected.document, run ? undefined : result => failures.push(...checkCadBenchmarkStep(result, { label: `${step.label} affected bodies`, bodies: expected.bodies }))));
+          await yieldTurn();
+        }
       }
       if (!reply) throw new Error('A benchmark step needs at least one run.');
-      const dirty: number[] = [];
-      if (step.dirtySubset) for (let run = 0; run < options.runs; run++) {
-        let model: ReturnType<typeof buildCadKernelModel> | undefined;
-        dirty.push(time(() => { model = buildCadKernelModel(step.dirtySubset!); }));
-        model?.dispose(); await yieldTurn();
-      }
+      failures.unshift(...checkCadBenchmarkStep(reply.result, step));
+      const mainThreadCalibration = cadBenchmarkCpuCalibrationMs();
       const clone: number[] = [], validate: number[] = [], display: number[] = [];
       for (let run = 0; run < options.runs; run++) {
         clone.push(time(() => structuredClone(reply)));
         validate.push(time(() => { if (!isCadKernelReply(reply)) throw new Error('The benchmark reply failed protocol validation.'); }));
         display.push(time(() => { for (const mesh of reply!.result.meshes) prepareCadMeshDisplay(mesh); }));
       }
-      steps.push({ label: step.label, failures: checkCadBenchmarkStep(reply.result, step), cpuCalibrationMs, ...(coldMs === undefined ? {} : { coldMs: Math.round(coldMs * 100) / 100 }),
+      steps.push({ label: step.label, failures, cpuCalibrationMs: { build: buildCalibration, edit: editCalibration, mainThread: mainThreadCalibration },
+        ...(coldMs === undefined ? {} : { coldMs: Math.round(coldMs * 100) / 100 }),
         buildMs: cadBenchmarkStats(builds), ...(shipped.length ? { shippedEditMs: cadBenchmarkStats(shipped) } : {}),
-        ...(dirty.length ? { dirtySubsetMs: cadBenchmarkStats(dirty) } : {}), payload: payload(reply.result),
+        ...(affected.length ? { affectedBodiesMs: cadBenchmarkStats(affected) } : {}), payload: payload(reply.result),
         mainThread: { cloneMs: cadBenchmarkStats(clone), validateMs: cadBenchmarkStats(validate), displayMs: cadBenchmarkStats(display) } });
     }
+    // Alternating documents defeats the whole-document cache, so every cycle replaces the cached model.
+    const last = Math.max(0, ...options.memoryMarks);
+    for (let cycle = 1; cycle <= last; cycle++) {
+      await shippedBuild(runtime, testCase.steps[cycle % testCase.steps.length].document, ++id);
+      await yieldTurn();
+      if (options.memoryMarks.includes(cycle)) memoryBytesAfterRebuilds[cycle] = options.memoryBytes();
+    }
   } finally { runtime.dispose(); }
-  const memoryBytesAfterRebuilds: Record<string, number> = {};
-  const last = Math.max(0, ...options.memoryMarks);
-  for (let cycle = 1; cycle <= last; cycle++) {
-    buildCadKernelModel(testCase.steps[0].document).dispose();
-    await yieldTurn();
-    if (options.memoryMarks.includes(cycle)) memoryBytesAfterRebuilds[cycle] = options.memoryBytes();
-  }
   return { id: testCase.id, description: testCase.description, steps, memoryBytesAfterRebuilds };
 }
 
@@ -200,13 +216,14 @@ export async function measureCadDragPreview(solver: CadSketchSolver, options: { 
     const { document, edit } = createCadBenchmarkDragPreview(sketchCount, options.rectanglesPerSketch);
     let solves = 0;
     const counted: CadSketchSolver = { solve: (input, signal) => { solves++; return solver.solve(input, signal); } };
+    const cpuCalibrationMs = cadBenchmarkCpuCalibrationMs();
     const samples: number[] = [];
     for (let run = 0; run <= options.runs; run++) {
       solves = 0;
       const elapsed = await timeAsync(() => prepareCadEdits(document, [edit], counted));
       if (run > 0) samples.push(elapsed);
     }
-    results.push({ sketchCount, rectanglesPerSketch: options.rectanglesPerSketch, solvesPerPreview: solves, prepareMs: cadBenchmarkStats(samples) });
+    results.push({ sketchCount, rectanglesPerSketch: options.rectanglesPerSketch, cpuCalibrationMs, solvesPerPreview: solves, prepareMs: cadBenchmarkStats(samples) });
   }
   return results;
 }

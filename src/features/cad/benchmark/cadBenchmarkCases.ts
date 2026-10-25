@@ -12,10 +12,10 @@ export interface CadBenchmarkStep {
   readonly document: CadDocument;
   readonly bodies: readonly CadBenchmarkBodyExpectation[];
   /**
-   * Only the features this step's edit actually invalidates. Its build time is the
-   * lower bound an incremental rebuild could reach; it is measured, never asserted.
+   * Only the bodies this step's edit changes, with every input they need, including unchanged
+   * ones. A rebuild that reuses unaffected bodies should take no longer than this document.
    */
-  readonly dirtySubset?: CadDocument;
+  readonly affectedBodies?: { readonly document: CadDocument; readonly bodies: readonly CadBenchmarkBodyExpectation[] };
 }
 /** The first step is the cold build; later steps are edits rebuilt through the shipped whole-document cache. */
 export interface CadKernelBenchmarkCase { readonly id: string; readonly description: string; readonly steps: readonly [CadBenchmarkStep, ...CadBenchmarkStep[]] }
@@ -73,7 +73,7 @@ export function createCadKernelBenchmarkCases(): CadKernelBenchmarkCase[] {
         bodies: [{ featureId: 'gear', volume: gear, solidCount: 1 }, { featureId: 'cut', volume: holedPlateVolume(100), solidCount: 1 }] },
       { label: 'plate width 110', document: document('gear_plate', [...gearFeatures(), ...holedPlate(200, 110)]),
         bodies: [{ featureId: 'gear', volume: gear, solidCount: 1 }, { featureId: 'cut', volume: holedPlateVolume(110), solidCount: 1 }],
-        dirtySubset: document('gear_plate', holedPlate(200, 110)) }
+        affectedBodies: { document: document('gear_plate', holedPlate(200, 110)), bodies: [{ featureId: 'cut', volume: holedPlateVolume(110), solidCount: 1 }] } }
     ] },
     { id: 'box-fillet-all-edges', description: 'Box with all twelve edges filleted; the radius edit reruns the rolling-ball fillet.', steps: [
       { label: 'build', document: filletedBox(2), bodies: [{ featureId: 'rounded', volume: filletedBoxVolume(40, 30, 20, 2), solidCount: 1 }] },
@@ -106,15 +106,16 @@ export function createCadBenchmarkRectangleGraph(count: number, prefix = 'r', so
 
 /**
  * Drag-preview workload: sketchCount independent graph sketches (no external references),
- * dragging one free corner of the first rectangle in the first sketch. Today every sketch is
- * re-solved per preview; an edited-sketch-only preparation should solve one.
+ * dragging the first rectangle of the first sketch, whose fixed corner is released so the drag
+ * moves it. Today every sketch is re-solved per preview; an edited-sketch-only preparation
+ * should solve one.
  */
 export function createCadBenchmarkDragPreview(sketchCount: number, rectanglesPerSketch: number): { document: CadDocument; edit: CadEdit } {
-  const features: CadFeature[] = Array.from({ length: sketchCount }, (_, index): CadSketchFeature => ({
-    ...base(`sketch_${index}`), kind: 'sketch', plane: 'XY', offset: index * 5, profiles: [],
-    graph: createCadBenchmarkRectangleGraph(rectanglesPerSketch, `s${index}r`, true)
-  }));
-  // Corner p2 is fully constrained, so preparation moves it and the solve returns it to its corner.
+  const features: CadFeature[] = Array.from({ length: sketchCount }, (_, index): CadSketchFeature => {
+    const graph = createCadBenchmarkRectangleGraph(rectanglesPerSketch, `s${index}r`, true);
+    return { ...base(`sketch_${index}`), kind: 'sketch', plane: 'XY', offset: index * 5, profiles: [],
+      graph: index ? graph : { ...graph, relations: graph.relations.filter(relation => relation.id !== 's0r0_fixed') } };
+  });
   return { document: parseCadDocument({ format: 'wireedm-cad', schemaVersion: 2, id: 'drag_preview', name: 'drag_preview', units: 'mm', parameters: {}, features }),
     edit: { kind: 'move-sketch-point', sketchId: 'sketch_0', pointId: 's0r0_p2', translation: [0.5, 0.25] } };
 }

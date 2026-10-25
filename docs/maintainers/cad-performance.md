@@ -9,46 +9,45 @@
 | Case | What it isolates |
 | --- | --- |
 | `plate-hole-pattern` | Ordinary sketch, extrude, linear pattern and boolean cut; the width edit invalidates every feature. |
-| `gear-and-plate` | A gear plugin profile (hundreds of faces) beside an independent holed plate. The plate edit rebuilds the unchanged gear; `dirtySubset` builds only the plate features, the lower bound for an incremental rebuild. |
+| `gear-and-plate` | A gear plugin profile (hundreds of faces) beside an independent holed plate. The plate edit rebuilds the unchanged gear. `affectedBodies` is the plate alone, with its unchanged hole pattern, and has its own analytic volume. |
 | `box-fillet-all-edges` | Rolling-ball fillet of all twelve box edges and a radius edit. |
 
-Solver workloads are independent, fully constrained rectangles (4 lines and 7 relations each). The drag preview uses documents with 1, 4 and 8 independent graph sketches of 10 rectangles and prepares one point move through `prepareCadEdits`, as a sketch drag preview does.
+Solver workloads are independent, fully constrained rectangles (4 lines and 7 relations each). The drag preview uses documents with 1, 4 and 8 independent graph sketches of 10 rectangles. The first rectangle of the first sketch has its fixed corner released, and one corner move is prepared through `prepareCadEdits`, as a sketch drag preview does. The suite checks that the rectangle follows the drag and that every other sketch is unchanged.
 
 ## Metrics
 
 - `buildMs`: uncached `buildCadKernelModel` of the full document. `coldMs` is the first build of the first step after WASM initialization.
 - `shippedEditMs`: the previous step followed by this step through `createCadKernelRuntime`, which caches only a whole document.
-- `dirtySubsetMs`: build of only the invalidated features.
+- `affectedBodiesMs`: uncached build of only the bodies the edit changes, including unchanged inputs they need. It is sampled alternately with `shippedEditMs` so both see the same clock speed. A rebuild that reuses unaffected bodies should take no longer than this; it can be faster by also reusing unchanged inputs.
 - `payload`: triangles, plain-array numbers and JSON size of the build result that crosses the worker boundary.
 - `mainThread`: `structuredClone` of the reply, `isCadKernelReply` validation and `prepareCadMeshDisplay` for every mesh. The app pays these on the main thread for each build.
-- `memoryBytesAfterRebuilds`: OpenCascade linear-memory capacity after 1, 10 and 50 build/dispose cycles.
+- `memoryBytesAfterRebuilds`: OpenCascade linear-memory capacity after 1, 10 and 50 edits through one shipped runtime, alternating the case steps so each edit replaces the cached model. WASM memory grows but never shrinks, and cases share one module in run order, so this is a high-water mark: growth within a case matters, not the absolute value.
 - Solver `scaling`, `drag`, `dragPreview` (`solvesPerPreview` counts native solves for one preview) and `capacity`. PlaneGCS has fixed linear memory and aborts with OOM, so capacity uses a fresh module per size and reports the largest rectangle count that solved and the first that did not.
-- `cpuCalibrationMs`: a fixed JavaScript loop timed beside every step. Laptops reduce clock speed under sustained load. The development host below ran the same loop 3.5 times slower after about three seconds. When calibration differs by more than 1.5 times across a run, the script warns. Compare ratios within a step, or steps with similar calibration, and never compare across hosts.
+- `cpuCalibrationMs`: a fixed JavaScript loop timed before each measurement group: full builds, edits, main-thread work and each drag-preview size. Laptops reduce clock speed under sustained load; the development host below ran the same loop 3.5 times slower after about three seconds. The script marks a step `THROTTLED` when its calibrations differ by more than 1.5 times and warns when they do across the run. Use only unthrottled groups, compare groups with similar calibration, and never compare across hosts.
 
 ## Baseline
 
-App 0.0.736, Node 24.22, Intel Core i9-14900HX laptop on the Balanced power plan, 7 runs. Calibration ranged from 62 ms (idle) to 196 ms (throttled), so absolute times are pessimistic; the ratios are the useful part.
+App 0.0.736, Node 24.22, Intel Core i9-14900HX laptop on the Balanced power plan, 7 runs. Idle calibration was 60 to 69 ms. Every row below comes from a measurement group calibrated at 60 to 75 ms, apart from the plate width edit (calibration 163 ms, throttled), which is left out.
 
 | Measurement | Result |
 | --- | --- |
-| OpenCascade WASM | 23.0 MB, 7.2 MB gzip |
+| OpenCascade WASM | 23.0 MB, 7.2 MB gzip, 88 ms initialization |
 | PlaneGCS WASM | 0.5 MB, 0.2 MB gzip, 21 MiB fixed linear memory |
 | occt-import-js WASM (machine STEP import, lazily loaded) | 7.6 MB, 3.1 MB gzip |
-| Gear and plate, plate width edit (shipped) | 1428 ms p50, of which the plate features alone take 202 ms (7 times headroom) |
-| Gear and plate build result | 5792 triangles, 1.1 MiB JSON, 7 ms structured clone, 7 ms display preparation |
-| Holed plate build | 69 ms p50 |
-| Box fillet, all edges | 90 ms p50 |
-| Solver warm solve | 1 rectangle 0.8 ms, 10 rectangles 4 ms, 40 rectangles 17 ms, 60 rectangles 46 ms |
-| Drag preview, one point move | 1 sketch: 1 solve, 8 ms; 4 sketches: 4 solves, 48 ms; 8 sketches: 8 solves, 82 ms |
+| Gear and plate, plate width edit (shipped) | 458 ms p50; the plate alone builds in 67 ms (6.8 times headroom) |
+| Gear and plate build result | 5792 triangles, 1.1 MiB JSON; main-thread clone, validation and display preparation 2.3, 0.7 and 2.2 ms |
+| Holed plate build | 70 ms p50 |
+| Box fillet, all edges, radius edit (shipped) | 37 ms p50 |
+| OpenCascade memory, 1 then 50 edits | holed plate 100 to 127 MiB; gear and plate 239 to 287 MiB |
+| Solver warm solve | 1 rectangle 0.5 ms, 10 rectangles 3.2 ms, 40 rectangles 10 ms, 60 rectangles 18 ms |
+| Drag preview, one corner move | 1 sketch: 1 solve, 4.1 ms; 4 sketches: 4 solves, 14 ms; 8 sketches: 8 solves, 29 ms |
 | Solver capacity, fresh module | 80 rectangles solved; 100 rectangles aborted with OOM |
-
-Unthrottled spot checks of the gear and plate edit were about 490 ms with about 75 ms for the plate features alone.
 
 ## Findings that set the order of work
 
 1. Drag previews re-solve every graph sketch in the document, so preview cost grows with unrelated sketches.
 2. PlaneGCS aborts on a few hundred constrained entities because its memory cannot grow; the worker reports the raw abort text and restarts.
-3. Every edit rebuilds every feature. Unchanged expensive bodies dominate edits of cheap ones.
-4. Build results cross the worker as plain arrays and are validated and prepared for display again on the main thread for every build.
+3. Every edit rebuilds every feature. Unchanged expensive bodies dominate edits of cheap ones. OpenCascade memory already grows by about a fifth over 50 edits of one document, so a feature cache must show bounded growth over the same 50 edits.
+4. Build results cross the worker as plain arrays (1.1 MiB JSON for 5.8k triangles) and are validated and prepared for display again on the main thread. That costs about 5 ms a build here, so it is a payload and memory cleanup, not the main latency.
 
 Proposed order: solve only edited sketches and their reference dependents, then solve independent sketch components separately with a clear limit message; incremental feature rebuilds keyed by a chain hash with bounded memory after 50 rebuilds as a gate; typed-array transfer with display preparation in the worker. Rust or kernel replacements are considered only where this benchmark shows the remaining time is inside the native kernel or solver.

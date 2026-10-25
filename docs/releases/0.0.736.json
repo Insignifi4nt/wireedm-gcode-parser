@@ -2,7 +2,7 @@
   "version": "0.0.736",
   "previousVersion": "0.0.735",
   "postCompatibility": "preserved-tooling-only",
-  "summary": "Adds npm run cad:benchmark, a Node baseline for the CAD kernel and sketch solver. It covers fixed kernel cases with analytic expected volumes, edit steps through the shipped whole-document cache, the build lower bound of only the invalidated features, worker payload size, main-thread clone, validation and display cost, kernel memory after repeated rebuilds, solver latency and drag-preview cost by sketch count, and a fresh-module solver capacity probe. A CPU calibration loop is recorded beside every step because laptop hosts throttle under sustained load. The baseline and the findings that set the order of the performance work are in docs/maintainers/cad-performance.md.",
+  "summary": "Adds npm run cad:benchmark, a Node baseline for the CAD kernel and sketch solver. It covers fixed kernel cases with analytic expected volumes, edit steps through the shipped whole-document cache, the build of only the bodies an edit changes (with its own expected volume), worker payload size, main-thread clone, validation and display cost, kernel memory after repeated edits through the shipped runtime, solver latency and drag-preview cost by sketch count, and a fresh-module solver capacity probe. A CPU calibration loop is timed before every measurement group, and throttled steps are marked, because laptop hosts slow down under sustained load. The baseline and the findings that set the order of the performance work are in docs/maintainers/cad-performance.md.",
   "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. No application code path changes; the benchmark only calls existing kernel, solver and edit-preparation functions.",
   "checklist": {
     "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage or journal schema change. Post engine API remains 1; saved-job engine remains 3.",
@@ -10,7 +10,7 @@
     "capabilities": "No post or machine capability change.",
     "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
     "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Reports are written only to the ignored tmp/cad-benchmark directory.",
-    "verification": "A new Node-environment suite builds every benchmark step and incremental subset against its analytic volumes and solid counts, checks the failure reporting, solves the rectangle workload to zero freedom and prepares a drag preview across independent sketches. Full and quick benchmark runs complete and write reports. Native tsc -b, npm run lint with zero findings and the focused suites pass; the PR records the full unit suite and production build."
+    "verification": "A new Node-environment suite builds every benchmark step and affected-body document against its analytic volumes and solid counts, checks the failure reporting, solves the rectangle workload to zero freedom, and prepares a drag preview in which the released rectangle follows the drag while other sketches stay unchanged. Full and quick benchmark runs complete and write reports. Native tsc -b, npm run lint with zero findings and the focused suites pass; the PR records the full unit suite and production build."
   },
   "testedPosts": [],
   "publicNotes": {

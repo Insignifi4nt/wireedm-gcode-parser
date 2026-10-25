@@ -33,16 +33,19 @@ setOC(await initOpenCascade({ wasmBinary, print: () => undefined, printErr: () =
 const kernelInitMs = performance.now() - started;
 const memoryBytes = () => getOC().wasmMemory.buffer.byteLength;
 
+// Calibration that moves by more than 1.5 times means the host changed clock speed mid-measurement.
+const drifted = (calibrations: readonly number[]) => Math.max(...calibrations) > 1.5 * Math.min(...calibrations);
 const kernel = [];
 for (const testCase of createCadKernelBenchmarkCases()) {
   const measured = await measureCadKernelCase(testCase, { runs, memoryMarks: quick ? [1, 10] : [1, 10, 50], memoryBytes });
   kernel.push(measured);
   for (const step of measured.steps) {
-    console.log(`${testCase.id} / ${step.label} [cpu ${step.cpuCalibrationMs} ms]: build p50 ${step.buildMs.p50} ms`
+    console.log(`${testCase.id} / ${step.label} [cpu ${step.cpuCalibrationMs.build}/${step.cpuCalibrationMs.edit}/${step.cpuCalibrationMs.mainThread} ms]: build p50 ${step.buildMs.p50} ms`
       + (step.shippedEditMs ? `, shipped edit p50 ${step.shippedEditMs.p50} ms` : '')
-      + (step.dirtySubsetMs ? `, dirty subset p50 ${step.dirtySubsetMs.p50} ms` : '')
+      + (step.affectedBodiesMs ? `, affected bodies alone p50 ${step.affectedBodiesMs.p50} ms` : '')
       + `, ${step.payload.triangles} triangles, ${Math.round(step.payload.jsonBytes / 1024)} KiB, main thread clone/validate/display p50 `
       + `${step.mainThread.cloneMs.p50}/${step.mainThread.validateMs.p50}/${step.mainThread.displayMs.p50} ms`
+      + (drifted(Object.values(step.cpuCalibrationMs)) ? ' THROTTLED: calibration drifted within this step' : '')
       + (step.failures.length ? ` INCORRECT: ${step.failures.join('; ')}` : ''));
   }
 }
@@ -60,7 +63,7 @@ const capacity = await probeCadSolverCapacity(() => createCadSketchSolverRuntime
   quick ? [60, 100] : [60, 80, 100, 125, 150, 200]);
 for (const size of solverScaling.sizes) console.log(`solver ${size.rectangles} rectangles (${size.entities} lines): ${size.outcome}, p50 ${size.solveMs.p50} ms`);
 console.log(`solver drag on ${solverScaling.drag.rectangles} rectangles: ${solverScaling.drag.outcome}, p50 ${solverScaling.drag.solveMs.p50} ms`);
-for (const preview of dragPreview) console.log(`drag preview with ${preview.sketchCount} sketches: ${preview.solvesPerPreview} solves, p50 ${preview.prepareMs.p50} ms`);
+for (const preview of dragPreview) console.log(`drag preview with ${preview.sketchCount} sketches [cpu ${preview.cpuCalibrationMs} ms]: ${preview.solvesPerPreview} solves, p50 ${preview.prepareMs.p50} ms`);
 console.log(`solver capacity in a fresh module: largest solved ${capacity.largestSolved ?? 'none'}, first failed ${capacity.firstFailed ?? 'none'} rectangles`);
 
 const report = {
@@ -70,8 +73,8 @@ const report = {
   cpuCalibrationMs: { idle: idleCpuCalibrationMs, solver: solverCpuCalibrationMs },
   solver: { initMs: Math.round(solverInitMs), scaling: solverScaling, dragPreview, capacity }
 };
-const calibrations = [idleCpuCalibrationMs, solverCpuCalibrationMs, ...kernel.flatMap(testCase => testCase.steps.map(step => step.cpuCalibrationMs))];
-if (Math.max(...calibrations) > 1.5 * Math.min(...calibrations)) {
+const calibrations = [idleCpuCalibrationMs, solverCpuCalibrationMs, ...kernel.flatMap(testCase => testCase.steps.flatMap(step => Object.values(step.cpuCalibrationMs))), ...dragPreview.map(preview => preview.cpuCalibrationMs)];
+if (drifted(calibrations)) {
   console.warn(`CPU calibration varied from ${Math.min(...calibrations)} to ${Math.max(...calibrations)} ms: the host throttled, so compare only steps with similar calibration.`);
 }
 await mkdir('tmp/cad-benchmark', { recursive: true });
