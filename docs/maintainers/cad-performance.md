@@ -68,7 +68,7 @@ After 0.0.737, most of a drag preview with several sketches is the final `parseC
 
 ## Native sketch solver (in progress)
 
-`packages/sketch-solver` is our own Rust constraint solver, compiled to a 51 kB WebAssembly module with no dependencies. From 0.0.739 it is built, tested and compared with PlaneGCS, but the app does not load it yet.
+`packages/sketch-solver` is our own Rust constraint solver, compiled to a 52 kB WebAssembly module with no dependencies. From 0.0.739 it is built, tested and compared with PlaneGCS, but the app does not load it yet.
 
 - `compileCadSketchEquations` turns a sketch into scalar parameters and twelve kinds of scalar equation, and the module solves them.
   - Each connected group of unknowns gets its own damped Gauss-Newton solve, with exact gradients from dual numbers.
@@ -77,7 +77,7 @@ After 0.0.737, most of a drag preview with several sketches is the final `parseC
   - From 0.0.740 the QR is sparse:
     - Rows keep their authoring order. Columns take a minimum-degree order fixed by the structure, so a chain of profiles fills like a band.
     - Each damping trial refactors from `sqrt(mu) I` and then rotates in the Jacobian rows. A row meeting a diagonal-only row carries on with only its own entries, so most rows stop near their own length. Rotating the damping in after the Jacobian, as MINPACK does, would run each damping row down the whole elimination tree: about 300 million updates per trial for a 5,000-link chain.
-    - In that order, the motion along directions the Jacobian leaves free depends on roundoff when rows cannot all be satisfied, as with conflicting relations. Those sketches are rejected. Satisfiable duplicates, such as one parallel relation entered twice far from the origin, do not slide. Diagnosis will set aside dependent rows before the damped step.
+    - In that order, the motion along directions the Jacobian leaves free depends on roundoff whenever dependent rows disagree within a step. Conflicting relations always do. Redundant ones also do before the solve converges, when their linearizations are different functions of the same motion: an angle of 90° plus a perpendicular relation on the same lines, far from the origin, moves a free midpoint by about 0.4 µm. The same relation entered twice does not, because its rows agree exactly. Both kinds of sketch are rejected by diagnosis. Diagnosis will also find the dependent rows at the start and leave them out of the damped step.
     - For sketch-like structure, where profiles join in chains and trees and shared parameters such as a radius are eliminated last, time and memory grow about linearly with the size of a group. A group whose columns are all coupled at random fills almost completely, as in a dense factorization.
   - Native code cannot be interrupted, so each group has limits:
     - The ordering gives the exact fill of the factor before any numeric work. A group above 2,000,000 entries (about 32 MiB) is left in place. The ordering stops as soon as the fill so far, plus the edges still present and the diagonals still to come, passes that limit, so its own memory stays within about twice the limit.

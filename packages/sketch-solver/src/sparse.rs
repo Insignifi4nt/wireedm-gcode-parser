@@ -22,28 +22,35 @@ pub struct Ordering {
 /// The ordering, or `None` as soon as its fill must exceed `fill_limit` or its work `work_limit`.
 /// Edges never disappear before one of their columns is eliminated, so the fill so far, the edges
 /// still present and the diagonals still to come bound the final fill from below, and adjacency
-/// memory stays within about twice the fill limit.
-pub fn minimum_degree(n: usize, rows: impl Iterator<Item = impl AsRef<[usize]>>, fill_limit: usize, work_limit: usize) -> Option<Ordering> {
+/// memory stays within about twice the fill limit. Lists are built distinct one column at a time
+/// from the rows each column is in, so repeated rows cost work but no adjacency memory.
+pub fn minimum_degree<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize, work_limit: usize) -> Option<Ordering> {
+    let mut incident: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, row) in rows.iter().enumerate() {
+        for &a in row.as_ref() { incident[a].push(i); }
+    }
     let mut adjacent: Vec<Vec<usize>> = vec![Vec::new(); n];
     // `seen[b] == stamp` marks `b` as already in the list being built, so lists need no sorting.
     let (mut seen, mut stamp) = (vec![0; n], 0);
+    let (mut live, mut fill, mut work) = (0usize, 0usize, 0usize);
+    let exceeded = |fill: usize, live: usize, left: usize, work: usize|
+        fill.saturating_add(live / 2).saturating_add(left) > fill_limit || work > work_limit;
+    for (a, list) in adjacent.iter_mut().enumerate() {
+        stamp += 1;
+        seen[a] = stamp;
+        for &i in &incident[a] {
+            let row = rows[i].as_ref();
+            work = work.saturating_add(row.len());
+            for &b in row { if seen[b] != stamp { seen[b] = stamp; list.push(b); } }
+        }
+        live += list.len();
+        if exceeded(fill, live, n, work) { return None; }
+    }
+    drop(incident);
     let mut distinct = |list: &mut Vec<usize>| {
         stamp += 1;
         list.retain(|&b| seen[b] != stamp && { seen[b] = stamp; true });
     };
-    let (mut live, mut fill, mut work) = (0usize, 0usize, 0usize);
-    let exceeded = |fill: usize, live: usize, left: usize, work: usize|
-        fill.saturating_add(live / 2).saturating_add(left) > fill_limit || work > work_limit;
-    for row in rows {
-        let row = row.as_ref();
-        for &a in row {
-            for &b in row { if a != b { adjacent[a].push(b); } }
-        }
-        work = work.saturating_add(row.len() * row.len());
-        if work > work_limit { return None; }
-    }
-    for list in &mut adjacent { distinct(list); live += list.len(); }
-    if exceeded(fill, live, n, work) { return None; }
     let mut position = vec![usize::MAX; n];
     // Stale entries, whose degree has changed since they were pushed, are skipped when popped.
     let mut queue: BinaryHeap<Reverse<(usize, usize)>> = (0..n).map(|k| Reverse((adjacent[k].len(), k))).collect();
@@ -134,8 +141,9 @@ impl Factor {
     /// Damping goes in first because a row meeting a diagonal-only row carries on with only its
     /// own later entries, so most rows stop near their own length. Rotated in after `J`, as in
     /// MINPACK, each damping row would run the depth of the elimination tree, the whole group
-    /// for a chain. Rows that `J` cannot fit together, as in conflicting equations, make
-    /// the step's motion along directions `J` leaves free depend on roundoff in that order.
+    /// for a chain. Dependent rows whose right-hand sides disagree, as conflicting equations
+    /// always do and redundant ones of different form may before convergence, make the step's
+    /// motion along directions `J` leaves free depend on roundoff in that order.
     pub fn damped(n: usize, mu: f64, budget: usize) -> Factor {
         let mut factor = Factor::new(n, budget);
         if mu > 0.0 { for (k, row) in factor.rows.iter_mut().enumerate() { *row = vec![(k, mu.sqrt())]; } }

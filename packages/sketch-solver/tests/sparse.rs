@@ -73,12 +73,12 @@ fn the_fill_bound_rejects_exactly_the_orderings_above_it() {
         [(x + 1 < side).then(|| vec![k, k + 1]), (y + 1 < side).then(|| vec![k, k + side])]
     }).flatten().collect();
     let n = side * side;
-    let ordering = minimum_degree(n, structure.iter(), usize::MAX, usize::MAX).unwrap();
+    let ordering = minimum_degree(n, &structure, usize::MAX, usize::MAX).unwrap();
     assert!(ordering.fill > 4 * n, "{}", ordering.fill);
-    assert!(minimum_degree(n, structure.iter(), ordering.fill, usize::MAX).is_some());
-    assert!(minimum_degree(n, structure.iter(), ordering.fill - 1, usize::MAX).is_none());
-    assert!(minimum_degree(n, structure.iter(), usize::MAX, ordering.work).is_some());
-    assert!(minimum_degree(n, structure.iter(), usize::MAX, ordering.work - 1).is_none());
+    assert!(minimum_degree(n, &structure, ordering.fill, usize::MAX).is_some());
+    assert!(minimum_degree(n, &structure, ordering.fill - 1, usize::MAX).is_none());
+    assert!(minimum_degree(n, &structure, usize::MAX, ordering.work).is_some());
+    assert!(minimum_degree(n, &structure, usize::MAX, ordering.work - 1).is_none());
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn a_scrambled_chain_is_ordered_to_a_band_and_its_fill_bounds_the_factor() {
     let n = 200;
     let label = |k: usize| (k * 73) % n;
     let structure: Vec<Vec<usize>> = (1..n).map(|k| vec![label(k - 1), label(k)]).collect();
-    let ordering = minimum_degree(n, structure.iter(), usize::MAX, usize::MAX).unwrap();
+    let ordering = minimum_degree(n, &structure, usize::MAX, usize::MAX).unwrap();
     let (position, fill) = (ordering.position, ordering.fill);
     assert!(fill <= 2 * n, "{fill}");
     let mut sorted = position.clone();
@@ -107,4 +107,14 @@ fn a_scrambled_chain_is_ordered_to_a_band_and_its_fill_bounds_the_factor() {
     }).collect();
     let factor = factor(&rows, n, 0.5);
     assert!(factor.rows.iter().map(|row| row.len()).sum::<usize>() <= fill);
+}
+
+#[test]
+fn repeated_rows_cost_work_but_no_adjacency() {
+    // The same four columns 200,000 times: the work counts every row, the fill only the clique.
+    let structure = vec![[0usize, 1, 2, 3]; 200_000];
+    let ordering = minimum_degree(4, &structure, usize::MAX, usize::MAX).unwrap();
+    assert_eq!(ordering.fill, 10);
+    assert!(ordering.work >= 16 * 200_000, "{}", ordering.work);
+    assert!(minimum_degree(4, &structure, 9, usize::MAX).is_none());
 }

@@ -244,7 +244,7 @@ fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> Outcome {
         status: if progress.accepted { Status::Converged } else if exhausted { Status::TooLarge } else { Status::NotConverged },
         iterations, residual: worst(rows) };
     if progress.polished || n == 0 { return finish(&rows, progress, 0, false); }
-    let Some(ordering) = minimum_degree(n, rows.iter().map(|row| &row.columns[..row.len]), limits.fill, limits.work)
+    let Some(ordering) = minimum_degree(n, &rows.iter().map(|row| &row.columns[..row.len]).collect::<Vec<_>>(), limits.fill, limits.work)
         else { return finish(&rows, progress, 0, true); };
     let (position, mut work) = (ordering.position, ordering.work);
     let mut jacobian = system.jacobian(&rows, &position);
