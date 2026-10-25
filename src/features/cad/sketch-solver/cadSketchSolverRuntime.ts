@@ -191,12 +191,14 @@ function components(objects: readonly SketchPrimitive[]): SketchPrimitive[][] {
 }
 
 /**
- * Largest group sent to native code, as unfixed parameters times constraints. PlaneGCS
+ * Largest group sent to native code, as unfixed parameters times scalar equations. PlaneGCS
  * diagnoses each system with dense matrices in a fixed 21 MiB heap and aborts the whole
  * module when they do not fit. The benchmark saw the smallest abort at 800 x 800 and
  * success at 760 x 760; the limit stays about a fifth below that.
  */
 export const MAX_CAD_SKETCH_SOLVER_GROUP_SIZE = 500_000;
+/** Native constraints that add two scalar equations; every other compiled constraint adds one. */
+const twoEquationConstraints = new Set<SketchPrimitive['type']>(['p2p_coincident', 'p2p_symmetric_ppp', 'p2p_symmetric_ppl']);
 
 type NativeStatus = NonNullable<CadSketchSolveDiagnostics['status']>;
 const statusRank: Record<NativeStatus, number> = { success: 0, converged: 1, invalid: 2, failed: 3 };
@@ -208,7 +210,9 @@ const noDiagnostics = (): CadSketchSolveDiagnostics => ({ status: null, degreesO
  * `discard`, which must make `initialize` create a fresh module.
  */
 export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketchSolverModule>, options: { readonly discard?: () => void } = {}) {
-  let aborted = false;
+  let aborted = false, queue: Promise<unknown> = Promise.resolve();
+  // Native work runs one solve at a time, so an abort is always discarded before the next native call.
+  const exclusive = <T>(work: () => Promise<T>): Promise<T> => { const run = queue.then(work); queue = run.catch(() => undefined); return run; };
   return { async solve(input: CadSketchSolveInput): Promise<CadSketchSolveResult> {
     let compiled: ReturnType<typeof compile>;
     try { input = parseCadSketchSolveInput(input); compiled = compile(input); }
@@ -222,57 +226,68 @@ export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketch
     // Lines own no parameters; arcs compile to two lines and a constraint.
     const unfixed = (group: readonly SketchPrimitive[]) => group.reduce((total, object) => total + (object.type === 'point'
       ? Number(!fixedX(object.id)) + Number(!fixedY(object.id)) : object.type === 'circle' ? Number(!fixedRadius(object.id)) : 0), 0);
-    const constraintCount = (group: readonly SketchPrimitive[]) => group.filter(object => compiled.sourceIds.has(object.id)).length;
-    const groups = components(compiled.objects), constrained = groups.filter(group => constraintCount(group) > 0);
-    if (constrained.some(group => unfixed(group) * constraintCount(group) > MAX_CAD_SKETCH_SOLVER_GROUP_SIZE)) return { kind: 'rejected', reason: 'too-large',
+    const equations = (group: readonly SketchPrimitive[]) => group.reduce((total, object) => total
+      + (!compiled.sourceIds.has(object.id) ? 0 : twoEquationConstraints.has(object.type) ? 2 : 1), 0);
+    const order = new Map(compiled.objects.map((object, index) => [object, index])), split = components(compiled.objects);
+    // PlaneGCS skips diagnosis in a system without unknowns. Relations on fully fixed geometry
+    // therefore join the smallest group that has unknowns, where they are diagnosed as they
+    // were in one sketch-wide system: satisfied ones as redundant and others as conflicting.
+    const fixed = split.filter(group => equations(group) && !unfixed(group)), others = split.filter(group => !fixed.includes(group));
+    const host = others.filter(group => unfixed(group)).reduce<SketchPrimitive[] | undefined>((best, group) => !best || unfixed(group) < unfixed(best) ? group : best, undefined);
+    const groups = fixed.length ? [...others.filter(group => group !== host), [...host ?? [], ...fixed.flat()].sort((a, b) => order.get(a)! - order.get(b)!)] : split;
+    groups.sort((a, b) => order.get(a[0])! - order.get(b[0])!);
+    const constrained = groups.filter(group => equations(group) > 0);
+    if (constrained.some(group => unfixed(group) * equations(group) > MAX_CAD_SKETCH_SOLVER_GROUP_SIZE)) return { kind: 'rejected', reason: 'too-large',
       message: 'A connected group of sketch relations is too large to solve. Split it into separate groups or remove relations.', diagnostics: noDiagnostics() };
-    if (aborted) {
-      if (!options.discard) throw new Error('The sketch solver stopped after a native failure and cannot restart.');
-      options.discard(); aborted = false;
-    }
     const mapped = (ids: readonly string[]) => ids.map(id => {
       const source = compiled.sourceIds.get(id);
       if (!source) throw new Error('A native sketch diagnostic has no source identity.');
       return source;
     });
     // A group without relations keeps its values and each unfixed parameter stays free.
-    let degreesOfFreedom = groups.filter(group => !constraintCount(group)).reduce((total, group) => total + unfixed(group), 0), status: NativeStatus = 'success';
+    let degreesOfFreedom = groups.filter(group => !equations(group)).reduce((total, group) => total + unfixed(group), 0), status: NativeStatus = 'success';
     const conflicting: string[] = [], redundant: string[] = [], partiallyRedundant: string[] = [];
     const solvedPoints = new Map<string, Point2>(), solvedRadii = new Map<string, number>();
-    const module = constrained.length ? await initialize() : undefined;
-    for (const group of constrained) {
-      let wrapper: GcsWrapper | undefined;
-      try {
-        wrapper = new GcsWrapper(new module!.GcsSystem(), module!);
-        wrapper.push_primitives_and_params(group);
-        for (const object of group) {
-          if (object.type !== 'point' && object.type !== 'circle') continue;
-          const start = wrapper.p_param_index.get(object.id);
-          if (start === undefined) throw new Error(`A compiled sketch ${object.type} has no native parameters.`);
-          if (object.type === 'point') {
-            const point = points.get(object.id)!;
-            if (fixedX(object.id)) wrapper.gcs.set_p_param(start + property_offsets.point.x, evaluateCadScalar(point.position[0], input.parameters), true);
-            if (fixedY(object.id)) wrapper.gcs.set_p_param(start + property_offsets.point.y, evaluateCadScalar(point.position[1], input.parameters), true);
-          } else if (fixedRadius(object.id)) wrapper.gcs.set_p_param(start + property_offsets.circle.radius, evaluateCadScalar(circles.get(object.id)!.radius, input.parameters), true);
-        }
-        const groupStatus = nativeStatus(wrapper.solve())!;
-        if (statusRank[groupStatus] > statusRank[status]) status = groupStatus;
-        degreesOfFreedom += wrapper.gcs.dof();
-        conflicting.push(...mapped(wrapper.get_gcs_conflicting_constraints()));
-        redundant.push(...mapped(wrapper.get_gcs_redundant_constraints()));
-        partiallyRedundant.push(...mapped(wrapper.get_gcs_partially_redundant_constraints()));
-        wrapper.apply_solution();
-        for (const object of group) {
-          if (object.type === 'point') { const solved = wrapper.sketch_index.get_sketch_point(object.id); solvedPoints.set(object.id, { x: solved.x, y: solved.y }); }
-          else if (object.type === 'circle') solvedRadii.set(object.id, wrapper.sketch_index.get_sketch_circle(object.id).radius);
-        }
-      } catch (error) {
-        // An Emscripten abort (for example out of memory) is a RuntimeError; anything else is an ordinary check.
-        if (!(error instanceof WebAssembly.RuntimeError)) throw error;
-        aborted = true;
-        throw new Error('The sketch solver ran out of native memory and will restart on the next solve.', { cause: error });
-      } finally { if (!aborted) wrapper?.destroy_gcs_module(); }
-    }
+    if (constrained.length) await exclusive(async () => {
+      if (aborted) {
+        if (!options.discard) throw new Error('The sketch solver stopped after a native failure and cannot restart.');
+        options.discard(); aborted = false;
+      }
+      const module = await initialize();
+      for (const group of constrained) {
+        let wrapper: GcsWrapper | undefined;
+        try {
+          wrapper = new GcsWrapper(new module.GcsSystem(), module);
+          wrapper.push_primitives_and_params(group);
+          for (const object of group) {
+            if (object.type !== 'point' && object.type !== 'circle') continue;
+            const start = wrapper.p_param_index.get(object.id);
+            if (start === undefined) throw new Error(`A compiled sketch ${object.type} has no native parameters.`);
+            if (object.type === 'point') {
+              const point = points.get(object.id)!;
+              if (fixedX(object.id)) wrapper.gcs.set_p_param(start + property_offsets.point.x, evaluateCadScalar(point.position[0], input.parameters), true);
+              if (fixedY(object.id)) wrapper.gcs.set_p_param(start + property_offsets.point.y, evaluateCadScalar(point.position[1], input.parameters), true);
+            } else if (fixedRadius(object.id)) wrapper.gcs.set_p_param(start + property_offsets.circle.radius, evaluateCadScalar(circles.get(object.id)!.radius, input.parameters), true);
+          }
+          const groupStatus = nativeStatus(wrapper.solve())!;
+          if (statusRank[groupStatus] > statusRank[status]) status = groupStatus;
+          degreesOfFreedom += wrapper.gcs.dof();
+          conflicting.push(...mapped(wrapper.get_gcs_conflicting_constraints()));
+          redundant.push(...mapped(wrapper.get_gcs_redundant_constraints()));
+          partiallyRedundant.push(...mapped(wrapper.get_gcs_partially_redundant_constraints()));
+          wrapper.apply_solution();
+          for (const object of group) {
+            if (object.type === 'point') { const solved = wrapper.sketch_index.get_sketch_point(object.id); solvedPoints.set(object.id, { x: solved.x, y: solved.y }); }
+            else if (object.type === 'circle') solvedRadii.set(object.id, wrapper.sketch_index.get_sketch_circle(object.id).radius);
+          }
+        } catch (error) {
+          // An Emscripten abort (for example out of memory) is a RuntimeError; anything else is an ordinary check.
+          if (!(error instanceof WebAssembly.RuntimeError)) throw error;
+          aborted = true;
+          throw new Error('The sketch solver ran out of native memory and will restart on the next solve.', { cause: error });
+        } finally { if (!aborted) wrapper?.destroy_gcs_module(); }
+      }
+    });
     const diagnostics: CadSketchSolveDiagnostics = { status, degreesOfFreedom, conflictingIds: [...new Set(conflicting)],
       redundantIds: [...new Set(redundant)], partiallyRedundantIds: [...new Set(partiallyRedundant)], issues: [] };
     if (diagnostics.conflictingIds.length) return { kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics };

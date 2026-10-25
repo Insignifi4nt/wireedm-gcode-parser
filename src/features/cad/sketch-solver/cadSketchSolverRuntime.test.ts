@@ -197,6 +197,16 @@ describe('independent solver groups', () => {
     if (solved.kind === 'solved') expect(solved.graph.entities.slice(1)).toEqual(merge(free).entities);
   });
 
+  it('diagnoses relations on fully fixed geometry as one sketch-wide system did', async () => {
+    // PlaneGCS skips diagnosis without unknowns, so the fixed group joins the free point's group.
+    const runtime = createCadSketchSolverRuntime(initialize), fixed = (value: number, ...more: Part[]) => runtime.solve({ parameters: {}, graph: merge(
+      { points: [{ id: 'p', position: ['0', '0'] }], entities: [], relations: [{ id: 'p-x', kind: 'fixed-axis', pointId: 'p', axis: 'x', value }] }, ...more) });
+    const spare: Part = { points: [{ id: 'q', position: [5, 5] }], entities: [], relations: [] };
+    expect(await fixed(0, spare)).toMatchObject({ kind: 'rejected', reason: 'redundant', diagnostics: { redundantIds: ['p-x'], degreesOfFreedom: 2 } });
+    expect(await fixed(1, spare)).toMatchObject({ kind: 'rejected', reason: 'conflicting', diagnostics: { conflictingIds: ['p-x'] } });
+    expect(await fixed(0, spare, line)).toMatchObject({ kind: 'rejected', reason: 'redundant', diagnostics: { redundantIds: ['p-x'], degreesOfFreedom: 3 } });
+  });
+
   it('keeps geometry without relations as authored without loading the native module', async () => {
     const load = vi.fn(initialize), graph = merge(free);
     expect(await createCadSketchSolverRuntime(load).solve({ graph, parameters: { w: 2 } })).toEqual({ kind: 'solved', graph,
@@ -215,6 +225,14 @@ describe('independent solver groups', () => {
     expect(await runtime.solve({ graph: createCadBenchmarkRectangleGraph(150), parameters: {} })).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 0 } });
   }, 30_000);
 
+  it('counts both equations of a coincidence when sizing a group', async () => {
+    // 800 parameters times 798 equations aborted natively; the same 399 relations count only 319,200 objects.
+    const load = vi.fn(initialize), graph = parseCadSketchGraph({ points: Array.from({ length: 400 }, (_, index) => ({ id: `c${index}`, position: [index, 0] })),
+      entities: [], relations: Array.from({ length: 399 }, (_, index) => ({ id: `co${index}`, kind: 'coincident', pointIds: [`c${index}`, `c${index + 1}`] })) });
+    expect(await createCadSketchSolverRuntime(load).solve({ graph, parameters: {} })).toMatchObject({ kind: 'rejected', reason: 'too-large' });
+    expect(load).not.toHaveBeenCalled();
+  });
+
   it('discards an aborted native module before the next solve', async () => {
     const real = await initialize();
     let aborting = true;
@@ -230,5 +248,15 @@ describe('independent solver groups', () => {
     const stuck = createCadSketchSolverRuntime(load);
     await expect(stuck.solve(input)).rejects.toThrow('ran out of native memory');
     await expect(stuck.solve(input)).rejects.toThrow('cannot restart');
+  });
+
+  it('runs overlapping solves one at a time so the second sees the first abort', async () => {
+    const real = await initialize();
+    let aborting = true;
+    const aborted = { ...real, GcsSystem: class { constructor() { throw new WebAssembly.RuntimeError('Aborted(OOM)'); } } } as unknown as CadSketchSolverModule;
+    const discard = vi.fn(() => { aborting = false; }), runtime = createCadSketchSolverRuntime(async () => aborting ? aborted : real, { discard });
+    const input = { graph: merge(line), parameters: {} }, [first, second] = await Promise.allSettled([runtime.solve(input), runtime.solve(input)]);
+    expect(first).toMatchObject({ status: 'rejected', reason: expect.objectContaining({ message: expect.stringContaining('ran out of native memory') }) });
+    expect(second).toMatchObject({ status: 'fulfilled', value: { kind: 'solved' } }); expect(discard).toHaveBeenCalledTimes(1);
   });
 });
