@@ -70,7 +70,7 @@ const dragPreview = await measureCadDragPreview(solver, { sketchCounts: [1, 4, 8
 const capacity = await probeCadSolverCapacity(() => createCadSketchSolverRuntime(() => initPlaneGcs({ locateFile: () => planeGcsWasm, print: () => undefined, printErr: () => undefined })),
   quick ? [60, 100] : [60, 80, 100, 125, 150, 200]);
 for (const size of solverScaling.sizes) console.log(`solver ${size.rectangles} rectangles (${size.entities} lines) [cpu ${size.cpuCalibrationMs.join('/')} ms]: ${size.outcome}, p50 ${size.solveMs.p50} ms${drifted(size.cpuCalibrationMs) ? ' THROTTLED' : ''}`);
-console.log(`solver drag on ${solverScaling.drag.rectangles} rectangles: ${solverScaling.drag.outcome}, p50 ${solverScaling.drag.solveMs.p50} ms`);
+console.log(`solver drag on ${solverScaling.drag.rectangles} rectangles [cpu ${solverScaling.drag.cpuCalibrationMs.join('/')} ms]: ${solverScaling.drag.outcome}, p50 ${solverScaling.drag.solveMs.p50} ms${drifted(solverScaling.drag.cpuCalibrationMs) ? ' THROTTLED' : ''}`);
 for (const preview of dragPreview) console.log(`drag preview with ${preview.sketchCount} sketches [cpu ${preview.cpuCalibrationMs.join('/')} ms]: ${preview.solvesPerPreview} solves, p50 ${preview.prepareMs.p50} ms${drifted(preview.cpuCalibrationMs) ? ' THROTTLED' : ''}`);
 console.log(`solver capacity in a fresh module: largest solved ${capacity.largestSolved ?? 'none'}, first failed ${capacity.firstFailed ?? 'none'} rectangles`);
 

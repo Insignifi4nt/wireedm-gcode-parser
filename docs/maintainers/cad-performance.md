@@ -31,7 +31,7 @@ App 0.0.736, Node 24.22, Intel Core i9-14900HX laptop on the Balanced power plan
 
 | Measurement | Result |
 | --- | --- |
-| OpenCascade WASM | 23.0 MB, 7.2 MB gzip, 86 ms initialization |
+| OpenCascade WASM | 23.0 MB, 7.3 MB gzip, 86 ms initialization |
 | PlaneGCS WASM | 0.5 MB, 0.2 MB gzip, 21 MiB fixed linear memory, 5 ms initialization |
 | occt-import-js WASM (machine STEP import, lazily loaded) | 7.6 MB, 3.1 MB gzip |
 | Gear and plate, plate width edit (shipped) | 456 ms p50; the plate alone builds in 65 ms (7.0 times headroom) |
