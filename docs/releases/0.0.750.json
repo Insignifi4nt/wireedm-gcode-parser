@@ -1,0 +1,24 @@
+{
+  "version": "0.0.750",
+  "previousVersion": "0.0.749",
+  "postCompatibility": "preserved-output-solver-runtime-benchmarks",
+  "summary": "The sketch-solver benchmark now measures the application's own solver runtime instead of separate adapters, so it can record the final native-versus-PlaneGCS comparison before PlaneGCS is removed. It runs three modes: PlaneGCS alone, native only (no fallback, so native's own gaps show), and native first, as the app runs. Every answer records which solver gave it and why native fell back. The runtime reports parse/compile, native call, mapping and validation stage timings through an observer that reads no clock when none is attached. New sections measure drags, from the start and chained, on the die slot, a two-link arm stretched out of reach and back, a four-bar linkage and a point landing on a tangency; a sweep that drags every movable point of the die and the free die; cold first answers for PlaneGCS, native only, native first and a native-first fallback that must load PlaneGCS; WASM and process memory over repeated solves and repeated drags; and connected-rectangle capacity. Each section is written as its own part with the commit, module hashes and host, and a stopped run resumes, so the full run can be taken in short idle bursts and joined with --aggregate. The legacy group also reports solver scaling and drag previews through the native-first runtime. No application behavior changes.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. The runtime's optional stage-timing observer is new and unused by the application. Benchmark reports from earlier releases used a separate native adapter without drags and are not comparable with these.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal, worker reply or native buffer protocol schema change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Benchmark parts are written only under tmp/.",
+    "verification": "Benchmark tests run every workload fixture through PlaneGCS and native only, with four reviewed differences; record runtime stages and a native-first fallback on overlapping conflicts; pin die-slot drags at 60 solved frames (59 reached, 1 projected) from the start and chained, the four-bar's 32.52 mm, and native-only's known gaps on the arm (3 of 47 frames unavailable) and the tangency (3 not converged, 1 landing diagnosed redundant), which native first answers through PlaneGCS; and sweep the die and free die (120 and 126 drags) with every answer native and none further from its target than PlaneGCS. A quick run of every section on this commit completed in 72 seconds and aggregated, on a busy host whose calibration ranged from 56 to 276 ms; it is a smoke run, not a baseline."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Internal benchmark update.",
+    "changes": [
+      "Measures the app's sketch solver as the app runs it, ahead of replacing the old solver."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
