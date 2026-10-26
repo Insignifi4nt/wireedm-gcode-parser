@@ -434,3 +434,21 @@ fn an_accepted_point_keeps_polishing_after_one_small_real_gain() {
     assert_eq!(outcome.status, Status::Converged);
     assert!(outcome.residual <= 1e-15, "residual {}", outcome.residual);
 }
+
+#[test]
+fn moves_a_group_with_freedom_left_to_the_solution_nearest_its_start() {
+    // A free point on a line from a fixed point, made parallel to a fixed 30 degree reference. A
+    // Newton step on the normalized sine swings the point across the line; the answer is the
+    // projection onto it.
+    let (cos, sin) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
+    let mut builder = Builder::new();
+    let c = builder.point(35.0, 15.0, false);
+    let d = builder.point(0.0, 20.0, true);
+    let e = builder.point(60.0, 0.0, true);
+    let f = builder.point(60.0 + 20.0 * cos, 20.0 * sin, true);
+    builder.equation(Kind::Parallel, 0.0, &[c[0], c[1], d[0], d[1], e[0], e[1], f[0], f[1]]);
+    let (status, _, values) = builder.solve();
+    assert_eq!(status, 0.0);
+    let along = 35.0 * cos - 5.0 * sin;
+    assert!(close(values[0], along * cos) && close(values[1], 20.0 + along * sin), "{values:?}");
+}
