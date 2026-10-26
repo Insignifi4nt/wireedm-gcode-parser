@@ -17,7 +17,7 @@
 use crate::equations::Kind;
 use crate::newton::DragOutcome;
 
-pub const VERSION: f64 = 3.0;
+pub const VERSION: f64 = 4.0;
 pub const TEMPORARY: f64 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,7 +32,8 @@ pub enum Status {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Diagnosis {
     Diagnosed = 0,
-    /// Some group's rank could not be decided reliably, or it was too large.
+    /// Some group was too large, a row was not finite, or a group that did not converge could not
+    /// be diagnosed reliably.
     Unavailable = 1,
     /// Nothing can move, so there is no freedom to diagnose against; relations that are not met
     /// conflict.
@@ -40,6 +41,9 @@ pub enum Diagnosis {
     /// A group that did not converge was diagnosed with a looser dependence distance
     /// (`diagnose::STALLED`), so its conflicts are suspected rather than certain.
     Suspected = 3,
+    /// A converged group's rank was unclear, as near a tangency: its labels are dependencies
+    /// found, but more may exist, and freedom is unknown.
+    Uncertain = 4,
 }
 
 #[derive(Clone, Debug)]

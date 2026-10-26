@@ -13,24 +13,28 @@ export interface CadSketchNativeSolution {
    * `max(1e-8, 32 epsilon S)` mm of every target, landed exactly when the lasting relations still
    * accept that; `projected`: nothing closer found from the start, the necessary conditions of the
    * nearest reachable values holding up to the solver's resolution, which does not prove them
-   * nearest; `stalled`: neither. `targetDistance` is the Euclidean distance from the values to every
-   * target, in millimetres.
+   * nearest; `limited`: stopped short where the drag ended, at the nearest feasible point found
+   * that is no more singular than its start, as a landing exactly on a tangency would be; `stalled`:
+   * none of these. `targetDistance` is the Euclidean distance from the values to every target, in
+   * millimetres.
    */
   readonly drag?: { readonly outcome: CadSketchNativeDragOutcome; readonly targetDistance: number };
 }
 
-export type CadSketchNativeDragOutcome = 'reached' | 'projected' | 'stalled';
+export type CadSketchNativeDragOutcome = 'reached' | 'projected' | 'stalled' | 'limited';
 
 /**
  * Rank diagnosis at the returned values. `suspected`: a group that did not converge stalled short of
  * a collapsed nearest point and was diagnosed with a looser dependence distance, so its conflicts
- * are suspected rather than certain and freedom is unknown. `no-unknowns`: nothing can move, so only
- * relations that are not met are labelled, as conflicting. `unavailable`: some group was too large,
- * or its rank was too close to call.
+ * are suspected rather than certain and freedom is unknown. `uncertain`: a converged group's rank
+ * was too close to call, as near a tangency, so its labels are the dependencies found but more may
+ * exist, and freedom is unknown. `no-unknowns`: nothing can move, so only relations that are not met
+ * are labelled, as conflicting. `unavailable`: some group was too large, or one that did not
+ * converge could not be diagnosed reliably.
  */
 export type CadSketchNativeDiagnosis =
   | { readonly kind: 'diagnosed'; readonly degreesOfFreedom: number | null; readonly labels: readonly number[] }
-  | { readonly kind: 'suspected' | 'no-unknowns'; readonly labels: readonly number[] }
+  | { readonly kind: 'suspected' | 'uncertain' | 'no-unknowns'; readonly labels: readonly number[] }
   | { readonly kind: 'unavailable' };
 
 export interface CadSketchNativeSolver {
@@ -55,8 +59,8 @@ function isExports(value: WebAssembly.Exports): value is WebAssembly.Exports & E
 }
 
 const STATUSES: Readonly<Record<number, CadSketchNativeSolution['status']>> = { 0: 'converged', 1: 'not-converged', 3: 'too-large' };
-const DIAGNOSES = ['diagnosed', 'unavailable', 'no-unknowns', 'suspected'] as const;
-const DRAG_OUTCOMES = ['reached', 'projected', 'stalled'] as const;
+const DIAGNOSES = ['diagnosed', 'unavailable', 'no-unknowns', 'suspected', 'uncertain'] as const;
+const DRAG_OUTCOMES = ['reached', 'projected', 'stalled', 'limited'] as const;
 const HEADER = 9;
 
 /** Loads the Rust solver from bytes, or from a URL (by default the bundled module asset). */

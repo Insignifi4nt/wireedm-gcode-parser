@@ -36,17 +36,27 @@
 //! Anything else, including a curvature test that cannot decide, is `Stalled`, at the last
 //! feasible values. Restoring the start, the trials with their restorations and a
 //! landing's polish share `DRAG_ITERATIONS`, and a check the budget cut short decides nothing.
+//!
+//! A drag can end on a singular configuration, as a point landed where its circle touches its
+//! line, where rank reads redundant though the sketch is not. A reached or projected end with more
+//! lasting rows dependent within `SINGULAR_MARGIN` `TAU` than the start had within `TAU` walks
+//! back through the last accepted iterates, and bisects toward the end with restored points, for
+//! the closest to the targets that is no more singular than the start. Such a drag is `Limited`
+//! unless that point is still within reach of the targets; running out of work there restores the
+//! start and is too large.
 
 use super::{Exhausted, GroupOutcome, Jacobian, Limits, MAX_ITERATIONS, System, assess, levenberg, solve_group as solve_whole, solve_group_within, worst};
+use crate::diagnose::{self, TAU};
 use crate::equations::Kind;
 use crate::problem::Status;
-use crate::sparse::{Factor, minimum_degree_with_heap};
+use crate::sparse::{Factor, SparseRow, minimum_degree_with_heap};
 
 mod curvature;
 use curvature::Curvature;
 
-/// How a group's drag targets ended; later variants are worse.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+/// How a group's drag targets ended. The codes are the wire format; worse outcomes order after
+/// better ones: reached, projected, limited, stalled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DragOutcome {
     /// Within `max(1e-8, 32 epsilon S)` millimetres of every target.
     Reached = 0,
@@ -56,6 +66,23 @@ pub enum DragOutcome {
     Projected = 1,
     /// Neither within the iterations allowed; the values are the last feasible ones.
     Stalled = 2,
+    /// Stopped short of where the drag ended, at the nearest feasible point found that is no
+    /// more singular than the start (`SINGULAR_MARGIN`), as one landed on a tangency would be.
+    Limited = 3,
+}
+
+impl DragOutcome {
+    fn severity(self) -> u8 {
+        match self { DragOutcome::Reached => 0, DragOutcome::Projected => 1, DragOutcome::Limited => 2, DragOutcome::Stalled => 3 }
+    }
+}
+
+impl PartialOrd for DragOutcome {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
+}
+
+impl Ord for DragOutcome {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.severity().cmp(&other.severity()) }
 }
 
 /// Weight of the lasting rows above the unit target rows in a tangent step.
@@ -78,6 +105,14 @@ pub const DRAG_ITERATIONS: usize = 4 * MAX_ITERATIONS;
 /// Most projection passes for a tangent step or a stationarity check; each shrinks the range
 /// part by `1 + W^2 sigma^2`.
 const PROJECTION_PASSES: usize = 3;
+/// A drag ends no more singular than its start: the lasting rows within this many `TAU` of
+/// dependence there are no more than those within `TAU` at the start. The margin keeps a later
+/// solve, an edit or rounding of the published values from finding a dependence the drag made.
+const SINGULAR_MARGIN: f64 = 10.0;
+/// Accepted points of a drag kept to step back to when it ends more singular than its start.
+const HISTORY: usize = 8;
+/// Halvings between the last point no more singular than the start and the next one.
+const REFINEMENTS: usize = 12;
 
 /// A target row: the dragged parameter, its column and the requested value.
 struct Target { parameter: usize, column: usize, value: f64 }
@@ -166,7 +201,7 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits, h
     // Half the work is kept for diagnosis.
     let mut drag = Drag { lasting: &lasting, targets: &targets, position: ordering.position, limits: Limits { fill: limits.fill, work: limits.work / 2 },
         work: ordering.work, iterations: 0, reached, held, stationary: 1e-9_f64.max(64.0 * f64::EPSILON * scale),
-        floor: 1e-6_f64.max(64.0 * f64::EPSILON * scale) };
+        floor: 1e-6_f64.max(64.0 * f64::EPSILON * scale), history: Vec::new() };
     let outcome = if assess(&rows).accepted { drag.run(values) } else {
         // An infeasible start is first restored onto the lasting rows, within the work left; one
         // whose work ran out is exhausted even when it ends accepted.
@@ -176,6 +211,10 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits, h
         drag.iterations += restored.iterations;
         if restored.status == Status::TooLarge || restored.position.is_none() || drag.work > drag.limits.work { Err(Exhausted) }
         else if restored.status == Status::Converged { drag.run(values) } else { Ok(DragOutcome::Stalled) }
+    };
+    let outcome = match outcome {
+        Ok(ended @ (DragOutcome::Reached | DragOutcome::Projected)) => drag.no_more_singular(values, ended),
+        other => other,
     };
     let rows = lasting.rows(values, None);
     let (status, position) = match outcome {
@@ -202,6 +241,8 @@ struct Drag<'a> {
     stationary: f64,
     /// Smallest step bound and trust radius, at the targets' scale.
     floor: f64,
+    /// The unknowns where `run` began, then at most `HISTORY` later accepted points, oldest first.
+    history: Vec<Vec<f64>>,
 }
 
 impl Drag<'_> {
@@ -209,6 +250,7 @@ impl Drag<'_> {
     fn residual(&self, values: &[f64]) -> Vec<f64> { self.targets.iter().map(|target| values[target.parameter] - target.value).collect() }
 
     fn run(&mut self, values: &mut [f64]) -> Result<DragOutcome, Exhausted> {
+        self.remember(values);
         let distance = norm(&self.residual(values));
         // The local size of the geometry the targets pull on; a target held only by linear rows
         // or by nothing is reached in one step.
@@ -220,6 +262,7 @@ impl Drag<'_> {
         // How many Gauss-Newton steps the next step may take, from the last secant.
         let mut stretch = 1.0_f64;
         while self.iterations < DRAG_ITERATIONS {
+            self.remember(values);
             let r = self.residual(values);
             let distance = norm(&r);
             if distance <= self.reached && self.land(values)? { return Ok(DragOutcome::Reached); }
@@ -360,6 +403,74 @@ impl Drag<'_> {
             _ => for (&p, &value) in unknowns.iter().zip(&saved) { values[p] = value; },
         }
         Ok(true)
+    }
+
+    /// Keeps the unknowns at `values`, an accepted point, to step back to; the start stays first.
+    fn remember(&mut self, values: &[f64]) {
+        let point: Vec<f64> = self.lasting.unknowns.iter().map(|&p| values[p]).collect();
+        if self.history.last() == Some(&point) { return; }
+        if self.history.len() > HISTORY { self.history.remove(1); }
+        self.history.push(point);
+    }
+
+    /// Lasting rows within `distance` of dependence at `values`, zero rows included; `None` when
+    /// that cannot be decided within the work left.
+    fn dependent_rows(&mut self, values: &[f64], distance: f64) -> Option<usize> {
+        let rows: Vec<SparseRow> = self.jacobian(values).rows.into_iter().map(|row| row.0).collect();
+        let (count, spent) = diagnose::dependent_count(self.position.len(), &rows, distance, self.limits.work.saturating_sub(self.work));
+        self.work = self.work.saturating_add(spent);
+        count
+    }
+
+    /// A drag that `ended` more singular than it began, as one landed exactly on a tangency, whose
+    /// rank reads redundant where the sketch is not, steps back to the latest remembered point
+    /// that is no more singular (`SINGULAR_MARGIN`), then halves toward the next one, each halfway
+    /// point restored onto the lasting rows and kept when accepted, closer to the targets and no
+    /// more singular. That point is `Reached` when within reach and otherwise `Limited`; with no
+    /// such point the drag stays where it began. A start whose dependence is unclear allows none.
+    /// Work that runs out decides nothing and restores the start.
+    fn no_more_singular(&mut self, values: &mut [f64], ended: DragOutcome) -> Result<DragOutcome, Exhausted> {
+        let Some(begin) = self.history.first().cloned() else { return Ok(ended) };
+        let margin = SINGULAR_MARGIN * TAU;
+        // Lasting rows within `distance` of dependence at `point`, `Err` once the work is spent.
+        let count = |drag: &mut Self, values: &mut [f64], point: Option<&[f64]>, distance: f64| {
+            if let Some(point) = point { drag.undo(values, point); }
+            let count = drag.dependent_rows(values, distance);
+            if drag.work > drag.limits.work { drag.undo(values, &begin); return Err(Exhausted); }
+            Ok(count)
+        };
+        let within = |count: Option<usize>, allowed: usize| count.is_some_and(|count| count <= allowed);
+        if within(count(self, values, None, margin)?, 0) { return Ok(ended); }
+        let end: Vec<f64> = self.lasting.unknowns.iter().map(|&p| values[p]).collect();
+        let allowed = count(self, values, Some(&begin), TAU)?.unwrap_or(0);
+        if allowed > 0 && within(count(self, values, Some(&end), margin)?, allowed) { return Ok(ended); }
+        let (mut best, mut toward) = (begin.clone(), end);
+        let later: Vec<Vec<f64>> = self.history[1..].iter().rev().cloned().collect();
+        for point in later {
+            if point == toward { continue; }
+            if within(count(self, values, Some(&point), margin)?, allowed) { best = point; break; }
+            toward = point;
+        }
+        self.undo(values, &best);
+        let mut nearest = norm(&self.residual(values));
+        for _ in 0..REFINEMENTS {
+            if self.iterations >= DRAG_ITERATIONS { break; }
+            let middle: Vec<f64> = best.iter().zip(&toward).map(|(a, b)| 0.5 * (a + b)).collect();
+            if middle == best || middle == toward { break; }
+            self.undo(values, &middle);
+            self.iterations += 1;
+            let (allowed_iterations, mut iterations) = (RESTORE_ITERATIONS.min(DRAG_ITERATIONS.saturating_sub(self.iterations)), 0);
+            let exhausted = levenberg(self.lasting, values, &self.position, self.limits, &mut self.work, &mut iterations, allowed_iterations);
+            self.iterations += iterations;
+            if exhausted || self.work > self.limits.work { self.undo(values, &begin); return Err(Exhausted); }
+            let distance = norm(&self.residual(values));
+            if distance < nearest && assess(&self.lasting.rows(values, None)).accepted && within(count(self, values, None, margin)?, allowed) {
+                best = self.lasting.unknowns.iter().map(|&p| values[p]).collect();
+                nearest = distance;
+            } else { toward = middle; }
+        }
+        self.undo(values, &best);
+        Ok(if nearest <= self.reached { DragOutcome::Reached } else { DragOutcome::Limited })
     }
 
     fn undo(&self, values: &mut [f64], saved: &[f64]) {

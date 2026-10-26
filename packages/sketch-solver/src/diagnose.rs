@@ -21,6 +21,13 @@
 //! sketch is rejected either way, but this blame is a suspicion: a row near a conflict without
 //! being in it can be blamed too, and a satisfiable sketch stuck at a stationary point is blamed
 //! as conflicting.
+//!
+//! Near a singular configuration, as a point a little off where its circle touches its line, rank
+//! at `TAU` is unclear for a solved sketch too. A row whose insertion or witness cannot be decided
+//! is left out, which leaves the factor as it was, so later rows are decided as before; the
+//! diagnosis is then not `certain`, and neither is one whose smallest singular value estimate is
+//! below `CERTAIN`. Its witnesses are dependencies found, but more may exist, so freedom is
+//! unknown.
 
 use crate::sparse::SparseRow;
 
@@ -49,6 +56,10 @@ pub struct Row {
 pub struct Diagnosis {
     pub rank: usize,
     pub witnesses: Vec<Witness>,
+    /// Every row was decided and the independent rows' smallest singular value estimate passed
+    /// `CERTAIN`. Otherwise rank is unclear: the witnesses found are dependencies within
+    /// `distance`, but more may exist, so freedom is unknown.
+    pub certain: bool,
 }
 
 /// A dependent row with the earlier rows that reproduce it.
@@ -60,8 +71,10 @@ pub struct Witness {
 }
 
 /// The diagnosis of `rows` over `n` columns, with a row dependent within `distance` (`TAU` or
-/// `STALLED`) of the span of earlier ones, and the work spent; `None` when rank cannot be decided
-/// reliably, the work would pass `budget` entries, or a witness fit would hold more than `fill`.
+/// `STALLED`) of the span of earlier ones, and the work spent; `None` when a row is not finite or
+/// the work would pass `budget` entries. A row whose dependence cannot be decided, or whose witness
+/// fit would hold more than `fill`, is left out and leaves the diagnosis uncertain: the factor is
+/// then as it was, so the rows after it are decided as before.
 pub fn diagnose(n: usize, rows: &[Row], distance: f64, budget: usize, fill: usize) -> (Option<Diagnosis>, usize) {
     let mut work = Work { done: 0, budget, fill };
     let found = diagnose_within(n, rows, distance, &mut work);
@@ -74,17 +87,23 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Op
     // Each dependent row with the earlier rows of its witness.
     let mut witnesses: Vec<(usize, Vec<(usize, f64)>)> = Vec::new();
     let norms: Vec<f64> = rows.iter().map(|row| row.entries.iter().map(|e| e.1 * e.1).sum::<f64>().sqrt()).collect();
-    let mut independent = Vec::new();
+    let (mut independent, mut certain) = (Vec::new(), true);
     for (index, row) in rows.iter().enumerate() {
         if !row.residual.is_finite() || !norms[index].is_finite() { return None; }
         if norms[index] == 0.0 { witnesses.push((index, Vec::new())); continue; }
         let unit = unit(row, norms[index]);
-        match insert(&mut r, unit.clone(), distance, work)? {
-            Insertion::Independent => { rank += 1; independent.push(index); }
-            Insertion::Dependent => witnesses.push((index, witness(&r, &unit, rows, &norms, &independent, distance, work)?)),
+        let decided = match insert(&mut r, unit.clone(), distance, work) {
+            Some(Insertion::Independent) => { rank += 1; independent.push(index); true }
+            Some(Insertion::Dependent) => witness(&r, &unit, rows, &norms, &independent, distance, work)
+                .map(|support| witnesses.push((index, support))).is_some(),
+            None => false,
+        };
+        if !decided {
+            if work.done > work.budget { return None; }
+            certain = false;
         }
     }
-    if rank > 0 && smallest_singular_value(&r, work)? < CERTAIN { return None; }
+    if rank > 0 && smallest_singular_value(&r, work)? < CERTAIN { certain = false; }
     // A unit row's residual, or the residual itself for a row without unknowns.
     let scaled = |i: usize, value: f64| if norms[i] > 0.0 { value / norms[i] } else { value };
     let witnesses = witnesses.into_iter().map(|(j, support)| {
@@ -92,7 +111,25 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Op
         let bound = support.iter().map(|&(i, c)| c.abs() * scaled(i, rows[i].tolerance)).sum::<f64>() + scaled(j, rows[j].tolerance);
         Witness { rows: support.iter().map(|s| s.0).chain([j]).collect(), agrees: combined.abs() <= bound }
     }).collect();
-    Some(Diagnosis { rank, witnesses })
+    Some(Diagnosis { rank, witnesses, certain })
+}
+
+/// How many of `rows`, zero rows included, lie within `distance` of the span of earlier ones once
+/// normalized, and the work spent; no singular value gate applies. `None` when a row's dependence
+/// cannot be decided or the work would pass `budget`.
+pub fn dependent_count(n: usize, rows: &[SparseRow], distance: f64, budget: usize) -> (Option<usize>, usize) {
+    let mut work = Work { done: 0, budget, fill: usize::MAX };
+    let found = (|| {
+        let (mut r, mut count) = (vec![Vec::new(); n], 0);
+        for row in rows {
+            let norm = row.iter().map(|e| e.1 * e.1).sum::<f64>().sqrt();
+            if !norm.is_finite() { return None; }
+            if norm == 0.0 { count += 1; continue; }
+            if let Insertion::Dependent = insert(&mut r, row.iter().map(|&(k, x)| (k, x / norm)).collect(), distance, &mut work)? { count += 1; }
+        }
+        Some(count)
+    })();
+    (found, work.done)
 }
 
 /// Indices of the nonzero `rows` within `TAU` of the span of earlier ones once normalized, and

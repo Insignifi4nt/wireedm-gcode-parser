@@ -860,3 +860,99 @@ fn coordinates_aligned_to_a_dimensioned_one_are_not_too_large() {
     assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
     assert!(values[x0].abs() <= 1e-30);
 }
+
+/// P on a circle of `radius` about a fixed origin and on the line x = `line`, from `start`, and
+/// dragged toward `target` when there is one: `P`.
+fn tangency(builder: &mut Builder, radius: f64, line: f64, start: [f64; 2], target: Option<[f64; 2]>) -> [usize; 2] {
+    let o = builder.point(0.0, 0.0, true);
+    let p = builder.point(start[0], start[1], false);
+    builder.equation(Kind::Distance, radius, &[o[0], o[1], p[0], p[1]]);
+    builder.equation(Kind::Value, line, &[p[0]]);
+    if let Some(target) = target {
+        builder.temporary(Kind::Value, target[0], &[p[0]]);
+        builder.temporary(Kind::Value, target[1], &[p[1]]);
+    }
+    p
+}
+
+fn tangency_outcome(radius: f64, line: f64, start: [f64; 2], target: Option<[f64; 2]>) -> (Outcome, [f64; 2]) {
+    let mut builder = Builder::new();
+    let p = tangency(&mut builder, radius, line, start, target);
+    let (outcome, values) = builder.outcome();
+    (outcome, [values[p[0]], values[p[1]]])
+}
+
+#[test]
+fn a_drag_onto_a_tangency_stops_short_where_rank_is_still_clear() {
+    // At (r, 0) the circle touches x = r and both rows' gradients point along x, so rank there reads
+    // redundant. Near it rank is too close to call; the drag stops where its relations are no more
+    // dependent than at its start, and the sketch it leaves solves, drags and edits again.
+    for radius in [10.0, 100.0, 1000.0] {
+        for lift in [1e-3, 1e-5] {
+            let (start, p) = tangency_outcome(radius, radius, [radius, lift * radius], None);
+            assert_eq!((start.status, start.labels.clone()), (Status::Converged, vec![0; 2]), "{radius} {lift}");
+            let mut landed = p;
+            for drag in 0..2 {
+                let (dragged, end) = tangency_outcome(radius, radius, landed, Some([radius, 0.0]));
+                assert_eq!((dragged.status, dragged.drag, dragged.labels.clone()), (Status::Converged, Some(DragOutcome::Limited), vec![0; 4]), "{radius} {lift} {drag}");
+                assert!((end[0] - radius).abs() <= 1e-12 * radius && end[1] > 0.0 && end[1] <= 2e-9 * radius, "{radius} {lift} {drag}: {end:?}");
+                assert!((dragged.target_distance - end[1]).abs() <= 1e-3 * end[1], "{radius} {lift} {drag}: {}", dragged.target_distance);
+                landed = end;
+            }
+            let (again, kept) = tangency_outcome(radius, radius, landed, None);
+            assert_eq!((again.status, again.labels, kept), (Status::Converged, vec![0; 2], landed), "{radius} {lift}");
+            let (edited, moved) = tangency_outcome(radius, radius - 1.0, landed, None);
+            assert_eq!((edited.status, edited.diagnosis, edited.degrees_of_freedom), (Status::Converged, Diagnosis::Diagnosed, Some(0)), "{radius} {lift}");
+            assert!((moved[0] - (radius - 1.0)).abs() <= 1e-12 * radius && (moved[1] - (2.0 * radius - 1.0).sqrt()).abs() <= 1e-9 * radius, "{radius} {lift}: {moved:?}");
+        }
+    }
+}
+
+#[test]
+fn a_stalled_group_outranks_a_limited_one() {
+    // One group stops short of a tangency; the other cannot meet distances 3 and 4 at once.
+    let mut builder = Builder::new();
+    tangency(&mut builder, 10.0, 10.0, [10.0, 1e-4], Some([10.0, 0.0]));
+    let a = builder.point(50.0, 0.0, true);
+    let q = builder.point(53.0, 0.0, false);
+    builder.equation(Kind::Distance, 3.0, &[a[0], a[1], q[0], q[1]]);
+    builder.equation(Kind::Distance, 4.0, &[a[0], a[1], q[0], q[1]]);
+    builder.temporary(Kind::Value, 55.0, &[q[0]]);
+    builder.temporary(Kind::Value, 5.0, &[q[1]]);
+    let (outcome, _) = builder.outcome();
+    assert_eq!((outcome.status, outcome.drag), (Status::NotConverged, Some(DragOutcome::Stalled)));
+}
+
+#[test]
+fn every_frame_of_an_arm_stretched_past_its_reach_and_back_is_solved() {
+    // Two 10 mm links from a fixed base, the tip pulled along y = 1 past its 20 mm reach and back
+    // inside it, each frame from the start and from the last. Straight, the arm's rank is clear.
+    let arm = |joint: [f64; 2], tip: [f64; 2], target: Option<[f64; 2]>| {
+        let mut builder = Builder::new();
+        let b = builder.point(0.0, 0.0, true);
+        let j = builder.point(joint[0], joint[1], false);
+        let t = builder.point(tip[0], tip[1], false);
+        builder.equation(Kind::Distance, 10.0, &[b[0], b[1], j[0], j[1]]);
+        builder.equation(Kind::Distance, 10.0, &[j[0], j[1], t[0], t[1]]);
+        if let Some(target) = target {
+            builder.temporary(Kind::Value, target[0], &[t[0]]);
+            builder.temporary(Kind::Value, target[1], &[t[1]]);
+        }
+        let (outcome, values) = builder.outcome();
+        (outcome, [values[j[0]], values[j[1]]], [values[t[0]], values[t[1]]])
+    };
+    for chained in [false, true] {
+        let (mut joint, mut tip) = ([6.0, 8.0], [16.0, 8.0]);
+        for frame in 0..47 {
+            let target = if frame < 46 { [10.0 + 0.25 * frame as f64, 1.0] } else { [15.0, 1.0] };
+            let (outcome, j, t) = if chained { arm(joint, tip, Some(target)) } else { arm([6.0, 8.0], [16.0, 8.0], Some(target)) };
+            let reached = target[0].hypot(target[1]) <= 20.0;
+            assert_eq!((outcome.status, outcome.drag, outcome.labels.clone()), (Status::Converged, Some(if reached { DragOutcome::Reached } else { DragOutcome::Projected }), vec![0; 4]), "{chained} {frame}");
+            assert!(matches!(outcome.diagnosis, Diagnosis::Diagnosed | Diagnosis::Uncertain), "{chained} {frame}: {:?}", outcome.diagnosis);
+            if reached { assert_eq!(outcome.degrees_of_freedom, Some(2), "{chained} {frame}"); }
+            let (again, ..) = arm(j, t, None);
+            assert_eq!((again.status, again.labels), (Status::Converged, vec![0; 2]), "{chained} {frame}");
+            (joint, tip) = (j, t);
+        }
+    }
+}
