@@ -281,3 +281,19 @@ fn a_spurious_guide_is_not_kept_where_its_neighbours_terms_cancel() {
     builder.equation(Kind::Difference, 1.0, &[p[1], q[1]]);
     assert_eq!(diagnose(&builder), (Diagnosis::Diagnosed, None, vec![0, CONFLICTING, CONFLICTING, CONFLICTING, CONFLICTING]));
 }
+
+#[test]
+fn a_long_closed_chain_around_a_shared_value_is_diagnosed_within_a_sparse_fill() {
+    // 3,200 midpoints chained around a loop at a free shared value and closed by `x0 = x3200`:
+    // the closure repeats them. Every midpoint shares that value's column, so least squares on
+    // the rows themselves fills quadratically; the witness must come from the solve's own sparse
+    // factor instead.
+    let mut builder = Builder::new();
+    let c = builder.parameter(1.0, false);
+    let x: Vec<usize> = (0..=3200).map(|i| builder.parameter(if i % 2 == 0 { 1.5 } else { 0.5 }, false)).collect();
+    for i in 0..3200 { builder.equation(Kind::Midpoint, 0.0, &[x[i], x[i + 1], c]); }
+    builder.equation(Kind::Difference, 0.0, &[x[0], x[3200]]);
+    let (outcome, _) = builder.outcome_within(Limits { fill: 20_000, ..sketch_solver::newton::LIMITS });
+    assert_eq!(outcome.diagnosis, Diagnosis::Diagnosed);
+    assert_eq!(outcome.labels.last(), Some(&REDUNDANT));
+}

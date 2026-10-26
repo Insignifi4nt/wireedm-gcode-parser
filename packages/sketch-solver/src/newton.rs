@@ -280,7 +280,7 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
         // rank was unclear, so a clear diagnosis is never lost to the looser distance.
         let mut work = group.work;
         let mut diagnose_at = |distance| {
-            let (found, spent) = diagnose_group(&system, values, &position, distance, limits.work.saturating_sub(work));
+            let (found, spent) = diagnose_group(&system, values, &position, distance, limits.work.saturating_sub(work), limits.fill);
             work = work.saturating_add(spent);
             found
         };
@@ -319,13 +319,13 @@ fn unmet(system: &System, values: &[f64]) -> Vec<Witness> {
 
 /// The rank of a group's lasting equations at `values`, dependent within `distance`, and their
 /// witnesses by equation index, with the work spent.
-fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance: f64, budget: usize) -> (Option<(usize, Vec<Witness>)>, usize) {
+fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance: f64, budget: usize, fill: usize) -> (Option<(usize, Vec<Witness>)>, usize) {
     let rows = system.rows(values, None);
     let jacobian = system.jacobian(&rows, position);
     let lasting: Vec<usize> = (0..rows.len()).filter(|&i| !system.problem.equations[system.equations[i]].temporary).collect();
     let diagnosed: Vec<diagnose::Row> = lasting.iter()
         .map(|&i| diagnose::Row { entries: jacobian.rows[i].0.clone(), residual: rows[i].residual, tolerance: rows[i].tolerance }).collect();
-    let (diagnosis, spent) = diagnose(position.len(), &diagnosed, distance, budget);
+    let (diagnosis, spent) = diagnose(position.len(), &diagnosed, distance, budget, fill);
     (diagnosis.map(|diagnosis| (diagnosis.rank, diagnosis.witnesses.into_iter().map(|witness| Witness {
         rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect())), spent)
 }
