@@ -24,10 +24,11 @@
 //! that gets closer to second order: the first- and second-order necessary conditions of a nearest
 //! point on the start's branch, not a global one. A clearly negative curvature, as at a circle's
 //! antipode or a straight arm with a target inside its reach, is followed by restored steps,
-//! halving; one that gets closer by any resolved gain continues the drag. Anything else, including
-//! a curvature test that cannot decide, is `Stalled`, at the last feasible values. Restoring the
-//! start, the trials with their restorations and a landing's polish share `DRAG_ITERATIONS`, and a
-//! check the budget cut short certifies nothing.
+//! halving; one that gets closer by any resolved gain continues the drag. A curvature within its
+//! error of zero is followed at two lengths, and projects only when neither gets closer, since higher
+//! orders decide there. Anything else, including a curvature test that cannot decide, is `Stalled`,
+//! at the last feasible values. Restoring the start, the trials with their restorations and a
+//! landing's polish share `DRAG_ITERATIONS`, and a check the budget cut short certifies nothing.
 
 use super::{Exhausted, GroupOutcome, Jacobian, Limits, MAX_ITERATIONS, System, assess, levenberg, solve_group as solve_whole, solve_group_within, worst};
 use crate::equations::Kind;
@@ -61,6 +62,8 @@ const DAMPING_PASSES: usize = 4;
 const RESTORE_ITERATIONS: usize = 8;
 /// Most step lengths, halving, tried along a direction of negative curvature.
 const DESCENT_LENGTHS: usize = 7;
+/// Step lengths, halving, tried along a flat direction before it is taken as flat.
+const FLAT_LENGTHS: usize = 2;
 /// Most iterations of one group's drag: restoring its start, its trials with their restorations,
 /// and polishing a landing, together. A restored trial takes about four.
 pub const DRAG_ITERATIONS: usize = 4 * MAX_ITERATIONS;
@@ -272,19 +275,22 @@ impl Drag<'_> {
         match self.curvature(values, &r)? {
             Curvature::Certified => Ok(Settled::Done(DragOutcome::Projected)),
             Curvature::Unresolved => Ok(Settled::Done(DragOutcome::Stalled)),
-            Curvature::Negative { direction, theta } => self.descend(values, &r, &direction, theta),
+            Curvature::Negative { direction, theta } => self.descend(values, &r, &direction, Some(theta)),
+            Curvature::Flat { direction } => self.descend(values, &r, &direction, None),
         }
     }
 
     /// Restored steps along a unit direction of negative curvature `theta`, from the rows' bound
-    /// and halving, first the way the gradient does not climb; the first that gets closer stands.
-    fn descend(&mut self, values: &mut [f64], r: &[f64], direction: &[f64], theta: f64) -> Result<Settled, Exhausted> {
+    /// and halving, first the way the gradient does not climb; the first that gets closer stands,
+    /// and without one the drag stalls. Along a flat direction (`None`), where orders past the
+    /// second decide, `FLAT_LENGTHS` lengths are tried and finding nothing closer projects.
+    fn descend(&mut self, values: &mut [f64], r: &[f64], direction: &[f64], theta: Option<f64>) -> Result<Settled, Exhausted> {
         let climb: f64 = self.targets.iter().zip(r).map(|(target, r)| r * direction[target.column]).sum();
         let first = if climb > 0.0 { -1.0 } else { 1.0 };
         let mut length = self.bounded(values, direction).min(norm(r));
-        for _ in 0..DESCENT_LENGTHS {
+        for _ in 0..theta.map_or(FLAT_LENGTHS, |_| DESCENT_LENGTHS) {
             // A gain the products cannot resolve is not worth a trial.
-            if !(-theta * length * length > 8.0 * f64::EPSILON * norm(r) * length) { break; }
+            if let Some(theta) = theta && !(-theta * length * length > 8.0 * f64::EPSILON * norm(r) * length) { break; }
             for sign in [first, -first] {
                 if self.iterations >= DRAG_ITERATIONS { return Ok(Settled::Done(DragOutcome::Stalled)); }
                 let step: Vec<f64> = direction.iter().map(|value| sign * length * value).collect();
@@ -295,7 +301,7 @@ impl Drag<'_> {
             }
             length *= 0.5;
         }
-        Ok(Settled::Done(DragOutcome::Stalled))
+        Ok(Settled::Done(if theta.is_some() { DragOutcome::Stalled } else { DragOutcome::Projected }))
     }
 
     /// Writes the targets exactly when the lasting rows still accept them. Landing moves the targeted

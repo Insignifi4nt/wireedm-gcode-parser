@@ -380,3 +380,47 @@ fn a_repeated_relation_still_certifies_its_nearest_point() {
     assert!(near([values[p[0]], values[p[1]]], [6.0, 8.0], 1e-9), "{:?}", &values[p[0]..]);
     assert_eq!(outcome.drag, Some(DragOutcome::Projected));
 }
+
+#[test]
+fn a_flat_point_whose_distance_falls_at_fourth_order_is_left() {
+    // x^2 + u^2 = 1 and y = 2u: from (1, 0) toward (-3, 0) the squared distance along the circle
+    // is 16 - 3 (1 - cos t)^2, flat to second order but falling.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let x = builder.parameter(1.0, false);
+    let u = builder.parameter(0.0, false);
+    let y = builder.parameter(0.0, false);
+    builder.equation(Kind::Distance, 1.0, &[o[0], o[1], x, u]);
+    builder.equation(Kind::Midpoint, 0.0, &[o[1], y, u]);
+    builder.temporary(Kind::Value, -3.0, &[x]);
+    builder.temporary(Kind::Value, 0.0, &[y]);
+    let (outcome, _) = builder.outcome();
+    assert!(outcome.target_distance < 3.9, "{outcome:?}");
+}
+
+#[test]
+fn a_collapsed_distance_is_not_certified() {
+    // |B - O| = r with B on O and r = 0, and P.x = r: B leaving O lets P reach its target, though
+    // the zero distance has no gradient to show it.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let b = builder.point(0.0, 0.0, false);
+    let r = builder.parameter(0.0, false);
+    let px = builder.parameter(0.0, false);
+    let py = builder.parameter(0.0, true);
+    builder.equation(Kind::DistanceToParameter, 0.0, &[o[0], o[1], b[0], b[1], r]);
+    builder.equation(Kind::Difference, 0.0, &[r, px]);
+    builder.temporary(Kind::Value, 1.0, &[px]);
+    builder.temporary(Kind::Value, 0.0, &[py]);
+    let (outcome, _) = builder.outcome();
+    assert_ne!(outcome.drag, Some(DragOutcome::Projected), "{outcome:?}");
+}
+
+#[test]
+fn a_slight_negative_curvature_is_followed() {
+    // A target just past the centre of a 1000 mm circle: the start is farthest by 2 um.
+    let (outcome, p) = circle([0.0, 0.0], 1000.0, [1000.0, 0.0], [-0.001, 0.0]);
+    // The nearest point curves only 1e-6 per mm, so its distance is resolved before its place.
+    assert!(near(p, [-1000.0, 0.0], 1e-3) && (outcome.target_distance - 999.999).abs() <= 1e-9, "{p:?} {}", outcome.target_distance);
+    assert_eq!(outcome.drag, Some(DragOutcome::Projected));
+}

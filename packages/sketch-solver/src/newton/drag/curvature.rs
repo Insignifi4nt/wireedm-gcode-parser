@@ -31,7 +31,9 @@ pub(super) enum Curvature {
     /// The most negative curvature `theta` of the squared distance's half along the unit
     /// direction `direction`, by column.
     Negative { direction: Vec<f64>, theta: f64 },
-    /// The multipliers or the support could not be resolved.
+    /// The lowest curvature is within its error of zero along `direction`, so higher orders decide.
+    Flat { direction: Vec<f64> },
+    /// The multipliers or the support could not be resolved, or a curved row has collapsed.
     Unresolved,
 }
 
@@ -86,13 +88,18 @@ impl Drag<'_> {
         if !(norm(&kkt) <= 2.0 * self.stationary) { return Ok(Curvature::Unresolved); }
         let lambda: Vec<f64> = (0..m).map(|i| by_position[place[i]]).collect();
 
-        let curved = self.curved(values, &rows, &lambda);
+        let Some(curved) = self.curved(values, &rows, &lambda) else { return Ok(Curvature::Unresolved); };
         let total: f64 = curved.iter().map(|row| row.lambda.abs() * row.size).sum();
-        let tolerance = 1e-6 * (1.0 + total) + curved.iter().map(|row| row.lambda.abs() * row.size * row.error).sum::<f64>();
+        // What the curvature is known to: each row's differencing error, the multipliers' remainder
+        // against every row's curvature, and roundoff in the eigensolves.
+        let tolerance = curved.iter().map(|row| row.lambda.abs() * row.size * row.error).sum::<f64>()
+            + norm(&kkt) * curved.iter().map(|row| row.size).sum::<f64>()
+            + 64.0 * f64::EPSILON * (1.0 + total) * (self.targets.len() + curved.iter().map(|row| row.columns.len()).sum::<usize>()) as f64;
         // Rows each within an even share of half the tolerance are left out, so together they stay within it.
         let share = 0.5 * tolerance / curved.len().max(1) as f64;
         let curved: Vec<&Curved> = curved.iter().filter(|row| row.lambda.abs() * row.size > share).collect();
-        // Only the targets' own `E^T E` is left, which never curves away.
+        // Only linear rows carry the multipliers: the point is nearest over the affine set those rows
+        // define, which holds the whole feasible set, so it is nearest over that too.
         if curved.is_empty() { return Ok(Curvature::Certified); }
 
         // The support's columns in first-seen order, and each column's place in it.
@@ -122,6 +129,7 @@ impl Drag<'_> {
         let projector: Vec<Vec<f64>> = (0..s).map(|a| (0..s).map(|b| if a == b { 1.0 } else { 0.0 } - dot(&x[a], &x[b])).collect()).collect();
         let (spread, basis) = symmetric_eigen(projector);
         let kept: Vec<usize> = (0..s).filter(|&k| spread[k] > KEPT).collect();
+        // Nothing along the lasting rows moves the support: the targets and every curved row are held.
         if kept.is_empty() { return Ok(Curvature::Certified); }
         // `C = U Lambda^1/2`; the curvature over the null space is the spectrum of `C^T H_SS C`.
         let c: Vec<Vec<f64>> = kept.iter().map(|&k| basis[k].iter().map(|u| u * spread[k].sqrt()).collect()).collect();
@@ -129,7 +137,7 @@ impl Drag<'_> {
         let reduced: Vec<Vec<f64>> = c.iter().map(|ca| hc.iter().map(|hb| dot(ca, hb)).collect()).collect();
         let (curvatures, directions) = symmetric_eigen(reduced);
         let (lowest, &theta) = curvatures.iter().enumerate().min_by(|a, b| a.1.total_cmp(b.1)).unwrap();
-        if theta >= -tolerance { return Ok(Curvature::Certified); }
+        if theta > tolerance { return Ok(Curvature::Certified); }
         // Lifted to the least-norm direction of the null space: `d = a - J^T R^-1 X a` for
         // `a = U Lambda^-1/2 b` on the support.
         let mut a = vec![0.0; s];
@@ -145,15 +153,19 @@ impl Drag<'_> {
         let Some((d, _)) = self.project(&jacobian, &d)? else { return Ok(Curvature::Unresolved); };
         let length = norm(&d);
         if !(length > 0.0 && length.is_finite()) { return Ok(Curvature::Unresolved); }
-        Ok(Curvature::Negative { direction: d.iter().map(|value| value / length).collect(), theta })
+        let direction = d.iter().map(|value| value / length).collect();
+        Ok(if theta < -tolerance { Curvature::Negative { direction, theta } } else { Curvature::Flat { direction } })
     }
 
     /// The nonlinear rows with a nonzero multiplier and their Hessians, by central differences of
     /// the exact gradient with each row's weight held. The step balances truncation, about
     /// `delta^2 / L^2` relative for a row of length `L`, against coordinate roundoff,
-    /// `epsilon S / delta`.
-    fn curved(&self, values: &[f64], rows: &[crate::newton::Row], lambda: &[f64]) -> Vec<Curved> {
+    /// `epsilon S / delta`. `None` when a row carrying a multiplier has collapsed to a length its
+    /// coordinates cannot resolve: a zero distance has no gradient to expand along, so neither
+    /// order of the test describes it.
+    fn curved(&self, values: &[f64], rows: &[crate::newton::Row], lambda: &[f64]) -> Option<Vec<Curved>> {
         let problem = self.lasting.problem;
+        let carrying = 64.0 * f64::EPSILON * lambda.iter().fold(0.0, |most: f64, lambda| most.max(lambda.abs()));
         let mut curved = Vec::new();
         for ((&e, row), &lambda) in self.lasting.equations.iter().zip(rows).zip(lambda) {
             if lambda == 0.0 || row.len == 0 { continue; }
@@ -161,7 +173,10 @@ impl Drag<'_> {
             let operands: Vec<f64> = equation.operands.iter().map(|&p| values[p]).collect();
             let free: Vec<bool> = equation.operands.iter().map(|&p| self.lasting.column[p] != usize::MAX).collect();
             let Some(length) = row_length(equation.kind, &operands, &free) else { continue; };
-            if !(length > 0.0) { continue; }
+            if !(length > 64.0 * f64::EPSILON * row.scale) {
+                if lambda.abs() > carrying { return None; }
+                continue;
+            }
             let columns: Vec<usize> = row.columns[..row.len].to_vec();
             let gradient = |operands: &[f64]| {
                 let duals: Vec<Dual> = operands.iter().enumerate().map(|(slot, &value)| Dual::variable(value, slot)).collect();
@@ -190,6 +205,6 @@ impl Drag<'_> {
             debug_assert!(columns.len() <= WIDTH);
             curved.push(Curved { columns, hessian, lambda, size, error: 4.0 * (f64::EPSILON * row.scale / length).powf(2.0 / 3.0) });
         }
-        curved
+        Some(curved)
     }
 }
