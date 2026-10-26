@@ -8,7 +8,7 @@ import { applyCadEdits } from '@/domain/cad/cadOperations';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import { lineReferencePart } from '@/domain/cad/__tests__/cadSketchExternalReferenceFixtures';
 import { circleRow, circleRowPart, rowSketch } from '@/domain/cad/__tests__/cadSketchLinearPatternFixtures';
-import { checkCadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { CAD_SKETCH_SOLVED_LAYOUT_VERSION, cadSketchSolvedValues, checkCadSketchGraph, parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { parseCadSketchSolveInput, parseCadSketchSolverReply } from './sketch-solver/cadSketchSolverProtocol';
 import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
@@ -100,7 +100,8 @@ describe('real native circle-pattern preparation', () => {
     const input = parseCadSketchSolveInput({ graph, parameters: document.parameters }), diagnostics = { status: 'success', degreesOfFreedom: 0,
       conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] };
     const forged = { ...graph, points: graph.points.map(point => point.id === 'holes_i1_p0' ? { ...point, position: [26, 10] } : point) };
-    expect(() => parseCadSketchSolverReply({ id: 1, kind: 'result', result: { kind: 'solved', graph: forged, diagnostics } }, input)).toThrow('constraints');
+    expect(() => parseCadSketchSolverReply({ id: 1, kind: 'result', result: { kind: 'solved', layout: CAD_SKETCH_SOLVED_LAYOUT_VERSION,
+      values: cadSketchSolvedValues(parseCadSketchGraph(forged)), diagnostics } }, input)).toThrow('constraints');
     const session = new CadSession(document), before = session.getSnapshot();
     await expect(session.editPrepared(before.version, async document => (await prepareCadEdits(document,
       [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { ...circleRow, direction: '+y' } }], { solve: async input => {

@@ -1,4 +1,4 @@
-import { parseCadSketchGraph, type CadSketchGraph } from '../../../../domain/cad/cadSketchGraph';
+import { cadSketchGraphWithSolvedValues, cadSketchSolvedSlots, type CadSketchGraph } from '../../../../domain/cad/cadSketchGraph';
 
 /**
  * Scalar equation kinds of the native solver, in wire-code order (the Rust `Kind::ALL`).
@@ -66,13 +66,18 @@ export function encodeCadSketchEquationModel(model: CadSketchEquationModel): Flo
   return buffer;
 }
 
-/** The graph with every numeric, unfixed point coordinate and circle radius taken from `values`. */
-export function applyCadSketchEquationSolution(graph: CadSketchGraph, model: CadSketchEquationModel, values: readonly number[]): CadSketchGraph {
-  const solved = (index: number | undefined, source: number | string) => index === undefined || typeof source === 'string' || model.fixed[index] ? source : values[index];
-  return parseCadSketchGraph({ ...graph, points: graph.points.map(point => {
-    const x = model.pointParameters.get(point.id);
-    return { ...point, position: [solved(x, point.position[0]), solved(x === undefined ? undefined : x + 1, point.position[1])] };
-  }), entities: graph.entities.map(entity => entity.kind === 'circle' ? { ...entity, radius: solved(model.radiusParameters.get(entity.id), entity.radius) } : entity) });
+/**
+ * The graph with every solved slot taken from `values`, or undefined when the solver moved a fixed
+ * value: only solved slots reach the graph, so a moved fixed value would otherwise be dropped silently.
+ */
+export function applyCadSketchEquationSolution(graph: CadSketchGraph, model: CadSketchEquationModel, values: readonly number[]): CadSketchGraph | undefined {
+  if (values.length !== model.values.length || model.fixed.some((fixed, index) => fixed && values[index] !== model.values[index])) return undefined;
+  return cadSketchGraphWithSolvedValues(graph, cadSketchSolvedSlots(graph).map(slot => {
+    const source = slot.kind === 'point' ? graph.points[slot.index].position[slot.axis] : (graph.entities[slot.index] as { readonly radius: number | string }).radius;
+    const index = slot.kind === 'point' ? model.pointParameters.get(graph.points[slot.index].id) : model.radiusParameters.get(graph.entities[slot.index].id);
+    const parameter = index === undefined ? undefined : slot.kind === 'point' ? index + slot.axis : index;
+    return parameter === undefined || model.fixed[parameter] ? source : values[parameter];
+  }));
 }
 
 /** Label bits of one diagnosed equation, as the Rust `diagnose` module sets them. */

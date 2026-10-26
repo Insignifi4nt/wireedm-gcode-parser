@@ -2,7 +2,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseCadSketchGraph } from '../../../domain/cad/cadSketchGraph';
 import { CAD_SKETCH_SOLVE_TIMEOUT_MS, createCadSketchSolverClient, type CadSketchSolverTransport } from './cadSketchSolverClient';
-import type { CadSketchSolverRequest } from './cadSketchSolverProtocol';
+import { cadSketchSolverWireResult, type CadSketchSolverRequest } from './cadSketchSolverProtocol';
+import type { CadSketchSolveResult } from './cadSketchSolverTypes';
 
 class Transport implements CadSketchSolverTransport {
   onmessage: CadSketchSolverTransport['onmessage'] = null;
@@ -14,7 +15,9 @@ class Transport implements CadSketchSolverTransport {
   terminate() { this.terminated = true; }
 }
 const graph = parseCadSketchGraph({ points: [{ id: 'point', position: [0, 0] }], entities: [], relations: [] });
-const result = { kind: 'solved', graph, diagnostics: { status: 'success', degreesOfFreedom: 2, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } };
+const result: CadSketchSolveResult = { kind: 'solved', graph, diagnostics: { status: 'success', degreesOfFreedom: 2, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } };
+// The worker sends solved values; the client rebuilds the graph from its own request.
+const reply = cadSketchSolverWireResult(result);
 
 describe('sketch solver worker lifetime', () => {
   it('starts lazily, cancels an active solve without terminating the warm worker, and drops its stale reply', async () => {
@@ -27,10 +30,10 @@ describe('sketch solver worker lifetime', () => {
     const next = client.solve({ graph, parameters: {} });
     // The canceled request still owns the single in-flight slot until its reply arrives.
     expect(transports[0].messages.map(message => message.id)).toEqual([1]);
-    transports[0].onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result } }));
+    transports[0].onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result: reply } }));
     expect(transports[0].messages.map(message => message.id)).toEqual([1, 2]);
-    transports[0].onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result } }));
-    transports[0].onmessage?.(new MessageEvent('message', { data: { id: 2, kind: 'result', result } }));
+    transports[0].onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result: reply } }));
+    transports[0].onmessage?.(new MessageEvent('message', { data: { id: 2, kind: 'result', result: reply } }));
     expect(await next).toEqual(result); expect(transports).toHaveLength(1); expect(transports[0].terminated).toBe(false);
     client.dispose(); expect(transports[0].terminated).toBe(true);
   });
@@ -64,16 +67,15 @@ describe('sketch solver worker lifetime', () => {
       await vi.advanceTimersByTimeAsync(CAD_SKETCH_SOLVE_TIMEOUT_MS); await rejected;
       expect(workers).toHaveLength(1); expect(workers[0].terminated).toBe(true);
       const retry = client.solve({ graph, parameters: {} });
-      workers[1].onmessage?.(new MessageEvent('message', { data: { id: 2, kind: 'result', result } }));
+      workers[1].onmessage?.(new MessageEvent('message', { data: { id: 2, kind: 'result', result: reply } }));
       expect(await retry).toEqual(result); expect(vi.getTimerCount()).toBe(0);
     } finally { client.dispose(); vi.useRealTimers(); }
   });
-  it('rejects a changed expression driver at the worker boundary and restarts after worker errors', async () => {
+  it('rejects values for a changed expression driver at the worker boundary and restarts after worker errors', async () => {
     const workers: Transport[] = [], client = createCadSketchSolverClient(() => { const worker = new Transport(); workers.push(worker); return worker; });
     const driven = parseCadSketchGraph({ ...graph, points: [{ id: 'point', position: ['x', 0] }] });
     const pending = client.solve({ graph: driven, parameters: { x: 4 } }), rejected = expect(pending).rejects.toThrow('does not match');
-    workers[0].onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result: { ...result,
-      graph: { ...driven, points: [{ id: 'point', position: [4, 0] }] } } } }));
+    workers[0].onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result: { ...reply, values: [4, 0] } } }));
     await rejected; expect(workers[0].terminated).toBe(true);
     const retry = client.solve({ graph, parameters: {} }), stopped = expect(retry).rejects.toThrow('worker stopped');
     workers[1].onerror?.(Object.assign(new Event('error'), { message: 'stopped', filename: '', lineno: 0, colno: 0, error: new Error('stopped') })); await stopped;
@@ -87,7 +89,7 @@ describe('sketch solver worker lifetime', () => {
     const canceled = expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
     controller.abort(); await canceled;
     expect(worker.terminated).toBe(false); expect(worker.messages).toHaveLength(1);
-    worker.onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result } }));
+    worker.onmessage?.(new MessageEvent('message', { data: { id: 1, kind: 'result', result: reply } }));
     expect(await active).toEqual(result); client.dispose();
   });
 });

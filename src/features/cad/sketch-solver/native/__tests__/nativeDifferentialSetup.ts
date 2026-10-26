@@ -72,7 +72,7 @@ async function compare(input: CadSketchSolveInput, result: CadSketchSolveResult 
   if (result.kind !== 'solved') return;
   if (native.status !== 'converged') { mismatches.push(label(`native solve did not converge (residual ${native.residual})`)); return; }
   const graph = applyCadSketchEquationSolution(parsed.graph, model, native.values);
-  if (!cadSketchSolutionMatchesInput(parsed, graph)) mismatches.push(label('native solution changed fixed source geometry'));
+  if (!graph || !cadSketchSolutionMatchesInput(parsed, graph)) { mismatches.push(label('native solution changed fixed source geometry')); return; }
   const issues = checkCadSketchGraph(graph, parsed.parameters);
   if (issues.length) mismatches.push(label(`native solution fails graph checks: ${JSON.stringify(issues)}`));
   if (result.diagnostics.degreesOfFreedom !== 0) return;

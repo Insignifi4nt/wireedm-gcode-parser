@@ -40,6 +40,9 @@ describe('native sketch equations', () => {
     expect(model.values).toEqual([4, 6, 12, 7, 3, 6]);
     expect(model.fixed).toEqual([true, true, true, false, true, true]);
     expect(model.equations).toEqual([]);
+    expect(applyCadSketchEquationSolution(graph, model, [4, 6, 12, 9, 3, 6])!.points[1].position).toEqual([' w ', 9]);
+    // Only solved slots reach the graph, so a moved fixed value refuses the whole solution.
+    for (const moved of [[5, 6, 12, 9, 3, 6], [4, 6, 13, 9, 3, 6], [4, 6, 12, 9, 4, 6]]) expect(applyCadSketchEquationSolution(graph, model, moved)).toBeUndefined();
   });
 
   it('rejects drag targets until the native solver owns them', () => {
@@ -66,7 +69,7 @@ describe('native sketch solver module', () => {
     const graph = rectangles(), model = compileCadSketchEquations({ graph, parameters: {} });
     const solution = solver.solve(model);
     expect(solution.status).toBe('converged');
-    const solved = applyCadSketchEquationSolution(graph, model, solution.values);
+    const solved = applyCadSketchEquationSolution(graph, model, solution.values)!;
     expect(checkCadSketchGraph(solved, {})).toEqual([]);
     expect(solved.points.find(point => point.id === 't2')?.position).toEqual([expect.closeTo(1e-5, 14), expect.closeTo(5e-6, 14)]);
     expect(solved.points.find(point => point.id === 'h2')?.position).toEqual([expect.closeTo(9e5, 6), expect.closeTo(7e5, 6)]);
@@ -77,7 +80,7 @@ describe('native sketch solver module', () => {
     const graph = createCadBenchmarkRectangleGraph(1000, 'r', false, true), model = compileCadSketchEquations({ graph, parameters: {} });
     const solution = solver.solve(model);
     expect(solution.status).toBe('converged');
-    expect(checkCadSketchGraph(applyCadSketchEquationSolution(graph, model, solution.values), {})).toEqual([]);
+    expect(checkCadSketchGraph(applyCadSketchEquationSolution(graph, model, solution.values)!, {})).toEqual([]);
     expect(solution.diagnosis).toEqual({ kind: 'diagnosed', degreesOfFreedom: 0, labels: model.equations.map(() => 0) });
   });
 
@@ -135,11 +138,11 @@ describe('native sketch solver module', () => {
     // polishing level; steps past acceptance then gained nothing until they vanished, 50 iterations.
     const die = createCadSolverDieInput(), first = compileCadSketchEquations(die), solved = solver.solve(first);
     expect(solved.status).toBe('converged');
-    const edited = { graph: applyCadSketchEquationSolution(die.graph, first, solved.values), parameters: { ...die.parameters, slotRadius: die.parameters.slotRadius + .5 } };
+    const edited = { graph: applyCadSketchEquationSolution(die.graph, first, solved.values)!, parameters: { ...die.parameters, slotRadius: die.parameters.slotRadius + .5 } };
     const model = compileCadSketchEquations(edited), solution = solver.solve(model);
     expect(solution.status).toBe('converged');
     expect(solution.iterations).toBeLessThanOrEqual(8);
-    expect(checkCadSketchGraph(applyCadSketchEquationSolution(edited.graph, model, solution.values), edited.parameters)).toEqual([]);
+    expect(checkCadSketchGraph(applyCadSketchEquationSolution(edited.graph, model, solution.values)!, edited.parameters)).toEqual([]);
   });
 
   it('leaves a satisfied sketch untouched and survives many solves in one instance', () => {

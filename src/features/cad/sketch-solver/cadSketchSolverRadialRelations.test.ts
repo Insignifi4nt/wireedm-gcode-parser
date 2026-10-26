@@ -2,7 +2,7 @@
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { cadSketchSolvedValues, checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from './cadSketchSolverModule';
 import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
@@ -10,7 +10,7 @@ import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from '../cadSession';
 import { prepareCadEdits } from '../cadEditPreparation';
 import { CadSketchPreparationError } from '../cadSketchConstraintFeedback';
-import { parseCadSketchSolverReply } from './cadSketchSolverProtocol';
+import { cadSketchSolverWireResult, parseCadSketchSolverReply } from './cadSketchSolverProtocol';
 
 const require = createRequire(import.meta.url);
 const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
@@ -26,9 +26,10 @@ describe('real PlaneGCS explicit radial dimensions', () => {
     expect(result.graph.entities[0]).toMatchObject({ radius: 10, construction: true });
     expect(result.graph.relations).toEqual(graph.relations); expect(result.graph.points).toEqual(graph.points);
     expect(result.diagnostics.degreesOfFreedom).toBe(0); expect(checkCadSketchGraph(result.graph, { bore: 20 })).toEqual([]);
-    expect(() => parseCadSketchSolverReply({ id: 1, kind: 'result', result: { ...result, graph: { ...result.graph,
-      relations: [{ id: 'size', kind: 'radial-size', entityId: 'circle', quantity: 'radius', value: 10 }]
-    } } }, { graph, parameters: { bore: 20 } })).toThrow('does not match');
+    // Only solved values cross the worker boundary, so a reply cannot rewrite drivers or relations.
+    const wire = { id: 1, kind: 'result', result: cadSketchSolverWireResult(result) };
+    expect(parseCadSketchSolverReply(wire, { graph, parameters: { bore: 20 } })).toEqual({ id: 1, kind: 'result', result });
+    expect(() => parseCadSketchSolverReply({ ...wire, result: { ...wire.result, values: [...cadSketchSolvedValues(result.graph), 10] } }, { graph, parameters: { bore: 20 } })).toThrow('does not match');
     expect(JSON.stringify(graph)).toBe(before);
   });
 
