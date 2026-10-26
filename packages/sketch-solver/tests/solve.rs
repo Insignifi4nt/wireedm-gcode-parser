@@ -3,7 +3,7 @@ mod common;
 use common::Builder;
 use sketch_solver::equations::Kind;
 use sketch_solver::newton::Limits;
-use sketch_solver::problem::{Status, VERSION};
+use sketch_solver::problem::{Diagnosis, Status, VERSION};
 use sketch_solver::solve_buffer;
 
 fn close(a: f64, b: f64) -> bool { (a - b).abs() < 1e-9 }
@@ -433,4 +433,66 @@ fn an_accepted_point_keeps_polishing_after_one_small_real_gain() {
     let (outcome, _) = builder.outcome();
     assert_eq!(outcome.status, Status::Converged);
     assert!(outcome.residual <= 1e-15, "residual {}", outcome.residual);
+}
+
+#[test]
+fn moves_a_group_with_freedom_left_to_the_solution_nearest_its_start() {
+    // A free point on a line from a fixed point, made parallel to a fixed 30 degree reference. A
+    // Newton step on the normalized sine swings the point across the line; the answer is the
+    // projection onto it.
+    let (cos, sin) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
+    let mut builder = Builder::new();
+    let c = builder.point(35.0, 15.0, false);
+    let d = builder.point(0.0, 20.0, true);
+    let e = builder.point(60.0, 0.0, true);
+    let f = builder.point(60.0 + 20.0 * cos, 20.0 * sin, true);
+    builder.equation(Kind::Parallel, 0.0, &[c[0], c[1], d[0], d[1], e[0], e[1], f[0], f[1]]);
+    let (status, _, values) = builder.solve();
+    assert_eq!(status, 0.0);
+    let along = 35.0 * cos - 5.0 * sin;
+    assert!(close(values[0], along * cos) && close(values[1], 20.0 + along * sin), "{values:?}");
+}
+
+#[test]
+fn keeps_the_diagnosed_solution_when_a_nearer_one_is_diagnosed_differently() {
+    // A point between two others held 1 mm from each, 2 mm apart: every solution is collinear, a
+    // tangency of the two circles. A nearer solution must stand only where it is diagnosed as the
+    // returned one was, so solving the answer again finds it diagnosed with the same freedom.
+    let triangle = |b: [f64; 2], c: [f64; 2]| {
+        let mut builder = Builder::new();
+        let a = builder.point(100.0, 0.0, true);
+        let b = builder.point(b[0], b[1], false);
+        let c = builder.point(c[0], c[1], false);
+        builder.equation(Kind::Distance, 2.0, &[a[0], a[1], b[0], b[1]]);
+        builder.equation(Kind::Distance, 1.0, &[a[0], a[1], c[0], c[1]]);
+        builder.equation(Kind::Distance, 1.0, &[b[0], b[1], c[0], c[1]]);
+        builder.outcome()
+    };
+    let (first, values) = triangle([100.5, 0.0], [100.1, 0.0001]);
+    assert_eq!((first.status, first.diagnosis), (Status::Converged, Diagnosis::Diagnosed));
+    // 15 iterations converge it and 9 more go to a correction that is then rolled back; all count.
+    assert_eq!(first.iterations, 24);
+    let (again, _) = triangle([values[2], values[3]], [values[4], values[5]]);
+    assert_eq!((again.status, again.diagnosis, again.degrees_of_freedom), (Status::Converged, Diagnosis::Diagnosed, first.degrees_of_freedom));
+}
+
+#[test]
+fn reports_the_residual_of_the_values_it_returns_after_moving_nearer() {
+    // Solving the answer again starts accepted and stays put, so it reports the residual there.
+    let parallel = |c: [f64; 2], degrees: f64| {
+        let (cos, sin) = (degrees.to_radians().cos(), degrees.to_radians().sin());
+        let mut builder = Builder::new();
+        let c = builder.point(c[0], c[1], false);
+        let d = builder.point(0.0, 20.0, true);
+        let e = builder.point(60.0, 0.0, true);
+        let f = builder.point(60.0 + 20.0 * cos, 20.0 * sin, true);
+        builder.equation(Kind::Parallel, 0.0, &[c[0], c[1], d[0], d[1], e[0], e[1], f[0], f[1]]);
+        builder.outcome()
+    };
+    for degrees in [30.0, 75.0] {
+        let (first, values) = parallel([35.0, 15.0], degrees);
+        let (again, kept) = parallel([values[0], values[1]], degrees);
+        assert_eq!((again.iterations, &kept[..2]), (0, &values[..2]));
+        assert_eq!(first.residual, again.residual, "{degrees} degrees");
+    }
 }

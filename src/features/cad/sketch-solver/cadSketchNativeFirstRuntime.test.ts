@@ -235,6 +235,29 @@ describe('native-first sketch solving', () => {
     expect(Math.abs(Number(after.graph.points[1].position[1]) - 10.000001)).toBeLessThan(1e-9);
   });
 
+  it('moves a group with freedom left to the solution nearest its start, never further than PlaneGCS', async () => {
+    const { solver, records } = runtime(loadCadSketchTestNativeSolver, planeGcsSolved(failedResult));
+    const planeGcs = await createCadSketchTestSolver({ mode: 'planegcs' });
+    // Free c on a line from fixed d made parallel to a fixed reference: the nearest solution projects
+    // c onto the line through d, where a Newton step on the normalized sine swings it across.
+    for (const degrees of [0, 30, 75]) {
+      const [cos, sin] = [Math.cos(degrees * Math.PI / 180), Math.sin(degrees * Math.PI / 180)];
+      const sketch = parseCadSketchGraph({ points: [{ id: 'c', position: [35, 15] }, { id: 'd', position: ['0', '20'] },
+        { id: 'e', position: ['60', '0'] }, { id: 'f', position: [String(60 + 20 * cos), String(20 * sin)] }],
+      entities: [{ id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+        { id: 'reference', kind: 'line', construction: true, startPointId: 'e', endPointId: 'f' }],
+      relations: [{ id: 'aligned', kind: 'parallel', lineIds: ['cd', 'reference'] }] });
+      const along = 35 * cos - 5 * sin, nearest = [along * cos, 20 + along * sin];
+      const result = await solver.solve({ graph: sketch, parameters: {} }), oracle = await planeGcs.solve({ graph: sketch, parameters: {} });
+      if (result.kind !== 'solved' || oracle.kind !== 'solved') throw new Error('Both solvers solve a free parallel line.');
+      expect(records.at(-1)!.answeredBy).toBe('native');
+      result.graph.points[0].position.forEach((value, axis) => expect(Math.abs(Number(value) - nearest[axis])).toBeLessThan(1e-9));
+      const moved = (graph: typeof sketch) => Math.hypot(Number(graph.points[0].position[0]) - 35, Number(graph.points[0].position[1]) - 15);
+      expect(moved(result.graph)).toBeLessThanOrEqual(moved(oracle.graph) + 1e-9);
+      if (degrees === 0) expect(result.graph.points[0].position).toEqual([35, 20]);
+    }
+  });
+
   it.each([
     ['too-large',{ status: 'too-large' }, 'too-large'],
     ['unavailable', { diagnosis: { kind: 'unavailable' } }, 'failed'],
