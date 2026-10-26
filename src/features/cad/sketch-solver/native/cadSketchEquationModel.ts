@@ -80,6 +80,37 @@ export function applyCadSketchEquationSolution(graph: CadSketchGraph, model: Cad
   }));
 }
 
+/** The residual of `equation` at `values`, as the Rust `equations::residual` computes it. */
+export function cadSketchEquationResidual(equation: CadSketchEquation, values: readonly number[]): number {
+  const o = equation.operands.map(operand => values[operand]), value = equation.value;
+  const cross = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx, dot = (ax: number, ay: number, bx: number, by: number) => ax * bx + ay * by;
+  switch (equation.kind) {
+    case 'difference': return o[1] - o[0] - value;
+    case 'value': return o[0] - value;
+    case 'midpoint': return (o[0] + o[1]) * 0.5 - o[2];
+    case 'distance': return Math.hypot(o[2] - o[0], o[3] - o[1]) - value;
+    case 'distance-to-parameter': return Math.hypot(o[2] - o[0], o[3] - o[1]) - o[4];
+    case 'point-on-line': {
+      const dx = o[4] - o[2], dy = o[5] - o[3];
+      return cross(dx, dy, o[0] - o[2], o[1] - o[3]) / Math.hypot(dx, dy);
+    }
+    case 'parallel': case 'perpendicular': case 'angle': case 'equal-length': {
+      const ax = o[2] - o[0], ay = o[3] - o[1], bx = o[6] - o[4], by = o[7] - o[5];
+      if (equation.kind === 'parallel') return cross(ax, ay, bx, by) / (Math.hypot(ax, ay) * Math.hypot(bx, by));
+      if (equation.kind === 'perpendicular') return dot(ax, ay, bx, by) / (Math.hypot(ax, ay) * Math.hypot(bx, by));
+      if (equation.kind === 'equal-length') return Math.hypot(ax, ay) - Math.hypot(bx, by);
+      const raw = Math.atan2(cross(ax, ay, bx, by), dot(ax, ay, bx, by)) - value;
+      return raw - Math.floor((raw + Math.PI) / (2 * Math.PI)) * 2 * Math.PI;
+    }
+    case 'symmetric-midpoint': case 'symmetric-perpendicular': {
+      const dx = o[6] - o[4], dy = o[7] - o[5];
+      return equation.kind === 'symmetric-midpoint'
+        ? cross(dx, dy, (o[0] + o[2]) * 0.5 - o[4], (o[1] + o[3]) * 0.5 - o[5]) / Math.hypot(dx, dy)
+        : dot(dx, dy, o[2] - o[0], o[3] - o[1]) / Math.hypot(dx, dy);
+    }
+  }
+}
+
 /** Label bits of one diagnosed equation, as the Rust `diagnose` module sets them. */
 export const CAD_SKETCH_EQUATION_REDUNDANT = 1, CAD_SKETCH_EQUATION_CONFLICTING = 2;
 

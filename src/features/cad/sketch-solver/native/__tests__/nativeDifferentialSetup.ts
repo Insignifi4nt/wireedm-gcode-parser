@@ -122,17 +122,20 @@ vi.mock('../../cadSketchSolverRuntime', async importOriginal => {
  * what PlaneGCS rejects; PlaneGCS may rescue a native fallback only where reviewed.
  */
 function compareAnswer(input: CadSketchSolveInput, result: CadSketchSolveResult, oracle: CadSketchSolveResult | undefined, record: CadSketchSolveRecord | undefined) {
-  if (!record || record.native === undefined) return;
   const label = (message: string) => `${expect.getState().currentTestName ?? 'unknown test'}: ${message}`;
+  // Input rejected before either solver runs leaves no record; anything solved went through one.
+  if (!record || record.native === undefined) { if (result.kind === 'solved') mismatches.push(label('a solved answer has no native attempt record')); return; }
   if (record.answeredBy === 'native') answers.native += 1; else answers.planeGcs += 1;
   if (record.native !== 'answer') answers.fallbacks[record.native] = (answers.fallbacks[record.native] ?? 0) + 1;
   answers.keptGroups += record.keptGroups ?? 0;
-  if (input.drag || !oracle) return;
-  if (record.answeredBy === 'planegcs' && result.kind === 'solved' && record.native !== 'load-failed') {
+  if (input.drag) return;
+  // A rescue needs review whatever its cause, including a native instance that failed to load or trapped.
+  if (record.answeredBy === 'planegcs' && result.kind === 'solved') {
     if (reviewedRescues.get(expect.getState().currentTestName ?? '') !== record.native) mismatches.push(label(`PlaneGCS solved after native fell back (${record.native})`));
     return;
   }
   if (record.answeredBy !== 'native') return;
+  if (!oracle) { mismatches.push(label('PlaneGCS alone failed on input native answered')); return; }
   if (result.kind === 'solved' && oracle.kind !== 'solved') { answers.nativeOnlyImprovements += 1; return; }
   if (result.kind === 'solved' && oracle.kind === 'solved' && result.diagnostics.degreesOfFreedom !== 0) {
     answers.freeSolutions += 1;
@@ -159,7 +162,10 @@ vi.mock('../../__tests__/cadSketchTestSolver', async importOriginal => {
       // Suites may mutate their input after the call to prove it was captured.
       const captured = structuredClone(input);
       record = undefined;
-      const result = await inner.solve(input), solvedRecord = record, expected = await oracle.solve(captured).catch(() => undefined);
+      const result = await inner.solve(input), solvedRecord = record, expected = await oracle.solve(captured).catch((error: unknown) => {
+        mismatches.push(`${expect.getState().currentTestName ?? 'unknown test'}: PlaneGCS alone threw: ${String(error)}`);
+        return undefined;
+      });
       compareAnswer(captured, result, expected, solvedRecord);
       return result;
     } };

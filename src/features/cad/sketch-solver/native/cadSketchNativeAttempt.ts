@@ -1,7 +1,7 @@
 import { checkCadSketchGraph, type CadSketchGraph, type CadSketchGraphIssue } from '../../../../domain/cad/cadSketchGraph';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
 import { compileCadSketchEquations } from './compileCadSketchEquations';
-import { applyCadSketchEquationSolution, cadSketchEquationDiagnostics, type CadSketchEquationModel } from './cadSketchEquationModel';
+import { applyCadSketchEquationSolution, cadSketchEquationDiagnostics, cadSketchEquationResidual, type CadSketchEquationModel } from './cadSketchEquationModel';
 import type { CadSketchNativeSolution, CadSketchNativeSolver } from './cadSketchNativeSolver';
 
 /** Why the native solver did not answer a solve; PlaneGCS answers it instead while both exist. */
@@ -103,11 +103,12 @@ function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel
 }
 
 /**
- * Free values moved to the nearest 12-significant-digit decimal when that is within 8 ulps of the
- * value, and to zero when within 8 ulps of the tightest scale among the equations using it (the
- * largest operand magnitude, at least 1 mm); undefined when nothing changes. Either move is within
- * roundoff of every equation using the value, so a small driven value next to large coordinates
- * keeps its digits. Values that need more digits keep them.
+ * Values the solver moved, moved again to the nearest 12-significant-digit decimal when that is
+ * within 8 ulps of the value, and to zero when within 8 ulps of the tightest scale among the
+ * equations using it (the largest operand magnitude, at least 1 mm); undefined when nothing changes.
+ * Values the solver left alone are the caller's intent, even a few ulps from a short decimal far from
+ * the origin, and a snap that leaves any equation further from met is undone with the others of that
+ * equation, so an exact driver target stays exact. Values that need more digits keep them.
  */
 function shortDecimals(model: CadSketchEquationModel, values: readonly number[]): number[] | undefined {
   const scale = values.map(() => Infinity);
@@ -115,15 +116,23 @@ function shortDecimals(model: CadSketchEquationModel, values: readonly number[])
     const size = equation.operands.reduce((largest, operand) => Math.max(largest, Math.abs(values[operand])), 1);
     for (const operand of equation.operands) scale[operand] = Math.min(scale[operand], size);
   }
-  let changed = false;
   const snapped = values.map((value, index) => {
-    if (model.fixed[index]) return value;
+    if (model.fixed[index] || Object.is(value, model.values[index])) return value;
     const short = Math.abs(value) <= 8 * Number.EPSILON * (Number.isFinite(scale[index]) ? scale[index] : 1) ? 0 : Number(value.toPrecision(12));
-    if (short === value || short !== 0 && Math.abs(short - value) > 8 * Number.EPSILON * Math.abs(value)) return value;
-    changed = true;
-    return short;
+    return short === value || short !== 0 && Math.abs(short - value) > 8 * Number.EPSILON * Math.abs(value) ? value : short;
   });
-  return changed ? snapped : undefined;
+  // Each pass undoes at least one snap, so this ends.
+  for (let worse = true; worse;) {
+    worse = false;
+    for (const equation of model.equations) {
+      if (equation.operands.every(operand => Object.is(snapped[operand], values[operand]))) continue;
+      const before = Math.abs(cadSketchEquationResidual(equation, values)), after = Math.abs(cadSketchEquationResidual(equation, snapped));
+      if (after <= before || Number.isNaN(after) && Number.isNaN(before)) continue;
+      for (const operand of equation.operands) snapped[operand] = values[operand];
+      worse = true;
+    }
+  }
+  return snapped.some((value, index) => !Object.is(value, values[index])) ? snapped : undefined;
 }
 
 /** Connected group of each parameter through the lasting equations' free operands; fixed values never move. */

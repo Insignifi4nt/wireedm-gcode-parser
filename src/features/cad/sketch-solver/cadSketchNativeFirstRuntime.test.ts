@@ -94,10 +94,15 @@ describe('native-first sketch solving', () => {
     // The sketch-wide check tolerance would also pass zero here; the driven value is kept exactly.
     const driven = await solver.solve({ graph: far(['999999990', 5], ['999999990', '0'], [lift]), parameters: {} });
     expect(driven.kind === 'solved' && driven.graph.points[0].position).toEqual(['999999990', 0.000001]);
+    // A placement and a driver target within 8 ulps of a short decimal keep their exact digits.
+    const placed = await solver.solve({ graph: far([999999990.000001, 0], [999999990.000001, 10], [{ id: 'upright', kind: 'vertical', pointIds: ['a', 'b'] }]), parameters: {} });
+    expect(placed.kind === 'solved' && placed.graph.points.map(point => point.position[0])).toEqual([999999990.000001, 999999990.000001]);
+    const target = await solver.solve({ graph: far([999999990, '0'], [999999990, 10], [{ id: 'place', kind: 'fixed-axis', pointId: 'a', axis: 'x', value: 999999990.000001 }]), parameters: {} });
+    expect(target.kind === 'solved' && target.graph.points[0].position[0]).toBe(999999990.000001);
     // With nothing free, a relation the graph checks accept is solved, as PlaneGCS solves it.
     const fixed = await solver.solve({ graph: far(['1000000000', '0'], ['1000000000', '10'], [lift]), parameters: {} });
     expect(fixed).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: 0, conflictingIds: [], issues: [] } });
-    expect(records[1].answeredBy).toBe('native');
+    expect(records.at(-1)!.answeredBy).toBe('native');
     // An edit the sketch-wide tolerance would hide still moves its group.
     const tall = far(['999999990', '0'], [999999990, 10], [{ id: 'tall', kind: 'axis-distance', pointIds: ['a', 'b'], axis: 'y', value: 'height' }]);
     const before = await solver.solve({ graph: tall, parameters: { height: 10 } });
