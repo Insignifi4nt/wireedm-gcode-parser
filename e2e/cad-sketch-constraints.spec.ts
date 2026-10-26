@@ -1573,7 +1573,9 @@ test('solves a saved entity sketch through WebMCP, rejects conflicts and exports
     { kind: 'set-sketch-relation', sketchId: 'outline', relation: { id: 'conflict', kind: 'distance', pointIds: ['a', 'b'], value: 10 } }
   ] });
   expect(conflict.ok).toBe(false); expect((await context(page)).version).toBe(current.version);
-  expect(nativeRequests.filter(url => url.includes('planegcs'))).toHaveLength(1);
+  // The native solver diagnoses the conflict itself, so PlaneGCS is never fetched.
+  expect(nativeRequests.some(url => url.includes('sketch_solver'))).toBe(true);
+  expect(nativeRequests.some(url => url.includes('planegcs'))).toBe(false);
   expect(nativeRequests.some(url => url.includes('replicad_single') || url.includes('occt-import-js'))).toBe(false);
   await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: {
     id: 'pad', kind: 'extrude', name: 'Plate', suppressed: false, sketchId: 'outline', distance: 5, symmetric: false, operation: 'new', targetId: null
