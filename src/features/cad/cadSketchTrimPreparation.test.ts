@@ -1,13 +1,9 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { prepareCadSketchTrim, trimCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
 import { prepareCadEdits } from './cadEditPreparation';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
 import { middleTrim, middleTrimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
 import { circleTrimPart } from '@/domain/cad/__tests__/cadSketchCircleTrimFixtures';
 import { CadSession } from './cadSession';
@@ -15,10 +11,9 @@ import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { middleArcTrimPart, middleArcTrimTarget } from '@/domain/cad/__tests__/cadSketchMiddleArcTrimFixtures';
 import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
 import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
-  require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 
 describe('real PlaneGCS exact end-Trim preparation', () => {
   it.each([false, true])('preserves the complete middle-arc candidate with fixed endpoint drivers=%s', async fixed => {
@@ -100,7 +95,7 @@ describe('real PlaneGCS exact end-Trim preparation', () => {
     ], runtime)).document).catch((error: unknown) => error);
     expect(failed).toBeInstanceOf(CadSketchPreparationError);
     if (!(failed instanceof CadSketchPreparationError)) throw new Error('Expected structured radius rejection.');
-    expect(failed.feedback).toMatchObject({ reason: 'invalid-solution', subjects: [expect.objectContaining({ source: { kind: 'relation', id: 'incompatible-radius' } })] });
+    expect(failed.feedback).toMatchObject({ reason: 'conflicting', subjects: [expect.objectContaining({ source: { kind: 'relation', id: 'incompatible-radius' } })] });
     expect(session.getSnapshot()).toBe(before); expect(JSON.stringify(document)).toBe(original);
   });
 

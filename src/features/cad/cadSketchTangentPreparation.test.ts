@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { tangentJoint, tangentPart, tangentSketch } from '@/domain/cad/__tests__/cadSketchTangentFixtures';
 import { checkCadSketchGraph } from '@/domain/cad/cadSketchGraph';
@@ -9,11 +7,9 @@ import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 const set = { kind: 'set-sketch-relation', sketchId: 'sketch', relation: tangentJoint } as const;
 describe('prepared line–arc tangent joint', () => {
   it('removes exactly one free degree without changing topology, tuple or any source scalar', async () => {
@@ -39,14 +35,16 @@ describe('prepared line–arc tangent joint', () => {
     expect(Number(graph.points[3].position[0])).toBeCloseTo(8, 12);
     expect(checkCadSketchGraph(graph, changed.document.parameters)).toEqual([]);
   });
-  it.each(['cusp', 'wrong'] as const)('independently rejects fixed %s after real native Success and retains the complete session', async mode => {
+  it.each(['cusp', 'wrong'] as const)('rejects fixed %s geometry and retains the complete session', async mode => {
     const session = new CadSession(tangentPart(mode)), before = session.getSnapshot(); let failure: unknown;
     try { await session.editPrepared(before.version, async document => (await prepareCadEdits(document, [{ kind: 'set-parameter', name: 'retained', value: 99 }, set], runtime)).document); }
     catch (error) { failure = error; }
     expect(failure).toBeInstanceOf(CadSketchPreparationError);
     if (!(failure instanceof CadSketchPreparationError)) throw new Error('Expected structured rejection.');
-    expect(failure.diagnostics).toMatchObject({ status: 'success', degreesOfFreedom: 0, conflictingIds: [], redundantIds: [],
-      issues: [expect.objectContaining({ source: { kind: 'relation', id: 'tangent' }, code: 'relation-residual' })] });
+    // With nothing free, the native solver names an unmet tangency itself; a met tangency at a cusp is left to the graph checks.
+    expect(failure.diagnostics).toMatchObject(mode === 'wrong' ? { status: 'failed', degreesOfFreedom: null, conflictingIds: ['tangent'], redundantIds: [], issues: [] }
+      : { status: 'success', degreesOfFreedom: 0, conflictingIds: [], redundantIds: [],
+        issues: [expect.objectContaining({ source: { kind: 'relation', id: 'tangent' }, code: 'relation-residual' })] });
     expect(session.getSnapshot()).toBe(before);
   });
   it('keeps a linked line fixed numeric while its distinct coincident arc endpoint and radius follow', async () => {

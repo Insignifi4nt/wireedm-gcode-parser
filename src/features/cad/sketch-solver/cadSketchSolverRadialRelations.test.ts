@@ -1,19 +1,16 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { cadSketchSolvedValues, checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './cadSketchSolverModule';
 import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from '../cadSession';
 import { prepareCadEdits } from '../cadEditPreparation';
 import { CadSketchPreparationError } from '../cadSketchConstraintFeedback';
 import { cadSketchSolverWireResult, parseCadSketchSolverReply } from './cadSketchSolverProtocol';
+import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 
 describe('real PlaneGCS explicit radial dimensions', () => {
   it('solves a displayed diameter into free numeric circle radius while retaining its exact driver text', async () => {

@@ -23,8 +23,14 @@ export type CadSketchNativeDiagnosis =
   | { readonly kind: 'unavailable' };
 
 export interface CadSketchNativeSolver {
+  /** Throws once the instance has stopped: after a trap or an invalid result it never runs again. */
   solve(model: CadSketchEquationModel): CadSketchNativeSolution;
+  /** Bytes of linear memory the instance holds; it never shrinks. */
+  memoryBytes(): number;
 }
+
+/** The module speaks another buffer protocol; no instance of it can be used. */
+export class CadSketchNativeProtocolError extends Error {}
 
 interface Exports {
   readonly memory: WebAssembly.Memory;
@@ -50,7 +56,9 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
   const exports = instance.exports;
   if (!isExports(exports)) throw new Error('The native sketch solver module has unexpected exports.');
   observeMemory?.(exports.memory);
-  return { solve(model) {
+  let stopped = false;
+  return { memoryBytes: () => exports.memory.buffer.byteLength, solve(model) {
+    if (stopped) throw new Error('The native sketch solver instance stopped after a failure.');
     const input = encodeCadSketchEquationModel(model);
     const pointer = exports.buffer_alloc(input.length);
     let output: number | undefined;
@@ -61,7 +69,7 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
       const length = new Float64Array(exports.memory.buffer, output, 1)[0];
       const result = new Float64Array(exports.memory.buffer, output, length).slice();
       const [, version, status, iterations, residual, diagnosed, degreesOfFreedom] = result;
-      if (version !== CAD_SKETCH_NATIVE_PROTOCOL_VERSION) throw new Error('The native sketch solver replied with another protocol version.');
+      if (version !== CAD_SKETCH_NATIVE_PROTOCOL_VERSION) throw new CadSketchNativeProtocolError('The native sketch solver replied with another protocol version.');
       if (status === 2) throw new Error('The native sketch solver rejected its input.');
       const values = Array.from(result.subarray(HEADER, HEADER + model.values.length)), labels = Array.from(result.subarray(HEADER + model.values.length));
       const kind = STATUSES[status], diagnosis = DIAGNOSES[diagnosed];
@@ -72,9 +80,16 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
       return { status: kind, iterations, residual, values, diagnosis: diagnosis === 'diagnosed'
         ? { kind: diagnosis, degreesOfFreedom: Number.isNaN(degreesOfFreedom) ? null : degreesOfFreedom, labels }
         : diagnosis === 'unavailable' ? { kind: diagnosis } : { kind: diagnosis, labels } };
+    } catch (error) {
+      // A trap can leave the allocator inconsistent, and an invalid result means the module cannot be
+      // trusted: nothing is freed and the instance never runs again.
+      stopped = true;
+      throw error;
     } finally {
-      exports.buffer_free(pointer, input.length);
-      if (output !== undefined) exports.buffer_free(output, new Float64Array(exports.memory.buffer, output, 1)[0]);
+      if (!stopped) {
+        exports.buffer_free(pointer, input.length);
+        if (output !== undefined) exports.buffer_free(output, new Float64Array(exports.memory.buffer, output, 1)[0]);
+      }
     }
   } };
 }

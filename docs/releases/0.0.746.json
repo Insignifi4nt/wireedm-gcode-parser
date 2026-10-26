@@ -1,0 +1,25 @@
+{
+  "version": "0.0.746",
+  "previousVersion": "0.0.745",
+  "postCompatibility": "preserved-output-native-first-sketch-solver",
+  "summary": "Sketches are solved by the app's own native solver first. PlaneGCS now answers only drag targets and the solves native cannot answer for: input it cannot compile, a group too large for it, an unavailable, suspected or unknown-freedom diagnosis, no convergence, or a solution that moves a fixed value or fails the graph checks. PlaneGCS loads on first use rather than with the worker. Native answers a converged, fully diagnosed solution that passes the graph checks, and definite conflicts and redundancies; when PlaneGCS does no better than native's own rejection, native's rejection stands. A failed native instance is replaced on the next solve, and one holding more than 64 MiB is replaced after its solve. Connected groups whose start already passed the graph checks keep their exact start values, so an edit moves only the geometry it affects, and values within a few ulps of a 12-digit decimal or of zero are tried at that decimal first. For the die, from medians of interleaved Node runs at about 65 to 75 ms of calibration, the first solve falls from 1.22 to 0.67 ms, a 0.5 mm dimension edit from about 2.4 to 1.3 ms, and the first answer from a fresh process from about 21 to 8.4 ms; a drag still takes about 1.75 ms, and the first drag after native solves takes about 19 ms because it loads PlaneGCS. The native module keeps 1.19 MiB of memory against PlaneGCS's 21 MiB.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Some sketch rejections change kind and wording: when nothing in a sketch is free and a relation is not met, the relation is now named as conflicting (status failed, no degrees of freedom) instead of being reported as an invalid solution with its residual; a relation that repeats another now names the newly added one as redundant instead of the earlier one; and a free chamfer edit that PlaneGCS solved outside the graph checks now solves. Solved sketches can differ from PlaneGCS's in the last digits, and an edit no longer nudges untouched groups by roundoff.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal, worker reply or native buffer protocol schema change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields; their sketch rejections follow the changed kinds above.",
+    "capabilities": "No post or machine capability change. No new application controls; the solver mode is fixed to native first in the app, and the PlaneGCS-only and native-only modes exist for tests and benchmarks.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Runtime tests cover native answers without loading PlaneGCS, one PlaneGCS load for drags, input captured before the first wait, every fallback reason with PlaneGCS solving, PlaneGCS failing and PlaneGCS throwing, native conflicts answered natively, remembered load failures, replacement after a trap or a memory limit, a protocol mismatch that stops native for good, the comparison modes, exact accepted groups kept across a PlaneGCS solution and an edit, short-decimal snapping, and a hand-built module whose trap stops the instance without freeing through it. The sketch suites now solve through the native-first runtime; their expectations changed only for the rejection kinds above. The native-differential project compares every native-first answer with a PlaneGCS answer to the same input: native never rejected what PlaneGCS solved, only drags were rescued, and native never moved a free solution further from its start than PlaneGCS. The CAD and full unit suites pass. Timings are medians of 100 runs for the first solve and three sets of 30 for the edit and drag, both solvers interleaved, and nine cold probes in fresh processes spaced to avoid throttling."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Solves sketches with the app's own solver.",
+    "changes": [
+      "Solves and edits sketches about twice as fast and starts the sketch solver sooner, using much less memory.",
+      "Names an unmet relation as conflicting when nothing in the sketch can move, and names a repeated relation that was just added as redundant."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

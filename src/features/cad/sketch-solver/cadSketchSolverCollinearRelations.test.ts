@@ -1,17 +1,13 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { checkCadSketchGraph, parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './cadSketchSolverModule';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from '../cadSession';
 import { prepareCadEdits } from '../cadEditPreparation';
 import { CadSketchPreparationError } from '../cadSketchConstraintFeedback';
+import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 
 function freePair(shared = false, reverse = false) {
   return parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] },
@@ -67,15 +63,15 @@ describe('real PlaneGCS collinear support', () => {
     expect(JSON.stringify(graph)).toBe(before);
   });
 
-  it('keeps native redundancy IDs source-owned and rejects a fixed parallel offset atomically even when native says Success', async () => {
+  it('keeps redundancy IDs source-owned and rejects a fixed parallel offset atomically', async () => {
     const graph = freePair(), solved = await runtime.solve({ graph, parameters: {} });
     if (solved.kind !== 'solved') throw new Error(JSON.stringify(solved));
     const duplicate = await runtime.solve({ graph: parseCadSketchGraph({ ...solved.graph, relations: [...solved.graph.relations,
       { id: 'duplicate', kind: 'collinear', lineIds: ['right', 'left'] }] }), parameters: {} });
     expect(duplicate).toMatchObject({ kind: 'rejected', reason: 'redundant' });
-    // Native analysis chooses the earlier source relation as redundant. Keep
-    // that result rather than relabeling it as the newly attempted relation.
-    expect(duplicate.diagnostics.redundantIds).toEqual(['support']);
+    // The native solver sets aside the relation that repeats, here the newly attempted one;
+    // PlaneGCS set aside the earlier one. Neither is relabelled.
+    expect(duplicate.diagnostics.redundantIds).toEqual(['duplicate']);
     expect([...duplicate.diagnostics.redundantIds, ...duplicate.diagnostics.partiallyRedundantIds]).not.toContain('$collinear-on:duplicate');
     const fixed = parseCadSketchGraph({ ...graph, points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: ['10', '0'] },
       { id: 'c', position: ['20', ' offset '] }, { id: 'd', position: ['30', ' offset '] }], relations: [] });
@@ -91,10 +87,10 @@ describe('real PlaneGCS collinear support', () => {
     ], runtime)).document).catch((cause: unknown) => cause);
     expect(failure).toBeInstanceOf(CadSketchPreparationError);
     if (!(failure instanceof CadSketchPreparationError)) throw new Error('Expected structured rejected support intent.');
-    expect(failure.diagnostics).toMatchObject({ status: 'success', degreesOfFreedom: 0, conflictingIds: [], redundantIds: [],
-      issues: [{ source: { kind: 'relation', id: 'support' }, code: 'relation-residual', residualMm: 3 }] });
+    // With nothing free, the native solver names the unmet relation itself.
+    expect(failure.diagnostics).toMatchObject({ status: 'failed', degreesOfFreedom: null, conflictingIds: ['support'], redundantIds: [], issues: [] });
     expect(failure.feedback.subjects).toMatchObject([{ source: { kind: 'relation', id: 'support' }, label: 'Collinear relation 1 · Line 1 and Line 2',
-      pointIds: ['a', 'b', 'c', 'd'], entityIds: ['left', 'right'], residualMm: 3 }]);
+      pointIds: ['a', 'b', 'c', 'd'], entityIds: ['left', 'right'], category: 'conflicting' }]);
     expect(session.getSnapshot()).toBe(accepted);
   });
 });

@@ -1,19 +1,14 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { prepareCadSketchExtend, extendCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
 import { prepareCadEdits } from './cadEditPreparation';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
 import { arcExtendPart, arcExtendTarget } from '@/domain/cad/__tests__/cadSketchArcExtendFixtures';
 import { CadSession } from './cadSession';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
-  require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 
 async function prepared(graph: CadSketchGraph, entityId: string, parameters: Readonly<Record<string, number>>, endPointId: string) {
   const document = parseCadDocument({ ...createCadDocument('Line extension', 'line-extension'), schemaVersion: 2, parameters,

@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { compileCadSketchGeometry } from '@/domain/cad/compileCadSketchGeometry';
@@ -9,13 +7,10 @@ import { offsetCirclePart, offsetGraphPart, offsetSlotPart } from '@/domain/cad/
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { needsCadSketchPreparation, prepareCadEdits } from './cadEditPreparation';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
 import { CadSession } from './cadSession';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
-  require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 const sketchOf = (document: ReturnType<typeof offsetGraphPart>) => {
   const sketch = document.features[0]; if (sketch.kind !== 'sketch') throw new Error('Offset sketch missing.'); return sketch;
 };

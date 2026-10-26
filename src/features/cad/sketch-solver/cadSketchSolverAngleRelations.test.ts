@@ -1,17 +1,13 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { checkCadSketchGraph, parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './cadSketchSolverModule';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from '../cadSession';
 import { prepareCadEdits } from '../cadEditPreparation';
 import { CadSketchPreparationError } from '../cadSketchConstraintFeedback';
+import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 function corner(degrees: number, sense: 'cw' | 'ccw' = 'ccw') {
   return parseCadSketchGraph({ points: [{ id: 'v', position: [' 0 ', '0'] }, { id: 'a', position: ['10', '0'] },
     { id: 'b', position: degrees > 90 ? [-3, 12] : [9, sense === 'cw' ? -14 : 14] }], entities: [
@@ -75,16 +71,16 @@ describe('real PlaneGCS explicit line angles', () => {
     expect(result.graph.relations).toEqual(graph.relations); expect(checkCadSketchGraph(result.graph, {})).toEqual([]);
   });
 
-  it('independently rejects all-string fixed wrong sectors even when native Success supplies no conflict IDs', async () => {
+  it('names an all-string fixed wrong sector as conflicting', async () => {
     const source = corner(30), graph = parseCadSketchGraph({ ...source, points: source.points.map(point => point.id === 'b' ? { ...point, position: ['0', '10'] } : point),
       relations: source.relations.filter(relation => relation.id !== 'length') }), before = JSON.stringify(graph);
     const result = await runtime.solve({ graph, parameters: {} });
-    expect(result).toMatchObject({ kind: 'rejected', reason: 'invalid-solution', diagnostics: { status: 'success', conflictingIds: [], redundantIds: [],
-      issues: [{ source: { kind: 'relation', id: 'angle' }, code: 'relation-residual' }] } });
+    // With nothing free, the native solver names the unmet relation itself.
+    expect(result).toMatchObject({ kind: 'rejected', reason: 'conflicting', diagnostics: { ...{ status: 'failed', degreesOfFreedom: null, conflictingIds: ['angle'], issues: [] }, redundantIds: [] } });
     if (result.kind !== 'rejected') throw new Error('Expected rejection.');
     const error = new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Corner', graph, rejection: result });
     expect(error.feedback.subjects[0]).toMatchObject({ label: 'Angle relation 1 · Line 2 and Line 1',
-      pointIds: ['a', 'v', 'b'], entityIds: ['reference', 'moving'], category: 'issue' });
+      pointIds: ['a', 'v', 'b'], entityIds: ['reference', 'moving'], category: 'conflicting' });
     expect(JSON.stringify(graph)).toBe(before);
   });
 });
