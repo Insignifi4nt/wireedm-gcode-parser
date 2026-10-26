@@ -82,6 +82,13 @@ describe('sketch solver input boundary', () => {
     // Transparent proxies around plain fields are read like the fields they wrap.
     const drag = { pointId: 'b', position: new Proxy([10, 1], {}) };
     expect(parseCadSketchSolveInput({ graph, parameters: new Proxy({ span: 10 }, {}), drag: new Proxy(drag, {}) })).toEqual({ graph, parameters: { span: 10 }, drag: { pointId: 'b', position: [10, 1] } });
+    // A `__proto__` field is copied as data, never through the inherited setter.
+    const prototypeNamed = parseCadSketchSolveInput({ graph, parameters: JSON.parse('{"span":10,"__proto__":10}') }).parameters;
+    expect(Object.getOwnPropertyDescriptor(prototypeNamed, '__proto__')?.value).toBe(10);
+    expect(() => parseCadSketchSolveInput(Object.assign(JSON.parse('{"__proto__":1}'), { graph, parameters: { span: 10 } }))).toThrow('Invalid sketch solver input.');
+    // An array whose extra named key stands in for an index count is refused, as before the copy.
+    const padded = new Proxy(Object.assign([10, 1], { extra: true }), { ownKeys: () => ['0', 'length', 'extra'] });
+    expect(() => parseCadSketchSolveInput({ graph, parameters: { span: 10 }, drag: { pointId: 'b', position: padded } })).toThrow('Invalid sketch solver input.');
     const revoked = Proxy.revocable({}, {}); revoked.revoke();
     expect(() => parseCadSketchSolveInput(revoked.proxy)).toThrow('Invalid sketch solver input.');
     expect(() => parseCadSketchSolveInput({ parameters: { span: 10 } })).toThrow('Invalid sketch solver input.');

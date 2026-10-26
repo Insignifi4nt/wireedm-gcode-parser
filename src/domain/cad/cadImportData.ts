@@ -84,6 +84,8 @@ export function cadImportDataCopy(value: unknown): unknown {
         if (Object.getPrototypeOf(item) !== Array.prototype) return undefined;
         const names = Reflect.ownKeys(item), length: unknown = Object.getOwnPropertyDescriptor(item, 'length')?.value;
         if (typeof length !== 'number' || !Number.isSafeInteger(length) || names.length !== length + 1) return undefined;
+        // The count alone would let an extra named key stand in for a missing index.
+        if (names.some(name => name !== 'length' && (typeof name !== 'string' || String(Number(name)) !== name || !Number.isSafeInteger(Number(name)) || Number(name) < 0 || Number(name) >= length))) return undefined;
         const result: unknown[] = [];
         for (let index = 0; index < length; index++) {
           const field = Object.getOwnPropertyDescriptor(item, String(index));
@@ -100,7 +102,8 @@ export function cadImportDataCopy(value: unknown): unknown {
       for (const [name, field] of Object.entries(fields)) {
         const entry = copy(field);
         if (entry === undefined) return undefined;
-        result[name] = entry;
+        // Defined, not assigned: assigning a `__proto__` field would call the inherited setter.
+        Object.defineProperty(result, name, { value: entry, enumerable: true, writable: true, configurable: true });
       }
       return result;
     } catch {
