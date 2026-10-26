@@ -25,15 +25,15 @@
 //! Near a singular configuration, as a point a little off where its circle touches its line, rank
 //! at `TAU` is unclear for a solved sketch too. A row whose insertion or witness cannot be decided
 //! is left out, which leaves the factor as it was, so later rows are decided as before; the
-//! diagnosis is then not `certain`, and neither is one whose smallest singular value estimate is
-//! below `CERTAIN`. Its witnesses are dependencies found, but more may exist, so freedom is
+//! diagnosis is then not `certain`, and neither is one whose independent rows are not shown to
+//! have a smallest singular value of at least `CERTAIN`. Its witnesses are dependencies found, but more may exist, so freedom is
 //! unknown.
 
 use crate::sparse::SparseRow;
 
 /// Distance from the span of earlier rows, for rows of unit norm, below which a row is dependent.
 pub const TAU: f64 = 1e-10;
-/// Smallest singular value estimate of the independent rows below which rank is not certain.
+/// Smallest singular value the independent rows must be shown to reach for rank to be certain.
 const CERTAIN: f64 = 1e3 * TAU;
 /// Dependence distance for a group that stalled short of the nearest point of a conflict: about
 /// seven times the largest distance seen there, so that independent pairs held near-singular
@@ -56,7 +56,7 @@ pub struct Row {
 pub struct Diagnosis {
     pub rank: usize,
     pub witnesses: Vec<Witness>,
-    /// Every row was decided and the independent rows' smallest singular value estimate passed
+    /// Every row was decided and the independent rows' smallest singular value was shown to reach
     /// `CERTAIN`. Otherwise rank is unclear: the witnesses found are dependencies within
     /// `distance`, but more may exist, so freedom is unknown.
     pub certain: bool,
@@ -444,21 +444,21 @@ fn two_product(a: f64, b: f64) -> (f64, f64) {
     (product, ((ah * bh - product) + ah * bl + al * bh) + al * bl)
 }
 
-/// Most independent rows whose singular values are computed densely when the pivot columns leave
-/// rank unclear; with more, rank stays unclear.
+/// Most independent rows whose singular values are computed densely when the bound over the pivot
+/// columns leaves rank unclear; with more, rank stays unclear.
 const DENSE_RANK: usize = 32;
 
 /// Whether the independent unit rows that `r` factors are clear of dependence: their smallest
-/// singular value is at least `CERTAIN`. The estimate over the pivot columns is cheap and can only
-/// be lower than the rows' own, so it decides when it reaches `CERTAIN`. A row whose lead is small
-/// beside its entries in columns without pivots, as a nearly straight arm's, leaves the pivot
+/// singular value is at least `CERTAIN`. Leaving out the columns without pivots can only lower it,
+/// so a lower bound over the pivot columns that reaches `CERTAIN` decides. A row whose lead is
+/// small beside its entries in columns without pivots, as a nearly straight arm's, leaves the pivot
 /// columns ill conditioned though the rows are not, so below it the rows' singular values are
-/// computed, not estimated: an estimate from above could miss a weak direction and call it clear.
-/// They are those of `S` in `R^T = Q S`, taken densely for at most `DENSE_RANK` rows and with an
-/// absolute accuracy of about `epsilon`; more rows, or an `S` that would hold more than
-/// `work.fill` entries, leave rank unclear. `None` when the work runs out.
+/// computed: those of `S` in `R^T = Q S`, taken densely for at most `DENSE_RANK` rows and with an
+/// absolute accuracy of about `epsilon`. More rows, or an `S` that would hold more than `work.fill`
+/// entries, leave rank unclear. No estimate decides, since one from above can miss a weak
+/// direction and call it clear. `None` when the work runs out.
 fn clear_of_dependence(r: &[SparseRow], work: &mut Work) -> Option<bool> {
-    if smallest_singular_value(r, work)? >= CERTAIN { return Some(true); }
+    if floor_over_pivots(r, work)? >= CERTAIN { return Some(true); }
     let pivots: Vec<usize> = (0..r.len()).filter(|&k| !r[k].is_empty()).collect();
     let m = pivots.len();
     if m > DENSE_RANK { return Some(false); }
@@ -480,23 +480,36 @@ fn clear_of_dependence(r: &[SparseRow], work: &mut Work) -> Option<bool> {
     Some(values.last().is_some_and(|&least| least >= CERTAIN))
 }
 
-/// Estimate of the smallest singular value of `R` over the columns with pivots, by four inverse
-/// iterations on `R^T R` from a fixed start. Inverse iteration approaches it from above, so this
-/// is an estimate, not a certificate. Leaving out the columns without pivots can only lower the
-/// value.
-fn smallest_singular_value(r: &[SparseRow], work: &mut Work) -> Option<f64> {
-    let mut x: Vec<f64> = (0..r.len()).map(|k| if r[k].is_empty() { 0.0 } else if k % 2 == 0 { 1.0 } else { -0.7 }).collect();
-    let mut estimate = f64::INFINITY;
-    for _ in 0..4 {
-        let norm = x.iter().map(|v| v * v).sum::<f64>().sqrt();
-        if norm == 0.0 || !norm.is_finite() { return Some(0.0); }
-        for v in &mut x { *v /= norm; }
-        let z = seminormal(r, x, work)?;
-        let grown = z.iter().map(|v| v * v).sum::<f64>().sqrt();
-        estimate = if grown > 0.0 { grown.sqrt().recip() } else { f64::INFINITY };
-        x = z;
+/// A lower bound on the smallest singular value of `R` over the columns with pivots, the upper
+/// triangle `T`: `1 / ||T^-1||_F`, since `||T^-1||_2 <= ||T^-1||_F`, which is at most `sqrt(rank)`
+/// times larger. Each row of `T^-1` comes from a triangular solve, backward stable, that visits
+/// only the pivots it reaches. Zero once the bound falls below `CERTAIN`; `None` when the work runs
+/// out.
+fn floor_over_pivots(r: &[SparseRow], work: &mut Work) -> Option<f64> {
+    use std::{cmp::Reverse, collections::BinaryHeap};
+    let n = r.len();
+    let (mut b, mut queued, mut reached) = (vec![0.0; n], vec![false; n], BinaryHeap::new());
+    let (mut total, limit) = (0.0, (CERTAIN * CERTAIN).recip());
+    for j in (0..n).filter(|&j| !r[j].is_empty()) {
+        // `T^T y = e_j` by columns of `T^T`, the rows of `T`, in increasing pivot order.
+        (b[j], queued[j]) = (1.0, true);
+        reached.push(Reverse(j));
+        let mut entries = 0;
+        while let Some(Reverse(k)) = reached.pop() {
+            let y = b[k] / r[k][0].1;
+            (b[k], queued[k]) = (0.0, false);
+            total += y * y;
+            entries += r[k].len();
+            for &(c, x) in &r[k][1..] {
+                if r[c].is_empty() { continue; }
+                b[c] -= x * y;
+                if !queued[c] { queued[c] = true; reached.push(Reverse(c)); }
+            }
+        }
+        work.spend(entries)?;
+        if !(total <= limit) { return Some(0.0); }
     }
-    Some(estimate)
+    Some(total.sqrt().recip())
 }
 
 /// Labels for equations with constraint `tags`, which never decrease, from the witnesses of all

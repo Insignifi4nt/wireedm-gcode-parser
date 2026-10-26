@@ -333,6 +333,17 @@ fn a_weak_direction_hidden_from_the_pivot_columns_is_still_found() {
 }
 
 #[test]
+fn a_weak_direction_an_estimate_from_above_misses_is_still_found() {
+    // Every lead passes `TAU`, and an inverse iteration from a fixed start estimates the smallest
+    // singular value at about 1.2e-7, yet (0, 1, 0.7) is held only to about 9e-9: rank is unclear.
+    let rows: Vec<Row> = [[1.0, -4.6e-8, 7.21e-8], [1.0, 5.2e-8, -6.79e-8], [1.0, -6e-9, -4.2e-9]]
+        .iter().map(|row| Row { entries: row.iter().copied().enumerate().collect(), residual: 0.0, tolerance: 1e-10 }).collect();
+    let (found, _) = sketch_solver::diagnose::diagnose(3, &rows, TAU, 1_000_000, 1_000);
+    let found = found.expect("diagnosed");
+    assert_eq!((found.rank, found.witnesses.len(), found.certain), (3, 0, false));
+}
+
+#[test]
 fn rows_clear_beyond_their_pivot_columns_are_checked_within_the_fill_limit() {
     // Row i is 1e-8 in x_i, 1 in y_i and 0.1 in a shared z: each lead is tiny, so the pivot columns
     // look nearly singular, but the rows are well conditioned. The shared z fills their transposed
