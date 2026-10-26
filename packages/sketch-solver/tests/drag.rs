@@ -71,9 +71,11 @@ fn a_dragged_point_leaves_the_far_side_of_its_circle() {
 
 #[test]
 fn a_target_at_the_centre_keeps_the_point_on_its_circle() {
+    // Every point of the circle is equally near: flat, so not certified, but the point still stands
+    // on its circle.
     let (outcome, p) = circle([0.0, 0.0], 10.0, [6.0, 8.0], [0.0, 0.0]);
     assert!((p[0].hypot(p[1]) - 10.0).abs() <= 1e-10, "{p:?}");
-    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
+    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Stalled)));
     assert!((outcome.target_distance - 10.0).abs() <= 1e-10);
 }
 
@@ -423,4 +425,86 @@ fn a_slight_negative_curvature_is_followed() {
     // The nearest point curves only 1e-6 per mm, so its distance is resolved before its place.
     assert!(near(p, [-1000.0, 0.0], 1e-3) && (outcome.target_distance - 999.999).abs() <= 1e-9, "{p:?} {}", outcome.target_distance);
     assert_eq!(outcome.drag, Some(DragOutcome::Projected));
+}
+
+#[test]
+fn a_radius_between_fixed_points_is_a_linear_row() {
+    // |O - O| = r with both points fixed is -r = 0, so x = r holds the target's coordinate.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let q = builder.point(0.0, 0.0, true);
+    let r = builder.parameter(0.0, false);
+    let x = builder.parameter(0.0, false);
+    builder.equation(Kind::DistanceToParameter, 0.0, &[o[0], o[1], q[0], q[1], r]);
+    builder.equation(Kind::Difference, 0.0, &[r, x]);
+    builder.temporary(Kind::Value, 1.0, &[x]);
+    let (outcome, values) = builder.outcome();
+    assert!(values[r].abs() <= 1e-30 && values[x].abs() <= 1e-30, "{} {}", values[r], values[x]);
+    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
+}
+
+#[test]
+fn a_landing_polish_out_of_work_leaves_the_landing_as_it_was() {
+    // Every row is accepted at the start and the target is where P already is; the polish runs
+    // out of work part way and must not leave Q moved off its accepted place.
+    let mut builder = Builder::new();
+    let p = builder.point(0.0, 0.0, false);
+    let q = builder.point(1e-5, 1.0, false);
+    let c = builder.point(0.0, 2.0, true);
+    builder.equation(Kind::Distance, 1.0, &[p[0], p[1], q[0], q[1]]);
+    builder.equation(Kind::Distance, 1.0, &[c[0], c[1], q[0], q[1]]);
+    builder.equation(Kind::Distance, 1.0 + 1.2e-10, &[p[0], p[1], q[0], q[1]]);
+    builder.temporary(Kind::Value, 0.0, &[p[0]]);
+    builder.temporary(Kind::Value, 0.0, &[p[1]]);
+    for work in 150..400 {
+        let (outcome, values) = builder.outcome_within(Limits { fill: 1_000_000, work });
+        if outcome.status == Status::TooLarge { assert_eq!([values[q[0]], values[q[1]]], [1e-5, 1.0], "work {work}"); }
+    }
+}
+
+#[test]
+fn a_collapsed_distance_beside_a_large_multiplier_is_not_certified() {
+    // A far target on Q, held by two unit circles, makes every other multiplier small beside its
+    // own; the collapsed |B| = r still may open and let x reach its target.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let b = builder.point(0.0, 0.0, false);
+    let q = builder.point(0.0, 0.0, false);
+    let r = builder.parameter(0.0, false);
+    let x = builder.parameter(0.0, false);
+    let first = builder.point(-1.0, 0.0, true);
+    let second = builder.point(-(0.0005f64).cos(), -(0.0005f64).sin(), true);
+    builder.equation(Kind::DistanceToParameter, 0.0, &[o[0], o[1], b[0], b[1], r]);
+    builder.equation(Kind::Difference, 0.0, &[r, x]);
+    builder.equation(Kind::Difference, 0.0, &[b[1], q[0]]);
+    builder.equation(Kind::Distance, 1.0, &[first[0], first[1], q[0], q[1]]);
+    builder.equation(Kind::Distance, 1.0, &[second[0], second[1], q[0], q[1]]);
+    builder.temporary(Kind::Value, 0.01, &[x]);
+    builder.temporary(Kind::Value, 1e9, &[q[1]]);
+    let (outcome, _) = builder.outcome();
+    assert_ne!(outcome.drag, Some(DragOutcome::Projected), "{outcome:?}");
+}
+
+#[test]
+fn a_far_side_point_with_a_long_doubling_chain_still_leaves() {
+    // (x, u) on a unit circle at its far side from x = 3, with v1 = 2u, v2 = 2 v1, ... v18 = 2 v17:
+    // the null direction barely moves the point, so its projector weight on the support is about
+    // 4^-18, below any fixed cutoff, yet the point can still leave. Each step moves v18 2^18 times
+    // as far as the point, so it may run out of work on the way, but never certifies short of x = 1.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let x = builder.parameter(-1.0, false);
+    let u = builder.parameter(0.0, false);
+    builder.equation(Kind::Distance, 1.0, &[o[0], o[1], x, u]);
+    let mut previous = u;
+    for _ in 0..18 {
+        let next = builder.parameter(0.0, false);
+        builder.equation(Kind::Midpoint, 0.0, &[o[1], next, previous]);
+        previous = next;
+    }
+    builder.temporary(Kind::Value, 3.0, &[x]);
+    let (outcome, values) = builder.outcome();
+    assert!(values[x] > -0.99, "{outcome:?} {}", values[x]);
+    assert!(values[x] > 0.999 || outcome.drag == Some(DragOutcome::Stalled), "{outcome:?} {}", values[x]);
+    assert_eq!(outcome.status, Status::Converged);
 }

@@ -25,8 +25,8 @@
 //! point on the start's branch, not a global one. A clearly negative curvature, as at a circle's
 //! antipode or a straight arm with a target inside its reach, is followed by restored steps,
 //! halving; one that gets closer by any resolved gain continues the drag. A curvature within its
-//! error of zero is followed at two lengths, and projects only when neither gets closer, since higher
-//! orders decide there. Anything else, including a curvature test that cannot decide, is `Stalled`,
+//! error of zero is followed at two lengths too, but higher orders decide there, so finding nothing
+//! closer stalls. Anything else, including a curvature test that cannot decide, is `Stalled`,
 //! at the last feasible values. Restoring the start, the trials with their restorations and a
 //! landing's polish share `DRAG_ITERATIONS`, and a check the budget cut short certifies nothing.
 
@@ -119,7 +119,8 @@ fn row_length(kind: Kind, o: &[f64], free: &[bool]) -> Option<f64> {
     let line = |first: usize| movable(first).then(|| length(o[first + 2] - o[first], o[first + 3] - o[first + 1]));
     match kind {
         Kind::Difference | Kind::Value | Kind::Midpoint => None,
-        Kind::Distance | Kind::DistanceToParameter => Some(length(o[2] - o[0], o[3] - o[1])),
+        // Between two fixed points a distance is a constant, or minus a free radius: linear.
+        Kind::Distance | Kind::DistanceToParameter => movable(0).then(|| length(o[2] - o[0], o[3] - o[1])),
         Kind::PointOnLine => line(2),
         Kind::Parallel | Kind::Perpendicular | Kind::Angle | Kind::EqualLength => [line(0), line(4)].into_iter().flatten().reduce(f64::min),
         Kind::SymmetricMidpoint | Kind::SymmetricPerpendicular => line(4),
@@ -165,7 +166,7 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits) -
     };
     let rows = lasting.rows(values, None);
     let (status, position) = match outcome {
-        Ok(DragOutcome::Stalled) => (Status::NotConverged, Some(drag.position)),
+        // A stalled drag still stands at feasible values when the lasting rows accept them.
         Ok(_) => (accepted(&rows), Some(drag.position)),
         Err(Exhausted) => (Status::TooLarge, None),
     };
@@ -283,7 +284,8 @@ impl Drag<'_> {
     /// Restored steps along a unit direction of negative curvature `theta`, from the rows' bound
     /// and halving, first the way the gradient does not climb; the first that gets closer stands,
     /// and without one the drag stalls. Along a flat direction (`None`), where orders past the
-    /// second decide, `FLAT_LENGTHS` lengths are tried and finding nothing closer projects.
+    /// second decide, `FLAT_LENGTHS` lengths are tried; finding nothing closer proves nothing, so
+    /// that stalls too.
     fn descend(&mut self, values: &mut [f64], r: &[f64], direction: &[f64], theta: Option<f64>) -> Result<Settled, Exhausted> {
         let climb: f64 = self.targets.iter().zip(r).map(|(target, r)| r * direction[target.column]).sum();
         let first = if climb > 0.0 { -1.0 } else { 1.0 };
@@ -301,7 +303,7 @@ impl Drag<'_> {
             }
             length *= 0.5;
         }
-        Ok(Settled::Done(if theta.is_some() { DragOutcome::Stalled } else { DragOutcome::Projected }))
+        Ok(Settled::Done(DragOutcome::Stalled))
     }
 
     /// Writes the targets exactly when the lasting rows still accept them. Landing moves the targeted
@@ -328,7 +330,11 @@ impl Drag<'_> {
         self.iterations += polished.iterations;
         match polished.status {
             Status::Converged => {}
-            Status::TooLarge => return Err(Exhausted),
+            Status::TooLarge => {
+                // The landing stands; the polish's partial work is not accepted.
+                for (&p, &value) in held.unknowns.iter().zip(&saved) { values[p] = value; }
+                return Err(Exhausted);
+            }
             _ => for (&p, &value) in held.unknowns.iter().zip(&saved) { values[p] = value; },
         }
         Ok(true)

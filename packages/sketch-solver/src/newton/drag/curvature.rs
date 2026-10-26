@@ -20,10 +20,8 @@ use crate::sparse::{Factor, minimum_degree};
 
 /// Most columns of the support; a wider one is not certified.
 const SUPPORT: usize = 64;
-/// Smallest eigenvalue of `P_SS` kept as a direction of the null space.
-const KEPT: f64 = 1e-10;
 /// Most refinements of the multipliers.
-const REFINEMENTS: usize = 3;
+const REFINEMENTS: usize = 8;
 
 pub(super) enum Curvature {
     /// No direction along the lasting rows gets closer to second order.
@@ -71,29 +69,38 @@ impl Drag<'_> {
         let factor = Factor::damped(m, 1.0 / (W * W), self.limits.work.saturating_sub(self.work));
         let factor = self.rotate(factor, columns.iter().zip(&g).map(|(column, &g)| (by_place(column), -g)))?;
         let Some(mut by_position) = factor.solve() else { return Ok(Curvature::Unresolved); };
-        // The damping leaves about `|lambda| / (W sigma)^2` of the gradient unexplained, which a far
-        // target makes large; corrected seminormal steps, `R^T R delta = -J k` for the remainder
-        // `k`, shrink it by as much each.
+        // The damping leaves the multipliers off by `rho = W^-2 / (sigma^2 + W^-2)` of their part
+        // along each direction of `J^T` with singular value `sigma`. Corrected seminormal steps,
+        // `R^T R delta = -J k` for the remainder `k`, shrink that part by `rho` each, so successive
+        // steps estimate the slowest `rho` and their geometric tail bounds what is left. Where `J^T`
+        // is too weak for the steps to shrink by half, the multipliers are not known.
         let remainder = |by_position: &[f64]| -> Vec<f64> { columns.iter().zip(&g).map(|(column, &g)| g + column.iter().map(|&(i, v)| v * by_position[place[i]]).sum::<f64>()).collect() };
         let mut kkt = remainder(&by_position);
+        let (mut before, mut error) = (f64::INFINITY, f64::INFINITY);
         for _ in 0..REFINEMENTS {
-            // The multipliers explain the gradient up to its certified projected part.
-            if norm(&kkt) <= 2.0 * self.stationary { break; }
             let mut jk = vec![0.0; m];
             for (column, &k) in columns.iter().zip(&kkt) { for &(i, v) in column { jk[place[i]] -= v * k; } }
             let Some(delta) = factor.solve_transposed(&jk).and_then(|y| factor.solve_with(&y)) else { return Ok(Curvature::Unresolved); };
             for (lambda, delta) in by_position.iter_mut().zip(&delta) { *lambda += delta; }
             kkt = remainder(&by_position);
+            let step = norm(&delta);
+            // Converged to the multipliers' own roundoff.
+            if step <= 64.0 * f64::EPSILON * norm(&by_position) { error = step; break; }
+            let ratio = step / before;
+            error = if ratio < 0.5 { step * ratio / (1.0 - ratio) } else { f64::INFINITY };
+            before = step;
         }
-        if !(norm(&kkt) <= 2.0 * self.stationary) { return Ok(Curvature::Unresolved); }
+        // The multipliers explain the gradient up to its certified projected part.
+        if !(error.is_finite() && norm(&kkt) <= 2.0 * self.stationary) { return Ok(Curvature::Unresolved); }
         let lambda: Vec<f64> = (0..m).map(|i| by_position[place[i]]).collect();
 
-        let Some(curved) = self.curved(values, &rows, &lambda) else { return Ok(Curvature::Unresolved); };
+        let negligible = error + 64.0 * f64::EPSILON * norm(&g);
+        let Some(curved) = self.curved(values, &rows, &lambda, negligible) else { return Ok(Curvature::Unresolved); };
         let total: f64 = curved.iter().map(|row| row.lambda.abs() * row.size).sum();
-        // What the curvature is known to: each row's differencing error, the multipliers' remainder
+        // What the curvature is known to: each row's differencing error, the multipliers' error
         // against every row's curvature, and roundoff in the eigensolves.
         let tolerance = curved.iter().map(|row| row.lambda.abs() * row.size * row.error).sum::<f64>()
-            + norm(&kkt) * curved.iter().map(|row| row.size).sum::<f64>()
+            + error * curved.iter().map(|row| row.size).sum::<f64>()
             + 64.0 * f64::EPSILON * (1.0 + total) * (self.targets.len() + curved.iter().map(|row| row.columns.len()).sum::<usize>()) as f64;
         // Rows each within an even share of half the tolerance are left out, so together they stay within it.
         let share = 0.5 * tolerance / curved.len().max(1) as f64;
@@ -128,20 +135,44 @@ impl Drag<'_> {
         let dot = |a: &[f64], b: &[f64]| a.iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
         let projector: Vec<Vec<f64>> = (0..s).map(|a| (0..s).map(|b| if a == b { 1.0 } else { 0.0 } - dot(&x[a], &x[b])).collect()).collect();
         let (spread, basis) = symmetric_eigen(projector);
-        let kept: Vec<usize> = (0..s).filter(|&k| spread[k] > KEPT).collect();
-        // Nothing along the lasting rows moves the support: the targets and every curved row are held.
+        let floor = 64.0 * f64::EPSILON * s as f64;
+        let kept: Vec<usize> = (0..s).filter(|&k| spread[k] > floor).collect();
+        // Nothing along the lasting rows moves the support, to roundoff: the targets and every
+        // curved row are held.
         if kept.is_empty() { return Ok(Curvature::Certified); }
-        // `C = U Lambda^1/2`; the curvature over the null space is the spectrum of `C^T H_SS C`.
+        // The damped projector `P = I - J^T (J J^T + W^-2)^-1 J` also passes a held direction's leak,
+        // `rho` of it, which no cutoff on `P_SS` separates from slight real motion. `P` keeps a null
+        // direction whole and scales a leak by `rho`, so the pencil `(P^2)_SS a = mu P_SS a` tells them
+        // apart: `mu = 1` moves, `mu = rho` leaks. Directions with `mu > 1/2` are kept, so a weak
+        // holding row counts as motion, never the reverse.
+        let mut lifted: Vec<Vec<f64>> = Vec::with_capacity(s);
+        for (&column, y) in support.iter().zip(&x) {
+            let Some(w) = factor.solve_with(y) else { return Ok(Curvature::Unresolved); };
+            let mut p = vec![0.0; n];
+            p[column] = 1.0;
+            for (c, entries) in columns.iter().enumerate() { p[c] -= entries.iter().map(|&(i, v)| v * w[place[i]]).sum::<f64>(); }
+            lifted.push(p);
+        }
+        let square: Vec<Vec<f64>> = (0..s).map(|a| (0..s).map(|b| dot(&lifted[a], &lifted[b])).collect()).collect();
+        let along = |vector: &[f64], matrix: &[Vec<f64>], other: &[f64]| (0..s).map(|a| vector[a] * dot(&matrix[a], other)).sum::<f64>();
+        let pencil: Vec<Vec<f64>> = kept.iter().map(|&j| kept.iter().map(|&l| along(&basis[j], &square, &basis[l]) / (spread[j] * spread[l]).sqrt()).collect()).collect();
+        let (moving, mixes) = symmetric_eigen(pencil);
+        let moves: Vec<&Vec<f64>> = (0..kept.len()).filter(|&k| moving[k] > 0.5).map(|k| &mixes[k]).collect();
+        if moves.is_empty() { return Ok(Curvature::Certified); }
+        // In coordinates `b` with `d_S = U Lambda^1/2 b`, `|d| = |b|` and the curvature is
+        // `b^T C^T H_SS C b` for `C = U Lambda^1/2`; over the moving mixes `z`, `b = Z w`.
         let c: Vec<Vec<f64>> = kept.iter().map(|&k| basis[k].iter().map(|u| u * spread[k].sqrt()).collect()).collect();
-        let hc: Vec<Vec<f64>> = c.iter().map(|c| (0..s).map(|a| dot(&hessian[a], c)).collect()).collect();
-        let reduced: Vec<Vec<f64>> = c.iter().map(|ca| hc.iter().map(|hb| dot(ca, hb)).collect()).collect();
+        let mixed: Vec<Vec<f64>> = moves.iter().map(|z| (0..s).map(|a| z.iter().zip(&c).map(|(z, c)| z * c[a]).sum::<f64>()).collect()).collect();
+        let reduced: Vec<Vec<f64>> = mixed.iter().map(|ma| mixed.iter().map(|mb| (0..s).map(|a| ma[a] * dot(&hessian[a], mb)).sum::<f64>()).collect()).collect();
         let (curvatures, directions) = symmetric_eigen(reduced);
         let (lowest, &theta) = curvatures.iter().enumerate().min_by(|a, b| a.1.total_cmp(b.1)).unwrap();
         if theta > tolerance { return Ok(Curvature::Certified); }
         // Lifted to the least-norm direction of the null space: `d = a - J^T R^-1 X a` for
-        // `a = U Lambda^-1/2 b` on the support.
+        // `a = U Lambda^-1/2 b` on the support, `b = Z w`.
+        let mut b = vec![0.0; kept.len()];
+        for (z, &w) in moves.iter().zip(&directions[lowest]) { for (b, z) in b.iter_mut().zip(z.iter()) { *b += w * z; } }
         let mut a = vec![0.0; s];
-        for (&k, &b) in kept.iter().zip(&directions[lowest]) { for (a, u) in a.iter_mut().zip(&basis[k]) { *a += b * u / spread[k].sqrt(); } }
+        for (&k, &b) in kept.iter().zip(&b) { for (a, u) in a.iter_mut().zip(&basis[k]) { *a += b * u / spread[k].sqrt(); } }
         let mut xa = vec![0.0; m];
         for (y, &a) in x.iter().zip(&a) { for (xa, y) in xa.iter_mut().zip(y) { *xa += a * y; } }
         let Some(w) = factor.solve_with(&xa) else { return Ok(Curvature::Unresolved); };
@@ -160,12 +191,11 @@ impl Drag<'_> {
     /// The nonlinear rows with a nonzero multiplier and their Hessians, by central differences of
     /// the exact gradient with each row's weight held. The step balances truncation, about
     /// `delta^2 / L^2` relative for a row of length `L`, against coordinate roundoff,
-    /// `epsilon S / delta`. `None` when a row carrying a multiplier has collapsed to a length its
-    /// coordinates cannot resolve: a zero distance has no gradient to expand along, so neither
-    /// order of the test describes it.
-    fn curved(&self, values: &[f64], rows: &[crate::newton::Row], lambda: &[f64]) -> Option<Vec<Curved>> {
+    /// `epsilon S / delta`. `None` when a row whose multiplier is not `negligible`, within its own
+    /// error, has collapsed to a length its coordinates cannot resolve: a zero distance has no
+    /// gradient to expand along, so neither order of the test describes it.
+    fn curved(&self, values: &[f64], rows: &[crate::newton::Row], lambda: &[f64], negligible: f64) -> Option<Vec<Curved>> {
         let problem = self.lasting.problem;
-        let carrying = 64.0 * f64::EPSILON * lambda.iter().fold(0.0, |most: f64, lambda| most.max(lambda.abs()));
         let mut curved = Vec::new();
         for ((&e, row), &lambda) in self.lasting.equations.iter().zip(rows).zip(lambda) {
             if lambda == 0.0 || row.len == 0 { continue; }
@@ -174,7 +204,7 @@ impl Drag<'_> {
             let free: Vec<bool> = equation.operands.iter().map(|&p| self.lasting.column[p] != usize::MAX).collect();
             let Some(length) = row_length(equation.kind, &operands, &free) else { continue; };
             if !(length > 64.0 * f64::EPSILON * row.scale) {
-                if lambda.abs() > carrying { return None; }
+                if lambda.abs() > negligible { return None; }
                 continue;
             }
             let columns: Vec<usize> = row.columns[..row.len].to_vec();
