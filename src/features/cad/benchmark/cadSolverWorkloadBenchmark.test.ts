@@ -9,14 +9,15 @@ import type { CadSketchSolveResult } from '../sketch-solver/cadSketchSolverTypes
 import { initializeCadSketchSolverModule } from '../sketch-solver/cadSketchSolverModule';
 import { loadCadSketchNativeSolver } from '../sketch-solver/native/cadSketchNativeSolver';
 import { createCadBenchmarkRectangleGraph } from './cadBenchmarkCases';
-import { createCadBenchmarkNative, createCadBenchmarkPlaneGcs, type CadBenchmarkSolver } from './cadSolverBenchmarkAdapters';
+import { createCadBenchmarkPlaneGcs, createCadBenchmarkRuntime, type CadBenchmarkSolver } from './cadSolverBenchmarkAdapters';
+import { createCadSolverDragTrajectories } from './cadSolverDragCases';
 import { createCadSolverDieInput, createCadSolverWorkloadCases } from './cadSolverWorkloadCases';
-import { cadSolverBoundaryThrottled, cadSolverCalibrationDrifted, cadSolverFrameStats, cadSolverOutcome, checkCadSolverBenchmarkResult, measureCadSolverDrag, measureCadSolverEdits, measureCadSolverOperations, measureCadSolverWorkload } from './cadSolverWorkloadBenchmark';
+import { cadSolverBoundaryThrottled, cadSolverCalibrationDrifted, cadSolverFrameStats, cadSolverOutcome, checkCadSolverBenchmarkResult, measureCadSolverDrag, measureCadSolverDragSweep, measureCadSolverEdits, measureCadSolverOperations, measureCadSolverWorkload } from './cadSolverWorkloadBenchmark';
 
 const require = createRequire(import.meta.url);
 const initialize = () => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href);
 const native = loadCadSketchNativeSolver(await readFile(new URL('../../../../packages/sketch-solver/wasm/sketch_solver.wasm', import.meta.url)));
-const pair = () => [createCadBenchmarkPlaneGcs(initialize), createCadBenchmarkNative(() => native)];
+const pair = () => [createCadBenchmarkPlaneGcs(initialize), createCadBenchmarkRuntime('native-only', () => native)];
 
 describe('public-boundary solver benchmarks', () => {
   it('keeps PlaneGCS results identical with stage observation and consumes each call once', async () => {
@@ -29,27 +30,40 @@ describe('public-boundary solver benchmarks', () => {
       .toMatchObject({ kind: 'rejected', reason: 'conflicting' });
     expect(solver.takeStages().nativeCall).toBeGreaterThan(0);
     expect(solver.takeStages().nativeCall).toBe(0);
+    expect(solver.takeRecord()).toBeUndefined();
   });
 
-  it('diagnoses every workload natively as PlaneGCS does and refuses drag', async () => {
+  it('observes the production runtime\'s stages and records, and adds PlaneGCS\'s on a fallback', async () => {
+    const solver = createCadBenchmarkRuntime('native-first', () => native, initialize), input = { graph: createCadBenchmarkRectangleGraph(2), parameters: {} };
+    expect(await solver.solve(input)).toEqual(await createCadBenchmarkRuntime('native-only', () => native).solve(input));
+    for (const stage of Object.values(solver.takeStages())) expect(stage).toBeGreaterThan(0);
+    expect(solver.takeRecord()).toMatchObject({ answeredBy: 'native', native: 'answer' });
+    expect(solver.takeRecord()).toBeUndefined();
+    const nativeOnly = solver.takeStages();
+    expect(nativeOnly).toEqual({ parseCompile: 0, nativeCall: 0, mapping: 0, validation: 0 });
+    // Native suspects these conflicts without naming them, so PlaneGCS is asked and names them.
+    const overlapping = createCadSolverWorkloadCases().find(testCase => testCase.id === 'overlapping-conflicts')!.input;
+    expect(await solver.solve(overlapping)).toMatchObject({ kind: 'rejected', reason: 'conflicting' });
+    expect(solver.takeRecord()).toMatchObject({ answeredBy: 'planegcs', native: 'suspected', planeGcs: 'conflicting' });
+    expect(solver.takeStages().nativeCall).toBeGreaterThan(0);
+  });
+
+  it('answers every workload through the production runtime as PlaneGCS does, except reviewed differences', async () => {
     const [plane, solver] = pair(), summary = (result: CadSketchSolveResult) => ({ outcome: cadSolverOutcome(result), degreesOfFreedom: result.diagnostics.degreesOfFreedom,
       conflictingIds: result.diagnostics.conflictingIds, redundantIds: result.diagnostics.redundantIds, partiallyRedundantIds: result.diagnostics.partiallyRedundantIds });
-    // Reviewed differences, where the native result is the better one. PlaneGCS stops short of
-    // tangency and fails the graph check. It diagnoses at the start, where the vertical offset is
-    // independent of the three distances and the impossible triangle is not yet flat; native finds
-    // the conflict at the nearest point and reports it as suspected. With nothing free, PlaneGCS
-    // reports success for a relation that is not met.
-    const conflicting = (...conflictingIds: string[]) => ({ outcome: 'rejected:conflicting', degreesOfFreedom: null, conflictingIds });
-    const reviewed: Record<string, object> = { 'tangency-near': { outcome: 'solved' }, 'overlapping-conflicts': conflicting('length', 'other', 'third', 'vertical'),
-      'impossible-triangle': conflicting('ab', 'bc', 'ac'), 'fully-fixed-conflict': conflicting('fixedSize') };
-    expect(solver.diagnosis).toBe('available'); expect(solver.drag).toBe('unsupported');
+    // Reviewed differences. PlaneGCS stops short of tangency and fails the graph check. Native suspects the overlapping conflicts and the impossible triangle at
+    // the nearest point it reached, without naming relations or freedom; PlaneGCS diagnoses at the
+    // start, naming the overlapping conflicts but counting freedom for the triangle. With nothing
+    // free, PlaneGCS accepts a relation that is not met and fails the graph check; native names it.
+    const suspected = { outcome: 'rejected:failed', degreesOfFreedom: null, conflictingIds: [] };
+    const reviewed: Record<string, object> = { 'tangency-near': { outcome: 'solved' }, 'overlapping-conflicts': suspected, 'impossible-triangle': suspected,
+      'fully-fixed-conflict': { outcome: 'rejected:conflicting', degreesOfFreedom: null, conflictingIds: ['fixedSize'] } };
     for (const testCase of createCadSolverWorkloadCases()) {
       const expected = summary(await plane.solve(testCase.input)), result = await solver.solve(testCase.input);
       expect(summary(result), testCase.id).toEqual({ ...expected, ...reviewed[testCase.id] });
+      expect(solver.takeRecord()?.answeredBy, testCase.id).toBe('native');
       if (result.kind === 'solved') expect(checkCadSolverBenchmarkResult(testCase.input, result), testCase.id).toEqual([]);
     }
-    const input = createCadSolverDieInput();
-    expect(await solver.solve({ ...input, drag: { pointId: 'slotA', position: [-12, 4] } })).toMatchObject({ kind: 'rejected', reason: 'invalid-input', message: expect.stringContaining('does not support drag') });
   }, 30_000);
 
   it('alternates solver order and feeds accepted geometry into the next edit, outside timing', async () => {
@@ -62,8 +76,8 @@ describe('public-boundary solver benchmarks', () => {
         return { ...previous, graph: parseCadSketchGraph({ ...previous.graph, relations: previous.graph.relations.map(relation => relation.id === 'r0_width' && relation.kind === 'distance' ? { ...relation, value: 20.5 } : relation) }) };
       } }
     ] });
-    expect(measured.sampleOrder).toEqual([['planegcs', 'native'], ['native', 'planegcs']]);
-    expect(order).toEqual(['planegcs', 'planegcs', 'native', 'native', 'planegcs', 'planegcs', 'native', 'native', 'native', 'native', 'planegcs', 'planegcs']);
+    expect(measured.sampleOrder).toEqual([['planegcs', 'native-only'], ['native-only', 'planegcs']]);
+    expect(order).toEqual(['planegcs', 'planegcs', 'native-only', 'native-only', 'planegcs', 'planegcs', 'native-only', 'native-only', 'native-only', 'native-only', 'planegcs', 'planegcs']);
     for (const width of previousWidths) expect(width).toBeCloseTo(20, 8);
     expect(measured.failures).toEqual([]);
     for (const row of measured.measurements) { expect(row.kind).toBe('measured'); if (row.kind === 'measured') expect(row.outcomes).toEqual({ solved: 2 }); }
@@ -89,15 +103,37 @@ describe('public-boundary solver benchmarks', () => {
     }
   });
 
-  it('runs all 60 connected-die frames with reversal and projects the unreachable target', async () => {
-    const [plane, nativeReport] = await measureCadSolverDrag(pair(), 1);
-    expect(nativeReport).toMatchObject({ solver: 'native', kind: 'unsupported' });
-    expect(plane).toMatchObject({ kind: 'measured', framesPerTrajectory: 60, accepted: 60, projected: 1, failures: [] });
-    if (plane.kind !== 'measured') throw new Error('Missing PlaneGCS trajectory.');
-    expect(plane.frames[45].targetErrorMm).toBeGreaterThan(100);
-    expect(plane.frames[0].target[1]).toBe(plane.frames[59].target[1]);
-    expect(plane.frames[29].target[1]).toBeGreaterThan(plane.frames[59].target[1]);
-  }, 30_000);
+  it('plays every drag trajectory from its start and chained, with native outcomes from production records', async () => {
+    const groups = await measureCadSolverDrag(pair(), 1);
+    const row = (trajectory: string, mode: string, solver: string) => groups.find(group => group.trajectory === trajectory && group.mode === mode)!.solvers.find(item => item.solver === solver)!;
+    expect(groups.map(group => `${group.trajectory}/${group.mode}`)).toEqual(createCadSolverDragTrajectories().flatMap(trajectory => [`${trajectory.id}/from-start`, `${trajectory.id}/chained`]));
+    for (const group of groups) expect(group.failures, `${group.trajectory}/${group.mode}`).toEqual([]);
+    for (const mode of ['from-start', 'chained']) for (const solver of ['planegcs', 'native-only']) {
+      const die = row('die-slot', mode, solver);
+      expect(die.outcomes).toEqual({ solved: 60 }); expect(die.dragOutcomes).toEqual({ reached: 59, projected: 1 });
+      expect(die.frames[45].targetErrorMm).toBeGreaterThan(100);
+      expect(die.frames[0].target[1]).toBe(die.frames[59].target[1]); expect(die.frames[29].target[1]).toBeGreaterThan(die.frames[59].target[1]);
+    }
+    expect(row('die-slot', 'from-start', 'native-only').answers).toEqual({ 'native:answer': 60 });
+    // Chained or in one jump, native stays on the four-bar's start assembly, as chained PlaneGCS does.
+    for (const [mode, solver] of [['from-start', 'native-only'], ['chained', 'native-only'], ['chained', 'planegcs']]) expect(row('four-bar', mode, solver).largestTargetErrorMm).toBeCloseTo(Math.hypot(17.2, 27.6), 6);
+    // Gaps a native-only release must close, which PlaneGCS answers today: stretched arm frames whose
+    // rank native cannot yet decide, and the tangency, where native stalls short of it and reads the
+    // exact landing as redundant.
+    expect(row('arm', 'from-start', 'native-only').answers).toEqual({ 'native:answer': 44, 'native:unavailable': 3 });
+    expect(row('tangency', 'from-start', 'native-only').answers).toEqual({ 'native:not-converged': 3, 'native:drag-diagnosis': 1 });
+    for (const trajectory of ['arm', 'tangency']) expect(row(trajectory, 'from-start', 'planegcs').outcomes).toEqual({ solved: createCadSolverDragTrajectories().find(item => item.id === trajectory)!.frames.length });
+  }, 60_000);
+
+  it('sweeps every free die point from one settled start, all answered natively and never further than PlaneGCS', async () => {
+    const sweeps = await measureCadSolverDragSweep(pair());
+    expect(sweeps.map(sweep => [sweep.id, sweep.drags])).toEqual([['die', 120], ['free-die', 126]]);
+    for (const sweep of sweeps) {
+      const [plane, nativeRow] = sweep.solvers;
+      expect(sweep.failures).toEqual([]); expect(plane.outcomes).toEqual({ solved: sweep.drags }); expect(nativeRow.outcomes).toEqual({ solved: sweep.drags });
+      expect(nativeRow.answers).toEqual({ 'native:answer': sweep.drags }); expect(nativeRow.worseThanFirst).toEqual([]);
+    }
+  }, 60_000);
 
   it('checks geometry independently and computes frame tail statistics from raw samples', () => {
     const input = createCadSolverDieInput();
