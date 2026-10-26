@@ -34,6 +34,29 @@ describe('owned sketch graph source', () => {
     expect(() => parseCadSketchGraph({ ...source(), surprise: true })).toThrow();
   });
 
+  it('returns an accepted graph as it is and parses copies, proxies and frozen lookalikes in full', () => {
+    const graph = parseCadSketchGraph(source());
+    expect(parseCadSketchGraph(graph)).toBe(graph);
+    // A proxy cannot be detached, so it never passes for the graph it wraps.
+    expect(() => parseCadSketchGraph(new Proxy(graph, {}))).toThrow();
+    for (const copy of [structuredClone(graph), { ...graph }]) {
+      const parsed = parseCadSketchGraph(copy);
+      expect(parsed).not.toBe(graph); expect(parsed).toEqual(graph);
+    }
+    const lookalike = Object.freeze({ ...graph, relations: Object.freeze([...graph.relations, graph.relations[0]]) });
+    expect(() => parseCadSketchGraph(lookalike)).toThrowError(expect.objectContaining({ code: 'duplicate-sketch-id' }));
+    // A proxy that swaps checked data for a Map before the clone leaves a copy that is checked again.
+    const raw = source(), entity = raw.entities[0];
+    raw.entities[0] = new Proxy(entity, { get(target, key, receiver) {
+      (raw.points[1] as { position: unknown }).position = new Map(); raw.entities[0] = entity; return Reflect.get(target, key, receiver);
+    } });
+    expect(() => parseCadSketchGraph(raw)).toThrowError(expect.objectContaining({ code: 'invalid-sketch-graph' }));
+    // Numeric values only need their range: coincident points parse, an out-of-range one does not.
+    const coincident = source(); coincident.points[1].position = [0, 0];
+    expect(() => parseCadSketchGraph(coincident)).not.toThrow();
+    const far = source(); far.points[1].position = [2e9, 0];
+    expect(() => parseCadSketchGraph(far)).toThrow();
+  });
   it('checks all point relation drivers without modifying expressions or accepting physical gaps', () => {
     const graph = parseCadSketchGraph({
       points: [{ id: 'a', position: [2, 3] }, { id: 'b', position: [2, 8] }, { id: 'c', position: [2, 8] }], entities: [],

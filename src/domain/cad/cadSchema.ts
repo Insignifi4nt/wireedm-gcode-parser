@@ -20,7 +20,7 @@ import { CadFeatureBaseSchemaFields, CadIdentifierSchema, CadLabelSchema, CadNum
 import { CadDatumPlaneFeatureSchema, resolveCadWorldDatum, resolveCadSketchPlacement, resolveCadExtrudeRevolvePlacement, type CadResolvedFrame } from './cadDatumPlanes';
 import { cadConsumedBodyIds, cadFeatureInputs, cadFeatureProducesBody } from './cadFeatureInputs';
 import { CadSketchDimensionConstraintSchema, validateCadSketchConstraints } from './cadSketchConstraints';
-import { CadSketchGraphSchema, parseCadSketchGraph } from './cadSketchGraph';
+import { CadSketchGraphSchema, parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
 import { assertCadSketchExternalReferences } from './cadSketchExternalReferences';
 export { cadConsumedBodyIds, cadFeatureDependencies, cadFeatureInputs, cadFeatureProducesBody, cadVisibleBodyIds, type CadBodyFeature } from './cadFeatureInputs';
 export { CadPathSegmentSchema } from './cadPrimitives';
@@ -163,7 +163,8 @@ export function parseCadDocument(value: unknown): CadDocument {
         e(feature.offset);
         if (feature.graph) {
           if (document.schemaVersion !== 2) throw new CadError('unsupported-sketch-format', 'Stable sketch entities require CAD schema 2. Preserve the schema 1 original when saving an upgrade.');
-          parseCadSketchGraph(feature.graph);
+          // Keep the parser's accepted graph, so later parses of it are free.
+          (feature as { graph: CadSketchGraph }).graph = parseCadSketchGraph(feature.graph);
           assertCadSketchExternalReferences({ sketch: feature, parameters: document.parameters, previous });
         }
         if (feature.source) parseCadDxfImportSource(feature.source);

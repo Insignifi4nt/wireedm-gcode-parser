@@ -1,13 +1,15 @@
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { CadSketchGraphIssueSchema, CadSketchGraphSchema, checkCadSketchGraph, parseCadSketchGraph } from '../../../domain/cad/cadSketchGraph';
+import { CadSketchGraphIssueSchema, CadSketchGraphSchema, checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '../../../domain/cad/cadSketchGraph';
 import { CadIdentifierSchema, CadNumberSchema } from '../../../domain/cad/cadPrimitives';
-import { isCadImportData } from '../../../domain/cad/cadImportData';
+import { cadImportDataCopy, cadImportDataFields, isCadImportData } from '../../../domain/cad/cadImportData';
+import { CadError } from '../../../domain/cad/cadError';
 import { cadSketchExternalReferenceComponents } from '../../../domain/cad/cadSketchExternalReferences';
 import { cadSketchLinearPatternLockReason } from '../../../domain/cad/cadSketchLinearPattern';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
 
-const inputSchema = Type.Object({ graph: CadSketchGraphSchema, parameters: Type.Record(Type.String(), CadNumberSchema),
+// The graph is not part of this schema: its own parser validates it, once.
+const envelopeSchema = Type.Object({ parameters: Type.Record(Type.String(), CadNumberSchema),
   drag: Type.Optional(Type.Object({ pointId: CadIdentifierSchema, position: Type.Tuple([CadNumberSchema, CadNumberSchema]) }, { additionalProperties: false }))
 }, { additionalProperties: false });
 const diagnosticsSchema = Type.Object({
@@ -26,13 +28,22 @@ export type CadSketchSolverReply = { readonly id: number; readonly kind: 'result
   | { readonly id: number; readonly kind: 'error'; readonly message: string };
 
 export function parseCadSketchSolveInput(value: unknown): CadSketchSolveInput {
-  if (!isCadImportData(value) || !Value.Check(inputSchema, value)) throw new Error('Invalid sketch solver input.');
-  const graph = parseCadSketchGraph(value.graph);
-  if (value.drag && !graph.points.some(point => point.id === value.drag?.pointId)) throw new Error('The sketch drag point does not exist.');
-  if (value.drag && cadSketchExternalReferenceComponents(graph).pointIds.has(value.drag.pointId)) throw new Error('Detach the sketch reference before dragging its geometry.');
-  if (value.drag && cadSketchLinearPatternLockReason(graph, { kind: 'point', id: value.drag.pointId })) throw new Error('Edit the seed or detach the linear pattern before dragging generated geometry.');
-  return Object.freeze({ graph, parameters: Object.freeze({ ...value.parameters }), ...(value.drag ? { drag: Object.freeze({ pointId: value.drag.pointId,
-    position: Object.freeze([value.drag.position[0], value.drag.position[1]] satisfies [number, number]) }) } : {}) });
+  // Each field is read once, so the graph validated is the graph used.
+  const fields = cadImportDataFields(value);
+  if (!fields || !('graph' in fields)) throw new Error('Invalid sketch solver input.');
+  const { graph: source, ...fieldsBesideGraph } = fields;
+  // A private copy, so parsing the graph cannot change the parameters or drag checked here.
+  const envelope = cadImportDataCopy(fieldsBesideGraph);
+  if (!isCadImportData(envelope) || !Value.Check(envelopeSchema, envelope)) throw new Error('Invalid sketch solver input.');
+  let graph: CadSketchGraph;
+  try { graph = parseCadSketchGraph(source); }
+  catch (error) { throw error instanceof CadError && error.code === 'invalid-sketch-graph' ? new Error('Invalid sketch solver input.') : error; }
+  const { parameters, drag } = envelope;
+  if (drag && !graph.points.some(point => point.id === drag.pointId)) throw new Error('The sketch drag point does not exist.');
+  if (drag && cadSketchExternalReferenceComponents(graph).pointIds.has(drag.pointId)) throw new Error('Detach the sketch reference before dragging its geometry.');
+  if (drag && cadSketchLinearPatternLockReason(graph, { kind: 'point', id: drag.pointId })) throw new Error('Edit the seed or detach the linear pattern before dragging generated geometry.');
+  return Object.freeze({ graph, parameters: Object.freeze({ ...parameters }), ...(drag ? { drag: Object.freeze({ pointId: drag.pointId,
+    position: Object.freeze([drag.position[0], drag.position[1]] satisfies [number, number]) }) } : {}) });
 }
 
 export function isCadSketchSolverEnvelope(value: unknown): value is { id: number; kind: string } {

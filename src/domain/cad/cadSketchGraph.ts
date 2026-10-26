@@ -96,10 +96,23 @@ export const CadSketchGraphIssueSchema = Type.Object({
 export type CadSketchGraphIssue = Immutable<Static<typeof CadSketchGraphIssueSchema>>;
 
 
+// Only this parser's detached, deeply frozen successful outputs are trusted; parsing one again
+// returns it as it is. Copies, structured clones and proxies cross the full boundary. Validity
+// depends on structure, identities, number-vs-string scalars and each number's schema range,
+// never on how numeric values relate, so a solved copy with in-range numbers stays valid.
+const acceptedGraphs = new WeakSet<CadSketchGraph>();
+
 /** Parse unsolved intent without solving, changing scalars, or checking geometric residuals. */
 export function parseCadSketchGraph(value: unknown): CadSketchGraph {
-  if (!isCadImportData(value) || !Value.Check(CadSketchGraphSchema, value)) throw new CadError('invalid-sketch-graph', 'Sketch graph must contain complete portable point, entity and relation data.');
-  const graph = structuredClone(value), ids = new Set<string>(), points = new Set(graph.points.map(point => point.id));
+  if (typeof value === 'object' && value !== null && acceptedGraphs.has(value as CadSketchGraph)) return value as CadSketchGraph;
+  const invalid = () => new CadError('invalid-sketch-graph', 'Sketch graph must contain complete portable point, entity and relation data.');
+  // Accessors are refused before cloning reads them; the detached copy is then checked again,
+  // since a proxy can change the source between the first walk and the clone.
+  if (!isCadImportData(value)) throw invalid();
+  let graph: CadSketchGraph;
+  try { graph = structuredClone(value) as CadSketchGraph; } catch { throw invalid(); }
+  if (!isCadImportData(graph) || !Value.Check(CadSketchGraphSchema, graph)) throw invalid();
+  const ids = new Set<string>(), points = new Set(graph.points.map(point => point.id));
   for (const item of [...graph.points, ...graph.entities, ...graph.relations]) {
     if (ids.has(item.id)) throw new CadError('duplicate-sketch-id', `Duplicate sketch graph identity "${item.id}".`);
     ids.add(item.id);
@@ -129,6 +142,7 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
     references(item.id, cadSketchRelationPointIds(graph, item));
   }
   deepFreezeCadData(graph);
+  acceptedGraphs.add(graph);
   return graph;
 }
 
