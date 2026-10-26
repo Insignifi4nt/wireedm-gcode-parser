@@ -83,7 +83,7 @@ describe('native-first sketch solving', () => {
         expect(distance(dragged.graph), `frame ${frame}`).toBeLessThanOrEqual(Math.max(0, reach - 20) + 1e-9);
         expect(distance(dragged.graph), `frame ${frame}`).toBeLessThanOrEqual(distance(expected.graph) + 1e-6);
         expect(records[frame], `frame ${frame}`).toMatchObject({ answeredBy: 'native', native: 'answer' });
-        if (reach < 20) expect(dragged.diagnostics.degreesOfFreedom, `frame ${frame}`).toBe(2);
+        expect(dragged.diagnostics.degreesOfFreedom, `frame ${frame}`).toBe(2);
         current = dragged.graph;
       }
       // Released straight, solved again, then edited, all by native alone.

@@ -103,7 +103,7 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Op
             certain = false;
         }
     }
-    if rank > 0 && smallest_singular_value(&r, work)? < CERTAIN { certain = false; }
+    if rank > 0 && !clear_of_dependence(&r, work)? { certain = false; }
     // A unit row's residual, or the residual itself for a row without unknowns.
     let scaled = |i: usize, value: f64| if norms[i] > 0.0 { value / norms[i] } else { value };
     let witnesses = witnesses.into_iter().map(|(j, support)| {
@@ -147,7 +147,7 @@ pub fn dependent(n: usize, rows: &[SparseRow], budget: usize) -> (Option<Vec<usi
                 Insertion::Dependent => dependent.push(index),
             }
         }
-        if rank > 0 && smallest_singular_value(&r, &mut work)? < CERTAIN { return None; }
+        if rank > 0 && !clear_of_dependence(&r, &mut work)? { return None; }
         Some(dependent)
     })();
     (found, work.done)
@@ -325,12 +325,35 @@ fn through(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], subset: 
 /// entries. `Some(None)` when the rows are dependent; `None` when the work runs out or the
 /// factor would hold more than that.
 fn fit(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize], distance: f64, work: &mut Work) -> Option<Option<Fitted>> {
-    let m = subset.len();
     let mut columns: Vec<SparseRow> = vec![Vec::new(); n];
     for (j, &i) in subset.iter().enumerate() {
         for &(k, x) in &rows[i].entries { columns[k].push((j, x / norms[i])); }
     }
     work.spend(n + subset.iter().map(|&i| rows[i].entries.len()).sum::<usize>())?;
+    let s = match transposed(columns, subset.len(), work)? {
+        Transposed::Factor(s) => s,
+        Transposed::Dependent => return Some(None),
+        Transposed::Full => return None,
+    };
+    let step = |missing: &[f64], work: &mut Work| -> Option<Vec<f64>> {
+        let b: Vec<f64> = subset.iter().map(|&i| rows[i].entries.iter().map(|&(k, x)| x / norms[i] * missing[k]).sum()).collect();
+        seminormal(&s, b, work)
+    };
+    refine(n, v, rows, norms, subset, distance, work, &step).map(Some)
+}
+
+enum Transposed {
+    Factor(Vec<SparseRow>),
+    /// A row of `S` is empty: the rows are dependent.
+    Dependent,
+    /// `S` would hold more than `work.fill` entries.
+    Full,
+}
+
+/// `S` of `A^T = Q S` by rotations, for `m` rows of `A` given by their `columns`: per column of
+/// `A`, its `(row, entry)` pairs in increasing row order. A column shared by many rows fills `S`
+/// densely, so it is held to `work.fill` entries. `None` when the work runs out.
+fn transposed(mut columns: Vec<SparseRow>, m: usize, work: &mut Work) -> Option<Transposed> {
     // In order of their leads, which keeps the rows rotated in short.
     let mut leading: Vec<Vec<usize>> = vec![Vec::new(); m];
     for (k, column) in columns.iter().enumerate() {
@@ -340,7 +363,7 @@ fn fit(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize], d
     for &k in leading.iter().flatten() {
         let mut rest = std::mem::take(&mut columns[k]);
         while let Some(&(j, _)) = rest.first() {
-            if held.saturating_add(rest.len()) > work.fill { return None; }
+            if held.saturating_add(rest.len()) > work.fill { return Some(Transposed::Full); }
             if s[j].is_empty() { held += rest.len(); s[j] = rest; break; }
             let kept;
             (kept, rest) = rotate(&s[j], &rest, work)?;
@@ -348,12 +371,7 @@ fn fit(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize], d
             s[j] = kept;
         }
     }
-    if s.iter().any(|row| row.is_empty()) { return Some(None); }
-    let step = |missing: &[f64], work: &mut Work| -> Option<Vec<f64>> {
-        let b: Vec<f64> = subset.iter().map(|&i| rows[i].entries.iter().map(|&(k, x)| x / norms[i] * missing[k]).sum()).collect();
-        seminormal(&s, b, work)
-    };
-    refine(n, v, rows, norms, subset, distance, work, &step).map(Some)
+    Some(if s.iter().any(|row| row.is_empty()) { Transposed::Dependent } else { Transposed::Factor(s) })
 }
 
 /// Coefficients of the unit rows `subset` for `v` from corrections by `step`, which turns what
@@ -425,11 +443,31 @@ fn two_product(a: f64, b: f64) -> (f64, f64) {
     (product, ((ah * bh - product) + ah * bl + al * bh) + al * bl)
 }
 
+/// Whether the independent unit rows that `r` factors are clear of dependence: the estimate of
+/// their smallest singular value is at least `CERTAIN`. The estimate over the pivot columns is
+/// cheap and can only be lower than the rows' own, which are taken through `R^T = Q S`, with the
+/// same singular values, only when it is below: a row whose lead is small beside its entries in
+/// columns without pivots, as a nearly straight arm's, leaves the pivot columns ill conditioned
+/// though the rows are not. A factor `S` that would hold more than `work.fill` leaves rank unclear.
+/// `None` when the work runs out.
+fn clear_of_dependence(r: &[SparseRow], work: &mut Work) -> Option<bool> {
+    if smallest_singular_value(r, work)? >= CERTAIN { return Some(true); }
+    let pivots: Vec<usize> = (0..r.len()).filter(|&k| !r[k].is_empty()).collect();
+    let mut columns: Vec<SparseRow> = vec![Vec::new(); r.len()];
+    for (j, &k) in pivots.iter().enumerate() {
+        for &(c, x) in &r[k] { columns[c].push((j, x)); }
+    }
+    work.spend(r.len() + r.iter().map(|row| row.len()).sum::<usize>())?;
+    match transposed(columns, pivots.len(), work)? {
+        Transposed::Factor(s) => Some(smallest_singular_value(&s, work)? >= CERTAIN),
+        Transposed::Dependent | Transposed::Full => Some(false),
+    }
+}
+
 /// Estimate of the smallest singular value of `R` over the columns with pivots, by four inverse
 /// iterations on `R^T R` from a fixed start. Inverse iteration approaches it from above, so this
 /// is an estimate, not a certificate. Leaving out the columns without pivots can only lower the
-/// value, so a row whose lead is small beside its entries in free columns, between `TAU` and
-/// `CERTAIN` of its norm, makes rank look unclear although it is not.
+/// value.
 fn smallest_singular_value(r: &[SparseRow], work: &mut Work) -> Option<f64> {
     let mut x: Vec<f64> = (0..r.len()).map(|k| if r[k].is_empty() { 0.0 } else if k % 2 == 0 { 1.0 } else { -0.7 }).collect();
     let mut estimate = f64::INFINITY;
