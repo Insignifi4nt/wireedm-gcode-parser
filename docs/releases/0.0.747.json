@@ -1,0 +1,24 @@
+{
+  "version": "0.0.747",
+  "previousVersion": "0.0.746",
+  "postCompatibility": "preserved-output-native-drag-solver",
+  "summary": "The app's own native sketch solver can now solve drag targets, ahead of answering drags in the app; drags are still solved by PlaneGCS. A drag target is a temporary value relation on a dragged coordinate. The native solver keeps every lasting relation met and moves the dragged values as close to their targets as the relations allow: exactly onto them when reachable, otherwise to the nearest reachable values, such as the nearest point of a circle or the end of a stretched arm. Each step is a damped tangent step toward the targets, sized to a trust radius and restored onto the lasting relations, with a line search on the restored path's slopes; nearest-point answers are certified by a projected-gradient test and quarter-turned probe targets. Groups without drag targets keep their values. The solver reports whether the targets were reached, projected or stalled, and the remaining target distance, in protocol 3 of its buffer format; solves without drag targets return the same results bit for bit as 0.0.746.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output, and no change to what the app shows: drags are still answered by PlaneGCS until a later release routes them to the native solver. The native solver's buffer format moves to protocol 3, which the app's bundled module and reader share.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal or worker reply schema change. The native solver buffer protocol moves from 2 to 3: two header fields for the drag outcome and target distance, and temporary relations accepted only as value relations. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and results.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Rust drag tests cover a free point landing exactly on its target; a point on a circle reaching the nearest point to far targets (15, 100 and 1e6 mm away) and leaving the far side of its circle; a target at the circle's centre; circle drags independent of position (offsets 1e6 and -3e8 mm) and scale (1e-3 to 1e3); the foot of a target on a line; far targets beside a linear relation and a short guide; fixed and held coordinates counted in the distance but kept; groups without targets kept exactly; an elbow keeping its side; an infeasible start that stalls; exhausted work reported as too large and feasible; identical bits for the same drag, with an out-of-reach two-link arm stretched toward its target; and only value relations accepted as targets. The reader tests cover protocol 3 replies with and without a drag outcome and reject an unknown outcome, a missing or invalid distance, and an outcome for a model without drag targets. Every non-drag native solve in the native-differential, sketch-solver, CAD domain and benchmark suites (3229 solves) was compared bit for bit with the 0.0.746 module, without a difference. On the die and the free die, dragging each free point 0.58 mm and 47 mm, the native solver's target distance matched PlaneGCS's in every case, in about half PlaneGCS's time except one chamfer point dragged far (6.9 ms against 4.9 ms)."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Prepares the app's own solver for sketch drags.",
+    "changes": [
+      "Teaches the app's own sketch solver to follow drags, ahead of using it for dragging in a later release."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
