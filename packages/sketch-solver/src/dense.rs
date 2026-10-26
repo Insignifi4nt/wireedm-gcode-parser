@@ -42,3 +42,43 @@ pub fn symmetric_eigen(mut a: Vec<Vec<f64>>) -> (Vec<f64>, Vec<Vec<f64>>) {
     }
     ((0..n).map(|i| a[i][i]).collect(), v)
 }
+
+/// Singular values and right singular vectors of the matrix whose columns are `columns`, all of
+/// one length: a Householder triangle `R`, then the eigenpairs of `[[0, R], [R^T, 0]]`, which are
+/// `±sigma`. Small singular values keep an absolute accuracy of about `epsilon |R|`, where those of
+/// `R^T R` would square it. `vectors[k]` belongs to `values[k]`; values come largest first.
+pub fn singular(columns: &[Vec<f64>]) -> (Vec<f64>, Vec<Vec<f64>>) {
+    let s = columns.len();
+    let n = columns.first().map_or(0, Vec::len);
+    let mut a = columns.to_vec();
+    for k in 0..s.min(n) {
+        let size = a[k][k..].iter().map(|x| x * x).sum::<f64>().sqrt();
+        if size == 0.0 { continue; }
+        let alpha = if a[k][k] > 0.0 { -size } else { size };
+        let mut v = a[k][k..].to_vec();
+        v[0] -= alpha;
+        let length = v.iter().map(|x| x * x).sum::<f64>();
+        if length == 0.0 { continue; }
+        for column in a.iter_mut().skip(k) {
+            let scale = 2.0 * v.iter().zip(&column[k..]).map(|(v, x)| v * x).sum::<f64>() / length;
+            for (x, v) in column[k..].iter_mut().zip(&v) { *x -= scale * v; }
+        }
+    }
+    let mut joined = vec![vec![0.0; 2 * s]; 2 * s];
+    for j in 0..s { for i in 0..=j.min(n.saturating_sub(1)) { if i < n { joined[i][s + j] = a[j][i]; } } }
+    let (values, vectors) = symmetric_eigen(joined);
+    // Largest first, by insertion: the matrices are small.
+    let mut order: Vec<usize> = Vec::with_capacity(2 * s);
+    for k in 0..2 * s {
+        let mut at = order.len();
+        while at > 0 && values[order[at - 1]] < values[k] { at -= 1; }
+        order.insert(at, k);
+    }
+    order.truncate(s);
+    let right = |k: usize| {
+        let v = &vectors[k][s..];
+        let length = v.iter().map(|x| x * x).sum::<f64>().sqrt();
+        v.iter().map(|x| if length > 0.0 { x / length } else { 0.0 }).collect::<Vec<f64>>()
+    };
+    (order.iter().map(|&k| values[k].max(0.0)).collect(), order.iter().map(|&k| right(k)).collect())
+}

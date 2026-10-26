@@ -87,6 +87,8 @@ pub struct Factor {
     pub c: Vec<f64>,
     /// Entries written, at most one rotation step past `budget`.
     pub work: usize,
+    /// Most rotations any one incoming row took, which scales the factor's backward error.
+    pub depth: usize,
     budget: usize,
     scratch: (SparseRow, SparseRow),
 }
@@ -94,12 +96,13 @@ pub struct Factor {
 impl Factor {
     /// An empty factor of `n` columns that may write about `budget` entries.
     pub fn new(n: usize, budget: usize) -> Factor {
-        Factor { rows: vec![Vec::new(); n], c: vec![0.0; n], work: 0, budget, scratch: (Vec::new(), Vec::new()) }
+        Factor { rows: vec![Vec::new(); n], c: vec![0.0; n], work: 0, depth: 0, budget, scratch: (Vec::new(), Vec::new()) }
     }
 
     /// Rotates row `v` with right-hand side `beta` into the factor. A row reaching an empty pivot
     /// fills it. `false` when the budget ran out first, which leaves the factor unusable.
     pub fn rotate(&mut self, mut v: SparseRow, mut beta: f64) -> bool {
+        let mut rotations = 0;
         while let Some(&(k, lead)) = v.first() {
             if self.work > self.budget { return false; }
             let row = &mut self.rows[k];
@@ -110,6 +113,8 @@ impl Factor {
                 return true;
             }
             let pivot = row[0].1;
+            rotations += 1;
+            self.depth = self.depth.max(rotations);
             // Scaled, so entries whose squares underflow still rotate.
             let big = pivot.abs().max(lead.abs());
             let radius = big * ((pivot / big).powi(2) + (lead / big).powi(2)).sqrt();

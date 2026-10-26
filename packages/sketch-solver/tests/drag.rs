@@ -508,3 +508,55 @@ fn a_far_side_point_with_a_long_doubling_chain_still_leaves() {
     assert!(values[x] > 0.999 || outcome.drag == Some(DragOutcome::Stalled), "{outcome:?} {}", values[x]);
     assert_eq!(outcome.status, Status::Converged);
 }
+
+#[test]
+fn a_far_side_point_geared_twenty_times_is_not_certified() {
+    // As above with 20 doublings: the point's share of the null direction, 2^-40, is the size of
+    // the leak a damped projector passes along held directions.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let x = builder.parameter(-1.0, false);
+    let u = builder.parameter(0.0, false);
+    builder.equation(Kind::Distance, 1.0, &[o[0], o[1], x, u]);
+    let mut previous = u;
+    for _ in 0..20 {
+        let next = builder.parameter(0.0, false);
+        builder.equation(Kind::Midpoint, 0.0, &[o[1], next, previous]);
+        previous = next;
+    }
+    builder.temporary(Kind::Value, 3.0, &[x]);
+    let (outcome, values) = builder.outcome();
+    assert!(values[x] > 0.999 || outcome.drag == Some(DragOutcome::Stalled), "{outcome:?} {}", values[x]);
+}
+
+#[test]
+fn weak_multipliers_beside_large_unrelated_ones_are_not_certified() {
+    // x^2 + y^2 = 1, |(x, z)| = r and r on a guide of slope 2e-7: the circle's multiplier is
+    // weakly determined. A point held by two fixed guides 0.001 apart and dragged 1e9 away, tied
+    // in by a midpoint, carries multipliers near 1e12; their roundoff must not pass for the
+    // circle multiplier's error, which hides a negative curvature along y.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let x = builder.parameter(1.0, false);
+    let y = builder.parameter(0.0, false);
+    let z = builder.parameter(0.0, false);
+    let r = builder.parameter(1.0, false);
+    let a = builder.point(1.0, 0.0, true);
+    let c = builder.point(1.0 + 2e-7, 1.0, true);
+    builder.equation(Kind::Distance, 1.0, &[o[0], o[1], x, y]);
+    builder.equation(Kind::DistanceToParameter, 0.0, &[o[0], o[1], x, z, r]);
+    builder.equation(Kind::PointOnLine, 0.0, &[r, z, a[0], a[1], c[0], c[1]]);
+    let q = builder.point(0.0, 0.0, false);
+    let g = builder.point(1.0, 0.0, true);
+    let h = builder.point(1.0, 0.001, true);
+    builder.equation(Kind::PointOnLine, 0.0, &[q[0], q[1], o[0], o[1], g[0], g[1]]);
+    builder.equation(Kind::PointOnLine, 0.0, &[q[0], q[1], o[0], o[1], h[0], h[1]]);
+    let middle = builder.parameter(0.5, false);
+    builder.equation(Kind::Midpoint, 0.0, &[q[1], x, middle]);
+    builder.temporary(Kind::Value, -0.3, &[x]);
+    builder.temporary(Kind::Value, 0.0, &[y]);
+    builder.temporary(Kind::Value, 0.0, &[z]);
+    builder.temporary(Kind::Value, 1e9, &[q[0]]);
+    let (outcome, values) = builder.outcome();
+    assert!(outcome.drag != Some(DragOutcome::Projected) || values[y].abs() > 1e-3, "{outcome:?} {values:?}");
+}
