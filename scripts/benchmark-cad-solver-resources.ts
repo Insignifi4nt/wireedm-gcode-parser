@@ -15,6 +15,11 @@ export const CAD_BENCHMARK_SOLVER_IDS = ['planegcs', 'native-only', 'native-firs
 const wasmFile = (module: 'native' | 'planegcs') => new URL(module === 'native' ? '../packages/sketch-solver/wasm/sketch_solver.wasm'
   : '../node_modules/@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm', import.meta.url);
 const quiet = { print: () => undefined, printErr: () => undefined };
+/** Node and V8 flags of this process without the tsx loader, so cold probes run as the parent does and runs record them. */
+export function cadBenchmarkExecArgv() {
+  const loader = (flag: string, value = '') => /^(--require|-r|--import|--loader)(=|$)/.test(flag) && /tsx/.test(flag.includes('=') ? flag : value);
+  return process.execArgv.filter((flag, index, all) => !loader(flag, all[index + 1]) && !(index > 0 && !all[index - 1].includes('=') && loader(all[index - 1], flag)));
+}
 
 /** Explicit compilation separates compile from instantiation/glue. Capture actual exported Memory
  * objects rather than assuming a module's heap size. Each factory owns fresh instances; a native
@@ -73,7 +78,7 @@ async function coldFirstAnswer(scenario: ColdScenario) {
 function child(args: readonly string[]) {
   // A separate process per probe prevents V8's WASM compilation cache from warming another probe.
   // OS disk caches are not flushed; this is not a browser/network fetch metric.
-  const run = spawnSync(process.execPath, ['--import', 'tsx', fileURLToPath(import.meta.url), ...args], { encoding: 'utf8', timeout: 60_000,
+  const run = spawnSync(process.execPath, [...cadBenchmarkExecArgv(), '--import', 'tsx', fileURLToPath(import.meta.url), ...args], { encoding: 'utf8', timeout: 60_000,
     env: { ...process.env, TSX_TSCONFIG_PATH: fileURLToPath(new URL('../tsconfig.app.json', import.meta.url)) } });
   if (run.status !== 0) throw new Error(`Cold probe ${args.join(' ')} failed: ${run.stderr || run.error}`);
   // PlaneGCS prints its own progress lines; the probe's report is the last line.

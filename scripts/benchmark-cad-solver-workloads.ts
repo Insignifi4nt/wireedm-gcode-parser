@@ -9,7 +9,7 @@ import { cadBenchmarkCpuCalibrationMs } from '../src/features/cad/benchmark/cadB
 import type { CadBenchmarkSolverId } from '../src/features/cad/benchmark/cadSolverBenchmarkAdapters';
 import { createCadSolverWorkloadCases } from '../src/features/cad/benchmark/cadSolverWorkloadCases';
 import { measureCadSolverDrag, measureCadSolverDragSweep, measureCadSolverEdits, measureCadSolverWorkload } from '../src/features/cad/benchmark/cadSolverWorkloadBenchmark';
-import { createNodeCadBenchmarkSolver, measureCadSolverMemory, measureColdCadBenchmarkSolvers, probeCadSolverWorkloadCapacity } from './benchmark-cad-solver-resources';
+import { cadBenchmarkExecArgv, createNodeCadBenchmarkSolver, measureCadSolverMemory, measureColdCadBenchmarkSolvers, probeCadSolverWorkloadCapacity } from './benchmark-cad-solver-resources';
 
 export const CAD_SOLVER_SECTIONS = ['workloads', 'edits', 'drag', 'sweep', 'cold', 'memory', 'capacity'] as const;
 export type CadSolverSection = typeof CAD_SOLVER_SECTIONS[number];
@@ -38,7 +38,7 @@ async function runIdentity(options: CadSolverWorkloadOptions) {
     ? hash(diff, ...(await Promise.all(untracked.map(async path => [`\0${path}\0`, await readFile(path)]))).flat()) : null;
   return { appVersion: packageInfo.version, commit: git('rev-parse', 'HEAD').trim(), dirty: uncommitted !== null, uncommittedSha256: uncommitted,
     modules: { native: await sha256('../packages/sketch-solver/wasm/sketch_solver.wasm'), planegcs: await sha256('../node_modules/@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm') },
-    environment: { node: process.version, platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model ?? 'unknown', cores: cpus().length, totalMemoryBytes: totalmem() },
+    environment: { node: process.version, v8: process.versions.v8, execArgv: cadBenchmarkExecArgv(), nodeOptions: process.env.NODE_OPTIONS ?? '', platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model ?? 'unknown', cores: cpus().length, totalMemoryBytes: totalmem() },
     runs: options.runs, quick: options.quick, solvers: options.solvers };
 }
 type RunIdentity = Awaited<ReturnType<typeof runIdentity>>;
@@ -79,9 +79,11 @@ export async function runCadSolverWorkloads(options: CadSolverWorkloadOptions) {
   } else await writeJson(manifestFile, { createdAt: new Date().toISOString(), identity });
   const solvers = async () => Promise.all(options.solvers.map(async id => (await createNodeCadBenchmarkSolver(id)).solver));
   let failures = 0;
-  const part = async (name: string, measure: () => Promise<unknown>) => {
+  /** `scope` names what a part covers beyond the run's identity, such as memory's fixtures; a kept part must cover the same. */
+  const part = async (name: string, measure: () => Promise<unknown>, scope?: readonly string[]) => {
     const file = join(options.out, `${name}.json`), kept = existsSync(file) ? await readJson(file) as Part | undefined : undefined;
     if (kept && !identityDifferences(identity, kept.identity).length) {
+      if (JSON.stringify(kept.scope) !== JSON.stringify(scope)) throw new Error(`${name} in ${options.out} covers ${kept.scope?.join(', ') ?? 'everything'}, not ${scope?.join(', ') ?? 'everything'}; use the same selection or another --out.`);
       const found = failuresOf(kept.result);
       failures += found.length;
       console.log(`${name}: kept from an earlier burst${found.length ? `, ${found.length} CORRECTNESS FAILURES` : ''}`);
@@ -89,7 +91,7 @@ export async function runCadSolverWorkloads(options: CadSolverWorkloadOptions) {
     }
     if (existsSync(file)) console.log(`${name}: unreadable or from another run, measuring again`);
     const started = performance.now(), idleCpuCalibrationMs = cadBenchmarkCpuCalibrationMs(), result = await measure(), found = failuresOf(result);
-    await writeJson(file, { part: name, createdAt: new Date().toISOString(), identity, idleCpuCalibrationMs, elapsedSeconds: Math.round((performance.now() - started) / 100) / 10, result });
+    await writeJson(file, { part: name, createdAt: new Date().toISOString(), identity, scope, idleCpuCalibrationMs, elapsedSeconds: Math.round((performance.now() - started) / 100) / 10, result });
     failures += found.length;
     console.log(`${name}: ${Math.round((performance.now() - started) / 100) / 10} s, calibration ${idleCpuCalibrationMs} ms idle${found.length ? `, ${found.length} CORRECTNESS FAILURES` : ''}`);
     for (const failure of found.slice(0, 10)) console.log(`  ${failure}`);
@@ -104,14 +106,14 @@ export async function runCadSolverWorkloads(options: CadSolverWorkloadOptions) {
     if (section === 'drag') await part('drag', async () => measureCadSolverDrag(await solvers(), options.runs));
     if (section === 'sweep') await part('sweep', async () => measureCadSolverDragSweep(await solvers()));
     if (section === 'cold') await part('cold', async () => measureColdCadBenchmarkSolvers(options.runs));
-    if (section === 'memory') await part('memory', () => measureCadSolverMemory(cases, options.quick ? 100 : 1000, options.solvers));
+    if (section === 'memory') await part('memory', () => measureCadSolverMemory(cases, options.quick ? 100 : 1000, options.solvers), cases.map(testCase => testCase.id));
     if (section === 'capacity') await part('capacity', () => probeCadSolverWorkloadCapacity(options.solvers.filter(id => id !== 'native-first') as ('planegcs' | 'native-only')[]));
   }
   if (failures) { console.log(`${failures} CORRECTNESS FAILURES; the results they belong to are incorrect.`); process.exitCode = 1; }
   console.log(`Parts are in ${options.out}. Aggregate with: npm run cad:benchmark -- --group solver-workloads --aggregate ${options.out}`);
 }
 
-interface Part { readonly part: string; readonly identity?: RunIdentity; readonly result: unknown }
+interface Part { readonly part: string; readonly identity?: RunIdentity; readonly scope?: readonly string[]; readonly result: unknown }
 type Calibrated = { readonly cpuCalibrationMs?: readonly number[]; readonly throttled?: boolean };
 const calibrated = (value: unknown): Calibrated[] => Array.isArray(value) ? value.flatMap(calibrated)
   : value && typeof value === 'object' ? [...('cpuCalibrationMs' in value && Array.isArray(value.cpuCalibrationMs) ? [value as Calibrated] : []),
