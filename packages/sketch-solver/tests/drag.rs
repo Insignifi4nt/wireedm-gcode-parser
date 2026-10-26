@@ -455,9 +455,12 @@ fn a_landing_polish_out_of_work_leaves_the_landing_as_it_was() {
     builder.equation(Kind::Distance, 1.0 + 1.2e-10, &[p[0], p[1], q[0], q[1]]);
     builder.temporary(Kind::Value, 0.0, &[p[0]]);
     builder.temporary(Kind::Value, 0.0, &[p[1]]);
-    for work in 150..400 {
+    // A polish can end accepted although its work ran out; that is cut short too.
+    let (_, polished) = builder.outcome();
+    for work in 150..1000 {
         let (outcome, values) = builder.outcome_within(Limits { fill: 1_000_000, work });
-        if outcome.status == Status::TooLarge { assert_eq!([values[q[0]], values[q[1]]], [1e-5, 1.0], "work {work}"); }
+        let expected = if outcome.status == Status::TooLarge { [1e-5, 1.0] } else { [polished[q[0]], polished[q[1]]] };
+        assert_eq!([values[q[0]], values[q[1]]], expected, "work {work}");
     }
 }
 
@@ -761,4 +764,23 @@ fn a_fixed_group_whose_relations_fail_is_stalled() {
     builder.temporary(Kind::Value, 2.0, &[p]);
     let (outcome, _) = builder.outcome();
     assert_eq!((outcome.status, outcome.drag), (Status::NotConverged, Some(DragOutcome::Stalled)));
+}
+
+#[test]
+fn the_curvature_test_charges_its_reduced_matrix() {
+    // 63 unit circles sharing x, each y dragged to zero and x out to 2: building the reduced
+    // curvature matrix costs about 1e6 entries, which 3e6 does not leave room for.
+    let mut builder = Builder::new();
+    let zero = builder.parameter(0.0, true);
+    let x = builder.parameter(1.0, false);
+    for _ in 0..63 {
+        let y = builder.parameter(0.0, false);
+        builder.equation(Kind::Distance, 1.0, &[zero, zero, x, y]);
+        builder.temporary(Kind::Value, 0.0, &[y]);
+    }
+    builder.temporary(Kind::Value, 2.0, &[x]);
+    let (outcome, _) = builder.outcome_within(Limits { fill: 2_000_000, work: 3_000_000 });
+    assert_eq!((outcome.status, outcome.drag), (Status::TooLarge, Some(DragOutcome::Stalled)));
+    let (outcome, _) = builder.outcome_within(Limits { fill: 2_000_000, work: 400_000_000 });
+    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
 }

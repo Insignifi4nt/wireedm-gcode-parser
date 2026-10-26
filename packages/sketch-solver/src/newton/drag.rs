@@ -338,13 +338,15 @@ impl Drag<'_> {
         let polished = solve_group_within(&held, values, limits, DRAG_ITERATIONS.saturating_sub(self.iterations).min(MAX_ITERATIONS));
         self.work = self.work.saturating_add(polished.work);
         self.iterations += polished.iterations;
+        // A polish cut short by its work can still end accepted; it carries no ordering then.
+        let exhausted = polished.status == Status::TooLarge || polished.position.is_none() || self.work > self.limits.work;
         match polished.status {
-            Status::Converged => {}
-            Status::TooLarge => {
+            _ if exhausted => {
                 // The landing stands; the polish's partial work is not accepted.
                 for (&p, &value) in held.unknowns.iter().zip(&saved) { values[p] = value; }
                 return Err(Exhausted);
             }
+            Status::Converged => {}
             _ => for (&p, &value) in held.unknowns.iter().zip(&saved) { values[p] = value; },
         }
         Ok(true)

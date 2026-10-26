@@ -278,7 +278,11 @@ impl Drag<'_> {
         let least = moving.iter().map(|&k| shares[k]).fold(f64::INFINITY, f64::min);
         let tolerance = tolerance + 6.0 * size_h * error / least;
         let along = |a: &[f64], b: &[f64]| (0..s).map(|i| a[i] * dot(&hessian[i], b)).sum::<f64>();
-        let reduced: Vec<Vec<f64>> = moving.iter().map(|&a| moving.iter().map(|&b| along(&vectors[a], &vectors[b])).collect()).collect();
+        // `H v` once per basis vector, then its products with the others, charged before they run.
+        self.work = self.work.saturating_add(moving.len() * s * (s + moving.len()));
+        if self.work > self.limits.work { return Err(Exhausted); }
+        let hv: Vec<Vec<f64>> = moving.iter().map(|&b| (0..s).map(|i| dot(&hessian[i], &vectors[b])).collect()).collect();
+        let reduced: Vec<Vec<f64>> = moving.iter().map(|&a| hv.iter().map(|hb| (0..s).map(|i| vectors[a][i] * hb[i]).sum::<f64>()).collect()).collect();
         let Some((curvatures, directions, spent)) = symmetric_eigen(reduced, self.limits.work.saturating_sub(self.work))
             else { self.work = self.work.max(self.limits.work); return Err(Exhausted); };
         self.work = self.work.saturating_add(spent);
