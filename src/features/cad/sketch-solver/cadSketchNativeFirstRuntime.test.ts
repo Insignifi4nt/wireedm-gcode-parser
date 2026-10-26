@@ -63,8 +63,8 @@ describe('native-first sketch solving', () => {
     // A two-link arm of 10 mm links from a fixed base reaches 20 mm. Its tip is dragged along y = 1
     // from x = 10 to 21.25, past its reach, then straight back to x = 15. Native's rank diagnosis
     // cannot yet decide some nearly straight arms, whose second row keeps a lead between TAU and
-    // CERTAIN in an early column (see `smallest_singular_value`); PlaneGCS answers those frames,
-    // which roundoff picks among the stretched ones.
+    // CERTAIN in an early column (see `smallest_singular_value`): roundoff picks those frames among
+    // the stretched ones, and native solves them with freedom unknown.
     const arm = parseCadSketchGraph({ points: [{ id: 'c', position: ['0', '0'] }, { id: 'p', position: [6, 8] }, { id: 'q', position: [16, 8] }],
       entities: [{ id: 'cp', kind: 'line', construction: false, startPointId: 'c', endPointId: 'p' }, { id: 'pq', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }],
       relations: [{ id: 'upper', kind: 'distance', pointIds: ['c', 'p'], value: 10 }, { id: 'lower', kind: 'distance', pointIds: ['p', 'q'], value: 10 }] });
@@ -82,9 +82,19 @@ describe('native-first sketch solving', () => {
         expect(records[frame].drag?.outcome, `frame ${frame}`).toBe(reach < 20 ? 'reached' : 'projected');
         expect(distance(dragged.graph), `frame ${frame}`).toBeLessThanOrEqual(Math.max(0, reach - 20) + 1e-9);
         expect(distance(dragged.graph), `frame ${frame}`).toBeLessThanOrEqual(distance(expected.graph) + 1e-6);
-        if (reach < 20 || records[frame].answeredBy !== 'native') expect(records[frame], `frame ${frame}`).toMatchObject(reach < 20 ? { answeredBy: 'native' } : { native: 'unavailable' });
+        expect(records[frame], `frame ${frame}`).toMatchObject({ answeredBy: 'native', native: 'answer' });
+        if (reach < 20) expect(dragged.diagnostics.degreesOfFreedom, `frame ${frame}`).toBe(2);
         current = dragged.graph;
       }
+      // Released straight, solved again, then edited, all by native alone.
+      const native = createCadSketchTestSolver({ mode: 'native-only' });
+      const stretched = await native.solve({ graph: chained ? current : arm, parameters: {}, drag: { pointId: 'q', position: [21.25, 1] } });
+      if (stretched.kind !== 'solved') throw new Error(JSON.stringify(stretched));
+      expect(await native.solve({ graph: stretched.graph, parameters: {} })).toMatchObject({ kind: 'solved' });
+      const longer = { ...stretched.graph, relations: stretched.graph.relations.map(relation => relation.id === 'lower' ? { ...relation, value: 12 } : relation) };
+      const edited = await native.solve({ graph: parseCadSketchGraph(longer), parameters: {} });
+      if (edited.kind !== 'solved') throw new Error(JSON.stringify(edited));
+      expect(checkCadSketchGraph(edited.graph, {})).toEqual([]);
     }
   });
 
@@ -135,19 +145,38 @@ describe('native-first sketch solving', () => {
     expect(loadPlaneGcs).not.toHaveBeenCalled();
   });
 
-  it('asks PlaneGCS before rejecting a drag landed on a tangency as redundant', async () => {
-    // p rides a circle of radius 10 about a and a vertical line at x = 10; dragged onto their tangency
-    // it lands where the two relations' gradients align, so native's rank there reads redundant.
-    const tangent = parseCadSketchGraph({ points: [{ id: 'a', position: ['0', '0'] }, { id: 'p', position: [10, 1e-5] }],
+  it.each([10, 100, 1000])('stops a drag onto a tangency short of its singular point, then solves, drags and edits it natively (radius %d)', async radius => {
+    // p rides a circle about a and the vertical line x = radius. Exactly on their tangency the two
+    // relations' gradients align and rank reads redundant; near it rank is too close to call, so
+    // the sketch solves with freedom unknown and the drag stops where rank is still clear of it.
+    const tangent = (x: number) => parseCadSketchGraph({ points: [{ id: 'a', position: ['0', '0'] }, { id: 'p', position: [radius, 1e-5 * radius] }],
       entities: [{ id: 'ap', kind: 'line', construction: false, startPointId: 'a', endPointId: 'p' }],
-      relations: [{ id: 'radius', kind: 'distance', pointIds: ['a', 'p'], value: 10 }, { id: 'x', kind: 'fixed-axis', pointId: 'p', axis: 'x', value: 10 }] });
-    const { solver, records } = runtime(loadCadSketchTestNativeSolver, await createCadSketchTestSolver({ mode: 'planegcs' }));
-    const start = await solver.solve({ graph: tangent, parameters: {} });
-    if (start.kind !== 'solved') throw new Error(JSON.stringify(start));
-    const dragged = await solver.solve({ graph: start.graph, parameters: {}, drag: { pointId: 'p', position: [10, 0] } });
-    expect(dragged).toMatchObject({ kind: 'solved' });
-    expect(records[1]).toMatchObject({ answeredBy: 'planegcs', native: 'drag-diagnosis', planeGcs: 'solved' });
-    // Native's own rejection stands when PlaneGCS does no better.
+      relations: [{ id: 'radius', kind: 'distance', pointIds: ['a', 'p'], value: radius }, { id: 'x', kind: 'fixed-axis', pointId: 'p', axis: 'x', value: x }] });
+    const records: CadSketchSolveRecord[] = [], solver = createCadSketchTestSolver({ mode: 'native-only', onSolve: record => records.push(record) });
+    const solve = async (input: CadSketchSolveInput) => {
+      const result = await solver.solve(input);
+      if (result.kind !== 'solved') throw new Error(JSON.stringify(result));
+      expect(result.diagnostics.redundantIds).toEqual([]);
+      return result.graph;
+    };
+    const start = await solve({ graph: tangent(radius), parameters: {} });
+    let current = start;
+    for (const drag of [0, 1]) {
+      current = await solve({ graph: current, parameters: {}, drag: { pointId: 'p', position: [radius, 0] } });
+      expect(records.at(-1)?.drag?.outcome, `drag ${drag}`).toBe('limited');
+      const [x, y] = current.points[1].position.map(Number);
+      expect(Math.abs(x - radius)).toBeLessThanOrEqual(1e-12 * radius);
+      expect(y).toBeGreaterThan(0);
+      expect(y).toBeLessThanOrEqual(2e-9 * radius);
+      // Released, it solves again where it was left.
+      expect((await solve({ graph: current, parameters: {} })).points[1].position.map(Number)).toEqual([x, y]);
+    }
+    const edited = await solve({ graph: parseCadSketchGraph({ ...current, relations: tangent(radius - 1).relations }), parameters: {} });
+    expect(Number(edited.points[1].position[1])).toBeCloseTo(Math.sqrt(2 * radius - 1), 9);
+    expect(records.every(record => record.answeredBy === 'native' && record.native === 'answer')).toBe(true);
+  });
+
+  it('keeps native\'s own drag rejection when PlaneGCS does no better', async () => {
     const fallback = runtime(async () => fakeNative(model => ({ diagnosis: { kind: 'diagnosed', degreesOfFreedom: 1, labels: model.equations.map(equation => equation.temporary ? 0 : CAD_SKETCH_EQUATION_REDUNDANT) },
       drag: { outcome: 'reached', targetDistance: 0 } })), planeGcsSolved(failedResult));
     expect(await fallback.solver.solve({ ...input, drag: { pointId: 'b', position: [12, 2] } })).toMatchObject({ kind: 'rejected', reason: 'redundant' });
@@ -195,6 +224,21 @@ describe('native-first sketch solving', () => {
     };
     expect(await solvedAt(9.999999999999998, 1e-47)).toEqual([10, 0]);
     expect(await solvedAt(1 / 3, 0)).toEqual([1 / 3, 0]);
+    // A rank too close to call solves with freedom unknown and is never rounded, which could close a
+    // near tangency exactly.
+    const uncertain = await runtime(async () => fakeNative(model => ({ values: model.values.map((value, index) => index === 2 ? 9.999999999999998 : index === 3 ? 1e-47 : value),
+      diagnosis: { kind: 'uncertain', labels: [0] } })), planeGcsSolved(failedResult)).solver.solve(level);
+    expect(uncertain).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: null } });
+    expect(uncertain.kind === 'solved' && uncertain.graph.points[1].position).toEqual([9.999999999999998, 1e-47]);
+    // Far from the origin 8 ulps exceed the driver tolerance, and rounding never moves a value that far.
+    const farLine = { graph: parseCadSketchGraph({ points: [{ id: 'a', position: ['999999980', '0'] }, { id: 'b', position: [999999989, 1] }],
+      entities: [{ id: 'line', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+      relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 10 }] }), parameters: {} };
+    for (const position of [[999999990, 1e-9], [999999990.0000001, 0]] as const) {
+      const result = await runtime(async () => fakeNative(model => ({ values: model.values.map((value, index) => index === 2 || index === 3 ? position[index - 2] : value) })),
+        planeGcsSolved(failedResult)).solver.solve(farLine);
+      expect(result.kind === 'solved' && result.graph.points[1].position).toEqual(position);
+    }
     // A group that moved only by polishing keeps its start, though a snap would move it further.
     const near = 100000.00000000012, polishing = runtime(async () => fakeNative(model => ({ values: model.values.map((value, index) => index === 2 ? near + 2 ** -36 : index === 3 ? 0 : value) })), planeGcsSolved(failedResult));
     const untouched = await polishing.solver.solve({ ...level, graph: parseCadSketchGraph({ ...level.graph, points: [level.graph.points[0], { id: 'b', position: [near, 1e-13] }] }) });
@@ -334,9 +378,9 @@ function nativeModule({ alloc, free, solve, data }: { readonly alloc: number[]; 
 
 describe('native solver instances', () => {
   const unreachable = [0, 11], at8 = [65, 8, 11], at1024 = [65, 128, 8, 11], none = [11];
-  // An empty model's reply: length, protocol 3, converged, no iterations or residual, nothing to
+  // An empty model's reply: length, protocol 4, converged, no iterations or residual, nothing to
   // diagnose, no freedom count, no drag outcome or target distance.
-  const reply = new Float64Array([9, 3, 0, 0, 0, 2, NaN, NaN, NaN]);
+  const reply = new Float64Array([9, 4, 0, 0, 0, 2, NaN, NaN, NaN]);
   const empty: CadSketchEquationModel = { values: [], fixed: [], pointParameters: new Map(), radiusParameters: new Map(), equations: [] };
 
   it('reads a reply and frees both buffers', async () => {
@@ -348,10 +392,15 @@ describe('native solver instances', () => {
     // One free value held at 0 and dragged toward 5: projected, 5 mm short, one degree of freedom.
     const dragged: CadSketchEquationModel = { ...empty, values: [0], fixed: [false],
       equations: [{ kind: 'value', operands: [0], value: 5, tag: 0, sourceId: 'drag', temporary: true }] };
-    const drag = (outcome: number, distance: number) => new Float64Array([11, 3, 0, 1, 0, 0, 1, outcome, distance, 0, 0]);
+    const drag = (outcome: number, distance: number) => new Float64Array([11, 4, 0, 1, 0, 0, 1, outcome, distance, 0, 0]);
     const solve = (model: CadSketchEquationModel, data: Float64Array) => loadCadSketchNativeSolver(nativeModule({ alloc: at8, free: none, solve: at1024, data })).then(solver => solver.solve(model));
     expect(await solve(dragged, drag(1, 5))).toMatchObject({ values: [0], drag: { outcome: 'projected', targetDistance: 5 } });
-    for (const [outcome, distance] of [[NaN, NaN], [3, 5], [1, NaN], [NaN, 5], [0, -1], [0, Infinity]])
+    expect(await solve(dragged, drag(3, 5))).toMatchObject({ drag: { outcome: 'limited', targetDistance: 5 } });
+    // An uncertain rank keeps its labels and leaves freedom unknown; a count with it is invalid.
+    const uncertain = (freedom: number) => new Float64Array([11, 4, 0, 1, 0, 4, freedom, 1, 5, 0, 0]);
+    expect(await solve(dragged, uncertain(NaN))).toMatchObject({ diagnosis: { kind: 'uncertain', labels: [0] } });
+    await expect(solve(dragged, uncertain(1))).rejects.toThrow('invalid result');
+    for (const [outcome, distance] of [[NaN, NaN], [4, 5], [1, NaN], [NaN, 5], [0, -1], [0, Infinity]])
       await expect(solve(dragged, drag(outcome, distance))).rejects.toThrow('invalid result');
     const undragged = { ...dragged, equations: [{ ...dragged.equations[0], temporary: false }] };
     await expect(solve(undragged, drag(1, 5))).rejects.toThrow('invalid result');

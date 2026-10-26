@@ -28,10 +28,11 @@ const STALLED_DRAG = 'The point could not be moved toward the target from this s
 
 /**
  * Solves already parsed input with the native solver and accepts only what it can answer for:
- * a converged, fully diagnosed solution with known freedom that keeps fixed values and passes the
- * graph checks, or definite conflicts and redundancies, rejected in the PlaneGCS runtime's order.
- * A drag answers only with a solution whose target was reached or projected: a stalled drag is not
- * converged, and a drag's conflicts and redundancies stand only when PlaneGCS does no better.
+ * a converged solution, diagnosed with known freedom or with a rank too close to call and nothing
+ * found dependent, that keeps fixed values and passes the graph checks, or definite conflicts and
+ * redundancies, rejected in the PlaneGCS runtime's order. A drag answers only with a solution whose
+ * target was reached, projected or limited: a stalled drag is not converged, and a drag's conflicts
+ * and redundancies stand only when PlaneGCS does no better.
  * Projected means native's first- and second-order necessary conditions for a local minimum of the
  * target distance held up to its resolution. That proves neither a local minimum nor the nearest
  * configuration: another solver can end closer, for example on another assembly of a linkage.
@@ -64,7 +65,9 @@ function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, soluti
   if (diagnosis.kind === 'suspected') return { kind: 'fallback', reason: 'suspected', rejection: failed('Sketch relations could not be met together from this start.') };
   const status = solution.status === 'converged' ? 'success' : 'failed', ids = cadSketchEquationDiagnostics(model, diagnosis.labels);
   // With nothing free, only unmet relations are labelled, each as conflicting, and nothing is free.
-  const degreesOfFreedom = diagnosis.kind === 'diagnosed' ? diagnosis.degreesOfFreedom : ids.conflictingIds.length ? null : 0;
+  // An uncertain rank leaves freedom unknown.
+  const uncertain = diagnosis.kind === 'uncertain';
+  const degreesOfFreedom = diagnosis.kind === 'diagnosed' ? diagnosis.degreesOfFreedom : uncertain || ids.conflictingIds.length ? null : 0;
   const diagnostics: CadSketchSolveDiagnostics = { ...noDiagnostics(status), degreesOfFreedom, ...ids };
   const unsolved = (reason: CadSketchNativeFallbackReason): CadSketchNativeAttempt => ({ kind: 'fallback', reason,
     rejection: { kind: 'rejected', reason: 'failed', message: stalled ? STALLED_DRAG : 'The sketch solver did not produce a valid solution.', diagnostics } });
@@ -84,8 +87,10 @@ function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, soluti
   if (ids.conflictingIds.length) return definite({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics });
   if (ids.redundantIds.length || ids.partiallyRedundantIds.length) return definite({ kind: 'rejected', reason: 'redundant', message: 'Sketch constraints are redundant.', diagnostics });
   if (solution.status !== 'converged' || stalled) return unsolved('not-converged');
-  if (degreesOfFreedom === null) return unsolved('unknown-freedom');
-  return solvedAttempt(input, model, solution, diagnostics, check);
+  // A converged sketch whose rank was too close to call, as near a tangency, is solved with its
+  // freedom unknown.
+  if (degreesOfFreedom === null && !uncertain) return unsolved('unknown-freedom');
+  return solvedAttempt(input, model, solution, diagnostics, check, !uncertain);
 }
 
 function answer(result: CadSketchSolveResult): CadSketchNativeAttempt { return { kind: 'answer', result, movedGroups: 0, keptGroups: 0 }; }
@@ -112,9 +117,10 @@ const polished = (start: number, value: number) => Math.abs(value - start) <= Ma
  * A drag moves its point's groups on purpose, however little, so they are never kept.
  * Groups are judged on the native values themselves. Roundoff also leaves exact intent a few ulps
  * off (55 as 54.99999999999999), so short decimals within roundoff are tried first, never in a kept
- * group; the graph checks decide, as for any solution.
+ * group; the graph checks decide, as for any solution. Rounding can close a near tangency exactly,
+ * so it is not tried at all when `snap` is off, for a rank too close to call.
  */
-function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel, solution: CadSketchNativeSolution, diagnostics: CadSketchSolveDiagnostics, check: Check): CadSketchNativeAttempt {
+function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel, solution: CadSketchNativeSolution, diagnostics: CadSketchSolveDiagnostics, check: Check, snap = true): CadSketchNativeAttempt {
   if (!applyCadSketchEquationSolution(input.graph, model, solution.values)) return { kind: 'fallback', reason: 'moved-fixed-value',
     rejection: { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution changed fixed source geometry.', diagnostics } };
   const group = parameterGroups(model), moved = new Set<number>(), edited = new Set<number>();
@@ -133,7 +139,7 @@ function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel
   }
   const keep = new Set([...moved].filter(id => !edited.has(id)));
   const kept = (values: readonly number[]) => values.map((value, index) => keep.has(group[index]) ? model.values[index] : value);
-  const snapped = shortDecimals(model, solution.values, index => keep.has(group[index]));
+  const snapped = snap ? shortDecimals(model, solution.values, index => keep.has(group[index])) : undefined;
   const candidates = [snapped && keep.size ? kept(snapped) : undefined, snapped, keep.size ? kept(solution.values) : undefined, solution.values];
   let issues: readonly CadSketchGraphIssue[] = [];
   for (const values of candidates) {
@@ -153,7 +159,10 @@ function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel
  * nothing changes.
  * Values the solver left alone are the caller's intent, even a few ulps from a short decimal far from
  * the origin, and a snap that leaves any equation further from met is undone with the others of that
- * equation, so an exact driver target stays exact. Values that need more digits keep them.
+ * equation, so an exact driver target stays exact. Values that need more digits keep them. No value
+ * moves by more than the driver tolerance, so far from the origin, where 8 ulps are larger,
+ * rounding cannot close a near tangency of a diagnosed sketch, whose rank holds over about 1e-7 of
+ * its size.
  */
 function shortDecimals(model: CadSketchEquationModel, values: readonly number[], kept: (index: number) => boolean): number[] | undefined {
   const scale = values.map(() => Infinity);
@@ -164,7 +173,7 @@ function shortDecimals(model: CadSketchEquationModel, values: readonly number[],
   const snapped = values.map((value, index) => {
     if (model.fixed[index] || kept(index) || Object.is(value, model.values[index])) return value;
     const short = Math.abs(value) <= 8 * Number.EPSILON * (Number.isFinite(scale[index]) ? scale[index] : 1) ? 0 : Number(value.toPrecision(12));
-    return short === value || short !== 0 && Math.abs(short - value) > 8 * Number.EPSILON * Math.abs(value) ? value : short;
+    return short === value || short !== 0 && Math.abs(short - value) > 8 * Number.EPSILON * Math.abs(value) || Math.abs(short - value) > DRIVER_TOLERANCE ? value : short;
   });
   // Each pass undoes at least one snap, so this ends.
   for (let worse = true; worse;) {

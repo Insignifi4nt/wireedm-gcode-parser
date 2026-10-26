@@ -85,7 +85,8 @@ export function parseCadSketchSolverReply(value: unknown, input: CadSketchSolveI
   if (result.kind === 'rejected') return { id: value.id, kind: 'result', result: { ...result, diagnostics } };
   let graph: CadSketchGraph | undefined;
   try { graph = cadSketchGraphWithSolvedValues(input.graph, result.values); } catch { graph = undefined; }
-  if (!graph || (diagnostics.status !== 'success' && diagnostics.status !== 'converged') || diagnostics.degreesOfFreedom === null || diagnostics.degreesOfFreedom < 0
+  // Freedom is unknown (null) when the solver could not decide rank near a singular configuration.
+  if (!graph || (diagnostics.status !== 'success' && diagnostics.status !== 'converged') || diagnostics.degreesOfFreedom !== null && diagnostics.degreesOfFreedom < 0
     || diagnostics.conflictingIds.length || diagnostics.redundantIds.length || diagnostics.partiallyRedundantIds.length || diagnostics.issues.length
     || checkCadSketchGraph(graph, input.parameters).length) throw new Error('Sketch worker solution does not match its request or constraints.');
   return { id: value.id, kind: 'result', result: { kind: 'solved', graph, diagnostics } };

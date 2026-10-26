@@ -229,8 +229,31 @@ fn a_weakly_held_direction_is_not_blamed_on_a_relation() {
     // These hold z = 2e4, but moving z by 1 mm breaks `x = 0` by only 5e-11 mm, so the rows are
     // dependent within TAU relative to their coefficients of about 1e6. That combination
     // reproduces the last row only to 5e-5, so its residuals are not constant and cannot tell
-    // redundant from conflicting: rank is unclear.
-    assert_eq!(weak([0.0, 0.0, 2e4], false, 5e-5), (Diagnosis::Unavailable, None, vec![0; 3]));
+    // redundant from conflicting: rank is unclear, so the solved sketch blames nothing and its
+    // freedom is unknown.
+    assert_eq!(weak([0.0, 0.0, 2e4], false, 5e-5), (Diagnosis::Uncertain, None, vec![0; 3]));
+}
+
+#[test]
+fn a_repeated_dimension_beside_a_near_tangency_is_still_redundant() {
+    // p 1.4e-8 mm from where its circle about the origin touches x = 10: rank there is too close to
+    // call, so freedom is unknown, but a repeated distance to q is still found, before or after it.
+    for tangency_first in [true, false] {
+        let mut builder = Builder::new();
+        let o = builder.point(0.0, 0.0, true);
+        let p = builder.point(10.0, 1.4e-8, false);
+        let q = builder.point(10.0, 5.0, false);
+        let tangency = |builder: &mut Builder| {
+            builder.equation(Kind::Distance, 10.0, &[o[0], o[1], p[0], p[1]]);
+            builder.equation(Kind::Value, 10.0, &[p[0]]);
+        };
+        if tangency_first { tangency(&mut builder); }
+        builder.equation(Kind::Distance, 5.0, &[p[0], p[1], q[0], q[1]]);
+        builder.equation(Kind::Distance, 5.0, &[p[0], p[1], q[0], q[1]]);
+        if !tangency_first { tangency(&mut builder); }
+        let expected = if tangency_first { vec![0, 0, 0, REDUNDANT] } else { vec![0, REDUNDANT, 0, 0] };
+        assert_eq!(diagnose(&builder), (Diagnosis::Uncertain, None, expected), "tangency first {tangency_first}");
+    }
 }
 
 #[test]

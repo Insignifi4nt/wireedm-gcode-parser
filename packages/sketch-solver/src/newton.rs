@@ -316,14 +316,21 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
             work = work.saturating_add(spent);
             found
         };
-        let diagnosed = diagnose_at(TAU).map(|found| (found, false)).or_else(||
-            (group.status == Status::NotConverged).then(|| diagnose_at(STALLED)).flatten().map(|found| (found, true)));
+        // A converged group whose rank is unclear, as near a tangency, keeps the witnesses found
+        // and leaves freedom unknown; a group that did not converge is diagnosed again at
+        // `STALLED`, as rank decides whether it conflicts.
+        let converged = group.status == Status::Converged;
+        let diagnosed = match diagnose_at(TAU) {
+            Some(found) if found.2 || converged => Some((found, false)),
+            _ => (group.status == Status::NotConverged).then(|| diagnose_at(STALLED)).flatten()
+                .filter(|found| found.2).map(|found| (found, true)),
+        };
         match diagnosed {
-            Some(((group_rank, group_witnesses), suspected)) => {
+            Some(((group_rank, group_witnesses, certain), suspected)) => {
                 // A solution that stands with freedom left moves toward the one nearest its start.
                 // The move stands only when the group is diagnosed the same where it ends, as a
                 // nearer solution can be singular; otherwise the diagnosed solution is kept.
-                if !dragging && !suspected && group.status == Status::Converged && group_witnesses.is_empty() && group_rank < position.len() {
+                if !dragging && certain && converged && group_witnesses.is_empty() && group_rank < position.len() {
                     let solved: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
                     let correction = nearest(&system, values, &start, &position, Limits { work: limits.work.saturating_sub(work), ..limits });
                     work = work.saturating_add(correction.work);
@@ -331,7 +338,7 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
                     outcome.iterations = outcome.iterations.max(group.iterations + correction.iterations);
                     if correction.moved {
                         let (found, _) = diagnose_group(&system, values, &position, TAU, limits.work.saturating_sub(work), limits.fill);
-                        if found.is_some_and(|(found_rank, found_witnesses)| found_rank == group_rank && found_witnesses.is_empty()) {
+                        if found.is_some_and(|(found_rank, found_witnesses, found_certain)| found_certain && found_rank == group_rank && found_witnesses.is_empty()) {
                             outcome.residual = fold(worst(&system.rows(values, None)));
                         } else {
                             for (&p, &value) in system.unknowns.iter().zip(&solved) { values[p] = value; }
@@ -340,7 +347,9 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
                 }
                 rank += group_rank;
                 witnesses.extend(group_witnesses);
+                // Unavailable, then Suspected, then Uncertain win over what any other group found.
                 if suspected { outcome.diagnosis = Diagnosis::Suspected; }
+                else if !certain && outcome.diagnosis == Diagnosis::Diagnosed { outcome.diagnosis = Diagnosis::Uncertain; }
             }
             None => outcome.diagnosis = Diagnosis::Unavailable,
         }
@@ -420,9 +429,9 @@ fn unmet(system: &System, values: &[f64]) -> Vec<Witness> {
         .map(|(_, &e)| Witness { rows: vec![e], agrees: false }).collect()
 }
 
-/// The rank of a group's lasting equations at `values`, dependent within `distance`, and their
-/// witnesses by equation index, with the work spent.
-fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance: f64, budget: usize, fill: usize) -> (Option<(usize, Vec<Witness>)>, usize) {
+/// The rank of a group's lasting equations at `values`, dependent within `distance`, their
+/// witnesses by equation index and whether rank is certain, with the work spent.
+fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance: f64, budget: usize, fill: usize) -> (Option<(usize, Vec<Witness>, bool)>, usize) {
     let rows = system.rows(values, None);
     let jacobian = system.jacobian(&rows, position);
     let lasting: Vec<usize> = (0..rows.len()).filter(|&i| !system.problem.equations[system.equations[i]].temporary).collect();
@@ -430,7 +439,7 @@ fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance:
         .map(|&i| diagnose::Row { entries: jacobian.rows[i].0.clone(), residual: rows[i].residual, tolerance: rows[i].tolerance }).collect();
     let (diagnosis, spent) = diagnose(position.len(), &diagnosed, distance, budget, fill);
     (diagnosis.map(|diagnosis| (diagnosis.rank, diagnosis.witnesses.into_iter().map(|witness| Witness {
-        rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect())), spent)
+        rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect(), diagnosis.certain)), spent)
 }
 
 /// Rows that depend on earlier lasting rows at the start stay out of a first solve, as their

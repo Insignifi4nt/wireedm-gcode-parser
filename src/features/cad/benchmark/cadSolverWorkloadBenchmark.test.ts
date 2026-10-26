@@ -117,11 +117,11 @@ describe('public-boundary solver benchmarks', () => {
     expect(row('die-slot', 'from-start', 'native-only').answers).toEqual({ 'native:answer': 60 });
     // Chained or in one jump, native stays on the four-bar's start assembly, as chained PlaneGCS does.
     for (const [mode, solver] of [['from-start', 'native-only'], ['chained', 'native-only'], ['chained', 'planegcs']]) expect(row('four-bar', mode, solver).largestTargetErrorMm).toBeCloseTo(Math.hypot(17.2, 27.6), 6);
-    // Gaps a native-only release must close, which PlaneGCS answers today: stretched arm frames whose
-    // rank native cannot yet decide, and the tangency, where native stalls short of it and reads the
-    // exact landing as redundant.
-    expect(row('arm', 'from-start', 'native-only').answers).toEqual({ 'native:answer': 44, 'native:unavailable': 3 });
-    expect(row('tangency', 'from-start', 'native-only').answers).toEqual({ 'native:not-converged': 3, 'native:drag-diagnosis': 1 });
+    // Stretched arm frames whose rank is too close to call still solve natively, with freedom unknown.
+    expect(row('arm', 'from-start', 'native-only').answers).toEqual({ 'native:answer': 47 });
+    // A gap a native-only release must close, which PlaneGCS answers today: native stalls on the way
+    // to the tangency. Its landing is answered, stopped short of the singular point.
+    expect(row('tangency', 'from-start', 'native-only').answers).toEqual({ 'native:not-converged': 3, 'native:answer': 1 });
     for (const trajectory of ['arm', 'tangency']) expect(row(trajectory, 'from-start', 'planegcs').outcomes).toEqual({ solved: createCadSolverDragTrajectories().find(item => item.id === trajectory)!.frames.length });
   }, 60_000);
 

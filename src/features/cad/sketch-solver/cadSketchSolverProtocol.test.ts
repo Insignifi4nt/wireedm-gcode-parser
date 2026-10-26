@@ -79,6 +79,11 @@ describe('values-only solved replies', () => {
     for (const values of [[10], [10, 0, 0], hole, [10, Number.NaN], [10, Number.POSITIVE_INFINITY], [Number.NEGATIVE_INFINITY, 0], [10, 2e9], [10, '0']])
       expect(() => parseCadSketchSolverReply(replyWith(graph, values), input)).toThrow();
   });
+  it('accepts a solved reply whose freedom is unknown and refuses negative freedom', () => {
+    const withFreedom = (degreesOfFreedom: number | null) => { const reply = replyWith(graph); return { ...reply, result: { ...reply.result, diagnostics: { ...reply.result.diagnostics, degreesOfFreedom } } }; };
+    expect(parseCadSketchSolverReply(withFreedom(null), input)).toMatchObject({ result: { kind: 'solved', diagnostics: { degreesOfFreedom: null } } });
+    expect(() => parseCadSketchSolverReply(withFreedom(-1), input)).toThrow('constraints');
+  });
   it('keeps negative zero and survives a structured clone with expressions, references, radii and no slots', () => {
     expect(Object.is(solvedGraph(parseCadSketchSolverReply(replyWith(graph, [10, -0]), input)).points[1].position[1], -0)).toBe(true);
     const document = circleReferencePart(true), target = document.features[1]; if (target.kind !== 'sketch' || !target.graph) throw new Error('Reference target missing.');

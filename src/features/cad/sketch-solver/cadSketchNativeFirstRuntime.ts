@@ -36,7 +36,8 @@ export const CAD_SKETCH_NATIVE_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
  * it refuses, load failure, a failed instance, too large groups, unavailable or suspected
  * diagnosis, unknown freedom, no convergence (including a stalled drag), a drag diagnosed as
  * conflicting or redundant where it ended, or a solution that moves fixed values or fails the graph
- * checks. PlaneGCS loads on first use. When native has its own rejection, PlaneGCS's answer replaces it
+ * checks. A converged sketch whose rank is too close to call, as near a tangency, is answered
+ * natively with freedom unknown. PlaneGCS loads on first use. When native has its own rejection, PlaneGCS's answer replaces it
  * only if it solves or names definite conflicts or redundancies.
  */
 export function createCadSketchNativeFirstRuntime(options: {
