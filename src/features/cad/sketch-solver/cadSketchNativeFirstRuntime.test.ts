@@ -5,7 +5,7 @@ import { createCadSolverDieInput } from '../benchmark/cadSolverWorkloadCases';
 import { createCadSketchNativeFirstRuntime, type CadSketchSolveRecord, type CadSketchSolverBackend } from './cadSketchNativeFirstRuntime';
 import type { CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
 import { CadSketchNativeProtocolError, loadCadSketchNativeSolver, type CadSketchNativeSolution, type CadSketchNativeSolver } from './native/cadSketchNativeSolver';
-import type { CadSketchEquationModel } from './native/cadSketchEquationModel';
+import { CAD_SKETCH_EQUATION_CONFLICTING, type CadSketchEquationModel } from './native/cadSketchEquationModel';
 import { createCadSketchTestSolver, loadCadSketchTestNativeSolver } from './__tests__/cadSketchTestSolver';
 
 // A free line whose length is driven: one relation, three degrees of freedom.
@@ -29,18 +29,81 @@ function runtime(native: () => Promise<CadSketchNativeSolver>, planeGcs: CadSket
 }
 
 describe('native-first sketch solving', () => {
-  it('answers natively without loading PlaneGCS, and loads PlaneGCS once for drag targets', async () => {
+  it('answers solves and drags natively without loading PlaneGCS', async () => {
     const { solver, records, loadPlaneGcs } = runtime(loadCadSketchTestNativeSolver, (await createCadSketchTestSolver({ mode: 'planegcs' })));
     const solved = await solver.solve(input);
     expect(solved).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: 3, conflictingIds: [], redundantIds: [], issues: [] } });
     expect(records[0]).toMatchObject({ answeredBy: 'native', native: 'answer' });
-    expect(loadPlaneGcs).not.toHaveBeenCalled();
+    expect(records[0]).not.toHaveProperty('drag');
     for (const position of [[12, 2], [13, 3]] as const) {
       const dragged = await solver.solve({ ...input, drag: { pointId: 'b', position } });
-      expect(dragged.kind).toBe('solved');
+      if (dragged.kind !== 'solved') throw new Error(JSON.stringify(dragged));
+      expect(dragged.graph.points[1].position).toEqual(position);
+      expect(dragged.diagnostics).toMatchObject({ status: 'success', degreesOfFreedom: 3 });
     }
-    expect(records.slice(1)).toMatchObject([{ answeredBy: 'planegcs', native: 'drag', planeGcs: 'solved' }, { answeredBy: 'planegcs', native: 'drag' }]);
-    expect(loadPlaneGcs).toHaveBeenCalledTimes(1);
+    expect(records.slice(1)).toEqual([0, 1].map(() => expect.objectContaining({ answeredBy: 'native', native: 'answer', drag: { outcome: 'reached', targetDistance: 0 } })));
+    expect(loadPlaneGcs).not.toHaveBeenCalled();
+  });
+
+  it('keeps a reached drag target exactly, however little it moved', async () => {
+    const { solver } = runtime(loadCadSketchTestNativeSolver, planeGcsSolved(failedResult));
+    const start = await solver.solve(input);
+    if (start.kind !== 'solved') throw new Error(JSON.stringify(start));
+    const [x, y] = start.graph.points[1].position as [number, number];
+    // A move within the polishing threshold is still the drag's own, and a target a few ulps from a
+    // short decimal keeps its digits.
+    for (const position of [[x + 3e-11, y], [12.000000000000002, 2]] as const) {
+      const dragged = await solver.solve({ graph: start.graph, parameters: {}, drag: { pointId: 'b', position } });
+      if (dragged.kind !== 'solved') throw new Error(JSON.stringify(dragged));
+      expect(dragged.graph.points[1].position).toEqual(position);
+    }
+  });
+
+  it('follows a drag trajectory out of reach and back, chained and from the start, as close as PlaneGCS', async () => {
+    // A two-link arm of 10 mm links from a fixed base reaches 20 mm. Its tip is dragged along y = 1
+    // from x = 10 to 21.25, past its reach, then straight back to x = 15. Native's rank diagnosis
+    // cannot yet decide some nearly straight arms, whose second row keeps a lead between TAU and
+    // CERTAIN in an early column (see `smallest_singular_value`); PlaneGCS answers those frames,
+    // which roundoff picks among the stretched ones.
+    const arm = parseCadSketchGraph({ points: [{ id: 'c', position: ['0', '0'] }, { id: 'p', position: [6, 8] }, { id: 'q', position: [16, 8] }],
+      entities: [{ id: 'cp', kind: 'line', construction: false, startPointId: 'c', endPointId: 'p' }, { id: 'pq', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }],
+      relations: [{ id: 'upper', kind: 'distance', pointIds: ['c', 'p'], value: 10 }, { id: 'lower', kind: 'distance', pointIds: ['p', 'q'], value: 10 }] });
+    const targets = [...Array.from({ length: 46 }, (_, frame) => [10 + 0.25 * frame, 1] as const), [15, 1] as const];
+    const planeGcs = await createCadSketchTestSolver({ mode: 'planegcs' });
+    for (const chained of [true, false]) {
+      const { solver, records } = runtime(loadCadSketchTestNativeSolver, planeGcs);
+      let current = arm;
+      for (const [frame, position] of targets.entries()) {
+        const input = { graph: chained ? current : arm, parameters: {}, drag: { pointId: 'q', position } };
+        const [dragged, expected] = [await solver.solve(input), await planeGcs.solve(input)];
+        if (dragged.kind !== 'solved' || expected.kind !== 'solved') throw new Error(`frame ${frame}: ${JSON.stringify(dragged.kind === 'solved' ? expected : dragged)}`);
+        const tip = (graph: typeof arm) => graph.points[2].position as [number, number], distance = (graph: typeof arm) => Math.hypot(tip(graph)[0] - position[0], tip(graph)[1] - position[1]);
+        const reach = Math.hypot(...position);
+        expect(records[frame].drag?.outcome, `frame ${frame}`).toBe(reach < 20 ? 'reached' : 'projected');
+        expect(distance(dragged.graph), `frame ${frame}`).toBeLessThanOrEqual(Math.max(0, reach - 20) + 1e-9);
+        expect(distance(dragged.graph), `frame ${frame}`).toBeLessThanOrEqual(distance(expected.graph) + 1e-6);
+        if (reach < 20 || records[frame].answeredBy !== 'native') expect(records[frame], `frame ${frame}`).toMatchObject(reach < 20 ? { answeredBy: 'native' } : { native: 'unavailable' });
+        current = dragged.graph;
+      }
+    }
+  });
+
+  it('rejects a stalled drag as not moved toward its target unless PlaneGCS solves it', async () => {
+    const stalled = { status: 'not-converged' as const, drag: { outcome: 'stalled' as const, targetDistance: 3 } };
+    const drag = { ...input, drag: { pointId: 'b', position: [12, 2] as const } };
+    const rejected = runtime(async () => fakeNative(() => stalled), planeGcsSolved(failedResult));
+    expect(await rejected.solver.solve(drag)).toMatchObject({ kind: 'rejected', reason: 'failed', message: 'The point could not be moved toward the target from this start.' });
+    expect(rejected.records[0]).toMatchObject({ answeredBy: 'native', native: 'not-converged', planeGcs: 'failed', drag: stalled.drag });
+    const solvedByPlaneGcs: CadSketchSolveResult = { kind: 'solved', graph, diagnostics: { ...noDiagnostics, status: 'success', degreesOfFreedom: 3 } };
+    const rescued = runtime(async () => fakeNative(() => stalled), planeGcsSolved(solvedByPlaneGcs));
+    expect(await rescued.solver.solve(drag)).toBe(solvedByPlaneGcs);
+    expect(rescued.records[0]).toMatchObject({ answeredBy: 'planegcs', native: 'not-converged', planeGcs: 'solved' });
+    // With nothing free, unmet labels the graph checks accept would otherwise solve: a stalled drag still does not.
+    const fixed = parseCadSketchGraph({ ...graph, points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: ['6', '8'] }] });
+    const unmet = runtime(async () => fakeNative(model => ({ status: 'converged', diagnosis: { kind: 'no-unknowns', labels: model.equations.map(equation => equation.temporary ? 0 : CAD_SKETCH_EQUATION_CONFLICTING) },
+      drag: stalled.drag })), planeGcsSolved(failedResult));
+    expect(await unmet.solver.solve({ graph: fixed, parameters: {}, drag: { pointId: 'b', position: [7, 8] } }))
+      .toMatchObject({ kind: 'rejected', reason: 'failed', message: 'The point could not be moved toward the target from this start.' });
   });
 
   it('captures the input before waiting, so both solvers see the caller\'s values at the call', async () => {

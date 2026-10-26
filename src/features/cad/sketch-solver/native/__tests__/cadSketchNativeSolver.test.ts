@@ -45,8 +45,14 @@ describe('native sketch equations', () => {
     for (const moved of [[5, 6, 12, 9, 3, 6], [4, 6, 13, 9, 3, 6], [4, 6, 12, 9, 4, 6]]) expect(applyCadSketchEquationSolution(graph, model, moved)).toBeUndefined();
   });
 
-  it('rejects drag targets until the native solver owns them', () => {
-    expect(() => compileCadSketchEquations({ graph: rectangles(), parameters: {}, drag: { pointId: 't1', position: [1, 1] } })).toThrow(/drag/);
+  it('compiles a drag target as two temporary value equations after the relations', () => {
+    const plain = compileCadSketchEquations({ graph: rectangles(), parameters: {} });
+    const dragged = compileCadSketchEquations({ graph: rectangles(), parameters: {}, drag: { pointId: 't1', position: [1, -2] } });
+    const x = dragged.pointParameters.get('t1')!, tag = plain.equations.at(-1)!.tag;
+    expect(dragged.equations).toEqual([...plain.equations, { kind: 'value', operands: [x], value: 1, sourceId: 't1', tag: tag + 1, temporary: true },
+      { kind: 'value', operands: [x + 1], value: -2, sourceId: 't1', tag: tag + 2, temporary: true }]);
+    for (const drag of [{ pointId: 'missing', position: [1, 1] }, { pointId: 't1', position: [2e9, 1] }, { pointId: 't1', position: [1, NaN] }] as const)
+      expect(() => compileCadSketchEquations({ graph: rectangles(), parameters: {}, drag })).toThrow('Invalid sketch drag target.');
   });
 
   it('refuses an equation with the wrong number of operands before native code', () => {
