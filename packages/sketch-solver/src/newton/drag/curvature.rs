@@ -24,7 +24,7 @@ use crate::dense::{singular, symmetric_eigen};
 use crate::dual::{Dual, WIDTH};
 use crate::equations::residual;
 use crate::newton::Exhausted;
-use crate::sparse::{Factor, minimum_degree};
+use crate::sparse::{Factor, minimum_degree_with_heap};
 
 /// Most columns of the support; a wider one leaves the test unresolved.
 const SUPPORT: usize = 64;
@@ -94,7 +94,7 @@ impl Drag<'_> {
         let size_j = columns.iter().flatten().map(|&(_, v)| v * v).sum::<f64>().sqrt();
         if !(size_j > 0.0 && size_j.is_finite()) { return Ok(Curvature::Unresolved); }
         let structure: Vec<Vec<usize>> = columns.iter().map(|column| column.iter().map(|&(i, _)| i).collect()).collect();
-        let Some(ordering) = minimum_degree(m, &structure, self.limits.fill, self.limits.work.saturating_sub(self.work))
+        let Some(ordering) = minimum_degree_with_heap(m, &structure, self.limits.fill, self.limits.work.saturating_sub(self.work))
             else { self.work = self.work.max(self.limits.work); return Err(Exhausted); };
         self.work = self.work.saturating_add(ordering.work);
         let place = ordering.position;

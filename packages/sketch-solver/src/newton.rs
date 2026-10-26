@@ -289,9 +289,11 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
     let unknowns = problem.fixed.iter().filter(|&&fixed| !fixed).count();
     if unknowns == 0 { outcome.diagnosis = Diagnosis::NoUnknowns; }
     let (mut rank, mut witnesses) = (0, Vec::new());
+    // A column map the drag's landings share, so each costs its own group's size.
+    let mut held = if dragging { vec![usize::MAX; problem.values.len()] } else { Vec::new() };
     for (equations, unknowns) in members {
         let system = System { problem, column: &column, equations, unknowns };
-        let group = if dragging { drag::solve_group(&system, values, limits) } else { solve_group(&system, values, limits) };
+        let group = if dragging { drag::solve_group(&system, values, limits, &mut held) } else { solve_group(&system, values, limits) };
         if let Some((kind, squared)) = group.drag {
             outcome.drag = Some(outcome.drag.map_or(kind, |worst| worst.max(kind)));
             squared_distance += squared;

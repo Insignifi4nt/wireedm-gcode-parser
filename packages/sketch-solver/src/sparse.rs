@@ -80,6 +80,18 @@ pub fn minimum_degree<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize
     Some(Ordering { position, fill, work })
 }
 
+/// `minimum_degree` within `work_limit` with its heap steps counted too. Each column's heap entry,
+/// and each degree update's, takes about `depth` steps to push and pop; updates number at most the
+/// adjacency work, so the ordering gets what is left after the columns' share, cut by that factor,
+/// and is charged for both before they run.
+pub fn minimum_degree_with_heap<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize, work_limit: usize) -> Option<Ordering> {
+    let depth = 2 * ((usize::BITS - n.saturating_add(work_limit).leading_zeros()) as usize + 1);
+    let columns = n.saturating_mul(1 + depth);
+    let mut ordering = minimum_degree(n, rows, fill_limit, work_limit.checked_sub(columns)? / (1 + depth))?;
+    ordering.work = columns + ordering.work * (1 + depth);
+    Some(ordering)
+}
+
 /// Upper-triangular `R` by rows (row `k` starts at position `k`) and `c = Q^T b`.
 #[derive(Clone)]
 pub struct Factor {

@@ -40,7 +40,7 @@
 use super::{Exhausted, GroupOutcome, Jacobian, Limits, MAX_ITERATIONS, System, assess, levenberg, solve_group as solve_whole, solve_group_within, worst};
 use crate::equations::Kind;
 use crate::problem::Status;
-use crate::sparse::{Factor, minimum_degree};
+use crate::sparse::{Factor, minimum_degree_with_heap};
 
 mod curvature;
 use curvature::Curvature;
@@ -139,7 +139,8 @@ fn norm(values: &[f64]) -> f64 { values.iter().map(|value| value * value).sum::<
 
 /// Solves a group of a problem with drag targets. A group without targets whose start is accepted
 /// is not iterated, so it keeps its values exactly; one that is not accepted is solved as usual.
-pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> GroupOutcome {
+/// `held` is a problem-wide column map of `usize::MAX`, left as it was.
+pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits, held: &mut [usize]) -> GroupOutcome {
     let problem = system.problem;
     let lasting = System { problem, column: system.column,
         equations: system.equations.iter().copied().filter(|&e| !problem.equations[e].temporary).collect(), unknowns: system.unknowns.clone() };
@@ -151,7 +152,7 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits) -
     let scale = targets.iter().fold(1.0, |scale: f64, target| scale.max(values[target.parameter].abs()).max(target.value.abs()));
     let reached = 1e-8_f64.max(32.0 * f64::EPSILON * scale);
     if targets.is_empty() && !assess(&rows).accepted { return solve_whole(system, values, limits); }
-    let Some(ordering) = minimum_degree(n, &system.rows(values, None).iter().map(|row| &row.columns[..row.len]).collect::<Vec<_>>(), limits.fill, limits.work)
+    let Some(ordering) = minimum_degree_with_heap(n, &system.rows(values, None).iter().map(|row| &row.columns[..row.len]).collect::<Vec<_>>(), limits.fill, limits.work)
         else { return GroupOutcome { status: Status::TooLarge, iterations: 0, residual: worst(&rows), position: None, work: limits.work,
             drag: (!targets.is_empty()).then(|| (DragOutcome::Stalled, squared(values))) }; };
     let accepted = |rows| if assess(rows).accepted { Status::Converged } else { Status::NotConverged };
@@ -164,7 +165,7 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits) -
     }
     // Half the work is kept for diagnosis.
     let mut drag = Drag { lasting: &lasting, targets: &targets, position: ordering.position, limits: Limits { fill: limits.fill, work: limits.work / 2 },
-        work: ordering.work, iterations: 0, reached, stationary: 1e-9_f64.max(64.0 * f64::EPSILON * scale),
+        work: ordering.work, iterations: 0, reached, held, stationary: 1e-9_f64.max(64.0 * f64::EPSILON * scale),
         floor: 1e-6_f64.max(64.0 * f64::EPSILON * scale) };
     let outcome = if assess(&rows).accepted { drag.run(values) } else {
         // An infeasible start is first restored onto the lasting rows, within the work left; one
@@ -190,6 +191,8 @@ struct Drag<'a> {
     lasting: &'a System<'a>,
     targets: &'a [Target],
     position: Vec<usize>,
+    /// The landing polish's column map, `usize::MAX` outside it.
+    held: &'a mut [usize],
     limits: Limits,
     work: usize,
     iterations: usize,
@@ -332,16 +335,17 @@ impl Drag<'_> {
             for (target, &value) in self.targets.iter().zip(&saved) { values[target.parameter] = value; }
             return Ok(false);
         }
-        let mut aimed = vec![false; values.len()];
-        for target in self.targets { aimed[target.parameter] = true; }
-        let unknowns: Vec<usize> = self.lasting.unknowns.iter().copied().filter(|&p| !aimed[p]).collect();
+        let mut aimed = vec![false; self.position.len()];
+        for target in self.targets { aimed[target.column] = true; }
+        let unknowns: Vec<usize> = self.lasting.unknowns.iter().copied().filter(|&p| !aimed[self.lasting.column[p]]).collect();
         if unknowns.is_empty() { return Ok(true); }
-        let mut column = vec![usize::MAX; values.len()];
-        for (c, &p) in unknowns.iter().enumerate() { column[p] = c; }
-        let held = System { problem: self.lasting.problem, column: &column, equations: self.lasting.equations.clone(), unknowns };
+        for (c, &p) in unknowns.iter().enumerate() { self.held[p] = c; }
+        let held = System { problem: self.lasting.problem, column: &*self.held, equations: self.lasting.equations.clone(), unknowns };
         let saved: Vec<f64> = held.unknowns.iter().map(|&p| values[p]).collect();
         let limits = Limits { fill: self.limits.fill, work: self.limits.work.saturating_sub(self.work) };
         let polished = solve_group_within(&held, values, limits, DRAG_ITERATIONS.saturating_sub(self.iterations).min(MAX_ITERATIONS));
+        let unknowns = held.unknowns;
+        for &p in &unknowns { self.held[p] = usize::MAX; }
         self.work = self.work.saturating_add(polished.work);
         self.iterations += polished.iterations;
         // A polish cut short by its work can still end accepted; it carries no ordering then.
@@ -349,11 +353,11 @@ impl Drag<'_> {
         match polished.status {
             _ if exhausted => {
                 // The landing stands; the polish's partial work is not accepted.
-                for (&p, &value) in held.unknowns.iter().zip(&saved) { values[p] = value; }
+                for (&p, &value) in unknowns.iter().zip(&saved) { values[p] = value; }
                 return Err(Exhausted);
             }
             Status::Converged => {}
-            _ => for (&p, &value) in held.unknowns.iter().zip(&saved) { values[p] = value; },
+            _ => for (&p, &value) in unknowns.iter().zip(&saved) { values[p] = value; },
         }
         Ok(true)
     }
