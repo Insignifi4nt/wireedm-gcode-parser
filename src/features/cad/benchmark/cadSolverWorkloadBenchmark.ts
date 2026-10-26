@@ -111,7 +111,7 @@ export function createCadSolverDragTrajectory() {
 export async function measureCadSolverDrag(solvers: readonly CadBenchmarkSolver[], runs: number) {
   const trajectory = createCadSolverDragTrajectory(), reports = [];
   for (const solver of solvers) {
-    if (solver.drag === 'unsupported') { reports.push({ solver: solver.id, label: solver.label, kind: 'unsupported' as const, reason: 'Native compiler rejects drag targets.' }); continue; }
+    if (solver.drag === 'unsupported') { reports.push({ solver: solver.id, label: solver.label, kind: 'unsupported' as const, reason: 'The native benchmark adapter does not judge drag outcomes yet.' }); continue; }
     const before = cadBenchmarkCpuCalibrationMs(), samples: number[] = [], frames = [], failures: string[] = [];
     for (let run = 0; run < runs; run++) {
       let previous = trajectory.input;
