@@ -1,7 +1,7 @@
 mod common;
 
 use common::Builder;
-use sketch_solver::diagnose::{CONFLICTING, REDUNDANT};
+use sketch_solver::diagnose::{CONFLICTING, REDUNDANT, Row, TAU, dependent};
 use sketch_solver::equations::Kind;
 use sketch_solver::newton::Limits;
 use sketch_solver::problem::{Diagnosis, Status};
@@ -319,4 +319,29 @@ fn a_long_closed_chain_around_a_shared_value_is_diagnosed_within_a_sparse_fill()
     let (outcome, _) = builder.outcome_within(Limits { fill: 20_000, ..sketch_solver::newton::LIMITS });
     assert_eq!(outcome.diagnosis, Diagnosis::Diagnosed);
     assert_eq!(outcome.labels.last(), Some(&REDUNDANT));
+}
+
+#[test]
+fn a_weak_direction_hidden_from_the_pivot_columns_is_still_found() {
+    // Singular values about 1.732, 1.2e-7 and 1e-8: rank is unclear. An inverse iteration from a
+    // fixed start nearly misses the weakest direction here and would call it clear.
+    let rows: Vec<Row> = [[1e-8, -8.616690359875787e-9, 8.03774303312371e-9, 1.0], [1e-8, 8.616690359875787e-9, -8.844220160038482e-8, 1.0], [1e-8, 0.0, 8.04044585672611e-8, 1.0]]
+        .iter().map(|row| Row { entries: row.iter().copied().enumerate().filter(|e| e.1 != 0.0).collect(), residual: 0.0, tolerance: 1e-10 }).collect();
+    let (found, _) = sketch_solver::diagnose::diagnose(4, &rows, TAU, 1_000_000, 1_000);
+    let found = found.expect("diagnosed");
+    assert_eq!((found.rank, found.witnesses.len(), found.certain), (3, 0, false));
+}
+
+#[test]
+fn rows_clear_beyond_their_pivot_columns_are_checked_within_the_fill_limit() {
+    // Row i is 1e-8 in x_i, 1 in y_i and 0.1 in a shared z: each lead is tiny, so the pivot columns
+    // look nearly singular, but the rows are well conditioned. The shared z fills their transposed
+    // factor densely, so a fill limit below it leaves rank unclear.
+    let m = 30;
+    let rows: Vec<Vec<(usize, f64)>> = (0..m).map(|i| vec![(i, 1e-8), (m + i, 1.0), (2 * m, 0.1)]).collect();
+    let (clear, spent) = dependent(2 * m + 1, &rows, 100_000_000, usize::MAX);
+    assert_eq!(clear, Some(Vec::new()));
+    // The dense singular values take most of it, about 41 million entries for 30 rows.
+    assert!(spent < 60_000_000, "{spent}");
+    assert_eq!(dependent(2 * m + 1, &rows, 100_000_000, 100).0, None);
 }

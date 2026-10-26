@@ -134,8 +134,9 @@ pub fn dependent_count(n: usize, rows: &[SparseRow], distance: f64, budget: usiz
 
 /// Indices of the nonzero `rows` within `TAU` of the span of earlier ones once normalized, and
 /// the work spent; `None` when rank cannot be decided reliably or the work would pass `budget`.
-pub fn dependent(n: usize, rows: &[SparseRow], budget: usize) -> (Option<Vec<usize>>, usize) {
-    let mut work = Work { done: 0, budget, fill: usize::MAX };
+/// A factor that rank is checked through holds at most `fill` entries.
+pub fn dependent(n: usize, rows: &[SparseRow], budget: usize, fill: usize) -> (Option<Vec<usize>>, usize) {
+    let mut work = Work { done: 0, budget, fill };
     let found = (|| {
         let (mut r, mut rank, mut dependent) = (vec![Vec::new(); n], 0, Vec::new());
         for (index, row) in rows.iter().enumerate() {
@@ -443,25 +444,40 @@ fn two_product(a: f64, b: f64) -> (f64, f64) {
     (product, ((ah * bh - product) + ah * bl + al * bh) + al * bl)
 }
 
-/// Whether the independent unit rows that `r` factors are clear of dependence: the estimate of
-/// their smallest singular value is at least `CERTAIN`. The estimate over the pivot columns is
-/// cheap and can only be lower than the rows' own, which are taken through `R^T = Q S`, with the
-/// same singular values, only when it is below: a row whose lead is small beside its entries in
-/// columns without pivots, as a nearly straight arm's, leaves the pivot columns ill conditioned
-/// though the rows are not. A factor `S` that would hold more than `work.fill` leaves rank unclear.
-/// `None` when the work runs out.
+/// Most independent rows whose singular values are computed densely when the pivot columns leave
+/// rank unclear; with more, rank stays unclear.
+const DENSE_RANK: usize = 32;
+
+/// Whether the independent unit rows that `r` factors are clear of dependence: their smallest
+/// singular value is at least `CERTAIN`. The estimate over the pivot columns is cheap and can only
+/// be lower than the rows' own, so it decides when it reaches `CERTAIN`. A row whose lead is small
+/// beside its entries in columns without pivots, as a nearly straight arm's, leaves the pivot
+/// columns ill conditioned though the rows are not, so below it the rows' singular values are
+/// computed, not estimated: an estimate from above could miss a weak direction and call it clear.
+/// They are those of `S` in `R^T = Q S`, taken densely for at most `DENSE_RANK` rows and with an
+/// absolute accuracy of about `epsilon`; more rows, or an `S` that would hold more than
+/// `work.fill` entries, leave rank unclear. `None` when the work runs out.
 fn clear_of_dependence(r: &[SparseRow], work: &mut Work) -> Option<bool> {
     if smallest_singular_value(r, work)? >= CERTAIN { return Some(true); }
     let pivots: Vec<usize> = (0..r.len()).filter(|&k| !r[k].is_empty()).collect();
+    let m = pivots.len();
+    if m > DENSE_RANK { return Some(false); }
     let mut columns: Vec<SparseRow> = vec![Vec::new(); r.len()];
     for (j, &k) in pivots.iter().enumerate() {
         for &(c, x) in &r[k] { columns[c].push((j, x)); }
     }
     work.spend(r.len() + r.iter().map(|row| row.len()).sum::<usize>())?;
-    match transposed(columns, pivots.len(), work)? {
-        Transposed::Factor(s) => Some(smallest_singular_value(&s, work)? >= CERTAIN),
-        Transposed::Dependent | Transposed::Full => Some(false),
+    let Transposed::Factor(s) = transposed(columns, m, work)? else { return Some(false) };
+    let mut dense = vec![vec![0.0; m]; m];
+    for (j, row) in s.iter().enumerate() {
+        for &(k, x) in row { dense[k][j] = x; }
     }
+    let Some((values, _, spent)) = crate::dense::singular(&dense, work.budget.saturating_sub(work.done)) else {
+        work.done = work.budget.saturating_add(1);
+        return None;
+    };
+    work.spend(spent)?;
+    Some(values.last().is_some_and(|&least| least >= CERTAIN))
 }
 
 /// Estimate of the smallest singular value of `R` over the columns with pivots, by four inverse
