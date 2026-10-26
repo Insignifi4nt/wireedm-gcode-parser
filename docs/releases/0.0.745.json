@@ -1,0 +1,24 @@
+{
+  "version": "0.0.745",
+  "previousVersion": "0.0.744",
+  "postCompatibility": "preserved-output-sketch-solution-values",
+  "summary": "Sketch solutions are built from the accepted request graph instead of being validated again as new graphs. A shared domain constructor replaces only the solved slots (each point's numeric x and y, then each circle's numeric radius, excluding external-reference snapshots), requires one finite number within the scalar range per slot, shares every unchanged point, entity and relation with the request, and marks the result as accepted. Before values are dropped, the PlaneGCS runtime checks that external-reference snapshots came back unchanged (expression-driven values keep their source text, as before), and the native adapter checks that every fixed parameter did; a moved reference snapshot is therefore still refused rather than dropped. The sketch worker now replies with the solved values and their layout version instead of a whole graph; the main thread applies them to its own request graph and keeps its graph check as the acceptance authority. For the die, applying a solution falls from about 0.78 ms to 0.025 ms, the first solve from about 1.4 to 0.53 ms native and from about 2.0 to 1.1 ms PlaneGCS, and the worker reply from 12 kB and about 1.6 ms to 525 bytes and 0.21 ms. A 200-rectangle reply shrinks from 213 kB to 6 kB and clones and parses in about 1.2 ms; its base timing ended throttled and is not compared.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. The worker reply format changes with the app bundle that contains both sides; a reply of another layout version is refused as an invalid worker response. Solved sketches, rejections and their messages are unchanged, except that a solved reply whose values do not fit the request now reports that it does not match its request.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal or native buffer protocol schema change. The internal sketch worker reply carries solved values and a layout version instead of a graph. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change. No new application controls or runtime solver selection.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Tests cover slot order for points, expressions, owned and free circles; shared unchanged data, freezing and acceptance of the result; refusal of a short, long, sparse, NaN, infinite, out-of-range or string value list; another layout version of the same length; negative zero kept; structured-clone round trips with expressions, reference snapshots, free radii and no slots; a multi-group PlaneGCS solve whose point order differs from its group order rebuilt after a structured clone; a PlaneGCS module whose fixed parameters come back moved, which is refused and, without the new check, would be accepted; and a native solution with a moved fixed value. The CAD and full unit suites pass. Timings are medians of 300 Node runs at about 70 ms of calibration, base and branch interleaved, except the base 200-rectangle reply runs, which ended throttled and are not compared."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Speeds up sketch solving.",
+    "changes": [
+      "Sends only solved values back from the sketch solver, so solving and dragging large sketches does less work after each solve."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

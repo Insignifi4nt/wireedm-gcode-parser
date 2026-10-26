@@ -18,7 +18,7 @@ import { checkCadSketchRadialRelation, resolveCadSketchRadialEntity } from './ca
 import { checkCadSketchEqualRelation, resolveCadSketchRadiusPair } from './cadSketchEqualRelations';
 import { checkCadSketchAngleRelation, resolveCadSketchAngleRays } from './cadSketchAngleRelations';
 import { resolveCadSketchMidpointOperands } from './cadSketchMidpointRelations';
-import { validateCadSketchExternalReference } from './cadSketchExternalReferences';
+import { cadSketchExternalReferenceComponents, validateCadSketchExternalReference } from './cadSketchExternalReferences';
 import { resolveCadSketchReferenceDimension } from './cadSketchReferenceDimensions';
 import { deepFreezeCadData } from './cadDeepFreeze';
 
@@ -144,6 +144,65 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   deepFreezeCadData(graph);
   acceptedGraphs.add(graph);
   return graph;
+}
+
+/** Changes whenever `cadSketchSolvedSlots` orders or selects values differently; a reply must carry it. */
+export const CAD_SKETCH_SOLVED_LAYOUT_VERSION = 1;
+export type CadSketchSolvedSlot = { readonly kind: 'point'; readonly index: number; readonly axis: 0 | 1 } | { readonly kind: 'radius'; readonly index: number };
+
+/**
+ * The numbers a solver writes, in this order: each point's numeric x then y, in point order, then
+ * each circle's numeric radius, in entity order. Expressions and external-reference snapshots stay fixed.
+ */
+export function cadSketchSolvedSlots(graph: CadSketchGraph): readonly CadSketchSolvedSlot[] {
+  const owned = cadSketchExternalReferenceComponents(graph), slots: CadSketchSolvedSlot[] = [];
+  graph.points.forEach((point, index) => {
+    if (owned.pointIds.has(point.id)) return;
+    for (const axis of [0, 1] as const) if (typeof point.position[axis] === 'number') slots.push({ kind: 'point', index, axis });
+  });
+  graph.entities.forEach((entity, index) => {
+    if (entity.kind === 'circle' && typeof entity.radius === 'number' && !owned.circleIds.has(entity.id)) slots.push({ kind: 'radius', index });
+  });
+  return slots;
+}
+
+export function cadSketchSolvedValues(graph: CadSketchGraph): number[] {
+  return cadSketchSolvedSlots(graph).map(slot => {
+    const value = slot.kind === 'point' ? graph.points[slot.index].position[slot.axis] : (graph.entities[slot.index] as { readonly radius: number | string }).radius;
+    if (typeof value !== 'number') throw new Error('A solved sketch slot is not numeric.');
+    return value;
+  });
+}
+
+/**
+ * `graph` with its solved slots replaced by `values`, which must be a dense array of one finite
+ * number within the scalar range per slot. Everything else, including each unchanged point and
+ * circle, is the accepted graph's own frozen data, so the result is accepted without parsing it.
+ * Callers check first that the solver kept the fixed values it was given.
+ */
+export function cadSketchGraphWithSolvedValues(source: CadSketchGraph, values: readonly unknown[]): CadSketchGraph {
+  const graph = parseCadSketchGraph(source), slots = cadSketchSolvedSlots(graph);
+  const invalid = () => new CadError('invalid-sketch-solution', 'The sketch solution does not match its graph.');
+  if (!Array.isArray(values) || values.length !== slots.length) throw invalid();
+  const points = [...graph.points], entities = [...graph.entities];
+  for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+    // Indexed reads see holes as undefined, which fail here.
+    const value: unknown = values[slotIndex], slot = slots[slotIndex];
+    if (typeof value !== 'number' || !(Math.abs(value) <= 1e9)) throw invalid();
+    if (slot.kind === 'point') {
+      const point = points[slot.index];
+      if (Object.is(point.position[slot.axis], value)) continue;
+      const position: [number | string, number | string] = [point.position[0], point.position[1]];
+      position[slot.axis] = value;
+      points[slot.index] = Object.freeze({ ...point, position: Object.freeze(position) });
+    } else {
+      const circle = entities[slot.index] as Extract<CadSketchGraph['entities'][number], { kind: 'circle' }>;
+      if (!Object.is(circle.radius, value)) entities[slot.index] = Object.freeze({ ...circle, radius: value });
+    }
+  }
+  const solved: CadSketchGraph = Object.freeze({ ...graph, points: Object.freeze(points), entities: Object.freeze(entities) });
+  acceptedGraphs.add(solved);
+  return solved;
 }
 
 /** Nonrepairing acceptance check. Empty issues means current numeric geometry and relations agree. */

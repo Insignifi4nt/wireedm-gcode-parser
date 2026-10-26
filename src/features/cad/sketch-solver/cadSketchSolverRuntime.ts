@@ -2,11 +2,11 @@ import { GcsWrapper } from '@salusoft89/planegcs/dist/sketch/gcs_wrapper.js';
 import { SolveStatus } from '@salusoft89/planegcs/dist/planegcs_dist/enums.js';
 import { property_offsets } from '@salusoft89/planegcs/dist/sketch/geom_params.js';
 import type { SketchPrimitive } from '@salusoft89/planegcs/dist/sketch/sketch_primitive.js';
-import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '../../../domain/cad/cadSketchGraph';
+import { cadSketchGraphWithSolvedValues, cadSketchSolvedSlots, checkCadSketchGraph } from '../../../domain/cad/cadSketchGraph';
 import { evaluateCadScalar } from '../../../domain/cad/cadExpression';
 import type { CadSketchSolverModule } from './cadSketchSolverModule';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
-import { cadSketchSolutionMatchesInput, parseCadSketchSolveInput } from './cadSketchSolverProtocol';
+import { parseCadSketchSolveInput } from './cadSketchSolverProtocol';
 import { cadSketchExternalReferenceComponents } from '../../../domain/cad/cadSketchExternalReferences';
 import { compileCadSketchCornerConstraints } from './cadSketchCornerConstraints';
 import { cadSketchLineDirection, resolveCadSketchLinePair } from '../../../domain/cad/cadSketchLineRelations';
@@ -316,15 +316,17 @@ export function createCadSketchSolverRuntime(initialize: () => Promise<CadSketch
       if (diagnostics.conflictingIds.length) return { kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics };
       if (diagnostics.redundantIds.length || diagnostics.partiallyRedundantIds.length) return { kind: 'rejected', reason: 'redundant', message: 'Sketch constraints are redundant.', diagnostics };
       if (status !== 'success' && status !== 'converged') return { kind: 'rejected', reason: 'failed', message: 'The sketch solver did not produce a valid solution.', diagnostics };
-      const graph: CadSketchGraph = parseCadSketchGraph({ ...compiled.graph, points: compiled.graph.points.map(point => {
-        const solved = solvedPoints.get(point.id);
-        return solved ? { ...point, position: [typeof point.position[0] === 'number' ? solved.x : point.position[0], typeof point.position[1] === 'number' ? solved.y : point.position[1]] } : point;
-      }), entities: compiled.graph.entities.map(entity => {
-        const radius = entity.kind === 'circle' && typeof entity.radius === 'number' ? solvedRadii.get(entity.id) : undefined;
-        return radius === undefined ? entity : { ...entity, radius };
-      }) });
+      // Fixed values are checked here because only solved slots reach the graph: a moved owned
+      // snapshot that kept the solution's local equations satisfied would otherwise be dropped silently.
+      if ([...owned.pointIds].some(id => { const solved = solvedPoints.get(id), position = points.get(id)!.position; return solved && (solved.x !== position[0] || solved.y !== position[1]); })
+        || [...owned.circleIds].some(id => { const radius = solvedRadii.get(id); return radius !== undefined && radius !== circles.get(id)!.radius; }))
+        return { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution changed fixed source geometry.', diagnostics };
+      const graph = cadSketchGraphWithSolvedValues(compiled.graph, cadSketchSolvedSlots(compiled.graph).map(slot => {
+        if (slot.kind === 'radius') { const entity = compiled.graph.entities[slot.index]; return solvedRadii.get(entity.id) ?? (entity as { radius: number }).radius; }
+        const point = compiled.graph.points[slot.index], solved = solvedPoints.get(point.id);
+        return solved ? (slot.axis ? solved.y : solved.x) : point.position[slot.axis];
+      }));
       nextStage('validation');
-      if (!cadSketchSolutionMatchesInput(input, graph)) return { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution changed fixed source geometry.', diagnostics };
       const issues = checkCadSketchGraph(graph, input.parameters);
       if (issues.length) return { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution does not satisfy its geometry and relations.', diagnostics: { ...diagnostics, issues } };
       return { kind: 'solved', graph, diagnostics };

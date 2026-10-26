@@ -1,7 +1,7 @@
 import { checkCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchSolverModule } from '../sketch-solver/cadSketchSolverModule';
 import { createCadSketchSolverRuntime, type CadSketchSolverTimingStage } from '../sketch-solver/cadSketchSolverRuntime';
-import { cadSketchSolutionMatchesInput, parseCadSketchSolveInput } from '../sketch-solver/cadSketchSolverProtocol';
+import { parseCadSketchSolveInput } from '../sketch-solver/cadSketchSolverProtocol';
 import type { CadSketchSolveDiagnostics, CadSketchSolveResult } from '../sketch-solver/cadSketchSolverTypes';
 import { compileCadSketchEquations } from '../sketch-solver/native/compileCadSketchEquations';
 import { applyCadSketchEquationSolution, cadSketchEquationDiagnostics } from '../sketch-solver/native/cadSketchEquationModel';
@@ -61,7 +61,7 @@ export function createCadBenchmarkNative(initialize: () => Promise<CadSketchNati
         if (status !== 'converged') return { kind: 'rejected', reason: 'failed', message: 'Native equations did not converge.', diagnostics };
         const graph = applyCadSketchEquationSolution(input.graph, model, solution.values);
         next('validation');
-        if (!cadSketchSolutionMatchesInput(input, graph)) return { kind: 'rejected', reason: 'invalid-solution', message: 'Native solution changed fixed source geometry.', diagnostics };
+        if (!graph) return { kind: 'rejected', reason: 'invalid-solution', message: 'Native solution changed fixed source geometry.', diagnostics };
         const issues = checkCadSketchGraph(graph, input.parameters);
         if (issues.length) return { kind: 'rejected', reason: 'invalid-solution', message: 'Native solution fails graph checks.', diagnostics: { ...diagnostics, issues } };
         return { kind: 'solved', graph, diagnostics };

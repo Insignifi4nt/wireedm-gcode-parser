@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkCadSketchGraph, parseCadSketchGraph } from '../cadSketchGraph';
+import { cadSketchGraphWithSolvedValues, cadSketchSolvedSlots, cadSketchSolvedValues, checkCadSketchGraph, parseCadSketchGraph } from '../cadSketchGraph';
 
 const source = () => ({
   points: [{ id: 'a', position: ['origin', 0] }, { id: 'b', position: [10, 0] }],
@@ -56,6 +56,23 @@ describe('owned sketch graph source', () => {
     expect(() => parseCadSketchGraph(coincident)).not.toThrow();
     const far = source(); far.points[1].position = [2e9, 0];
     expect(() => parseCadSketchGraph(far)).toThrow();
+  });
+  it('replaces only solved slots, in point then circle order, and accepts the result without parsing it', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'c', position: [5, 'y'] }, { id: 'a', position: ['origin', 0] }, { id: 'b', position: [10, 0] }],
+      entities: [{ id: 'line', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false },
+        { id: 'fixed', kind: 'circle', centerPointId: 'c', radius: 'r', construction: true }, { id: 'circle', kind: 'circle', centerPointId: 'c', radius: 2, construction: false }],
+      relations: [] });
+    expect(cadSketchSolvedSlots(graph)).toEqual([{ kind: 'point', index: 0, axis: 0 }, { kind: 'point', index: 1, axis: 1 },
+      { kind: 'point', index: 2, axis: 0 }, { kind: 'point', index: 2, axis: 1 }, { kind: 'radius', index: 2 }]);
+    expect(cadSketchSolvedValues(graph)).toEqual([5, 0, 10, 0, 2]);
+    const solved = cadSketchGraphWithSolvedValues(graph, [5, 0, 12, 3, 4]);
+    expect(solved.points.map(point => point.position)).toEqual([[5, 'y'], ['origin', 0], [12, 3]]);
+    expect(solved.entities[2]).toMatchObject({ radius: 4 });
+    expect(solved.points[0]).toBe(graph.points[0]); expect(solved.entities[1]).toBe(graph.entities[1]); expect(solved.relations).toBe(graph.relations);
+    expect(Object.isFrozen(solved) && Object.isFrozen(solved.points[2]) && Object.isFrozen(solved.points[2].position)).toBe(true);
+    expect(parseCadSketchGraph(solved)).toBe(solved);
+    for (const values of [[5, 0, 12, 3], [5, 0, 12, 3, Number.NaN], [5, 0, 12, 3, 1e10], [5, 0, 12, 3, '4']])
+      expect(() => cadSketchGraphWithSolvedValues(graph, values)).toThrowError(expect.objectContaining({ code: 'invalid-sketch-solution' }));
   });
   it('checks all point relation drivers without modifying expressions or accepting physical gaps', () => {
     const graph = parseCadSketchGraph({

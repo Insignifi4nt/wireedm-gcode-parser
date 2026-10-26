@@ -1,17 +1,23 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
-import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { CAD_SKETCH_SOLVED_LAYOUT_VERSION, cadSketchSolvedValues, parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { parseCadSketchSolveInput, parseCadSketchSolverReply } from './cadSketchSolverProtocol';
 import { circleReferencePart } from '@/domain/cad/__tests__/cadSketchExternalReferenceFixtures';
+import { cadSketchExternalReferenceComponents } from '@/domain/cad/cadSketchExternalReferences';
 
 const source = () => parseCadSketchGraph({ points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [10, 0] }],
   entities: [{ id: 'line', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
   relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: ' span ' }] });
 const documentWith = (graph: CadSketchGraph) => ({ ...createCadDocument('Precision', 'precision'), schemaVersion: 2, parameters: { span: 10 },
   features: [{ id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph }] });
-const replyWith = (graph: CadSketchGraph) => ({ id: 1, kind: 'result', result: { kind: 'solved', graph,
-  diagnostics: { status: 'success', degreesOfFreedom: 1, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } } });
+// A worker reply carrying the solved values of `graph`, which has the request's structure.
+const replyWith = (graph: CadSketchGraph, values: readonly unknown[] = cadSketchSolvedValues(graph), layout: number = CAD_SKETCH_SOLVED_LAYOUT_VERSION) => ({ id: 1, kind: 'result',
+  result: { kind: 'solved', layout, values, diagnostics: { status: 'success', degreesOfFreedom: 1, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } } });
+const solvedGraph = (reply: ReturnType<typeof parseCadSketchSolverReply>) => {
+  if (reply.kind !== 'result' || reply.result.kind !== 'solved') throw new Error('Expected a solved reply.');
+  return reply.result.graph;
+};
 
 describe('shared sketch precision at document and worker boundaries', () => {
   it('preserves the exact passive descriptor at the worker boundary without treating its readout as a driver', () => {
@@ -19,19 +25,23 @@ describe('shared sketch precision at document and worker boundaries', () => {
       measurement: { kind: 'point-distance', pointIds: ['b', 'a'] } }] });
     const input = parseCadSketchSolveInput({ graph, parameters: { span: 10 } });
     const moved = parseCadSketchGraph({ ...graph, points: [graph.points[0], { ...graph.points[1], position: [20, 0] }] });
-    expect(parseCadSketchSolverReply(replyWith(moved), input)).toMatchObject({ result: { kind: 'solved', graph: moved } });
-    const rebound = parseCadSketchGraph({ ...moved, relations: [{ id: 'measure', kind: 'reference-dimension',
-      measurement: { kind: 'point-distance', pointIds: ['a', 'b'] } }] });
-    expect(() => parseCadSketchSolverReply(replyWith(rebound), input)).toThrow('request');
-    expect(() => parseCadSketchSolverReply(replyWith({ ...moved, relations: [] }), input)).toThrow('request');
+    const solved = solvedGraph(parseCadSketchSolverReply(replyWith(moved), input));
+    expect(solved).toEqual(moved);
+    // Only values cross the boundary: relations and drivers are the request's own.
+    expect(solved.relations).toBe(input.graph.relations); expect(solved.points[0]).toBe(input.graph.points[0]);
   });
-  it.each(['position', 'radius'] as const)('rejects a forged numeric reference %s even when local equations remain valid', component => {
+  it.each(['position', 'radius'] as const)('keeps numeric reference %s snapshots out of the solved values', component => {
     const document = circleReferencePart(true), target = document.features[1]; if (target.kind !== 'sketch' || !target.graph) throw new Error('Reference target missing.');
     const graph = target.graph, input = parseCadSketchSolveInput({ graph, parameters: document.parameters });
+    const owned = cadSketchExternalReferenceComponents(graph);
     const candidate = parseCadSketchGraph({ ...graph,
-      ...(component === 'position' ? { points: graph.points.map(point => ({ ...point, position: [Number(point.position[0]) + 1, point.position[1]] })) }
-        : { entities: graph.entities.map(entity => entity.kind === 'circle' ? { ...entity, radius: Number(entity.radius) + 1 } : entity) }) });
-    expect(() => parseCadSketchSolverReply(replyWith(candidate), input)).toThrow('request');
+      ...(component === 'position' ? { points: graph.points.map(point => owned.pointIds.has(point.id) ? { ...point, position: [Number(point.position[0]) + 1, point.position[1]] } : point) }
+        : { entities: graph.entities.map(entity => owned.circleIds.has(entity.id) && entity.kind === 'circle' ? { ...entity, radius: Number(entity.radius) + 1 } : entity) }) });
+    expect(candidate).not.toEqual(graph);
+    // A forged snapshot has no slot to travel in; the solvers check their fixed values themselves.
+    expect(cadSketchSolvedValues(candidate)).toEqual(cadSketchSolvedValues(graph));
+    expect(solvedGraph(parseCadSketchSolverReply(replyWith(candidate), input))).toEqual(graph);
+    expect(() => parseCadSketchSolverReply(replyWith(candidate, [...cadSketchSolvedValues(graph), 1]), input)).toThrow('request');
     expect(() => parseCadSketchSolveInput({ graph, parameters: document.parameters, drag: { pointId: 'ref_c0', position: [12, 8] } })).toThrow();
     expect(parseCadSketchSolveInput({ graph, parameters: document.parameters, drag: { pointId: 'bore-center', position: [12, 8] } }).drag?.pointId).toBe('bore-center');
   });
@@ -52,11 +62,32 @@ describe('shared sketch precision at document and worker boundaries', () => {
     expect(() => parseCadDocument(documentWith(outside))).toThrowError(expect.objectContaining({ code: 'invalid-sketch-graph-geometry' }));
     expect(() => parseCadSketchSolverReply(replyWith(outside), input)).toThrow('constraints');
     const changedDriver = parseCadSketchGraph({ ...graph, points: graph.points.map(point => point.id === 'a' ? { ...point, position: ['0', '0'] } : point) });
-    expect(() => parseCadSketchSolverReply(replyWith(changedDriver), input)).toThrow('request');
+    expect(solvedGraph(parseCadSketchSolverReply(replyWith(changedDriver), input)).points[0].position).toEqual([' 0 ', '0']);
     const separated = parseCadSketchGraph({ ...graph, points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [5e-11, 0] }],
       entities: [], relations: [{ id: 'join', kind: 'coincident', pointIds: ['a', 'b'] }] });
     expect(() => parseCadDocument(documentWith(separated))).toThrowError(expect.objectContaining({ code: 'invalid-sketch-graph-geometry' }));
     expect(() => parseCadSketchSolverReply(replyWith(separated), parseCadSketchSolveInput({ graph: separated, parameters: { span: 10 } }))).toThrow('constraints');
+  });
+});
+
+describe('values-only solved replies', () => {
+  const graph = source(), input = parseCadSketchSolveInput({ graph, parameters: { span: 10 } });
+  it('refuses another layout, a wrong length, holes and values outside the scalar range', () => {
+    // Same length, other layout: only the version tells a swapped order apart.
+    expect(() => parseCadSketchSolverReply(replyWith(graph, [0, 10], CAD_SKETCH_SOLVED_LAYOUT_VERSION + 1), input)).toThrow('Invalid sketch worker response.');
+    const hole: number[] = [10]; hole.length = 2;
+    for (const values of [[10], [10, 0, 0], hole, [10, Number.NaN], [10, Number.POSITIVE_INFINITY], [Number.NEGATIVE_INFINITY, 0], [10, 2e9], [10, '0']])
+      expect(() => parseCadSketchSolverReply(replyWith(graph, values), input)).toThrow();
+  });
+  it('keeps negative zero and survives a structured clone with expressions, references, radii and no slots', () => {
+    expect(Object.is(solvedGraph(parseCadSketchSolverReply(replyWith(graph, [10, -0]), input)).points[1].position[1], -0)).toBe(true);
+    const document = circleReferencePart(true), target = document.features[1]; if (target.kind !== 'sketch' || !target.graph) throw new Error('Reference target missing.');
+    const referenced = parseCadSketchSolveInput({ graph: target.graph, parameters: document.parameters });
+    expect(target.graph.entities.some(entity => entity.kind === 'circle' && typeof entity.radius === 'number' && !cadSketchExternalReferenceComponents(target.graph!).circleIds.has(entity.id))).toBe(true);
+    expect(solvedGraph(parseCadSketchSolverReply(structuredClone(replyWith(target.graph)), referenced))).toEqual(target.graph);
+    const fixed = parseCadSketchGraph({ points: [{ id: 'a', position: ['0', 'span'] }], entities: [], relations: [] });
+    expect(cadSketchSolvedValues(fixed)).toEqual([]);
+    expect(solvedGraph(parseCadSketchSolverReply(structuredClone(replyWith(fixed)), parseCadSketchSolveInput({ graph: fixed, parameters: { span: 10 } })))).toEqual(fixed);
   });
 });
 

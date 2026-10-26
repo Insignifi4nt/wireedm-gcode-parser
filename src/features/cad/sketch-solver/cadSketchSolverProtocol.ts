@@ -1,6 +1,7 @@
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { CadSketchGraphIssueSchema, CadSketchGraphSchema, checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '../../../domain/cad/cadSketchGraph';
+import { CAD_SKETCH_SOLVED_LAYOUT_VERSION, CadSketchGraphIssueSchema, cadSketchGraphWithSolvedValues, cadSketchSolvedValues, checkCadSketchGraph,
+  parseCadSketchGraph, type CadSketchGraph } from '../../../domain/cad/cadSketchGraph';
 import { CadIdentifierSchema, CadNumberSchema } from '../../../domain/cad/cadPrimitives';
 import { cadImportDataCopy, cadImportDataFields, isCadImportData } from '../../../domain/cad/cadImportData';
 import { CadError } from '../../../domain/cad/cadError';
@@ -19,13 +20,23 @@ const diagnosticsSchema = Type.Object({
   issues: Type.Array(CadSketchGraphIssueSchema)
 }, { additionalProperties: false });
 const resultSchema = Type.Union([
-  Type.Object({ kind: Type.Literal('solved'), graph: CadSketchGraphSchema, diagnostics: diagnosticsSchema }, { additionalProperties: false }),
+  Type.Object({ kind: Type.Literal('solved'), layout: Type.Literal(CAD_SKETCH_SOLVED_LAYOUT_VERSION), values: Type.Array(Type.Number()), diagnostics: diagnosticsSchema },
+    { additionalProperties: false }),
   Type.Object({ kind: Type.Literal('rejected'), reason: Type.Union([Type.Literal('invalid-input'), Type.Literal('too-large'), Type.Literal('conflicting'), Type.Literal('redundant'), Type.Literal('failed'), Type.Literal('invalid-solution')]),
     message: Type.String({ maxLength: 8192 }), diagnostics: diagnosticsSchema }, { additionalProperties: false })
 ]);
 export interface CadSketchSolverRequest { readonly id: number; readonly kind: 'solve'; readonly input: CadSketchSolveInput }
 export type CadSketchSolverReply = { readonly id: number; readonly kind: 'result'; readonly result: CadSketchSolveResult }
   | { readonly id: number; readonly kind: 'error'; readonly message: string };
+/** A solved result crosses the worker boundary as its solved values only; the client applies them to its own request graph. */
+export type CadSketchSolverWireResult = Exclude<CadSketchSolveResult, { readonly kind: 'solved' }>
+  | { readonly kind: 'solved'; readonly layout: number; readonly values: readonly number[]; readonly diagnostics: CadSketchSolveDiagnostics };
+export type CadSketchSolverWireReply = { readonly id: number; readonly kind: 'result'; readonly result: CadSketchSolverWireResult }
+  | { readonly id: number; readonly kind: 'error'; readonly message: string };
+
+export function cadSketchSolverWireResult(result: CadSketchSolveResult): CadSketchSolverWireResult {
+  return result.kind === 'solved' ? { kind: 'solved', layout: CAD_SKETCH_SOLVED_LAYOUT_VERSION, values: cadSketchSolvedValues(result.graph), diagnostics: result.diagnostics } : result;
+}
 
 export function parseCadSketchSolveInput(value: unknown): CadSketchSolveInput {
   // Each field is read once, so the graph validated is the graph used.
@@ -72,9 +83,10 @@ export function parseCadSketchSolverReply(value: unknown, input: CadSketchSolveI
   if ([...diagnostics.conflictingIds, ...diagnostics.redundantIds, ...diagnostics.partiallyRedundantIds].some(id => !knownIds.has(id))
     || diagnostics.issues.some(issue => !knownIds.has(issue.source.id))) throw new Error('Sketch worker diagnostics do not match the request.');
   if (result.kind === 'rejected') return { id: value.id, kind: 'result', result: { ...result, diagnostics } };
-  const graph = parseCadSketchGraph(result.graph);
-  if ((diagnostics.status !== 'success' && diagnostics.status !== 'converged') || diagnostics.degreesOfFreedom === null || diagnostics.degreesOfFreedom < 0
+  let graph: CadSketchGraph | undefined;
+  try { graph = cadSketchGraphWithSolvedValues(input.graph, result.values); } catch { graph = undefined; }
+  if (!graph || (diagnostics.status !== 'success' && diagnostics.status !== 'converged') || diagnostics.degreesOfFreedom === null || diagnostics.degreesOfFreedom < 0
     || diagnostics.conflictingIds.length || diagnostics.redundantIds.length || diagnostics.partiallyRedundantIds.length || diagnostics.issues.length
-    || !cadSketchSolutionMatchesInput(input, graph) || checkCadSketchGraph(graph, input.parameters).length) throw new Error('Sketch worker solution does not match its request or constraints.');
+    || checkCadSketchGraph(graph, input.parameters).length) throw new Error('Sketch worker solution does not match its request or constraints.');
   return { id: value.id, kind: 'result', result: { kind: 'solved', graph, diagnostics } };
 }

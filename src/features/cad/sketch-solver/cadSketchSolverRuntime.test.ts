@@ -8,6 +8,8 @@ import { initializeCadSketchSolverModule, type CadSketchSolverModule } from './c
 import { resolveCadSketchRegions } from '@/domain/cad/cadSketchGeometry';
 import { measureCadResolvedProfile } from '@/domain/cad/cadMeasurements';
 import { createCadBenchmarkRectangleGraph } from '../benchmark/cadBenchmarkCases';
+import { cadSketchSolverWireResult, parseCadSketchSolveInput, parseCadSketchSolverReply } from './cadSketchSolverProtocol';
+import { circleReferencePart } from '@/domain/cad/__tests__/cadSketchExternalReferenceFixtures';
 
 const require = createRequire(import.meta.url);
 const initialize = () => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href);
@@ -285,5 +287,35 @@ describe('independent solver groups', () => {
     const input = { graph: merge(line), parameters: {} }, [first, second] = await Promise.allSettled([runtime.solve(input), runtime.solve(input)]);
     expect(first).toMatchObject({ status: 'rejected', reason: expect.objectContaining({ message: expect.stringContaining('ran out of native memory') }) });
     expect(second).toMatchObject({ status: 'fulfilled', value: { kind: 'solved' } }); expect(discard).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('solved values across the worker boundary', () => {
+  it('rebuilds a multi-group solve whose group order differs from graph order after a structured clone', async () => {
+    // Points interleave the rectangles (r0_p0, r1_p0, r2_p0, r0_p1, ...), so each solved group's
+    // points are scattered through the graph and no group lists them in graph order.
+    const rectangles = createCadBenchmarkRectangleGraph(3), key = (id: string) => id.match(/^r(\d+)_p(\d+)$/)!.slice(1).map(Number);
+    const graph = parseCadSketchGraph({ ...rectangles, points: [...rectangles.points].sort((a, b) => key(a.id)[1] - key(b.id)[1] || key(a.id)[0] - key(b.id)[0]) });
+    expect(graph.points.slice(0, 3).map(point => point.id)).toEqual(['r0_p0', 'r1_p0', 'r2_p0']);
+    const input = { graph, parameters: {} }, result = await createCadSketchSolverRuntime(initialize).solve(input);
+    if (result.kind !== 'solved') throw new Error(result.message);
+    const reply = parseCadSketchSolverReply(structuredClone({ id: 1, kind: 'result', result: cadSketchSolverWireResult(result) }), parseCadSketchSolveInput(input));
+    expect(reply).toEqual({ id: 1, kind: 'result', result });
+  });
+  it('rejects a solve that moved a fixed reference snapshot before its values are dropped', async () => {
+    const document = circleReferencePart(true), target = document.features[1]; if (target.kind !== 'sketch' || !target.graph) throw new Error('Reference target missing.');
+    const input = { graph: target.graph, parameters: document.parameters };
+    expect(await createCadSketchSolverRuntime(initialize).solve(input)).toMatchObject({ kind: 'solved' });
+    // A module whose fixed parameters come back moved, as a faulty solver's would.
+    const moving = async (): Promise<CadSketchSolverModule> => {
+      const module = await initialize();
+      return { ...module, GcsSystem: function GcsSystem() {
+        const system = new module.GcsSystem(), fixed = new Set<number>(), set = system.set_p_param.bind(system), get = system.get_p_param.bind(system);
+        system.set_p_param = (index: number, value: number, isFixed: boolean) => { if (isFixed) fixed.add(index); return set(index, value, isFixed); };
+        system.get_p_param = (index: number) => get(index) + (fixed.has(index) ? 1 : 0);
+        return system;
+      } as unknown as CadSketchSolverModule['GcsSystem'] };
+    };
+    expect(await createCadSketchSolverRuntime(moving).solve(input)).toMatchObject({ kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution changed fixed source geometry.' });
   });
 });
