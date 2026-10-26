@@ -327,10 +327,11 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
                     let solved: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
                     let correction = nearest(&system, values, &start, &position, Limits { work: limits.work.saturating_sub(work), ..limits });
                     work = work.saturating_add(correction.work);
+                    // Iterations count whether or not the correction stands.
+                    outcome.iterations = outcome.iterations.max(group.iterations + correction.iterations);
                     if correction.moved {
                         let (found, _) = diagnose_group(&system, values, &position, TAU, limits.work.saturating_sub(work), limits.fill);
                         if found.is_some_and(|(found_rank, found_witnesses)| found_rank == group_rank && found_witnesses.is_empty()) {
-                            outcome.iterations = outcome.iterations.max(group.iterations + correction.iterations);
                             outcome.residual = fold(worst(&system.rows(values, None)));
                         } else {
                             for (&p, &value) in system.unknowns.iter().zip(&solved) { values[p] = value; }

@@ -470,6 +470,8 @@ fn keeps_the_diagnosed_solution_when_a_nearer_one_is_diagnosed_differently() {
     };
     let (first, values) = triangle([100.5, 0.0], [100.1, 0.0001]);
     assert_eq!((first.status, first.diagnosis), (Status::Converged, Diagnosis::Diagnosed));
+    // 15 iterations converge it and 9 more go to a correction that is then rolled back; all count.
+    assert_eq!(first.iterations, 24);
     let (again, _) = triangle([values[2], values[3]], [values[4], values[5]]);
     assert_eq!((again.status, again.diagnosis, again.degrees_of_freedom), (Status::Converged, Diagnosis::Diagnosed, first.degrees_of_freedom));
 }
