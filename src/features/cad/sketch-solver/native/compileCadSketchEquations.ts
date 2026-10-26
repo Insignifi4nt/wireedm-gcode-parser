@@ -18,11 +18,10 @@ interface Segment { readonly startPointId: string; readonly endPointId: string }
 
 /**
  * The scalar equations of a parsed solve input, with the same relations, operand order,
- * source identities and fixed values as the PlaneGCS compilation. Drag targets are not
- * supported yet.
+ * source identities and fixed values as the PlaneGCS compilation. A drag target becomes two
+ * temporary value equations on the dragged point, last, as PlaneGCS's temporary coordinates.
  */
 export function compileCadSketchEquations(input: CadSketchSolveInput): CadSketchEquationModel {
-  if (input.drag) throw new Error('The native sketch solver does not support drag targets yet.');
   const graph = input.graph, scalar = (value: number | string) => evaluateCadScalar(value, input.parameters);
   const owned = cadSketchExternalReferenceComponents(graph);
   const values: number[] = [], fixed: boolean[] = [], equations: CadSketchEquation[] = [];
@@ -155,6 +154,11 @@ export function compileCadSketchEquations(input: CadSketchSolveInput): CadSketch
       }
       default: { const exhaustive: never = relation; throw exhaustive; }
     }
+  }
+  if (input.drag) {
+    const { pointId, position } = input.drag;
+    if (!pointParameters.has(pointId) || position.some(value => !Number.isFinite(value) || Math.abs(value) > 1e9)) throw new Error('Invalid sketch drag target.');
+    for (const coordinate of [0, 1]) equations.push({ kind: 'value', operands: [point(pointId)[coordinate]], value: position[coordinate], sourceId: pointId, tag: tags++, temporary: true });
   }
   return { values, fixed, pointParameters, radiusParameters, equations };
 }

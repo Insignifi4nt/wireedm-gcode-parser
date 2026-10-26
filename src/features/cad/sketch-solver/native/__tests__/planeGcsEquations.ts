@@ -26,7 +26,7 @@ export function planeGcsEquations(compiled: Compiled, model: CadSketchEquationMo
     const sourceId = compiled.sourceIds.get(object.id);
     if (sourceId === undefined) continue;
     tag += 1;
-    const add = (kind: CadSketchEquation['kind'], operands: number[], value = 0) => equations.push({ kind, operands, value, sourceId, tag });
+    const add = (kind: CadSketchEquation['kind'], operands: number[], value = 0) => equations.push({ kind, operands, value, sourceId, tag, ...'temporary' in object && object.temporary ? { temporary: true } : {} });
     const o = object as SketchPrimitive & Record<string, unknown>;
     switch (object.type) {
       case 'p2p_coincident': for (const axis of [0, 1]) add('difference', [point(object.p1_id)[axis], point(object.p2_id)[axis]]); break;

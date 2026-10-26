@@ -5,34 +5,47 @@ import { applyCadSketchEquationSolution, cadSketchEquationDiagnostics, cadSketch
 import type { CadSketchNativeSolution, CadSketchNativeSolver } from './cadSketchNativeSolver';
 
 /** Why the native solver did not answer a solve; PlaneGCS answers it instead while both exist. */
-export type CadSketchNativeFallbackReason = 'drag' | 'compile' | 'too-large' | 'unavailable' | 'suspected' | 'unknown-freedom'
-  | 'not-converged' | 'moved-fixed-value' | 'graph-check';
+export type CadSketchNativeFallbackReason = 'compile' | 'too-large' | 'unavailable' | 'suspected' | 'unknown-freedom'
+  | 'not-converged' | 'drag-diagnosis' | 'moved-fixed-value' | 'graph-check';
 
 /**
- * `answer`: a solution, or a definite conflicting or redundant diagnosis. `fallback`: native cannot
+ * `answer`: a solution, or a definite conflicting or redundant diagnosis of a solve that is not a
+ * drag. `fallback`: native cannot
  * answer; `rejection` is its own result, returned when PlaneGCS does no better. Group counts say how
- * many connected groups native moved and how many of those kept their accepted start values.
+ * many connected groups native moved and how many of those kept their accepted start values. `drag`
+ * is native's drag outcome whenever the input has a drag target.
  */
-export type CadSketchNativeAttempt =
+export type CadSketchNativeAttempt = (
   | { readonly kind: 'answer'; readonly result: CadSketchSolveResult; readonly movedGroups: number; readonly keptGroups: number }
-  | { readonly kind: 'fallback'; readonly reason: CadSketchNativeFallbackReason; readonly rejection?: CadSketchSolveResult };
+  | { readonly kind: 'fallback'; readonly reason: CadSketchNativeFallbackReason; readonly rejection?: CadSketchSolveResult }
+) & { readonly drag?: CadSketchNativeSolution['drag'] };
 
 const noDiagnostics = (status: CadSketchSolveDiagnostics['status']): CadSketchSolveDiagnostics =>
   ({ status, degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] });
 const failed = (message: string): CadSketchSolveResult => ({ kind: 'rejected', reason: 'failed', message, diagnostics: noDiagnostics('failed') });
+const STALLED_DRAG = 'The point could not be moved toward the target from this start.';
 
 /**
  * Solves already parsed input with the native solver and accepts only what it can answer for:
  * a converged, fully diagnosed solution with known freedom that keeps fixed values and passes the
  * graph checks, or definite conflicts and redundancies, rejected in the PlaneGCS runtime's order.
+ * A drag answers only with a solution whose target was reached or projected: a stalled drag is not
+ * converged, and a drag's conflicts and redundancies stand only when PlaneGCS does no better.
+ * Projected means native's first- and second-order necessary conditions for a local minimum of the
+ * target distance held up to its resolution. That proves neither a local minimum nor the nearest
+ * configuration: another solver can end closer, for example on another assembly of a linkage.
  * Errors from `solver` propagate; the caller treats them as a failed native instance.
  */
 export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: CadSketchNativeSolver): CadSketchNativeAttempt {
-  if (input.drag) return { kind: 'fallback', reason: 'drag' };
   let model: CadSketchEquationModel;
   try { model = compileCadSketchEquations(input); }
   catch (error) { return { kind: 'fallback', reason: 'compile', rejection: { kind: 'rejected', reason: 'invalid-input', message: error instanceof Error ? error.message : 'Invalid sketch input.', diagnostics: noDiagnostics(null) } }; }
-  const solution = solver.solve(model), { diagnosis } = solution;
+  const solution = solver.solve(model), attempt = judge(input, model, solution);
+  return solution.drag ? { ...attempt, drag: solution.drag } : attempt;
+}
+
+function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, solution: CadSketchNativeSolution): CadSketchNativeAttempt {
+  const { diagnosis } = solution, stalled = solution.drag?.outcome === 'stalled';
   if (solution.status === 'too-large') return { kind: 'fallback', reason: 'too-large', rejection: { kind: 'rejected', reason: 'too-large',
     message: 'A connected group of sketch relations is too large to solve. Split it into separate groups or remove relations.', diagnostics: noDiagnostics(null) } };
   if (diagnosis.kind === 'unavailable') return { kind: 'fallback', reason: 'unavailable', rejection: failed('The sketch solver could not diagnose these relations.') };
@@ -42,20 +55,24 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
   // With nothing free, only unmet relations are labelled, each as conflicting, and nothing is free.
   const degreesOfFreedom = diagnosis.kind === 'diagnosed' ? diagnosis.degreesOfFreedom : ids.conflictingIds.length ? null : 0;
   const diagnostics: CadSketchSolveDiagnostics = { ...noDiagnostics(status), degreesOfFreedom, ...ids };
+  const unsolved = (reason: CadSketchNativeFallbackReason): CadSketchNativeAttempt => ({ kind: 'fallback', reason,
+    rejection: { kind: 'rejected', reason: 'failed', message: stalled ? STALLED_DRAG : 'The sketch solver did not produce a valid solution.', diagnostics } });
   // Native judges each equation at its own scale and the graph checks at the sketch's, which can be
   // looser far from the origin. With nothing free there is nothing to solve, so the checks decide for
   // each relation: one they accept is not blamed, and issues elsewhere are reported as the checks'.
   if (diagnosis.kind === 'no-unknowns' && ids.conflictingIds.length) {
     const flagged = new Set(checkCadSketchGraph(input.graph, input.parameters).filter(issue => issue.source.kind === 'relation').map(issue => issue.source.id));
     const conflictingIds = ids.conflictingIds.filter(id => flagged.has(id));
-    if (!conflictingIds.length) return solvedAttempt(input, model, solution, { ...noDiagnostics('success'), degreesOfFreedom: 0 });
+    if (!conflictingIds.length) return stalled ? unsolved('not-converged') : solvedAttempt(input, model, solution, { ...noDiagnostics('success'), degreesOfFreedom: 0 });
     return answer({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics: { ...diagnostics, conflictingIds } });
   }
-  if (ids.conflictingIds.length) return answer({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics });
-  if (ids.redundantIds.length || ids.partiallyRedundantIds.length) return answer({ kind: 'rejected', reason: 'redundant', message: 'Sketch constraints are redundant.', diagnostics });
-  const unsolved = (reason: CadSketchNativeFallbackReason): CadSketchNativeAttempt => ({ kind: 'fallback', reason,
-    rejection: { kind: 'rejected', reason: 'failed', message: 'The sketch solver did not produce a valid solution.', diagnostics } });
-  if (solution.status !== 'converged') return unsolved('not-converged');
+  // A drag is diagnosed where it ends, and its target can land it on a singular configuration (a
+  // tangency met exactly) whose rank reads redundant or conflicting where the sketch is not, so for a
+  // drag such a rejection stands only when PlaneGCS does no better.
+  const definite = (result: CadSketchSolveResult): CadSketchNativeAttempt => solution.drag ? { kind: 'fallback', reason: 'drag-diagnosis', rejection: result } : answer(result);
+  if (ids.conflictingIds.length) return definite({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics });
+  if (ids.redundantIds.length || ids.partiallyRedundantIds.length) return definite({ kind: 'rejected', reason: 'redundant', message: 'Sketch constraints are redundant.', diagnostics });
+  if (solution.status !== 'converged' || stalled) return unsolved('not-converged');
   if (degreesOfFreedom === null) return unsolved('unknown-freedom');
   return solvedAttempt(input, model, solution, diagnostics);
 }
@@ -81,6 +98,7 @@ const polished = (start: number, value: number) => Math.abs(value - start) <= Ma
  * its values moved further, or when its start leaves any of its equations further from met than
  * the solution by more than the driver tolerance: far from the origin a driver edit can move each
  * value by only a few ulps, and the checks' sketch-wide tolerance would accept the old values.
+ * A drag moves its point's groups on purpose, however little, so they are never kept.
  * Groups are judged on the native values themselves. Roundoff also leaves exact intent a few ulps
  * off (55 as 54.99999999999999), so short decimals within roundoff are tried first, never in a kept
  * group; the graph checks decide, as for any solution.
@@ -95,6 +113,7 @@ function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel
     moved.add(group[index]);
     if (!polished(start, value)) edited.add(group[index]);
   });
+  for (const equation of model.equations) if (equation.temporary) for (const operand of equation.operands) if (!model.fixed[operand]) edited.add(group[operand]);
   for (const equation of model.equations) {
     const groups = equation.operands.filter(operand => !model.fixed[operand]).map(operand => group[operand]);
     if (groups.every(id => !moved.has(id) || edited.has(id))) continue;

@@ -1,7 +1,7 @@
 import type { CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
 import { parseCadSketchSolveInput } from './cadSketchSolverProtocol';
 import { attemptCadSketchNativeSolve, type CadSketchNativeAttempt, type CadSketchNativeFallbackReason } from './native/cadSketchNativeAttempt';
-import { CadSketchNativeProtocolError, type CadSketchNativeSolver } from './native/cadSketchNativeSolver';
+import { CadSketchNativeProtocolError, type CadSketchNativeSolution, type CadSketchNativeSolver } from './native/cadSketchNativeSolver';
 
 /** `planegcs` and `native-only` exist for comparisons in tests and benchmarks; the app uses `native-first`. */
 export type CadSketchSolverMode = 'native-first' | 'planegcs' | 'native-only';
@@ -19,6 +19,8 @@ export interface CadSketchSolveRecord {
   readonly planeGcs?: 'solved' | Extract<CadSketchSolveResult, { kind: 'rejected' }>['reason'] | 'threw';
   readonly movedGroups?: number;
   readonly keptGroups?: number;
+  /** Native's drag outcome and remaining distance to the target, when it ran on a drag. */
+  readonly drag?: CadSketchNativeSolution['drag'];
   /** Why the native instance was dropped after this solve; the next solve creates a fresh one. */
   readonly nativeReset?: 'failure' | 'memory';
   readonly nativeMs?: number;
@@ -29,9 +31,10 @@ export interface CadSketchSolveRecord {
 export const CAD_SKETCH_NATIVE_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 
 /**
- * Solves with the native solver first and asks PlaneGCS only when native cannot answer: drag targets,
- * compilation it refuses, load failure, a failed instance, too large groups, unavailable or suspected
- * diagnosis, unknown freedom, no convergence, or a solution that moves fixed values or fails the graph
+ * Solves with the native solver first and asks PlaneGCS only when native cannot answer: compilation
+ * it refuses, load failure, a failed instance, too large groups, unavailable or suspected
+ * diagnosis, unknown freedom, no convergence (including a stalled drag), a drag diagnosed as
+ * conflicting or redundant where it ended, or a solution that moves fixed values or fails the graph
  * checks. PlaneGCS loads on first use. When native has its own rejection, PlaneGCS's answer replaces it
  * only if it solves or names definite conflicts or redundancies.
  */
@@ -71,17 +74,17 @@ export function createCadSketchNativeFirstRuntime(options: {
         }
         record.nativeMs = performance.now() - started;
         if (attempt) record.native = attempt.kind === 'answer' ? 'answer' : attempt.reason;
+        if (attempt?.drag) record.drag = attempt.drag;
         if (attempt?.kind === 'answer') {
           record.answeredBy = 'native'; record.movedGroups = attempt.movedGroups; record.keptGroups = attempt.keptGroups;
           return attempt.result;
         }
       }
-      // Drag and compilation are PlaneGCS's to answer outright while both solvers exist.
-      const own = attempt?.kind === 'fallback' && attempt.reason !== 'drag' && attempt.reason !== 'compile' ? attempt.rejection : undefined;
+      // Compilation is PlaneGCS's to answer outright while both solvers exist.
+      const own = attempt?.kind === 'fallback' && attempt.reason !== 'compile' ? attempt.rejection : undefined;
       if (mode === 'native-only') {
         record.answeredBy = 'native';
-        return (attempt?.kind === 'fallback' ? attempt.rejection : undefined) ?? { kind: 'rejected', reason: 'failed',
-          message: attempt?.kind === 'fallback' && attempt.reason === 'drag' ? 'The native sketch solver does not support drag targets yet.' : 'The native sketch solver is unavailable.',
+        return (attempt?.kind === 'fallback' ? attempt.rejection : undefined) ?? { kind: 'rejected', reason: 'failed', message: 'The native sketch solver is unavailable.',
           diagnostics: { status: null, degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } };
       }
       const started = performance.now();

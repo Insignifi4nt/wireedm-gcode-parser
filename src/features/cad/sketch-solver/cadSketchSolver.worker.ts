@@ -8,7 +8,7 @@ import { cadSketchSolverWireResult, isCadSketchSolverEnvelope, type CadSketchSol
 let nativeModule: Promise<WebAssembly.Module> | undefined;
 const runtime = createCadSketchNativeFirstRuntime({
   loadNative: async () => loadCadSketchNativeSolver(await (nativeModule ??= fetch(nativeWasmUrl).then(response => response.arrayBuffer()).then(bytes => WebAssembly.compile(bytes)))),
-  // PlaneGCS is fetched and compiled only when native cannot answer, for example on the first drag.
+  // PlaneGCS is fetched and compiled only when native cannot answer, such as a suspected diagnosis or a stalled drag.
   loadPlaneGcs: async () => {
     const [{ createCadSketchSolverRuntime }, { initializeCadSketchSolverModule, resetCadSketchSolverModule }] = await Promise.all([import('./cadSketchSolverRuntime'), import('./cadSketchSolverModule')]);
     return createCadSketchSolverRuntime(initializeCadSketchSolverModule, { discard: resetCadSketchSolverModule });

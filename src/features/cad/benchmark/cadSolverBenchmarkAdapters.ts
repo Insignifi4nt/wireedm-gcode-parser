@@ -44,7 +44,11 @@ export function createCadBenchmarkNative(initialize: () => Promise<CadSketchNati
       const next = (value: CadSketchSolverTimingStage) => { const now = performance.now(); collector.record(stage, now - started); stage = value; started = now; };
       try {
         let input, model;
-        try { input = parseCadSketchSolveInput(source); model = compileCadSketchEquations(input); }
+        try { input = parseCadSketchSolveInput(source); }
+        catch (error) { return { kind: 'rejected', reason: 'invalid-input', message: String(error), diagnostics: unavailable }; }
+        // The compiler accepts drag targets, but this adapter does not judge drag outcomes yet.
+        if (input.drag) return { kind: 'rejected', reason: 'invalid-input', message: 'The native benchmark adapter does not support drag.', diagnostics: unavailable };
+        try { model = compileCadSketchEquations(input); }
         catch (error) { return { kind: 'rejected', reason: 'invalid-input', message: String(error), diagnostics: unavailable }; }
         next('nativeCall');
         const solution = (await initialize()).solve(model);
