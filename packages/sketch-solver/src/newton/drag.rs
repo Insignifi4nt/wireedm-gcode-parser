@@ -1,16 +1,20 @@
 //! Drag targets. Temporary `value` rows ask for dragged coordinates; the lasting rows define where
 //! the sketch may be, and the targets are approached within that set in Euclidean millimetres.
 //!
-//! Each trial solves one damped factor with the lasting rows weighted by `W` above the unit target
-//! rows, toward the full target. Finite weights leak motion across the lasting rows, about
-//! `d / (1 + W^2 sigma^2)` for a target `d` away, so a pass of `project` strips the step's part in
-//! their range. The step is scaled to a trust radius and a per-row bound, then restored onto the
-//! lasting rows by a few Levenberg-Marquardt iterations. A trial stands when the restored point is
-//! accepted, within its bounds and strictly closer to the targets, with the gain computed from
-//! products so that roundoff in two nearly equal distances cannot fake it. The trust radius grows
-//! when restoration was small and the gain near its prediction, and shrinks when restoration was
-//! large. It is also the continuation: the targets are approached from the start in bounded,
-//! restored steps, so the result is a function of the input and follows the start's branch.
+//! Each trial solves a damped factor with the lasting rows weighted by `W` above the unit target
+//! rows, toward the full target, its damping grown until the step is about the trust radius long.
+//! Finite weights leak motion across the lasting rows, about `d / (1 + W^2 sigma^2)` for a target
+//! `d` away, so `project` strips the step's part in their range until it cannot swamp the step's
+//! first-order gain. The step is scaled to the trust radius and a per-row bound, then restored onto
+//! the lasting rows by a few Levenberg-Marquardt iterations. A tangent step overshoots a curved path,
+//! so the slopes of the squared distance at both ends of the restored path place its nearest point,
+//! and an overshot step is retried there. A trial stands when the restored point is accepted, within
+//! its bounds and strictly closer to the targets, with the gain computed from products so that
+//! roundoff in two nearly equal distances cannot fake it; where roundoff hides the gain, the end
+//! slope decides once the projected gradient is not certified small. The trust radius grows when
+//! restoration was small and the path still descending, and shrinks when restoration was large. It
+//! is also the continuation: the targets are approached from the start in bounded, restored steps,
+//! so the result is a function of the input and follows the start's branch.
 //!
 //! A drag is `Reached` within `max(1e-8, 32 epsilon S)` of its targets, and lands exactly on them
 //! when the lasting rows still accept that. It is `Projected` only when the projected gradient is
@@ -41,11 +45,12 @@ const W: f64 = 1e6;
 /// targets nor the lasting rows decide still, and stays far below `W^2 sigma^2` of any lasting
 /// direction whose rank is reliable.
 const MU: f64 = 1e-6;
-/// Levenberg-Marquardt iterations restoring one trial onto the lasting rows.
 /// Most damped solves for one tangent step.
 const DAMPING_PASSES: usize = 4;
+/// Levenberg-Marquardt iterations restoring one trial onto the lasting rows.
 const RESTORE_ITERATIONS: usize = 8;
-/// Projection passes certifying stationarity; each shrinks the range part by `1 + W^2 sigma^2`.
+/// Most projection passes for a tangent step or a stationarity certificate; each shrinks the range
+/// part by `1 + W^2 sigma^2`.
 const PROJECTION_PASSES: usize = 3;
 
 /// A target row: the dragged parameter, its column and the requested value.
@@ -54,6 +59,7 @@ struct Target { parameter: usize, column: usize, value: f64 }
 /// A nonlinear lasting row's unknown columns and how far one step may move each.
 struct Bound { columns: Vec<usize>, limit: f64 }
 
+/// What a drag does where gains no longer resolve progress.
 enum Settled { Done(DragOutcome), Moved, Moving }
 
 /// A restored trial step, left in the values until it is kept or undone.
@@ -66,7 +72,8 @@ struct Trial {
     roundoff: f64,
     /// Norm of the restoration's own displacement.
     restoration: f64,
-    /// Derivative of the squared distance at the end of the path `x + s step + s^2 restoration`.
+    /// Derivative of the squared distance along the step at the restored point, with the step
+    /// projected along the lasting rows there; not a number when the trial is not within.
     slope: f64,
     saved: Vec<f64>,
 }
