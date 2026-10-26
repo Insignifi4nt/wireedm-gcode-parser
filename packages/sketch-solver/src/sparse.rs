@@ -25,6 +25,20 @@ pub struct Ordering {
 /// memory stays within about twice the fill limit. Lists are built distinct one column at a time
 /// from the rows each column is in, so repeated rows cost work but no adjacency memory.
 pub fn minimum_degree<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize, work_limit: usize) -> Option<Ordering> {
+    order(n, rows, fill_limit, work_limit, false)
+}
+
+/// `minimum_degree` with its heap steps counted in `work` too: each entry pushed is charged, before
+/// it is pushed, the steps of its push and its later pop.
+pub fn minimum_degree_with_heap<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize, work_limit: usize) -> Option<Ordering> {
+    order(n, rows, fill_limit, work_limit, true)
+}
+
+fn order<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize, work_limit: usize, heap: bool) -> Option<Ordering> {
+    // Steps of one push and its pop on a heap of `len` entries.
+    let steps = |len: usize| if heap { 2 * (usize::BITS - len.leading_zeros()) as usize + 2 } else { 0 };
+    let mut work = n.saturating_mul(steps(n));
+    if work > work_limit { return None; }
     let mut incident: Vec<Vec<usize>> = vec![Vec::new(); n];
     for (i, row) in rows.iter().enumerate() {
         for &a in row.as_ref() { incident[a].push(i); }
@@ -32,7 +46,7 @@ pub fn minimum_degree<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize
     let mut adjacent: Vec<Vec<usize>> = vec![Vec::new(); n];
     // `seen[b] == stamp` marks `b` as already in the list being built, so lists need no sorting.
     let (mut seen, mut stamp) = (vec![0; n], 0);
-    let (mut live, mut fill, mut work) = (0usize, 0usize, 0usize);
+    let (mut live, mut fill) = (0usize, 0usize);
     let exceeded = |fill: usize, live: usize, left: usize, work: usize|
         fill.saturating_add(live / 2).saturating_add(left) > fill_limit || work > work_limit;
     for (a, list) in adjacent.iter_mut().enumerate() {
@@ -66,7 +80,7 @@ pub fn minimum_degree<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize
             // Eliminating `next` joins its remaining neighbors into a clique.
             let list = &mut adjacent[a];
             live -= list.len();
-            work = work.saturating_add(list.len() + neighbors.len());
+            work = work.saturating_add(list.len() + neighbors.len() + steps(queue.len() + 1));
             list.retain(|&b| b != next);
             list.extend(neighbors.iter().copied().filter(|&b| b != a));
             distinct(list);
@@ -78,18 +92,6 @@ pub fn minimum_degree<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize
         if exceeded(fill, live, n - step, work) { return None; }
     }
     Some(Ordering { position, fill, work })
-}
-
-/// `minimum_degree` within `work_limit` with its heap steps counted too. Each column's heap entry,
-/// and each degree update's, takes about `depth` steps to push and pop; updates number at most the
-/// adjacency work, so the ordering gets what is left after the columns' share, cut by that factor,
-/// and is charged for both before they run.
-pub fn minimum_degree_with_heap<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize, work_limit: usize) -> Option<Ordering> {
-    let depth = 2 * ((usize::BITS - n.saturating_add(work_limit).leading_zeros()) as usize + 1);
-    let columns = n.saturating_mul(1 + depth);
-    let mut ordering = minimum_degree(n, rows, fill_limit, work_limit.checked_sub(columns)? / (1 + depth))?;
-    ordering.work = columns + ordering.work * (1 + depth);
-    Some(ordering)
 }
 
 /// Upper-triangular `R` by rows (row `k` starts at position `k`) and `c = Q^T b`.

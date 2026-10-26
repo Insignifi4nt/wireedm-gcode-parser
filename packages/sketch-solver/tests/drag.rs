@@ -843,3 +843,20 @@ fn restoring_the_start_shares_the_drag_allowance() {
     let (outcome, values) = builder.outcome();
     assert_eq!((outcome.status, outcome.drag, values[x]), (Status::Converged, Some(DragOutcome::Reached), 1.0));
 }
+
+#[test]
+fn coordinates_aligned_to_a_dimensioned_one_are_not_too_large() {
+    // 200 coordinates tied to x0, which a value relation holds at zero: a linear group whose
+    // ordering rewrites long lists, which the heap's charge must not multiply.
+    let mut builder = Builder::new();
+    let x0 = builder.parameter(0.0, false);
+    builder.equation(Kind::Value, 0.0, &[x0]);
+    for _ in 0..200 {
+        let x = builder.parameter(0.0, false);
+        builder.equation(Kind::Difference, 0.0, &[x0, x]);
+    }
+    builder.temporary(Kind::Value, 1.0, &[x0]);
+    let (outcome, values) = builder.outcome();
+    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
+    assert!(values[x0].abs() <= 1e-30);
+}
