@@ -317,10 +317,22 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
             (group.status == Status::NotConverged).then(|| diagnose_at(STALLED)).flatten().map(|found| (found, true)));
         match diagnosed {
             Some(((group_rank, group_witnesses), suspected)) => {
-                // A solution that stands with freedom left moves to the one nearest its start.
-                if !dragging && !suspected && group.status == Status::Converged && group_witnesses.is_empty() && group_rank < position.len()
-                    && nearest(&system, values, &start, &position, Limits { work: limits.work.saturating_sub(work), ..limits }) {
-                    outcome.residual = outcome.residual.max(worst(&system.rows(values, None)));
+                // A solution that stands with freedom left moves toward the one nearest its start.
+                // The move stands only when the group is diagnosed the same where it ends, as a
+                // nearer solution can be singular; otherwise the diagnosed solution is kept.
+                if !dragging && !suspected && group.status == Status::Converged && group_witnesses.is_empty() && group_rank < position.len() {
+                    let solved: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
+                    let correction = nearest(&system, values, &start, &position, Limits { work: limits.work.saturating_sub(work), ..limits });
+                    work = work.saturating_add(correction.work);
+                    if correction.moved {
+                        let (found, _) = diagnose_group(&system, values, &position, TAU, limits.work.saturating_sub(work), limits.fill);
+                        if found.is_some_and(|(found_rank, found_witnesses)| found_rank == group_rank && found_witnesses.is_empty()) {
+                            outcome.iterations = outcome.iterations.max(group.iterations + correction.iterations);
+                            outcome.residual = outcome.residual.max(worst(&system.rows(values, None)));
+                        } else {
+                            for (&p, &value) in system.unknowns.iter().zip(&solved) { values[p] = value; }
+                        }
+                    }
                 }
                 rank += group_rank;
                 witnesses.extend(group_witnesses);
@@ -344,22 +356,32 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
     outcome
 }
 
-/// Rounds of `nearest`; each leaves a small part of the excess movement, and the first ends it
-/// when the relations are linear in the moved unknowns.
+/// Rounds of `nearest`. The first ends the excess movement when the relations are linear in the
+/// moved unknowns; where they bend, each round only brings the group nearer.
 const NEAREST_ROUNDS: usize = 4;
 
+/// What `nearest` did: whether it moved the group, and the work and iterations it spent.
+struct Correction {
+    moved: bool,
+    work: usize,
+    iterations: usize,
+}
+
 /// Moves a converged group with freedom left toward the solution nearest `start`, its unknowns
-/// before solving, and says whether it moved. Damped Newton steps reach a solution but not the
-/// nearest one where relations bend: a direction residual is a normalized sine, so its step moves
-/// a point across its line rather than straight to the line it must lie on. Each round solves the
-/// linearized relations for the least change from the start, `min |z|` with
-/// `J z = J (x - start) - r`, converges again from `start + z`, and stands only when every row is
-/// still accepted and the group ended nearer its start. Work past `limits.work` keeps the last
-/// values that stood.
-fn nearest(system: &System, values: &mut [f64], start: &[f64], position: &[usize], limits: Limits) -> bool {
+/// before solving. Damped Newton steps reach a solution but not the nearest one where relations
+/// bend: a direction residual is a normalized sine, so its step moves a point across its line
+/// rather than straight to the line it must lie on. Each round solves the linearized relations for
+/// the least change from the start, `min |z|` with `J z = J (x - start) - r`, converges again from
+/// `start + z`, and stands only when every row is still accepted and the group ended nearer its
+/// start. That reaches the nearest solution when the relations are linear in the moved unknowns
+/// and approaches it otherwise, without proving it. The rounds share `MAX_ITERATIONS`, and work
+/// past `limits.work` keeps the last values that stood.
+fn nearest(system: &System, values: &mut [f64], start: &[f64], position: &[usize], limits: Limits) -> Correction {
     let distance = |values: &[f64]| system.unknowns.iter().zip(start).map(|(&p, &s)| (values[p] - s).powi(2)).sum::<f64>().sqrt();
     let scale = system.unknowns.iter().zip(start).fold(1.0, |scale: f64, (&p, &s)| scale.max(values[p].abs()).max(s.abs()));
-    let (mut current, mut work, mut moved) = (distance(values), 0, false);
+    let mut current = distance(values);
+    let mut correction = Correction { moved: false, work: 0, iterations: 0 };
+    let Correction { moved, work, iterations } = &mut correction;
     for _ in 0..NEAREST_ROUNDS {
         if current == 0.0 { break; }
         let rows = system.rows(values, None);
@@ -367,22 +389,23 @@ fn nearest(system: &System, values: &mut [f64], start: &[f64], position: &[usize
         let mut offset = vec![0.0; position.len()];
         for (column, &p) in system.unknowns.iter().enumerate() { offset[position[column]] = values[p] - start[column]; }
         for (row, rhs) in &mut jacobian.rows { *rhs += row.iter().map(|&(k, derivative)| derivative * offset[k]).sum::<f64>(); }
-        let Ok(Some(z)) = damped_step(&jacobian, position, f64::EPSILON * jacobian.diagonal.max(1.0), &mut work, limits.work) else { break; };
-        // A correction within roundoff of the current values cannot bring the group nearer.
-        let correction = system.unknowns.iter().zip(start).zip(&z).map(|((&p, &s), &z)| (s + z - values[p]).powi(2)).sum::<f64>().sqrt();
-        if correction <= POLISH * scale { break; }
+        let Ok(Some(z)) = damped_step(&jacobian, position, f64::EPSILON * jacobian.diagonal.max(1.0), work, limits.work) else { break; };
+        // A correction smaller than acceptance cannot move the group visibly nearer, and below
+        // roundoff it cannot move it at all.
+        let step = system.unknowns.iter().zip(start).zip(&z).map(|((&p, &s), &z)| (s + z - values[p]).powi(2)).sum::<f64>().sqrt();
+        if step <= ACCEPT_MM.max(POLISH * scale) { break; }
         let saved: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
         for ((&p, &s), &z) in system.unknowns.iter().zip(start).zip(&z) { values[p] = s + z; }
-        let mut iterations = 0;
-        let exhausted = levenberg(system, values, position, limits, &mut work, &mut iterations, MAX_ITERATIONS);
+        let exhausted = levenberg(system, values, position, limits, work, iterations, MAX_ITERATIONS);
         let next = distance(values);
         if exhausted || !assess(&system.rows(values, None)).accepted || !(next < current) {
             for (&p, &value) in system.unknowns.iter().zip(&saved) { values[p] = value; }
             break;
         }
-        (current, moved) = (next, true);
+        current = next;
+        *moved = true;
     }
-    moved
+    correction
 }
 
 /// Witnesses of the lasting rows of a group without unknowns that are finite and not met: each

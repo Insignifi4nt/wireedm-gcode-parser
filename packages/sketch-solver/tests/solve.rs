@@ -3,7 +3,7 @@ mod common;
 use common::Builder;
 use sketch_solver::equations::Kind;
 use sketch_solver::newton::Limits;
-use sketch_solver::problem::{Status, VERSION};
+use sketch_solver::problem::{Diagnosis, Status, VERSION};
 use sketch_solver::solve_buffer;
 
 fn close(a: f64, b: f64) -> bool { (a - b).abs() < 1e-9 }
@@ -451,4 +451,25 @@ fn moves_a_group_with_freedom_left_to_the_solution_nearest_its_start() {
     assert_eq!(status, 0.0);
     let along = 35.0 * cos - 5.0 * sin;
     assert!(close(values[0], along * cos) && close(values[1], 20.0 + along * sin), "{values:?}");
+}
+
+#[test]
+fn keeps_the_diagnosed_solution_when_a_nearer_one_is_diagnosed_differently() {
+    // A point between two others held 1 mm from each, 2 mm apart: every solution is collinear, a
+    // tangency of the two circles. A nearer solution must stand only where it is diagnosed as the
+    // returned one was, so solving the answer again finds it diagnosed with the same freedom.
+    let triangle = |b: [f64; 2], c: [f64; 2]| {
+        let mut builder = Builder::new();
+        let a = builder.point(100.0, 0.0, true);
+        let b = builder.point(b[0], b[1], false);
+        let c = builder.point(c[0], c[1], false);
+        builder.equation(Kind::Distance, 2.0, &[a[0], a[1], b[0], b[1]]);
+        builder.equation(Kind::Distance, 1.0, &[a[0], a[1], c[0], c[1]]);
+        builder.equation(Kind::Distance, 1.0, &[b[0], b[1], c[0], c[1]]);
+        builder.outcome()
+    };
+    let (first, values) = triangle([100.5, 0.0], [100.1, 0.0001]);
+    assert_eq!((first.status, first.diagnosis), (Status::Converged, Diagnosis::Diagnosed));
+    let (again, _) = triangle([values[2], values[3]], [values[4], values[5]]);
+    assert_eq!((again.status, again.diagnosis, again.degrees_of_freedom), (Status::Converged, Diagnosis::Diagnosed, first.degrees_of_freedom));
 }
