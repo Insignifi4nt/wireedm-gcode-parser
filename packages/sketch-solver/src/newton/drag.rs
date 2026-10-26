@@ -30,9 +30,9 @@
 //! A clearly negative curvature, as at a circle's antipode or a straight arm with a target inside
 //! its reach, is followed by restored steps, halving; one that gets closer by any resolved gain
 //! continues the drag. A curvature within its error of zero is followed at two lengths too, along
-//! the flat direction that moves the targets most. Finding nothing closer leaves the drag projected
-//! when no flat direction moves a target, as a free part the targets do not reach; otherwise higher
-//! orders decide, so that stalls.
+//! the flat direction that moves the targets most; finding nothing closer leaves the drag
+//! projected, the second-order condition met and higher orders not checked. A point whose distance
+//! falls only at fourth order, with every length bounded short of showing it, stays projected.
 //! Anything else, including a curvature test that cannot decide, is `Stalled`, at the last
 //! feasible values. Restoring the start, the trials with their restorations and a
 //! landing's polish share `DRAG_ITERATIONS`, and a check the budget cut short decides nothing.
@@ -158,7 +158,8 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits) -
     if targets.is_empty() || n == 0 {
         // Untouched by the drag, or with only fixed targets, which count toward the distance but never move.
         let distance = squared(values);
-        let drag = (!targets.is_empty()).then(|| (if distance.sqrt() <= reached { DragOutcome::Reached } else { DragOutcome::Projected }, distance));
+        let outcome = if !assess(&rows).accepted { DragOutcome::Stalled } else if distance.sqrt() <= reached { DragOutcome::Reached } else { DragOutcome::Projected };
+        let drag = (!targets.is_empty()).then(|| (outcome, distance));
         return GroupOutcome { status: accepted(&rows), iterations: 0, residual: worst(&rows), position: Some(ordering.position), work: ordering.work, drag };
     }
     // Half the work is kept for diagnosis.
@@ -285,10 +286,7 @@ impl Drag<'_> {
             Curvature::Clear => Ok(Settled::Done(DragOutcome::Projected)),
             Curvature::Unresolved => Ok(Settled::Done(DragOutcome::Stalled)),
             Curvature::Negative { direction, theta } => self.descend(values, &r, &direction, Some(theta)),
-            Curvature::Flat { direction, still } => match self.descend(values, &r, &direction, None)? {
-                Settled::Done(DragOutcome::Projected) if !still => Ok(Settled::Done(DragOutcome::Stalled)),
-                settled => Ok(settled),
-            },
+            Curvature::Flat { direction } => self.descend(values, &r, &direction, None),
         }
     }
 
@@ -296,7 +294,7 @@ impl Drag<'_> {
     /// and halving, first the way the gradient does not climb; the first that gets closer stands,
     /// and without one the drag stalls. Along a flat direction (`None`), where orders past the
     /// second decide, `FLAT_LENGTHS` lengths are tried; finding nothing closer leaves the second-order
-    /// necessary condition met, so that is projected, unless the caller knows higher orders decide.
+    /// necessary condition met, so that is projected; the orders past it are not checked.
     fn descend(&mut self, values: &mut [f64], r: &[f64], direction: &[f64], theta: Option<f64>) -> Result<Settled, Exhausted> {
         let climb: f64 = self.targets.iter().zip(r).map(|(target, r)| r * direction[target.column]).sum();
         let first = if climb > 0.0 { -1.0 } else { 1.0 };
@@ -317,14 +315,15 @@ impl Drag<'_> {
         Ok(Settled::Done(if theta.is_none() { DragOutcome::Projected } else { DragOutcome::Stalled }))
     }
 
-    /// Writes the targets exactly when the lasting rows still accept them. Landing moves the targeted
+    /// Writes the targets exactly when the lasting rows still accept them and every target stays reached. Landing moves the targeted
     /// coordinates by up to the reach distance, so the other unknowns are then polished with the
     /// targets held, as a solve without targets would polish them; a polish that is not accepted is
     /// undone, leaving the landing accepted as it was.
     fn land(&mut self, values: &mut [f64]) -> Result<bool, Exhausted> {
         let saved: Vec<f64> = self.targets.iter().map(|target| values[target.parameter]).collect();
         for target in self.targets { values[target.parameter] = target.value; }
-        if !assess(&self.lasting.rows(values, None)).accepted {
+        // Two targets on one coordinate land on the last; the landing must still reach the others.
+        if !(norm(&self.residual(values)) <= self.reached) || !assess(&self.lasting.rows(values, None)).accepted {
             for (target, &value) in self.targets.iter().zip(&saved) { values[target.parameter] = value; }
             return Ok(false);
         }
@@ -385,6 +384,13 @@ impl Drag<'_> {
         if finished { Ok(factor) } else { Err(Exhausted) }
     }
 
+    /// Solves with `factor`, its entries charged before it runs; `Err` when the work runs out.
+    fn solve(&mut self, factor: &Factor) -> Result<Option<Vec<f64>>, Exhausted> {
+        self.work = self.work.saturating_add(factor.rows.iter().map(Vec::len).sum());
+        if self.work > self.limits.work { return Err(Exhausted); }
+        Ok(factor.solve())
+    }
+
     fn jacobian(&self, values: &[f64]) -> Jacobian { self.lasting.jacobian(&self.lasting.rows(values, None), &self.position) }
 
     /// A step toward `goal` along the lasting rows, by column; `None` when it is not finite. When
@@ -401,7 +407,7 @@ impl Drag<'_> {
         let mut step = None;
         for pass in 0..DAMPING_PASSES {
             let factor = self.rotate(self.factor(mu), weighted.iter().chain(&pulls).cloned())?;
-            let Some(x) = factor.solve() else { return Ok(None); };
+            let Some(x) = self.solve(&factor)? else { return Ok(None); };
             let h: Vec<f64> = self.position.iter().map(|&k| x[k]).collect();
             // Measured once its leak across the lasting rows is gone: a far target's pull leaks
             // about its distance over `W^2`, which can dwarf the step along them.
@@ -444,7 +450,7 @@ impl Drag<'_> {
             (row.iter().map(|&(k, v)| (k, W * v)).collect(), W * along)
         }).collect();
         let factor = self.rotate(self.factor(1.0), rows)?;
-        let Some(y) = factor.solve() else { return Ok(None); };
+        let Some(y) = self.solve(&factor)? else { return Ok(None); };
         let removed: Vec<f64> = self.position.iter().map(|&k| y[k]).collect();
         Ok(Some((z.iter().zip(&removed).map(|(z, y)| z - y).collect(), norm(&removed))))
     }

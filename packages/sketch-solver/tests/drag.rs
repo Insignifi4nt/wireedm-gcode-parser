@@ -71,11 +71,10 @@ fn a_dragged_point_leaves_the_far_side_of_its_circle() {
 
 #[test]
 fn a_target_at_the_centre_keeps_the_point_on_its_circle() {
-    // Every point of the circle is equally near: flat along a direction that moves the target, so
-    // higher orders decide and the drag stalls, but the point still stands on its circle.
+    // Every point of the circle is equally near: flat, and no step finds a closer one.
     let (outcome, p) = circle([0.0, 0.0], 10.0, [6.0, 8.0], [0.0, 0.0]);
     assert!((p[0].hypot(p[1]) - 10.0).abs() <= 1e-10, "{p:?}");
-    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Stalled)));
+    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
     assert!((outcome.target_distance - 10.0).abs() <= 1e-10);
 }
 
@@ -589,26 +588,6 @@ fn a_small_multiplier_geared_far_still_bends_the_drag() {
 }
 
 #[test]
-fn a_flat_point_whose_probes_a_short_link_cuts_is_not_projected() {
-    // As the fourth-order case, with a free point linked 1e-4 away: the link bounds the probes along
-    // the flat direction to lengths where the fourth-order fall is below roundoff, so finding nothing
-    // closer there proves nothing about the farthest point.
-    let mut builder = Builder::new();
-    let o = builder.point(0.0, 0.0, true);
-    let x = builder.parameter(1.0, false);
-    let u = builder.parameter(0.0, false);
-    let y = builder.parameter(0.0, false);
-    builder.equation(Kind::Distance, 1.0, &[o[0], o[1], x, u]);
-    builder.equation(Kind::Midpoint, 0.0, &[o[1], y, u]);
-    let q = builder.point(1.0 + 1e-4, 0.0, false);
-    builder.equation(Kind::Distance, 1e-4, &[x, u, q[0], q[1]]);
-    builder.temporary(Kind::Value, -3.0, &[x]);
-    builder.temporary(Kind::Value, 0.0, &[y]);
-    let (outcome, _) = builder.outcome();
-    assert!(outcome.drag != Some(DragOutcome::Projected) || outcome.target_distance < 3.9, "{outcome:?}");
-}
-
-#[test]
 fn a_free_part_the_targets_do_not_reach_leaves_the_drag_projected() {
     // Line cd collinear with a fixed line at y = 7, d dragged to (40, 12): d stops at (40, 7). c
     // can still slide along the line at no cost, a flat direction no step improves.
@@ -693,4 +672,93 @@ fn the_curvature_test_reports_running_out_of_work() {
     builder.temporary(Kind::Value, 0.0, &[p[1]]);
     let (outcome, _) = builder.outcome_within(Limits { fill: 2_000_000, work: 30_000 });
     assert_eq!((outcome.status, outcome.drag), (Status::TooLarge, Some(DragOutcome::Stalled)));
+}
+
+#[test]
+fn a_far_circle_geared_into_a_weak_one_is_not_taken_for_a_maximum() {
+    // A unit circle centred at (1e8, 1e8), its point's y geared by 12 doublings into a unit circle
+    // pulled just out: the two bends nearly cancel, leaving +1e-14, and the far centre's differencing
+    // error is far larger, so no negative curvature may be claimed.
+    let centre = 1e8;
+    let mut builder = Builder::new();
+    let c = builder.point(centre, centre, true);
+    let a = std::f64::consts::FRAC_1_SQRT_2;
+    let p = builder.point(centre + a, centre + a, false);
+    let q = builder.values[p[0]] - centre;
+    builder.equation(Kind::Distance, (2.0 * q * q).sqrt(), &[c[0], c[1], p[0], p[1]]);
+    let mut previous = builder.parameter(0.0, false);
+    builder.equation(Kind::Difference, -builder.values[p[1]], &[p[1], previous]);
+    let zero = builder.parameter(0.0, true);
+    for _ in 0..12 {
+        let next = builder.parameter(0.0, false);
+        builder.equation(Kind::Midpoint, 0.0, &[zero, next, previous]);
+        previous = next;
+    }
+    let z = builder.parameter(1.0, false);
+    builder.equation(Kind::Distance, 1.0, &[zero, zero, z, previous]);
+    let target = centre - 3.0 * q;
+    let beta = (builder.values[p[0]] - target) / q - 1.0;
+    let pull = f64::from_bits((1.0 + 2.0 * beta * 2f64.powi(-24)).to_bits() + 64);
+    builder.temporary(Kind::Value, target, &[p[0]]);
+    builder.temporary(Kind::Value, target, &[p[1]]);
+    builder.temporary(Kind::Value, pull, &[z]);
+    let (outcome, _) = builder.outcome();
+    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
+}
+
+#[test]
+fn the_curvature_test_eigensolves_and_ordering_count_against_the_work() {
+    // Eight unit circles tied by free midpoints, each point dragged out radially: the dense
+    // eigensolves alone pass 100000 entries. And 100 repeated unit circles: ordering their
+    // transposed Jacobian alone passes 5000.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let mut previous = None;
+    for k in 0..8 {
+        let angle = 0.1 + k as f64 * 0.4141414;
+        let p = builder.point(angle.cos(), angle.sin(), false);
+        builder.equation(Kind::Distance, 1.0, &[o[0], o[1], p[0], p[1]]);
+        if let Some(q) = previous {
+            let middle = builder.parameter(0.5 * (builder.values[q] + builder.values[p[0]]), false);
+            builder.equation(Kind::Midpoint, 0.0, &[q, p[0], middle]);
+        }
+        previous = Some(p[0]);
+        builder.temporary(Kind::Value, 2.0 * angle.cos(), &[p[0]]);
+        builder.temporary(Kind::Value, 2.0 * angle.sin(), &[p[1]]);
+    }
+    let (outcome, _) = builder.outcome_within(Limits { fill: 2_000_000, work: 100_000 });
+    assert_eq!((outcome.status, outcome.drag), (Status::TooLarge, Some(DragOutcome::Stalled)));
+    let (outcome, _) = builder.outcome_within(Limits { fill: 2_000_000, work: 400_000_000 });
+    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
+
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let p = builder.point(1.0, 0.0, false);
+    for _ in 0..100 { builder.equation(Kind::Distance, 1.0, &[o[0], o[1], p[0], p[1]]); }
+    builder.temporary(Kind::Value, 2.0, &[p[0]]);
+    builder.temporary(Kind::Value, 0.0, &[p[1]]);
+    let (outcome, _) = builder.outcome_within(Limits { fill: 2_000_000, work: 5_000 });
+    assert_eq!((outcome.status, outcome.drag), (Status::TooLarge, Some(DragOutcome::Stalled)));
+}
+
+#[test]
+fn a_landing_keeps_every_target_on_one_coordinate_reached() {
+    // Targets 7e-9 either side of a free value at zero: zero reaches both, landing on either does not.
+    let mut builder = Builder::new();
+    let p = builder.parameter(0.0, false);
+    builder.temporary(Kind::Value, 7e-9, &[p]);
+    builder.temporary(Kind::Value, -7e-9, &[p]);
+    let (outcome, values) = builder.outcome();
+    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Reached)));
+    assert_eq!(values[p], 0.0);
+}
+
+#[test]
+fn a_fixed_group_whose_relations_fail_is_stalled() {
+    let mut builder = Builder::new();
+    let p = builder.parameter(0.0, true);
+    builder.equation(Kind::Value, 1.0, &[p]);
+    builder.temporary(Kind::Value, 2.0, &[p]);
+    let (outcome, _) = builder.outcome();
+    assert_eq!((outcome.status, outcome.drag), (Status::NotConverged, Some(DragOutcome::Stalled)));
 }

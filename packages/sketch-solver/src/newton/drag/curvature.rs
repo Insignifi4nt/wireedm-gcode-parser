@@ -14,7 +14,8 @@
 //! roundoff, and a bound on its inverse from the comparison matrix, or a verified Frobenius norm,
 //! bounds the smallest singular value from below. That bounds each curved row's multiplier error
 //! and each projector column's error; a share of support motion between twice and eight times its
-//! error, or a factor too ill-conditioned to bound, leaves the test unresolved. Two limits remain:
+//! error, or a factor too ill-conditioned to bound, leaves the test unresolved, and its dense
+//! eigensolves count against the work allowed like its solves. Two limits remain:
 //! a share within twice its error counts as held, and a curved row whose multiplier is within its
 //! error and the first-order tolerance of zero counts as carrying none.
 
@@ -58,11 +59,10 @@ pub(super) enum Curvature {
     /// No resolved direction along the lasting rows gets closer to second order.
     Clear,
     /// The most negative curvature `theta` of the squared distance's half along the unit
-    /// direction `direction`, by column, beyond what the rows counted as carrying none could bend.
+    /// direction `direction`, by column, beyond every row's error along it.
     Negative { direction: Vec<f64>, theta: f64 },
-    /// The lowest curvature is within its error of zero along `direction`, so higher orders decide;
-    /// `still` when no direction that flat moves a target, within its error.
-    Flat { direction: Vec<f64>, still: bool },
+    /// The lowest curvature is within its error of zero along `direction`, so higher orders decide.
+    Flat { direction: Vec<f64> },
     /// The multipliers or the support could not be resolved, or a curved row has collapsed.
     Unresolved,
 }
@@ -92,7 +92,7 @@ impl Drag<'_> {
         if !(size_j > 0.0 && size_j.is_finite()) { return Ok(Curvature::Unresolved); }
         let structure: Vec<Vec<usize>> = columns.iter().map(|column| column.iter().map(|&(i, _)| i).collect()).collect();
         let Some(ordering) = minimum_degree(m, &structure, self.limits.fill, self.limits.work.saturating_sub(self.work))
-            else { return Ok(Curvature::Unresolved); };
+            else { self.work = self.work.max(self.limits.work); return Err(Exhausted); };
         self.work = self.work.saturating_add(ordering.work);
         let place = ordering.position;
         // Damping at the Jacobian's own roundoff, so that a held direction leaks nothing that
@@ -263,7 +263,9 @@ impl Drag<'_> {
         if self.work > self.limits.work { return Err(Exhausted); }
         let size_l = lifted.iter().flatten().map(|v| v * v).sum::<f64>().sqrt();
         let error = squared.sqrt() + (4.0 * (n + 4 * s) as f64 * (s as f64).sqrt() + 64.0 * s as f64) * f64::EPSILON * size_l;
-        let (shares, vectors) = singular(&lifted);
+        let Some((shares, vectors, spent)) = singular(&lifted, self.limits.work.saturating_sub(self.work))
+            else { self.work = self.work.max(self.limits.work); return Err(Exhausted); };
+        self.work = self.work.saturating_add(spent);
         // A share within twice its error is held to the Jacobian's backward error: a perturbation of
         // that size holds it exactly. One between that and eight times its error is not resolved.
         if shares.iter().any(|&share| share > 2.0 * error && share < 8.0 * error) { return Ok(Curvature::Unresolved); }
@@ -277,19 +279,19 @@ impl Drag<'_> {
         let tolerance = tolerance + 6.0 * size_h * error / least;
         let along = |a: &[f64], b: &[f64]| (0..s).map(|i| a[i] * dot(&hessian[i], b)).sum::<f64>();
         let reduced: Vec<Vec<f64>> = moving.iter().map(|&a| moving.iter().map(|&b| along(&vectors[a], &vectors[b])).collect()).collect();
-        let (curvatures, directions) = symmetric_eigen(reduced);
+        let Some((curvatures, directions, spent)) = symmetric_eigen(reduced, self.limits.work.saturating_sub(self.work))
+            else { self.work = self.work.max(self.limits.work); return Err(Exhausted); };
+        self.work = self.work.saturating_add(spent);
         let (lowest, &theta) = curvatures.iter().enumerate().min_by(|a, b| a.1.total_cmp(b.1)).unwrap();
         if theta > tolerance { return Ok(Curvature::Clear); }
-        // Each eigenvector's part on the targeted columns. The flat ones, within the tolerance of
-        // zero, leave the targets still only when all of them do, against the basis' error; a flat
-        // direction is probed where it moves the targets most.
+        // A flat direction is probed where it moves the targets most, as higher orders there are
+        // what can still get closer.
         let targeted: Vec<f64> = directions.iter().map(|y| {
             let mut v = vec![0.0; s];
             for (&k, &y) in moving.iter().zip(y) { for (v, w) in v.iter_mut().zip(&vectors[k]) { *v += y * w; } }
             self.targets.iter().map(|target| v[index(target.column).unwrap()].powi(2)).sum::<f64>().sqrt()
         }).collect();
         let flat: Vec<usize> = (0..curvatures.len()).filter(|&e| curvatures[e] <= tolerance).collect();
-        let still = flat.iter().map(|&e| targeted[e] * targeted[e]).sum::<f64>().sqrt() <= 8.0 * error / least;
         let chosen = if theta < -tolerance { lowest } else { flat.iter().copied().max_by(|&a, &b| targeted[a].total_cmp(&targeted[b])).unwrap_or(lowest) };
         // Lifted to the least-norm null direction with support part `v = V y`: `d = L V Sigma^-2 y`.
         let mut u = vec![0.0; s];
@@ -308,11 +310,14 @@ impl Drag<'_> {
         // `descend` weighs its gains per unit of the whole direction.
         let part: Vec<f64> = support.iter().map(|&column| direction[column]).collect();
         let bent = along(&part, &part);
-        // Rows counted as carrying none may still bend it, by up to their multiplier and its error.
-        let unbent: f64 = dropped.iter().map(|row| {
-            (row.lambda.abs() + row.uncertainty) * row.size * (1.0 + row.error) * row.columns.iter().map(|&c| direction[c] * direction[c]).sum::<f64>()
-        }).sum();
-        Ok(if theta < -tolerance && bent < -unbent { Curvature::Negative { direction, theta: bent } } else { Curvature::Flat { direction, still } })
+        // What the rows may bend it by beyond `bent`, over each row's own columns of the direction:
+        // a kept row its differencing and multiplier errors, one counted as carrying none its whole
+        // multiplier and error, and the products' roundoff.
+        let on = |row: &Curved| row.columns.iter().map(|&c| direction[c] * direction[c]).sum::<f64>();
+        let margin = curved.iter().map(|row| (row.lambda.abs() * row.error + row.uncertainty) * row.size * on(row)).sum::<f64>()
+            + dropped.iter().map(|row| (row.lambda.abs() + row.uncertainty) * row.size * (1.0 + row.error) * on(row)).sum::<f64>()
+            + 64.0 * f64::EPSILON * (1.0 + total) * (self.targets.len() + curved.iter().map(|row| row.columns.len()).sum::<usize>()) as f64;
+        Ok(if theta < -tolerance && bent < -margin { Curvature::Negative { direction, theta: bent } } else { Curvature::Flat { direction } })
     }
 
     /// Whether `row`, of equation `e`, is a nonlinear row collapsed to a length its coordinates
