@@ -189,8 +189,8 @@ fn rejects_malformed_buffers() {
         assert!(invalid(&buffer), "index {index}");
     }
     let empty = solve_buffer(&[]);
-    assert_eq!(&empty[..4], &[7.0, VERSION, 2.0, 0.0]);
-    assert!(empty.len() == 7 && empty[4].is_nan() && empty[5] == 1.0 && empty[6].is_nan());
+    assert_eq!(&empty[..4], &[9.0, VERSION, 2.0, 0.0]);
+    assert!(empty.len() == 9 && empty[4].is_nan() && empty[5] == 1.0 && empty[6..].iter().all(|value| value.is_nan()));
     // Tags never decrease.
     builder.equation(Kind::Value, 1.0, &[a[1]]);
     let mut buffer = builder.encode();

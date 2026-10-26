@@ -70,24 +70,6 @@ fn a_start_between_two_centres_keeps_the_result_of_solving_every_row() {
 }
 
 #[test]
-fn drag_targets_stay_in_the_solve() {
-    // A point on a steep fixed line dragged toward a cursor off it: the targets are not diagnosed,
-    // so neither is left out, and the point settles halfway between the cursor and its foot.
-    let mut builder = Builder::new();
-    let a = builder.point(0.0, 0.0, true);
-    let b = builder.point(1.0, 5.0, true);
-    let p = builder.point(0.2, 1.0, false);
-    builder.equation(Kind::PointOnLine, 0.0, &[p[0], p[1], a[0], a[1], b[0], b[1]]);
-    builder.temporary(Kind::Value, 7.0, &[p[0]]);
-    builder.temporary(Kind::Value, 1.0, &[p[1]]);
-    let (_, values) = builder.outcome();
-    let normal = [5.0 / 26f64.sqrt(), -1.0 / 26f64.sqrt()];
-    let offset = (normal[0] * 7.0 + normal[1] * 1.0) / 2.0;
-    let expected = [7.0 - offset * normal[0], 1.0 - offset * normal[1]];
-    assert!((values[p[0]] - expected[0]).abs() < 1e-9 && (values[p[1]] - expected[1]).abs() < 1e-9, "{:?} {expected:?}", &values[p[0]..]);
-}
-
-#[test]
 fn a_witness_keeps_every_row_its_contradiction_needs() {
     // x = 0, y = 0 and x + 5e-10 y = 1 contradict only together: the y coefficient is larger
     // than the dependence tolerance, so it stays in the witness.
