@@ -217,8 +217,7 @@ describe('native solver instances', () => {
     const drag = (outcome: number, distance: number) => new Float64Array([11, 3, 0, 1, 0, 0, 1, outcome, distance, 0, 0]);
     const solve = (model: CadSketchEquationModel, data: Float64Array) => loadCadSketchNativeSolver(nativeModule({ alloc: at8, free: none, solve: at1024, data })).then(solver => solver.solve(model));
     expect(await solve(dragged, drag(1, 5))).toMatchObject({ values: [0], drag: { outcome: 'projected', targetDistance: 5 } });
-    expect(await solve(dragged, drag(NaN, NaN))).not.toHaveProperty('drag');
-    for (const [outcome, distance] of [[3, 5], [1, NaN], [NaN, 5], [0, -1], [0, Infinity]])
+    for (const [outcome, distance] of [[NaN, NaN], [3, 5], [1, NaN], [NaN, 5], [0, -1], [0, Infinity]])
       await expect(solve(dragged, drag(outcome, distance))).rejects.toThrow('invalid result');
     const undragged = { ...dragged, equations: [{ ...dragged.equations[0], temporary: false }] };
     await expect(solve(undragged, drag(1, 5))).rejects.toThrow('invalid result');

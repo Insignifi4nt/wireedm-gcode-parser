@@ -33,6 +33,22 @@ fn a_free_point_lands_exactly_on_its_target() {
 }
 
 #[test]
+fn a_landed_drag_leaves_the_rest_of_its_group_polished() {
+    // Landing writes the target exactly; the point held 30 and 20 mm away follows to roundoff.
+    let mut builder = Builder::new();
+    let a = builder.point(5.0, 7.0, false);
+    let b = builder.point(35.0, 27.0, false);
+    builder.equation(Kind::Difference, 30.0, &[a[0], b[0]]);
+    builder.equation(Kind::Difference, 20.0, &[a[1], b[1]]);
+    builder.temporary(Kind::Value, 10.0, &[a[0]]);
+    builder.temporary(Kind::Value, 20.0, &[a[1]]);
+    let (outcome, values) = builder.outcome();
+    assert_eq!((values[a[0]], values[a[1]]), (10.0, 20.0));
+    assert!(near([values[b[0]], values[b[1]]], [40.0, 40.0], 1e-13), "{:?}", &values[b[0]..]);
+    assert_eq!((outcome.status, outcome.drag, outcome.target_distance), (Status::Converged, Some(DragOutcome::Reached), 0.0));
+}
+
+#[test]
 fn a_point_on_a_circle_goes_to_the_nearest_point_to_far_targets() {
     for distance in [15.0, 100.0, 1e6] {
         let direction = [0.3f64.cos(), 0.3f64.sin()];
@@ -177,6 +193,55 @@ fn an_elbow_keeps_its_side() {
     assert_eq!(outcome.drag, Some(DragOutcome::Reached));
     let side = values[tip[0]] * values[joint[1]] - values[tip[1]] * values[joint[0]];
     assert!(side > 0.0, "the elbow turned over: {:?}", &values[joint[0]..]);
+}
+
+/// Two 10 mm links from a fixed base at the origin, joint and tip started at `joint` and `tip`,
+/// with the tip dragged toward `target`.
+fn arm(joint: [f64; 2], tip: [f64; 2], target: [f64; 2]) -> (Outcome, [f64; 2], [f64; 2]) {
+    let mut builder = Builder::new();
+    let b = builder.point(0.0, 0.0, true);
+    let j = builder.point(joint[0], joint[1], false);
+    let t = builder.point(tip[0], tip[1], false);
+    builder.equation(Kind::Distance, 10.0, &[b[0], b[1], j[0], j[1]]);
+    builder.equation(Kind::Distance, 10.0, &[j[0], j[1], t[0], t[1]]);
+    builder.temporary(Kind::Value, target[0], &[t[0]]);
+    builder.temporary(Kind::Value, target[1], &[t[1]]);
+    let (outcome, values) = builder.outcome();
+    (outcome, [values[j[0]], values[j[1]]], [values[t[0]], values[t[1]]])
+}
+
+#[test]
+fn a_straight_arm_folds_toward_a_target_inside_its_reach() {
+    // Straight, the tip cannot move toward the base to first order: only folding the elbow, which
+    // keeps the tip still to first order, gets it closer.
+    let (outcome, _, tip) = arm([10.0, 0.0], [20.0, 0.0], [15.0, 0.0]);
+    assert_eq!(tip, [15.0, 0.0]);
+    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Reached)));
+}
+
+#[test]
+fn a_stretched_arm_stays_projected_beyond_its_reach() {
+    // Folding takes the tip away from a target beyond its reach, so the straight arm is nearest.
+    let (outcome, joint, tip) = arm([10.0, 0.0], [20.0, 0.0], [25.0, 0.0]);
+    assert!(near(joint, [10.0, 0.0], 1e-9) && near(tip, [20.0, 0.0], 1e-9), "{joint:?} {tip:?}");
+    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
+}
+
+#[test]
+fn a_tiny_circle_leaves_its_far_side_for_a_target_a_billion_times_further() {
+    let (outcome, p) = circle([0.0, 0.0], 0.001, [-0.001, 0.0], [1e9, 0.0]);
+    assert!(near(p, [0.001, 0.0], 1e-12), "{p:?}");
+    assert_eq!(outcome.drag, Some(DragOutcome::Projected));
+}
+
+#[test]
+fn a_drag_leaves_a_farthest_point_within_one_iteration_budget() {
+    // From the farthest point half way round to the nearest. Stationarity is certified on the
+    // gradient, which grows only 0.1 mm per mm along the circle there, so the point is within 1e-8.
+    let (outcome, p) = circle([0.0, 0.0], 10.0, [10.0, 0.0], [-1.0, 0.0]);
+    assert!(near(p, [-10.0, 0.0], 1e-8), "{p:?}");
+    assert_eq!(outcome.drag, Some(DragOutcome::Projected));
+    assert!(outcome.iterations <= sketch_solver::newton::DRAG_ITERATIONS / 2, "{}", outcome.iterations);
 }
 
 #[test]

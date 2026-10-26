@@ -5,24 +5,28 @@
 //! rows, toward the full target, its damping grown until the step is about the trust radius long.
 //! Finite weights leak motion across the lasting rows, about `d / (1 + W^2 sigma^2)` for a target
 //! `d` away, so `project` strips the step's part in their range until it cannot swamp the step's
-//! first-order gain. The step is scaled to the trust radius and a per-row bound, then restored onto
-//! the lasting rows by a few Levenberg-Marquardt iterations. A tangent step overshoots a curved path,
-//! so the slopes of the squared distance at both ends of the restored path place its nearest point,
-//! and an overshot step is retried there. A trial stands when the restored point is accepted, within
-//! its bounds and strictly closer to the targets, with the gain computed from products so that
-//! roundoff in two nearly equal distances cannot fake it; where roundoff hides the gain, the end
-//! slope decides once the projected gradient is not certified small. The trust radius grows when
+//! first-order gain. The step is scaled within the trust radius and a per-row bound, then restored
+//! onto the lasting rows by a few Levenberg-Marquardt iterations. A tangent step overshoots a curved
+//! path, so the slopes of the squared distance at both ends of the restored path place its nearest
+//! point: an overshot step is retried there, and where the nearest point lies beyond, the next step
+//! goes up to four times further than the Gauss-Newton step. A trial stands when the restored point
+//! is accepted, within its bounds and strictly closer to the targets, with the gain computed from
+//! products so that roundoff in two nearly equal distances cannot fake it, and motion below the
+//! targeted coordinates' ulps is not counted; where that hides the gain, the end slope decides
+//! once the projected gradient is not certified small. The trust radius grows when
 //! restoration was small and the path still descending, and shrinks when restoration was large. It
 //! is also the continuation: the targets are approached from the start in bounded, restored steps,
 //! so the result is a function of the input and follows the start's branch.
 //!
 //! A drag is `Reached` within `max(1e-8, 32 epsilon S)` of its targets, and lands exactly on them
 //! when the lasting rows still accept that. It is `Projected` only when the projected gradient is
-//! certified small and two restored tangent probes find nothing closer, so a farthest point, such
-//! as the antipode of a circle, is never projected. Anything else is `Stalled`, at the last
-//! feasible values.
+//! certified small and restored probes find nothing closer: two tangent probes, so a farthest
+//! point, such as the antipode of a circle, is never projected, and two along a direction holding
+//! the targets still to first order, so a straight arm folds toward a target inside its reach.
+//! Anything else is `Stalled`, at the last feasible values. Restoring the start, the trials with
+//! their restorations and a landing's polish share `DRAG_ITERATIONS`.
 
-use super::{Exhausted, GroupOutcome, Jacobian, Limits, MAX_ITERATIONS, System, assess, levenberg, solve_group as solve_whole, worst};
+use super::{Exhausted, GroupOutcome, Jacobian, Limits, MAX_ITERATIONS, System, assess, levenberg, solve_group as solve_whole, solve_group_within, worst};
 use crate::equations::Kind;
 use crate::problem::Status;
 use crate::sparse::{Factor, minimum_degree};
@@ -49,6 +53,9 @@ const MU: f64 = 1e-6;
 const DAMPING_PASSES: usize = 4;
 /// Levenberg-Marquardt iterations restoring one trial onto the lasting rows.
 const RESTORE_ITERATIONS: usize = 8;
+/// Most iterations of one group's drag: restoring its start, its trials with their restorations,
+/// and polishing a landing, together. A restored trial takes about four.
+pub const DRAG_ITERATIONS: usize = 4 * MAX_ITERATIONS;
 /// Most projection passes for a tangent step or a stationarity certificate; each shrinks the range
 /// part by `1 + W^2 sigma^2`.
 const PROJECTION_PASSES: usize = 3;
@@ -128,10 +135,10 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits) -
     // Half the work is kept for diagnosis.
     let mut drag = Drag { lasting: &lasting, targets: &targets, position: ordering.position, limits: Limits { fill: limits.fill, work: limits.work / 2 },
         work: ordering.work, iterations: 0, reached, stationary: 1e-9_f64.max(64.0 * f64::EPSILON * scale),
-        floor: 1e-6_f64.max(64.0 * f64::EPSILON * scale), scale };
+        floor: 1e-6_f64.max(64.0 * f64::EPSILON * scale) };
     let outcome = if assess(&rows).accepted { drag.run(values) } else {
         // An infeasible start is first restored onto the lasting rows.
-        let restored = solve_whole(&lasting, values, drag.limits);
+        let restored = solve_group_within(&lasting, values, drag.limits, MAX_ITERATIONS);
         drag.work = drag.work.saturating_add(restored.work);
         drag.iterations += restored.iterations;
         match restored.status { Status::Converged => drag.run(values), Status::TooLarge => Err(Exhausted), _ => Ok(DragOutcome::Stalled) }
@@ -159,8 +166,6 @@ struct Drag<'a> {
     stationary: f64,
     /// Smallest step bound and trust radius, at the targets' scale.
     floor: f64,
-    /// Largest magnitude of a targeted coordinate or target, at least one.
-    scale: f64,
 }
 
 impl Drag<'_> {
@@ -175,20 +180,21 @@ impl Drag<'_> {
             .map(|bound| 2.0 * bound.limit).reduce(f64::min);
         let mut radius = support.map_or(distance, |support| distance.min(0.25 * support)).max(self.floor);
         let probe = 0.1 * radius;
-        let mut trials = 0;
-        while trials < MAX_ITERATIONS {
+        // How many Gauss-Newton steps the next step may take, from the last secant.
+        let mut stretch = 1.0_f64;
+        while self.iterations < DRAG_ITERATIONS {
             let r = self.residual(values);
             let distance = norm(&r);
-            if distance <= self.reached && self.land(values) { return Ok(DragOutcome::Reached); }
-            trials += 1;
+            if distance <= self.reached && self.land(values)? { return Ok(DragOutcome::Reached); }
             let goal: Vec<f64> = self.targets.iter().map(|target| target.value).collect();
             let step = match radius > self.floor * 1e-6 { true => self.tangent(values, &goal, radius)?, false => None }.map(|h| {
-                let alpha = 1.0_f64.min(radius / norm(&h)).min(self.bounded(values, &h));
-                h.iter().map(|value| alpha * value).collect::<Vec<f64>>()
-            }).filter(|step| self.lasting.unknowns.iter().zip(step).any(|(&p, value)| values[p] + value != values[p]));
-            let Some(step) = step else {
+                let gauss = norm(&h);
+                let alpha = stretch.min(radius / gauss).min(self.bounded(values, &h));
+                (h.iter().map(|value| alpha * value).collect::<Vec<f64>>(), gauss)
+            }).filter(|(step, _)| self.lasting.unknowns.iter().zip(step).any(|(&p, value)| values[p] + value != values[p]));
+            let Some((step, gauss)) = step else {
                 // No step moves anything: reached short of an exact landing, stationary, or stalled.
-                match self.settle(values, probe, &mut trials)? {
+                match self.settle(values, probe)? {
                     Settled::Moved => { radius = radius.max(probe); continue; }
                     Settled::Done(outcome) => return Ok(outcome),
                     Settled::Moving => return Ok(DragOutcome::Stalled),
@@ -216,6 +222,11 @@ impl Drag<'_> {
                 continue;
             }
             if trial.closer() {
+                // Where the path is flatter than the Gauss-Newton model, as near a far target, or
+                // curves away, as off a farthest point, the secant places the nearest point beyond
+                // the step: the next step goes that many Gauss-Newton steps, at most four times this one.
+                let secant = if trial.slope < 0.0 && first + trial.slope > 0.0 { first / (first + trial.slope) } else if trial.slope < 0.0 { f64::INFINITY } else { 1.0 };
+                stretch = (length / gauss * secant.min(4.0)).max(1.0);
                 let q = trial.restoration / length;
                 if q > 0.5 { radius = 0.5 * radius.min(length); }
                 else if trial.slope <= 0.0 && q <= 0.1 && length >= 0.5 * radius { radius *= 2.0; }
@@ -224,7 +235,7 @@ impl Drag<'_> {
             // The gains no longer resolve progress: the projected gradient at the trial point
             // decides, then whether the slopes still fell, which resolve progress where the gains
             // cannot, as when the targets are far from the moving coordinates.
-            match self.settle(values, probe, &mut trials)? {
+            match self.settle(values, probe)? {
                 Settled::Moved => radius = radius.max(probe),
                 Settled::Done(outcome) => return Ok(outcome),
                 Settled::Moving if trial.slope <= 0.25 * first => { if trial.slope <= 0.0 && length >= 0.5 * radius { radius *= 2.0; } }
@@ -237,20 +248,41 @@ impl Drag<'_> {
     /// Where progress can no longer be measured by gains: `Done` when the targets are reached, or
     /// projected with the probes finding nothing closer; `Moved` when a probe got closer; `Moving`
     /// when the projected gradient is not certified small.
-    fn settle(&mut self, values: &mut [f64], probe: f64, trials: &mut usize) -> Result<Settled, Exhausted> {
+    fn settle(&mut self, values: &mut [f64], probe: f64) -> Result<Settled, Exhausted> {
         let r = self.residual(values);
         if norm(&r) <= self.reached { return Ok(Settled::Done(DragOutcome::Reached)); }
         if !self.stationary(values, &r)? { return Ok(Settled::Moving); }
-        Ok(if self.probe(values, &r, probe, trials)? { Settled::Moved } else { Settled::Done(DragOutcome::Projected) })
+        Ok(if self.probe(values, &r, probe)? || self.fold(values, &r, probe)? { Settled::Moved } else { Settled::Done(DragOutcome::Projected) })
     }
 
-    /// Writes the targets exactly when the lasting rows still accept them.
-    fn land(&self, values: &mut [f64]) -> bool {
+    /// Writes the targets exactly when the lasting rows still accept them. Landing moves the targeted
+    /// coordinates by up to the reach distance, so the other unknowns are then polished with the
+    /// targets held, as a solve without targets would polish them; a polish that is not accepted is
+    /// undone, leaving the landing accepted as it was.
+    fn land(&mut self, values: &mut [f64]) -> Result<bool, Exhausted> {
         let saved: Vec<f64> = self.targets.iter().map(|target| values[target.parameter]).collect();
         for target in self.targets { values[target.parameter] = target.value; }
-        if assess(&self.lasting.rows(values, None)).accepted { return true; }
-        for (target, &value) in self.targets.iter().zip(&saved) { values[target.parameter] = value; }
-        false
+        if !assess(&self.lasting.rows(values, None)).accepted {
+            for (target, &value) in self.targets.iter().zip(&saved) { values[target.parameter] = value; }
+            return Ok(false);
+        }
+        let unknowns: Vec<usize> = self.lasting.unknowns.iter().copied()
+            .filter(|&p| !self.targets.iter().any(|target| target.parameter == p)).collect();
+        if unknowns.is_empty() { return Ok(true); }
+        let mut column = vec![usize::MAX; values.len()];
+        for (c, &p) in unknowns.iter().enumerate() { column[p] = c; }
+        let held = System { problem: self.lasting.problem, column: &column, equations: self.lasting.equations.clone(), unknowns };
+        let saved: Vec<f64> = held.unknowns.iter().map(|&p| values[p]).collect();
+        let limits = Limits { fill: self.limits.fill, work: self.limits.work.saturating_sub(self.work) };
+        let polished = solve_group_within(&held, values, limits, DRAG_ITERATIONS.saturating_sub(self.iterations).min(MAX_ITERATIONS));
+        self.work = self.work.saturating_add(polished.work);
+        self.iterations += polished.iterations;
+        match polished.status {
+            Status::Converged => {}
+            Status::TooLarge => return Err(Exhausted),
+            _ => for (&p, &value) in held.unknowns.iter().zip(&saved) { values[p] = value; },
+        }
+        Ok(true)
     }
 
     fn undo(&self, values: &mut [f64], saved: &[f64]) {
@@ -270,9 +302,9 @@ impl Drag<'_> {
         }).collect()
     }
 
-    /// The largest scale of `step`, at most 1, that keeps every row within its bound.
+    /// The largest scale of `step` that keeps every row within its bound.
     fn bounded(&self, values: &[f64], step: &[f64]) -> f64 {
-        self.bounds(values).iter().fold(1.0, |alpha: f64, bound| {
+        self.bounds(values).iter().fold(f64::INFINITY, |alpha: f64, bound| {
             let largest = bound.columns.iter().fold(0.0, |largest: f64, &c| largest.max(step[c].abs()));
             if largest > 0.0 { alpha.min(bound.limit / largest) } else { alpha }
         })
@@ -335,10 +367,13 @@ impl Drag<'_> {
     /// `(I + W^2 J^T J)^-1 z` for the lasting rows' `J`, with the norm of what it removed: `z`'s part
     /// along their null space is kept exactly, and the rest shrinks by at least `1 + W^2 sigma^2`.
     /// `y` minimizes `|W J y - W J z|^2 + |y|^2`, and the result is `z - y`.
-    fn project(&mut self, jacobian: &Jacobian, z: &[f64]) -> Result<Option<(Vec<f64>, f64)>, Exhausted> {
+    fn project(&mut self, jacobian: &Jacobian, z: &[f64]) -> Result<Option<(Vec<f64>, f64)>, Exhausted> { self.project_rows(&jacobian.rows, z) }
+
+    /// `project` along the null space of `rows`, given by factor position.
+    fn project_rows(&mut self, rows: &[(Vec<(usize, f64)>, f64)], z: &[f64]) -> Result<Option<(Vec<f64>, f64)>, Exhausted> {
         let mut by_position = vec![0.0; z.len()];
         for (column, &k) in self.position.iter().enumerate() { by_position[k] = z[column]; }
-        let rows: Vec<_> = jacobian.rows.iter().map(|(row, _)| {
+        let rows: Vec<_> = rows.iter().map(|(row, _)| {
             let along = row.iter().map(|&(k, v)| v * by_position[k]).sum::<f64>();
             (row.iter().map(|&(k, v)| (k, W * v)).collect(), W * along)
         }).collect();
@@ -366,10 +401,9 @@ impl Drag<'_> {
     /// Tries steps of `radius` toward each target turned a quarter turn about its point, one way
     /// and then the other, keeping the first that gets closer. A dragged point's two targets
     /// are adjacent, x then y; a coordinate without its pair is probed along its own axis.
-    fn probe(&mut self, values: &mut [f64], r: &[f64], radius: f64, trials: &mut usize) -> Result<bool, Exhausted> {
+    fn probe(&mut self, values: &mut [f64], r: &[f64], radius: f64) -> Result<bool, Exhausted> {
         for sign in [1.0, -1.0] {
-            if *trials >= MAX_ITERATIONS { return Ok(false); }
-            *trials += 1;
+            if self.iterations >= DRAG_ITERATIONS { return Ok(false); }
             let mut goal: Vec<f64> = self.targets.iter().map(|target| values[target.parameter]).collect();
             let mut i = 0;
             while i < self.targets.len() {
@@ -385,12 +419,41 @@ impl Drag<'_> {
             let Some(h) = self.tangent(values, &goal, radius)? else { continue; };
             let length = norm(&h);
             if length == 0.0 { continue; }
-            let alpha = (radius / length).min(self.bounded(values, &h));
+            // At most the tangent step itself, which is only leakage where the targets are held.
+            let alpha = 1.0_f64.min(radius / length).min(self.bounded(values, &h));
             let step: Vec<f64> = h.iter().map(|value| alpha * value).collect();
             let trial = self.trial(values, &step, radius, r)?;
             if trial.closer() { return Ok(true); }
             self.undo(values, &trial.saved);
         }
+        Ok(false)
+    }
+
+    /// Tries a step of `radius` along a fixed direction that keeps the lasting rows and the targeted
+    /// coordinates still to first order, keeping it when it gets closer. At a singular point no
+    /// first-order motion of the targets helps, but such internal motion can at second order: a
+    /// straight arm folds at its elbow to bring its tip back. Second-order motion is the same
+    /// either way along the direction, so one way is tried.
+    fn fold(&mut self, values: &mut [f64], r: &[f64], radius: f64) -> Result<bool, Exhausted> {
+        let jacobian = self.jacobian(values);
+        let held: Vec<(Vec<(usize, f64)>, f64)> = jacobian.rows.iter().cloned()
+            .chain(self.targets.iter().map(|target| (vec![(self.position[target.column], 1.0)], 0.0))).collect();
+        // A fixed start with a part along every column.
+        let mut d: Vec<f64> = (0..self.position.len()).map(|c| if c % 2 == 0 { 1.0 } else { -0.7 }).collect();
+        let start = norm(&d);
+        for _ in 0..PROJECTION_PASSES {
+            let Some((next, removed)) = self.project_rows(&held, &d)? else { return Ok(false); };
+            d = next;
+            if removed <= 1e-3 * f64::EPSILON * norm(&d) { break; }
+        }
+        let length = norm(&d);
+        if !(length > 1e-8 * start) { return Ok(false); }
+        if self.iterations >= DRAG_ITERATIONS { return Ok(false); }
+        let alpha = (radius / length).min(self.bounded(values, &d));
+        let step: Vec<f64> = d.iter().map(|value| alpha * value).collect();
+        let trial = self.trial(values, &step, radius, r)?;
+        if trial.closer() { return Ok(true); }
+        self.undo(values, &trial.saved);
         Ok(false)
     }
 
@@ -403,9 +466,12 @@ impl Drag<'_> {
         let bounds = self.bounds(values);
         for (&p, value) in unknowns.iter().zip(step) { values[p] += value; }
         let stepped: Vec<f64> = unknowns.iter().map(|&p| values[p]).collect();
+        // The trial counts as one iteration and its restoration takes at most what is left.
+        self.iterations += 1;
+        let allowed = RESTORE_ITERATIONS.min(DRAG_ITERATIONS.saturating_sub(self.iterations));
         let mut iterations = 0;
-        let exhausted = levenberg(self.lasting, values, &self.position, self.limits, &mut self.work, &mut iterations, RESTORE_ITERATIONS);
-        self.iterations += iterations + 1;
+        let exhausted = levenberg(self.lasting, values, &self.position, self.limits, &mut self.work, &mut iterations, allowed);
+        self.iterations += iterations;
         if exhausted { self.undo(values, &saved); return Err(Exhausted); }
         let moved: Vec<f64> = unknowns.iter().zip(&saved).map(|(&p, start)| values[p] - start).collect();
         let restoration: Vec<f64> = unknowns.iter().zip(&stepped).map(|(&p, stepped)| values[p] - stepped).collect();
@@ -413,8 +479,11 @@ impl Drag<'_> {
             && restoration.iter().all(|value| value.abs() <= radius)
             && bounds.iter().all(|bound| bound.columns.iter().all(|&c| moved[c].abs() <= bound.limit));
         // |r|^2 - |r + E dx|^2 from products, so roundoff in two nearly equal distances cannot fake it.
-        // Each moved coordinate is rounded to its own magnitude, so the gain is resolved only to
-        // about `|r|` times the targets' scale in ulps.
+        // The displacements are differences of the values themselves and each residual is rounded
+        // to its own size, so the gain is resolved to a few ulps of `|r| |E dx|`. Motion of the
+        // targeted coordinates below a few ulps of their own size, at least a millimetre, is not
+        // progress: it is the slack the lasting rows accept, whatever the targets' size.
+        let coordinates = self.targets.iter().map(|target| values[target.parameter].abs().max(saved[target.column].abs())).fold(1.0, f64::max);
         let (along, squared) = self.targets.iter().zip(r).fold((0.0, 0.0), |(along, squared), (target, &r)|
             (along + r * moved[target.column], squared + moved[target.column] * moved[target.column]));
         // The path's direction at its end is the step projected along the lasting rows there, which
@@ -425,7 +494,7 @@ impl Drag<'_> {
         };
         let Ok(direction) = direction else { self.undo(values, &saved); return Err(Exhausted); };
         let slope = direction.map_or(f64::NAN, |(direction, _)| 2.0 * self.targets.iter().map(|target| (values[target.parameter] - target.value) * direction[target.column]).sum::<f64>());
-        Ok(Trial { within, gain: -2.0 * along - squared, roundoff: 8.0 * f64::EPSILON * norm(r) * (squared.sqrt() + self.scale),
+        Ok(Trial { within, gain: -2.0 * along - squared, roundoff: 8.0 * f64::EPSILON * norm(r) * (squared.sqrt() + coordinates),
             restoration: norm(&restoration), slope, saved })
     }
 }

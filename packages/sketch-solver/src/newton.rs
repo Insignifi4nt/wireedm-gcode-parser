@@ -15,7 +15,7 @@ use crate::problem::{Diagnosis, Problem, Status};
 use crate::sparse::{Factor, SparseRow, minimum_degree};
 
 mod drag;
-pub use drag::DragOutcome;
+pub use drag::{DRAG_ITERATIONS, DragOutcome};
 
 pub const MAX_ITERATIONS: usize = 100;
 /// Resource bounds on one group. Native code cannot be interrupted, so these bound one solve.
@@ -361,7 +361,10 @@ fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance:
 /// linearizations can disagree before convergence and the seeded damped factor would then move
 /// free directions by roundoff. Its result stands when every row is accepted there; otherwise
 /// the group is solved again from the start with every row, sharing the iterations and work.
-fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> GroupOutcome {
+fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> GroupOutcome { solve_group_within(system, values, limits, MAX_ITERATIONS) }
+
+/// `solve_group` within `most` iterations.
+fn solve_group_within(system: &System, values: &mut [f64], limits: Limits, most: usize) -> GroupOutcome {
     let n = system.unknowns.len();
     let rows = system.rows(values, None);
     let progress = assess(&rows);
@@ -380,13 +383,13 @@ fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> GroupOutc
         let equations = system.equations.iter().enumerate()
             .filter(|&(i, _)| if out.peek() == Some(&&i) { out.next(); false } else { true }).map(|(_, &e)| e).collect();
         let reduced = System { problem: system.problem, column: system.column, equations, unknowns: system.unknowns.clone() };
-        let exhausted = levenberg(&reduced, values, &position, limits, &mut work, &mut iterations, MAX_ITERATIONS);
+        let exhausted = levenberg(&reduced, values, &position, limits, &mut work, &mut iterations, most);
         let rows = system.rows(values, None);
         let progress = assess(&rows);
         if progress.accepted || exhausted { return finish(&rows, progress, iterations, exhausted, Some(position), work); }
         for (&p, &value) in system.unknowns.iter().zip(&start) { values[p] = value; }
     }
-    let exhausted = levenberg(system, values, &position, limits, &mut work, &mut iterations, MAX_ITERATIONS);
+    let exhausted = levenberg(system, values, &position, limits, &mut work, &mut iterations, most);
     let rows = system.rows(values, None);
     finish(&rows, assess(&rows), iterations, exhausted, Some(position), work)
 }

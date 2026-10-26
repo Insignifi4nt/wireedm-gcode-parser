@@ -9,7 +9,7 @@ export interface CadSketchNativeSolution {
   readonly values: readonly number[];
   readonly diagnosis: CadSketchNativeDiagnosis;
   /**
-   * Present when the model has drag targets (temporary value equations). `reached`: every target
+   * Present exactly when the model has drag targets (temporary value equations). `reached`: every target
    * met exactly; `projected`: certified at the nearest reachable values, with no turn of the
    * targets closer; `stalled`: neither. `targetDistance` is the Euclidean distance from the values
    * to every target, in millimetres.
@@ -86,7 +86,7 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
       if (kind === undefined || diagnosis === undefined || length !== HEADER + model.values.length + model.equations.length
         || values.some(value => !Number.isFinite(value)) || labels.some(label => label !== 0 && label !== 1 && label !== 2)
         || !(Number.isNaN(degreesOfFreedom) || diagnosis === 'diagnosed' && Number.isSafeInteger(degreesOfFreedom) && degreesOfFreedom >= 0)
-        || !(Number.isNaN(dragged) && Number.isNaN(targetDistance) || dragging && drag !== undefined && Number.isFinite(targetDistance) && targetDistance >= 0))
+        || !(dragging ? drag !== undefined && Number.isFinite(targetDistance) && targetDistance >= 0 : Number.isNaN(dragged) && Number.isNaN(targetDistance)))
         throw new Error('The native sketch solver returned an invalid result.');
       exports.buffer_free(pointer, input.length);
       exports.buffer_free(output, length);
