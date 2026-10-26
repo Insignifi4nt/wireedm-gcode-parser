@@ -60,11 +60,10 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
   return { memoryBytes: () => exports.memory.buffer.byteLength, solve(model) {
     if (stopped) throw new Error('The native sketch solver instance stopped after a failure.');
     const input = encodeCadSketchEquationModel(model);
-    const pointer = exports.buffer_alloc(input.length);
-    let output: number | undefined;
     try {
+      const pointer = exports.buffer_alloc(input.length);
       new Float64Array(exports.memory.buffer, pointer, input.length).set(input);
-      output = exports.solve(pointer, input.length);
+      const output = exports.solve(pointer, input.length);
       // Memory may have grown during the solve; read through a fresh view.
       const length = new Float64Array(exports.memory.buffer, output, 1)[0];
       const result = new Float64Array(exports.memory.buffer, output, length).slice();
@@ -77,19 +76,17 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
         || values.some(value => !Number.isFinite(value)) || labels.some(label => label !== 0 && label !== 1 && label !== 2)
         || !(Number.isNaN(degreesOfFreedom) || diagnosis === 'diagnosed' && Number.isSafeInteger(degreesOfFreedom) && degreesOfFreedom >= 0))
         throw new Error('The native sketch solver returned an invalid result.');
+      exports.buffer_free(pointer, input.length);
+      exports.buffer_free(output, length);
       return { status: kind, iterations, residual, values, diagnosis: diagnosis === 'diagnosed'
         ? { kind: diagnosis, degreesOfFreedom: Number.isNaN(degreesOfFreedom) ? null : degreesOfFreedom, labels }
         : diagnosis === 'unavailable' ? { kind: diagnosis } : { kind: diagnosis, labels } };
     } catch (error) {
-      // A trap can leave the allocator inconsistent, and an invalid result means the module cannot be
-      // trusted: nothing is freed and the instance never runs again.
+      // A trap anywhere, including allocation or freeing, can leave the allocator inconsistent, and an
+      // invalid result means the module cannot be trusted: nothing more is freed and the instance never
+      // runs again.
       stopped = true;
       throw error;
-    } finally {
-      if (!stopped) {
-        exports.buffer_free(pointer, input.length);
-        if (output !== undefined) exports.buffer_free(output, new Float64Array(exports.memory.buffer, output, 1)[0]);
-      }
     }
   } };
 }

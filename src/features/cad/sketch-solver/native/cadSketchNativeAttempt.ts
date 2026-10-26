@@ -1,5 +1,4 @@
 import { checkCadSketchGraph, type CadSketchGraph, type CadSketchGraphIssue } from '../../../../domain/cad/cadSketchGraph';
-import { cadSketchEntityPointIds, cadSketchRelationEntityIds, cadSketchRelationPointIds } from '../../../../domain/cad/cadSketchGraphReferences';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
 import { compileCadSketchEquations } from './compileCadSketchEquations';
 import { applyCadSketchEquationSolution, cadSketchEquationDiagnostics, type CadSketchEquationModel } from './cadSketchEquationModel';
@@ -43,6 +42,10 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
   // With nothing free, only unmet relations are labelled, each as conflicting, and nothing is free.
   const degreesOfFreedom = diagnosis.kind === 'diagnosed' ? diagnosis.degreesOfFreedom : ids.conflictingIds.length ? null : 0;
   const diagnostics: CadSketchSolveDiagnostics = { ...noDiagnostics(status), degreesOfFreedom, ...ids };
+  // Native judges each equation at its own scale and the graph checks at the sketch's, which can be
+  // looser far from the origin. With nothing free there is nothing to solve, so the checks decide.
+  if (diagnosis.kind === 'no-unknowns' && ids.conflictingIds.length && !checkCadSketchGraph(input.graph, input.parameters).length)
+    return solvedAttempt(input, model, solution, { ...noDiagnostics('success'), degreesOfFreedom: 0 });
   if (ids.conflictingIds.length) return answer({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics });
   if (ids.redundantIds.length || ids.partiallyRedundantIds.length) return answer({ kind: 'rejected', reason: 'redundant', message: 'Sketch constraints are redundant.', diagnostics });
   const unsolved = (reason: CadSketchNativeFallbackReason): CadSketchNativeAttempt => ({ kind: 'fallback', reason,
@@ -55,10 +58,19 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
 function answer(result: CadSketchSolveResult): CadSketchNativeAttempt { return { kind: 'answer', result, movedGroups: 0, keptGroups: 0 }; }
 
 /**
+ * A value that moved by at most the native solver's driver tolerance, or about one ulp of its start
+ * where that is larger, moved only by polishing: PlaneGCS leaves residuals of about 1e-12 mm that
+ * native polishes away, while an edit at least this large is solved even far from the origin.
+ */
+const polished = (start: number, value: number) => Math.abs(value - start) <= Math.max(1e-10, 2 * Number.EPSILON * Math.abs(start));
+
+/**
  * The solved graph. Native polishing moves values by ulps even where the start already met every
- * check, and each solver moves the other's solutions, so connected groups whose start was already
- * accepted keep their exact start values: an edit then moves only the geometry it affects, and
- * exact comparisons of untouched geometry (linear pattern ownership, placements) still hold.
+ * check, and each solver moves the other's solutions, so connected groups that moved only by
+ * polishing keep their exact start values when the graph checks accept them: an edit then moves
+ * only the geometry it affects, and exact comparisons of untouched geometry (linear pattern
+ * ownership, placements) still hold. A group any of whose values moved further was edited, even
+ * when its start would pass the checks' sketch-wide tolerance, and takes the solved values.
  * Roundoff also leaves exact intent a few ulps off (55 as 54.99999999999999), so short decimals
  * within roundoff are tried first; the graph checks decide, as for any solution.
  */
@@ -66,17 +78,19 @@ function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel
   if (!applyCadSketchEquationSolution(input.graph, model, solution.values)) return { kind: 'fallback', reason: 'moved-fixed-value',
     rejection: { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution changed fixed source geometry.', diagnostics } };
   const group = parameterGroups(model), check = (graph: CadSketchGraph) => checkCadSketchGraph(graph, input.parameters);
-  let startIssues: readonly CadSketchGraphIssue[] | undefined;
   const solvedWith = (values: readonly number[]): CadSketchNativeAttempt | readonly CadSketchGraphIssue[] => {
-    const moved = new Set<number>();
-    values.forEach((value, index) => { if (!Object.is(value, model.values[index])) moved.add(group[index]); });
+    const moved = new Set<number>(), edited = new Set<number>();
+    values.forEach((value, index) => {
+      const start = model.values[index];
+      if (Object.is(value, start)) return;
+      moved.add(group[index]);
+      if (!polished(start, value)) edited.add(group[index]);
+    });
     const solved = (graph: CadSketchGraph, keptGroups: number): CadSketchNativeAttempt => ({ kind: 'answer', result: { kind: 'solved', graph, diagnostics }, movedGroups: moved.size, keptGroups });
-    if (moved.size) {
-      const dirty = issueGroups(input.graph, model, group, startIssues ??= check(input.graph)), kept = [...moved].filter(id => !dirty.has(id));
-      if (kept.length) {
-        const keep = new Set(kept), graph = applyCadSketchEquationSolution(input.graph, model, values.map((value, index) => keep.has(group[index]) ? model.values[index] : value))!;
-        if (!check(graph).length) return solved(graph, kept.length);
-      }
+    const kept = [...moved].filter(id => !edited.has(id));
+    if (kept.length) {
+      const keep = new Set(kept), graph = applyCadSketchEquationSolution(input.graph, model, values.map((value, index) => keep.has(group[index]) ? model.values[index] : value))!;
+      if (!check(graph).length) return solved(graph, kept.length);
     }
     const graph = applyCadSketchEquationSolution(input.graph, model, values)!, issues = check(graph);
     return issues.length ? issues : solved(graph, 0);
@@ -89,16 +103,22 @@ function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel
 }
 
 /**
- * Free values moved to the nearest 12-significant-digit decimal when that is within 8 ulps, and to
- * zero within 8 ulps of the sketch's largest value; undefined when nothing changes. Values that need
- * more digits keep them.
+ * Free values moved to the nearest 12-significant-digit decimal when that is within 8 ulps of the
+ * value, and to zero when within 8 ulps of the tightest scale among the equations using it (the
+ * largest operand magnitude, at least 1 mm); undefined when nothing changes. Either move is within
+ * roundoff of every equation using the value, so a small driven value next to large coordinates
+ * keeps its digits. Values that need more digits keep them.
  */
 function shortDecimals(model: CadSketchEquationModel, values: readonly number[]): number[] | undefined {
-  const zero = 8 * Number.EPSILON * values.reduce((largest, value) => Math.max(largest, Math.abs(value)), 1);
+  const scale = values.map(() => Infinity);
+  for (const equation of model.equations) {
+    const size = equation.operands.reduce((largest, operand) => Math.max(largest, Math.abs(values[operand])), 1);
+    for (const operand of equation.operands) scale[operand] = Math.min(scale[operand], size);
+  }
   let changed = false;
   const snapped = values.map((value, index) => {
     if (model.fixed[index]) return value;
-    const short = Math.abs(value) <= zero ? 0 : Number(value.toPrecision(12));
+    const short = Math.abs(value) <= 8 * Number.EPSILON * (Number.isFinite(scale[index]) ? scale[index] : 1) ? 0 : Number(value.toPrecision(12));
     if (short === value || short !== 0 && Math.abs(short - value) > 8 * Number.EPSILON * Math.abs(value)) return value;
     changed = true;
     return short;
@@ -116,27 +136,4 @@ function parameterGroups(model: CadSketchEquationModel): number[] {
     for (const operand of free.slice(1)) parent[root(operand)] = root(free[0]);
   }
   return parent.map((_, index) => root(index));
-}
-
-/** Groups holding any value that an input issue's point, entity or relation reaches. */
-function issueGroups(graph: CadSketchGraph, model: CadSketchEquationModel, group: readonly number[], issues: readonly CadSketchGraphIssue[]): Set<number> {
-  const dirty = new Set<number>();
-  if (!issues.length) return dirty;
-  const entities = new Map(graph.entities.map(entity => [entity.id, entity])), relations = new Map(graph.relations.map(relation => [relation.id, relation]));
-  const point = (id: string) => { const index = model.pointParameters.get(id); if (index !== undefined) dirty.add(group[index]).add(group[index + 1]); };
-  const entity = (id: string) => {
-    const item = entities.get(id); if (!item) return;
-    cadSketchEntityPointIds(item).forEach(point);
-    const radius = model.radiusParameters.get(id); if (radius !== undefined) dirty.add(group[radius]);
-  };
-  for (const { source } of issues) {
-    if (source.kind === 'point') point(source.id);
-    else if (source.kind === 'entity') entity(source.id);
-    else {
-      const relation = relations.get(source.id);
-      if (relation) { cadSketchRelationPointIds(graph, relation).forEach(point); cadSketchRelationEntityIds(relation).forEach(entity); }
-    }
-    for (const equation of model.equations) if (equation.sourceId === source.id) equation.operands.forEach(operand => dirty.add(group[operand]));
-  }
-  return dirty;
 }

@@ -86,8 +86,29 @@ describe('native-first sketch solving', () => {
     expect(await solvedAt(1 / 3, 0)).toEqual([1 / 3, 0]);
   });
 
+  it('keeps small driven values and edits next to large coordinates', async () => {
+    const { solver, records } = runtime(loadCadSketchTestNativeSolver, planeGcsSolved(failedResult));
+    const far = (a: readonly (string | number)[], b: readonly (string | number)[], relations: readonly object[]) => parseCadSketchGraph({ points: [{ id: 'a', position: a }, { id: 'b', position: b }],
+      entities: [{ id: 'line', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations });
+    const lift = { id: 'lift', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0.000001 };
+    // The sketch-wide check tolerance would also pass zero here; the driven value is kept exactly.
+    const driven = await solver.solve({ graph: far(['999999990', 5], ['999999990', '0'], [lift]), parameters: {} });
+    expect(driven.kind === 'solved' && driven.graph.points[0].position).toEqual(['999999990', 0.000001]);
+    // With nothing free, a relation the graph checks accept is solved, as PlaneGCS solves it.
+    const fixed = await solver.solve({ graph: far(['1000000000', '0'], ['1000000000', '10'], [lift]), parameters: {} });
+    expect(fixed).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: 0, conflictingIds: [], issues: [] } });
+    expect(records[1].answeredBy).toBe('native');
+    // An edit the sketch-wide tolerance would hide still moves its group.
+    const tall = far(['999999990', '0'], [999999990, 10], [{ id: 'tall', kind: 'axis-distance', pointIds: ['a', 'b'], axis: 'y', value: 'height' }]);
+    const before = await solver.solve({ graph: tall, parameters: { height: 10 } });
+    if (before.kind !== 'solved') throw new Error(before.message);
+    const after = await solver.solve({ graph: before.graph, parameters: { height: 10.000001 } });
+    if (after.kind !== 'solved') throw new Error(after.message);
+    expect(Math.abs(Number(after.graph.points[1].position[1]) - 10.000001)).toBeLessThan(1e-9);
+  });
+
   it.each([
-    ['too-large', { status: 'too-large' }, 'too-large'],
+    ['too-large',{ status: 'too-large' }, 'too-large'],
     ['unavailable', { diagnosis: { kind: 'unavailable' } }, 'failed'],
     ['suspected', { status: 'not-converged', diagnosis: { kind: 'suspected', labels: [2] } }, 'failed'],
     ['not-converged', { status: 'not-converged' }, 'failed'],
@@ -148,18 +169,36 @@ describe('native-first sketch solving', () => {
   });
 });
 
+/** A module with the solver's exports: each body is code ending in `end`, and `data` is placed at 1024. */
+function nativeModule({ alloc, free, solve, data }: { readonly alloc: number[]; readonly free: number[]; readonly solve: number[]; readonly data?: Float64Array }) {
+  const size = (length: number) => { const bytes = []; do { bytes.push(length & 127 | (length > 127 ? 128 : 0)); length >>>= 7; } while (length); return bytes; };
+  const name = (text: string) => [text.length, ...new TextEncoder().encode(text)], section = (id: number, bytes: number[]) => [id, ...size(bytes.length), ...bytes];
+  const body = (code: number[]) => [...size(code.length + 1), 0, ...code];
+  return new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0,
+    ...section(1, [3, 96, 1, 127, 1, 127, 96, 2, 127, 127, 0, 96, 2, 127, 127, 1, 127]), ...section(3, [3, 0, 1, 2]), ...section(5, [1, 0, 1]),
+    ...section(7, [4, ...name('memory'), 2, 0, ...name('buffer_alloc'), 0, 0, ...name('buffer_free'), 0, 1, ...name('solve'), 0, 2]),
+    ...section(10, [3, ...body(alloc), ...body(free), ...body(solve)]),
+    ...data ? section(11, [1, 0, 65, 128, 8, 11, ...size(data.byteLength), ...new Uint8Array(data.buffer)]) : []]);
+}
+
 describe('native solver instances', () => {
-  it('stops after a trap without freeing through the failed allocator', async () => {
-    // memory; buffer_alloc returns 8; buffer_free divides by zero; solve is unreachable.
-    const bytes = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0,
-      1, 17, 3, 96, 1, 127, 1, 127, 96, 2, 127, 127, 0, 96, 2, 127, 127, 1, 127,
-      3, 4, 3, 0, 1, 2,
-      5, 3, 1, 0, 1,
-      7, 47, 4, 6, ...new TextEncoder().encode('memory'), 2, 0, 12, ...new TextEncoder().encode('buffer_alloc'), 0, 0,
-      11, ...new TextEncoder().encode('buffer_free'), 0, 1, 5, ...new TextEncoder().encode('solve'), 0, 2,
-      10, 19, 3, 4, 0, 65, 8, 11, 8, 0, 65, 1, 65, 0, 109, 26, 11, 3, 0, 0, 11]);
-    const solver = await loadCadSketchNativeSolver(bytes), model: CadSketchEquationModel = { values: [0], fixed: [false], pointParameters: new Map(), radiusParameters: new Map(), equations: [] };
-    expect(() => solver.solve(model)).toThrow('unreachable');
-    expect(() => solver.solve(model)).toThrow('The native sketch solver instance stopped after a failure.');
+  const unreachable = [0, 11], at8 = [65, 8, 11], at1024 = [65, 128, 8, 11], none = [11];
+  // An empty model's reply: length, protocol 2, converged, no iterations or residual, nothing to diagnose, no freedom count.
+  const reply = new Float64Array([7, 2, 0, 0, 0, 2, NaN]);
+  const empty: CadSketchEquationModel = { values: [], fixed: [], pointParameters: new Map(), radiusParameters: new Map(), equations: [] };
+
+  it('reads a reply and frees both buffers', async () => {
+    const solver = await loadCadSketchNativeSolver(nativeModule({ alloc: at8, free: none, solve: at1024, data: reply }));
+    for (let run = 0; run < 2; run++) expect(solver.solve(empty)).toEqual({ status: 'converged', iterations: 0, residual: 0, values: [], diagnosis: { kind: 'no-unknowns', labels: [] } });
+  });
+
+  it.each([
+    ['allocating', { alloc: unreachable, free: none, solve: at1024, data: reply }],
+    ['solving', { alloc: at8, free: unreachable, solve: unreachable }],
+    ['freeing', { alloc: at8, free: unreachable, solve: at1024, data: reply }]
+  ] as const)('stops after a trap while %s and never runs again', async (_, parts) => {
+    const solver = await loadCadSketchNativeSolver(nativeModule(parts));
+    expect(() => solver.solve(empty)).toThrow('unreachable');
+    expect(() => solver.solve(empty)).toThrow('The native sketch solver instance stopped after a failure.');
   });
 });
