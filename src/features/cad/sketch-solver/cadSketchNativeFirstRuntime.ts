@@ -33,7 +33,8 @@ export const CAD_SKETCH_NATIVE_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 /**
  * Solves with the native solver first and asks PlaneGCS only when native cannot answer: compilation
  * it refuses, load failure, a failed instance, too large groups, unavailable or suspected
- * diagnosis, unknown freedom, no convergence (including a stalled drag), or a solution that moves fixed values or fails the graph
+ * diagnosis, unknown freedom, no convergence (including a stalled drag), a drag diagnosed as
+ * conflicting or redundant where it ended, or a solution that moves fixed values or fails the graph
  * checks. PlaneGCS loads on first use. When native has its own rejection, PlaneGCS's answer replaces it
  * only if it solves or names definite conflicts or redundancies.
  */

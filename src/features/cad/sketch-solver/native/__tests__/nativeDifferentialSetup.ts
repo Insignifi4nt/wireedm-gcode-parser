@@ -1,6 +1,7 @@
 // Setup for the `native-differential` project. Every PlaneGCS solve in the selected suites is
 // repeated by the native solver, which must match its diagnosis and, for solved sketches, its
-// geometry, or for a drag, come at least as close to its target within a small bound. Suites that solve through the application's native-first runtime also get a PlaneGCS
+// geometry, or for a drag, come at least as close to its target within a small bound unless reviewed
+// as a change of assembly. Suites that solve through the application's native-first runtime also get a PlaneGCS
 // answer for the same input, so every native answer, fallback and rescue is compared and tallied.
 // Mismatches are collected and fail the suite after its tests, so suites that expect rejections
 // cannot swallow them.
@@ -18,12 +19,12 @@ import type { CadSketchSolveRecord } from '../../cadSketchNativeFirstRuntime';
 
 const wasm = readFileSync(new URL('../../../../../../packages/sketch-solver/wasm/sketch_solver.wasm', import.meta.url));
 const tally = { compared: 0, diagnosed: 0, reviewedDifferences: 0, unmetWithoutUnknowns: 0, wellConstrained: 0,
-  /** Drags both solvers answered, native drags that stalled, and the largest amount native ended closer to a target. */
-  drags: 0, dragStalls: 0, largestDragImprovement: 0 }, mismatches: string[] = [];
+  /** Drags both solvers answered, native drags that stalled, reviewed changes of assembly, and the largest amount native ended closer to a target. */
+  drags: 0, dragStalls: 0, dragBranches: 0, largestDragImprovement: 0 }, mismatches: string[] = [];
 /** The application runtime's answers: which backend answered, why native fell back, and how far free solutions differ. */
 const answers = { native: 0, planeGcs: 0, fallbacks: {} as Record<string, number>, keptGroups: 0, nativeOnlyImprovements: 0, freeSolutions: 0, largestFreeDifference: 0,
   /** Free solutions where native moved further from the start than PlaneGCS, and the largest such excess in mm. */
-  movedFurther: 0, movedLess: 0, largestExtraMovement: 0, movements: [] as string[], drags: 0 };
+  movedFurther: 0, movedLess: 0, largestExtraMovement: 0, movements: [] as string[], drags: 0, dragBranches: 0 };
 
 /** Distance in mm from the dragged point of `graph` to the drag target. */
 function dragDistance(input: CadSketchSolveInput, graph: CadSketchGraph) {
@@ -39,6 +40,28 @@ function dragAllowance(input: CadSketchSolveInput, graph: CadSketchGraph) {
   const drag = input.drag!, position = graph.points.find(point => point.id === drag.pointId)!.position;
   const scale = Math.max(1, ...position.map(value => Math.abs(evaluateCadScalar(value, input.parameters))), ...drag.position.map(Math.abs));
   return Math.max(1e-6, 64 * Number.EPSILON * scale);
+}
+
+/**
+ * Reviewed drags where native ends further from its target than PlaneGCS because PlaneGCS lands on
+ * another assembly of the sketch, by test name, dragged point and target. Native's projected answer
+ * must stay at the recorded position; dragged in steps, PlaneGCS ends there too. A reviewed drag
+ * that no longer differs is a mismatch, so the list cannot go stale.
+ */
+const reviewedDragBranches = new Map([
+  ['real PlaneGCS sketch solving > reassembles a four-bar dragged out of reach in one jump, but not when the drag is chained',
+    { pointId: 'c', target: [-20, -18], native: [-2.8, 9.6] }]
+]);
+const seenDragBranches = new Set<string>(), testsRun = new Set<string>();
+
+/** Whether a native drag ending further than PlaneGCS is a reviewed change of assembly. */
+function reviewedDragBranch(input: CadSketchSolveInput, graph: CadSketchGraph, outcome: string | undefined) {
+  const name = expect.getState().currentTestName ?? '', reviewed = reviewedDragBranches.get(name), drag = input.drag!;
+  const position = graph.points.find(point => point.id === drag.pointId)!.position.map(value => evaluateCadScalar(value, input.parameters));
+  if (!reviewed || outcome !== 'projected' || drag.pointId !== reviewed.pointId || drag.position.some((value, axis) => value !== reviewed.target[axis])
+    || position.some((value, axis) => Math.abs(value - reviewed.native[axis]) > 1e-9)) return false;
+  seenDragBranches.add(name);
+  return true;
 }
 
 /**
@@ -78,6 +101,7 @@ function nativeDiagnostics(model: CadSketchEquationModel, native: CadSketchNativ
 
 async function compare(input: CadSketchSolveInput, result: CadSketchSolveResult | undefined, runtime: typeof import('../../cadSketchSolverRuntime')) {
   const label = (message: string) => `${expect.getState().currentTestName ?? 'unknown test'}: ${message}`;
+  testsRun.add(expect.getState().currentTestName ?? '');
   let planeGcs: ReturnType<typeof runtime.compileCadSketchPlaneGcs> | undefined, parsed: CadSketchSolveInput | undefined;
   try { parsed = parseCadSketchSolveInput(input); planeGcs = runtime.compileCadSketchPlaneGcs(parsed); } catch { /* compared below */ }
   let model: CadSketchEquationModel | undefined;
@@ -110,7 +134,10 @@ async function compare(input: CadSketchSolveInput, result: CadSketchSolveResult 
   if (parsed.drag) {
     tally.drags += 1;
     const own = dragDistance(parsed, graph), planeGcsDistance = dragDistance(parsed, result.graph);
-    if (own > planeGcsDistance + dragAllowance(parsed, result.graph)) mismatches.push(label(`native drag ends ${own} mm from its target, PlaneGCS ${planeGcsDistance} mm`));
+    if (own > planeGcsDistance + dragAllowance(parsed, result.graph)) {
+      if (reviewedDragBranch(parsed, graph, native.drag?.outcome)) tally.dragBranches += 1;
+      else mismatches.push(label(`native drag ends ${own} mm from its target, PlaneGCS ${planeGcsDistance} mm`));
+    }
     tally.largestDragImprovement = Math.max(tally.largestDragImprovement, planeGcsDistance - own);
   }
   if (result.diagnostics.degreesOfFreedom !== 0) return;
@@ -148,6 +175,7 @@ vi.mock('../../cadSketchSolverRuntime', async importOriginal => {
  */
 function compareAnswer(input: CadSketchSolveInput, result: CadSketchSolveResult, oracle: CadSketchSolveResult | undefined, record: CadSketchSolveRecord | undefined) {
   const label = (message: string) => `${expect.getState().currentTestName ?? 'unknown test'}: ${message}`;
+  testsRun.add(expect.getState().currentTestName ?? '');
   // Input rejected before either solver runs leaves no record; anything solved went through one.
   if (!record || record.native === undefined) { if (result.kind === 'solved') mismatches.push(label('a solved answer has no native attempt record')); return; }
   if (record.answeredBy === 'native') answers.native += 1; else answers.planeGcs += 1;
@@ -165,7 +193,10 @@ function compareAnswer(input: CadSketchSolveInput, result: CadSketchSolveResult,
   if (input.drag && result.kind === 'solved' && oracle.kind === 'solved') {
     answers.drags += 1;
     const own = dragDistance(input, result.graph), expected = dragDistance(input, oracle.graph);
-    if (own > expected + dragAllowance(input, oracle.graph)) mismatches.push(label(`answered drag ends ${own} mm from its target, PlaneGCS ${expected} mm`));
+    if (own > expected + dragAllowance(input, oracle.graph)) {
+      if (reviewedDragBranch(input, result.graph, record.drag?.outcome)) answers.dragBranches += 1;
+      else mismatches.push(label(`answered drag ends ${own} mm from its target, PlaneGCS ${expected} mm`));
+    }
   } else if (result.kind === 'solved' && oracle.kind === 'solved' && result.diagnostics.degreesOfFreedom !== 0) {
     answers.freeSolutions += 1;
     const solved = cadSketchSolvedValues(result.graph), expected = cadSketchSolvedValues(oracle.graph);
@@ -204,5 +235,6 @@ vi.mock('../../__tests__/cadSketchTestSolver', async importOriginal => {
 afterAll(() => {
   if (process.env.NATIVE_DIFFERENTIAL_TALLY) console.log(`native-first answers: ${JSON.stringify(answers)}`);
   if (process.env.NATIVE_DIFFERENTIAL_TALLY) console.log(`native differential: ${JSON.stringify(tally)}`);
+  for (const name of reviewedDragBranches.keys()) if (testsRun.has(name) && !seenDragBranches.has(name)) mismatches.push(`${name}: the reviewed drag no longer ends as recorded, further than PlaneGCS`);
   expect(mismatches).toEqual([]);
 });

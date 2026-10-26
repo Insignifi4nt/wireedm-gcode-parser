@@ -98,6 +98,26 @@ describe('real PlaneGCS sketch solving', () => {
     expect(Math.hypot(Number(limited.graph.points[1].position[0]), Number(limited.graph.points[1].position[1]))).toBeCloseTo(20, 10);
     expect(limited.graph.relations).toEqual(dimensioned.relations); expect(limited.diagnostics.degreesOfFreedom).toBe(1);
   });
+  it('reassembles a four-bar dragged out of reach in one jump, but not when the drag is chained', async () => {
+    // c–b must stay between 6 and 16 mm, so the linkage has two separate assemblies, c above a as it
+    // starts or below. One long jump lands PlaneGCS on the lower one, closer to the target; the same
+    // drag in steps stays on the upper one, stretched with c, d and b in line, as native does in one jump.
+    const fourBar = parseCadSketchGraph({ points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: ['10', '0'] }, { id: 'c', position: [6, 8] }, { id: 'd', position: [10, 11] }],
+      entities: [], relations: [{ id: 'ac-length', kind: 'distance', pointIds: ['a', 'c'], value: 10 }, { id: 'cd-length', kind: 'distance', pointIds: ['c', 'd'], value: 5 },
+        { id: 'db-length', kind: 'distance', pointIds: ['d', 'b'], value: 11 }] });
+    const runtime = createCadSketchSolverRuntime(initialize), target = [-20, -18] as const;
+    const jumped = await runtime.solve({ graph: fourBar, parameters: {}, drag: { pointId: 'c', position: target } });
+    if (jumped.kind !== 'solved') throw new Error(jumped.message);
+    const c = jumped.graph.points[2].position as [number, number];
+    [-2.8, -9.6].forEach((expected, axis) => expect(c[axis]).toBeCloseTo(expected, 8));
+    let current = fourBar;
+    for (let frame = 1; frame <= 10; frame++) {
+      const dragged = await runtime.solve({ graph: current, parameters: {}, drag: { pointId: 'c', position: [6 + (target[0] - 6) * frame / 10, 8 + (target[1] - 8) * frame / 10] } });
+      if (dragged.kind !== 'solved') throw new Error(dragged.message);
+      current = dragged.graph;
+    }
+    [-2.8, 9.6].forEach((expected, axis) => expect(current.points[2].position[axis]).toBeCloseTo(expected, 8));
+  });
   it('keeps circle radius expressions fixed while allowing its numeric center to move', async () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'center', position: [0, 0] }], entities: [
       { id: 'circle', kind: 'circle', construction: true, centerPointId: 'center', radius: ' diameter / 2 ' }

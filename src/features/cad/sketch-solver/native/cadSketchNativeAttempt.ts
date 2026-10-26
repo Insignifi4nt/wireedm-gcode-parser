@@ -6,10 +6,11 @@ import type { CadSketchNativeSolution, CadSketchNativeSolver } from './cadSketch
 
 /** Why the native solver did not answer a solve; PlaneGCS answers it instead while both exist. */
 export type CadSketchNativeFallbackReason = 'compile' | 'too-large' | 'unavailable' | 'suspected' | 'unknown-freedom'
-  | 'not-converged' | 'moved-fixed-value' | 'graph-check';
+  | 'not-converged' | 'drag-diagnosis' | 'moved-fixed-value' | 'graph-check';
 
 /**
- * `answer`: a solution, or a definite conflicting or redundant diagnosis. `fallback`: native cannot
+ * `answer`: a solution, or a definite conflicting or redundant diagnosis of a solve that is not a
+ * drag. `fallback`: native cannot
  * answer; `rejection` is its own result, returned when PlaneGCS does no better. Group counts say how
  * many connected groups native moved and how many of those kept their accepted start values. `drag`
  * is native's drag outcome whenever the input has a drag target.
@@ -28,9 +29,12 @@ const STALLED_DRAG = 'The point could not be moved toward the target from this s
  * Solves already parsed input with the native solver and accepts only what it can answer for:
  * a converged, fully diagnosed solution with known freedom that keeps fixed values and passes the
  * graph checks, or definite conflicts and redundancies, rejected in the PlaneGCS runtime's order.
- * A drag answers only when its target was reached or it was projected, nothing closer found; a
- * stalled drag is not converged. Errors from `solver` propagate; the caller treats them as a
- * failed native instance.
+ * A drag answers only with a solution whose target was reached or projected: a stalled drag is not
+ * converged, and a drag's conflicts and redundancies stand only when PlaneGCS does no better.
+ * Projected means native's first- and second-order necessary conditions for a local minimum of the
+ * target distance held up to its resolution. That proves neither a local minimum nor the nearest
+ * configuration: another solver can end closer, for example on another assembly of a linkage.
+ * Errors from `solver` propagate; the caller treats them as a failed native instance.
  */
 export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: CadSketchNativeSolver): CadSketchNativeAttempt {
   let model: CadSketchEquationModel;
@@ -62,8 +66,12 @@ function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, soluti
     if (!conflictingIds.length) return stalled ? unsolved('not-converged') : solvedAttempt(input, model, solution, { ...noDiagnostics('success'), degreesOfFreedom: 0 });
     return answer({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics: { ...diagnostics, conflictingIds } });
   }
-  if (ids.conflictingIds.length) return answer({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics });
-  if (ids.redundantIds.length || ids.partiallyRedundantIds.length) return answer({ kind: 'rejected', reason: 'redundant', message: 'Sketch constraints are redundant.', diagnostics });
+  // A drag is diagnosed where it ends, and its target can land it on a singular configuration (a
+  // tangency met exactly) whose rank reads redundant or conflicting where the sketch is not, so for a
+  // drag such a rejection stands only when PlaneGCS does no better.
+  const definite = (result: CadSketchSolveResult): CadSketchNativeAttempt => solution.drag ? { kind: 'fallback', reason: 'drag-diagnosis', rejection: result } : answer(result);
+  if (ids.conflictingIds.length) return definite({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics });
+  if (ids.redundantIds.length || ids.partiallyRedundantIds.length) return definite({ kind: 'rejected', reason: 'redundant', message: 'Sketch constraints are redundant.', diagnostics });
   if (solution.status !== 'converged' || stalled) return unsolved('not-converged');
   if (degreesOfFreedom === null) return unsolved('unknown-freedom');
   return solvedAttempt(input, model, solution, diagnostics);
