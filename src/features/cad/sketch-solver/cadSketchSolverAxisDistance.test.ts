@@ -1,18 +1,13 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
-import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './cadSketchSolverModule';
 import { prepareCadEdits } from '../cadEditPreparation';
 import { CadSession } from '../cadSession';
 import { CadSketchPreparationError } from '../cadSketchConstraintFeedback';
+import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
-  require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 const offsets = [
   { id: 'dx', kind: 'axis-distance', pointIds: ['a', 'b'], axis: 'x', value: ' dx ' },
   { id: 'dy', kind: 'axis-distance', pointIds: ['a', 'b'], axis: 'y', value: ' dy ' }
@@ -100,15 +95,15 @@ describe('real PlaneGCS signed axis distances', () => {
     expect(session.getSnapshot()).toBe(accepted);
   });
 
-  it('keeps fully driven compatible intent and independently rejects a wrong fixed-coordinate difference', async () => {
+  it('keeps fully driven compatible intent and names a wrong fixed-coordinate difference as conflicting', async () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: ['30', '20'] }], entities: [], relations: offsets });
     const before = JSON.stringify(graph), compatible = await runtime.solve({ graph, parameters });
     expect(compatible).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: 0, redundantIds: [], issues: [] } });
     if (compatible.kind !== 'solved') throw new Error(JSON.stringify(compatible));
     expect(compatible.graph).toEqual(graph);
     const wrong = await runtime.solve({ graph, parameters: { ...parameters, dx: 31 } });
-    expect(wrong).toMatchObject({ kind: 'rejected', reason: 'invalid-solution', diagnostics: { status: 'success', conflictingIds: [],
-      issues: [{ source: { kind: 'relation', id: 'dx' }, code: 'relation-residual', residualMm: 1 }] } });
+    // With nothing free, the native solver names the unmet relation itself.
+    expect(wrong).toMatchObject({ kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['dx'], issues: [] } });
     expect(JSON.stringify(graph)).toBe(before);
   });
 });

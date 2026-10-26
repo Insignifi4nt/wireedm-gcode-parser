@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { Value } from '@sinclair/typebox/value';
 import { CadEditSchema, type CadEdit } from '@/domain/cad/cadOperations';
@@ -10,12 +8,9 @@ import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
 import { pairedBoreMirrorPart, mirrorBoreRequest, mixedMirrorPart, mixedMirrorRequest } from '@/domain/cad/__tests__/cadSketchMirrorFixtures';
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
-  require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 
 describe('exact native Mirror copy preparation', () => {
   it.each([{ part: pairedBoreMirrorPart, request: mirrorBoreRequest }, { part: mixedMirrorPart, request: mixedMirrorRequest }])('accepts the complete independent copy from $part.name without projecting source or declared joints', async ({ part, request }) => {

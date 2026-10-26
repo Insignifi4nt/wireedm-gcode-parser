@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
@@ -12,16 +10,14 @@ import { dxf, stock } from '@/domain/cad/__tests__/cadSketchRegionFixtures';
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
 import { CadSketchEditDraft, type CadSketchAreaRepairInspection } from './cadSketchEditDraft';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
 import { endTrim, trimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
 import { extendPart, lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
 import { compileCadSketchGeometry } from '@/domain/cad/compileCadSketchGeometry';
 import { pairedBoreMirrorPart, mirrorBoreRequest } from '@/domain/cad/__tests__/cadSketchMirrorFixtures';
 import { dPlacement, placementPart, placementSketch } from '@/domain/cad/__tests__/cadSketchPlacementFixtures';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const solver = createCadSketchTestSolver();
 const prepare = async (document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) => (await prepareCadEdits(document, edits, solver, signal)).document;
 const sketchOf = (document: CadDocument, id = 'sketch') => {
   const feature = document.features.find(feature => feature.id === id);

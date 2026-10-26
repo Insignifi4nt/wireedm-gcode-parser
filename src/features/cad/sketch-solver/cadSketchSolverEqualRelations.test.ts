@@ -1,19 +1,15 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { cadSketchSolvedValues, checkCadSketchGraph, parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './cadSketchSolverModule';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
 import { CadSession } from '../cadSession';
 import { prepareCadEdits } from '../cadEditPreparation';
 import { CadSketchPreparationError } from '../cadSketchConstraintFeedback';
 import { cadSketchSolverWireResult, parseCadSketchSolverReply } from './cadSketchSolverProtocol';
+import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 
 describe('real PlaneGCS scalar-free size equality', () => {
   it('solves shared reversed line lengths without changing exact coordinate drivers or relation tuples', async () => {
@@ -110,15 +106,18 @@ describe('real PlaneGCS scalar-free size equality', () => {
     expect(document.features[0]).toMatchObject({ graph: { entities: [{ radius: 10 }, { radius: 6 }] } });
   });
 
-  it('reports the pinned fixed-string circle limitation honestly and independently rejects unequal radii', async () => {
+  it('accepts equal fixed-string circles and names unequal ones as conflicting', async () => {
     for (const second of [10, 6]) {
       const graph = parseCadSketchGraph({ points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: ['30', '0'] }], entities: [
         { id: 'c1', kind: 'circle', construction: true, centerPointId: 'a', radius: ' first ' }, { id: 'c2', kind: 'circle', construction: false, centerPointId: 'b', radius: ' second ' }
       ], relations: [{ id: 'same', kind: 'equal-radius', curveIds: ['c2', 'c1'] }] }), original = JSON.stringify(graph);
       const result = await runtime.solve({ graph, parameters: { first: 10, second } });
-      expect(result.diagnostics).toMatchObject({ status: 'success', degreesOfFreedom: 0, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
-      if (second === 10) { expect(result.kind).toBe('solved'); if (result.kind === 'solved') expect(result.graph).toEqual(graph); }
-      else expect(result).toMatchObject({ kind: 'rejected', reason: 'invalid-solution', diagnostics: { issues: [{ source: { kind: 'relation', id: 'same' }, code: 'relation-residual', residualMm: 4 }] } });
+      // With nothing free, the native solver names an unmet relation itself.
+      if (second === 10) {
+        expect(result.diagnostics).toMatchObject({ status: 'success', degreesOfFreedom: 0, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+        expect(result.kind).toBe('solved'); if (result.kind === 'solved') expect(result.graph).toEqual(graph);
+      } else expect(result).toMatchObject({ kind: 'rejected', reason: 'conflicting',
+        diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['same'], redundantIds: [], partiallyRedundantIds: [], issues: [] } });
       expect(JSON.stringify(graph)).toBe(original);
     }
   });
@@ -137,7 +136,8 @@ describe('real PlaneGCS scalar-free size equality', () => {
     ], runtime)).document).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(CadSketchPreparationError);
     if (!(failure instanceof CadSketchPreparationError)) throw new Error('Expected structured preparation error.');
-    expect(failure.code).toBe('sketch-invalid-solution'); expect(failure.diagnostics.issues[0].residualMm).toBe(8);
+    // With nothing free, the native solver names the unmet relation itself.
+    expect(failure.code).toBe('sketch-conflicting'); expect(failure.diagnostics.conflictingIds).toEqual(['attempt']);
     expect(failure.feedback.subjects).toContainEqual(expect.objectContaining({ source: { kind: 'relation', id: 'attempt' }, label: 'Equal radius relation 1 · Circle 2 and Circle 1', entityIds: ['c2', 'c1'] }));
     expect(session.getSnapshot()).toBe(before);
   });

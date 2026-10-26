@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadDocument } from '@/domain/cad/cadDocument';
@@ -8,12 +6,9 @@ import type { CadEdit } from '@/domain/cad/cadOperations';
 import { CadSession } from './cadSession';
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
-  require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 const midpoint: CadEdit = { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'mid', kind: 'midpoint', pointId: 'm', lineId: 'line' } };
 function part(fixed = false) {
   return parseCadDocument({ ...createCadDocument('Midpoint propagation', 'midpoint'), schemaVersion: 2, parameters: { width: 40, retained: 7 }, features: [{
@@ -56,10 +51,11 @@ describe('prepared persistent midpoint edits', () => {
     } catch (error) { failure = error; }
     expect(failure).toBeInstanceOf(CadSketchPreparationError);
     if (!(failure instanceof CadSketchPreparationError)) throw Error('Expected structured rejection');
-    expect(failure.feedback).toMatchObject({ sketchId: 'sketch', reason: 'invalid-solution', subjects: [expect.objectContaining({
-      category: 'issue', source: { kind: 'relation', id: 'mid' }, pointIds: ['m', 'a', 'b'], entityIds: ['line']
+    // With nothing free, the native solver names the unmet relation itself.
+    expect(failure.feedback).toMatchObject({ sketchId: 'sketch', reason: 'conflicting', subjects: [expect.objectContaining({
+      category: 'conflicting', source: { kind: 'relation', id: 'mid' }, pointIds: ['m', 'a', 'b'], entityIds: ['line']
     })] });
-    expect(failure.diagnostics).toMatchObject({ status: 'success', conflictingIds: [], redundantIds: [] });
+    expect(failure.diagnostics).toMatchObject({ status: 'failed', conflictingIds: ['mid'], redundantIds: [] });
     expect(session.getSnapshot()).toBe(before);
     expect(graph(before.document).points[2].position).toEqual(['0', '4']);
   });

@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { createCadFreshSketchGraph } from '@/domain/cad/cadFreshSketchGraph';
@@ -8,12 +6,9 @@ import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketch
 import { prepareCadSketchTrim, prepareCadSketchExtend, trimCadSketchEntity, extendCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { prepareCadEdits } from './cadEditPreparation';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
-  require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 function part(graph: CadSketchGraph) {
   return parseCadDocument({ ...createCadDocument('Directional boundary', 'directional-boundary'), schemaVersion: 2, parameters: { width: 10, retained: 23 },
     features: [{ id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph }] });

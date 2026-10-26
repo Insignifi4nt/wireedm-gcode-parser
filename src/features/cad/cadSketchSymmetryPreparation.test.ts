@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { symmetricRelation, symmetryPart, symmetrySketch } from '@/domain/cad/__tests__/cadSketchSymmetryFixtures';
 import { checkCadSketchGraph } from '@/domain/cad/cadSketchGraph';
@@ -9,11 +7,9 @@ import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from './cadSession';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { prepareCadEdits } from './cadEditPreparation';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 const set = { kind: 'set-sketch-relation', sketchId: 'sketch', relation: symmetricRelation } as const;
 describe('pinned native point-pair symmetry', () => {
   it('adds two conditions without anchoring a free pair or equating circle sizes', async () => {
@@ -46,14 +42,15 @@ describe('pinned native point-pair symmetry', () => {
       expect(symmetrySketch(result.document).graph.entities).toEqual(symmetrySketch(document).graph.entities);
     }
   });
-  it('independently rejects incompatible fully fixed points after actual native Success without fabricating native IDs or history', async () => {
+  it('rejects incompatible fully fixed points, naming the unmet relation without adding history', async () => {
     const session = new CadSession(symmetryPart({ incompatible: true })), before = session.getSnapshot();
     let failure: unknown;
     try { await session.editPrepared(before.version, async document => (await prepareCadEdits(document, [{ kind: 'set-parameter', name: 'retained', value: 99 }, set], runtime)).document); }
     catch (error) { failure = error; }
     expect(failure).toBeInstanceOf(CadSketchPreparationError);
     if (!(failure instanceof CadSketchPreparationError)) throw new Error('Expected structured rejection.');
-    expect(failure.diagnostics).toMatchObject({ status: 'success', degreesOfFreedom: 0, conflictingIds: [], redundantIds: [], issues: [expect.objectContaining({ source: { kind: 'relation', id: 'symmetry' }, code: 'relation-residual' })] });
+    // With nothing free, the native solver names the unmet relation itself.
+    expect(failure.diagnostics).toMatchObject({ status: 'failed', degreesOfFreedom: null, conflictingIds: ['symmetry'], redundantIds: [], issues: [] });
     expect(session.getSnapshot()).toBe(before);
   });
   it('allows a linked readonly axis and one linked paired point to drive the independent point without detaching', async () => {

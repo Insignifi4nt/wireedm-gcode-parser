@@ -1,14 +1,9 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph, checkCadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './cadSketchSolverModule';
+import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
-  require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 function driven(fixed?: readonly [string, string]) {
   return parseCadSketchGraph({ points: [{ id: 'a', position: ['0', ' 0 '] }, { id: 'b', position: [' width ', '0'] },
     { id: 'm', position: fixed ?? [14, 3] }], entities: [
@@ -46,12 +41,12 @@ describe('real PlaneGCS line midpoint', () => {
     expect(moved.diagnostics.degreesOfFreedom).toBe(4);
   });
 
-  it('reports actual duplicate diagnostics and independently rejects incompatible all-fixed native Success', async () => {
+  it('reports actual duplicate diagnostics and names an incompatible all-fixed midpoint as conflicting', async () => {
     const matching = await runtime.solve({ graph: driven(['20', '0']), parameters: { width: 40 } });
     expect(matching.kind).toBe('solved'); expect(matching.diagnostics).toMatchObject({ status: 'success', degreesOfFreedom: 0, redundantIds: [] });
     const wrong = driven(['0', '4']), before = JSON.stringify(wrong), rejected = await runtime.solve({ graph: wrong, parameters: { width: 40 } });
-    expect(rejected).toMatchObject({ kind: 'rejected', reason: 'invalid-solution', diagnostics: { status: 'success', conflictingIds: [],
-      issues: [expect.objectContaining({ source: { kind: 'relation', id: 'mid' }, code: 'relation-residual' })] } });
+    // With nothing free, the native solver names the unmet relation itself.
+    expect(rejected).toMatchObject({ kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['mid'], issues: [] } });
     expect(JSON.stringify(wrong)).toBe(before);
     const graph = driven(), duplicate = await runtime.solve({ graph: parseCadSketchGraph({ ...graph,
       relations: [...graph.relations, { id: 'duplicate-midpoint', kind: 'midpoint', pointId: 'm', lineId: 'line' }] }), parameters: { width: 40 } });

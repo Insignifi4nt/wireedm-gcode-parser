@@ -1,9 +1,19 @@
-import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule, resetCadSketchSolverModule } from './cadSketchSolverModule';
+import nativeWasmUrl from '../../../../packages/sketch-solver/wasm/sketch_solver.wasm?url';
+import { createCadSketchNativeFirstRuntime } from './cadSketchNativeFirstRuntime';
+import { loadCadSketchNativeSolver } from './native/cadSketchNativeSolver';
 import type { CadSketchSolveInput } from './cadSketchSolverTypes';
 import { cadSketchSolverWireResult, isCadSketchSolverEnvelope, type CadSketchSolverWireReply } from './cadSketchSolverProtocol';
 
-const runtime = createCadSketchSolverRuntime(initializeCadSketchSolverModule, { discard: resetCadSketchSolverModule });
+// Compiled once; a failed instance is replaced by a fresh instantiation of the same module.
+let nativeModule: Promise<WebAssembly.Module> | undefined;
+const runtime = createCadSketchNativeFirstRuntime({
+  loadNative: async () => loadCadSketchNativeSolver(await (nativeModule ??= fetch(nativeWasmUrl).then(response => response.arrayBuffer()).then(bytes => WebAssembly.compile(bytes)))),
+  // PlaneGCS is fetched and compiled only when native cannot answer, for example on the first drag.
+  loadPlaneGcs: async () => {
+    const [{ createCadSketchSolverRuntime }, { initializeCadSketchSolverModule, resetCadSketchSolverModule }] = await Promise.all([import('./cadSketchSolverRuntime'), import('./cadSketchSolverModule')]);
+    return createCadSketchSolverRuntime(initializeCadSketchSolverModule, { discard: resetCadSketchSolverModule });
+  }
+});
 let queue = Promise.resolve();
 self.addEventListener('message', (event: MessageEvent<unknown>) => {
   const value = event.data;

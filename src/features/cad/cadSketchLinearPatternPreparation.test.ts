@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
@@ -10,13 +8,11 @@ import { lineReferencePart } from '@/domain/cad/__tests__/cadSketchExternalRefer
 import { circleRow, circleRowPart, rowSketch } from '@/domain/cad/__tests__/cadSketchLinearPatternFixtures';
 import { CAD_SKETCH_SOLVED_LAYOUT_VERSION, cadSketchSolvedValues, checkCadSketchGraph, parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { parseCadSketchSolveInput, parseCadSketchSolverReply } from './sketch-solver/cadSketchSolverProtocol';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const solver = createCadSketchTestSolver();
 const set: CadEdit = { kind: 'set-sketch-relation', sketchId: 'sketch', relation: circleRow };
 const prepare = async (document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) => (await prepareCadEdits(document, edits, solver, signal)).document;
 

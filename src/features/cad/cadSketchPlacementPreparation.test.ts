@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import { placeCadSketchGraph } from '@/domain/cad/cadSketchPlacement';
@@ -10,10 +8,8 @@ import { applyCadEdits } from '@/domain/cad/cadOperations';
 import type { CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
-const require = createRequire(import.meta.url);
-const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
+const solver = createCadSketchTestSolver();
 const edit = { kind: 'place-sketch-geometry', sketchId: 'sketch', ...dPlacement } as const;
 describe('prepared exact rigid placement', () => {
   it('flushes preceding request parameters and retains the entire cardinal native candidate exactly', async () => {

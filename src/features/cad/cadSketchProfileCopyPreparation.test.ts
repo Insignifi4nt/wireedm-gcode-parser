@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { Value } from '@sinclair/typebox/value';
 import { applyCadEdits, CadEditSchema, type CadEdit } from '@/domain/cad/cadOperations';
@@ -13,12 +11,9 @@ import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
 import { profileCopySlotPart, profileCopyDxfPart, slotProfileCopyRequest, dxfProfileCopyRequest } from '@/domain/cad/__tests__/cadSketchProfileCopyFixtures';
 import { needsCadSketchPreparation, prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(
-  require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 
 describe('document-level independent profile copy preparation', () => {
   it.each([{ part: profileCopySlotPart, request: slotProfileCopyRequest, dof: 10 }, { part: profileCopyDxfPart, request: dxfProfileCopyRequest, dof: 5 }])('prepares the exact known $part.name candidate from schema 1 without changing its source', async ({ part, request, dof }) => {

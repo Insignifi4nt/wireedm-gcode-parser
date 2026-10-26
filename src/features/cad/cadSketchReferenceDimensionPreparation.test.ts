@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
@@ -9,11 +7,9 @@ import { lineReferencePart } from '@/domain/cad/__tests__/cadSketchExternalRefer
 import { CadSession } from './cadSession';
 import { CadSketchEditDraft } from './cadSketchEditDraft';
 import { prepareCadEdits } from './cadEditPreparation';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const solver = createCadSketchTestSolver();
 const prepare = async (document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) => (await prepareCadEdits(document, edits, solver, signal)).document;
 const reference = { id: 'measurement', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'line' } } as const;
 const featureOf = (document: CadDocument, id: string) => {

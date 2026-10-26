@@ -4,21 +4,17 @@ import { pointOnLineRelation, pointOnLinePart } from '@/domain/cad/__tests__/cad
 import { tangentJoint, tangentPart } from '@/domain/cad/__tests__/cadSketchTangentFixtures';
 import { circleRow, circleRowPart } from '@/domain/cad/__tests__/cadSketchLinearPatternFixtures';
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { inspectCadSketchConstraints, pageCadSketchConstraints, summarizeCadSketchConstraintAnalysis } from './cadSketchConstraintInspection';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
 import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTreatment';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { Value } from '@sinclair/typebox/value';
 import { CadToolEditDefinitions } from './cadToolSchemas';
 import { applyCadEdits } from '@/domain/cad/cadOperations';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const solver = createCadSketchTestSolver();
 const source = () => parseCadDocument({ ...createCadDocument('Line', 'line'), schemaVersion: 2, parameters: { span: 20 }, features: [{
   id: 'sketch', name: 'Sketch', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
     points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [20, 0] }],

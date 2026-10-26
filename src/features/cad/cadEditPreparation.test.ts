@@ -1,10 +1,6 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
 import { needsCadSketchPreparation, prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
 import type { CadEdit } from '@/domain/cad/cadOperations';
@@ -17,9 +13,9 @@ import { cadSketchRelationPlacement } from '@/domain/cad/cadSketchRelationPlacem
 import { endTrim, trimPart, middleTrim, middleTrimPart } from '@/domain/cad/__tests__/cadSketchTrimFixtures';
 import { trimCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
 import { extendPart, lineExtend } from '@/domain/cad/__tests__/cadSketchExtendFixtures';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const solver = createCadSketchTestSolver();
 const source = () => parseCadDocument({ ...createCadDocument('Line', 'line'), schemaVersion: 2, parameters: { length: 20 }, features: [{
   id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
     points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [20, 0] }],

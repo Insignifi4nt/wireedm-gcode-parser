@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { pointOnLineRelation, pointOnLinePart, pointOnLineSketch } from '@/domain/cad/__tests__/cadSketchPointOnLineFixtures';
 import { checkCadSketchGraph } from '@/domain/cad/cadSketchGraph';
@@ -9,11 +7,9 @@ import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const runtime = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const runtime = createCadSketchTestSolver();
 const set = { kind: 'set-sketch-relation', sketchId: 'sketch', relation: pointOnLineRelation } as const;
 describe('prepared point-on-line incidence', () => {
   it('retains one sliding freedom and follows soft drags and guide parameters without changing source drivers', async () => {
@@ -32,14 +28,14 @@ describe('prepared point-on-line incidence', () => {
     expect(pointOnLineSketch(changed.document).graph.entities).toEqual(graph.entities);
     expect(pointOnLineSketch(changed.document).graph.relations).toEqual([pointOnLineRelation]);
   });
-  it('rejects wrong fixed incidence after actual native Success atomically with real issue evidence', async () => {
+  it('rejects wrong fixed incidence atomically, naming the unmet relation', async () => {
     const session = new CadSession(pointOnLinePart(true)), before = session.getSnapshot(); let failure: unknown;
     try { await session.editPrepared(before.version, async document => (await prepareCadEdits(document, [{ kind: 'set-parameter', name: 'retained', value: 99 }, set], runtime)).document); }
     catch (error) { failure = error; }
     expect(failure).toBeInstanceOf(CadSketchPreparationError);
     if (!(failure instanceof CadSketchPreparationError)) throw new Error('Expected structured failure.');
-    expect(failure.diagnostics).toMatchObject({ status: 'success', degreesOfFreedom: 0, conflictingIds: [], redundantIds: [],
-      issues: [expect.objectContaining({ source: { kind: 'relation', id: 'on-guide' }, code: 'relation-residual' })] });
+    // With nothing free, the native solver names the unmet relation itself.
+    expect(failure.diagnostics).toMatchObject({ status: 'failed', degreesOfFreedom: null, conflictingIds: ['on-guide'], redundantIds: [], issues: [] });
     expect(session.getSnapshot()).toBe(before);
   });
   it('uses a linked readonly guide without detaching or replacing its numeric authority', async () => {

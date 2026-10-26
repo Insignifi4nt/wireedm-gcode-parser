@@ -1,18 +1,14 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph, checkCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTreatment';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { prepareCadEdits } from '../cadEditPreparation';
 import { CadSession } from '../cadSession';
-import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './cadSketchSolverModule';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
+import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const solver = createCadSketchTestSolver();
 function fixture(kind: 'fillet' | 'chamfer', fixed = true) {
   const graph = parseCadSketchGraph({ points: [{ id: 'v', position: fixed ? ['0', '0'] : [0, 0] }, { id: 'a', position: fixed ? ['20', '0'] : [20, 0] }, { id: 'b', position: fixed ? ['0', '16'] : [0, 16] }],
     entities: [{ id: 'a-line', kind: 'line', construction: false, startPointId: 'a', endPointId: 'v' },
@@ -47,11 +43,15 @@ describe('real PlaneGCS corner constraints', () => {
     expect(JSON.stringify(corner.graph)).toBe(before);
   });
 
-  it('keeps a native-success free chamfer edit rejected when independent world residuals fail', async () => {
+  it('solves a free chamfer edit natively that PlaneGCS reports solved but the graph checks reject', async () => {
     const corner = fixture('chamfer', false), before = JSON.stringify(corner.graph);
     const result = await solver.solve({ graph: corner.graph, parameters: { size: 3 } });
-    expect(result).toMatchObject({ kind: 'rejected', reason: 'invalid-solution', diagnostics: { status: 'success', degreesOfFreedom: 6, conflictingIds: [], redundantIds: [] } });
-    expect(result.diagnostics.issues).toContainEqual(expect.objectContaining({ source: { kind: 'relation', id: corner.relationId }, code: 'relation-residual' }));
+    expect(result).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: 6, conflictingIds: [], redundantIds: [], issues: [] } });
+    if (result.kind === 'solved') expect(checkCadSketchGraph(result.graph, { size: 3 })).toEqual([]);
+    // The graph checks still guard PlaneGCS's success.
+    const planeGcs = await createCadSketchTestSolver({ mode: 'planegcs' }).solve({ graph: corner.graph, parameters: { size: 3 } });
+    expect(planeGcs).toMatchObject({ kind: 'rejected', reason: 'invalid-solution', diagnostics: { status: 'success', degreesOfFreedom: 6, conflictingIds: [], redundantIds: [] } });
+    expect(planeGcs.diagnostics.issues).toContainEqual(expect.objectContaining({ source: { kind: 'relation', id: corner.relationId }, code: 'relation-residual' }));
     expect(JSON.stringify(corner.graph)).toBe(before);
   });
 

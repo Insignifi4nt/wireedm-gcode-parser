@@ -10,7 +10,7 @@ const pureDomainTests = [
   'src/domain/cad/__tests__/**/*.{test,spec}.{ts,tsx}'
 ];
 
-// Suites that solve sketches with the real PlaneGCS runtime.
+// Suites that solve sketches with the real PlaneGCS runtime or the native-first runtime.
 const nativeDifferentialTests = [
   'src/features/cad/sketch-solver/{cadSketchMidpointRuntime,cadSketchSolver*Relations,cadSketchSolverAxisDistance,cadSketchSolverCorners,cadSketchSolverRuntime}.test.ts',
   'src/features/cad/cad*Preparation.test.ts'

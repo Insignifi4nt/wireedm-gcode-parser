@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import initOpenCascade from 'replicad-opencascadejs';
@@ -12,12 +10,10 @@ import { lineReferencePart, lineUseReference, lineMidpoint, circleReferencePart,
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSession } from './cadSession';
 import { CadSketchEditDraft } from './cadSketchEditDraft';
-import { createCadSketchSolverRuntime } from './sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from './sketch-solver/cadSketchSolverModule';
 import { buildCadKernelModel } from './kernel/cadKernelModel';
+import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
-const require = createRequire(import.meta.url);
-const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const solver = createCadSketchTestSolver();
 const prepare = async (document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) => (await prepareCadEdits(document, edits, solver, signal)).document;
 const graphOf = (document: CadDocument, id = 'plate') => {
   const sketch = document.features.find(feature => feature.id === id); if (sketch?.kind !== 'sketch' || !sketch.graph) throw new Error('Reference graph missing.'); return sketch.graph;
