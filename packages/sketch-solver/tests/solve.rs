@@ -1,44 +1,10 @@
+mod common;
+
+use common::Builder;
 use sketch_solver::equations::Kind;
-use sketch_solver::newton::{Limits, solve_within};
-use sketch_solver::problem::{Status, decode};
+use sketch_solver::newton::Limits;
+use sketch_solver::problem::{Status, VERSION};
 use sketch_solver::solve_buffer;
-
-struct Builder { values: Vec<f64>, fixed: Vec<bool>, equations: Vec<(Kind, f64, Vec<usize>)> }
-
-impl Builder {
-    fn new() -> Self { Self { values: Vec::new(), fixed: Vec::new(), equations: Vec::new() } }
-    fn point(&mut self, x: f64, y: f64, fixed: bool) -> [usize; 2] {
-        self.values.extend([x, y]);
-        self.fixed.extend([fixed, fixed]);
-        [self.values.len() - 2, self.values.len() - 1]
-    }
-    fn equation(&mut self, kind: Kind, value: f64, operands: &[usize]) { self.equations.push((kind, value, operands.to_vec())); }
-    fn encode(&self) -> Vec<f64> {
-        let mut buffer = vec![1.0, self.values.len() as f64, self.equations.len() as f64];
-        buffer.extend(&self.values);
-        buffer.extend(self.fixed.iter().map(|&fixed| if fixed { 1.0 } else { 0.0 }));
-        for (kind, value, operands) in &self.equations {
-            buffer.push(Kind::ALL.iter().position(|k| k == kind).unwrap() as f64);
-            buffer.push(*value);
-            buffer.extend(operands.iter().map(|&o| o as f64));
-        }
-        buffer
-    }
-    /// `(status, iterations, values)`
-    fn solve(&self) -> (f64, f64, Vec<f64>) {
-        let output = solve_buffer(&self.encode());
-        assert_eq!(output[0] as usize, output.len());
-        assert_eq!(output[1], 1.0);
-        (output[2], output[3], output[5..].to_vec())
-    }
-    /// `(status, iterations, values)` within `limits`.
-    fn solve_within(&self, limits: Limits) -> (Status, usize, Vec<f64>) {
-        let problem = decode(&self.encode()).unwrap();
-        let mut values = problem.values.clone();
-        let outcome = solve_within(&problem, &mut values, limits);
-        (outcome.status, outcome.iterations, values)
-    }
-}
 
 fn close(a: f64, b: f64) -> bool { (a - b).abs() < 1e-9 }
 
@@ -216,14 +182,24 @@ fn rejects_malformed_buffers() {
     assert!(!invalid(&valid));
     assert!(invalid(&valid[..valid.len() - 1]));
     assert!(invalid(&[valid.clone(), vec![0.0]].concat()));
-    for (index, bad) in [(0, 2.0), (1, 2.5), (3, f64::NAN), (5, 0.5), (7, 12.0), (8, f64::INFINITY), (9, 2.0)] {
+    // Version, counts, value, fixed flag, kind, value, tag, flags and operand.
+    for (index, bad) in [(0, 1.0), (1, 2.5), (3, f64::NAN), (5, 0.5), (7, 12.0), (8, f64::INFINITY), (9, 0.5), (9, -1.0), (10, 2.0), (11, 2.0)] {
         let mut buffer = valid.clone();
         buffer[index] = bad;
         assert!(invalid(&buffer), "index {index}");
     }
     let empty = solve_buffer(&[]);
-    assert_eq!(&empty[..4], &[5.0, 1.0, 2.0, 0.0]);
-    assert!(empty.len() == 5 && empty[4].is_nan());
+    assert_eq!(&empty[..4], &[7.0, VERSION, 2.0, 0.0]);
+    assert!(empty.len() == 7 && empty[4].is_nan() && empty[5] == 1.0 && empty[6].is_nan());
+    // Tags never decrease.
+    builder.equation(Kind::Value, 1.0, &[a[1]]);
+    let mut buffer = builder.encode();
+    assert!(!invalid(&buffer));
+    let second = buffer.len() - 3;
+    buffer[second] = 0.0;
+    assert!(!invalid(&buffer));
+    buffer[9] = 2.0;
+    assert!(invalid(&buffer));
 }
 
 #[test]
@@ -235,7 +211,9 @@ fn a_non_finite_residual_fails_whatever_follows_it() {
         // A guide line of zero length has no direction; both equations have only fixed operands.
         let undefined = (Kind::PointOnLine, 0.0, vec![p[0], p[1], a[0], a[1], a[0], a[1]]);
         let satisfied = (Kind::Value, 1.0, vec![p[0]]);
-        builder.equations = if reversed { vec![satisfied, undefined] } else { vec![undefined, satisfied] };
+        for (kind, value, operands) in if reversed { [satisfied, undefined] } else { [undefined, satisfied] } {
+            builder.equation(kind, value, &operands);
+        }
         assert_eq!(builder.solve().0, 1.0, "reversed: {reversed}");
     }
 }

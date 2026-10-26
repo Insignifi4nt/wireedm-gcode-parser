@@ -7,7 +7,20 @@ export interface CadSketchNativeSolution {
   /** Largest equation residual at `values` in millimetres; a direction error moves its longer line's far end. */
   readonly residual: number;
   readonly values: readonly number[];
+  readonly diagnosis: CadSketchNativeDiagnosis;
 }
+
+/**
+ * Rank diagnosis at the returned values. `suspected`: a group that did not converge stalled short of
+ * a collapsed nearest point and was diagnosed with a looser dependence distance, so its conflicts
+ * are suspected rather than certain and freedom is unknown. `no-unknowns`: nothing can move, so only
+ * relations that are not met are labelled, as conflicting. `unavailable`: some group was too large,
+ * or its rank was too close to call.
+ */
+export type CadSketchNativeDiagnosis =
+  | { readonly kind: 'diagnosed'; readonly degreesOfFreedom: number | null; readonly labels: readonly number[] }
+  | { readonly kind: 'suspected' | 'no-unknowns'; readonly labels: readonly number[] }
+  | { readonly kind: 'unavailable' };
 
 export interface CadSketchNativeSolver {
   solve(model: CadSketchEquationModel): CadSketchNativeSolution;
@@ -25,6 +38,8 @@ function isExports(value: WebAssembly.Exports): value is WebAssembly.Exports & E
 }
 
 const STATUSES: Readonly<Record<number, CadSketchNativeSolution['status']>> = { 0: 'converged', 1: 'not-converged', 3: 'too-large' };
+const DIAGNOSES = ['diagnosed', 'unavailable', 'no-unknowns', 'suspected'] as const;
+const HEADER = 7;
 
 /** Loads the Rust solver from bytes, or from a URL (by default the bundled module asset). */
 export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssembly.Module | string | URL, observeMemory?: (memory: WebAssembly.Memory) => void): Promise<CadSketchNativeSolver> {
@@ -45,13 +60,18 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
       // Memory may have grown during the solve; read through a fresh view.
       const length = new Float64Array(exports.memory.buffer, output, 1)[0];
       const result = new Float64Array(exports.memory.buffer, output, length).slice();
-      const [, version, status, iterations, residual] = result, values = Array.from(result.subarray(5));
+      const [, version, status, iterations, residual, diagnosed, degreesOfFreedom] = result;
       if (version !== CAD_SKETCH_NATIVE_PROTOCOL_VERSION) throw new Error('The native sketch solver replied with another protocol version.');
       if (status === 2) throw new Error('The native sketch solver rejected its input.');
-      const kind = STATUSES[status];
-      if (kind === undefined || values.length !== model.values.length || values.some(value => !Number.isFinite(value)))
+      const values = Array.from(result.subarray(HEADER, HEADER + model.values.length)), labels = Array.from(result.subarray(HEADER + model.values.length));
+      const kind = STATUSES[status], diagnosis = DIAGNOSES[diagnosed];
+      if (kind === undefined || diagnosis === undefined || length !== HEADER + model.values.length + model.equations.length
+        || values.some(value => !Number.isFinite(value)) || labels.some(label => label !== 0 && label !== 1 && label !== 2)
+        || !(Number.isNaN(degreesOfFreedom) || diagnosis === 'diagnosed' && Number.isSafeInteger(degreesOfFreedom) && degreesOfFreedom >= 0))
         throw new Error('The native sketch solver returned an invalid result.');
-      return { status: kind, iterations, residual, values };
+      return { status: kind, iterations, residual, values, diagnosis: diagnosis === 'diagnosed'
+        ? { kind: diagnosis, degreesOfFreedom: Number.isNaN(degreesOfFreedom) ? null : degreesOfFreedom, labels }
+        : diagnosis === 'unavailable' ? { kind: diagnosis } : { kind: diagnosis, labels } };
     } finally {
       exports.buffer_free(pointer, input.length);
       if (output !== undefined) exports.buffer_free(output, new Float64Array(exports.memory.buffer, output, 1)[0]);

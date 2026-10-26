@@ -6,7 +6,8 @@ type Compiled = ReturnType<typeof compileCadSketchPlaneGcs>;
 
 /**
  * Test oracle: the PlaneGCS compilation restated as native scalar equations, resolving lines
- * to their endpoints and parameter references to indices of `model`.
+ * to their endpoints and parameter references to indices of `model`. Each PlaneGCS constraint is
+ * one tag.
  */
 export function planeGcsEquations(compiled: Compiled, model: CadSketchEquationModel): CadSketchEquation[] {
   const objects = new Map(compiled.objects.map(object => [object.id, object]));
@@ -20,10 +21,12 @@ export function planeGcsEquations(compiled: Compiled, model: CadSketchEquationMo
   const parameter = (reference: { o_id: string; prop: string }) => reference.prop === 'radius' ? radius(reference.o_id)
     : point(reference.o_id)[reference.prop === 'x' ? 0 : reference.prop === 'y' ? 1 : Number.NaN];
   const equations: CadSketchEquation[] = [];
+  let tag = -1;
   for (const object of compiled.objects) {
     const sourceId = compiled.sourceIds.get(object.id);
     if (sourceId === undefined) continue;
-    const add = (kind: CadSketchEquation['kind'], operands: number[], value = 0) => equations.push({ kind, operands, value, sourceId });
+    tag += 1;
+    const add = (kind: CadSketchEquation['kind'], operands: number[], value = 0) => equations.push({ kind, operands, value, sourceId, tag });
     const o = object as SketchPrimitive & Record<string, unknown>;
     switch (object.type) {
       case 'p2p_coincident': for (const axis of [0, 1]) add('difference', [point(object.p1_id)[axis], point(object.p2_id)[axis]]); break;

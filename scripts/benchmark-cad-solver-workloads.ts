@@ -11,7 +11,7 @@ export async function runCadSolverWorkloads(options: { readonly runs: number; re
   const cold = measureColdCadBenchmarkSolvers(), coldCpuCalibrationMs = [idleCpuCalibrationMs, cadBenchmarkCpuCalibrationMs()];
   const freshSolvers = async () => [(await createNodeCadBenchmarkSolver('planegcs')).solver, (await createNodeCadBenchmarkSolver('native')).solver];
   const cases = createCadSolverWorkloadCases(), groups = [];
-  const summary: string[] = ['| Workload / operation | PlaneGCS full job p50 ms | Native solve only, no diagnosis p50 ms | CPU ms before/after |', '| --- | ---: | ---: | --- |'];
+  const summary: string[] = ['| Workload / operation | PlaneGCS full job p50 ms | Native full job p50 ms | CPU ms before/after |', '| --- | ---: | ---: | --- |'];
   const printGroup = (group: Awaited<ReturnType<typeof measureCadSolverWorkload>>) => {
     for (const operation of [...new Set(group.measurements.map(row => row.operation))]) {
       const cell = (id: 'planegcs' | 'native') => {
@@ -43,7 +43,7 @@ export async function runCadSolverWorkloads(options: { readonly runs: number; re
   const report = { createdAt: new Date().toISOString(), appVersion: packageInfo.version, group: 'solver-workloads', ...options,
     environment: { node: process.version, platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model ?? 'unknown', cores: cpus().length, totalMemoryBytes: totalmem() },
     comparison: { planegcs: 'Full job: parse, compile, components, solve, ALWAYS diagnose, map source ids, map geometry, validate.',
-      native: 'Solve only, no diagnosis. Same input and geometry acceptance checks; DOF/conflicting/redundant/partially redundant diagnostics unavailable. Drag unsupported. Totals are NOT full-job speedups.',
+      native: 'Full job: parse, compile, solve, ALWAYS diagnose (DOF, conflicting, redundant, partially redundant; conflicts suspected for a group that stalls), map source ids, map geometry, validate. Drag unsupported.',
       stages: 'parseCompile includes parsing, compilation and component preparation; nativeCall includes buffer/wrapper work, solve and PlaneGCS diagnosis; mapping includes source ids and geometry; validation uses the shared acceptance checks. Public-call totals also include promise and observer overhead.',
       reSolve: 'Already-solved input still passes through the full public call. It approximates diagnosis cost, but includes compile, convergence detection, mapping and validation.' },
     cold, workloads: groups, edits, drag, memory, capacity,
