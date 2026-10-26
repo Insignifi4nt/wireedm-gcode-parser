@@ -292,7 +292,11 @@ describe('independent solver groups', () => {
 
 describe('solved values across the worker boundary', () => {
   it('rebuilds a multi-group solve whose group order differs from graph order after a structured clone', async () => {
-    const rectangles = createCadBenchmarkRectangleGraph(3), graph = parseCadSketchGraph({ ...rectangles, points: [...rectangles.points].reverse() });
+    // Points interleave the rectangles (r0_p0, r1_p0, r2_p0, r0_p1, ...), so each solved group's
+    // points are scattered through the graph and no group lists them in graph order.
+    const rectangles = createCadBenchmarkRectangleGraph(3), key = (id: string) => id.match(/^r(\d+)_p(\d+)$/)!.slice(1).map(Number);
+    const graph = parseCadSketchGraph({ ...rectangles, points: [...rectangles.points].sort((a, b) => key(a.id)[1] - key(b.id)[1] || key(a.id)[0] - key(b.id)[0]) });
+    expect(graph.points.slice(0, 3).map(point => point.id)).toEqual(['r0_p0', 'r1_p0', 'r2_p0']);
     const input = { graph, parameters: {} }, result = await createCadSketchSolverRuntime(initialize).solve(input);
     if (result.kind !== 'solved') throw new Error(result.message);
     const reply = parseCadSketchSolverReply(structuredClone({ id: 1, kind: 'result', result: cadSketchSolverWireResult(result) }), parseCadSketchSolveInput(input));
