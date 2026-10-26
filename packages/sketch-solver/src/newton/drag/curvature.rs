@@ -35,10 +35,13 @@ const REFINEMENTS: usize = 2;
 fn gamma(k: usize) -> f64 { let e = k as f64 * f64::EPSILON; e / (1.0 - e) }
 
 /// `|R^-1|_F` by solving `R^T y = e_i` from position `i` on, as the inverse's columns are zero
-/// before their own position; `None` past `allowance` entries. Also the entries spent.
+/// before their own position; `None` past `allowance` entries. Also the entries spent, each
+/// position's clearing, scan and sum of its suffix counted before they run.
 fn frobenius(factor: &Factor, positions: &[usize], m: usize, allowance: usize) -> (Option<f64>, usize) {
-    let (mut total, mut spent, mut y) = (0.0, 0, vec![0.0; m]);
+    let (mut total, mut spent, mut y) = (0.0, m, vec![0.0; m]);
     for &i in positions {
+        spent += 3 * (m - i);
+        if spent > allowance { return (None, spent); }
         y[i..].fill(0.0);
         y[i] = 1.0;
         for k in i..m {
@@ -46,11 +49,11 @@ fn frobenius(factor: &Factor, positions: &[usize], m: usize, allowance: usize) -
             let row = &factor.rows[k];
             y[k] /= row[0].1;
             let value = y[k];
-            for &(j, entry) in &row[1..] { y[j] -= entry * value; }
             spent += row.len();
+            if spent > allowance { return (None, spent); }
+            for &(j, entry) in &row[1..] { y[j] -= entry * value; }
         }
         total += y[i..].iter().map(|v| v * v).sum::<f64>();
-        if spent > allowance { return (None, spent); }
     }
     (total.is_finite().then_some(total.sqrt()), spent)
 }
@@ -121,7 +124,8 @@ impl Drag<'_> {
         }
         let Some((factor, eta)) = factored else { return Ok(Curvature::Unresolved); };
         let positions: Vec<usize> = { let mut at = vec![false; m]; for i in 0..m { at[place[i]] = kept[i]; } (0..m).filter(|&k| at[k]).collect() };
-        let solves = |count: usize| count * positions.iter().map(|&k| factor.rows[k].len()).sum::<usize>();
+        // A solve visits every position, the left-out rows' damping included, and its vectors.
+        let solves = |count: usize| count * (2 * m + n + factor.rows.iter().map(Vec::len).sum::<usize>());
 
         // Rows left out decouple with only their damping and keep a zero multiplier.
         let remainder = |by_position: &[f64]| -> Vec<f64> {

@@ -784,3 +784,62 @@ fn the_curvature_test_charges_its_reduced_matrix() {
     let (outcome, _) = builder.outcome_within(Limits { fill: 2_000_000, work: 400_000_000 });
     assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
 }
+
+#[test]
+fn the_curvature_test_charges_solves_over_rows_it_leaves_out() {
+    // 64 unit circles tied in a line by zero distances, one tie repeated 20000 times: the repeats
+    // are left out of the multipliers, but every solve still passes their damping.
+    let mut builder = Builder::new();
+    let zero = builder.parameter(0.0, true);
+    let mut xs = Vec::new();
+    for _ in 0..64 {
+        let p = builder.point(1.0, 0.0, false);
+        builder.equation(Kind::Distance, 1.0, &[zero, zero, p[0], p[1]]);
+        builder.temporary(Kind::Value, 2.0, &[p[0]]);
+        xs.push(p[0]);
+    }
+    for pair in xs.windows(2) { builder.equation(Kind::Distance, 0.0, &[pair[0], zero, pair[1], zero]); }
+    for _ in 0..20_000 { builder.equation(Kind::Distance, 0.0, &[xs[0], zero, xs[1], zero]); }
+    let (outcome, _) = builder.outcome_within(Limits { fill: 2_000_000, work: 1_000_000 });
+    assert_eq!((outcome.status, outcome.drag), (Status::TooLarge, Some(DragOutcome::Stalled)));
+}
+
+#[test]
+fn the_curvature_test_charges_its_frobenius_scans() {
+    // 500 unit circles tied by collapsed distances, the first one's y held by a 30-link chain: the
+    // Frobenius bound clears and sums a suffix of every position, about 1e6 entries uncounted before.
+    let mut builder = Builder::new();
+    let zero = builder.parameter(0.0, true);
+    let (mut last, mut first) = (None, 0);
+    for i in 0..500 {
+        let p = builder.point(1.0, 0.0, false);
+        if i == 0 { first = p[1]; }
+        builder.equation(Kind::Distance, 1.0, &[zero, zero, p[0], p[1]]);
+        if let Some(q) = last { builder.equation(Kind::Distance, 0.0, &[q, zero, p[0], zero]); }
+        builder.temporary(Kind::Value, 2.0, &[p[0]]);
+        last = Some(p[0]);
+    }
+    for _ in 0..30 {
+        let p = builder.parameter(0.0, false);
+        builder.equation(Kind::Difference, 0.0, &[first, p]);
+        first = p;
+    }
+    builder.equation(Kind::Value, 0.0, &[first]);
+    let (outcome, _) = builder.outcome_within(Limits { fill: 2_000_000, work: 2_000_000 });
+    assert_eq!((outcome.status, outcome.drag), (Status::TooLarge, Some(DragOutcome::Stalled)));
+}
+
+#[test]
+fn restoring_the_start_shares_the_drag_allowance() {
+    // Ordering 30 targets on one value spends the drag's half of the work, so restoring x onto its
+    // relation has none left and must not report the drag reached.
+    let mut builder = Builder::new();
+    let x = builder.parameter(0.0, false);
+    builder.equation(Kind::Value, 1.0, &[x]);
+    for _ in 0..30 { builder.temporary(Kind::Value, 1.0, &[x]); }
+    let (outcome, values) = builder.outcome_within(Limits { fill: 1_000, work: 31 });
+    assert_eq!((outcome.status, outcome.drag), (Status::TooLarge, Some(DragOutcome::Stalled)));
+    assert_eq!(values[x], 0.0);
+    let (outcome, values) = builder.outcome();
+    assert_eq!((outcome.status, outcome.drag, values[x]), (Status::Converged, Some(DragOutcome::Reached), 1.0));
+}

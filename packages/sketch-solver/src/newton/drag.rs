@@ -167,11 +167,14 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits) -
         work: ordering.work, iterations: 0, reached, stationary: 1e-9_f64.max(64.0 * f64::EPSILON * scale),
         floor: 1e-6_f64.max(64.0 * f64::EPSILON * scale) };
     let outcome = if assess(&rows).accepted { drag.run(values) } else {
-        // An infeasible start is first restored onto the lasting rows.
-        let restored = solve_group_within(&lasting, values, drag.limits, MAX_ITERATIONS);
+        // An infeasible start is first restored onto the lasting rows, within the work left; one
+        // whose work ran out is exhausted even when it ends accepted.
+        let left = Limits { fill: drag.limits.fill, work: drag.limits.work.saturating_sub(drag.work) };
+        let restored = solve_group_within(&lasting, values, left, MAX_ITERATIONS);
         drag.work = drag.work.saturating_add(restored.work);
         drag.iterations += restored.iterations;
-        match restored.status { Status::Converged => drag.run(values), Status::TooLarge => Err(Exhausted), _ => Ok(DragOutcome::Stalled) }
+        if restored.status == Status::TooLarge || restored.position.is_none() || drag.work > drag.limits.work { Err(Exhausted) }
+        else if restored.status == Status::Converged { drag.run(values) } else { Ok(DragOutcome::Stalled) }
     };
     let rows = lasting.rows(values, None);
     let (status, position) = match outcome {
@@ -206,7 +209,9 @@ impl Drag<'_> {
         let distance = norm(&self.residual(values));
         // The local size of the geometry the targets pull on; a target held only by linear rows
         // or by nothing is reached in one step.
-        let support = self.bounds(values).iter().filter(|bound| self.targets.iter().any(|target| bound.columns.contains(&target.column)))
+        let mut aimed = vec![false; self.position.len()];
+        for target in self.targets { aimed[target.column] = true; }
+        let support = self.bounds(values).iter().filter(|bound| bound.columns.iter().any(|&c| aimed[c]))
             .map(|bound| 2.0 * bound.limit).reduce(f64::min);
         let mut radius = support.map_or(distance, |support| distance.min(0.25 * support)).max(self.floor);
         // How many Gauss-Newton steps the next step may take, from the last secant.
@@ -327,8 +332,9 @@ impl Drag<'_> {
             for (target, &value) in self.targets.iter().zip(&saved) { values[target.parameter] = value; }
             return Ok(false);
         }
-        let unknowns: Vec<usize> = self.lasting.unknowns.iter().copied()
-            .filter(|&p| !self.targets.iter().any(|target| target.parameter == p)).collect();
+        let mut aimed = vec![false; values.len()];
+        for target in self.targets { aimed[target.parameter] = true; }
+        let unknowns: Vec<usize> = self.lasting.unknowns.iter().copied().filter(|&p| !aimed[p]).collect();
         if unknowns.is_empty() { return Ok(true); }
         let mut column = vec![usize::MAX; values.len()];
         for (c, &p) in unknowns.iter().enumerate() { column[p] = c; }
