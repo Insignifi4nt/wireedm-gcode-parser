@@ -3,7 +3,7 @@
 // tests, rebuilds and fails unless the committed module and manifest match byte for byte.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 
@@ -15,9 +15,13 @@ const toolchain = /channel\s*=\s*"([^"]+)"/.exec(readFileSync(join(crate, 'rust-
 if (!toolchain) throw new Error('rust-toolchain.toml has no pinned channel.');
 
 const cargoHome = join(homedir(), '.cargo', 'bin');
+// Panic locations embed source paths, which Windows spells `src\newton\drag.rs`, so every source
+// directory is remapped to match other hosts. rustc applies the last matching prefix, so deeper
+// directories come after their parents.
+const directories = dir => [dir, ...readdirSync(join(crate, dir), { withFileTypes: true }).filter(entry => entry.isDirectory()).flatMap(entry => directories(`${dir}/${entry.name}`))];
+const separators = directories('src').sort((a, b) => a.split('/').length - b.split('/').length).map(dir => `--remap-path-prefix=${dir.replaceAll('/', '\\')}\\=${dir}/`);
 const env = { ...process.env, PATH: existsSync(cargoHome) ? `${cargoHome}${delimiter}${process.env.PATH}` : process.env.PATH,
-  // Panic locations embed source paths; Windows spells them `src\x.rs`, so match other hosts.
-  RUSTFLAGS: `--remap-path-prefix=${crate}=sketch-solver --remap-path-prefix=src\\=src/` };
+  RUSTFLAGS: [`--remap-path-prefix=${crate}=sketch-solver`, ...separators].join(' ') };
 if (check) execFileSync('cargo', ['test', '--release', '--locked'], { cwd: crate, env: { ...env, RUSTFLAGS: '' }, stdio: 'inherit' });
 execFileSync('cargo', ['build', '--release', '--locked', '--target', 'wasm32-unknown-unknown'], { cwd: crate, env, stdio: 'inherit' });
 
