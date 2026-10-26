@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { cpus, totalmem } from 'node:os';
 import { join } from 'node:path';
 import packageInfo from '../package.json' with { type: 'json' };
@@ -24,29 +24,75 @@ export interface CadSolverWorkloadOptions {
   readonly out: string;
 }
 
-const sha256 = async (path: string) => createHash('sha256').update(await readFile(new URL(path, import.meta.url))).digest('hex');
-async function provenance() {
-  const git = (...args: string[]) => { try { return execFileSync('git', args, { encoding: 'utf8' }).trim(); } catch { return 'unknown'; } };
-  return { appVersion: packageInfo.version, commit: git('rev-parse', 'HEAD'), dirty: git('status', '--porcelain', '--untracked-files=no') !== '',
+const hash = (...chunks: (string | Buffer)[]) => chunks.reduce((digest, chunk) => digest.update(chunk), createHash('sha256')).digest('hex');
+const sha256 = async (path: string) => hash(await readFile(new URL(path, import.meta.url)));
+/**
+ * What a part was measured from and with. Uncommitted changes to tracked files and untracked source
+ * files are fingerprinted, so parts measured from different uncommitted code never join one report.
+ */
+async function runIdentity(options: CadSolverWorkloadOptions) {
+  const git = (...args: string[]) => { try { return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 1 << 28 }); } catch { return 'unknown'; } };
+  const untracked = git('ls-files', '--others', '--exclude-standard', '--', 'src', 'scripts', 'packages').split(/\r?\n/).filter(Boolean).sort();
+  const diff = git('diff', 'HEAD', '--binary');
+  const uncommitted = diff.trim() || untracked.length
+    ? hash(diff, ...(await Promise.all(untracked.map(async path => [`\0${path}\0`, await readFile(path)]))).flat()) : null;
+  return { appVersion: packageInfo.version, commit: git('rev-parse', 'HEAD').trim(), dirty: uncommitted !== null, uncommittedSha256: uncommitted,
     modules: { native: await sha256('../packages/sketch-solver/wasm/sketch_solver.wasm'), planegcs: await sha256('../node_modules/@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm') },
-    environment: { node: process.version, platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model ?? 'unknown', cores: cpus().length, totalMemoryBytes: totalmem() } };
+    environment: { node: process.version, platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model ?? 'unknown', cores: cpus().length, totalMemoryBytes: totalmem() },
+    runs: options.runs, quick: options.quick, solvers: options.solvers };
 }
+type RunIdentity = Awaited<ReturnType<typeof runIdentity>>;
+const MANIFEST = 'manifest.json';
+const identityDifferences = (expected: RunIdentity, actual: Partial<RunIdentity> = {}) => (Object.keys(expected) as (keyof RunIdentity)[])
+  .filter(key => JSON.stringify(expected[key]) !== JSON.stringify(actual[key]));
+
+/** Written to a temporary file and renamed into place, so an interrupted write never leaves a part that looks complete. */
+async function writeJson(file: string, value: unknown) {
+  await writeFile(`${file}.partial`, `${JSON.stringify(value, null, 2)}\n`);
+  await rename(`${file}.partial`, file);
+}
+async function readJson(file: string) {
+  try { return JSON.parse(await readFile(file, 'utf8')) as unknown; } catch { return undefined; }
+}
+
+/** Every correctness failure recorded anywhere in a part's result. */
+const failuresOf = (value: unknown): string[] => Array.isArray(value) ? value.flatMap(failuresOf)
+  : value && typeof value === 'object' ? Object.entries(value).flatMap(([key, item]) => key === 'failures' && Array.isArray(item)
+    ? item.filter((failure): failure is string => typeof failure === 'string') : failuresOf(item)) : [];
 
 /**
  * Measures the selected sections into `options.out`, one JSON file per part, each with its own
- * provenance and calibration. Workloads are written one case per file, so a burst can stop between
- * cases. Run in short bursts on an idle host, then aggregate.
+ * identity and calibration. Workloads are written one case per file, so a burst can stop between
+ * cases. The directory's manifest records the code, modules, host and settings; a burst with any
+ * other is refused rather than mixed in. Run in short bursts on an idle host, then aggregate.
+ * Correctness failures stay in their parts for diagnosis and fail the command.
  */
 export async function runCadSolverWorkloads(options: CadSolverWorkloadOptions) {
   await mkdir(join(options.out, 'workloads'), { recursive: true });
+  const identity = await runIdentity(options), manifestFile = join(options.out, MANIFEST);
+  const manifest = await readJson(manifestFile) as { identity?: RunIdentity } | undefined;
+  if (manifest?.identity) {
+    const differences = identityDifferences(manifest.identity, identity);
+    if (differences.length) throw new Error(`${options.out} was measured with a different ${differences.join(', ')}; resume with the same code, host and settings or use another --out.`);
+  } else if (existsSync(manifestFile) || (await readdir(options.out)).some(name => name.endsWith('.json')) || (await readdir(join(options.out, 'workloads'))).length) {
+    throw new Error(`${options.out} has parts without a readable ${MANIFEST}; use another --out.`);
+  } else await writeJson(manifestFile, { createdAt: new Date().toISOString(), identity });
   const solvers = async () => Promise.all(options.solvers.map(async id => (await createNodeCadBenchmarkSolver(id)).solver));
+  let failures = 0;
   const part = async (name: string, measure: () => Promise<unknown>) => {
-    const file = join(options.out, `${name}.json`);
-    if (existsSync(file)) { console.log(`${name}: kept from an earlier burst`); return; }
-    const started = performance.now(), idleCpuCalibrationMs = cadBenchmarkCpuCalibrationMs(), result = await measure();
-    await writeFile(file, `${JSON.stringify({ part: name, createdAt: new Date().toISOString(), runs: options.runs, quick: options.quick, solvers: options.solvers,
-      ...await provenance(), idleCpuCalibrationMs, elapsedSeconds: Math.round((performance.now() - started) / 100) / 10, result }, null, 2)}\n`);
-    console.log(`${name}: ${Math.round((performance.now() - started) / 100) / 10} s, calibration ${idleCpuCalibrationMs} ms idle`);
+    const file = join(options.out, `${name}.json`), kept = existsSync(file) ? await readJson(file) as Part | undefined : undefined;
+    if (kept && !identityDifferences(identity, kept.identity).length) {
+      const found = failuresOf(kept.result);
+      failures += found.length;
+      console.log(`${name}: kept from an earlier burst${found.length ? `, ${found.length} CORRECTNESS FAILURES` : ''}`);
+      return;
+    }
+    if (existsSync(file)) console.log(`${name}: unreadable or from another run, measuring again`);
+    const started = performance.now(), idleCpuCalibrationMs = cadBenchmarkCpuCalibrationMs(), result = await measure(), found = failuresOf(result);
+    await writeJson(file, { part: name, createdAt: new Date().toISOString(), identity, idleCpuCalibrationMs, elapsedSeconds: Math.round((performance.now() - started) / 100) / 10, result });
+    failures += found.length;
+    console.log(`${name}: ${Math.round((performance.now() - started) / 100) / 10} s, calibration ${idleCpuCalibrationMs} ms idle${found.length ? `, ${found.length} CORRECTNESS FAILURES` : ''}`);
+    for (const failure of found.slice(0, 10)) console.log(`  ${failure}`);
   };
   const cases = createCadSolverWorkloadCases().filter(testCase => !options.cases.length || options.cases.includes(testCase.id));
   for (const section of options.sections) {
@@ -61,80 +107,94 @@ export async function runCadSolverWorkloads(options: CadSolverWorkloadOptions) {
     if (section === 'memory') await part('memory', () => measureCadSolverMemory(cases, options.quick ? 100 : 1000, options.solvers));
     if (section === 'capacity') await part('capacity', () => probeCadSolverWorkloadCapacity(options.solvers.filter(id => id !== 'native-first') as ('planegcs' | 'native-only')[]));
   }
+  if (failures) { console.log(`${failures} CORRECTNESS FAILURES; the results they belong to are incorrect.`); process.exitCode = 1; }
   console.log(`Parts are in ${options.out}. Aggregate with: npm run cad:benchmark -- --group solver-workloads --aggregate ${options.out}`);
 }
 
-interface Part { readonly part: string; readonly commit: string; readonly dirty: boolean; readonly modules: object; readonly result: unknown }
+interface Part { readonly part: string; readonly identity?: RunIdentity; readonly result: unknown }
 type Calibrated = { readonly cpuCalibrationMs?: readonly number[]; readonly throttled?: boolean };
 const calibrated = (value: unknown): Calibrated[] => Array.isArray(value) ? value.flatMap(calibrated)
   : value && typeof value === 'object' ? [...('cpuCalibrationMs' in value && Array.isArray(value.cpuCalibrationMs) ? [value as Calibrated] : []),
     ...Object.entries(value).filter(([key]) => key !== 'cpuCalibrationMs' && key !== 'frames' && key !== 'samples').flatMap(([, item]) => calibrated(item))] : [];
 
 /**
- * One report from a run directory. Parts from different commits or modules are refused, as their
- * numbers do not compare; throttled groups stay in the report and are listed so claims skip them.
+ * One report from a run directory. Every part must be readable and match the manifest's code,
+ * modules, host and settings, as other numbers do not compare. Throttled groups stay in the report
+ * and are listed so claims skip them. Correctness failures are listed first and fail the command.
  */
 export async function aggregateCadSolverWorkloads(directory: string) {
-  const names = [...(await readdir(directory)).filter(name => name.endsWith('.json') && name !== 'report.json'),
-    ...(existsSync(join(directory, 'workloads')) ? (await readdir(join(directory, 'workloads'))).map(name => `workloads/${name}`) : [])];
-  const parts: Part[] = await Promise.all(names.map(async name => JSON.parse(await readFile(join(directory, name), 'utf8'))));
-  const identity = new Set(parts.map(part => JSON.stringify([part.commit, part.dirty, part.modules])));
-  if (identity.size > 1) throw new Error(`Parts come from ${identity.size} different commits or modules; measure them again from one.`);
+  const manifest = await readJson(join(directory, MANIFEST)) as { identity?: RunIdentity } | undefined;
+  const identity = manifest?.identity;
+  if (!identity) throw new Error(`${directory} has no readable ${MANIFEST}; it is not a solver-workloads run directory.`);
+  const names = [...(await readdir(directory)).filter(name => name.endsWith('.json') && name !== 'report.json' && name !== MANIFEST),
+    ...(existsSync(join(directory, 'workloads')) ? (await readdir(join(directory, 'workloads'))).filter(name => name.endsWith('.json')).map(name => `workloads/${name}`) : [])];
+  const parts = await Promise.all(names.map(async name => {
+    const part = await readJson(join(directory, name)) as Part | undefined;
+    if (!part) throw new Error(`${name} is unreadable; resume the run to measure it again.`);
+    const differences = identityDifferences(identity, part.identity);
+    if (differences.length) throw new Error(`${name} was measured with a different ${differences.join(', ')} from the run; measure it again from one.`);
+    return part;
+  }));
   const sections = Object.fromEntries(CAD_SOLVER_SECTIONS.map(section => [section, section === 'workloads'
     ? parts.filter(part => part.part.startsWith('workloads/')).map(part => part.result) : parts.find(part => part.part === section)?.result ?? null])) as Record<CadSolverSection, unknown>;
   const groups = parts.flatMap(part => calibrated(part.result).map(group => ({ part: part.part, ...group })));
   const calibrations = groups.flatMap(group => group.cpuCalibrationMs ?? []);
-  const report = { createdAt: new Date().toISOString(), group: 'solver-workloads', parts: parts.map(part => part.part).sort(),
-    missing: CAD_SOLVER_SECTIONS.filter(section => section === 'workloads' ? !(sections.workloads as unknown[]).length : !sections[section]), ...parts[0] && { commit: parts[0].commit, dirty: parts[0].dirty, modules: parts[0].modules },
-    cpuCalibrationMs: { min: Math.min(...calibrations), max: Math.max(...calibrations) }, throttledGroups: groups.filter(group => group.throttled).length, groups: groups.length,
+  const failures = parts.flatMap(part => failuresOf(part.result));
+  const report = { createdAt: new Date().toISOString(), group: 'solver-workloads', ...identity, parts: parts.map(part => part.part).sort(),
+    missing: CAD_SOLVER_SECTIONS.filter(section => section === 'workloads' ? !(sections.workloads as unknown[]).length : !sections[section]),
+    failures, cpuCalibrationMs: { min: Math.min(...calibrations), max: Math.max(...calibrations) }, throttledGroups: groups.filter(group => group.throttled).length, groups: groups.length,
     comparison: { planegcs: 'PlaneGCS alone, as the app solved before 0.0.746: parse, compile, components, solve, always diagnose, map source ids and geometry, validate.',
       'native-only': 'The app\'s runtime without PlaneGCS: parse, compile, solve, always diagnose, judge, keep or snap groups, map and validate. Native\'s own rejection stands where native-first would ask PlaneGCS.',
       'native-first': 'The app\'s runtime as shipped: native-only, then PlaneGCS for what native cannot answer, loaded on first use. Stages of both add up.',
       stages: 'parseCompile includes parsing and compilation; nativeCall the module call (solve and diagnosis); mapping judging, source ids and geometry; validation the shared graph checks. Public-call totals also include promise, queue and observer overhead.',
       reSolve: 'Already-solved input still passes through the full public call: compile, convergence detection, diagnosis, mapping and validation.' },
     sections };
-  await writeFile(join(directory, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
-  await writeFile(join(directory, 'summary.md'), `${summarize(sections)}\n`);
+  await writeJson(join(directory, 'report.json'), report);
+  await writeFile(join(directory, 'summary.md'), `${summarize(identity, failures, sections)}\n`);
   console.log(`Report: ${join(directory, 'report.json')} with summary.md. ${report.throttledGroups}/${report.groups} groups throttled; calibration ${report.cpuCalibrationMs.min}-${report.cpuCalibrationMs.max} ms.${report.missing.length ? ` Missing: ${report.missing.join(', ')}.` : ''}`);
+  if (failures.length) { console.log(`${failures.length} CORRECTNESS FAILURES; the results they belong to are incorrect.`); process.exitCode = 1; }
   return report;
 }
 
-/** Markdown tables of medians, with every throttled group marked. */
-function summarize(sections: Record<CadSolverSection, unknown>) {
+/** Markdown tables of medians, after the run's provenance and any correctness failures, with every throttled or incorrect group marked. */
+function summarize(identity: RunIdentity, failures: readonly string[], sections: Record<CadSolverSection, unknown>) {
   type Measured = { solver: string; operation: string; kind: string; totalMs?: { p50: number }; outcomes?: Record<string, number>; answers?: Record<string, number> };
-  type Group = { id: string; throttled: boolean; cpuCalibrationMs: number[]; measurements: Measured[] };
+  type Group = { id: string; throttled: boolean; failures: string[]; cpuCalibrationMs: number[]; measurements: Measured[] };
   const ids = (rows: readonly { solver: string }[]) => [...new Set(rows.map(row => row.solver))];
-  const lines: string[] = [];
+  const lines: string[] = [`App ${identity.appVersion}, commit ${identity.commit}${identity.dirty ? ` with uncommitted changes ${identity.uncommittedSha256}` : ''}; ${identity.environment.cpu}, ${identity.environment.cores} cores, Node ${identity.environment.node} on ${identity.environment.platform}; ${identity.runs} runs${identity.quick ? ', quick' : ''}; ${identity.solvers.join(', ')}.`, ''];
+  if (failures.length) lines.push(`**${failures.length} correctness failures. Rows marked INVALID gave incorrect results; their timings are not comparable.**`, '', ...failures.map(failure => `- ${failure}`), '');
+  const mark = (group: { throttled?: boolean; failures?: readonly string[] }) => `${group.throttled ? ' THROTTLED' : ''}${group.failures?.length ? ' INVALID' : ''}`;
   const operations = [...(sections.workloads as Group[] ?? []), ...(sections.edits as Group[] ?? [])];
   if (operations.length) {
     const solvers = ids(operations.flatMap(group => group.measurements));
     lines.push(`| Workload / operation | ${solvers.map(id => `${id} p50 ms`).join(' | ')} | CPU ms before/after |`, `| --- | ${solvers.map(() => '---:').join(' | ')} | --- |`);
     for (const group of operations) for (const operation of [...new Set(group.measurements.map(row => row.operation))]) {
       const cell = (id: string) => { const row = group.measurements.find(item => item.solver === id && item.operation === operation); return !row || row.kind === 'skipped' ? 'skipped' : `${row.totalMs!.p50} ${Object.keys(row.outcomes!).join(',')}`; };
-      lines.push(`| ${group.id} / ${operation} | ${solvers.map(cell).join(' | ')} | ${group.cpuCalibrationMs.join('/')}${group.throttled ? ' THROTTLED' : ''} |`);
+      lines.push(`| ${group.id} / ${operation} | ${solvers.map(cell).join(' | ')} | ${group.cpuCalibrationMs.join('/')}${mark(group)} |`);
     }
   }
-  type DragGroup = { trajectory: string; mode: string; throttled: boolean; cpuCalibrationMs: number[]; solvers: { solver: string; totalMs: { p50: number; p95: number }; outcomes: Record<string, number>; dragOutcomes: Record<string, number>; largestTargetErrorMm: number | null }[] };
+  type DragGroup = { trajectory: string; mode: string; throttled: boolean; failures: string[]; cpuCalibrationMs: number[]; solvers: { solver: string; totalMs: { p50: number; p95: number }; outcomes: Record<string, number>; dragOutcomes: Record<string, number>; largestTargetErrorMm: number | null }[] };
   const drag = sections.drag as DragGroup[] | null;
   if (drag?.length) {
     lines.push('', '| Drag trajectory / mode | Solver | p50/p95 ms | Outcomes | Drag outcomes | Largest target error mm | CPU ms |', '| --- | --- | ---: | --- | --- | ---: | --- |');
-    for (const group of drag) for (const row of group.solvers) lines.push(`| ${group.trajectory} / ${group.mode} | ${row.solver} | ${row.totalMs.p50}/${row.totalMs.p95} | ${JSON.stringify(row.outcomes)} | ${JSON.stringify(row.dragOutcomes)} | ${row.largestTargetErrorMm?.toPrecision(4) ?? '-'} | ${group.cpuCalibrationMs.join('/')}${group.throttled ? ' THROTTLED' : ''} |`);
+    for (const group of drag) for (const row of group.solvers) lines.push(`| ${group.trajectory} / ${group.mode} | ${row.solver} | ${row.totalMs.p50}/${row.totalMs.p95} | ${JSON.stringify(row.outcomes)} | ${JSON.stringify(row.dragOutcomes)} | ${row.largestTargetErrorMm?.toPrecision(4) ?? '-'} | ${group.cpuCalibrationMs.join('/')}${mark(group)} |`);
   }
-  type Sweep = { id: string; drags: number; throttled: boolean; cpuCalibrationMs: number[]; solvers: { solver: string; sumMs: number; totalMs: { p50: number }; answers: Record<string, number>; worseThanFirst: unknown[] }[] };
+  type Sweep = { id: string; drags: number; throttled: boolean; failures: string[]; cpuCalibrationMs: number[]; solvers: { solver: string; sumMs: number; totalMs: { p50: number }; answers: Record<string, number>; worseThanFirst: unknown[] }[] };
   const sweep = sections.sweep as Sweep[] | null;
   if (sweep?.length) {
     lines.push('', '| Sweep | Solver | Drags | Sum ms | p50 ms | Answers | Worse than first | CPU ms |', '| --- | --- | ---: | ---: | ---: | --- | ---: | --- |');
-    for (const group of sweep) for (const row of group.solvers) lines.push(`| ${group.id} | ${row.solver} | ${group.drags} | ${row.sumMs} | ${row.totalMs.p50} | ${JSON.stringify(row.answers)} | ${row.worseThanFirst.length} | ${group.cpuCalibrationMs.join('/')}${group.throttled ? ' THROTTLED' : ''} |`);
+    for (const group of sweep) for (const row of group.solvers) lines.push(`| ${group.id} | ${row.solver} | ${group.drags} | ${row.sumMs} | ${row.totalMs.p50} | ${JSON.stringify(row.answers)} | ${row.worseThanFirst.length} | ${group.cpuCalibrationMs.join('/')}${mark(group)} |`);
   }
-  type Cold = { modules: { module: string; bytes: number; gzipBytes: number; totalMs: number }[]; firstAnswer: { scenario: string; firstAnswerMs: { p50: number }; outcomes: string[] }[] };
+  type Cold = { cpuCalibrationMs: number[]; throttled: boolean; modules: { module: string; bytes: number; gzipBytes: number; totalMs: number }[]; firstAnswer: { scenario: string; firstAnswerMs: { p50: number }; outcomes: string[]; samples: { failures: string[] }[] }[] };
   const cold = sections.cold as Cold | null;
   if (cold) {
     lines.push('', '| Module | Bytes | Gzip bytes | Read + compile + instantiate ms |', '| --- | ---: | ---: | ---: |', ...cold.modules.map(row => `| ${row.module} | ${row.bytes} | ${row.gzipBytes} | ${row.totalMs.toFixed(2)} |`));
-    lines.push('', '| Cold scenario | First answer p50 ms | Outcome |', '| --- | ---: | --- |', ...cold.firstAnswer.map(row => `| ${row.scenario} | ${row.firstAnswerMs.p50} | ${row.outcomes.join('; ')} |`));
+    lines.push('', `Cold processes, CPU ms before/after: ${cold.cpuCalibrationMs.join('/')}${mark(cold)}`, '', '| Cold scenario | First answer p50 ms | Outcome | Checks |', '| --- | ---: | --- | --- |',
+      ...cold.firstAnswer.map(row => `| ${row.scenario} | ${row.firstAnswerMs.p50} | ${row.outcomes.join('; ')} | ${row.samples.some(sample => sample.failures.length) ? 'INVALID' : 'passed'} |`));
   }
-  type Capacity = { limits: { solver: string; largestConnectedRectanglesUnder1s: number | null; firstRejectedOrAtLeast1s: number | null; boundaryThrottled: boolean }[] };
+  type Capacity = { limits: { solver: string; largestConnectedRectanglesUnder1s: number | null; firstRejectedOrAtLeast1s: number | null; boundaryThrottled: boolean }[]; probes: { measurements: { solver: string; failures: string[] }[] }[] };
   const capacity = sections.capacity as Capacity | null;
   if (capacity) lines.push('', '| Capacity | Largest connected rectangles under 1 s | Next |', '| --- | ---: | ---: |',
-    ...capacity.limits.map(row => `| ${row.solver} | ${row.largestConnectedRectanglesUnder1s ?? '-'} | ${row.firstRejectedOrAtLeast1s ?? 'not reached'}${row.boundaryThrottled ? ' THROTTLED' : ''} |`));
+    ...capacity.limits.map(row => `| ${row.solver} | ${row.largestConnectedRectanglesUnder1s ?? '-'} | ${row.firstRejectedOrAtLeast1s ?? 'not reached'}${mark({ throttled: row.boundaryThrottled, failures: capacity.probes.flatMap(probe => probe.measurements.filter(item => item.solver === row.solver).flatMap(item => item.failures)) })} |`));
   return lines.join('\n');
 }

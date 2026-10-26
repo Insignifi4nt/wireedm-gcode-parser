@@ -66,7 +66,8 @@ async function coldFirstAnswer(scenario: ColdScenario) {
   const solver = scenario === 'planegcs' ? createCadBenchmarkPlaneGcs(initializePlaneGcs)
     : createCadBenchmarkRuntime(scenario === 'native-only' ? 'native-only' : 'native-first', loadNative, initializePlaneGcs);
   const result = await solver.solve(input), firstAnswerMs = performance.now() - started, record = solver.takeRecord();
-  return { scenario, firstAnswerMs, outcome: cadSolverOutcome(result), answer: record && cadSolverRecordKey(record), nativeMs: record?.nativeMs, planeGcsMs: record?.planeGcsMs };
+  return { scenario, firstAnswerMs, outcome: cadSolverOutcome(result), answer: record && cadSolverRecordKey(record), nativeMs: record?.nativeMs, planeGcsMs: record?.planeGcsMs,
+    failures: checkCadSolverBenchmarkResult(input, result).map(failure => `cold/${scenario}: ${failure}`) };
 }
 
 function child(args: readonly string[]) {
@@ -79,8 +80,9 @@ function child(args: readonly string[]) {
   return JSON.parse(run.stdout.trim().split(/\r?\n/).at(-1)!) as unknown;
 }
 
-/** Module breakdowns once each, then `runs` fresh processes per first-answer scenario in rotating order. */
+/** Module breakdowns once each, then `runs` fresh processes per first-answer scenario in rotating order, in one calibration bracket. */
 export function measureColdCadBenchmarkSolvers(runs: number) {
+  const before = cadBenchmarkCpuCalibrationMs();
   const modules = (['planegcs', 'native'] as const).map(module => child(['--cold-probe', module === 'native' ? 'native-only' : 'planegcs']));
   const scenarios = Object.keys(CAD_SOLVER_COLD_SCENARIOS) as ColdScenario[];
   const samples = new Map(scenarios.map(scenario => [scenario, [] as Awaited<ReturnType<typeof coldFirstAnswer>>[]]));
@@ -88,7 +90,8 @@ export function measureColdCadBenchmarkSolvers(runs: number) {
     const scenario = scenarios[(index + run) % scenarios.length];
     samples.get(scenario)!.push(child(['--cold-answer', scenario]) as Awaited<ReturnType<typeof coldFirstAnswer>>);
   }
-  return { modules, firstAnswer: scenarios.map(scenario => {
+  const cpuCalibrationMs = [before, cadBenchmarkCpuCalibrationMs()];
+  return { cpuCalibrationMs, throttled: cadSolverCalibrationDrifted(cpuCalibrationMs), modules, firstAnswer: scenarios.map(scenario => {
     const rows = samples.get(scenario)!;
     return { scenario, description: CAD_SOLVER_COLD_SCENARIOS[scenario], firstAnswerMs: cadBenchmarkStats(rows.map(row => row.firstAnswerMs)),
       outcomes: [...new Set(rows.map(row => `${row.outcome} ${row.answer ?? ''}`.trim()))], samples: rows };
