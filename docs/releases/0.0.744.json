@@ -1,0 +1,24 @@
+{
+  "version": "0.0.744",
+  "previousVersion": "0.0.743",
+  "postCompatibility": "preserved-output-sketch-graph-parse-once",
+  "summary": "Sketch graphs are validated once per parse. The sketch solver input no longer checks the whole graph against its schema before the graph parser checks it again; it checks the envelope (parameters and an optional drag), reads the graph field once and leaves the graph to its parser. The graph parser records the detached, deeply frozen graphs it returns, and returns such a graph as it is when it is parsed again; copies, structured clones and proxies are still parsed in full. Parsed CAD documents keep the accepted graph of each sketch feature, so later parses of a stored graph are free. For the die, parsing the solver input of an accepted graph falls from about 1.1 ms to 0.01 ms, and the first solve from 2.49 to 1.23 ms with the native solver and from 3.10 to 1.85 ms with PlaneGCS.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Accepted and rejected inputs are unchanged: invalid solver envelopes and graphs are refused as before, and a duplicate sketch id still reports its own error code.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal, solver protocol or native buffer protocol schema change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, WebMCP tool, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change. No new application controls or runtime solver selection.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Tests cover an accepted graph returned as it is on a second parse, structured clones and spread copies parsed in full into new equal graphs, a proxy refused because it cannot be detached, a frozen lookalike with a duplicate relation still refused, a solver input whose graph field is a getter refused without reading it, extra, missing and malformed envelope fields refused, a duplicate sketch id keeping its error code, and parsed documents keeping accepted sketch graphs. The CAD unit suites and the full unit suite pass. Timings are medians of 300 interleaved Node runs of the die solve at about 70 ms of calibration."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Speeds up sketch solving.",
+    "changes": [
+      "Checks each sketch once instead of several times before and after solving, so small dimension edits finish sooner."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

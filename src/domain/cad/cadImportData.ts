@@ -1,3 +1,25 @@
+/**
+ * The own data fields of a plain object, each read once, or `undefined` when it is not one or a
+ * field is a symbol or an accessor. The field values are not checked.
+ */
+export function cadImportDataFields(value: unknown): Readonly<Record<string, unknown>> | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  try {
+    const prototype: unknown = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return undefined;
+    const fields: Record<string, unknown> = Object.create(null);
+    for (const name of Reflect.ownKeys(value)) {
+      if (typeof name !== 'string') return undefined;
+      const field = Object.getOwnPropertyDescriptor(value, name);
+      if (!field?.enumerable || !('value' in field)) return undefined;
+      fields[name] = field.value;
+    }
+    return fields;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Complete acyclic own JSON data, checked before a schema can read any accessor. */
 export function isCadImportData(value: unknown): boolean {
   interface Frame { item: object; names: readonly PropertyKey[]; index: number; arrayLength: number | null }

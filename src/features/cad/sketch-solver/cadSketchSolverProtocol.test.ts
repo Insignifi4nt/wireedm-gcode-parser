@@ -59,3 +59,30 @@ describe('shared sketch precision at document and worker boundaries', () => {
     expect(() => parseCadSketchSolverReply(replyWith(separated), parseCadSketchSolveInput({ graph: separated, parameters: { span: 10 } }))).toThrow('constraints');
   });
 });
+
+describe('sketch solver input boundary', () => {
+  it('passes an accepted graph through and validates any other graph once', () => {
+    const graph = source();
+    expect(parseCadSketchSolveInput({ graph, parameters: { span: 10 } }).graph).toBe(graph);
+    const copy = parseCadSketchSolveInput({ graph: structuredClone(graph), parameters: { span: 10 } }).graph;
+    expect(copy).not.toBe(graph); expect(copy).toEqual(graph); expect(parseCadSketchGraph(copy)).toBe(copy);
+  });
+  it('reads each input field once and refuses accessors, extra or missing fields and malformed graphs', () => {
+    const graph = source();
+    let reads = 0;
+    const getter = { parameters: { span: 10 } };
+    Object.defineProperty(getter, 'graph', { enumerable: true, get: () => { reads++; return graph; } });
+    expect(() => parseCadSketchSolveInput(getter)).toThrow('Invalid sketch solver input.');
+    expect(reads).toBe(0);
+    expect(() => parseCadSketchSolveInput({ graph, parameters: { span: 10 }, extra: 1 })).toThrow('Invalid sketch solver input.');
+    expect(() => parseCadSketchSolveInput({ parameters: { span: 10 } })).toThrow('Invalid sketch solver input.');
+    expect(() => parseCadSketchSolveInput({ graph: { ...graph, points: 'none' }, parameters: { span: 10 } })).toThrow('Invalid sketch solver input.');
+    expect(() => parseCadSketchSolveInput({ graph: { ...graph, relations: [...graph.relations, graph.relations[0]] }, parameters: { span: 10 } }))
+      .toThrowError(expect.objectContaining({ code: 'duplicate-sketch-id' }));
+  });
+  it('keeps the accepted sketch graphs of an accepted document', () => {
+    const sketch = parseCadDocument(documentWith(source())).features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch graph missing.');
+    expect(parseCadSketchGraph(sketch.graph)).toBe(sketch.graph);
+  });
+});
