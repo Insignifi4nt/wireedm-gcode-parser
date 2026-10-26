@@ -45,6 +45,12 @@ describe('owned sketch graph source', () => {
     }
     const lookalike = Object.freeze({ ...graph, relations: Object.freeze([...graph.relations, graph.relations[0]]) });
     expect(() => parseCadSketchGraph(lookalike)).toThrowError(expect.objectContaining({ code: 'duplicate-sketch-id' }));
+    // A proxy that swaps checked data for a Map before the clone leaves a copy that is checked again.
+    const raw = source(), entity = raw.entities[0];
+    raw.entities[0] = new Proxy(entity, { get(target, key, receiver) {
+      (raw.points[1] as { position: unknown }).position = new Map(); raw.entities[0] = entity; return Reflect.get(target, key, receiver);
+    } });
+    expect(() => parseCadSketchGraph(raw)).toThrowError(expect.objectContaining({ code: 'invalid-sketch-graph' }));
     // Numeric values only need their range: coincident points parse, an out-of-range one does not.
     const coincident = source(); coincident.points[1].position = [0, 0];
     expect(() => parseCadSketchGraph(coincident)).not.toThrow();

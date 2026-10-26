@@ -3,8 +3,10 @@
  * field is a symbol or an accessor. The field values are not checked.
  */
 export function cadImportDataFields(value: unknown): Readonly<Record<string, unknown>> | undefined {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  if (value === null || typeof value !== 'object') return undefined;
   try {
+    // Inside the try: a revoked proxy throws here.
+    if (Array.isArray(value)) return undefined;
     const prototype: unknown = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) return undefined;
     const fields: Record<string, unknown> = Object.create(null);

@@ -105,8 +105,14 @@ const acceptedGraphs = new WeakSet<CadSketchGraph>();
 /** Parse unsolved intent without solving, changing scalars, or checking geometric residuals. */
 export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   if (typeof value === 'object' && value !== null && acceptedGraphs.has(value as CadSketchGraph)) return value as CadSketchGraph;
-  if (!isCadImportData(value) || !Value.Check(CadSketchGraphSchema, value)) throw new CadError('invalid-sketch-graph', 'Sketch graph must contain complete portable point, entity and relation data.');
-  const graph = structuredClone(value), ids = new Set<string>(), points = new Set(graph.points.map(point => point.id));
+  const invalid = () => new CadError('invalid-sketch-graph', 'Sketch graph must contain complete portable point, entity and relation data.');
+  // Accessors are refused before cloning reads them; the detached copy is then checked again,
+  // since a proxy can change the source between the first walk and the clone.
+  if (!isCadImportData(value)) throw invalid();
+  let graph: CadSketchGraph;
+  try { graph = structuredClone(value) as CadSketchGraph; } catch { throw invalid(); }
+  if (!isCadImportData(graph) || !Value.Check(CadSketchGraphSchema, graph)) throw invalid();
+  const ids = new Set<string>(), points = new Set(graph.points.map(point => point.id));
   for (const item of [...graph.points, ...graph.entities, ...graph.relations]) {
     if (ids.has(item.id)) throw new CadError('duplicate-sketch-id', `Duplicate sketch graph identity "${item.id}".`);
     ids.add(item.id);

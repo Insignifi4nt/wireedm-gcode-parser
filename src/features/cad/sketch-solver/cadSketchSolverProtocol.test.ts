@@ -75,6 +75,12 @@ describe('sketch solver input boundary', () => {
     expect(() => parseCadSketchSolveInput(getter)).toThrow('Invalid sketch solver input.');
     expect(reads).toBe(0);
     expect(() => parseCadSketchSolveInput({ graph, parameters: { span: 10 }, extra: 1 })).toThrow('Invalid sketch solver input.');
+    // Parameters are copied before the graph is parsed, so a proxy in the graph cannot change them.
+    const parameters = { span: 10 }, raw = structuredClone(graph) as unknown as { points: unknown[] }, point = raw.points[0] as object;
+    raw.points[0] = new Proxy(point, { getOwnPropertyDescriptor(target, key) { parameters.span = Infinity; raw.points[0] = point; return Reflect.getOwnPropertyDescriptor(target, key); } });
+    expect(parseCadSketchSolveInput({ graph: raw, parameters }).parameters.span).toBe(10);
+    const revoked = Proxy.revocable({}, {}); revoked.revoke();
+    expect(() => parseCadSketchSolveInput(revoked.proxy)).toThrow('Invalid sketch solver input.');
     expect(() => parseCadSketchSolveInput({ parameters: { span: 10 } })).toThrow('Invalid sketch solver input.');
     expect(() => parseCadSketchSolveInput({ graph: { ...graph, points: 'none' }, parameters: { span: 10 } })).toThrow('Invalid sketch solver input.');
     expect(() => parseCadSketchSolveInput({ graph: { ...graph, relations: [...graph.relations, graph.relations[0]] }, parameters: { span: 10 } }))

@@ -31,7 +31,10 @@ export function parseCadSketchSolveInput(value: unknown): CadSketchSolveInput {
   // Each field is read once, so the graph validated is the graph used.
   const fields = cadImportDataFields(value);
   if (!fields || !('graph' in fields)) throw new Error('Invalid sketch solver input.');
-  const { graph: source, ...envelope } = fields;
+  const { graph: source, ...fieldsBesideGraph } = fields;
+  // A private copy, so parsing the graph cannot change the parameters or drag checked here.
+  let envelope: unknown;
+  try { envelope = isCadImportData(fieldsBesideGraph) ? structuredClone(fieldsBesideGraph) : undefined; } catch { envelope = undefined; }
   if (!isCadImportData(envelope) || !Value.Check(envelopeSchema, envelope)) throw new Error('Invalid sketch solver input.');
   let graph: CadSketchGraph;
   try { graph = parseCadSketchGraph(source); }
