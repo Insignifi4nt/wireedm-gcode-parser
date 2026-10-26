@@ -473,3 +473,24 @@ fn keeps_the_diagnosed_solution_when_a_nearer_one_is_diagnosed_differently() {
     let (again, _) = triangle([values[2], values[3]], [values[4], values[5]]);
     assert_eq!((again.status, again.diagnosis, again.degrees_of_freedom), (Status::Converged, Diagnosis::Diagnosed, first.degrees_of_freedom));
 }
+
+#[test]
+fn reports_the_residual_of_the_values_it_returns_after_moving_nearer() {
+    // Solving the answer again starts accepted and stays put, so it reports the residual there.
+    let parallel = |c: [f64; 2], degrees: f64| {
+        let (cos, sin) = (degrees.to_radians().cos(), degrees.to_radians().sin());
+        let mut builder = Builder::new();
+        let c = builder.point(c[0], c[1], false);
+        let d = builder.point(0.0, 20.0, true);
+        let e = builder.point(60.0, 0.0, true);
+        let f = builder.point(60.0 + 20.0 * cos, 20.0 * sin, true);
+        builder.equation(Kind::Parallel, 0.0, &[c[0], c[1], d[0], d[1], e[0], e[1], f[0], f[1]]);
+        builder.outcome()
+    };
+    for degrees in [30.0, 75.0] {
+        let (first, values) = parallel([35.0, 15.0], degrees);
+        let (again, kept) = parallel([values[0], values[1]], degrees);
+        assert_eq!((again.iterations, &kept[..2]), (0, &values[..2]));
+        assert_eq!(first.residual, again.residual, "{degrees} degrees");
+    }
+}

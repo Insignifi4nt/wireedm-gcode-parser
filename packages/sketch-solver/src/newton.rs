@@ -300,7 +300,10 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
             squared_distance += squared;
         }
         outcome.iterations = outcome.iterations.max(group.iterations);
-        outcome.residual = if outcome.residual.is_nan() || group.residual.is_nan() { f64::NAN } else { outcome.residual.max(group.residual) };
+        // Earlier groups' largest residual with this one's, folded again if the correction moves it.
+        let earlier = outcome.residual;
+        let fold = |residual: f64| if earlier.is_nan() || residual.is_nan() { f64::NAN } else { earlier.max(residual) };
+        outcome.residual = fold(group.residual);
         if outcome.status != Status::TooLarge && group.status != Status::Converged { outcome.status = group.status; }
         if outcome.diagnosis == Diagnosis::NoUnknowns { witnesses.extend(unmet(&system, values)); continue; }
         if outcome.diagnosis == Diagnosis::Unavailable { continue; }
@@ -328,7 +331,7 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
                         let (found, _) = diagnose_group(&system, values, &position, TAU, limits.work.saturating_sub(work), limits.fill);
                         if found.is_some_and(|(found_rank, found_witnesses)| found_rank == group_rank && found_witnesses.is_empty()) {
                             outcome.iterations = outcome.iterations.max(group.iterations + correction.iterations);
-                            outcome.residual = outcome.residual.max(worst(&system.rows(values, None)));
+                            outcome.residual = fold(worst(&system.rows(values, None)));
                         } else {
                             for (&p, &value) in system.unknowns.iter().zip(&solved) { values[p] = value; }
                         }
