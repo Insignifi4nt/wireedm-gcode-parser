@@ -84,6 +84,10 @@ describe('native-first sketch solving', () => {
     };
     expect(await solvedAt(9.999999999999998, 1e-47)).toEqual([10, 0]);
     expect(await solvedAt(1 / 3, 0)).toEqual([1 / 3, 0]);
+    // A group that moved only by polishing keeps its start, though a snap would move it further.
+    const near = 100000.00000000012, polishing = runtime(async () => fakeNative(model => ({ values: model.values.map((value, index) => index === 2 ? near + 2 ** -36 : index === 3 ? 0 : value) })), planeGcsSolved(failedResult));
+    const untouched = await polishing.solver.solve({ ...level, graph: parseCadSketchGraph({ ...level.graph, points: [level.graph.points[0], { id: 'b', position: [near, 1e-13] }] }) });
+    expect(untouched.kind === 'solved' && untouched.graph.points[1].position).toEqual([near, 1e-13]);
   });
 
   it('keeps small driven values and edits next to large coordinates', async () => {
@@ -103,6 +107,14 @@ describe('native-first sketch solving', () => {
     const fixed = await solver.solve({ graph: far(['1000000000', '0'], ['1000000000', '10'], [lift]), parameters: {} });
     expect(fixed).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: 0, conflictingIds: [], issues: [] } });
     expect(records.at(-1)!.answeredBy).toBe('native');
+    // Only relations the checks reject are blamed; an unrelated invalid circle is reported as such.
+    const ring = { id: 'ring', kind: 'circle', construction: true, centerPointId: 'b', radius: '0' };
+    const invalid = await solver.solve({ graph: parseCadSketchGraph({ ...far(['1000000000', '0'], ['1000000000', '10'], [lift]), entities: [ring] }), parameters: {} });
+    expect(invalid).toMatchObject({ kind: 'rejected', reason: 'invalid-solution', diagnostics: { conflictingIds: [] } });
+    expect(invalid.diagnostics.issues.map(issue => issue.source.id)).toContain('ring');
+    // A driver edit of a few ulps at each end, which the old values would pass, is solved.
+    const span = await solver.solve({ graph: far([999999970, '0'], [999999980, '0'], [{ id: 'span', kind: 'axis-distance', pointIds: ['a', 'b'], axis: 'x', value: 10.000000476837158 }]), parameters: {} });
+    expect(span.kind === 'solved' && Number(span.graph.points[1].position[0]) - Number(span.graph.points[0].position[0])).toBe(10.000000476837158);
     // An edit the sketch-wide tolerance would hide still moves its group.
     const tall = far(['999999990', '0'], [999999990, 10], [{ id: 'tall', kind: 'axis-distance', pointIds: ['a', 'b'], axis: 'y', value: 'height' }]);
     const before = await solver.solve({ graph: tall, parameters: { height: 10 } });
