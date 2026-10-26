@@ -625,3 +625,72 @@ fn a_free_part_the_targets_do_not_reach_leaves_the_drag_projected() {
     assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
     assert!((values[d[0]] - 40.0).abs() <= 1e-9 && (values[d[1]] - 7.0).abs() <= 1e-9, "{values:?}");
 }
+
+#[test]
+fn a_flat_direction_moving_a_target_is_probed_beside_a_free_one() {
+    // The fourth-order point beside the collinear line, tied by a midpoint of x and c: c's slide is
+    // flat and moves no target, the circle's turn is flat and moves y. The circle's must be probed.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let x = builder.parameter(1.0, false);
+    let u = builder.parameter(0.0, false);
+    let y = builder.parameter(0.0, false);
+    builder.equation(Kind::Distance, 1.0, &[o[0], o[1], x, u]);
+    builder.equation(Kind::Midpoint, 0.0, &[o[1], y, u]);
+    let a = builder.point(0.0, 7.0, true);
+    let b = builder.point(10.0, 7.0, true);
+    let c = builder.point(20.0, 7.0, false);
+    let d = builder.point(40.0, 7.0, false);
+    builder.equation(Kind::Parallel, 0.0, &[a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]);
+    builder.equation(Kind::PointOnLine, 0.0, &[c[0], c[1], a[0], a[1], b[0], b[1]]);
+    let middle = builder.parameter(10.5, false);
+    builder.equation(Kind::Midpoint, 0.0, &[x, c[0], middle]);
+    builder.temporary(Kind::Value, -3.0, &[x]);
+    builder.temporary(Kind::Value, 0.0, &[y]);
+    builder.temporary(Kind::Value, 40.0, &[d[0]]);
+    builder.temporary(Kind::Value, 12.0, &[d[1]]);
+    let (outcome, _) = builder.outcome();
+    assert!(outcome.drag != Some(DragOutcome::Projected) || outcome.target_distance < 41f64.sqrt() - 1e-3, "{outcome:?}");
+}
+
+#[test]
+fn a_weak_multiplier_left_out_does_not_fake_a_negative_curvature() {
+    // The unit circle's antipode with u geared 2^17 into a unit circle on z pulled 1e-9 out: that
+    // circle's multiplier is too weak to count, yet through the gearing it bends the path by about
+    // +17 per unit u against the antipode's -4, so the antipode is nearest after all.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let x = builder.parameter(-1.0, false);
+    let u = builder.parameter(0.0, false);
+    builder.equation(Kind::Distance, 1.0, &[o[0], o[1], x, u]);
+    let mut previous = u;
+    for _ in 0..17 {
+        let next = builder.parameter(0.0, false);
+        builder.equation(Kind::Midpoint, 0.0, &[o[1], next, previous]);
+        previous = next;
+    }
+    let z = builder.parameter(1.0, false);
+    builder.equation(Kind::Distance, 1.0, &[o[0], o[1], z, previous]);
+    builder.temporary(Kind::Value, 3.0, &[x]);
+    builder.temporary(Kind::Value, 1.0 + 1e-9, &[z]);
+    let (outcome, values) = builder.outcome();
+    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
+    assert_eq!(values[x], -1.0);
+}
+
+#[test]
+fn the_curvature_test_reports_running_out_of_work() {
+    // A straight chain of 100 unit links dragged 1 mm past its reach: the curvature test's solves
+    // alone exceed the work allowed, which is reported, not taken as a stall.
+    let mut builder = Builder::new();
+    let mut p = builder.point(0.0, 0.0, true);
+    for k in 1..=100 {
+        let q = builder.point(k as f64, 0.0, false);
+        builder.equation(Kind::Distance, 1.0, &[p[0], p[1], q[0], q[1]]);
+        p = q;
+    }
+    builder.temporary(Kind::Value, 101.0, &[p[0]]);
+    builder.temporary(Kind::Value, 0.0, &[p[1]]);
+    let (outcome, _) = builder.outcome_within(Limits { fill: 2_000_000, work: 30_000 });
+    assert_eq!((outcome.status, outcome.drag), (Status::TooLarge, Some(DragOutcome::Stalled)));
+}

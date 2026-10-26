@@ -29,9 +29,10 @@
 //!
 //! A clearly negative curvature, as at a circle's antipode or a straight arm with a target inside
 //! its reach, is followed by restored steps, halving; one that gets closer by any resolved gain
-//! continues the drag. A curvature within its error of zero is followed at two lengths too. Finding
-//! nothing closer along one that moves no target, as a free part the targets do not reach, leaves
-//! the drag projected; along one that moves a target, higher orders decide, so that stalls.
+//! continues the drag. A curvature within its error of zero is followed at two lengths too, along
+//! the flat direction that moves the targets most. Finding nothing closer leaves the drag projected
+//! when no flat direction moves a target, as a free part the targets do not reach; otherwise higher
+//! orders decide, so that stalls.
 //! Anything else, including a curvature test that cannot decide, is `Stalled`, at the last
 //! feasible values. Restoring the start, the trials with their restorations and a
 //! landing's polish share `DRAG_ITERATIONS`, and a check the budget cut short decides nothing.
