@@ -15,9 +15,12 @@ export const CAD_BENCHMARK_SOLVER_IDS = ['planegcs', 'native-only', 'native-firs
 const wasmFile = (module: 'native' | 'planegcs') => new URL(module === 'native' ? '../packages/sketch-solver/wasm/sketch_solver.wasm'
   : '../node_modules/@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm', import.meta.url);
 const quiet = { print: () => undefined, printErr: () => undefined };
+// The tsx package itself (`tsx`, `tsx/esm`) or a file inside its installed package, as a path or URL; any other preload is kept.
+const TSX_LOADER = /^(tsx(\/[\w./-]*)?|.*[\\/]node_modules[\\/]tsx[\\/].*)$/;
 /** Node and V8 flags of this process without the tsx loader, so cold probes run as the parent does and runs record them. */
 export function cadBenchmarkExecArgv() {
-  const loader = (flag: string, value = '') => /^(--require|-r|--import|--loader)(=|$)/.test(flag) && /tsx/.test(flag.includes('=') ? flag : value);
+  const loader = (flag: string, value = '') => /^(--require|-r|--import|--loader)(=|$)/.test(flag)
+    && TSX_LOADER.test(flag.includes('=') ? flag.slice(flag.indexOf('=') + 1) : value);
   return process.execArgv.filter((flag, index, all) => !loader(flag, all[index + 1]) && !(index > 0 && !all[index - 1].includes('=') && loader(all[index - 1], flag)));
 }
 
