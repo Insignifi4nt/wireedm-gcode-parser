@@ -162,9 +162,9 @@ describe('native sketch solver module', () => {
     for (const buffer of [[version, 2 ** 31, 0], [version, 0, 2 ** 32 - 1], [version, 2 ** 32 - 1, 2 ** 32 - 1, 0, 0]]) {
       const pointer = exports.buffer_alloc(buffer.length);
       new Float64Array(exports.memory.buffer, pointer, buffer.length).set(buffer);
-      const output = exports.solve(pointer, buffer.length), reply = new Float64Array(exports.memory.buffer, output, 7).slice();
-      expect([...reply.subarray(0, 4)]).toEqual([7, version, 2, 0]);
-      exports.buffer_free(pointer, buffer.length); exports.buffer_free(output, 7);
+      const output = exports.solve(pointer, buffer.length), reply = new Float64Array(exports.memory.buffer, output, 9).slice();
+      expect([...reply.subarray(0, 4)]).toEqual([9, version, 2, 0]);
+      exports.buffer_free(pointer, buffer.length); exports.buffer_free(output, 9);
     }
   });
 

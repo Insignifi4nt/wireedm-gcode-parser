@@ -3,17 +3,21 @@
 //! input  `[version, parameter count n, equation count m, values × n, fixed flags × n,
 //!          m × [kind code, value, tag, flags, operand parameter indices × arity]]`
 //! output `[output length, version, status, iterations, largest residual, diagnosis,
-//!          degrees of freedom, values × n, labels × m]`, with status codes from `Status`,
-//!        diagnosis codes from `Diagnosis` and label bits from `diagnose`
+//!          degrees of freedom, drag outcome, target distance, values × n, labels × m]`, with
+//!        status codes from `Status`, diagnosis codes from `Diagnosis`, drag outcome codes from
+//!        `DragOutcome` and label bits from `diagnose`
 //!
 //! A tag names the source constraint an equation belongs to; tags never decrease, and the
-//! equations of one constraint share it. Flag 1 marks a temporary equation, such as a drag
-//! target, that is solved but left out of diagnosis. Degrees of freedom are NaN unless the
-//! sketch was diagnosed exactly (code 0) without conflicts.
+//! equations of one constraint share it. Flag 1 marks a temporary equation, a drag target: a
+//! `value` row that is approached as closely as the lasting equations allow and left out of
+//! diagnosis. Degrees of freedom are NaN unless the sketch was diagnosed exactly (code 0) without
+//! conflicts. The drag outcome and the distance in millimetres from the targeted coordinates to
+//! their targets are NaN without targets.
 
 use crate::equations::Kind;
+use crate::newton::DragOutcome;
 
-pub const VERSION: f64 = 2.0;
+pub const VERSION: f64 = 3.0;
 pub const TEMPORARY: f64 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,7 +79,7 @@ pub fn decode(input: &[f64]) -> Option<Problem> {
     for _ in 0..m {
         let kind = Kind::from_code(*cursor.first()?)?;
         let (value, tag) = (*cursor.get(1)?, count(*cursor.get(2)?)?);
-        let temporary = match *cursor.get(3)? { 0.0 => false, TEMPORARY => true, _ => return None };
+        let temporary = match *cursor.get(3)? { 0.0 => false, TEMPORARY if kind == Kind::Value => true, _ => return None };
         let operands = cursor.get(4..4 + kind.arity())?.iter().map(|&index| count(index).filter(|&index| index < n))
             .collect::<Option<Vec<_>>>()?;
         if !value.is_finite() || equations.last().is_some_and(|last| last.tag > tag) { return None; }
@@ -91,15 +95,18 @@ pub struct Output<'a> {
     pub residual: f64,
     pub diagnosis: Diagnosis,
     pub degrees_of_freedom: Option<usize>,
+    pub drag: Option<DragOutcome>,
+    pub target_distance: f64,
     pub values: &'a [f64],
     pub labels: &'a [u8],
 }
 
 pub fn encode_output(output: &Output) -> Vec<f64> {
-    let length = 7 + output.values.len() + output.labels.len();
+    let length = 9 + output.values.len() + output.labels.len();
     let mut buffer = Vec::with_capacity(length);
     buffer.extend([length as f64, VERSION, output.status as u8 as f64, output.iterations as f64, output.residual,
-        output.diagnosis as u8 as f64, output.degrees_of_freedom.map_or(f64::NAN, |dof| dof as f64)]);
+        output.diagnosis as u8 as f64, output.degrees_of_freedom.map_or(f64::NAN, |dof| dof as f64),
+        output.drag.map_or(f64::NAN, |drag| drag as u8 as f64), output.target_distance]);
     buffer.extend_from_slice(output.values);
     buffer.extend(output.labels.iter().map(|&label| label as f64));
     buffer

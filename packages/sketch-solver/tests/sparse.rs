@@ -1,4 +1,4 @@
-use sketch_solver::sparse::{Factor, SparseRow, minimum_degree};
+use sketch_solver::sparse::{Factor, SparseRow, minimum_degree, minimum_degree_with_heap};
 
 /// `(J^T J + mu I) h = J^T b` by Gaussian elimination, the reference for a damped step.
 fn normal_equations(rows: &[(SparseRow, f64)], n: usize, mu: f64) -> Vec<f64> {
@@ -117,4 +117,33 @@ fn repeated_rows_cost_work_but_no_adjacency() {
     assert_eq!(ordering.fill, 10);
     assert!(ordering.work >= 16 * 200_000, "{}", ordering.work);
     assert!(minimum_degree(4, &structure, 9, usize::MAX).is_none());
+}
+
+#[test]
+fn the_transposed_solve_inverts_the_factor_transposed() {
+    let rows: Vec<(SparseRow, f64)> = vec![
+        (vec![(0, 2.0), (2, -1.0)], 0.0),
+        (vec![(1, 0.5), (3, 3.0)], 0.0),
+        (vec![(0, 1.0), (1, 1.0), (2, 1.0)], 0.0),
+        (vec![(2, 4.0), (3, -0.5)], 0.0),
+    ];
+    let factor = factor(&rows, 4, 0.3);
+    let b = [1.0, -2.0, 0.5, 3.0];
+    let y = factor.solve_transposed(&b).unwrap();
+    // R^T y, column by column of R.
+    let mut back = [0.0; 4];
+    for row in &factor.rows { for &(j, value) in row { back[j] += value * y[row[0].0]; } }
+    for (back, b) in back.iter().zip(&b) { assert!((back - b).abs() <= 1e-12, "{back} {b}"); }
+}
+
+#[test]
+fn the_ordering_with_its_heap_charges_every_column_before_it_runs() {
+    // A thousand isolated columns cost the bare ordering one entry each, but the heap still takes
+    // a logarithmic number of steps for each.
+    let rows: Vec<Vec<usize>> = (0..1000).map(|k| vec![k]).collect();
+    assert!(minimum_degree(1000, &rows, 10_000, 2_000).is_some());
+    assert!(minimum_degree_with_heap(1000, &rows, 10_000, 2_000).is_none());
+    let ordering = minimum_degree_with_heap(1000, &rows, 10_000, 1_000_000).unwrap();
+    assert_eq!(ordering.position, minimum_degree(1000, &rows, 10_000, 1_000_000).unwrap().position);
+    assert!(ordering.work >= 20 * 1000);
 }

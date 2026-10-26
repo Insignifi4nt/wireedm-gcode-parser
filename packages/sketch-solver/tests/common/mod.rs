@@ -50,8 +50,8 @@ impl Builder {
         assert_eq!(output[0] as usize, output.len());
         assert_eq!(output[1], VERSION);
         let n = self.values.len();
-        assert_eq!(output.len(), 7 + n + self.equations.len());
-        (output[2], output[3], output[7..7 + n].to_vec())
+        assert_eq!(output.len(), 9 + n + self.equations.len());
+        (output[2], output[3], output[9..9 + n].to_vec())
     }
     /// The whole outcome and the solved values.
     pub fn outcome(&self) -> (Outcome, Vec<f64>) { self.outcome_within(sketch_solver::newton::LIMITS) }

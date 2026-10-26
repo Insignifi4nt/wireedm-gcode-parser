@@ -14,6 +14,9 @@ use crate::diagnose::{self, CONFLICTING, STALLED, TAU, Witness, diagnose};
 use crate::problem::{Diagnosis, Problem, Status};
 use crate::sparse::{Factor, SparseRow, minimum_degree};
 
+mod drag;
+pub use drag::{DRAG_ITERATIONS, DragOutcome};
+
 pub const MAX_ITERATIONS: usize = 100;
 /// Resource bounds on one group. Native code cannot be interrupted, so these bound one solve.
 #[derive(Clone, Copy, Debug)]
@@ -56,6 +59,11 @@ pub struct Outcome {
     pub degrees_of_freedom: Option<usize>,
     /// `diagnose` label bits of each equation, zero unless diagnosed.
     pub labels: Vec<u8>,
+    /// How the drag targets ended, the worst of any group's; `None` without targets.
+    pub drag: Option<DragOutcome>,
+    /// Euclidean distance in millimetres from the targeted coordinates to their targets, fixed
+    /// ones included; NaN without targets.
+    pub target_distance: f64,
 }
 
 /// One group's result and the column order its factor used.
@@ -66,6 +74,8 @@ struct GroupOutcome {
     position: Option<Vec<usize>>,
     /// Work spent, which diagnosis continues from.
     work: usize,
+    /// A group with drag targets: how they ended and their squared distance.
+    drag: Option<(DragOutcome, f64)>,
 }
 
 /// One normalized Jacobian row over distinct unknown columns; fixed operands have no column.
@@ -272,13 +282,22 @@ pub fn solve(problem: &Problem, values: &mut [f64]) -> Outcome { solve_within(pr
 pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Outcome {
     let (members, column) = groups(problem);
     let mut outcome = Outcome { status: Status::Converged, iterations: 0, residual: 0.0, diagnosis: Diagnosis::Diagnosed,
-        degrees_of_freedom: None, labels: vec![0; problem.equations.len()] };
+        degrees_of_freedom: None, labels: vec![0; problem.equations.len()], drag: None, target_distance: f64::NAN };
+    // Drag targets change how every group is solved, so a problem without them is solved as before.
+    let dragging = problem.equations.iter().any(|equation| equation.temporary);
+    let mut squared_distance = 0.0;
     let unknowns = problem.fixed.iter().filter(|&&fixed| !fixed).count();
     if unknowns == 0 { outcome.diagnosis = Diagnosis::NoUnknowns; }
     let (mut rank, mut witnesses) = (0, Vec::new());
+    // A column map the drag's landings share, so each costs its own group's size.
+    let mut held = if dragging { vec![usize::MAX; problem.values.len()] } else { Vec::new() };
     for (equations, unknowns) in members {
         let system = System { problem, column: &column, equations, unknowns };
-        let group = solve_group(&system, values, limits);
+        let group = if dragging { drag::solve_group(&system, values, limits, &mut held) } else { solve_group(&system, values, limits) };
+        if let Some((kind, squared)) = group.drag {
+            outcome.drag = Some(outcome.drag.map_or(kind, |worst| worst.max(kind)));
+            squared_distance += squared;
+        }
         outcome.iterations = outcome.iterations.max(group.iterations);
         outcome.residual = if outcome.residual.is_nan() || group.residual.is_nan() { f64::NAN } else { outcome.residual.max(group.residual) };
         if outcome.status != Status::TooLarge && group.status != Status::Converged { outcome.status = group.status; }
@@ -304,6 +323,7 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
             None => outcome.diagnosis = Diagnosis::Unavailable,
         }
     }
+    if outcome.drag.is_some() { outcome.target_distance = squared_distance.sqrt(); }
     if outcome.diagnosis != Diagnosis::Unavailable {
         let tags: Vec<usize> = problem.equations.iter().map(|equation| equation.tag).collect();
         match diagnose::labels(&tags, &witnesses, limits.work) {
@@ -343,13 +363,16 @@ fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance:
 /// linearizations can disagree before convergence and the seeded damped factor would then move
 /// free directions by roundoff. Its result stands when every row is accepted there; otherwise
 /// the group is solved again from the start with every row, sharing the iterations and work.
-fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> GroupOutcome {
+fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> GroupOutcome { solve_group_within(system, values, limits, MAX_ITERATIONS) }
+
+/// `solve_group` within `most` iterations.
+fn solve_group_within(system: &System, values: &mut [f64], limits: Limits, most: usize) -> GroupOutcome {
     let n = system.unknowns.len();
     let rows = system.rows(values, None);
     let progress = assess(&rows);
     let finish = |rows: &[Row], progress: Progress, iterations, exhausted: bool, position, work| GroupOutcome {
         status: if progress.accepted { Status::Converged } else if exhausted { Status::TooLarge } else { Status::NotConverged },
-        iterations, residual: worst(rows), position: if exhausted { None } else { position }, work };
+        iterations, residual: worst(rows), position: if exhausted { None } else { position }, work, drag: None };
     let Some(ordering) = minimum_degree(n, &rows.iter().map(|row| &row.columns[..row.len]).collect::<Vec<_>>(), limits.fill, limits.work)
         else { return finish(&rows, progress, 0, true, None, limits.work); };
     if progress.polished || n == 0 { return finish(&rows, progress, 0, false, Some(ordering.position), ordering.work); }
@@ -362,13 +385,13 @@ fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> GroupOutc
         let equations = system.equations.iter().enumerate()
             .filter(|&(i, _)| if out.peek() == Some(&&i) { out.next(); false } else { true }).map(|(_, &e)| e).collect();
         let reduced = System { problem: system.problem, column: system.column, equations, unknowns: system.unknowns.clone() };
-        let exhausted = levenberg(&reduced, values, &position, limits, &mut work, &mut iterations);
+        let exhausted = levenberg(&reduced, values, &position, limits, &mut work, &mut iterations, most);
         let rows = system.rows(values, None);
         let progress = assess(&rows);
         if progress.accepted || exhausted { return finish(&rows, progress, iterations, exhausted, Some(position), work); }
         for (&p, &value) in system.unknowns.iter().zip(&start) { values[p] = value; }
     }
-    let exhausted = levenberg(system, values, &position, limits, &mut work, &mut iterations);
+    let exhausted = levenberg(system, values, &position, limits, &mut work, &mut iterations, most);
     let rows = system.rows(values, None);
     finish(&rows, assess(&rows), iterations, exhausted, Some(position), work)
 }
@@ -385,9 +408,9 @@ fn dependent_at_start(system: &System, rows: &[Row], position: &[usize], limit: 
     dependent.map_or_else(Vec::new, |dependent| dependent.into_iter().map(|i| lasting[i]).collect())
 }
 
-/// Levenberg-Marquardt from `values` until accepted at roundoff, stalled, or out of iterations;
-/// `true` when the work passed `limits.work`.
-fn levenberg(system: &System, values: &mut [f64], position: &[usize], limits: Limits, work: &mut usize, iterations: &mut usize) -> bool {
+/// Levenberg-Marquardt from `values` until accepted at roundoff, stalled, or `iterations` reaches
+/// `max_iterations`; `true` when the work passed `limits.work`.
+fn levenberg(system: &System, values: &mut [f64], position: &[usize], limits: Limits, work: &mut usize, iterations: &mut usize, max_iterations: usize) -> bool {
     let mut rows = system.rows(values, None);
     let mut progress = assess(&rows);
     if progress.polished { return false; }
@@ -399,7 +422,7 @@ fn levenberg(system: &System, values: &mut [f64], position: &[usize], limits: Li
     let (floor, polish_floor) = (1e-12 * diagonal.max(1.0), f64::EPSILON * diagonal.max(1.0));
     let (mut mu, mut nu) = (if progress.near { polish_floor } else { (1e-6 * diagonal).max(floor) }, 2.0);
     let mut stagnant = 0;
-    while *iterations < MAX_ITERATIONS {
+    while *iterations < max_iterations {
         *iterations += 1;
         let (mut stepped, mut rejected) = (false, false);
         let Ok(step) = damped_step(&jacobian, position, mu, work, limits.work) else { return true; };

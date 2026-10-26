@@ -25,6 +25,20 @@ pub struct Ordering {
 /// memory stays within about twice the fill limit. Lists are built distinct one column at a time
 /// from the rows each column is in, so repeated rows cost work but no adjacency memory.
 pub fn minimum_degree<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize, work_limit: usize) -> Option<Ordering> {
+    order(n, rows, fill_limit, work_limit, false)
+}
+
+/// `minimum_degree` with its heap steps counted in `work` too: each entry pushed is charged, before
+/// it is pushed, the steps of its push and its later pop.
+pub fn minimum_degree_with_heap<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize, work_limit: usize) -> Option<Ordering> {
+    order(n, rows, fill_limit, work_limit, true)
+}
+
+fn order<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize, work_limit: usize, heap: bool) -> Option<Ordering> {
+    // Steps of one push and its pop on a heap of `len` entries.
+    let steps = |len: usize| if heap { 2 * (usize::BITS - len.leading_zeros()) as usize + 2 } else { 0 };
+    let mut work = n.saturating_mul(steps(n));
+    if work > work_limit { return None; }
     let mut incident: Vec<Vec<usize>> = vec![Vec::new(); n];
     for (i, row) in rows.iter().enumerate() {
         for &a in row.as_ref() { incident[a].push(i); }
@@ -32,7 +46,7 @@ pub fn minimum_degree<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize
     let mut adjacent: Vec<Vec<usize>> = vec![Vec::new(); n];
     // `seen[b] == stamp` marks `b` as already in the list being built, so lists need no sorting.
     let (mut seen, mut stamp) = (vec![0; n], 0);
-    let (mut live, mut fill, mut work) = (0usize, 0usize, 0usize);
+    let (mut live, mut fill) = (0usize, 0usize);
     let exceeded = |fill: usize, live: usize, left: usize, work: usize|
         fill.saturating_add(live / 2).saturating_add(left) > fill_limit || work > work_limit;
     for (a, list) in adjacent.iter_mut().enumerate() {
@@ -66,7 +80,7 @@ pub fn minimum_degree<R: AsRef<[usize]>>(n: usize, rows: &[R], fill_limit: usize
             // Eliminating `next` joins its remaining neighbors into a clique.
             let list = &mut adjacent[a];
             live -= list.len();
-            work = work.saturating_add(list.len() + neighbors.len());
+            work = work.saturating_add(list.len() + neighbors.len() + steps(queue.len() + 1));
             list.retain(|&b| b != next);
             list.extend(neighbors.iter().copied().filter(|&b| b != a));
             distinct(list);
@@ -87,6 +101,8 @@ pub struct Factor {
     pub c: Vec<f64>,
     /// Entries written, at most one rotation step past `budget`.
     pub work: usize,
+    /// Most rotations any one incoming row took, which scales the factor's backward error.
+    pub depth: usize,
     budget: usize,
     scratch: (SparseRow, SparseRow),
 }
@@ -94,12 +110,13 @@ pub struct Factor {
 impl Factor {
     /// An empty factor of `n` columns that may write about `budget` entries.
     pub fn new(n: usize, budget: usize) -> Factor {
-        Factor { rows: vec![Vec::new(); n], c: vec![0.0; n], work: 0, budget, scratch: (Vec::new(), Vec::new()) }
+        Factor { rows: vec![Vec::new(); n], c: vec![0.0; n], work: 0, depth: 0, budget, scratch: (Vec::new(), Vec::new()) }
     }
 
     /// Rotates row `v` with right-hand side `beta` into the factor. A row reaching an empty pivot
     /// fills it. `false` when the budget ran out first, which leaves the factor unusable.
     pub fn rotate(&mut self, mut v: SparseRow, mut beta: f64) -> bool {
+        let mut rotations = 0;
         while let Some(&(k, lead)) = v.first() {
             if self.work > self.budget { return false; }
             let row = &mut self.rows[k];
@@ -110,6 +127,8 @@ impl Factor {
                 return true;
             }
             let pivot = row[0].1;
+            rotations += 1;
+            self.depth = self.depth.max(rotations);
             // Scaled, so entries whose squares underflow still rotate.
             let big = pivot.abs().max(lead.abs());
             let radius = big * ((pivot / big).powi(2) + (lead / big).powi(2)).sqrt();
@@ -152,17 +171,34 @@ impl Factor {
     }
 
     /// `x` with `R x = c` by positions; `None` when a pivot is missing or the result not finite.
-    pub fn solve(&self) -> Option<Vec<f64>> {
-        let n = self.c.len();
+    pub fn solve(&self) -> Option<Vec<f64>> { self.solve_with(&self.c) }
+
+    /// `x` with `R x = c` for another right-hand side `c`, by positions.
+    pub fn solve_with(&self, c: &[f64]) -> Option<Vec<f64>> {
+        let n = c.len();
         let mut x = vec![0.0; n];
         for k in (0..n).rev() {
             let row = &self.rows[k];
             let &(first, pivot) = row.first()?;
             if first != k { return None; }
-            let mut sum = self.c[k];
+            let mut sum = c[k];
             for &(j, value) in &row[1..] { sum -= value * x[j]; }
             x[k] = sum / pivot;
         }
         x.iter().all(|value| value.is_finite()).then_some(x)
+    }
+
+    /// `y` with `R^T y = b` by positions; `None` when a pivot is missing or the result not finite.
+    pub fn solve_transposed(&self, b: &[f64]) -> Option<Vec<f64>> {
+        let mut y = b.to_vec();
+        for k in 0..y.len() {
+            let row = &self.rows[k];
+            let &(first, pivot) = row.first()?;
+            if first != k { return None; }
+            y[k] /= pivot;
+            let value = y[k];
+            for &(j, entry) in &row[1..] { y[j] -= entry * value; }
+        }
+        y.iter().all(|value| value.is_finite()).then_some(y)
     }
 }

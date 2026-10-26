@@ -2,6 +2,7 @@
 //! `problem`) into memory from `buffer_alloc`, calls `solve` and frees both buffers with
 //! `buffer_free`. The names avoid the C allocator's `alloc` and `free` on native hosts.
 
+pub mod dense;
 pub mod diagnose;
 pub mod dual;
 pub mod equations;
@@ -18,10 +19,11 @@ pub fn solve_buffer(input: &[f64]) -> Vec<f64> {
             let mut values = problem.values.clone();
             let outcome = newton::solve(&problem, &mut values);
             encode_output(&Output { status: outcome.status, iterations: outcome.iterations, residual: outcome.residual,
-                diagnosis: outcome.diagnosis, degrees_of_freedom: outcome.degrees_of_freedom, values: &values, labels: &outcome.labels })
+                diagnosis: outcome.diagnosis, degrees_of_freedom: outcome.degrees_of_freedom, drag: outcome.drag,
+                target_distance: outcome.target_distance, values: &values, labels: &outcome.labels })
         }
         None => encode_output(&Output { status: Status::InvalidInput, iterations: 0, residual: f64::NAN,
-            diagnosis: Diagnosis::Unavailable, degrees_of_freedom: None, values: &[], labels: &[] }),
+            diagnosis: Diagnosis::Unavailable, degrees_of_freedom: None, drag: None, target_distance: f64::NAN, values: &[], labels: &[] }),
     }
 }
 

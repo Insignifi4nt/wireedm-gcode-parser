@@ -200,13 +200,27 @@ function nativeModule({ alloc, free, solve, data }: { readonly alloc: number[]; 
 
 describe('native solver instances', () => {
   const unreachable = [0, 11], at8 = [65, 8, 11], at1024 = [65, 128, 8, 11], none = [11];
-  // An empty model's reply: length, protocol 2, converged, no iterations or residual, nothing to diagnose, no freedom count.
-  const reply = new Float64Array([7, 2, 0, 0, 0, 2, NaN]);
+  // An empty model's reply: length, protocol 3, converged, no iterations or residual, nothing to
+  // diagnose, no freedom count, no drag outcome or target distance.
+  const reply = new Float64Array([9, 3, 0, 0, 0, 2, NaN, NaN, NaN]);
   const empty: CadSketchEquationModel = { values: [], fixed: [], pointParameters: new Map(), radiusParameters: new Map(), equations: [] };
 
   it('reads a reply and frees both buffers', async () => {
     const solver = await loadCadSketchNativeSolver(nativeModule({ alloc: at8, free: none, solve: at1024, data: reply }));
     for (let run = 0; run < 2; run++) expect(solver.solve(empty)).toEqual({ status: 'converged', iterations: 0, residual: 0, values: [], diagnosis: { kind: 'no-unknowns', labels: [] } });
+  });
+
+  it('reads a drag outcome only for a model with drag targets', async () => {
+    // One free value held at 0 and dragged toward 5: projected, 5 mm short, one degree of freedom.
+    const dragged: CadSketchEquationModel = { ...empty, values: [0], fixed: [false],
+      equations: [{ kind: 'value', operands: [0], value: 5, tag: 0, sourceId: 'drag', temporary: true }] };
+    const drag = (outcome: number, distance: number) => new Float64Array([11, 3, 0, 1, 0, 0, 1, outcome, distance, 0, 0]);
+    const solve = (model: CadSketchEquationModel, data: Float64Array) => loadCadSketchNativeSolver(nativeModule({ alloc: at8, free: none, solve: at1024, data })).then(solver => solver.solve(model));
+    expect(await solve(dragged, drag(1, 5))).toMatchObject({ values: [0], drag: { outcome: 'projected', targetDistance: 5 } });
+    for (const [outcome, distance] of [[NaN, NaN], [3, 5], [1, NaN], [NaN, 5], [0, -1], [0, Infinity]])
+      await expect(solve(dragged, drag(outcome, distance))).rejects.toThrow('invalid result');
+    const undragged = { ...dragged, equations: [{ ...dragged.equations[0], temporary: false }] };
+    await expect(solve(undragged, drag(1, 5))).rejects.toThrow('invalid result');
   });
 
   it.each([
