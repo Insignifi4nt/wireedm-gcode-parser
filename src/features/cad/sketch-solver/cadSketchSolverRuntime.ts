@@ -19,6 +19,7 @@ import { resolveCadSketchSymmetryOperands } from '../../../domain/cad/cadSketchS
 import { resolveCadSketchPointOnLineOperands } from '../../../domain/cad/cadSketchPointOnLineRelations';
 import { resolveCadSketchTangentJoint } from '../../../domain/cad/cadSketchTangentRelations';
 import { cadSketchLinearPatternInstances } from '../../../domain/cad/cadSketchLinearPattern';
+import type { CadSketchSolverTimingStage } from './cadSketchSolverStages';
 
 function nativeStatus(status: SolveStatus): CadSketchSolveDiagnostics['status'] {
   switch (status) {
@@ -205,8 +206,6 @@ const twoEquationConstraints = new Set<SketchPrimitive['type']>(['p2p_coincident
 type NativeStatus = NonNullable<CadSketchSolveDiagnostics['status']>;
 const statusRank: Record<NativeStatus, number> = { success: 0, converged: 1, invalid: 2, failed: 3 };
 const noDiagnostics = (): CadSketchSolveDiagnostics => ({ status: null, degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] });
-
-export type CadSketchSolverTimingStage = 'parseCompile' | 'nativeCall' | 'mapping' | 'validation';
 
 /**
  * Each call owns and deletes its C++ systems; caller objects are never handed to the package.

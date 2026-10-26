@@ -1,5 +1,6 @@
 import type { CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
 import { parseCadSketchSolveInput } from './cadSketchSolverProtocol';
+import { cadSketchSolverStageClock, type CadSketchSolverStageObserver } from './cadSketchSolverStages';
 import { attemptCadSketchNativeSolve, type CadSketchNativeAttempt, type CadSketchNativeFallbackReason } from './native/cadSketchNativeAttempt';
 import { CadSketchNativeProtocolError, type CadSketchNativeSolution, type CadSketchNativeSolver } from './native/cadSketchNativeSolver';
 
@@ -44,6 +45,8 @@ export function createCadSketchNativeFirstRuntime(options: {
   readonly mode?: CadSketchSolverMode;
   readonly memoryLimitBytes?: number;
   readonly onSolve?: (record: CadSketchSolveRecord) => void;
+  /** Benchmark observer of native stages; PlaneGCS's backend observes its own. */
+  readonly onStageTiming?: CadSketchSolverStageObserver;
 }): CadSketchSolverBackend {
   const mode = options.mode ?? 'native-first', memoryLimit = options.memoryLimitBytes ?? CAD_SKETCH_NATIVE_MEMORY_LIMIT_BYTES;
   let native: Promise<CadSketchNativeSolver> | undefined, nativeLoadFailed = false, planeGcs: Promise<CadSketchSolverBackend> | undefined;
@@ -65,7 +68,7 @@ export function createCadSketchNativeFirstRuntime(options: {
         const started = performance.now(), solver = await nativeSolver();
         if (!solver) record.native = 'load-failed';
         else {
-          try { attempt = attemptCadSketchNativeSolve(input, solver); } catch (error) {
+          try { attempt = attemptCadSketchNativeSolve(input, solver, options.onStageTiming); } catch (error) {
             record.native = 'failed'; record.nativeReset = 'failure'; native = undefined;
             // Every instance of a module speaking another protocol fails the same way.
             if (error instanceof CadSketchNativeProtocolError) nativeLoadFailed = true;
@@ -104,10 +107,11 @@ export function createCadSketchNativeFirstRuntime(options: {
   return { solve(source) {
     // Parsed before any wait, so later changes to the caller's input reach neither solver.
     let input: CadSketchSolveInput;
+    const clock = cadSketchSolverStageClock(options.onStageTiming, 'parseCompile');
     try { input = parseCadSketchSolveInput(source); } catch (error) {
       return Promise.resolve({ kind: 'rejected', reason: 'invalid-input', message: error instanceof Error ? error.message : 'Invalid sketch input.',
         diagnostics: { status: null, degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } });
-    }
+    } finally { clock.stop(); }
     return exclusive(() => run(input));
   } };
 }

@@ -1,4 +1,5 @@
-import { checkCadSketchGraph, type CadSketchGraphIssue } from '../../../../domain/cad/cadSketchGraph';
+import { checkCadSketchGraph, type CadSketchGraph, type CadSketchGraphIssue } from '../../../../domain/cad/cadSketchGraph';
+import { cadSketchSolverStageClock, type CadSketchSolverStageObserver } from '../cadSketchSolverStages';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
 import { compileCadSketchEquations } from './compileCadSketchEquations';
 import { applyCadSketchEquationSolution, cadSketchEquationDiagnostics, cadSketchEquationResidual, type CadSketchEquationModel } from './cadSketchEquationModel';
@@ -35,16 +36,26 @@ const STALLED_DRAG = 'The point could not be moved toward the target from this s
  * target distance held up to its resolution. That proves neither a local minimum nor the nearest
  * configuration: another solver can end closer, for example on another assembly of a linkage.
  * Errors from `solver` propagate; the caller treats them as a failed native instance.
+ * `observe` receives stage timings for benchmarks.
  */
-export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: CadSketchNativeSolver): CadSketchNativeAttempt {
-  let model: CadSketchEquationModel;
-  try { model = compileCadSketchEquations(input); }
-  catch (error) { return { kind: 'fallback', reason: 'compile', rejection: { kind: 'rejected', reason: 'invalid-input', message: error instanceof Error ? error.message : 'Invalid sketch input.', diagnostics: noDiagnostics(null) } }; }
-  const solution = solver.solve(model), attempt = judge(input, model, solution);
-  return solution.drag ? { ...attempt, drag: solution.drag } : attempt;
+export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: CadSketchNativeSolver, observe?: CadSketchSolverStageObserver): CadSketchNativeAttempt {
+  const clock = cadSketchSolverStageClock(observe, 'parseCompile');
+  const check: Check = observe ? (graph, parameters) => clock.during('validation', () => checkCadSketchGraph(graph, parameters)) : checkCadSketchGraph;
+  try {
+    let model: CadSketchEquationModel;
+    try { model = compileCadSketchEquations(input); }
+    catch (error) { return { kind: 'fallback', reason: 'compile', rejection: { kind: 'rejected', reason: 'invalid-input', message: error instanceof Error ? error.message : 'Invalid sketch input.', diagnostics: noDiagnostics(null) } }; }
+    clock.next('nativeCall');
+    const solution = solver.solve(model);
+    clock.next('mapping');
+    const attempt = judge(input, model, solution, check);
+    return solution.drag ? { ...attempt, drag: solution.drag } : attempt;
+  } finally { clock.stop(); }
 }
 
-function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, solution: CadSketchNativeSolution): CadSketchNativeAttempt {
+type Check = (graph: CadSketchGraph, parameters: CadSketchSolveInput['parameters']) => readonly CadSketchGraphIssue[];
+
+function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, solution: CadSketchNativeSolution, check: Check): CadSketchNativeAttempt {
   const { diagnosis } = solution, stalled = solution.drag?.outcome === 'stalled';
   if (solution.status === 'too-large') return { kind: 'fallback', reason: 'too-large', rejection: { kind: 'rejected', reason: 'too-large',
     message: 'A connected group of sketch relations is too large to solve. Split it into separate groups or remove relations.', diagnostics: noDiagnostics(null) } };
@@ -61,9 +72,9 @@ function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, soluti
   // looser far from the origin. With nothing free there is nothing to solve, so the checks decide for
   // each relation: one they accept is not blamed, and issues elsewhere are reported as the checks'.
   if (diagnosis.kind === 'no-unknowns' && ids.conflictingIds.length) {
-    const flagged = new Set(checkCadSketchGraph(input.graph, input.parameters).filter(issue => issue.source.kind === 'relation').map(issue => issue.source.id));
+    const flagged = new Set(check(input.graph, input.parameters).filter(issue => issue.source.kind === 'relation').map(issue => issue.source.id));
     const conflictingIds = ids.conflictingIds.filter(id => flagged.has(id));
-    if (!conflictingIds.length) return stalled ? unsolved('not-converged') : solvedAttempt(input, model, solution, { ...noDiagnostics('success'), degreesOfFreedom: 0 });
+    if (!conflictingIds.length) return stalled ? unsolved('not-converged') : solvedAttempt(input, model, solution, { ...noDiagnostics('success'), degreesOfFreedom: 0 }, check);
     return answer({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics: { ...diagnostics, conflictingIds } });
   }
   // A drag is diagnosed where it ends, and its target can land it on a singular configuration (a
@@ -74,7 +85,7 @@ function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, soluti
   if (ids.redundantIds.length || ids.partiallyRedundantIds.length) return definite({ kind: 'rejected', reason: 'redundant', message: 'Sketch constraints are redundant.', diagnostics });
   if (solution.status !== 'converged' || stalled) return unsolved('not-converged');
   if (degreesOfFreedom === null) return unsolved('unknown-freedom');
-  return solvedAttempt(input, model, solution, diagnostics);
+  return solvedAttempt(input, model, solution, diagnostics, check);
 }
 
 function answer(result: CadSketchSolveResult): CadSketchNativeAttempt { return { kind: 'answer', result, movedGroups: 0, keptGroups: 0 }; }
@@ -103,7 +114,7 @@ const polished = (start: number, value: number) => Math.abs(value - start) <= Ma
  * off (55 as 54.99999999999999), so short decimals within roundoff are tried first, never in a kept
  * group; the graph checks decide, as for any solution.
  */
-function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel, solution: CadSketchNativeSolution, diagnostics: CadSketchSolveDiagnostics): CadSketchNativeAttempt {
+function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel, solution: CadSketchNativeSolution, diagnostics: CadSketchSolveDiagnostics, check: Check): CadSketchNativeAttempt {
   if (!applyCadSketchEquationSolution(input.graph, model, solution.values)) return { kind: 'fallback', reason: 'moved-fixed-value',
     rejection: { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution changed fixed source geometry.', diagnostics } };
   const group = parameterGroups(model), moved = new Set<number>(), edited = new Set<number>();
@@ -128,7 +139,7 @@ function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel
   for (const values of candidates) {
     if (!values) continue;
     const graph = applyCadSketchEquationSolution(input.graph, model, values)!;
-    issues = checkCadSketchGraph(graph, input.parameters);
+    issues = check(graph, input.parameters);
     if (!issues.length) return { kind: 'answer', result: { kind: 'solved', graph, diagnostics }, movedGroups: moved.size, keptGroups: values === solution.values || values === snapped ? 0 : keep.size };
   }
   return { kind: 'fallback', reason: 'graph-check',
