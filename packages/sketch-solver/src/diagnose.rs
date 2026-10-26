@@ -133,22 +133,23 @@ pub fn dependent_count(n: usize, rows: &[SparseRow], distance: f64, budget: usiz
 }
 
 /// Indices of the nonzero `rows` within `TAU` of the span of earlier ones once normalized, and
-/// the work spent; `None` when rank cannot be decided reliably or the work would pass `budget`.
-/// A factor that rank is checked through holds at most `fill` entries.
+/// the work spent; `None` when some are and rank cannot be decided reliably, or the work would
+/// pass `budget`. A factor that rank is checked through holds at most `fill` entries.
 pub fn dependent(n: usize, rows: &[SparseRow], budget: usize, fill: usize) -> (Option<Vec<usize>>, usize) {
     let mut work = Work { done: 0, budget, fill };
     let found = (|| {
-        let (mut r, mut rank, mut dependent) = (vec![Vec::new(); n], 0, Vec::new());
+        let (mut r, mut dependent) = (vec![Vec::new(); n], Vec::new());
         for (index, row) in rows.iter().enumerate() {
             let norm = row.iter().map(|e| e.1 * e.1).sum::<f64>().sqrt();
             if !norm.is_finite() { return None; }
             if norm == 0.0 { continue; }
             match insert(&mut r, row.iter().map(|&(k, x)| (k, x / norm)).collect(), TAU, &mut work)? {
-                Insertion::Independent => rank += 1,
+                Insertion::Independent => {}
                 Insertion::Dependent => dependent.push(index),
             }
         }
-        if rank > 0 && !clear_of_dependence(&r, &mut work)? { return None; }
+        // Rank matters only for rows set aside; none leaves nothing to check.
+        if !dependent.is_empty() && !clear_of_dependence(&r, &mut work)? { return None; }
         Some(dependent)
     })();
     (found, work.done)
@@ -481,35 +482,81 @@ fn clear_of_dependence(r: &[SparseRow], work: &mut Work) -> Option<bool> {
 }
 
 /// A lower bound on the smallest singular value of `R` over the columns with pivots, the upper
-/// triangle `T`: `1 / ||T^-1||_F`, since `||T^-1||_2 <= ||T^-1||_F`, which is at most `sqrt(rank)`
-/// times larger. Each row of `T^-1` comes from a triangular solve, backward stable, that visits
-/// only the pivots it reaches. Zero once the bound falls below `CERTAIN`; `None` when the work runs
-/// out.
+/// triangle `T`, first in work linear in its entries and otherwise from the rows of its inverse.
 fn floor_over_pivots(r: &[SparseRow], work: &mut Work) -> Option<f64> {
+    let bound = comparison_floor(r, work)?;
+    if bound >= CERTAIN { return Some(bound); }
+    Some(inverse_floor(r, work))
+}
+
+/// `1 / sqrt(||C^-1||_1 ||C^-1||_inf)` for the comparison matrix `C` of `T`, `|T_ii|` on its
+/// diagonal and `-|T_ij|` off it: `|T^-1| <= C^-1` entrywise, so this bounds `1 / ||T^-1||_2`.
+/// `C^-1` is not negative, so its norms are the largest entries of `C^-1 1` and `C^-T 1`, sums
+/// without cancellation, and the bound allows for their rounding. It is far below the true value
+/// when entries of `T^-1` cancel, as along a chain whose links alternate in sign.
+fn comparison_floor(r: &[SparseRow], work: &mut Work) -> Option<f64> {
+    let n = r.len();
+    // `C z = 1` from the last pivot back, and `C^T w = 1` by rows of `C` from the first.
+    let mut z = vec![0.0; n];
+    for k in (0..n).rev() {
+        let Some(&(_, pivot)) = r[k].first() else { continue };
+        z[k] = (1.0 + r[k][1..].iter().map(|&(c, x)| x.abs() * z[c]).sum::<f64>()) / pivot.abs();
+    }
+    let mut w = vec![1.0; n];
+    for k in 0..n {
+        let Some(&(_, pivot)) = r[k].first() else { continue };
+        w[k] /= pivot.abs();
+        for &(c, x) in &r[k][1..] { w[c] += x.abs() * w[k]; }
+    }
+    let entries: usize = r.iter().map(|row| row.len()).sum();
+    work.spend(2 * entries)?;
+    // Columns without pivots take no part: `z` is zero there and `w` is not read.
+    let largest = |v: &[f64]| (0..n).filter(|&k| !r[k].is_empty()).map(|k| v[k]).fold(0.0, f64::max);
+    let widest = r.iter().map(|row| row.len()).max().unwrap_or(0);
+    // Each computed sum solves `C` with entries moved by a relative `(widest + 2) epsilon`, which
+    // can grow along `n` pivots.
+    let slack = 1.0 + 4.0 * n as f64 * (widest + 2) as f64 * f64::EPSILON;
+    let product = largest(&z) * largest(&w);
+    Some(if product.is_finite() && slack < 1.01 { (product * slack * slack).sqrt().recip() } else { 0.0 })
+}
+
+/// Most counted entries the rows of `T^-1` may take; past them the bound is not shown, which
+/// leaves rank unclear without spending the group's work allowance.
+const INVERSE_WORK: usize = 20_000_000;
+
+/// `1 / ||T^-1||_F`, since `||T^-1||_2 <= ||T^-1||_F`, which is at most `sqrt(rank)` times larger.
+/// Each row of `T^-1` comes from a triangular solve, backward stable, that visits only the pivots
+/// it reaches, so a chain costs the square of its length. Zero once the bound falls below
+/// `CERTAIN` or the work would pass `INVERSE_WORK` or the allowance left.
+fn inverse_floor(r: &[SparseRow], work: &mut Work) -> f64 {
     use std::{cmp::Reverse, collections::BinaryHeap};
     let n = r.len();
+    let allowed = INVERSE_WORK.min(work.budget.saturating_sub(work.done));
     let (mut b, mut queued, mut reached) = (vec![0.0; n], vec![false; n], BinaryHeap::new());
-    let (mut total, limit) = (0.0, (CERTAIN * CERTAIN).recip());
+    let (mut total, mut spent, limit) = (0.0, 0usize, (CERTAIN * CERTAIN).recip());
     for j in (0..n).filter(|&j| !r[j].is_empty()) {
         // `T^T y = e_j` by columns of `T^T`, the rows of `T`, in increasing pivot order.
         (b[j], queued[j]) = (1.0, true);
         reached.push(Reverse(j));
-        let mut entries = 0;
         while let Some(Reverse(k)) = reached.pop() {
             let y = b[k] / r[k][0].1;
             (b[k], queued[k]) = (0.0, false);
             total += y * y;
-            entries += r[k].len();
+            spent += r[k].len();
             for &(c, x) in &r[k][1..] {
                 if r[c].is_empty() { continue; }
                 b[c] -= x * y;
                 if !queued[c] { queued[c] = true; reached.push(Reverse(c)); }
             }
         }
-        work.spend(entries)?;
-        if !(total <= limit) { return Some(0.0); }
+        if spent > allowed {
+            work.done += allowed;
+            return 0.0;
+        }
+        if !(total <= limit) { break; }
     }
-    Some(total.sqrt().recip())
+    work.done += spent;
+    if total <= limit { total.sqrt().recip() } else { 0.0 }
 }
 
 /// Labels for equations with constraint `tags`, which never decrease, from the witnesses of all

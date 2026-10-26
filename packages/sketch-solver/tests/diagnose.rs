@@ -347,12 +347,27 @@ fn a_weak_direction_an_estimate_from_above_misses_is_still_found() {
 fn rows_clear_beyond_their_pivot_columns_are_checked_within_the_fill_limit() {
     // Row i is 1e-8 in x_i, 1 in y_i and 0.1 in a shared z: each lead is tiny, so the pivot columns
     // look nearly singular, but the rows are well conditioned. The shared z fills their transposed
-    // factor densely, so a fill limit below it leaves rank unclear.
+    // factor densely, so a fill limit below it leaves rank unclear. A repeat of the first row is
+    // set aside only when rank is clear.
     let m = 30;
-    let rows: Vec<Vec<(usize, f64)>> = (0..m).map(|i| vec![(i, 1e-8), (m + i, 1.0), (2 * m, 0.1)]).collect();
+    let mut rows: Vec<Vec<(usize, f64)>> = (0..m).map(|i| vec![(i, 1e-8), (m + i, 1.0), (2 * m, 0.1)]).collect();
+    rows.push(rows[0].clone());
     let (clear, spent) = dependent(2 * m + 1, &rows, 100_000_000, usize::MAX);
-    assert_eq!(clear, Some(Vec::new()));
+    assert_eq!(clear, Some(vec![m]));
     // The dense singular values take most of it, about 41 million entries for 30 rows.
     assert!(spent < 60_000_000, "{spent}");
     assert_eq!(dependent(2 * m + 1, &rows, 100_000_000, 100).0, None);
+}
+#[test]
+fn rows_whose_inverse_cancels_are_clear_beyond_the_dense_rank() {
+    // Row i is 1 in columns i, i + 1 and i + 2. Its comparison matrix's inverse grows as the
+    // Fibonacci numbers, so the linear bound fails, but the factor's own inverse repeats 1, -1, 0
+    // and its rows bound the smallest singular value well above `CERTAIN`, for more rows than are
+    // computed densely.
+    let m = 80;
+    let rows: Vec<Row> = (0..m).map(|i| Row { entries: vec![(i, 1.0), (i + 1, 1.0), (i + 2, 1.0)], residual: 0.0, tolerance: 1e-10 }).collect();
+    let (found, spent) = sketch_solver::diagnose::diagnose(m + 2, &rows, TAU, 1_000_000, 1_000);
+    let found = found.expect("diagnosed");
+    assert_eq!((found.rank, found.witnesses.len(), found.certain), (m, 0, true));
+    assert!(spent < 100_000, "{spent}");
 }
