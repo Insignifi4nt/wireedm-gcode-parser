@@ -10,9 +10,10 @@ export interface CadSketchNativeSolution {
   readonly diagnosis: CadSketchNativeDiagnosis;
   /**
    * Present exactly when the model has drag targets (temporary value equations). `reached`: every target
-   * met exactly; `projected`: certified at the nearest reachable values, with no turn of the
-   * targets closer; `stalled`: neither. `targetDistance` is the Euclidean distance from the values
-   * to every target, in millimetres.
+   * met exactly; `projected`: nothing closer found from the start, the necessary conditions of the
+   * nearest reachable values holding up to the solver's resolution, which does not prove them
+   * nearest; `stalled`: neither. `targetDistance` is the Euclidean distance from the values to every
+   * target, in millimetres.
    */
   readonly drag?: { readonly outcome: CadSketchNativeDragOutcome; readonly targetDistance: number };
 }

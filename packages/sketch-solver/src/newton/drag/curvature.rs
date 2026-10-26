@@ -2,7 +2,7 @@
 //! null space, the squared target distance changes to second order by `d^T H d`, with
 //! `H = E^T E + sum lambda_i Hess c_i` and the multipliers `J^T lambda = -E^T r`. A point whose
 //! smallest such curvature is not clearly negative meets the first- and second-order necessary
-//! conditions on its branch; a clearly negative one gives the direction that gets closer, as a
+//! conditions on its branch, up to the test's resolution; a clearly negative one gives the direction that gets closer, as a
 //! straight arm folding toward a target inside its reach or a point leaving a circle's far side.
 //!
 //! `H` is nonzero only on the support `S`: the targeted columns and those of the nonlinear rows
@@ -10,11 +10,13 @@
 //! support's part of the null space, whose basis comes from the singular vectors of the projector's
 //! columns on `S`; the curvature is measured per unit of support motion.
 //!
-//! Every decision is limited only by roundoff. The factor of `J^T` is damped at the Jacobian's own
+//! Every decision carries a verified roundoff bound. The factor of `J^T` is damped at the Jacobian's own
 //! roundoff, and a bound on its inverse from the comparison matrix, or a verified Frobenius norm,
 //! bounds the smallest singular value from below. That bounds each curved row's multiplier error
 //! and each projector column's error; a share of support motion between twice and eight times its
-//! error, or a factor too ill-conditioned to bound, leaves the test unresolved.
+//! error, or a factor too ill-conditioned to bound, leaves the test unresolved. Two limits remain:
+//! a share within twice its error counts as held, and a curved row whose multiplier is within its
+//! error and the first-order tolerance of zero counts as carrying none.
 
 use super::{Drag, norm, row_length};
 use crate::dense::{singular, symmetric_eigen};
@@ -23,7 +25,7 @@ use crate::equations::residual;
 use crate::newton::Exhausted;
 use crate::sparse::{Factor, minimum_degree};
 
-/// Most columns of the support; a wider one is not certified.
+/// Most columns of the support; a wider one leaves the test unresolved.
 const SUPPORT: usize = 64;
 /// Refinements of the multipliers; soundness rests on the error bounds, not on these.
 const REFINEMENTS: usize = 2;
@@ -53,20 +55,21 @@ fn frobenius(factor: &Factor, positions: &[usize], m: usize, allowance: usize) -
 }
 
 pub(super) enum Curvature {
-    /// No direction along the lasting rows gets closer to second order.
-    Certified,
+    /// No resolved direction along the lasting rows gets closer to second order.
+    Clear,
     /// The most negative curvature `theta` of the squared distance's half along the unit
     /// direction `direction`, by column.
     Negative { direction: Vec<f64>, theta: f64 },
-    /// The lowest curvature is within its error of zero along `direction`, so higher orders decide.
-    Flat { direction: Vec<f64> },
+    /// The lowest curvature is within its error of zero along `direction`, so higher orders decide;
+    /// `still` when that direction moves no target, within its error.
+    Flat { direction: Vec<f64>, still: bool },
     /// The multipliers or the support could not be resolved, or a curved row has collapsed.
     Unresolved,
 }
 
 /// One nonlinear row's weighted Hessian over its columns, with its multiplier and error scale, its
 /// place among the rows and its multiplier's error.
-struct Curved { columns: Vec<usize>, hessian: Vec<Vec<f64>>, lambda: f64, size: f64, error: f64, index: usize, uncertainty: f64 }
+struct Curved { columns: Vec<usize>, hessian: Vec<Vec<f64>>, lambda: f64, size: f64, error: f64, index: usize, uncertainty: f64, spread: f64 }
 
 impl Drag<'_> {
     pub(super) fn curvature(&mut self, values: &[f64], r: &[f64]) -> Result<Curvature, Exhausted> {
@@ -75,9 +78,9 @@ impl Drag<'_> {
         // The objective's gradient `E^T r`, by column.
         let mut g = vec![0.0; n];
         for (target, &r) in self.targets.iter().zip(r) { g[target.column] += r; }
-        if m == 0 { return Ok(Curvature::Certified); }
-        // The certificate is of a relaxation: rows left out only enlarge the feasible set, so a point
-        // certified nearest without them is nearest with them. A collapsed distance, which has no
+        if m == 0 { return Ok(Curvature::Clear); }
+        // The test is of a relaxation: rows left out only widen the null space it covers, with the
+        // same multipliers, so a test resolving nothing closer without them resolves nothing with them. A collapsed distance, which has no
         // gradient to expand along, is left out, and so is a row the factor finds dependent.
         let mut kept: Vec<bool> = self.lasting.equations.iter().zip(&rows).map(|(&e, row)| !self.collapsed(values, e, row)).collect();
         // `J` by column, over equations.
@@ -134,7 +137,7 @@ impl Drag<'_> {
             for (lambda, delta) in by_position.iter_mut().zip(&delta) { *lambda += delta; }
             kkt = remainder(&by_position);
         }
-        // The multipliers explain the gradient up to its certified projected part.
+        // The multipliers explain the gradient up to its small projected part.
         if !(norm(&kkt) <= 2.0 * self.stationary) { return Ok(Curvature::Unresolved); }
         let lambda: Vec<f64> = (0..m).map(|i| if kept[i] { by_position[place[i]] } else { 0.0 }).collect();
 
@@ -195,26 +198,23 @@ impl Drag<'_> {
             let absolute: Vec<f64> = p.iter().map(|p| p.abs()).collect();
             let wrong = (2.0 * eta / sigma + 2.0 * drift * size_j) * norm(&w) + gamma(tallest + 1) * norm(&magnitude);
             let k_abs: Vec<f64> = kkt.iter().map(|k| k.abs()).collect();
+            row.spread = norm(&p);
             row.uncertainty = dot(&p, &kkt).abs() + dot(&absolute, &slack) + wrong * (size_k + size_slack) + gamma(n + 1) * dot(&absolute, &k_abs);
         }
         self.work = self.work.saturating_add(solves(2 + 2 * REFINEMENTS + 2 * curved.len()));
         if self.work > self.limits.work { return Ok(Curvature::Unresolved); }
 
+        // A curved row carries curvature only when its multiplier is resolved: beyond its own error
+        // and the change the first-order tolerance allows, `|p_i|` per unit of remainder. Others count
+        // as carrying none, a documented limit of the test.
+        let curved: Vec<&Curved> = curved.iter().filter(|row| row.lambda.abs() > row.uncertainty + 2.0 * row.spread * self.stationary).collect();
+        // No curved row carries a resolved multiplier: the curvature is the targets' alone, never negative.
+        if curved.is_empty() { return Ok(Curvature::Clear); }
         let total: f64 = curved.iter().map(|row| row.lambda.abs() * row.size).sum();
         // What the curvature on the support is known to: each row's differencing error, its
         // multiplier's error against its curvature, and roundoff in the eigensolves.
         let tolerance = curved.iter().map(|row| row.lambda.abs() * row.size * row.error + row.uncertainty * row.size).sum::<f64>()
             + 64.0 * f64::EPSILON * (1.0 + total) * (self.targets.len() + curved.iter().map(|row| row.columns.len()).sum::<usize>()) as f64;
-        // Rows whose whole curvature is within an even share of half the tolerance are left out of
-        // the Hessian and added to the tolerance instead.
-        let share = 0.5 * tolerance / curved.len().max(1) as f64;
-        let reach = |row: &Curved| (row.lambda.abs() + row.uncertainty) * row.size;
-        let omitted: f64 = curved.iter().filter(|row| reach(row) <= share).map(reach).sum();
-        let curved: Vec<&Curved> = curved.iter().filter(|row| reach(row) > share).collect();
-        // Only linear rows carry the multipliers: the point is nearest over the affine set those rows
-        // define, which holds the whole feasible set, so it is nearest over that too.
-        if curved.is_empty() && omitted == 0.0 { return Ok(Curvature::Certified); }
-        let tolerance = tolerance + omitted;
 
         // The support's columns in first-seen order, and each column's place in it.
         let (mut support, mut at) = (Vec::new(), vec![usize::MAX; n]);
@@ -263,7 +263,7 @@ impl Drag<'_> {
         if shares.iter().any(|&share| share > 2.0 * error && share < 8.0 * error) { return Ok(Curvature::Unresolved); }
         let moving: Vec<usize> = (0..s).filter(|&k| shares[k] >= 8.0 * error).collect();
         // Nothing along the lasting rows moves the support: the targets and every curved row are held.
-        if moving.is_empty() { return Ok(Curvature::Certified); }
+        if moving.is_empty() { return Ok(Curvature::Clear); }
         // The curvature per unit of support motion, over an orthonormal basis `V` of the support's
         // part of the null space; the basis is known to `error / sigma_min` of `L`.
         let size_h = hessian.iter().flatten().map(|h| h * h).sum::<f64>().sqrt();
@@ -273,7 +273,12 @@ impl Drag<'_> {
         let reduced: Vec<Vec<f64>> = moving.iter().map(|&a| moving.iter().map(|&b| along(&vectors[a], &vectors[b])).collect()).collect();
         let (curvatures, directions) = symmetric_eigen(reduced);
         let (lowest, &theta) = curvatures.iter().enumerate().min_by(|a, b| a.1.total_cmp(b.1)).unwrap();
-        if theta > tolerance { return Ok(Curvature::Certified); }
+        if theta > tolerance { return Ok(Curvature::Clear); }
+        // The direction's part on the targeted columns, against the basis' error.
+        let mut v = vec![0.0; s];
+        for (&k, &y) in moving.iter().zip(&directions[lowest]) { for (v, w) in v.iter_mut().zip(&vectors[k]) { *v += y * w; } }
+        let targeted = self.targets.iter().map(|target| v[index(target.column).unwrap()].powi(2)).sum::<f64>().sqrt();
+        let still = targeted <= 8.0 * error / least;
         // Lifted to the least-norm null direction with support part `v = V y`: `d = L V Sigma^-2 y`.
         let mut u = vec![0.0; s];
         for (&k, &y) in moving.iter().zip(&directions[lowest]) {
@@ -291,7 +296,7 @@ impl Drag<'_> {
         // `descend` weighs its gains per unit of the whole direction.
         let part: Vec<f64> = support.iter().map(|&column| direction[column]).collect();
         let bent = along(&part, &part);
-        Ok(if theta < -tolerance && bent < 0.0 { Curvature::Negative { direction, theta: bent } } else { Curvature::Flat { direction } })
+        Ok(if theta < -tolerance && bent < 0.0 { Curvature::Negative { direction, theta: bent } } else { Curvature::Flat { direction, still } })
     }
 
     /// Whether `row`, of equation `e`, is a nonlinear row collapsed to a length its coordinates
@@ -344,7 +349,7 @@ impl Drag<'_> {
             }
             let size = hessian.iter().flatten().map(|h| h * h).sum::<f64>().sqrt();
             debug_assert!(columns.len() <= WIDTH);
-            curved.push(Curved { columns, hessian, lambda, size, error: 4.0 * (f64::EPSILON * row.scale / length).powf(2.0 / 3.0), index, uncertainty: 0.0 });
+            curved.push(Curved { columns, hessian, lambda, size, error: 4.0 * (f64::EPSILON * row.scale / length).powf(2.0 / 3.0), index, uncertainty: 0.0, spread: 0.0 });
         }
         Some(curved)
     }

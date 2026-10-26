@@ -13,22 +13,28 @@
 //! is accepted, within its bounds and strictly closer to the targets, with the gain computed from
 //! products so that roundoff in two nearly equal distances cannot fake it, and motion below the
 //! targeted coordinates' ulps is not counted; where that hides the gain, the end slope decides
-//! once the projected gradient is not certified small. The trust radius grows when
+//! once the projected gradient is not small. The trust radius grows when
 //! restoration was small and the path still descending, and shrinks when restoration was large. It
 //! is also the continuation: the targets are approached from the start in bounded, restored steps,
 //! so the result is a function of the input and follows the start's branch.
 //!
 //! A drag is `Reached` within `max(1e-8, 32 epsilon S)` of its targets, and lands exactly on them
-//! when the lasting rows still accept that. It is `Projected` only when the projected gradient is
-//! certified small and the curvature test (`curvature`) finds no direction along the lasting rows
-//! that gets closer to second order: the first- and second-order necessary conditions of a nearest
-//! point on the start's branch, not a global one. A clearly negative curvature, as at a circle's
-//! antipode or a straight arm with a target inside its reach, is followed by restored steps,
-//! halving; one that gets closer by any resolved gain continues the drag. A curvature within its
-//! error of zero is followed at two lengths too, but higher orders decide there, so finding nothing
-//! closer stalls. Anything else, including a curvature test that cannot decide, is `Stalled`,
-//! at the last feasible values. Restoring the start, the trials with their restorations and a
-//! landing's polish share `DRAG_ITERATIONS`, and a check the budget cut short certifies nothing.
+//! when the lasting rows still accept that. It is `Projected` when the projected gradient is
+//! within `stationary` and the curvature test (`curvature`) resolves no direction along the
+//! lasting rows that gets closer to second order: the first- and second-order necessary conditions
+//! on the start's branch, up to the test's resolution, not a proof of a nearest point. The test
+//! counts a free direction that moves its support by no more than about its own error as held, and
+//! a curved row whose multiplier is within its error and the first-order tolerance of zero as
+//! carrying none, so a sketch geared past about 2^40 can hide a farthest point.
+//!
+//! A clearly negative curvature, as at a circle's antipode or a straight arm with a target inside
+//! its reach, is followed by restored steps, halving; one that gets closer by any resolved gain
+//! continues the drag. A curvature within its error of zero is followed at two lengths too. Finding
+//! nothing closer along one that moves no target, as a free part the targets do not reach, leaves
+//! the drag projected; along one that moves a target, higher orders decide, so that stalls.
+//! Anything else, including a curvature test that cannot decide, is `Stalled`, at the last
+//! feasible values. Restoring the start, the trials with their restorations and a
+//! landing's polish share `DRAG_ITERATIONS`, and a check the budget cut short decides nothing.
 
 use super::{Exhausted, GroupOutcome, Jacobian, Limits, MAX_ITERATIONS, System, assess, levenberg, solve_group as solve_whole, solve_group_within, worst};
 use crate::equations::Kind;
@@ -43,8 +49,9 @@ use curvature::Curvature;
 pub enum DragOutcome {
     /// Within `max(1e-8, 32 epsilon S)` millimetres of every target.
     Reached = 0,
-    /// As close as the lasting rows allow from this start: the projected gradient is certified
-    /// small and no direction along the lasting rows gets closer to second order.
+    /// Nothing closer found from this start: the projected gradient is small and the curvature
+    /// test resolves no direction along the lasting rows that gets closer to second order. A
+    /// necessary condition up to the test's resolution, not a proof of the nearest point.
     Projected = 1,
     /// Neither within the iterations allowed; the values are the last feasible ones.
     Stalled = 2,
@@ -67,7 +74,7 @@ const FLAT_LENGTHS: usize = 2;
 /// Most iterations of one group's drag: restoring its start, its trials with their restorations,
 /// and polishing a landing, together. A restored trial takes about four.
 pub const DRAG_ITERATIONS: usize = 4 * MAX_ITERATIONS;
-/// Most projection passes for a tangent step or a stationarity certificate; each shrinks the range
+/// Most projection passes for a tangent step or a stationarity check; each shrinks the range
 /// part by `1 + W^2 sigma^2`.
 const PROJECTION_PASSES: usize = 3;
 
@@ -183,7 +190,7 @@ struct Drag<'a> {
     iterations: usize,
     /// Distance within which the targets are reached.
     reached: f64,
-    /// Projected gradient norm certifying stationarity.
+    /// Projected gradient norm counted as stationary.
     stationary: f64,
     /// Smallest step bound and trust radius, at the targets' scale.
     floor: f64,
@@ -266,26 +273,29 @@ impl Drag<'_> {
     }
 
     /// Where progress can no longer be measured by gains: `Done` when the targets are reached, or
-    /// projected with the curvature test certifying the point; `Moved` when a step along a
-    /// negative curvature got closer; `Moving` when the projected gradient is not certified small.
+    /// projected with the curvature test resolving nothing closer; `Moved` when a step along a
+    /// negative curvature got closer; `Moving` when the projected gradient is not small.
     /// A test that cannot decide, or a negative curvature no step can follow, stalls the drag.
     fn settle(&mut self, values: &mut [f64]) -> Result<Settled, Exhausted> {
         let r = self.residual(values);
         if norm(&r) <= self.reached { return Ok(Settled::Done(DragOutcome::Reached)); }
         if !self.stationary(values, &r)? { return Ok(Settled::Moving); }
         match self.curvature(values, &r)? {
-            Curvature::Certified => Ok(Settled::Done(DragOutcome::Projected)),
+            Curvature::Clear => Ok(Settled::Done(DragOutcome::Projected)),
             Curvature::Unresolved => Ok(Settled::Done(DragOutcome::Stalled)),
             Curvature::Negative { direction, theta } => self.descend(values, &r, &direction, Some(theta)),
-            Curvature::Flat { direction } => self.descend(values, &r, &direction, None),
+            Curvature::Flat { direction, still } => match self.descend(values, &r, &direction, None)? {
+                Settled::Done(DragOutcome::Projected) if !still => Ok(Settled::Done(DragOutcome::Stalled)),
+                settled => Ok(settled),
+            },
         }
     }
 
     /// Restored steps along a unit direction of negative curvature `theta`, from the rows' bound
     /// and halving, first the way the gradient does not climb; the first that gets closer stands,
     /// and without one the drag stalls. Along a flat direction (`None`), where orders past the
-    /// second decide, `FLAT_LENGTHS` lengths are tried; finding nothing closer proves nothing, so
-    /// that stalls too.
+    /// second decide, `FLAT_LENGTHS` lengths are tried; finding nothing closer leaves the second-order
+    /// necessary condition met, so that is projected, unless the caller knows higher orders decide.
     fn descend(&mut self, values: &mut [f64], r: &[f64], direction: &[f64], theta: Option<f64>) -> Result<Settled, Exhausted> {
         let climb: f64 = self.targets.iter().zip(r).map(|(target, r)| r * direction[target.column]).sum();
         let first = if climb > 0.0 { -1.0 } else { 1.0 };
@@ -303,7 +313,7 @@ impl Drag<'_> {
             }
             length *= 0.5;
         }
-        Ok(Settled::Done(DragOutcome::Stalled))
+        Ok(Settled::Done(if theta.is_none() { DragOutcome::Projected } else { DragOutcome::Stalled }))
     }
 
     /// Writes the targets exactly when the lasting rows still accept them. Landing moves the targeted
@@ -438,7 +448,7 @@ impl Drag<'_> {
         Ok(Some((z.iter().zip(&removed).map(|(z, y)| z - y).collect(), norm(&removed))))
     }
 
-    /// Whether the projected gradient of the target distance is certified within `stationary`.
+    /// Whether the projected gradient of the target distance is within `stationary`, roundoff aside.
     /// Each pass leaves the gradient's null-space part `P g` exactly and an orthogonal remainder in
     /// the lasting rows' range, so the norm bounds `|P g|` from above and a leak can only fail the test.
     fn stationary(&mut self, values: &[f64], r: &[f64]) -> Result<bool, Exhausted> {

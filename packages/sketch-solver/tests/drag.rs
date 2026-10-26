@@ -71,8 +71,8 @@ fn a_dragged_point_leaves_the_far_side_of_its_circle() {
 
 #[test]
 fn a_target_at_the_centre_keeps_the_point_on_its_circle() {
-    // Every point of the circle is equally near: flat, so not certified, but the point still stands
-    // on its circle.
+    // Every point of the circle is equally near: flat along a direction that moves the target, so
+    // higher orders decide and the drag stalls, but the point still stands on its circle.
     let (outcome, p) = circle([0.0, 0.0], 10.0, [6.0, 8.0], [0.0, 0.0]);
     assert!((p[0].hypot(p[1]) - 10.0).abs() <= 1e-10, "{p:?}");
     assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Stalled)));
@@ -559,4 +559,69 @@ fn weak_multipliers_beside_large_unrelated_ones_are_not_certified() {
     builder.temporary(Kind::Value, 1e9, &[q[0]]);
     let (outcome, values) = builder.outcome();
     assert!(outcome.drag != Some(DragOutcome::Projected) || values[y].abs() > 1e-3, "{outcome:?} {values:?}");
+}
+
+#[test]
+fn a_small_multiplier_geared_far_still_bends_the_drag() {
+    // (x, u) on a unit circle dragged to x = 2, u geared by 10 doublings into a circle of 1e6 mm
+    // whose far point is dragged 1 mm in. That circle bends only 1e-6 per mm, yet through the
+    // gearing it bends the path by about -0.05 per unit u, so u = 0 is not nearest and the drag
+    // leaves it.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let x = builder.parameter(1.0, false);
+    let u = builder.parameter(0.0, false);
+    builder.equation(Kind::Distance, 1.0, &[o[0], o[1], x, u]);
+    let mut previous = u;
+    for _ in 0..10 {
+        let next = builder.parameter(0.0, false);
+        builder.equation(Kind::Midpoint, 0.0, &[o[1], next, previous]);
+        previous = next;
+    }
+    let z = builder.parameter(1e6, false);
+    builder.equation(Kind::Distance, 1e6, &[o[0], o[1], z, previous]);
+    builder.temporary(Kind::Value, 2.0, &[x]);
+    builder.temporary(Kind::Value, 1e6 - 1.0, &[z]);
+    let (outcome, values) = builder.outcome();
+    assert!(values[u].abs() > 0.1, "{outcome:?} {}", values[u]);
+    assert!(outcome.target_distance < 2f64.sqrt() - 1e-4, "{outcome:?}");
+    assert_eq!(outcome.status, Status::Converged);
+}
+
+#[test]
+fn a_flat_point_whose_probes_a_short_link_cuts_is_not_projected() {
+    // As the fourth-order case, with a free point linked 1e-4 away: the link bounds the probes along
+    // the flat direction to lengths where the fourth-order fall is below roundoff, so finding nothing
+    // closer there proves nothing about the farthest point.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let x = builder.parameter(1.0, false);
+    let u = builder.parameter(0.0, false);
+    let y = builder.parameter(0.0, false);
+    builder.equation(Kind::Distance, 1.0, &[o[0], o[1], x, u]);
+    builder.equation(Kind::Midpoint, 0.0, &[o[1], y, u]);
+    let q = builder.point(1.0 + 1e-4, 0.0, false);
+    builder.equation(Kind::Distance, 1e-4, &[x, u, q[0], q[1]]);
+    builder.temporary(Kind::Value, -3.0, &[x]);
+    builder.temporary(Kind::Value, 0.0, &[y]);
+    let (outcome, _) = builder.outcome();
+    assert!(outcome.drag != Some(DragOutcome::Projected) || outcome.target_distance < 3.9, "{outcome:?}");
+}
+
+#[test]
+fn a_free_part_the_targets_do_not_reach_leaves_the_drag_projected() {
+    // Line cd collinear with a fixed line at y = 7, d dragged to (40, 12): d stops at (40, 7). c
+    // can still slide along the line at no cost, a flat direction no step improves.
+    let mut builder = Builder::new();
+    let a = builder.point(0.0, 7.0, true);
+    let b = builder.point(10.0, 7.0, true);
+    let c = builder.point(20.0, 7.0, false);
+    let d = builder.point(30.0, 7.0, false);
+    builder.equation(Kind::Parallel, 0.0, &[a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]);
+    builder.equation(Kind::PointOnLine, 0.0, &[c[0], c[1], a[0], a[1], b[0], b[1]]);
+    builder.temporary(Kind::Value, 40.0, &[d[0]]);
+    builder.temporary(Kind::Value, 12.0, &[d[1]]);
+    let (outcome, values) = builder.outcome();
+    assert_eq!((outcome.status, outcome.drag), (Status::Converged, Some(DragOutcome::Projected)));
+    assert!((values[d[0]] - 40.0).abs() <= 1e-9 && (values[d[1]] - 7.0).abs() <= 1e-9, "{values:?}");
 }
