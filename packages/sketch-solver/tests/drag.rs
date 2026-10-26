@@ -63,7 +63,7 @@ fn a_point_on_a_circle_goes_to_the_nearest_point_to_far_targets() {
 
 #[test]
 fn a_dragged_point_leaves_the_far_side_of_its_circle() {
-    // Exactly opposite the target the distance is stationary but largest; probes leave it.
+    // Exactly opposite the target the distance is stationary but largest; its negative curvature leaves it.
     let (outcome, p) = circle([0.0, 0.0], 10.0, [-10.0, 0.0], [20.0, 0.0]);
     assert!(near(p, [10.0, 0.0], 1e-9), "{p:?}");
     assert_eq!(outcome.drag, Some(DragOutcome::Projected));
@@ -294,4 +294,89 @@ fn only_value_rows_can_be_targets() {
     let b = builder.point(1.0, 0.0, false);
     builder.temporary(Kind::Distance, 2.0, &[a[0], a[1], b[0], b[1]]);
     assert_eq!(solve_buffer(&builder.encode())[2], Status::InvalidInput as u8 as f64);
+}
+
+/// A chain of links from a fixed base through `joints` to its tip, each as long as it starts,
+/// with the tip dragged toward `target`.
+fn chain(base: [f64; 2], joints: &[[f64; 2]], target: [f64; 2]) -> (Outcome, [f64; 2]) {
+    let mut builder = Builder::new();
+    let mut previous = (builder.point(base[0], base[1], true), base);
+    for &joint in joints {
+        let point = builder.point(joint[0], joint[1], false);
+        builder.equation(Kind::Distance, (joint[0] - previous.1[0]).hypot(joint[1] - previous.1[1]), &[previous.0[0], previous.0[1], point[0], point[1]]);
+        previous = (point, joint);
+    }
+    let tip = previous.0;
+    builder.temporary(Kind::Value, target[0], &[tip[0]]);
+    builder.temporary(Kind::Value, target[1], &[tip[1]]);
+    let (outcome, values) = builder.outcome();
+    (outcome, [values[tip[0]], values[tip[1]]])
+}
+
+#[test]
+fn a_straight_arm_folds_whatever_its_direction() {
+    let (outcome, tip) = chain([0.0, 0.0], &[[1.0, -0.7], [2.0, -1.4]], [1.5, -1.05]);
+    assert_eq!((tip, outcome.drag), ([1.5, -1.05], Some(DragOutcome::Reached)));
+}
+
+#[test]
+fn a_folded_back_chain_unfolds_toward_a_target_inside_its_reach() {
+    let (outcome, tip) = chain([0.0, 0.0], &[[10.0, 0.0], [20.0, 0.0], [10.0, 0.0]], [5.0, 0.0]);
+    assert_eq!((tip, outcome.drag), ([5.0, 0.0], Some(DragOutcome::Reached)));
+}
+
+#[test]
+fn a_tiny_circle_far_from_the_origin_leaves_its_far_side() {
+    let (outcome, p) = circle([-3e8, 0.0], 0.001, [-3e8 - 0.001, 0.0], [-3e8 + 0.002, 0.0]);
+    assert!(near(p, [-3e8 + 0.001, 0.0], 1e-7), "{p:?}");
+    assert_eq!(outcome.drag, Some(DragOutcome::Projected));
+}
+
+#[test]
+fn a_far_drag_never_passes_its_iteration_budget() {
+    let (outcome, _) = chain([0.0, 0.0], &[[0.0, 10.0], [10.0, 10.0]], [600.0, -900.0]);
+    assert!(outcome.iterations <= sketch_solver::newton::DRAG_ITERATIONS, "{}", outcome.iterations);
+}
+
+#[test]
+fn a_point_on_a_turning_line_is_not_held_by_its_start() {
+    // The point sits on a line through the fixed origin and (1, u) with u free. Sliding along the
+    // line or turning it alone gains nothing, but doing both at once does: (s, s^2) on u = s.
+    let mut builder = Builder::new();
+    let a = builder.point(0.0, 0.0, true);
+    let bx = builder.parameter(1.0, true);
+    let by = builder.parameter(0.0, false);
+    let p = builder.point(0.0, 0.0, false);
+    builder.equation(Kind::PointOnLine, 0.0, &[p[0], p[1], a[0], a[1], bx, by]);
+    builder.temporary(Kind::Value, 0.0, &[p[0]]);
+    builder.temporary(Kind::Value, 1.0, &[p[1]]);
+    let (outcome, _) = builder.outcome();
+    assert!(outcome.target_distance < 0.5, "{outcome:?}");
+}
+
+#[test]
+fn a_stretched_chain_is_certified_up_to_the_curvature_support() {
+    // Every link of a chain stretched toward a target beyond its reach carries tension, so the
+    // curvature test spans all its joints: 30 are certified, 40 are past its support.
+    for (joints, outcome) in [(30, DragOutcome::Projected), (40, DragOutcome::Stalled)] {
+        let points: Vec<[f64; 2]> = (1..=joints).map(|k| [k as f64, 0.0]).collect();
+        let (result, tip) = chain([0.0, 0.0], &points, [joints as f64 + 5.0, 0.0]);
+        assert!(near(tip, [joints as f64, 0.0], 1e-9), "{joints} {tip:?}");
+        assert_eq!(result.drag, Some(outcome), "{joints}");
+    }
+}
+
+#[test]
+fn a_repeated_relation_still_certifies_its_nearest_point() {
+    // Two equal distance rows share one multiplier between them.
+    let mut builder = Builder::new();
+    let c = builder.point(0.0, 0.0, true);
+    let p = builder.point(0.0, 10.0, false);
+    builder.equation(Kind::Distance, 10.0, &[c[0], c[1], p[0], p[1]]);
+    builder.equation(Kind::Distance, 10.0, &[c[0], c[1], p[0], p[1]]);
+    builder.temporary(Kind::Value, 30.0, &[p[0]]);
+    builder.temporary(Kind::Value, 40.0, &[p[1]]);
+    let (outcome, values) = builder.outcome();
+    assert!(near([values[p[0]], values[p[1]]], [6.0, 8.0], 1e-9), "{:?}", &values[p[0]..]);
+    assert_eq!(outcome.drag, Some(DragOutcome::Projected));
 }

@@ -2,6 +2,7 @@
 //! `problem`) into memory from `buffer_alloc`, calls `solve` and frees both buffers with
 //! `buffer_free`. The names avoid the C allocator's `alloc` and `free` on native hosts.
 
+pub mod dense;
 pub mod diagnose;
 pub mod dual;
 pub mod equations;

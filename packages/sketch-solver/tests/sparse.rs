@@ -118,3 +118,20 @@ fn repeated_rows_cost_work_but_no_adjacency() {
     assert!(ordering.work >= 16 * 200_000, "{}", ordering.work);
     assert!(minimum_degree(4, &structure, 9, usize::MAX).is_none());
 }
+
+#[test]
+fn the_transposed_solve_inverts_the_factor_transposed() {
+    let rows: Vec<(SparseRow, f64)> = vec![
+        (vec![(0, 2.0), (2, -1.0)], 0.0),
+        (vec![(1, 0.5), (3, 3.0)], 0.0),
+        (vec![(0, 1.0), (1, 1.0), (2, 1.0)], 0.0),
+        (vec![(2, 4.0), (3, -0.5)], 0.0),
+    ];
+    let factor = factor(&rows, 4, 0.3);
+    let b = [1.0, -2.0, 0.5, 3.0];
+    let y = factor.solve_transposed(&b).unwrap();
+    // R^T y, column by column of R.
+    let mut back = [0.0; 4];
+    for row in &factor.rows { for &(j, value) in row { back[j] += value * y[row[0].0]; } }
+    for (back, b) in back.iter().zip(&b) { assert!((back - b).abs() <= 1e-12, "{back} {b}"); }
+}

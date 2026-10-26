@@ -152,17 +152,34 @@ impl Factor {
     }
 
     /// `x` with `R x = c` by positions; `None` when a pivot is missing or the result not finite.
-    pub fn solve(&self) -> Option<Vec<f64>> {
-        let n = self.c.len();
+    pub fn solve(&self) -> Option<Vec<f64>> { self.solve_with(&self.c) }
+
+    /// `x` with `R x = c` for another right-hand side `c`, by positions.
+    pub fn solve_with(&self, c: &[f64]) -> Option<Vec<f64>> {
+        let n = c.len();
         let mut x = vec![0.0; n];
         for k in (0..n).rev() {
             let row = &self.rows[k];
             let &(first, pivot) = row.first()?;
             if first != k { return None; }
-            let mut sum = self.c[k];
+            let mut sum = c[k];
             for &(j, value) in &row[1..] { sum -= value * x[j]; }
             x[k] = sum / pivot;
         }
         x.iter().all(|value| value.is_finite()).then_some(x)
+    }
+
+    /// `y` with `R^T y = b` by positions; `None` when a pivot is missing or the result not finite.
+    pub fn solve_transposed(&self, b: &[f64]) -> Option<Vec<f64>> {
+        let mut y = b.to_vec();
+        for k in 0..y.len() {
+            let row = &self.rows[k];
+            let &(first, pivot) = row.first()?;
+            if first != k { return None; }
+            y[k] /= pivot;
+            let value = y[k];
+            for &(j, entry) in &row[1..] { y[j] -= entry * value; }
+        }
+        y.iter().all(|value| value.is_finite()).then_some(y)
     }
 }
