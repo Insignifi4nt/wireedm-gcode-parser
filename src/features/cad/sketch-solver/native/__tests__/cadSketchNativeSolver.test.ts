@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { checkCadSketchGraph, parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { createCadBenchmarkRectangleGraph } from '../../../benchmark/cadBenchmarkCases';
+import { createCadSolverDieInput } from '../../../benchmark/cadSolverWorkloadCases';
 import { compileCadSketchEquations } from '../compileCadSketchEquations';
 import { applyCadSketchEquationSolution, CAD_SKETCH_NATIVE_PROTOCOL_VERSION, cadSketchEquationDiagnostics, encodeCadSketchEquationModel } from '../cadSketchEquationModel';
 import { loadCadSketchNativeSolver } from '../cadSketchNativeSolver';
@@ -127,6 +128,18 @@ describe('native sketch solver module', () => {
     if (solution.diagnosis.kind !== 'diagnosed') throw new Error(solution.diagnosis.kind);
     expect(solution.diagnosis.degreesOfFreedom).toBeNull();
     expect(cadSketchEquationDiagnostics(model, solution.diagnosis.labels)).toEqual({ conflictingIds: ['tw', 'clash'], redundantIds: [], partiallyRedundantIds: [] });
+  });
+
+  it('stops polishing an edited die once its steps only move roundoff', () => {
+    // After the slot radius grows by 0.5 mm, one direction row's roundoff floor sits above the
+    // polishing level; steps past acceptance then gained nothing until they vanished, 50 iterations.
+    const die = createCadSolverDieInput(), first = compileCadSketchEquations(die), solved = solver.solve(first);
+    expect(solved.status).toBe('converged');
+    const edited = { graph: applyCadSketchEquationSolution(die.graph, first, solved.values), parameters: { ...die.parameters, slotRadius: die.parameters.slotRadius + .5 } };
+    const model = compileCadSketchEquations(edited), solution = solver.solve(model);
+    expect(solution.status).toBe('converged');
+    expect(solution.iterations).toBeLessThanOrEqual(8);
+    expect(checkCadSketchGraph(applyCadSketchEquationSolution(edited.graph, model, solution.values), edited.parameters)).toEqual([]);
   });
 
   it('leaves a satisfied sketch untouched and survives many solves in one instance', () => {

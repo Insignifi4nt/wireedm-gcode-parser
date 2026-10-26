@@ -35,6 +35,15 @@ pub const ACCEPT_RADIANS: f64 = 1e-12;
 const NEAR: f64 = 1e-10;
 /// Steps continue past acceptance while they improve, down to roundoff at this level.
 const POLISH: f64 = 2.0 * f64::EPSILON;
+/// Past acceptance, a step gaining less than this part of its predicted gain, and less than
+/// `NEGLIGIBLE` of the cost, is taken as roundoff. Steps that move only roundoff gain about 1e-14
+/// of their prediction and 1e-14 of the cost. With damping at `polish_floor`, a real gain below
+/// `NEGLIGIBLE` needs a direction whose squared singular value is below 512 epsilon squared of
+/// the diagonal, dependent at any distance used here. A step near a tangency can gain a real part
+/// of the cost with a low ratio, so the ratio alone does not decide. A single such step can still be
+/// real, so polishing stops at the second in a row.
+const STAGNANT: f64 = 0.25;
+const NEGLIGIBLE: f64 = 1024.0 * f64::EPSILON;
 
 #[derive(Clone, Debug)]
 pub struct Outcome {
@@ -389,6 +398,7 @@ fn levenberg(system: &System, values: &mut [f64], position: &[usize], limits: Li
     // swamp, turning Newton's quadratic convergence linear. A start that is already near polishes.
     let (floor, polish_floor) = (1e-12 * diagonal.max(1.0), f64::EPSILON * diagonal.max(1.0));
     let (mut mu, mut nu) = (if progress.near { polish_floor } else { (1e-6 * diagonal).max(floor) }, 2.0);
+    let mut stagnant = 0;
     while *iterations < MAX_ITERATIONS {
         *iterations += 1;
         let (mut stepped, mut rejected) = (false, false);
@@ -399,13 +409,22 @@ fn levenberg(system: &System, values: &mut [f64], position: &[usize], limits: Li
             for (column, &p) in system.unknowns.iter().enumerate() { values[p] += h[column]; }
             let next = system.rows(values, Some(&rows));
             let predicted = 0.5 * h.iter().zip(&jacobian.gradient).map(|(step, gradient)| step * (mu * step - gradient)).sum::<f64>();
-            let reduction = cost(&rows) - cost(&next);
+            let before = cost(&rows);
+            let reduction = before - cost(&next);
             if reduction > 0.0 && predicted > 0.0 {
                 stepped = true;
                 let (rho, searching) = (reduction / predicted, !progress.near);
+                // A stopping heuristic: past acceptance, a step that gains a small part of its
+                // prediction and a negligible part of the cost moved only roundoff. Without it, a
+                // row whose roundoff floor sits above `POLISH` keeps the loop taking such steps
+                // until they vanish. The ratio keeps polishing a group whose cost is mostly a row
+                // no step can reduce, accepted within tolerance: its prediction is far below the
+                // cost, and a negligible part of the cost is still a real gain.
+                let still = progress.accepted && rho < STAGNANT && reduction <= NEGLIGIBLE * before;
                 rows = system.rows(values, None);
                 progress = assess(&rows);
-                if progress.polished { break; }
+                stagnant = if still && progress.accepted { stagnant + 1 } else { 0 };
+                if progress.polished || stagnant == 2 { break; }
                 mu = if searching && progress.near { polish_floor }
                     else { (mu * (1.0 / 3.0_f64).max(1.0 - (2.0 * rho - 1.0).powi(3))).max(if progress.near { polish_floor } else { floor }) };
                 nu = 2.0;
