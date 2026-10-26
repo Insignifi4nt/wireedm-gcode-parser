@@ -66,3 +66,46 @@ export function isCadImportData(value: unknown): boolean {
     return false;
   }
 }
+
+/**
+ * A detached plain copy of complete acyclic own JSON data, each field read once through its
+ * descriptor, or `undefined` when the value is not such data. Unlike `structuredClone`, it accepts
+ * transparent proxies, as `isCadImportData` does. Meant for small envelopes; it recurses.
+ */
+export function cadImportDataCopy(value: unknown): unknown {
+  const ancestors = new WeakSet<object>();
+  const copy = (item: unknown): unknown => {
+    if (item === null || typeof item === 'string' || typeof item === 'boolean') return item;
+    if (typeof item === 'number') return Number.isFinite(item) ? item : undefined;
+    if (typeof item !== 'object' || ancestors.has(item)) return undefined;
+    ancestors.add(item);
+    try {
+      if (Array.isArray(item)) {
+        if (Object.getPrototypeOf(item) !== Array.prototype) return undefined;
+        const names = Reflect.ownKeys(item), length: unknown = Object.getOwnPropertyDescriptor(item, 'length')?.value;
+        if (typeof length !== 'number' || !Number.isSafeInteger(length) || names.length !== length + 1) return undefined;
+        const result: unknown[] = [];
+        for (let index = 0; index < length; index++) {
+          const field = Object.getOwnPropertyDescriptor(item, String(index));
+          if (!field?.enumerable || !('value' in field)) return undefined;
+          const entry = copy(field.value);
+          if (entry === undefined) return undefined;
+          result.push(entry);
+        }
+        return result;
+      }
+      const fields = cadImportDataFields(item);
+      if (!fields) return undefined;
+      const result: Record<string, unknown> = {};
+      for (const [name, field] of Object.entries(fields)) {
+        const entry = copy(field);
+        if (entry === undefined) return undefined;
+        result[name] = entry;
+      }
+      return result;
+    } catch {
+      return undefined;
+    } finally { ancestors.delete(item); }
+  };
+  return copy(value);
+}

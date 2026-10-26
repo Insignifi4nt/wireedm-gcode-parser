@@ -2,7 +2,7 @@ import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { CadSketchGraphIssueSchema, CadSketchGraphSchema, checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '../../../domain/cad/cadSketchGraph';
 import { CadIdentifierSchema, CadNumberSchema } from '../../../domain/cad/cadPrimitives';
-import { cadImportDataFields, isCadImportData } from '../../../domain/cad/cadImportData';
+import { cadImportDataCopy, cadImportDataFields, isCadImportData } from '../../../domain/cad/cadImportData';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadSketchExternalReferenceComponents } from '../../../domain/cad/cadSketchExternalReferences';
 import { cadSketchLinearPatternLockReason } from '../../../domain/cad/cadSketchLinearPattern';
@@ -33,8 +33,7 @@ export function parseCadSketchSolveInput(value: unknown): CadSketchSolveInput {
   if (!fields || !('graph' in fields)) throw new Error('Invalid sketch solver input.');
   const { graph: source, ...fieldsBesideGraph } = fields;
   // A private copy, so parsing the graph cannot change the parameters or drag checked here.
-  let envelope: unknown;
-  try { envelope = isCadImportData(fieldsBesideGraph) ? structuredClone(fieldsBesideGraph) : undefined; } catch { envelope = undefined; }
+  const envelope = cadImportDataCopy(fieldsBesideGraph);
   if (!isCadImportData(envelope) || !Value.Check(envelopeSchema, envelope)) throw new Error('Invalid sketch solver input.');
   let graph: CadSketchGraph;
   try { graph = parseCadSketchGraph(source); }

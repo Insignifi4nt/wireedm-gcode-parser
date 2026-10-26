@@ -79,6 +79,9 @@ describe('sketch solver input boundary', () => {
     const parameters = { span: 10 }, raw = structuredClone(graph) as unknown as { points: unknown[] }, point = raw.points[0] as object;
     raw.points[0] = new Proxy(point, { getOwnPropertyDescriptor(target, key) { parameters.span = Infinity; raw.points[0] = point; return Reflect.getOwnPropertyDescriptor(target, key); } });
     expect(parseCadSketchSolveInput({ graph: raw, parameters }).parameters.span).toBe(10);
+    // Transparent proxies around plain fields are read like the fields they wrap.
+    const drag = { pointId: 'b', position: new Proxy([10, 1], {}) };
+    expect(parseCadSketchSolveInput({ graph, parameters: new Proxy({ span: 10 }, {}), drag: new Proxy(drag, {}) })).toEqual({ graph, parameters: { span: 10 }, drag: { pointId: 'b', position: [10, 1] } });
     const revoked = Proxy.revocable({}, {}); revoked.revoke();
     expect(() => parseCadSketchSolveInput(revoked.proxy)).toThrow('Invalid sketch solver input.');
     expect(() => parseCadSketchSolveInput({ parameters: { span: 10 } })).toThrow('Invalid sketch solver input.');
