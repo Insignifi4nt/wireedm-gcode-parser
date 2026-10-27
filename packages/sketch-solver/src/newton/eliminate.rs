@@ -21,9 +21,13 @@
 //! separate solutions, and the two solves can reach different ones, so it is solved whole too; so
 //! are a drag, a start already polished, and a smaller solve or diagnosis that falls short.
 //!
-//! So elimination changes a group's status in one way only: the smaller system can converge where
-//! the whole one runs out of iterations, as on a long, badly scaled chain of midpoints. The group
-//! then converges, with every one of its rows checked where the classes end.
+//! So elimination changes a group's answer only where the whole solve falls short: where it stops
+//! without converging, as a long, badly scaled chain of midpoints does at its iteration limit, or
+//! runs out of the group's work, which it spends on its steps before it diagnoses, and so ends too
+//! large or converged with its diagnosis incomplete. The smaller system can finish there, and the
+//! group then converges and is diagnosed, with every one of its rows checked where the classes end.
+//! Elsewhere both converge and are diagnosed, and as the rows are linear their gradients, and with
+//! them the diagnosis, freedom and labels, are the same wherever either solve ends.
 
 use super::{ColumnMap, GroupOutcome, Limits, MAX_ITERATIONS, Row, System, assess, diagnose_group, solve_group_within, worst};
 use crate::diagnose::{TAU, Witness};

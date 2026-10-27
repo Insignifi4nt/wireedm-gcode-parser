@@ -4,7 +4,7 @@ use common::Builder;
 use sketch_solver::diagnose::{CONFLICTING, REDUNDANT};
 use sketch_solver::equations::Kind;
 use sketch_solver::newton::{LIMITS, Limits, MAX_ITERATIONS, Outcome};
-use sketch_solver::problem::Status;
+use sketch_solver::problem::{Diagnosis, Status};
 
 type Solved = (Outcome, Vec<f64>);
 
@@ -142,8 +142,9 @@ fn a_midpoint_inside_one_class_holds_as_a_row_that_must_already_hold() {
 fn where_the_whole_solve_runs_out_of_iterations_the_classes_can_still_converge() {
     // Found in review: each midpoint halves the next unknown's distance to `z`, a chain so badly
     // scaled that the whole solve stops at its iteration limit just short of polish. The classes
-    // converge, and every row of the group holds where they end. This is the one way elimination
-    // changes a status: wherever its smaller solve or a check falls short, the group is solved whole.
+    // converge, and every row of the group holds where they end. Elimination changes an answer only
+    // where the whole solve falls short like this or runs out of work (below): wherever its smaller
+    // solve or a check falls short, the group is solved whole.
     let mut builder = Builder::new();
     let z = builder.parameter(0.0, true);
     let x: Vec<usize> = (0..21).map(|_| builder.parameter(100.0, false)).collect();
@@ -153,6 +154,33 @@ fn where_the_whole_solve_runs_out_of_iterations_the_classes_can_still_converge()
     assert_eq!((whole.0.status, whole.0.iterations), (Status::NotConverged, MAX_ITERATIONS), "{:?}", whole.0);
     let e = &eliminated.0;
     assert!(e.status == Status::Converged && e.residual <= 1e-15 && e.degrees_of_freedom == Some(0) && e.labels.iter().all(|&label| label == 0), "{e:?}");
+}
+
+#[test]
+fn where_the_whole_solve_runs_out_of_work_the_classes_can_still_finish() {
+    // Found in review: the whole solve spends the group's work on its steps before it diagnoses, so
+    // with less work it ends too large, or converged with its diagnosis incomplete and its freedom
+    // unknown, where the classes, pinned without a step, are still diagnosed. With the default
+    // limits the same star does so at about 28,000 unknowns.
+    let mut builder = Builder::new();
+    let x: Vec<usize> = (0..10).map(|_| builder.parameter(10.0, false)).collect();
+    builder.equation(Kind::Value, 0.0, &[x[0]]);
+    for i in 1..10 { builder.equation(Kind::Difference, 0.0, &[x[0], x[i]]); }
+    let (mut too_large, mut incomplete) = (0, 0);
+    for work in (0..60).map(|k| (1.4f64.powi(k) as usize).min(LIMITS.work)) {
+        let limits = Limits { work, ..LIMITS };
+        let (eliminated, whole) = (builder.outcome_within(limits), builder.outcome_whole_within(limits));
+        if agrees(&eliminated, &whole) { continue; }
+        let (e, w) = (&eliminated.0, &whole.0);
+        assert!((e.status, e.diagnosis, e.degrees_of_freedom, e.iterations) == (Status::Converged, Diagnosis::Diagnosed, Some(0), 0)
+            && eliminated.1.iter().all(|&v| v == 0.0), "work {work}: {e:?}");
+        match (w.status, w.diagnosis) {
+            (Status::TooLarge, Diagnosis::Unavailable) => too_large += 1,
+            (Status::Converged, Diagnosis::Incomplete) => incomplete += 1,
+            _ => panic!("work {work}: {e:?} against {w:?}"),
+        }
+    }
+    assert!(too_large > 0 && incomplete > 0, "too large {too_large}, incomplete {incomplete}");
 }
 
 #[test]
