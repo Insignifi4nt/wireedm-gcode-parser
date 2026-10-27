@@ -37,11 +37,12 @@ const previewLine = (preview: DragPreview['dependent']['referenced']) =>
   + `one full parse of the ${Math.round(preview.documentJsonBytes / 1024)} KiB document p50 ${preview.documentParseMs.p50} ms${drifted(preview.cpuCalibrationMs) ? ' THROTTLED' : ''}`;
 function logDragPreview(dragPreview: DragPreview) {
   for (const item of dragPreview.independent) console.log(`drag preview with ${item.sketchCount} sketches ${previewLine(item)}`);
+  for (const item of dragPreview.padded) console.log(`drag preview with ${item.sketchCount} extruded sketches ${previewLine(item)}`);
   console.log(`dependent drag preview, referenced edge ${previewLine(dragPreview.dependent.referenced)}`);
   console.log(`dependent drag preview, unreferenced point ${previewLine(dragPreview.dependent.unreferenced)}`);
 }
 const dragPreviewCalibrations = (dragPreview: DragPreview) =>
-  [...dragPreview.independent, dragPreview.dependent.referenced, dragPreview.dependent.unreferenced].flatMap(preview => preview.cpuCalibrationMs);
+  [...dragPreview.independent, ...dragPreview.padded, dragPreview.dependent.referenced, dragPreview.dependent.unreferenced].flatMap(preview => preview.cpuCalibrationMs);
 async function writeReport<Report extends { createdAt: string }>(prefix: string, report: Report) {
   await mkdir('tmp/cad-benchmark', { recursive: true });
   const file = `tmp/cad-benchmark/${prefix}${report.createdAt.replace(/[:.]/g, '-')}.json`;

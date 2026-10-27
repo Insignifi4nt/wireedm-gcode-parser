@@ -2,7 +2,7 @@ import type { CadDocument, CadFeature } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { reduceCadEditIntents, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
-import { parseCadDocument } from '@/domain/cad/cadSchema';
+import { hasValidCadSketchGeometry, parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchSolveDiagnostics, CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { Value } from '@sinclair/typebox/value';
@@ -71,10 +71,11 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
       // An unedited sketch whose refreshed references still match its accepted solution keeps it:
       // the same graph and parameters with every relation still satisfied. Redundancy and freedom are
       // only diagnosed for sketches that are solved. The dragged sketch and every sketch of an
-      // exact-prefix certificate always solve.
+      // exact-prefix certificate always solve. A parse that found the sketch's geometry valid under the
+      // same values already checked its relations.
       const acceptedSketch = acceptedSketches.get(feature.id);
       if (!exact && drag?.sketchId !== feature.id && sameParameters && (refreshed === acceptedSketch || Value.Equal(refreshed, acceptedSketch))
-        && !checkCadSketchGraph(refreshed.graph, target.parameters).length) {
+        && (hasValidCadSketchGeometry(refreshed, target.parameters) || !checkCadSketchGraph(refreshed.graph, target.parameters).length)) {
         features.push(refreshed); previous.set(feature.id, refreshed); continue;
       }
       const input = { graph: refreshed.graph, parameters: target.parameters,

@@ -11,7 +11,7 @@ import { createCadSketchCellIndex, selectCadSketchRegions, isCadSketchGraphCellS
   type CadSketchCellReference, type CadSketchCellMode, type CadSketchCellId, type CadSketchRegionSelection } from './cadSketchRegionSelection';
 import { prepareCadSketchGraphCells } from './cadSketchGraphCells';
 export type { CadSketchCellMode, CadSketchCellId } from './cadSketchRegionSelection';
-import { cadScalarParameterNames, mapCadFeatureScalars } from './cadParameters';
+import { readCadSketchGeometryParameters, sameCadSketchGeometryValues } from './cadSketchParameterReads';
 import { CadSketchSplitTargetSchema, splitCadSketchEntity, type CadSketchSplitTarget } from './cadSketchSplit';
 import { CadSketchTrimTargetSchema, prepareCadSketchTrim, trimCadSketchEntity, type CadSketchTrimTarget,
   CadSketchExtendTargetSchema, prepareCadSketchExtend, extendCadSketchEntity, type CadSketchExtendTarget } from './cadSketchTrimExtend';
@@ -44,7 +44,7 @@ export type CadPreparedSketchGraphCells = Omit<ReturnType<typeof prepareCadSketc
 };
 export type CadPreparedSketchCatalog = CadPreparedSketchCells | CadPreparedSketchGraphCells;
 
-const preparations = new WeakMap<CadSketchFeature, { names: readonly string[]; values: readonly (number | undefined)[];
+const preparations = new WeakMap<CadSketchFeature, { values: readonly (number | undefined)[];
   catalogs: Partial<Record<CadSketchCellMode, CadPreparedSketchCatalog>> }>();
 
 /** Reuse source geometry only; placement and complete history still validate separately. */
@@ -60,35 +60,21 @@ export function prepareCadSketchCells(sketch: CadSketchFeature, parameters: CadD
       ? graph.resolve(selection) : resolveCadSketchRegions(sketch, environment, selection) });
   }
   if (!isAcceptedCadSketchSource(sketch)) return build(parameters);
+  // Own data is captured once for both key and geometry. Accessors and invalid values keep the
+  // ordinary evaluator, without ever adopting their result.
+  const reads = readCadSketchGeometryParameters(sketch, parameters);
+  if (!reads) return build(parameters);
   const previous = preparations.get(sketch);
-  let names = previous?.names;
-  if (!names) {
-    const used = new Set<string>();
-    mapCadFeatureScalars(sketch, (value, path) => {
-      if (path.startsWith('profiles.') || path.startsWith('graph.')) for (const name of cadScalarParameterNames(value)) used.add(name);
-      return value;
-    });
-    names = [...used];
-  }
-  const values: (number | undefined)[] = [], environment: Record<string, number> = Object.create(null);
-  for (const name of names) {
-    const field = Object.getOwnPropertyDescriptor(parameters, name);
-    if (!field) { values.push(undefined); continue; }
-    // Preserve the ordinary evaluator for accessors/invalid values without ever
-    // adopting their result. Own data is captured once for both key and geometry.
-    if (!('value' in field) || typeof field.value !== 'number' || !Number.isFinite(field.value)) return build(parameters);
-    values.push(field.value); environment[name] = field.value;
-  }
-  const reusable = previous && values.every((value, index) => Object.is(value, previous.values[index]));
+  const reusable = previous && sameCadSketchGeometryValues(reads.values, previous.values);
   const cached = reusable ? previous.catalogs[mode] : undefined;
   if (cached) return cached;
-  const cells = build(environment);
+  const cells = build(reads.environment);
   for (const cell of cells.cells) {
     // Only newly resolved objects are frozen here. The profile is borrowed from
     // the already deeply frozen parser source; raw caller inputs stay untouched.
     deepFreezeCadData(cell.boundary.geometry); if ('point' in cell.boundary) Object.freeze(cell.boundary.point); Object.freeze(cell.boundary);
   }
-  preparations.set(sketch, { names, values, catalogs: { ...(reusable ? previous.catalogs : {}), [mode]: cells } });
+  preparations.set(sketch, { values: reads.values, catalogs: { ...(reusable ? previous.catalogs : {}), [mode]: cells } });
   return cells;
 }
 
